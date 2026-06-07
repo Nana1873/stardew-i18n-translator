@@ -1,0 +1,50 @@
+# Milestone M1: Setup + Mod Scan + Import
+
+## Goal
+Implement the core project setup flow, recursively scan the Stardew Valley Mods directory, parse SMAPI manifests and i18n JSON structures, and display a list of discovered mods in a panel.
+
+## Scope
+* **Setup Screen:** UI inputs to set/detect Stardew Valley directory, Mods directory, and select source/target languages.
+* **Optional Glossary Builder:** Extract Stardew game strings to construct an official translation dictionary (non-blocking; skips gracefully if game folder cannot be read).
+* **Mod Directory Scanner:** Recursive scanner searching for folders containing `manifest.json`.
+* **Manifest & UpdateKeys Parser:** Extract mod metadata (name, author, version, Nexus Mod ID from `UpdateKeys`).
+* **i18n Loader:** Read `i18n/default.json` and import existing target language translations (`i18n/<lang>.json`).
+* **Mod List UI:** A list view displaying detected mods, translation status, and file counts.
+
+## Out of Scope
+* The main String Table/Editor UI grid.
+* String validation or token parsing.
+* Any export, file-saving, or backup mechanisms.
+* In-app AI or Nexus API calls.
+
+## Acceptance Criteria
+1. User can choose directories, and paths are validated (must contain `manifest.json` under Mod subfolders).
+2. Missing or target language files are correctly recognized (e.g. "default.json exists, de.json missing").
+3. Mod list table renders correctly with columns: Mod Name, Nexus ID, Status, and Translation Progress percentage.
+4. If glossary extraction fails or is skipped, the scanner still functions completely.
+5. All file parsing and scanner logic has unit tests with mock fixtures.
+
+## Risks
+* **Varying Manifest Structures:** Mods may have incomplete manifest files. (Mitigation: Implement safe fallback defaults and log warnings without crashing).
+* **Massive Mod Folders:** Some users have 300+ mods, causing scanning bottlenecks. (Mitigation: Use asynchronous scanning, and do not block the UI thread).
+
+## Suggested Issue Breakdown
+
+### Issue 3: Implement setup wizard for Stardew and Mods paths
+* **Goal:** Create settings UI, detect paths, select source/target languages, and implement optional glossary extraction.
+* **Suggested Agent:** Claude Code (for UI framework setup).
+
+### Issue 4: Implement recursive manifest.json mod scanner
+* **Goal:** Scan Mods directory, parse `manifest.json`, extract Nexus ID, and build database model of mods.
+* **Suggested Agent:** Codex (for isolated, highly testable scanner code).
+
+### Issue 5: Parse SMAPI i18n/default.json and target language files
+* **Goal:** Read base English/default key-values and import existing target translations, handling missing files gracefully.
+* **Suggested Agent:** Codex.
+
+### Issue 6: Display mod list table
+* **Goal:** Bind the scan results to the left panel Mod List UI, showing progress bars and metadata.
+* **Suggested Agent:** Claude Code.
+
+## Agent Handoff Notes
+*Ensure mock fixtures are placed in `tests/fixtures/` and contain valid/invalid manifests for testing.*

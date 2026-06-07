@@ -1,0 +1,76 @@
+# === OS Junk ===
+[Dd]esktoptop.ini
+$RECYCLE.BIN/
+.DS_Store
+Thumbs.db
+
+# === Editors and IDEs ===
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.swo
+
+# === Environment & Secrets ===
+.env
+.env.*
+*.pem
+*.key
+secrets.json
+credentials.json
+token.json
+
+# === Logs & Diagnostics ===
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# === Build and Dependency Folders (Generic Placeholder) ===
+node_modules/
+bower_components/
+dist/
+build/
+out/
+bin/
+obj/
+target/
+.gradle/
+.venv/
+env/
+venv/
+ENV/
+__pycache__/
+*.pyc
+
+# === Application Cache & Cache Databases ===
+.cache/
+.parcel-cache/
+.eslintcache
+.tsbuildinfo
+
+# === Stardew Valley & SMAPI Local Data ===
+# Do not commit real Stardew Valley files, mod directories, or user settings
+/Stardew Valley/
+/Mods/
+!/tests/fixtures/
+/tests/fixtures/*/Mods/
+/app_data/
+/user_data/
+/glossary_cache/
+*.json.bak
+*.db
+*.sqlite
+
+# === Mod Archives & Unpacked Assets ===
+*.zip
+*.rar
+*.7z
+*.tar.gz
+*.xnb
+extracted_assets/
+manifest.json.user
