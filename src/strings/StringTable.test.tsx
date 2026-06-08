@@ -130,4 +130,18 @@ describe("StringTable", () => {
     fireEvent.click(screen.getByRole("button", { name: "{{name}}" }));
     expect(textarea.value).toBe("{{name}}");
   });
+
+  it("right-click → Mark as not translatable persists the status", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.contextMenu(await screen.findByText("greeting"));
+
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark as not translatable" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({ key: "greeting", status: "not-translatable" }),
+      ),
+    );
+  });
 });

@@ -399,6 +399,62 @@ body {
   color: #d6a85f;
 }
 
+.stringrow--selected {
+  background: rgba(74, 157, 107, 0.18);
+}
+
+/* --- Right-click context menu --- */
+.ctxmenu__scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+}
+
+.ctxmenu {
+  position: fixed;
+  z-index: 51;
+  margin: 0;
+  padding: 4px 0;
+  min-width: 190px;
+  list-style: none;
+  background: var(--bg-toolbar);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.ctxmenu button {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 5px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ctxmenu button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ctxmenu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.ctxmenu__sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+
+.ctxmenu__count {
+  padding: 4px 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
 /* --- String editor dialog --- */
 .editor__backdrop {
   position: fixed;
