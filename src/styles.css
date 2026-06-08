@@ -367,6 +367,38 @@ body {
   vertical-align: middle;
 }
 
+.stringrow__val {
+  text-align: center;
+  font-size: 10px;
+}
+
+.val--error {
+  color: #e06c6c;
+}
+
+.val--warning {
+  color: #d6a85f;
+}
+
+.editor__valid-ok {
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.editor__issue {
+  display: inline-block;
+  margin-right: 12px;
+  font-size: 12px;
+}
+
+.editor__issue--error {
+  color: #e06c6c;
+}
+
+.editor__issue--warning {
+  color: #d6a85f;
+}
+
 /* --- String editor dialog --- */
 .editor__backdrop {
   position: fixed;

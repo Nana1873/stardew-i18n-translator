@@ -11,6 +11,7 @@
  * original · F4 reset.
  */
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import { validate } from "./validation";
 
 export interface EditorRow {
   key: string;
@@ -18,6 +19,7 @@ export interface EditorRow {
   /** Effective current target (saved edit or imported value). */
   target: string;
   file: string;
+  targetPresent: boolean;
 }
 
 interface StringEditorProps {
@@ -97,6 +99,7 @@ export function StringEditor({
   }
 
   const sourceTokens = tokensOf(row.source);
+  const issues = validate(row.source, value, row.targetPresent);
 
   return (
     <div
@@ -143,7 +146,17 @@ export function StringEditor({
           </label>
         </div>
 
-        <div className="editor__validation">Validation runs in the next step.</div>
+        <div className="editor__validation">
+          {issues.length === 0 ? (
+            <span className="editor__valid-ok">✓ All checks passed</span>
+          ) : (
+            issues.map((issue, i) => (
+              <span key={i} className={`editor__issue editor__issue--${issue.severity}`}>
+                {issue.message}
+              </span>
+            ))
+          )}
+        </div>
 
         <footer className="editor__footer">
           <button type="button" onClick={() => navigate(-1)} disabled={index === 0}>
