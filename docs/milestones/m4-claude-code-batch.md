@@ -6,7 +6,7 @@ Implement the offline AI translation batch workflow, allowing users to export un
 ## Scope
 * **Batch Request Exporter:** Export a structured JSON file containing metadata, source language, target language, and a flat map of missing or outdated keys/values across selected mods.
 * **Batch Response Importer:** Import a translated batch JSON file, matching keys back to their respective mods and strings.
-* **Merge & Transition Logic:** Merge imported translations, update statuses to "Translated", track the source hash, and flag any formatting/token warnings on import.
+* **Merge & Transition Logic:** Merge imported translations, set their status to **`review-needed`** (per [SPEC.md §11](../../SPEC.md) — imported AI results are never auto-marked done), track the source hash, and run token validation on import. Do not overwrite `done` strings without user confirmation.
 
 ## Out of Scope
 * Direct API integrations (OpenAI, Anthropic, etc.) inside the application.
@@ -16,7 +16,7 @@ Implement the offline AI translation batch workflow, allowing users to export un
 1. Exported JSON has a clear schema specifying: `sourceLang`, `targetLang`, `exportDate`, and `translations` (grouped by Mod ID / File Path / Key).
 2. The export includes prompt templates or context instructions at the top of the file to guide external LLMs.
 3. Import parses external JSON, validates keys, and updates the local state db.
-4. Imported values are run through the token validator; mismatches are flagged as "Warning".
+4. Imported values get status `review-needed` and are run through the token validator; mismatches surface as validation issues (not auto-rejected).
 5. Merging handles duplicate keys or missing metadata gracefully without corrupting database state.
 6. The entire export/import cycle is covered by unit tests using mock batch files.
 
@@ -27,7 +27,7 @@ Implement the offline AI translation batch workflow, allowing users to export un
 ## Suggested Issue Breakdown
 
 ### Issue 13: Export Claude-Code translation batch JSON
-* **Goal:** Create utility to extract all keys in "Original" or "Outdated" status into an offline batch JSON file, including translation context and instructions.
+* **Goal:** Create utility to extract the user-selected strings (typically `untranslated` or `outdated`) into an offline batch JSON file, including translation context and instructions.
 * **Suggested Agent:** Codex or Claude Code.
 
 ### Issue 14: Import Claude-Code result JSON

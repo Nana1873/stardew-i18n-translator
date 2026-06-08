@@ -5,10 +5,10 @@ Implement the main workspace string table, search/filter capabilities, double-cl
 
 ## Scope
 * **String Table Grid:** A high-density grid showing keys, source strings, target strings, and current translation status.
-* **Filter Toolbar:** Instant search (by key/text), filter by status (All, Missing, Warnings, Outdated).
+* **Filter Toolbar:** Instant search (by key/original/target text), filter by status (per [SPEC.md §9](../../SPEC.md): untranslated, review-needed, imported, done, outdated, not-translatable, or all).
 * **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, token validation results, and glossary/context hints.
-* **Basic Token Validation:** Warning checks to ensure target strings preserve formatting tokens like `{0}`, `{name}`, etc.
-* **Status Model:** Implementation of state flags per string (Original, Translated, Outdated, Warning) and updates during editing.
+* **Basic Token Validation:** The 4 v1 rules from [SPEC.md §10](../../SPEC.md): `token-missing`, `token-added`, `empty-target`, `json-invalid`. SMAPI i18n tokens use **double curly braces** `{{token}}` (regex `\{\{([^}]+)\}\}`), compared as sets between source and target. (Not `{0}` / `{name}`.)
+* **Status Model:** Implement the **6** string statuses from [SPEC.md §9](../../SPEC.md) (untranslated, review-needed, imported, done, outdated, not-translatable) and their transitions during editing.
 * **Outdated Logic:** Detect modified source strings using hash checks (`sourceHash` / `sourceTextAtTranslation`).
 
 ## Out of Scope
@@ -19,14 +19,14 @@ Implement the main workspace string table, search/filter capabilities, double-cl
 ## Acceptance Criteria
 1. String table handles high-density data (up to 5,000 strings) without lag or memory leaks.
 2. Double-clicking a row opens a modal dialog that correctly updates the table on save.
-3. Token validation highlights missing or modified tokens (e.g. source has `{0}`, target does not).
-4. Status of edited items changes from "Original" to "Translated" (or "Warning" if tokens fail).
+3. Token validation flags missing/added tokens (e.g. source has `{{PlayerName}}`, target does not → `token-missing` error).
+4. Editing a string updates its status per SPEC §9 (e.g. saving sets `done`; token errors surface as a validation issue, not a status).
 5. Search bar filters results in real-time.
 6. Validation rules are covered by comprehensive unit tests.
 
 ## Risks
 * **Virtualization Requirements:** Large string counts can cause UI lag. (Mitigation: Use virtual list/grid rendering in the chosen UI stack).
-* **Complex Token Syntax:** Some SMAPI mods use custom formatting parameters. (Mitigation: Implement simple brace matching `{...}` for v1 token validation).
+* **Complex Token Syntax:** Some SMAPI mods use advanced tokens (e.g. `{{Gender:male|female}}`). (Mitigation: v1 treats anything matching `\{\{([^}]+)\}\}` as one opaque token and compares source/target token sets; no inner parsing.)
 
 ## Suggested Issue Breakdown
 
@@ -39,11 +39,11 @@ Implement the main workspace string table, search/filter capabilities, double-cl
 * **Suggested Agent:** Antigravity (UI layout & validation wiring).
 
 ### Issue 9: Implement basic token validation
-* **Goal:** Create utility regex/parser to validate brace tokens (`{0}`, `{name}`) between source and target, triggering warnings on mismatch.
+* **Goal:** Create utility regex/parser to validate SMAPI `{{token}}` placeholders (regex `\{\{([^}]+)\}\}`) between source and target as sets, raising `token-missing` (error) / `token-added` (warning) on mismatch.
 * **Suggested Agent:** Codex.
 
 ### Issue 10: Implement status model and transitions
-* **Goal:** Write logic for calculating string statuses (Original, Translated, Outdated, Warning) and handle data model transitions on edit. Include `sourceHash` tracking.
+* **Goal:** Write logic for the 6 SPEC §9 string statuses (untranslated, review-needed, imported, done, outdated, not-translatable) and their transitions on edit/re-scan. Include `sourceTextAtTranslation` snapshot + `sourceHash` tracking for `outdated` detection.
 * **Suggested Agent:** Codex.
 
 ## Agent Handoff Notes
