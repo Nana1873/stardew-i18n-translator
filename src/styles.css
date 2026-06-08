@@ -190,6 +190,27 @@ body {
 
 .modrow--package {
   font-weight: 600;
+  background: #2f3338;
+  border-top: 1px solid var(--border);
+}
+
+/* Children of a multi-component package: a left accent rail + faint tint so the
+   group reads as one unit, clearly distinct from surrounding standalone mods. */
+.modrow--child {
+  background: rgba(106, 176, 255, 0.05);
+  box-shadow: inset 3px 0 0 rgba(106, 176, 255, 0.5);
+}
+
+.modrow--child:hover {
+  background: rgba(106, 176, 255, 0.1);
+}
+
+.modrow--child.modrow--selected {
+  background: rgba(74, 157, 107, 0.28);
+}
+
+.modrow--child-last {
+  border-bottom: 1px solid var(--border);
 }
 
 .modrow__name {
