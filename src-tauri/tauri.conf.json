@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Stardew i18n Translator",
+  "version": "0.1.0",
+  "identifier": "io.github.foxy1873.stardew-i18n-translator",
+  "build": {
+    "beforeDevCommand": "corepack pnpm dev:web",
+    "devUrl": "http://127.0.0.1:5174",
+    "beforeBuildCommand": "corepack pnpm build:web",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Stardew i18n Translator",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 720
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.ico"]
+  }
+}
