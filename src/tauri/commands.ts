@@ -33,11 +33,15 @@ export function pickFolder(title?: string): Promise<string | null> {
   return invoke<string | null>("pick_folder", { title });
 }
 
+export type ModStatus = "none" | "untranslated" | "imported";
+
 export interface ScannedI18nFile {
   relativeDir: string;
   defaultPath: string;
   targetPath: string;
   targetExists: boolean;
+  totalKeys: number;
+  translatedKeys: number;
 }
 
 export interface ScannedMod {
@@ -48,6 +52,11 @@ export interface ScannedMod {
   packageId: string;
   folderPath: string;
   i18nFiles: ScannedI18nFile[];
+  totalKeys: number;
+  translatedKeys: number;
+  /** 0–1. */
+  progress: number;
+  status: ModStatus;
 }
 
 export interface ScanResult {

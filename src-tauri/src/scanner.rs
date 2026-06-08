@@ -28,9 +28,13 @@ pub struct ScannedI18nFile {
     pub default_path: String,
     pub target_path: String,
     pub target_exists: bool,
+    /// Number of keys in `default.json`.
+    pub total_keys: usize,
+    /// Source keys with a non-empty value in the target `<lang>.json`.
+    pub translated_keys: usize,
 }
 
-#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScannedMod {
     pub unique_id: String,
@@ -41,9 +45,15 @@ pub struct ScannedMod {
     pub package_id: String,
     pub folder_path: String,
     pub i18n_files: Vec<ScannedI18nFile>,
+    /// Aggregates across all i18n files.
+    pub total_keys: usize,
+    pub translated_keys: usize,
+    pub progress: f64,
+    /// "none" (no keys) | "untranslated" (some missing) | "imported" (all present).
+    pub status: String,
 }
 
-#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Serialize, Clone, Debug, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
@@ -136,6 +146,10 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str) -> ScanResult {
         scanned
             .i18n_files
             .sort_by(|a, b| a.relative_dir.cmp(&b.relative_dir));
+        scanned.total_keys = scanned.i18n_files.iter().map(|f| f.total_keys).sum();
+        scanned.translated_keys = scanned.i18n_files.iter().map(|f| f.translated_keys).sum();
+        scanned.progress = progress_of(scanned.total_keys, scanned.translated_keys);
+        scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
     }
 
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
@@ -172,7 +186,56 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         package_id,
         folder_path: dir.display().to_string(),
         i18n_files: Vec::new(),
+        total_keys: 0,
+        translated_keys: 0,
+        progress: 0.0,
+        status: String::new(),
     })
+}
+
+fn progress_of(total: usize, translated: usize) -> f64 {
+    if total == 0 {
+        0.0
+    } else {
+        translated as f64 / total as f64
+    }
+}
+
+fn derive_status(total: usize, translated: usize) -> &'static str {
+    if total == 0 {
+        "none"
+    } else if translated >= total {
+        "imported"
+    } else {
+        "untranslated"
+    }
+}
+
+/// Parse a flat i18n JSON object (lenient), returning its string entries.
+fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
+    let body = std::fs::read_to_string(path).ok()?;
+    parse_json_lenient(&body).ok()?.as_object().cloned()
+}
+
+/// (total source keys, source keys with a non-empty target value).
+fn count_keys(default_path: &Path, target_path: &Path) -> (usize, usize) {
+    let Some(source) = read_object(default_path) else {
+        return (0, 0);
+    };
+    let total = source.len();
+    let translated = match read_object(target_path) {
+        Some(target) => source
+            .keys()
+            .filter(|key| {
+                target
+                    .get(*key)
+                    .and_then(Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty())
+            })
+            .count(),
+        None => 0,
+    };
+    (total, translated)
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -221,12 +284,16 @@ fn build_i18n_file(mod_dir: &Path, i18n_dir: &Path, target_lang: &str) -> Option
         .ok()?
         .to_str()?
         .replace('\\', "/");
+    let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
+    let (total_keys, translated_keys) = count_keys(&default_path, &target_path);
     Some(ScannedI18nFile {
-        default_path: i18n_dir.join("default.json").display().to_string(),
         target_exists: target_path.is_file(),
+        default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
         relative_dir,
+        total_keys,
+        translated_keys,
     })
 }
 
@@ -490,6 +557,48 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    #[test]
+    fn counts_keys_and_derives_progress_status() {
+        let root = crate::test_support::temp_dir("scan-progress");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Mod\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"a\": \"1\", \"b\": \"2\", \"c\": \"3\" }",
+        );
+        // Only `a` is translated; `b` is empty, `c` missing.
+        write(
+            &mod_dir.join("i18n").join("de.json"),
+            "{ \"a\": \"eins\", \"b\": \"  \" }",
+        );
+
+        let scanned = &scan_mods(&root, "de").mods[0];
+        assert_eq!(scanned.total_keys, 3);
+        assert_eq!(scanned.translated_keys, 1);
+        assert!((scanned.progress - 1.0 / 3.0).abs() < 1e-9);
+        assert_eq!(scanned.status, "untranslated");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn fully_translated_mod_is_imported() {
+        let root = crate::test_support::temp_dir("scan-imported");
+        let mod_dir = root.join("Mod");
+        write(&mod_dir.join("manifest.json"), "{ \"UniqueID\": \"a.b\" }");
+        write(&mod_dir.join("i18n").join("default.json"), "{ \"a\": \"1\" }");
+        write(&mod_dir.join("i18n").join("de.json"), "{ \"a\": \"eins\" }");
+
+        let scanned = &scan_mods(&root, "de").mods[0];
+        assert_eq!(scanned.status, "imported");
+        assert!((scanned.progress - 1.0).abs() < 1e-9);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
     /// Real-machine smoke check against the user's Mods folder, if present.
     #[test]
     fn reports_scan_on_real_mods() {
@@ -498,15 +607,27 @@ mod tests {
             eprintln!("scan: real Mods folder absent — skipped");
             return;
         }
+        let started = std::time::Instant::now();
         let result = scan_mods(mods, "de");
+        let elapsed = started.elapsed();
+        let total_keys: usize = result.mods.iter().map(|m| m.total_keys).sum();
         eprintln!(
-            "scan: {} mods, {} i18n files, {} warnings",
+            "scan: {} mods, {} i18n files, {} total keys, {} warnings in {:?}",
             result.mod_count,
             result.file_count,
-            result.warnings.len()
+            total_keys,
+            result.warnings.len(),
+            elapsed
         );
-        if let Some(rsv) = result.mods.iter().find(|m| m.package_id.contains("Ridgeside")) {
-            eprintln!("  Ridgeside component: {} (nexus {:?})", rsv.name, rsv.nexus_id);
+        if let Some(cp) = result
+            .mods
+            .iter()
+            .find(|m| m.name.contains("Ridgeside") && m.name.contains("Content"))
+        {
+            eprintln!(
+                "  Ridgeside [CP]: {} keys, {} translated, status {}",
+                cp.total_keys, cp.translated_keys, cp.status
+            );
         }
     }
 }
