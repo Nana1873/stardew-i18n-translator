@@ -191,13 +191,16 @@ function StringTablePanel({ mod }: { mod: ScannedMod | null }) {
           <h3>{mod.name}</h3>
           <p className="panel__muted">
             {mod.version && <>v{mod.version} · </>}
-            {mod.i18nFiles.length} i18n file
-            {mod.i18nFiles.length === 1 ? "" : "s"}
+            {mod.translatedKeys}/{mod.totalKeys} strings translated
+            {mod.totalKeys > 0 && <> · {Math.round(mod.progress * 100)}%</>}
           </p>
           <ul className="panel__filelist">
             {mod.i18nFiles.map((file) => (
               <li key={file.relativeDir}>
-                <code>{file.relativeDir}/default.json</code>
+                <code>{file.relativeDir}/default.json</code>{" "}
+                <span className="panel__muted">
+                  ({file.translatedKeys}/{file.totalKeys})
+                </span>
                 {file.targetExists && <span className="panel__ok"> · translation present</span>}
               </li>
             ))}

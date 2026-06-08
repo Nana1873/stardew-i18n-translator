@@ -19,8 +19,14 @@ function mod(partial: Partial<ScannedMod> & { uniqueId: string }): ScannedMod {
         defaultPath: "d",
         targetPath: "t",
         targetExists: false,
+        totalKeys: 10,
+        translatedKeys: 0,
       },
     ],
+    totalKeys: 10,
+    translatedKeys: 0,
+    progress: 0,
+    status: "untranslated",
     ...partial,
   };
 }
