@@ -270,7 +270,7 @@ export function StringTable({ mod }: { mod: ScannedMod }) {
                 role="menuitem"
                 onClick={() => void applyStatus("untranslated", true)}
               >
-                Mark as needs translation
+                Clear translation
               </button>
             </li>
           </ul>
@@ -315,6 +315,7 @@ function RowView({
         height,
         transform: `translateY(${top}px)`,
         boxShadow: `inset 3px 0 0 ${status.color}`,
+        backgroundColor: selected ? "rgba(74, 157, 107, 0.34)" : `${status.color}24`,
       }}
       title={status.label}
       onClick={onSelect}

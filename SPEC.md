@@ -358,7 +358,7 @@ Available on one or multiple selected strings in the String Table.
 | **Copy Translation** | Copy target text to clipboard |
 | **Mark as Translated** | Set status to `translated` for all selected |
 | **Mark as Not Translatable** | Set status to `not-translatable` for all selected |
-| **Mark as Needs Translation** | Clear target text and set status to `untranslated` |
+| **Clear Translation** | Clear target text and set status to `untranslated` (explicitly destructive) |
 | **Search Translation on Nexus** | Opens browser to Nexus search for this mod + target language *(mod-level context menu only)* |
 
 **Added in Milestone 4 (Claude-Code):**
