@@ -185,7 +185,7 @@ body {
 }
 
 .modrow--selected {
-  background: rgba(74, 157, 107, 0.22);
+  background: rgba(106, 176, 255, 0.28);
 }
 
 .modrow--package {
@@ -206,7 +206,7 @@ body {
 }
 
 .modrow--child.modrow--selected {
-  background: rgba(74, 157, 107, 0.28);
+  background: rgba(106, 176, 255, 0.34);
 }
 
 .modrow--child-last {
@@ -400,7 +400,7 @@ body {
 }
 
 .stringrow--selected {
-  background: rgba(74, 157, 107, 0.18);
+  background: rgba(106, 176, 255, 0.22);
 }
 
 /* --- Right-click context menu --- */
