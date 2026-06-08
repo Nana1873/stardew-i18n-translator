@@ -2,17 +2,18 @@
  * String editor dialog — M2 / Issue 8 (SPEC §7.5).
  *
  * Opened by double-clicking a string row. Source on the left (read-only),
- * editable target on the right, with prev/next navigation and keyboard
- * shortcuts. Saving updates the in-memory translation; disk persistence and the
- * full status model arrive in Issue 10. Validation panel is a placeholder until
- * Issue 9.
+ * editable target on the right, with prev/next navigation, live validation, a
+ * status badge, and keyboard shortcuts. Saving persists the target + status to
+ * disk (status defaults to `done`).
  *
- * Shortcuts: Ctrl+Enter save · Esc cancel · Alt+←/→ prev/next · F3 copy
- * original · F4 reset.
+ * Shortcuts: Ctrl+Enter save · Esc cancel · Alt+←/→ prev/next · F2 toggle
+ * done/review-needed · F3 copy original · F4 reset.
  */
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import type { StringStatus } from "../tauri/commands";
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
+import { STATUS_META } from "./status";
 
 export interface EditorRow {
   key: string;
@@ -21,6 +22,7 @@ export interface EditorRow {
   target: string;
   file: string;
   targetPresent: boolean;
+  status: StringStatus;
 }
 
 interface StringEditorProps {
@@ -28,10 +30,16 @@ interface StringEditorProps {
   index: number;
   total: number;
   modName: string;
-  /** Persist the edited target for this row. */
-  onSave: (value: string) => void;
+  /** Persist the edited target + status for this row. */
+  onSave: (value: string, status: StringStatus) => void;
   onClose: () => void;
   onNavigate: (delta: number) => void;
+}
+
+/** The status to save into: keep an explicit review/not-translatable choice,
+ * otherwise saving marks the string done. */
+function initialSaveStatus(status: StringStatus): StringStatus {
+  return status === "review-needed" || status === "not-translatable" ? status : "done";
 }
 
 /** Small shortcut hint on a button; aria-hidden so the accessible name stays clean. */
@@ -61,22 +69,28 @@ export function StringEditor({
   onNavigate,
 }: StringEditorProps) {
   const [value, setValue] = useState(row.target);
+  const [status, setStatus] = useState<StringStatus>(initialSaveStatus(row.status));
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Reset the field whenever the row changes (including via prev/next).
   useEffect(() => {
     setValue(row.target);
+    setStatus(initialSaveStatus(row.status));
     textareaRef.current?.focus();
-  }, [row.key, row.file, row.target]);
+  }, [row.key, row.file, row.target, row.status]);
 
   function save() {
-    onSave(value);
+    onSave(value, status);
     onClose();
   }
 
   function navigate(delta: number) {
-    if (value !== row.target) onSave(value);
+    if (value !== row.target) onSave(value, status);
     onNavigate(delta);
+  }
+
+  function toggleReview() {
+    setStatus((current) => (current === "review-needed" ? "done" : "review-needed"));
   }
 
   /** Insert a protected token at the cursor (or replace the selection). */
@@ -106,6 +120,9 @@ export function StringEditor({
     } else if (event.altKey && event.key === "ArrowRight") {
       event.preventDefault();
       navigate(1);
+    } else if (event.key === "F2") {
+      event.preventDefault();
+      toggleReview();
     } else if (event.key === "F3") {
       event.preventDefault();
       setValue(row.source);
@@ -132,8 +149,22 @@ export function StringEditor({
           <span className="editor__title">
             <code>{row.key}</code>
           </span>
-          <span className="editor__crumbs">
-            {modName} · {row.file} · {index + 1}/{total}
+          <span className="editor__meta-right">
+            <button
+              type="button"
+              className="editor__status"
+              style={{
+                color: STATUS_META[status].color,
+                borderColor: STATUS_META[status].color,
+              }}
+              onClick={toggleReview}
+              title="Toggle done / review-needed (F2)"
+            >
+              ● {STATUS_META[status].label}
+            </button>
+            <span className="editor__crumbs">
+              {modName} · {row.file} · {index + 1}/{total}
+            </span>
           </span>
         </header>
 
