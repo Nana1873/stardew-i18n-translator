@@ -6,6 +6,7 @@
 //! abstractions.
 
 mod detection;
+mod scanner;
 mod settings;
 
 use std::path::{Path, PathBuf};
@@ -14,6 +15,7 @@ use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
 
 use detection::DetectedInstall;
+use scanner::ScanResult;
 use settings::AppSettings;
 
 #[tauri::command]
@@ -51,6 +53,11 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 }
 
 #[tauri::command]
+fn scan_mods(mods_path: String, target_lang: String) -> ScanResult {
+    scanner::scan_mods(Path::new(&mods_path), &target_lang)
+}
+
+#[tauri::command]
 fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
     Ok(settings::load(&config_dir(&app)?))
 }
@@ -75,6 +82,7 @@ pub fn run() {
             validate_stardew_path,
             default_mods_path,
             pick_folder,
+            scan_mods,
             load_settings,
             save_settings
         ])
