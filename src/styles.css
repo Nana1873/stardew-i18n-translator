@@ -499,6 +499,22 @@ body {
   border-color: var(--accent);
 }
 
+.editor__kbd {
+  margin-left: 5px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+}
+
+.editor__save .editor__kbd {
+  color: rgba(255, 255, 255, 0.85);
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
 /* --- Setup Wizard --- */
 .wizard__backdrop {
   position: fixed;
