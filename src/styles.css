@@ -357,6 +357,148 @@ body {
   color: var(--text-muted);
 }
 
+.stringrow__tgt--modified {
+  color: var(--accent);
+}
+
+.stringrow__tgt--modified::after {
+  content: " ●";
+  font-size: 9px;
+  vertical-align: middle;
+}
+
+/* --- String editor dialog --- */
+.editor__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  width: 860px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.editor__meta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.editor__title code {
+  font-size: 14px;
+  color: #c8b88a;
+}
+
+.editor__crumbs {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.editor__tokens {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor__token {
+  background: rgba(106, 176, 255, 0.12);
+  color: #6ab0ff;
+  border-radius: 3px;
+  padding: 1px 5px;
+  margin-right: 4px;
+}
+
+.editor__panes {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  padding: 14px 16px;
+  flex: 1;
+  min-height: 220px;
+}
+
+.editor__pane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.editor__pane span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.editor__pane textarea {
+  flex: 1;
+  resize: none;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.editor__pane textarea[readonly] {
+  color: var(--text-muted);
+}
+
+.editor__validation {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+}
+
+.editor__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.editor__spacer {
+  flex: 1;
+}
+
+.editor button {
+  background: #3a3d42;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.editor button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.editor__save {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
 /* --- Setup Wizard --- */
 .wizard__backdrop {
   position: fixed;
