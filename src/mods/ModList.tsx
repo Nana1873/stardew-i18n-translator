@@ -113,11 +113,13 @@ function PackageNode({
         <span className="modrow__progress">—</span>
       </div>
       {open &&
-        group.mods.map((mod) => (
+        group.mods.map((mod, index) => (
           <ModRow
             key={mod.uniqueId}
             mod={mod}
             depth={1}
+            child
+            lastChild={index === group.mods.length - 1}
             selectedId={selectedId}
             onSelect={onSelect}
           />
@@ -129,18 +131,30 @@ function PackageNode({
 function ModRow({
   mod,
   depth,
+  child = false,
+  lastChild = false,
   selectedId,
   onSelect,
 }: {
   mod: ScannedMod;
   depth: number;
+  child?: boolean;
+  lastChild?: boolean;
   selectedId: string | null;
   onSelect: (uniqueId: string) => void;
 }) {
   const selected = mod.uniqueId === selectedId;
+  const className = [
+    "modrow modrow--mod",
+    child ? "modrow--child" : "",
+    lastChild ? "modrow--child-last" : "",
+    selected ? "modrow--selected" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div
-      className={`modrow modrow--mod${selected ? " modrow--selected" : ""}`}
+      className={className}
       role="treeitem"
       aria-selected={selected}
       onClick={() => onSelect(mod.uniqueId)}
