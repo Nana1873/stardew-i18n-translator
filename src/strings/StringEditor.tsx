@@ -75,6 +75,20 @@ export function StringEditor({
     onNavigate(delta);
   }
 
+  /** Insert a protected token at the cursor (or replace the selection). */
+  function insertToken(raw: string) {
+    const textarea = textareaRef.current;
+    const start = textarea?.selectionStart ?? value.length;
+    const end = textarea?.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + raw + value.slice(end);
+    setValue(next);
+    requestAnimationFrame(() => {
+      const caret = start + raw.length;
+      textarea?.focus();
+      textarea?.setSelectionRange(caret, caret);
+    });
+  }
+
   function onKeyDown(event: ReactKeyboardEvent) {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
@@ -120,11 +134,17 @@ export function StringEditor({
 
         {sourceTokens.length > 0 && (
           <div className="editor__tokens">
-            Tokens:{" "}
+            Tokens (click to insert):{" "}
             {sourceTokens.map((token, i) => (
-              <code key={i} className="editor__token">
+              <button
+                key={i}
+                type="button"
+                className="editor__token"
+                title={`Insert ${token}`}
+                onClick={() => insertToken(token)}
+              >
                 {describeToken(token)}
-              </code>
+              </button>
             ))}
           </div>
         )}
