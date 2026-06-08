@@ -74,3 +74,6 @@ __pycache__/
 *.xnb
 extracted_assets/
 manifest.json.user
+
+# === Tauri generated ===
+/src-tauri/gen/
