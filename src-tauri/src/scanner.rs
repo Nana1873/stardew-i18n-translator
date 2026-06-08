@@ -217,6 +217,8 @@ pub struct StringRow {
     pub key: String,
     pub source: String,
     pub target: String,
+    /// Whether the key exists in the target file (distinguishes "" from absent).
+    pub target_present: bool,
 }
 
 /// Load the paired source/target strings of one i18n file, preserving the key
@@ -232,6 +234,7 @@ pub fn load_strings(default_path: &Path, target_path: &Path) -> Vec<StringRow> {
             key: key.clone(),
             source: value_to_text(value),
             target: target.get(key).map(value_to_text).unwrap_or_default(),
+            target_present: target.contains_key(key),
         })
         .collect()
 }

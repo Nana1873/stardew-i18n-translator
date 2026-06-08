@@ -47,8 +47,8 @@ const MOD: ScannedMod = {
 beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockResolvedValue([
-    { key: "greeting", source: "Hello", target: "Hallo" },
-    { key: "bye", source: "Bye", target: "" },
+    { key: "greeting", source: "Hello", target: "Hallo", targetPresent: true },
+    { key: "bye", source: "Bye", target: "", targetPresent: false },
   ]);
 });
 
@@ -82,5 +82,17 @@ describe("StringTable", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSaveEdit).toHaveBeenCalledWith("i18n", "greeting", "Hallo Welt");
+  });
+
+  it("shows a validation error icon when a source token is missing", async () => {
+    invokeMock.mockResolvedValue([
+      { key: "greet", source: "Hi {{name}}", target: "Hallo", targetPresent: true },
+      { key: "ok", source: "Yes", target: "Ja", targetPresent: true },
+    ]);
+    render(<StringTable mod={MOD} edits={{}} onSaveEdit={() => {}} />);
+
+    expect(
+      await screen.findByTitle("Missing token {{name}}"),
+    ).toBeInTheDocument();
   });
 });
