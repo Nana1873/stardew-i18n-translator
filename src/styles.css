@@ -123,6 +123,125 @@ body {
   text-align: center;
 }
 
+/* --- Mod list tree --- */
+.modlist {
+  flex: 1;
+  overflow: auto;
+}
+
+.modrow {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 64px 64px 56px 70px;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  cursor: default;
+}
+
+.modrow--head {
+  position: sticky;
+  top: 0;
+  background: var(--bg-toolbar);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  border-bottom: 1px solid var(--border);
+}
+
+.modrow--mod {
+  cursor: pointer;
+}
+
+.modrow--mod:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.modrow--selected {
+  background: rgba(74, 157, 107, 0.22);
+}
+
+.modrow--package {
+  font-weight: 600;
+}
+
+.modrow__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.modrow__twisty {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0;
+  width: 14px;
+  font-size: 11px;
+}
+
+.modrow__status {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.modrow__nexus {
+  color: #6ab0ff;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.modrow__nexus--none {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.modrow__version,
+.modrow__files,
+.modrow__progress {
+  color: var(--text-muted);
+}
+
+.panel__warn {
+  color: #d6a85f;
+}
+
+/* --- Selected-mod summary (placeholder until M2 string table) --- */
+.panel__selected {
+  padding: 14px 16px;
+  overflow: auto;
+}
+
+.panel__selected h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.panel__muted {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.panel__filelist {
+  margin: 10px 0;
+  padding-left: 18px;
+  font-size: 12px;
+}
+
+.panel__filelist li {
+  margin: 3px 0;
+}
+
+.panel__ok {
+  color: var(--accent);
+}
+
 /* --- Setup Wizard --- */
 .wizard__backdrop {
   position: fixed;

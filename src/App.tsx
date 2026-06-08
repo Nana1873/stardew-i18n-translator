@@ -1,19 +1,31 @@
 /**
  * Application shell — Milestone 1.
  *
- * Toolbar + two-panel layout (SPEC §7.3), plus the Setup Wizard which opens
- * on first launch (no saved Stardew path) and is re-openable via Settings.
- * The mod list and string table are still placeholders — wired up in later
- * M1/M2 issues. Kept flat per SCOPE_GUARDRAILS (2 panels + toolbar).
+ * Toolbar + two-panel layout (SPEC §7.3): left = mod list tree, right = string
+ * table (still a placeholder until M2). The Setup Wizard opens on first launch
+ * and via Settings. Scan runs the Rust scanner and fills the tree.
  */
 import { useEffect, useState } from "react";
-import { type AppSettings, loadSettings, saveSettings } from "./tauri/commands";
+import {
+  type AppSettings,
+  type ScanResult,
+  type ScannedMod,
+  loadSettings,
+  saveSettings,
+  scanMods,
+} from "./tauri/commands";
 import { SetupWizard } from "./setup/SetupWizard";
+import { ModList } from "./mods/ModList";
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
+
+  const [scan, setScan] = useState<ScanResult | null>(null);
+  const [scanning, setScanning] = useState(false);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [selectedModId, setSelectedModId] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -24,7 +36,6 @@ export function App() {
         setWizardOpen(!loadedSettings.stardewPath);
       })
       .catch(() => {
-        // No backend / first run — show the wizard so the user can configure.
         if (active) setWizardOpen(true);
       })
       .finally(() => {
@@ -39,20 +50,59 @@ export function App() {
     try {
       await saveSettings(next);
     } catch {
-      /* keep the in-memory settings even if persistence fails */
+      /* keep in-memory settings even if persistence fails */
     }
     setSettings(next);
     setWizardOpen(false);
   }
 
+  async function handleScan() {
+    if (!settings?.modsPath) return;
+    setScanning(true);
+    setScanError(null);
+    setSelectedModId(null);
+    try {
+      setScan(await scanMods(settings.modsPath, settings.targetLang ?? ""));
+    } catch (error) {
+      setScanError(String(error));
+    } finally {
+      setScanning(false);
+    }
+  }
+
   const configured = Boolean(settings?.stardewPath);
+  const selectedMod = scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
 
   return (
     <div className="app">
-      <Toolbar onOpenSettings={() => setWizardOpen(true)} settingsEnabled={loaded} />
+      <Toolbar
+        onScan={handleScan}
+        scanEnabled={configured && !scanning}
+        scanning={scanning}
+        onOpenSettings={() => setWizardOpen(true)}
+        settingsEnabled={loaded}
+      />
       <main className="workspace">
-        <ModListPanel />
-        <StringTablePanel />
+        <section className="panel panel--mods" aria-label="Mod list">
+          <div className="panel__header">
+            Mods{scan ? ` · ${scan.modCount}` : ""}
+            {scan && scan.warnings.length > 0 && (
+              <span className="panel__warn"> · {scan.warnings.length} skipped</span>
+            )}
+          </div>
+          {scan ? (
+            <ModList
+              mods={scan.mods}
+              selectedId={selectedModId}
+              onSelect={setSelectedModId}
+            />
+          ) : (
+            <div className="panel__empty">
+              {scanError ?? (scanning ? "Scanning…" : "No mods scanned yet.")}
+            </div>
+          )}
+        </section>
+        <StringTablePanel mod={selectedMod} />
       </main>
       {wizardOpen && (
         <SetupWizard
@@ -66,9 +116,15 @@ export function App() {
 }
 
 function Toolbar({
+  onScan,
+  scanEnabled,
+  scanning,
   onOpenSettings,
   settingsEnabled,
 }: {
+  onScan: () => void;
+  scanEnabled: boolean;
+  scanning: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
 }) {
@@ -76,10 +132,10 @@ function Toolbar({
     <header className="toolbar" role="banner">
       <span className="toolbar__title">Stardew i18n Translator</span>
       <div className="toolbar__actions">
-        {/* Scan/Export are enabled by their own M1–M3 issues. */}
-        <button type="button" disabled>
-          Scan
+        <button type="button" onClick={onScan} disabled={!scanEnabled}>
+          {scanning ? "Scanning…" : "Scan"}
         </button>
+        {/* Export is enabled by its own M3 issue. */}
         <button type="button" disabled>
           Export
         </button>
@@ -98,20 +154,31 @@ function Toolbar({
   );
 }
 
-function ModListPanel() {
-  return (
-    <section className="panel panel--mods" aria-label="Mod list">
-      <div className="panel__header">Mods</div>
-      <div className="panel__empty">No mods scanned yet.</div>
-    </section>
-  );
-}
-
-function StringTablePanel() {
+function StringTablePanel({ mod }: { mod: ScannedMod | null }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
       <div className="panel__header">Strings</div>
-      <div className="panel__empty">Select a mod to view its strings.</div>
+      {mod ? (
+        <div className="panel__selected">
+          <h3>{mod.name}</h3>
+          <p className="panel__muted">
+            {mod.version && <>v{mod.version} · </>}
+            {mod.i18nFiles.length} i18n file
+            {mod.i18nFiles.length === 1 ? "" : "s"}
+          </p>
+          <ul className="panel__filelist">
+            {mod.i18nFiles.map((file) => (
+              <li key={file.relativeDir}>
+                <code>{file.relativeDir}/default.json</code>
+                {file.targetExists && <span className="panel__ok"> · translation present</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="panel__muted">String editing arrives in Milestone 2.</p>
+        </div>
+      ) : (
+        <div className="panel__empty">Select a mod to view its strings.</div>
+      )}
     </section>
   );
 }

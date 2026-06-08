@@ -1,12 +1,19 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (...args: unknown[]) => invokeMock(...args),
+  invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
 }));
 
 import { App } from "./App";
+
+const CONFIGURED = {
+  stardewPath: "E:/SDV",
+  modsPath: "E:/SDV/Mods",
+  sourceLang: "default",
+  targetLang: "de",
+};
 
 beforeEach(() => {
   invokeMock.mockReset();
@@ -14,12 +21,7 @@ beforeEach(() => {
 
 describe("App shell", () => {
   it("renders the toolbar and two-panel layout", async () => {
-    invokeMock.mockResolvedValue({
-      stardewPath: "E:/SDV",
-      modsPath: "E:/SDV/Mods",
-      sourceLang: "default",
-      targetLang: "de",
-    });
+    invokeMock.mockResolvedValue(CONFIGURED);
     render(<App />);
 
     expect(screen.getByText("Stardew i18n Translator")).toBeInTheDocument();
@@ -27,11 +29,9 @@ describe("App shell", () => {
     expect(
       screen.getByRole("region", { name: "String table" }),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan" })).toBeDisabled();
 
-    // Settings enables once settings have loaded; configured -> no wizard.
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
     );
     expect(
       screen.queryByRole("dialog", { name: "Setup" }),
@@ -50,5 +50,45 @@ describe("App shell", () => {
     expect(
       await screen.findByRole("dialog", { name: "Setup" }),
     ).toBeInTheDocument();
+  });
+
+  it("scans and shows the discovered mods", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "scan_mods")
+        return Promise.resolve({
+          mods: [
+            {
+              uniqueId: "a.b",
+              name: "Test Mod",
+              version: "1.0",
+              nexusId: 7286,
+              packageId: "Test Mod",
+              folderPath: "E:/SDV/Mods/Test Mod",
+              i18nFiles: [
+                {
+                  relativeDir: "i18n",
+                  defaultPath: "x/i18n/default.json",
+                  targetPath: "x/i18n/de.json",
+                  targetExists: false,
+                },
+              ],
+            },
+          ],
+          warnings: [],
+          modCount: 1,
+          fileCount: 1,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
+
+    expect(await screen.findByText("Test Mod")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "7286" })).toBeInTheDocument();
   });
 });
