@@ -51,12 +51,12 @@ export function ModList({ mods, selectedId, onSelect }: ModListProps) {
   return (
     <div className="modlist" role="tree" aria-label="Mods">
       <div className="modrow modrow--head">
-        <span>Status</span>
+        <span title="Status" aria-label="Status" />
         <span>Mod</span>
-        <span>Version</span>
+        <span>Ver</span>
         <span>Nexus</span>
-        <span>Dateien</span>
-        <span>Fortschritt</span>
+        <span>Files</span>
+        <span>Progress</span>
       </div>
       {groups.map((group) =>
         group.mods.length === 1 ? (

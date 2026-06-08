@@ -5,7 +5,7 @@
  * table (still a placeholder until M2). The Setup Wizard opens on first launch
  * and via Settings. Scan runs the Rust scanner and fills the tree.
  */
-import { useEffect, useState } from "react";
+import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import {
   type AppSettings,
   type ScanResult,
@@ -26,6 +26,23 @@ export function App() {
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
+  const [modsWidth, setModsWidth] = useState(460);
+
+  function startResize(event: ReactMouseEvent) {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = modsWidth;
+    const onMove = (move: MouseEvent) => {
+      const next = startWidth + (move.clientX - startX);
+      setModsWidth(Math.min(900, Math.max(300, next)));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }
 
   useEffect(() => {
     let active = true;
@@ -83,7 +100,11 @@ export function App() {
         settingsEnabled={loaded}
       />
       <main className="workspace">
-        <section className="panel panel--mods" aria-label="Mod list">
+        <section
+          className="panel panel--mods"
+          aria-label="Mod list"
+          style={{ width: modsWidth, flex: "0 0 auto" }}
+        >
           <div className="panel__header">
             Mods{scan ? ` · ${scan.modCount}` : ""}
             {scan && scan.warnings.length > 0 && (
@@ -102,6 +123,13 @@ export function App() {
             </div>
           )}
         </section>
+        <div
+          className="splitter"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize mod list"
+          onMouseDown={startResize}
+        />
         <StringTablePanel mod={selectedMod} />
       </main>
       {wizardOpen && (
