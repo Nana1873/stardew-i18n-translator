@@ -52,7 +52,7 @@ function mockStrings(
       return Promise.resolve(
         rows.map((r) => ({
           targetPresent: false,
-          status: r.target ? "imported" : "untranslated",
+          status: r.target ? "translated" : "untranslated",
           ...r,
         })),
       );
@@ -100,7 +100,7 @@ describe("StringTable", () => {
         relativeDir: "i18n",
         key: "greeting",
         target: "Hallo Welt",
-        status: "done",
+        status: "translated",
         source: "Hello",
       }),
     );

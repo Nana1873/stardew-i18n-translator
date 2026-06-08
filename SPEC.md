@@ -341,7 +341,7 @@ Opened by **double-clicking** a string row.
 | `Esc` | Cancel and close |
 | `Alt+Left` | Previous string |
 | `Alt+Right` | Next string |
-| `F2` | Toggle done / review-needed |
+| `F2` | Toggle not-translatable |
 | `F3` | Copy original to target |
 | `F4` | Reset target |
 
@@ -356,12 +356,9 @@ Available on one or multiple selected strings in the String Table.
 | **Edit String** | Open in String Editor (single selection only) |
 | **Copy Original** | Copy source text to clipboard |
 | **Copy Translation** | Copy target text to clipboard |
-| **Reset Selected** | Clear target text for all selected |
-| **Mark as Done** | Set status to `done` |
-| **Mark as Review Needed** | Set status to `review-needed` |
-| **Mark as No Translation Needed** | Set status to `not-translatable` |
-| **Mark as Needs Translation** | Set status to `untranslated` |
-| **Revalidate** | Re-run validation checks on selected |
+| **Mark as Translated** | Set status to `translated` for all selected |
+| **Mark as Not Translatable** | Set status to `not-translatable` for all selected |
+| **Mark as Needs Translation** | Clear target text and set status to `untranslated` |
 | **Search Translation on Nexus** | Opens browser to Nexus search for this mod + target language *(mod-level context menu only)* |
 
 **Added in Milestone 4 (Claude-Code):**
@@ -382,7 +379,7 @@ Available on one or multiple selected strings in the String Table.
 4. **Live validation** runs as the user types (debounced, ~300ms).
 5. Glossary matches are highlighted in the source text (if glossary available).
 6. User can navigate to previous/next string without closing.
-7. **Save** writes the change and sets status to `done`.
+7. **Save** writes the change and sets status to `translated`.
 8. **Cancel** discards all unsaved changes.
 
 ---
@@ -391,44 +388,34 @@ Available on one or multiple selected strings in the String Table.
 
 ### String-Level Status
 
-| Status | Color | Meaning | Transitions |
-|--------|-------|---------|-------------|
-| `untranslated` | 🔴 Red | No target text exists | → `review-needed`, `done`, `not-translatable` |
-| `review-needed` | 🟡 Yellow | Imported from Claude-Code batch or flagged for review | → `done`, `untranslated` |
-| `imported` | 🔵 Blue | Target text imported from existing `i18n/<lang>.json`; not yet reviewed | → `done`, `review-needed`, `untranslated` |
-| `done` | 🟢 Green | Manually reviewed and approved | → `review-needed`, `untranslated`, `outdated` |
-| `outdated` | 🟣 Purple | Source text in `default.json` changed since this string was last translated | → `review-needed`, `done`, `untranslated` |
-| `not-translatable` | ⚪ Gray | Explicitly marked as not needing translation | → `untranslated` |
+v1 uses **4 statuses** (simplified from an earlier 6-status draft — see the scope note). Three describe a string's state; `outdated` is derived automatically.
 
-**6 statuses total.** No additional sub-states in v1.
+| Status | Color | Meaning | How it's set |
+|--------|-------|---------|--------------|
+| `untranslated` | 🔴 Red | No target text yet | Initial; or "Reset" / "Mark as needs translation" |
+| `translated` | 🟢 Green | Has a translation (your edit, or an imported existing `<lang>.json` value) | Saving in the editor; or "Mark as translated" |
+| `outdated` | 🟣 Purple | The English source changed since this string was translated | **Automatic** on re-scan (see below) — never set manually |
+| `not-translatable` | ⚪ Gray | Explicitly marked as not needing translation (proper nouns, IDs) | F2 in the editor; or "Mark as not translatable" |
 
-### `outdated` Detection
+> **Scope note (2026-06-08):** An earlier draft had 6 statuses (`imported`, `review-needed`, `done`, …). These were collapsed to match the actual workflow: `imported`/`done` → **`translated`**; `review-needed` is **deferred to M4** (where AI-batch results genuinely need a review pass and the status is reintroduced). Legacy stored values are normalized to the v1 set on load.
 
-The `outdated` status requires comparing the current source text against the source text at the time of translation. The data model stores:
+### `outdated` Detection (automatic, surgical)
 
-- `sourceTextAtTranslation`: snapshot of the source text when the target was last saved.
-- `sourceHash`: SHA-256 hash of `sourceTextAtTranslation` (for fast comparison during re-scan).
+When a string is saved, its `sourceHash` (SHA-256 of the **English source text of that key**) is stored alongside the target. On re-scan, a `translated` string whose stored `sourceHash` no longer matches the current `default.json` value for that key becomes `outdated`.
 
-On re-scan, if a string has status `done` and `sourceHash` does not match the hash of the current `default.json` value, the status transitions to `outdated`.
-
-Strings with status `untranslated`, `not-translatable`, or `review-needed` are **not** affected by source changes (they already need attention).
+This is **per-string**, not per-mod: a mod update flags **only** the handful of strings whose English text actually changed. New keys arrive as `untranslated`; unchanged translations stay `translated`; `not-translatable` is never affected.
 
 ### Mod-Level Status (Aggregate)
 
-Derived from the worst-case string status within the mod:
+Coarse health indicator derived from the working translation counts:
 
 | Aggregate | Condition |
 |-----------|-----------|
-| 🔴 Red | Any string is `untranslated` |
-| 🟡 Yellow | No `untranslated`, but any string is `review-needed` |
-| 🟣 Purple | No `untranslated` or `review-needed`, but any string is `outdated` |
-| 🔵 Blue | All strings are `imported` (no manual edits yet) |
-| 🟢 Green | All strings are `done` or `not-translatable` |
+| 🔴 Red | Any key is untranslated |
+| 🟢 Green | All keys are translated or not-translatable |
 | ⚪ Gray | No translatable strings (empty `default.json`) |
 
-Priority order for aggregation: Red > Yellow > Purple > Blue > Green > Gray.
-
-The **package** (parent tree node, §7.3) uses the same worst-case roll-up one level higher: its status is the worst-case status across its component mods.
+The **package** (parent tree node, §7.3) uses the same roll-up across its component mods. (Per-string `outdated` is shown in the string table's status bar, not the coarse mod dot.)
 
 ---
 
@@ -740,7 +727,7 @@ Core workflow — no AI, no Nexus API:
 - [ ] Mod list **tree** grouped by package/download folder (multi-component mods expand to components; single-component mods render flat) with Status | Mod | Version | Nexus | Dateien | Fortschritt
 - [ ] String table with Key | Original | Target Text | Validation
 - [ ] String editor dialog (double-click)
-- [ ] Status model: 6 statuses with color coding
+- [ ] Status model: 4 statuses with color coding (`untranslated`, `translated`, `outdated`, `not-translatable`)
 - [ ] `outdated` detection via `sourceHash` / `sourceTextAtTranslation`
 - [ ] Token validation (`token-missing`, `token-added`)
 - [ ] Empty target validation (`empty-target`)
@@ -817,7 +804,7 @@ The following are **explicitly excluded** from v1:
 | `Data/*.json` mod file translation | i18n files only in v1 |
 | In-app XNB decoder | Deferred to future version |
 | Multiple settings screens | One settings section accessible from toolbar |
-| More than 6 status values | Intentionally capped |
+| More than 4 status values | Intentionally capped (v1) |
 | Project save/load system | State persisted automatically, no project files |
 | Quality/style validation rules | v1 validates only safety (tokens, JSON). Quality rules deferred to v1.1. |
 
@@ -1017,7 +1004,7 @@ The following are **explicitly excluded** from v1:
 
 1. **The SSE-AT test.** Before adding a UI element, ask: "Would SSE Auto Translator have this?" If no, it probably doesn't belong in v1.
 
-2. **The 6-status rule.** Do not add more statuses. If a new status is proposed, one existing status must be removed or merged.
+2. **The 4-status rule.** v1 has 4 statuses (`untranslated`, `translated`, `outdated`, `not-translatable`). Do not add more. `review-needed` returns only with the M4 Claude-Code batch (AI results need a review pass).
 
 3. **The 4-validation-rule rule.** v1 has exactly 4 validation rules. Adding a rule requires justifying why it prevents broken mods, not just improves quality.
 
