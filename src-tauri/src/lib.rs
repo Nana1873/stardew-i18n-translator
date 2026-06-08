@@ -57,6 +57,11 @@ fn scan_mods(mods_path: String, target_lang: String) -> ScanResult {
     scanner::scan_mods(Path::new(&mods_path), &target_lang)
 }
 
+#[tauri::command]
+fn load_strings(default_path: String, target_path: String) -> Vec<scanner::StringRow> {
+    scanner::load_strings(Path::new(&default_path), Path::new(&target_path))
+}
+
 /// Open an external http(s) URL in the user's default browser (Nexus links).
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -97,6 +102,7 @@ pub fn run() {
             default_mods_path,
             pick_folder,
             scan_mods,
+            load_strings,
             open_url,
             load_settings,
             save_settings

@@ -211,6 +211,38 @@ fn derive_status(total: usize, translated: usize) -> &'static str {
     }
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StringRow {
+    pub key: String,
+    pub source: String,
+    pub target: String,
+}
+
+/// Load the paired source/target strings of one i18n file, preserving the key
+/// order of `default.json` (serde_json `preserve_order`).
+pub fn load_strings(default_path: &Path, target_path: &Path) -> Vec<StringRow> {
+    let Some(source) = read_object(default_path) else {
+        return Vec::new();
+    };
+    let target = read_object(target_path).unwrap_or_default();
+    source
+        .iter()
+        .map(|(key, value)| StringRow {
+            key: key.clone(),
+            source: value_to_text(value),
+            target: target.get(key).map(value_to_text).unwrap_or_default(),
+        })
+        .collect()
+}
+
+fn value_to_text(value: &Value) -> String {
+    match value {
+        Value::String(text) => text.clone(),
+        other => other.to_string(),
+    }
+}
+
 /// Parse a flat i18n JSON object (lenient), returning its string entries.
 fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
     let body = std::fs::read_to_string(path).ok()?;
@@ -580,6 +612,25 @@ mod tests {
         assert_eq!(scanned.translated_keys, 1);
         assert!((scanned.progress - 1.0 / 3.0).abs() < 1e-9);
         assert_eq!(scanned.status, "untranslated");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn load_strings_preserves_order_and_pairs_target() {
+        let root = crate::test_support::temp_dir("load-strings");
+        let i18n = root.join("i18n");
+        // Intentionally non-alphabetical to prove order is preserved.
+        write(&i18n.join("default.json"), "{ \"zeta\": \"Z\", \"alpha\": \"A\" }");
+        write(&i18n.join("de.json"), "{ \"alpha\": \"Ä\" }");
+
+        let rows = load_strings(&i18n.join("default.json"), &i18n.join("de.json"));
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].key, "zeta");
+        assert_eq!(rows[0].source, "Z");
+        assert_eq!(rows[0].target, "");
+        assert_eq!(rows[1].key, "alpha");
+        assert_eq!(rows[1].target, "Ä");
 
         std::fs::remove_dir_all(&root).ok();
     }

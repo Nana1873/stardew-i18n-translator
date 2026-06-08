@@ -16,6 +16,7 @@ import {
 } from "./tauri/commands";
 import { SetupWizard } from "./setup/SetupWizard";
 import { ModList } from "./mods/ModList";
+import { StringTable, StringTableHeader } from "./strings/StringTable";
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -185,28 +186,11 @@ function Toolbar({
 function StringTablePanel({ mod }: { mod: ScannedMod | null }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
-      <div className="panel__header">Strings</div>
+      <div className="panel__header">
+        Strings{mod && <> · <StringTableHeader mod={mod} /></>}
+      </div>
       {mod ? (
-        <div className="panel__selected">
-          <h3>{mod.name}</h3>
-          <p className="panel__muted">
-            {mod.version && <>v{mod.version} · </>}
-            {mod.translatedKeys}/{mod.totalKeys} strings translated
-            {mod.totalKeys > 0 && <> · {Math.round(mod.progress * 100)}%</>}
-          </p>
-          <ul className="panel__filelist">
-            {mod.i18nFiles.map((file) => (
-              <li key={file.relativeDir}>
-                <code>{file.relativeDir}/default.json</code>{" "}
-                <span className="panel__muted">
-                  ({file.translatedKeys}/{file.totalKeys})
-                </span>
-                {file.targetExists && <span className="panel__ok"> · translation present</span>}
-              </li>
-            ))}
-          </ul>
-          <p className="panel__muted">String editing arrives in Milestone 2.</p>
-        </div>
+        <StringTable key={mod.uniqueId} mod={mod} />
       ) : (
         <div className="panel__empty">Select a mod to view its strings.</div>
       )}
