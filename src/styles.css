@@ -122,3 +122,130 @@ body {
   color: var(--text-muted);
   text-align: center;
 }
+
+/* --- Setup Wizard --- */
+.wizard__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wizard {
+  display: flex;
+  flex-direction: column;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.wizard__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.wizard__header h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.wizard__progress {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.wizard__body {
+  padding: 18px;
+  min-height: 160px;
+}
+
+.wizard__row {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.wizard__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 12px 0;
+}
+
+.wizard__field span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.wizard__field input,
+.wizard__field select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+
+.wizard__path {
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.wizard__path--empty {
+  color: var(--text-muted);
+}
+
+.wizard__path--invalid .wizard__bad {
+  color: #e06c6c;
+}
+
+.wizard__ok {
+  color: var(--accent);
+}
+
+.wizard__error {
+  color: #e06c6c;
+  font-size: 12px;
+}
+
+.wizard__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+}
+
+.wizard__spacer {
+  flex: 1;
+}
+
+.wizard button {
+  background: #3a3d42;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 5px 12px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wizard button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.wizard__finish {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
