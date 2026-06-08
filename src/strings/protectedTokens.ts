@@ -1,0 +1,134 @@
+/**
+ * Protected-token extraction for Stardew/SMAPI strings.
+ *
+ * Ported (and trimmed to raw-string output) from the previous project. These
+ * are the tokens a translation MUST preserve or the mod breaks at runtime:
+ *  - Content Patcher / i18n tokens: `{{...}}` (nested-aware)
+ *  - gender switch: `${male^female}$`
+ *  - mail commands: `[#]`, `%item ... %%`, `%action ... %%`
+ *  - dialogue page break: `#$b#` (and `#$...#` variants)
+ *  - bracket tokens: `[...]`
+ *  - positional placeholders: `{0}`
+ *  - dialogue commands: `$b`, `$s`, `$e`, `$1` ...
+ *  - single-character tokens: `@` (player name), `^` / `\n` (line break)
+ *
+ * The order of the readers matters — more specific shapes are tried first.
+ */
+const positionalPlaceholderPattern = /^\{\d+\}/;
+const simpleDialogueCommandPattern = /^\$(?:[a-zA-Z]+|\d+)/;
+
+interface Token {
+  raw: string;
+  end: number;
+}
+
+export function extractProtectedTokens(value: string): string[] {
+  const tokens: string[] = [];
+  let offset = 0;
+
+  while (offset < value.length) {
+    const token =
+      readContentPatcherToken(value, offset) ??
+      readGenderSwitch(value, offset) ??
+      readMailCommand(value, offset) ??
+      readDialogueBreak(value, offset) ??
+      readBracketToken(value, offset) ??
+      readPositionalPlaceholder(value, offset) ??
+      readSimpleDialogueCommand(value, offset) ??
+      readSingleCharacterToken(value, offset);
+
+    if (token) {
+      tokens.push(token.raw);
+      offset = token.end;
+    } else {
+      offset += 1;
+    }
+  }
+
+  return tokens;
+}
+
+/** A friendlier label for cryptic single-character tokens. */
+export function describeToken(token: string): string {
+  if (token === "@") return "@ (player name)";
+  if (token === "^") return "^ (line break)";
+  if (token === "\n") return "newline";
+  return token;
+}
+
+function token(value: string, start: number, end: number): Token {
+  return { raw: value.slice(start, end), end };
+}
+
+function readContentPatcherToken(value: string, offset: number): Token | null {
+  if (!value.startsWith("{{", offset)) return null;
+
+  let depth = 0;
+  let index = offset;
+  while (index < value.length - 1) {
+    const placeholder = positionalPlaceholderPattern.exec(value.slice(index));
+    if (placeholder) {
+      index += placeholder[0].length;
+      continue;
+    }
+    const pair = value.slice(index, index + 2);
+    if (pair === "{{") {
+      depth += 1;
+      index += 2;
+      continue;
+    }
+    if (pair === "}}") {
+      depth -= 1;
+      index += 2;
+      if (depth === 0) return token(value, offset, index);
+      continue;
+    }
+    index += 1;
+  }
+  return null;
+}
+
+function readGenderSwitch(value: string, offset: number): Token | null {
+  if (!value.startsWith("${", offset)) return null;
+  const end = value.indexOf("}$", offset + 2);
+  return end >= 0 ? token(value, offset, end + 2) : null;
+}
+
+function readMailCommand(value: string, offset: number): Token | null {
+  if (value.startsWith("[#]", offset)) return token(value, offset, offset + 3);
+  if (!value.startsWith("%item ", offset) && !value.startsWith("%action ", offset)) {
+    return null;
+  }
+  const end = value.indexOf("%%", offset);
+  return end >= 0 ? token(value, offset, end + 2) : null;
+}
+
+function readDialogueBreak(value: string, offset: number): Token | null {
+  if (!value.startsWith("#$", offset)) return null;
+  const end = value.indexOf("#", offset + 2);
+  return end >= 0 ? token(value, offset, end + 1) : null;
+}
+
+function readBracketToken(value: string, offset: number): Token | null {
+  if (value[offset] !== "[") return null;
+  const end = value.indexOf("]", offset + 1);
+  return end >= 0 ? token(value, offset, end + 1) : null;
+}
+
+function readPositionalPlaceholder(value: string, offset: number): Token | null {
+  const match = positionalPlaceholderPattern.exec(value.slice(offset));
+  return match ? token(value, offset, offset + match[0].length) : null;
+}
+
+function readSimpleDialogueCommand(value: string, offset: number): Token | null {
+  const match = simpleDialogueCommandPattern.exec(value.slice(offset));
+  return match ? token(value, offset, offset + match[0].length) : null;
+}
+
+function readSingleCharacterToken(value: string, offset: number): Token | null {
+  const char = value[offset];
+  if (char === "@" || char === "^" || char === "\n") {
+    return token(value, offset, offset + 1);
+  }
+  return null;
+}

@@ -2,13 +2,18 @@
  * v1 string validation — M2 / Issue 9 (SPEC §10).
  *
  * Exactly four rules, focused on preventing broken mods (not translation
- * quality):
- *  - token-missing  (error)   a source {{token}} is absent from the target
- *  - token-added    (warning) the target has a {{token}} not in the source
+ * quality). "Token" here means any Stardew/SMAPI protected token (Content
+ * Patcher `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
+ * `[...]`, ...) — see protectedTokens.ts. Tokens are compared as multisets, so
+ * a dropped second `$b` is caught too.
+ *  - token-missing  (error)   a source token is absent (or under-represented)
+ *  - token-added    (warning) the target has a token not in the source
  *  - empty-target   (warning) the key is present in the target file but empty
  *  - json-invalid   (error)   the value cannot be serialized to valid JSON
  *                              (export-serialization safety; e.g. lone surrogate)
  */
+import { describeToken, extractProtectedTokens } from "./protectedTokens";
+
 export type Severity = "error" | "warning";
 
 export interface ValidationIssue {
@@ -17,10 +22,12 @@ export interface ValidationIssue {
   message: string;
 }
 
-const TOKEN_RE = /\{\{([^}]+)\}\}/g;
-
-function tokenSet(text: string): Set<string> {
-  return new Set(Array.from(text.matchAll(TOKEN_RE), (match) => match[0]));
+function tokenCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const token of extractProtectedTokens(text)) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /** True if the string contains an unpaired UTF-16 surrogate (invalid JSON). */
@@ -46,23 +53,23 @@ export function validate(
   const issues: ValidationIssue[] = [];
 
   if (target.length > 0) {
-    const sourceTokens = tokenSet(source);
-    const targetTokens = tokenSet(target);
-    for (const token of sourceTokens) {
-      if (!targetTokens.has(token)) {
+    const sourceTokens = tokenCounts(source);
+    const targetTokens = tokenCounts(target);
+    for (const [token, count] of sourceTokens) {
+      if ((targetTokens.get(token) ?? 0) < count) {
         issues.push({
           ruleId: "token-missing",
           severity: "error",
-          message: `Missing token ${token}`,
+          message: `Missing token ${describeToken(token)}`,
         });
       }
     }
-    for (const token of targetTokens) {
-      if (!sourceTokens.has(token)) {
+    for (const [token, count] of targetTokens) {
+      if ((sourceTokens.get(token) ?? 0) < count) {
         issues.push({
           ruleId: "token-added",
           severity: "warning",
-          message: `Unexpected token ${token}`,
+          message: `Unexpected token ${describeToken(token)}`,
         });
       }
     }
