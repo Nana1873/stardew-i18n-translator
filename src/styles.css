@@ -450,9 +450,17 @@ body {
 .editor__token {
   background: rgba(106, 176, 255, 0.12);
   color: #6ab0ff;
+  border: 1px solid rgba(106, 176, 255, 0.3);
   border-radius: 3px;
-  padding: 1px 5px;
+  padding: 1px 6px;
   margin-right: 4px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.editor__token:hover {
+  background: rgba(106, 176, 255, 0.25);
 }
 
 .editor__panes {
