@@ -463,6 +463,17 @@ body {
   background: rgba(106, 176, 255, 0.25);
 }
 
+.editor__token--done {
+  color: var(--accent);
+  border-color: rgba(74, 157, 107, 0.5);
+  background: rgba(74, 157, 107, 0.12);
+  opacity: 0.7;
+}
+
+.editor__token--done:hover {
+  background: rgba(74, 157, 107, 0.22);
+}
+
 .editor__panes {
   display: grid;
   grid-template-columns: 1fr 1fr;
