@@ -315,7 +315,7 @@ function RowView({
         height,
         transform: `translateY(${top}px)`,
         boxShadow: `inset 3px 0 0 ${status.color}`,
-        backgroundColor: selected ? "rgba(74, 157, 107, 0.34)" : `${status.color}24`,
+        backgroundColor: selected ? "rgba(106, 176, 255, 0.30)" : `${status.color}24`,
       }}
       title={status.label}
       onClick={onSelect}
