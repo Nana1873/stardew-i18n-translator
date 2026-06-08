@@ -33,6 +33,38 @@ export function pickFolder(title?: string): Promise<string | null> {
   return invoke<string | null>("pick_folder", { title });
 }
 
+export interface ScannedI18nFile {
+  relativeDir: string;
+  defaultPath: string;
+  targetPath: string;
+  targetExists: boolean;
+}
+
+export interface ScannedMod {
+  uniqueId: string;
+  name: string;
+  version: string;
+  nexusId: number | null;
+  packageId: string;
+  folderPath: string;
+  i18nFiles: ScannedI18nFile[];
+}
+
+export interface ScanResult {
+  mods: ScannedMod[];
+  warnings: string[];
+  modCount: number;
+  fileCount: number;
+}
+
+export function scanMods(modsPath: string, targetLang: string): Promise<ScanResult> {
+  return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
+}
+
+export function openUrl(url: string): Promise<void> {
+  return invoke<void>("open_url", { url });
+}
+
 export function loadSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("load_settings");
 }

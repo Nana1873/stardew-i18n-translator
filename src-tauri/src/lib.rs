@@ -57,6 +57,20 @@ fn scan_mods(mods_path: String, target_lang: String) -> ScanResult {
     scanner::scan_mods(Path::new(&mods_path), &target_lang)
 }
 
+/// Open an external http(s) URL in the user's default browser (Nexus links).
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+    if !(url.starts_with("https://") || url.starts_with("http://")) {
+        return Err("Only http(s) URLs are allowed.".to_string());
+    }
+    #[cfg(windows)]
+    std::process::Command::new("cmd")
+        .args(["/C", "start", "", &url])
+        .spawn()
+        .map_err(|error| format!("Could not open URL: {error}"))?;
+    Ok(())
+}
+
 #[tauri::command]
 fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
     Ok(settings::load(&config_dir(&app)?))
@@ -83,6 +97,7 @@ pub fn run() {
             default_mods_path,
             pick_folder,
             scan_mods,
+            open_url,
             load_settings,
             save_settings
         ])
