@@ -95,4 +95,19 @@ describe("StringTable", () => {
       await screen.findByTitle("Missing token {{name}}"),
     ).toBeInTheDocument();
   });
+
+  it("inserts a protected token at the cursor when its chip is clicked", async () => {
+    invokeMock.mockResolvedValue([
+      { key: "g", source: "Hi {{name}}", target: "", targetPresent: false },
+      { key: "ok", source: "Yes", target: "", targetPresent: false },
+    ]);
+    render(<StringTable mod={MOD} edits={{}} onSaveEdit={() => {}} />);
+
+    fireEvent.doubleClick(await screen.findByText("g"));
+    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "{{name}}" }));
+    expect(textarea.value).toBe("{{name}}");
+  });
 });
