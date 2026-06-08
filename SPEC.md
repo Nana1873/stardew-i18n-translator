@@ -1,4 +1,4 @@
-# Stardew Translator V2 — Product & Architecture Specification
+# Stardew i18n Translator — Product & Architecture Specification
 
 > **Version:** 1.0 — 2026-06-07
 > **Status:** Draft — Awaiting Approval
@@ -9,7 +9,7 @@
 
 ## 1. Product Goal
 
-Stardew Translator V2 is a **local desktop tool** for translating Stardew Valley / SMAPI mod content.
+Stardew i18n Translator is a **local desktop tool** for translating Stardew Valley / SMAPI mod content.
 
 It provides a compact, power-user workflow — inspired by SSE Auto Translator — to:
 
@@ -69,7 +69,7 @@ The setup wizard runs on first launch and can be re-triggered from settings.
 | Step | Required | Description | Details |
 |------|----------|-------------|---------|
 | 1 | ✅ | **Stardew Valley folder** | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder. |
-| 2 | ✅ | **Mods folder** | Default: `<Stardew Valley>/Mods`. User can override for Vortex/MO2 setups (any folder that contains mod subfolders with `manifest.json`). |
+| 2 | ✅ | **Mods folder** | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied. |
 | 3 | ✅ | **Source & target language** | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh). |
 | 4 | ❌ | **Build glossary** *(optional)* | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary. |
 
@@ -183,9 +183,10 @@ Dialogue and narrative prose would pollute matching. The glossary is strictly **
 2. Find all `manifest.json` files.
 3. Each `manifest.json` defines one mod root.
 4. From each manifest, read: `Name`, `Version`, `UniqueID`, `UpdateKeys`.
-5. Extract Nexus ID from `UpdateKeys` entries matching `Nexus:<id>`.
+5. Extract Nexus ID from `UpdateKeys` entries matching `Nexus:<id>` (trim whitespace, e.g. `Nexus: 7286`). **Only a positive integer is a real ID** — sentinel/placeholder values such as `Nexus:-1` (used by multi-component mods to suppress update checks on sub-mods) must be treated as **no Nexus ID** (display `—`, no link). In a multi-component download, the real ID typically lives on only one component (e.g. the `[CP]` pack).
 6. Search for `i18n/` folders relative to the manifest's parent directory.
 7. Within each `i18n/` folder, find `default.json` and any existing `<target_lang>.json`.
+8. **Assign a package:** record each mod's *package* = the top-level folder under the Mods root that contains it (e.g. `Ridgeside Village`). Mods sharing a package group under one tree node in the UI (see §7.3). A package with one component is shown flat; with several, as an expandable parent.
 
 ### Import
 
@@ -208,6 +209,8 @@ Dialogue and narrative prose would pollute matching. The glossary is strictly **
 | **BOM in JSON** | Strip UTF-8 BOM before parsing. |
 | **Comments in JSON** | Use lenient parser or strip `//` comments. Log if comments detected. |
 | **Missing `UniqueID`** | Use folder name as fallback identity. Log warning. |
+| **Multi-component mod** (one download = several manifests, e.g. `[CP]`/`[CC]`/`[FTM]`/SMAPI components) | Each manifest = a separate mod row. Components without `i18n/` are skipped. Real-world example: Ridgeside Village = 4 manifests, 3 with i18n (`[CP]` ≈ 17.5k keys). |
+| **`Nexus:-1` (or non-positive) UpdateKey** | Sentinel, not a real ID → treat as no Nexus ID (`—`, no link). Common on the non-`[CP]` components of multi-part mods. |
 | **Symlinks / junctions** | Follow, but detect cycles. |
 
 ### Progress Calculation
@@ -216,7 +219,7 @@ Dialogue and narrative prose would pollute matching. The glossary is strictly **
 progress = (strings with non-empty target text) / (total strings in default.json)
 ```
 
-Calculated per file and aggregated per mod (across all `i18n/` folders).
+Calculated per file, aggregated per mod (across all `i18n/` folders), and rolled up per package (across all component mods) for the parent tree node.
 
 ---
 
@@ -244,18 +247,25 @@ Modal dialog during mod scanning.
 
 **Two-panel layout:**
 
-**Left panel — Mod List Table**
+**Left panel — Mod List Tree** *(grouped by package, SSE-AT style)*
 
-| Column | Content |
-|--------|---------|
-| **Status** | Color-coded icon (see §9) |
-| **Mod** | Mod name from manifest |
-| **Version** | Version string from manifest |
-| **Nexus** | Nexus ID (clickable link to `nexusmods.com/stardewvalley/mods/<id>`) or `—` |
-| **Dateien** | Number of translatable `i18n/` files |
-| **Fortschritt** | Progress bar + percentage |
+A two-level tree, mirroring SSE-AT's Mod → Plugin tree:
 
-No other columns. No priority column.
+- **Level 1 — Package:** the top-level folder under the Mods root (e.g. `Mods/Ridgeside Village/`). This is the unit the user downloaded.
+- **Level 2 — Component:** each `manifest.json` inside that package (e.g. `[CP]`, `[CC]`, SMAPI components). Components without an `i18n/` folder are omitted.
+
+A package containing a **single** component renders as one flat row (no expand arrow). A package with **multiple** components renders as an expandable parent node with one child row per component.
+
+| Column | Package (parent) row | Component (child / single) row |
+|--------|----------------------|--------------------------------|
+| **Status** | Worst-case roll-up across components (see §9) | Color-coded icon (see §9) |
+| **Mod** | Package folder name (e.g. `Ridgeside Village`) | Component name from manifest |
+| **Version** | *(blank, or the `[CP]` component's version)* | Version string from manifest |
+| **Nexus** | Real Nexus ID rolled up from a component (typically the `[CP]` one; ignores `Nexus:-1`) as a clickable link, or `—` | Component's own valid Nexus ID, or `—` |
+| **Dateien** | Sum of translatable `i18n/` files across components | Number of translatable `i18n/` files |
+| **Fortschritt** | Aggregated progress across components | Progress bar + percentage |
+
+No other columns. No priority column. Selecting a component (or a single-component package) loads its strings into the right panel; selecting a multi-component parent shows the aggregate and does not itself load a string table.
 
 **Right panel — String Table** (for selected mod/file)
 
@@ -417,6 +427,8 @@ Derived from the worst-case string status within the mod:
 | ⚪ Gray | No translatable strings (empty `default.json`) |
 
 Priority order for aggregation: Red > Yellow > Purple > Blue > Green > Gray.
+
+The **package** (parent tree node, §7.3) uses the same worst-case roll-up one level higher: its status is the worst-case status across its component mods.
 
 ---
 
@@ -654,7 +666,8 @@ AppState
       ├── name: string
       ├── version: string
       ├── uniqueId: string
-      ├── nexusId?: number                 // extracted from UpdateKeys
+      ├── nexusId?: number                 // extracted from UpdateKeys; null for Nexus:-1 / non-positive
+      ├── packageId: string                // top-level Mods subfolder; mods sharing it group under one tree node (§7.3)
       ├── folderPath: string
       ├── status: ModStatus               // aggregate, derived
       ├── progress: number                // 0.0–1.0, derived
@@ -711,7 +724,7 @@ Core workflow — no AI, no Nexus API:
 - [ ] Nexus ID extraction from `UpdateKeys`
 - [ ] `i18n/default.json` parsing (flat key-value JSON)
 - [ ] Existing translation import (`i18n/<lang>.json`)
-- [ ] Mod list table with Status | Mod | Version | Nexus | Dateien | Fortschritt
+- [ ] Mod list **tree** grouped by package/download folder (multi-component mods expand to components; single-component mods render flat) with Status | Mod | Version | Nexus | Dateien | Fortschritt
 - [ ] String table with Key | Original | Target Text | Validation
 - [ ] String editor dialog (double-click)
 - [ ] Status model: 6 statuses with color coding

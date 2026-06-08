@@ -21,7 +21,7 @@ graph TD
 ## 2. Step-by-Step Instructions
 
 ### Step 1: Repo Scan
-* Always start by listing the directory structure and scanning the root docs: [SPEC.md](file:///SPEC.md) and [SCOPE_GUARDRAILS.md](file:///SCOPE_GUARDRAILS.md).
+* Always start by listing the directory structure and scanning the root docs: [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md).
 * Verify that your current git worktree is clean before starting.
 
 ### Step 2: Implement Scoped Changes
@@ -39,4 +39,4 @@ graph TD
 
 ### Step 5: Clean Handoff
 * Commit changes locally using clear, scoped commit messages.
-* Write a final response summary using the [Handoff Template](file:///docs/agents/handoff-template.md).
+* Write a final response summary using the [Handoff Template](../../docs/agents/handoff-template.md).

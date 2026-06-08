@@ -9,12 +9,12 @@ To ensure consistency, code quality, and strict scope control, you MUST follow t
 ## 1. Rules of Engagement
 
 * **Read First:** Before modifying any files or proposing designs, you must read:
-  1. [SPEC.md](file:///SPEC.md) (The feature source of truth)
-  2. [SCOPE_GUARDRAILS.md](file:///SCOPE_GUARDRAILS.md) (Strict boundaries)
+  1. [SPEC.md](SPEC.md) (The feature source of truth)
+  2. [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md) (Strict boundaries)
   3. The specific milestone documentation in `docs/milestones/` for your active issue.
 * **Single-Issue Focus:** Work only on the assigned GitHub issue. Do not attempt to fix unrelated bugs, implement unrelated features, or execute general refactoring unless it is explicitly requested in the active issue.
-* **No Scope Creep:** Do not implement features scheduled for future milestones (`v1.1` or `v2`). If you find yourself building something not in [SPEC.md](file:///SPEC.md), stop immediately.
-* **No Framework/Dependency Choice:** Do not scaffold, install, or reference framework dependencies (Tauri, Electron, PySide, etc.) until [ADR 0001: Tech Stack Decision](file:///docs/adr/0001-tech-stack-decision.md) has been fully written, reviewed, and marked as `Accepted`.
+* **No Scope Creep:** Do not implement features scheduled for future milestones (`v1.1` or `v2`). If you find yourself building something not in [SPEC.md](SPEC.md), stop immediately.
+* **No Framework/Dependency Choice:** Do not scaffold, install, or reference framework dependencies (Tauri, Electron, PySide, etc.) until [ADR 0001: Tech Stack Decision](docs/adr/0001-tech-stack-decision.md) has been fully written, reviewed, and marked as `Accepted`.
 * **Propose Plans:** For any task that isn't trivially simple, outline your proposed changes in an implementation plan or task file first. Wait for user review if required.
 
 ## 2. Commit and Code Hygiene
@@ -34,7 +34,7 @@ To prevent leaks and copyright issues, **do not check in or commit** the followi
 
 ## 4. Handoff Procedure
 
-At the end of every completed task or session, you **MUST** write a brief handoff summary at the bottom of your final response, using the format in [handoff-template.md](file:///docs/agents/handoff-template.md):
+At the end of every completed task or session, you **MUST** write a brief handoff summary at the bottom of your final response, using the format in [handoff-template.md](docs/agents/handoff-template.md):
 1. **Task / Issue:** The name/number of the issue you worked on.
 2. **Summary:** Brief description of what was done.
 3. **Files Changed:** A bulleted list of file paths.
