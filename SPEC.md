@@ -442,8 +442,8 @@ v1 validation focuses on **preventing broken mods** — not on translation quali
 
 | Rule ID | Severity | Check |
 |---------|----------|-------|
-| `token-missing` | Error | Source token `{{...}}` not found in target text. This will break the mod at runtime. |
-| `token-added` | Warning | Target contains `{{...}}` token not present in source. Likely a typo. |
+| `token-missing` | Error | A **protected token** present in the source is missing (or under-represented) in the target. This will break the mod at runtime. |
+| `token-added` | Warning | The target contains a **protected token** not present in the source. Likely a typo. |
 | `empty-target` | Warning | Key exists in target file but value is empty string. |
 | `json-invalid` | Error | **Export-serialization safety.** The value cannot be safely serialized to valid JSON — e.g. an invalid/unpaired Unicode surrogate or stray control character (typically from an imported file). A correct serializer escapes normal characters (quotes, backslashes, newlines) automatically, so well-formed input never trips this; the rule exists only to *guarantee the exported `<lang>.json` is always valid JSON*. Affected strings are skipped on export (per the severity table below). |
 
@@ -471,11 +471,24 @@ v1 validation focuses on **preventing broken mods** — not on translation quali
 > [!IMPORTANT]
 > **Missing translations (`untranslated` strings) do NOT block export.** The tool exports all strings that have target text. Untranslated keys are simply omitted from the export file (SMAPI falls back to `default.json` for missing keys). The export summary shows how many strings were skipped.
 
-### Token Extraction Regex
+### Protected Tokens
 
-**SMAPI placeholders:** `\{\{([^}]+)\}\}`
+`token-missing` / `token-added` operate on **protected tokens** — anything a translation must preserve or the mod breaks at runtime. This extends beyond SMAPI i18n `{{...}}` to the Stardew dialogue/Content Patcher tokens that dominate real content mods (e.g. Ridgeside). Recognized kinds (ported from the previous project's token extractor):
 
-Tokens are compared as **sets** (not ordered). If source has `{{A}}` and `{{B}}`, target must contain both.
+| Kind | Examples |
+|------|----------|
+| Content Patcher / i18n | `{{PlayerName}}`, `{{i18n:key}}` (nested-aware) |
+| Gender switch | `${male^female}$` |
+| Mail commands | `[#]`, `%item … %%`, `%action … %%` |
+| Dialogue page break | `#$b#`, `#$…#` |
+| Bracket tokens | `[ … ]` |
+| Positional placeholders | `{0}` |
+| Dialogue commands | `$b`, `$s`, `$e`, `$1` … |
+| Single-character | `@` (player name), `^` / `\n` (line break) |
+
+Tokens are compared as **multisets** (counts matter, order does not): every token in the source must appear in the target the same number of times. This catches a dropped second `$b`, not just a missing distinct token.
+
+> **Scope note (2026-06-08):** Protecting the full Stardew token taxonomy (not only `{{...}}`) was pulled forward from v1.1 into v1 — without it, validation is effectively useless for the dialogue-heavy content mods that are the common case. The 4-rule cap (§19) is unchanged; only the definition of "token" broadened.
 
 ---
 
