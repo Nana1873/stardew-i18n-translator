@@ -43,8 +43,12 @@ function Kbd({ children }: { children: string }) {
   );
 }
 
-function tokensOf(text: string): string[] {
-  return Array.from(new Set(extractProtectedTokens(text)));
+function countTokens(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const token of extractProtectedTokens(text)) {
+    counts.set(token, (counts.get(token) ?? 0) + 1);
+  }
+  return counts;
 }
 
 export function StringEditor({
@@ -111,7 +115,8 @@ export function StringEditor({
     }
   }
 
-  const sourceTokens = tokensOf(row.source);
+  const sourceTokenCounts = countTokens(row.source);
+  const valueTokenCounts = countTokens(value);
   const issues = validate(row.source, value, row.targetPresent);
 
   return (
@@ -132,20 +137,25 @@ export function StringEditor({
           </span>
         </header>
 
-        {sourceTokens.length > 0 && (
+        {sourceTokenCounts.size > 0 && (
           <div className="editor__tokens">
             Tokens (click to insert):{" "}
-            {sourceTokens.map((token, i) => (
-              <button
-                key={i}
-                type="button"
-                className="editor__token"
-                title={`Insert ${token}`}
-                onClick={() => insertToken(token)}
-              >
-                {describeToken(token)}
-              </button>
-            ))}
+            {[...sourceTokenCounts].map(([token, required], i) => {
+              const satisfied = (valueTokenCounts.get(token) ?? 0) >= required;
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  className={`editor__token${satisfied ? " editor__token--done" : ""}`}
+                  title={satisfied ? `${token} — all present` : `Insert ${token}`}
+                  onClick={() => insertToken(token)}
+                >
+                  {describeToken(token)}
+                  {required > 1 ? ` ×${required}` : ""}
+                  {satisfied ? " ✓" : ""}
+                </button>
+              );
+            })}
           </div>
         )}
 
