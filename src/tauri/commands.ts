@@ -70,6 +70,19 @@ export function scanMods(modsPath: string, targetLang: string): Promise<ScanResu
   return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
 }
 
+export interface StringRow {
+  key: string;
+  source: string;
+  target: string;
+}
+
+export function loadStrings(
+  defaultPath: string,
+  targetPath: string,
+): Promise<StringRow[]> {
+  return invoke<StringRow[]>("load_strings", { defaultPath, targetPath });
+}
+
 export function openUrl(url: string): Promise<void> {
   return invoke<void>("open_url", { url });
 }

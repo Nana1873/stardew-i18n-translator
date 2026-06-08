@@ -288,6 +288,75 @@ body {
   color: var(--accent);
 }
 
+/* --- String table --- */
+.stringtable {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.stringtable__body {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+.stringrow {
+  display: grid;
+  grid-template-columns: minmax(130px, 24%) minmax(0, 1fr) minmax(0, 1fr) 22px;
+  gap: 10px;
+  align-items: center;
+  padding: 0 12px;
+  font-size: 12px;
+}
+
+.stringtable--multifile .stringrow {
+  grid-template-columns: 90px minmax(110px, 20%) minmax(0, 1fr) minmax(0, 1fr) 22px;
+}
+
+.stringrow--head {
+  height: 26px;
+  align-items: center;
+  background: var(--bg-toolbar);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  border-bottom: 1px solid var(--border);
+}
+
+.stringrow--data {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.stringrow--data:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.stringrow__file,
+.stringrow__key,
+.stringrow__src,
+.stringrow__tgt {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stringrow__file {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.stringrow__key {
+  font-family: "Cascadia Code", Consolas, monospace;
+  color: #c8b88a;
+}
+
+.stringrow__tgt--empty {
+  color: var(--text-muted);
+}
+
 /* --- Setup Wizard --- */
 .wizard__backdrop {
   position: fixed;
