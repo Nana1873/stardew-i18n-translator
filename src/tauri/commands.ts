@@ -70,19 +70,53 @@ export function scanMods(modsPath: string, targetLang: string): Promise<ScanResu
   return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
 }
 
+export type StringStatus =
+  | "untranslated"
+  | "imported"
+  | "review-needed"
+  | "done"
+  | "outdated"
+  | "not-translatable";
+
 export interface StringRow {
   key: string;
   source: string;
   target: string;
   /** Whether the key exists in the target file (distinguishes "" from absent). */
   targetPresent: boolean;
+  status: StringStatus;
 }
 
 export function loadStrings(
+  modUniqueId: string,
+  relativeDir: string,
   defaultPath: string,
   targetPath: string,
 ): Promise<StringRow[]> {
-  return invoke<StringRow[]>("load_strings", { defaultPath, targetPath });
+  return invoke<StringRow[]>("load_strings", {
+    modUniqueId,
+    relativeDir,
+    defaultPath,
+    targetPath,
+  });
+}
+
+export function saveString(
+  modUniqueId: string,
+  relativeDir: string,
+  key: string,
+  target: string,
+  status: StringStatus,
+  source: string,
+): Promise<void> {
+  return invoke<void>("save_string", {
+    modUniqueId,
+    relativeDir,
+    key,
+    target,
+    status,
+    source,
+  });
 }
 
 export function openUrl(url: string): Promise<void> {

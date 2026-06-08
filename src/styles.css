@@ -440,6 +440,21 @@ body {
   font-size: 12px;
 }
 
+.editor__meta-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.editor__status {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 9px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
 .editor__tokens {
   padding: 8px 16px;
   font-size: 12px;

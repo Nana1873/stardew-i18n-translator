@@ -8,6 +8,7 @@
 mod detection;
 mod scanner;
 mod settings;
+mod translations;
 
 use std::path::{Path, PathBuf};
 
@@ -53,13 +54,49 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 }
 
 #[tauri::command]
-fn scan_mods(mods_path: String, target_lang: String) -> ScanResult {
-    scanner::scan_mods(Path::new(&mods_path), &target_lang)
+fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
+    let config = config_dir(&app)?;
+    Ok(scanner::scan_mods(Path::new(&mods_path), &target_lang, &config))
 }
 
 #[tauri::command]
-fn load_strings(default_path: String, target_path: String) -> Vec<scanner::StringRow> {
-    scanner::load_strings(Path::new(&default_path), Path::new(&target_path))
+fn load_strings(
+    app: AppHandle,
+    mod_unique_id: String,
+    relative_dir: String,
+    default_path: String,
+    target_path: String,
+) -> Result<Vec<scanner::StringRow>, String> {
+    let state = translations::load(&config_dir(&app)?, &mod_unique_id);
+    Ok(scanner::load_strings(
+        Path::new(&default_path),
+        Path::new(&target_path),
+        &state,
+        &relative_dir,
+    ))
+}
+
+#[tauri::command]
+fn save_string(
+    app: AppHandle,
+    mod_unique_id: String,
+    relative_dir: String,
+    key: String,
+    target: String,
+    status: String,
+    source: String,
+) -> Result<(), String> {
+    let entry = translations::StoredString {
+        target,
+        status,
+        source_hash: translations::source_hash(&source),
+    };
+    translations::save_one(
+        &config_dir(&app)?,
+        &mod_unique_id,
+        translations::entry_key(&relative_dir, &key),
+        entry,
+    )
 }
 
 /// Open an external http(s) URL in the user's default browser (Nexus links).
@@ -103,6 +140,7 @@ pub fn run() {
             pick_folder,
             scan_mods,
             load_strings,
+            save_string,
             open_url,
             load_settings,
             save_settings
