@@ -28,6 +28,8 @@ export function App() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modsWidth, setModsWidth] = useState(460);
+  // In-memory target edits per mod (disk persistence + status are Issue 10).
+  const [editsByMod, setEditsByMod] = useState<Record<string, Record<string, string>>>({});
 
   function startResize(event: ReactMouseEvent) {
     event.preventDefault();
@@ -88,6 +90,13 @@ export function App() {
     }
   }
 
+  function saveEdit(modId: string, file: string, key: string, value: string) {
+    setEditsByMod((prev) => ({
+      ...prev,
+      [modId]: { ...(prev[modId] ?? {}), [`${file} ${key}`]: value },
+    }));
+  }
+
   const configured = Boolean(settings?.stardewPath);
   const selectedMod = scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
 
@@ -131,7 +140,13 @@ export function App() {
           aria-label="Resize mod list"
           onMouseDown={startResize}
         />
-        <StringTablePanel mod={selectedMod} />
+        <StringTablePanel
+          mod={selectedMod}
+          edits={selectedMod ? (editsByMod[selectedMod.uniqueId] ?? {}) : {}}
+          onSaveEdit={(file, key, value) =>
+            selectedMod && saveEdit(selectedMod.uniqueId, file, key, value)
+          }
+        />
       </main>
       {wizardOpen && (
         <SetupWizard
@@ -183,14 +198,22 @@ function Toolbar({
   );
 }
 
-function StringTablePanel({ mod }: { mod: ScannedMod | null }) {
+function StringTablePanel({
+  mod,
+  edits,
+  onSaveEdit,
+}: {
+  mod: ScannedMod | null;
+  edits: Record<string, string>;
+  onSaveEdit: (file: string, key: string, value: string) => void;
+}) {
   return (
     <section className="panel panel--strings" aria-label="String table">
       <div className="panel__header">
         Strings{mod && <> · <StringTableHeader mod={mod} /></>}
       </div>
       {mod ? (
-        <StringTable key={mod.uniqueId} mod={mod} />
+        <StringTable key={mod.uniqueId} mod={mod} edits={edits} onSaveEdit={onSaveEdit} />
       ) : (
         <div className="panel__empty">Select a mod to view its strings.</div>
       )}
