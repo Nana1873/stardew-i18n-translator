@@ -445,7 +445,7 @@ v1 validation focuses on **preventing broken mods** — not on translation quali
 | `token-missing` | Error | Source token `{{...}}` not found in target text. This will break the mod at runtime. |
 | `token-added` | Warning | Target contains `{{...}}` token not present in source. Likely a typo. |
 | `empty-target` | Warning | Key exists in target file but value is empty string. |
-| `json-invalid` | Error | Target value would produce invalid JSON on export (e.g., unescaped quotes). |
+| `json-invalid` | Error | **Export-serialization safety.** The value cannot be safely serialized to valid JSON — e.g. an invalid/unpaired Unicode surrogate or stray control character (typically from an imported file). A correct serializer escapes normal characters (quotes, backslashes, newlines) automatically, so well-formed input never trips this; the rule exists only to *guarantee the exported `<lang>.json` is always valid JSON*. Affected strings are skipped on export (per the severity table below). |
 
 **4 rules total for v1.** Quality and style checks are deferred to v1.1+.
 
@@ -913,7 +913,7 @@ The following are **explicitly excluded** from v1:
 - [ ] Source text is read-only; target text is editable.
 - [ ] Validation runs live as user types.
 - [ ] `token-missing` error is raised when `{{...}}` token is removed from target.
-- [ ] `json-invalid` error is raised for invalid JSON characters in target.
+- [ ] `json-invalid` error is raised for values that cannot be serialized to valid JSON (e.g. an invalid Unicode surrogate); normal quotes/backslashes are escaped by the serializer and do not trip it.
 - [ ] `empty-target` warning is raised for empty target values.
 - [ ] Status transitions work correctly.
 - [ ] Saving a string sets `sourceTextAtTranslation` and `sourceHash`.

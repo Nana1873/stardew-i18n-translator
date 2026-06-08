@@ -76,7 +76,7 @@ So **one** mod ≈ 17.5k strings — ~3.5× the SPEC's "5000+" planning figure. 
 
 ## Decision
 
-**Tauri (Rust backend + TypeScript/WebView2 frontend).** The performance-critical path — recursive mod scan, relaxed-JSON parsing of multi-MB files, token validation, and filter/sort over very large string sets — runs in **Rust**; the WebView2 UI receives only the virtualized slice it renders (TanStack Virtual / AG Grid for the dense string table). `tauri-plugin-dialog` for folder pickers; Tauri bundler for the small portable Windows build.
+**Tauri (Rust backend + TypeScript/WebView2 frontend).** The performance-critical path — recursive mod scan, relaxed-JSON parsing of multi-MB files, token validation, and filter/sort over very large string sets — runs in **Rust**; a **React + TypeScript** WebView2 UI receives only the virtualized slice it renders, using **TanStack Table + TanStack Virtual** for both the dense string table and the package tree. `tauri-plugin-dialog` for folder pickers; Tauri bundler for the small portable Windows build.
 
 ### Decision Summary vs Criteria
 
@@ -112,11 +112,16 @@ So **one** mod ≈ 17.5k strings — ~3.5× the SPEC's "5000+" planning figure. 
 
 * **Positive:** Best performance and lowest memory for very large mods; broadest reuse (Rust hot path + TS UI logic + fixtures); smallest portable binary; environment already proven; relaxed-JSON parsing handled in Rust.
 * **Negative / trade-offs:** Two languages (Rust + TypeScript) with an IPC boundary — slightly higher agent friction than a TS-only stack and slower compile times than interpreted stacks. Mitigated by keeping the boundary thin: Rust owns data/IO, TS owns UI, with a small typed command surface.
-* **Risks:** (1) FFI boundary tempting premature abstraction — mitigated by SPEC §19 (no provider/plugin systems) and a minimal Tauri command set. (2) Rust learning curve for some agents — mitigated by reusing the old project's Rust parser/validator as the starting point and isolating Rust to data/IO. (3) Keep the WebView string table **virtualized** (TanStack Virtual / AG Grid) and lazy-load per-mod string data on selection (SPEC §7.4 shows one mod/file at a time) so the UI never materializes all rows at once.
+* **Risks:** (1) FFI boundary tempting premature abstraction — mitigated by SPEC §19 (no provider/plugin systems) and a minimal Tauri command set. (2) Rust learning curve for some agents — mitigated by reusing the old project's Rust parser/validator as the starting point and isolating Rust to data/IO. (3) Keep the WebView string table **virtualized** (TanStack Virtual) and lazy-load per-mod string data on selection (SPEC §7.4 shows one mod/file at a time) so the UI never materializes all rows at once.
+
+## Resolved Implementation Choices
+
+The ADR's pre-scaffolding questions, resolved 2026-06-08 so M1 starts without re-litigation:
+
+1. **Renderer → React + TypeScript.** Largest ecosystem, strongest agent (Antigravity/Codex/Claude Code) familiarity, first-class bindings for the chosen grid. Svelte/Preact's smaller bundle is irrelevant — the heavy work is in Rust.
+2. **Grid → TanStack Table + TanStack Virtual (MIT).** Must drive **both** a virtualized flat grid (string table, 17k+ rows) **and** a virtualized expandable tree (mod list grouped by package, §7.3). TanStack does both (expanding sub-rows + virtual rows) under MIT. **AG Grid is ruled out:** its Tree Data / Row Grouping are **Enterprise (paid)** features — unacceptable for a free local tool — even though AG Grid Community has row virtualization.
+3. **Frontend package manager → pnpm.** Already the project convention (lockfile carried from the old repo), fast and disk-efficient; agents handle it fine.
 
 ## Open Questions
 
-1. **Renderer framework:** confirm React (ecosystem/agent familiarity) vs. a lighter Svelte/Preact before M1 scaffolding.
-2. **Grid library:** must support **both** a virtualized flat grid (string table, 17k+ rows) **and** a virtualized **tree/grouped grid** (mod list grouped by package, SPEC §7.3). Both TanStack Table+Virtual (grouping/expanding + virtual rows) and AG Grid (native tree data) qualify — confirm one before M1.
-3. **Frontend package manager:** old project used pnpm (lockfile present) — confirm pnpm vs npm before M1.
-4. **Rust reuse depth:** decide in M1 how much of the old `parser.rs` / `validator.rs` to port directly vs. rewrite to the trimmed v1 scope (4 rules, flat i18n only).
+1. **Rust reuse depth:** decide in M1 how much of the old `parser.rs` / `validator.rs` to port directly vs. rewrite to the trimmed v1 scope (4 rules, flat i18n only).
