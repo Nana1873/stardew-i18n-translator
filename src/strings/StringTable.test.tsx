@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -44,64 +44,84 @@ const MOD: ScannedMod = {
   status: "untranslated",
 };
 
+function mockStrings(
+  rows: Array<{ key: string; source: string; target: string; targetPresent?: boolean; status?: string }>,
+) {
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === "load_strings") {
+      return Promise.resolve(
+        rows.map((r) => ({
+          targetPresent: false,
+          status: r.target ? "imported" : "untranslated",
+          ...r,
+        })),
+      );
+    }
+    return Promise.resolve(undefined); // save_string
+  });
+}
+
 beforeEach(() => {
   invokeMock.mockReset();
-  invokeMock.mockResolvedValue([
+  mockStrings([
     { key: "greeting", source: "Hello", target: "Hallo", targetPresent: true },
-    { key: "bye", source: "Bye", target: "", targetPresent: false },
+    { key: "bye", source: "Bye", target: "" },
   ]);
 });
 
 describe("StringTable", () => {
-  it("loads and renders the mod's source/target strings", async () => {
-    render(<StringTable mod={MOD} edits={{}} onSaveEdit={() => {}} />);
+  it("loads the mod's strings via load_strings and renders them", async () => {
+    render(<StringTable mod={MOD} />);
 
     expect(await screen.findByText("greeting")).toBeInTheDocument();
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByText("Hallo")).toBeInTheDocument();
-    expect(screen.getByText("bye")).toBeInTheDocument();
 
     expect(invokeMock).toHaveBeenCalledWith("load_strings", {
+      modUniqueId: "a.b",
+      relativeDir: "i18n",
       defaultPath: "x/i18n/default.json",
       targetPath: "x/i18n/de.json",
     });
   });
 
-  it("opens the editor on double-click and saves the edited target", async () => {
-    const onSaveEdit = vi.fn();
-    render(<StringTable mod={MOD} edits={{}} onSaveEdit={onSaveEdit} />);
+  it("persists an edit via save_string (status done) on Save", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("greeting"));
 
-    const keyCell = await screen.findByText("greeting");
-    fireEvent.doubleClick(keyCell);
-
-    const dialog = screen.getByRole("dialog", { name: "Edit string" });
-    expect(dialog).toBeInTheDocument();
-
-    const textarea = screen.getByLabelText("Translation");
-    fireEvent.change(textarea, { target: { value: "Hallo Welt" } });
+    fireEvent.change(screen.getByLabelText("Translation"), {
+      target: { value: "Hallo Welt" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(onSaveEdit).toHaveBeenCalledWith("i18n", "greeting", "Hallo Welt");
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_string", {
+        modUniqueId: "a.b",
+        relativeDir: "i18n",
+        key: "greeting",
+        target: "Hallo Welt",
+        status: "done",
+        source: "Hello",
+      }),
+    );
   });
 
   it("shows a validation error icon when a source token is missing", async () => {
-    invokeMock.mockResolvedValue([
+    mockStrings([
       { key: "greet", source: "Hi {{name}}", target: "Hallo", targetPresent: true },
       { key: "ok", source: "Yes", target: "Ja", targetPresent: true },
     ]);
-    render(<StringTable mod={MOD} edits={{}} onSaveEdit={() => {}} />);
+    render(<StringTable mod={MOD} />);
 
-    expect(
-      await screen.findByTitle("Missing token {{name}}"),
-    ).toBeInTheDocument();
+    expect(await screen.findByTitle("Missing token {{name}}")).toBeInTheDocument();
   });
 
   it("inserts a protected token at the cursor when its chip is clicked", async () => {
-    invokeMock.mockResolvedValue([
-      { key: "g", source: "Hi {{name}}", target: "", targetPresent: false },
-      { key: "ok", source: "Yes", target: "", targetPresent: false },
+    mockStrings([
+      { key: "g", source: "Hi {{name}}", target: "" },
+      { key: "ok", source: "Yes", target: "" },
     ]);
-    render(<StringTable mod={MOD} edits={{}} onSaveEdit={() => {}} />);
+    render(<StringTable mod={MOD} />);
 
     fireEvent.doubleClick(await screen.findByText("g"));
     const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;

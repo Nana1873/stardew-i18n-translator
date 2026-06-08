@@ -17,6 +17,8 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::translations::{self, ModState};
+
 const MAX_DEPTH: usize = 12;
 const MAX_DIRS: usize = 200_000;
 
@@ -96,8 +98,9 @@ pub fn extract_nexus_id(update_keys: &[String]) -> Option<u64> {
     None
 }
 
-/// Scan `mods_path` for translatable mods, importing for `target_lang`.
-pub fn scan_mods(mods_path: &Path, target_lang: &str) -> ScanResult {
+/// Scan `mods_path` for translatable mods, importing for `target_lang`. Saved
+/// translation state from `config_dir` is merged into progress counts.
+pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> ScanResult {
     let mut warnings = Vec::new();
     let mut manifest_files = Vec::new();
     let mut i18n_dirs = Vec::new();
@@ -124,13 +127,18 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str) -> ScanResult {
         }
     }
 
-    // Associate each i18n/ folder with the nearest ancestor manifest.
+    // Associate each i18n/ folder with the nearest ancestor manifest, merging
+    // saved translation state (cached per mod).
+    let mut state_cache: HashMap<String, ModState> = HashMap::new();
     for i18n_dir in &i18n_dirs {
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             continue;
         };
         if let Some(scanned) = mods.get_mut(&owner) {
-            if let Some(file) = build_i18n_file(&owner, i18n_dir, target_lang) {
+            let state = state_cache
+                .entry(scanned.unique_id.clone())
+                .or_insert_with(|| translations::load(config_dir, &scanned.unique_id));
+            if let Some(file) = build_i18n_file(&owner, i18n_dir, target_lang, state) {
                 scanned.i18n_files.push(file);
             }
         }
@@ -219,24 +227,65 @@ pub struct StringRow {
     pub target: String,
     /// Whether the key exists in the target file (distinguishes "" from absent).
     pub target_present: bool,
+    /// untranslated | imported | review-needed | done | outdated | not-translatable
+    pub status: String,
 }
 
 /// Load the paired source/target strings of one i18n file, preserving the key
-/// order of `default.json` (serde_json `preserve_order`).
-pub fn load_strings(default_path: &Path, target_path: &Path) -> Vec<StringRow> {
+/// order of `default.json` (serde_json `preserve_order`). Saved translation
+/// state overrides the imported target and supplies the per-string status.
+pub fn load_strings(
+    default_path: &Path,
+    target_path: &Path,
+    state: &ModState,
+    relative_dir: &str,
+) -> Vec<StringRow> {
     let Some(source) = read_object(default_path) else {
         return Vec::new();
     };
     let target = read_object(target_path).unwrap_or_default();
     source
         .iter()
-        .map(|(key, value)| StringRow {
-            key: key.clone(),
-            source: value_to_text(value),
-            target: target.get(key).map(value_to_text).unwrap_or_default(),
-            target_present: target.contains_key(key),
+        .map(|(key, value)| {
+            let source_text = value_to_text(value);
+            let (effective_target, status) =
+                resolve_string(&source_text, target.get(key), state, relative_dir, key);
+            StringRow {
+                key: key.clone(),
+                source: source_text,
+                target: effective_target,
+                target_present: target.contains_key(key),
+                status,
+            }
         })
         .collect()
+}
+
+/// Resolve the effective target + status for one key from saved state, falling
+/// back to the imported value. Detects `outdated` via the stored source hash.
+fn resolve_string(
+    source_text: &str,
+    imported: Option<&Value>,
+    state: &ModState,
+    relative_dir: &str,
+    key: &str,
+) -> (String, String) {
+    if let Some(stored) = state.get(&translations::entry_key(relative_dir, key)) {
+        let settled = matches!(stored.status.as_str(), "done" | "review-needed");
+        let status = if settled && stored.source_hash != translations::source_hash(source_text) {
+            "outdated".to_string()
+        } else {
+            stored.status.clone()
+        };
+        return (stored.target.clone(), status);
+    }
+    let imported_text = imported.map(value_to_text).unwrap_or_default();
+    let status = if imported_text.trim().is_empty() {
+        "untranslated"
+    } else {
+        "imported"
+    };
+    (imported_text, status.to_string())
 }
 
 fn value_to_text(value: &Value) -> String {
@@ -252,24 +301,31 @@ fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
     parse_json_lenient(&body).ok()?.as_object().cloned()
 }
 
-/// (total source keys, source keys with a non-empty target value).
-fn count_keys(default_path: &Path, target_path: &Path) -> (usize, usize) {
+/// (total source keys, source keys with a non-empty **working** target — saved
+/// state takes precedence over the imported `<lang>.json` value).
+fn count_keys(
+    default_path: &Path,
+    target_path: &Path,
+    state: &ModState,
+    relative_dir: &str,
+) -> (usize, usize) {
     let Some(source) = read_object(default_path) else {
         return (0, 0);
     };
     let total = source.len();
-    let translated = match read_object(target_path) {
-        Some(target) => source
-            .keys()
-            .filter(|key| {
-                target
+    let target = read_object(target_path).unwrap_or_default();
+    let translated = source
+        .keys()
+        .filter(|key| {
+            match state.get(&translations::entry_key(relative_dir, key)) {
+                Some(stored) => !stored.target.trim().is_empty(),
+                None => target
                     .get(*key)
                     .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty())
-            })
-            .count(),
-        None => 0,
-    };
+                    .is_some_and(|value| !value.trim().is_empty()),
+            }
+        })
+        .count();
     (total, translated)
 }
 
@@ -313,7 +369,12 @@ fn nearest_manifest_owner(i18n_dir: &Path, manifest_dirs: &HashSet<PathBuf>) -> 
     None
 }
 
-fn build_i18n_file(mod_dir: &Path, i18n_dir: &Path, target_lang: &str) -> Option<ScannedI18nFile> {
+fn build_i18n_file(
+    mod_dir: &Path,
+    i18n_dir: &Path,
+    target_lang: &str,
+    state: &ModState,
+) -> Option<ScannedI18nFile> {
     let relative_dir = i18n_dir
         .strip_prefix(mod_dir)
         .ok()?
@@ -321,7 +382,7 @@ fn build_i18n_file(mod_dir: &Path, i18n_dir: &Path, target_lang: &str) -> Option
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys) = count_keys(&default_path, &target_path);
+    let (total_keys, translated_keys) = count_keys(&default_path, &target_path, state, &relative_dir);
     Some(ScannedI18nFile {
         target_exists: target_path.is_file(),
         default_path: default_path.display().to_string(),
@@ -557,7 +618,7 @@ mod tests {
         // A malformed manifest -> skipped with a warning.
         write(&root.join("Broken").join("manifest.json"), "{ not json");
 
-        let result = scan_mods(&root, "de");
+        let result = scan_mods(&root, "de", &root);
 
         assert_eq!(result.mod_count, 3, "only components with i18n are listed");
         assert!(result.warnings.iter().any(|w| w.contains("Broken")));
@@ -584,7 +645,7 @@ mod tests {
         write(&mod_dir.join("i18n").join("default.json"), "{ \"k\": \"v\" }");
         write(&mod_dir.join("i18n").join("de.json"), "{ \"k\": \"w\" }");
 
-        let result = scan_mods(&root, "de");
+        let result = scan_mods(&root, "de", &root);
         let file = &result.mods[0].i18n_files[0];
         assert!(file.target_exists);
         assert!(file.target_path.ends_with("de.json"));
@@ -610,7 +671,7 @@ mod tests {
             "{ \"a\": \"eins\", \"b\": \"  \" }",
         );
 
-        let scanned = &scan_mods(&root, "de").mods[0];
+        let scanned = &scan_mods(&root, "de", &root).mods[0];
         assert_eq!(scanned.total_keys, 3);
         assert_eq!(scanned.translated_keys, 1);
         assert!((scanned.progress - 1.0 / 3.0).abs() < 1e-9);
@@ -627,13 +688,51 @@ mod tests {
         write(&i18n.join("default.json"), "{ \"zeta\": \"Z\", \"alpha\": \"A\" }");
         write(&i18n.join("de.json"), "{ \"alpha\": \"Ä\" }");
 
-        let rows = load_strings(&i18n.join("default.json"), &i18n.join("de.json"));
+        let rows = load_strings(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &ModState::new(),
+            "i18n",
+        );
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].key, "zeta");
         assert_eq!(rows[0].source, "Z");
         assert_eq!(rows[0].target, "");
         assert_eq!(rows[1].key, "alpha");
         assert_eq!(rows[1].target, "Ä");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn load_strings_applies_saved_status_and_detects_outdated() {
+        let root = crate::test_support::temp_dir("load-status");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
+
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "Hallo".into(),
+                status: "done".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id");
+
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].target, "Hallo");
+        assert_eq!(rows[0].status, "done");
+
+        // Source text changed since the translation was saved -> outdated.
+        write(&default_path, "{ \"k\": \"Hello there\" }");
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "outdated");
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -646,7 +745,7 @@ mod tests {
         write(&mod_dir.join("i18n").join("default.json"), "{ \"a\": \"1\" }");
         write(&mod_dir.join("i18n").join("de.json"), "{ \"a\": \"eins\" }");
 
-        let scanned = &scan_mods(&root, "de").mods[0];
+        let scanned = &scan_mods(&root, "de", &root).mods[0];
         assert_eq!(scanned.status, "imported");
         assert!((scanned.progress - 1.0).abs() < 1e-9);
 
@@ -662,7 +761,7 @@ mod tests {
             return;
         }
         let started = std::time::Instant::now();
-        let result = scan_mods(mods, "de");
+        let result = scan_mods(mods, "de", &std::env::temp_dir());
         let elapsed = started.elapsed();
         let total_keys: usize = result.mods.iter().map(|m| m.total_keys).sum();
         eprintln!(
