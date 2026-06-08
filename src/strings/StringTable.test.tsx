@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -54,17 +54,33 @@ beforeEach(() => {
 
 describe("StringTable", () => {
   it("loads and renders the mod's source/target strings", async () => {
-    render(<StringTable mod={MOD} />);
+    render(<StringTable mod={MOD} edits={{}} onSaveEdit={() => {}} />);
 
     expect(await screen.findByText("greeting")).toBeInTheDocument();
     expect(screen.getByText("Hello")).toBeInTheDocument();
     expect(screen.getByText("Hallo")).toBeInTheDocument();
-    // Untranslated target shows a dash placeholder.
     expect(screen.getByText("bye")).toBeInTheDocument();
 
     expect(invokeMock).toHaveBeenCalledWith("load_strings", {
       defaultPath: "x/i18n/default.json",
       targetPath: "x/i18n/de.json",
     });
+  });
+
+  it("opens the editor on double-click and saves the edited target", async () => {
+    const onSaveEdit = vi.fn();
+    render(<StringTable mod={MOD} edits={{}} onSaveEdit={onSaveEdit} />);
+
+    const keyCell = await screen.findByText("greeting");
+    fireEvent.doubleClick(keyCell);
+
+    const dialog = screen.getByRole("dialog", { name: "Edit string" });
+    expect(dialog).toBeInTheDocument();
+
+    const textarea = screen.getByLabelText("Translation");
+    fireEvent.change(textarea, { target: { value: "Hallo Welt" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSaveEdit).toHaveBeenCalledWith("i18n", "greeting", "Hallo Welt");
   });
 });
