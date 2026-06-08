@@ -31,6 +31,15 @@ interface StringEditorProps {
   onNavigate: (delta: number) => void;
 }
 
+/** Small shortcut hint on a button; aria-hidden so the accessible name stays clean. */
+function Kbd({ children }: { children: string }) {
+  return (
+    <kbd className="editor__kbd" aria-hidden>
+      {children}
+    </kbd>
+  );
+}
+
 const TOKEN_RE = /\{\{([^}]+)\}\}/g;
 
 function tokensOf(text: string): string[] {
@@ -138,27 +147,27 @@ export function StringEditor({
 
         <footer className="editor__footer">
           <button type="button" onClick={() => navigate(-1)} disabled={index === 0}>
-            ◀ Prev
+            ◀ Prev <Kbd>Alt+←</Kbd>
           </button>
           <button
             type="button"
             onClick={() => navigate(1)}
             disabled={index >= total - 1}
           >
-            Next ▶
+            Next ▶ <Kbd>Alt+→</Kbd>
           </button>
           <span className="editor__spacer" />
           <button type="button" onClick={() => setValue(row.source)}>
-            Copy original
+            Copy original <Kbd>F3</Kbd>
           </button>
           <button type="button" onClick={() => setValue(row.target)}>
-            Reset
+            Reset <Kbd>F4</Kbd>
           </button>
           <button type="button" onClick={onClose}>
-            Cancel
+            Cancel <Kbd>Esc</Kbd>
           </button>
           <button type="button" className="editor__save" onClick={save}>
-            Save
+            Save <Kbd>Ctrl+Enter</Kbd>
           </button>
         </footer>
       </div>
