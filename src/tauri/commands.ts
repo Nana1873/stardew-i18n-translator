@@ -74,6 +74,8 @@ export interface StringRow {
   key: string;
   source: string;
   target: string;
+  /** Whether the key exists in the target file (distinguishes "" from absent). */
+  targetPresent: boolean;
 }
 
 export function loadStrings(

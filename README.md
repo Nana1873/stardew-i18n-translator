@@ -4,7 +4,7 @@ Early-stage planning repository for **Stardew i18n Translator** (`stardew-i18n-t
 
 > [!IMPORTANT]
 > **Status:** Private early development.  
-> **Current Phase:** `M2 in progress` — M1 done. The virtualized string table + double-click editor dialog are in (edits in memory). Next: token validation, then the editable/persisted 6-status model.  
+> **Current Phase:** `M2 in progress` — M1 done. The virtualized string table, double-click editor dialog, and `{{token}}` validation (4 rules, live in the editor + table column) are in (edits in memory). Next: the persisted, editable 6-status model (Issue 10).  
 > **Stack:** [ADR 0001](docs/adr/0001-tech-stack-decision.md) is **Accepted** (Tauri / Rust + TypeScript). The code freeze is lifted for this stack; do not introduce other frameworks.
 
 ## Documentation
