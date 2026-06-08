@@ -23,7 +23,7 @@ interface PackageGroup {
 
 function deriveStatus(total: number, translated: number): ModStatus {
   if (total === 0) return "none";
-  if (translated >= total) return "imported";
+  if (translated >= total) return "translated";
   return "untranslated";
 }
 
@@ -58,14 +58,14 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
 
 function StatusDot({ status }: { status: ModStatus }) {
   const color =
-    status === "imported"
-      ? "#6ab0ff"
+    status === "translated"
+      ? "#4a9d6b"
       : status === "untranslated"
         ? "#e06c6c"
         : "var(--text-muted)";
   const title =
-    status === "imported"
-      ? "All strings present (imported)"
+    status === "translated"
+      ? "All strings translated"
       : status === "untranslated"
         ? "Has untranslated strings"
         : "No translatable strings";

@@ -33,7 +33,7 @@ export function pickFolder(title?: string): Promise<string | null> {
   return invoke<string | null>("pick_folder", { title });
 }
 
-export type ModStatus = "none" | "untranslated" | "imported";
+export type ModStatus = "none" | "untranslated" | "translated";
 
 export interface ScannedI18nFile {
   relativeDir: string;
@@ -72,9 +72,7 @@ export function scanMods(modsPath: string, targetLang: string): Promise<ScanResu
 
 export type StringStatus =
   | "untranslated"
-  | "imported"
-  | "review-needed"
-  | "done"
+  | "translated"
   | "outdated"
   | "not-translatable";
 

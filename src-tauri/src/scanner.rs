@@ -213,7 +213,7 @@ fn derive_status(total: usize, translated: usize) -> &'static str {
     if total == 0 {
         "none"
     } else if translated >= total {
-        "imported"
+        "translated"
     } else {
         "untranslated"
     }
@@ -271,11 +271,14 @@ fn resolve_string(
     key: &str,
 ) -> (String, String) {
     if let Some(stored) = state.get(&translations::entry_key(relative_dir, key)) {
-        let settled = matches!(stored.status.as_str(), "done" | "review-needed");
-        let status = if settled && stored.source_hash != translations::source_hash(source_text) {
+        let status = normalize_status(&stored.status);
+        // Only a `translated` string can go stale when its source changes.
+        let status = if status == "translated"
+            && stored.source_hash != translations::source_hash(source_text)
+        {
             "outdated".to_string()
         } else {
-            stored.status.clone()
+            status
         };
         return (stored.target.clone(), status);
     }
@@ -283,9 +286,20 @@ fn resolve_string(
     let status = if imported_text.trim().is_empty() {
         "untranslated"
     } else {
-        "imported"
+        "translated"
     };
     (imported_text, status.to_string())
+}
+
+/// Map any stored status (including legacy values) to the v1 set:
+/// `untranslated` | `translated` | `not-translatable`. (`outdated` is derived.)
+fn normalize_status(stored: &str) -> String {
+    match stored {
+        "not-translatable" => "not-translatable",
+        "untranslated" => "untranslated",
+        _ => "translated", // done | review-needed | imported | translated | outdated
+    }
+    .to_string()
 }
 
 fn value_to_text(value: &Value) -> String {
@@ -318,7 +332,10 @@ fn count_keys(
         .keys()
         .filter(|key| {
             match state.get(&translations::entry_key(relative_dir, key)) {
-                Some(stored) => !stored.target.trim().is_empty(),
+                // Not-translatable counts as handled, even without target text.
+                Some(stored) => {
+                    stored.status == "not-translatable" || !stored.target.trim().is_empty()
+                }
                 None => target
                     .get(*key)
                     .and_then(Value::as_str)
@@ -727,7 +744,8 @@ mod tests {
         let target_path = i18n.join("de.json");
         let rows = load_strings(&default_path, &target_path, &state, "i18n");
         assert_eq!(rows[0].target, "Hallo");
-        assert_eq!(rows[0].status, "done");
+        // Legacy "done" normalizes to "translated".
+        assert_eq!(rows[0].status, "translated");
 
         // Source text changed since the translation was saved -> outdated.
         write(&default_path, "{ \"k\": \"Hello there\" }");
@@ -738,7 +756,7 @@ mod tests {
     }
 
     #[test]
-    fn fully_translated_mod_is_imported() {
+    fn fully_translated_mod_is_translated() {
         let root = crate::test_support::temp_dir("scan-imported");
         let mod_dir = root.join("Mod");
         write(&mod_dir.join("manifest.json"), "{ \"UniqueID\": \"a.b\" }");
@@ -746,7 +764,7 @@ mod tests {
         write(&mod_dir.join("i18n").join("de.json"), "{ \"a\": \"eins\" }");
 
         let scanned = &scan_mods(&root, "de", &root).mods[0];
-        assert_eq!(scanned.status, "imported");
+        assert_eq!(scanned.status, "translated");
         assert!((scanned.progress - 1.0).abs() < 1e-9);
 
         std::fs::remove_dir_all(&root).ok();

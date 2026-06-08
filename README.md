@@ -4,7 +4,7 @@ Early-stage planning repository for **Stardew i18n Translator** (`stardew-i18n-t
 
 > [!IMPORTANT]
 > **Status:** Private early development.  
-> **Current Phase:** `M2 complete` — string table, editor dialog, protected-token validation, and the **persisted 6-status model** are done. Edits are saved to disk per mod (`outdated` detection via source hash), and the mod-tree progress reflects saved work. Next: **M3 — export** clean `i18n/<lang>.json`.  
+> **Current Phase:** `M2` — string table, editor dialog, protected-token validation, and a **persisted 4-status model** (`untranslated` · `translated` · `outdated` · `not-translatable`) are done; edits are saved to disk per mod with surgical `outdated` detection. Remaining M2: right-click context menu + multi-select. Then **M3 — export**.  
 > **Stack:** [ADR 0001](docs/adr/0001-tech-stack-decision.md) is **Accepted** (Tauri / Rust + TypeScript). The code freeze is lifted for this stack; do not introduce other frameworks.
 
 ## Documentation

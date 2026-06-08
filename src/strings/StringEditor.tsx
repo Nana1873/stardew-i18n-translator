@@ -7,7 +7,7 @@
  * disk (status defaults to `done`).
  *
  * Shortcuts: Ctrl+Enter save · Esc cancel · Alt+←/→ prev/next · F2 toggle
- * done/review-needed · F3 copy original · F4 reset.
+ * not-translatable · F3 copy original · F4 reset.
  */
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import type { StringStatus } from "../tauri/commands";
@@ -36,10 +36,10 @@ interface StringEditorProps {
   onNavigate: (delta: number) => void;
 }
 
-/** The status to save into: keep an explicit review/not-translatable choice,
- * otherwise saving marks the string done. */
+/** The status to save into: keep an explicit not-translatable choice, otherwise
+ * saving marks the string translated. */
 function initialSaveStatus(status: StringStatus): StringStatus {
-  return status === "review-needed" || status === "not-translatable" ? status : "done";
+  return status === "not-translatable" ? "not-translatable" : "translated";
 }
 
 /** Small shortcut hint on a button; aria-hidden so the accessible name stays clean. */
@@ -89,8 +89,8 @@ export function StringEditor({
     onNavigate(delta);
   }
 
-  function toggleReview() {
-    setStatus((current) => (current === "review-needed" ? "done" : "review-needed"));
+  function toggleNotTranslatable() {
+    setStatus((current) => (current === "not-translatable" ? "translated" : "not-translatable"));
   }
 
   /** Insert a protected token at the cursor (or replace the selection). */
@@ -122,7 +122,7 @@ export function StringEditor({
       navigate(1);
     } else if (event.key === "F2") {
       event.preventDefault();
-      toggleReview();
+      toggleNotTranslatable();
     } else if (event.key === "F3") {
       event.preventDefault();
       setValue(row.source);
@@ -157,8 +157,8 @@ export function StringEditor({
                 color: STATUS_META[status].color,
                 borderColor: STATUS_META[status].color,
               }}
-              onClick={toggleReview}
-              title="Toggle done / review-needed (F2)"
+              onClick={toggleNotTranslatable}
+              title="Toggle translated / not-translatable (F2)"
             >
               ● {STATUS_META[status].label}
             </button>
