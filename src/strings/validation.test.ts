@@ -32,4 +32,32 @@ describe("validate", () => {
     const issues = validate("Hi", "bad \ud800 char", false);
     expect(issues.some((i) => i.ruleId === "json-invalid")).toBe(true);
   });
+
+  it("flags a dropped @ player-name token (Stardew dialogue)", () => {
+    const issues = validate("Thank you, @. Really!", "Thank you, . Really!", false);
+    expect(issues).toEqual([
+      {
+        ruleId: "token-missing",
+        severity: "error",
+        message: "Missing token @ (player name)",
+      },
+    ]);
+  });
+
+  it("catches a dropped second $b via multiset comparison", () => {
+    const issues = validate("a$b b$b c", "a$b b c", false);
+    expect(issues.map((i) => i.ruleId)).toEqual(["token-missing"]);
+    expect(issues[0].message).toBe("Missing token $b");
+  });
+
+  it("treats a #$b# dialogue break and $s command as protected tokens", () => {
+    expect(validate("Hi.$s#$b#Bye?$s", "Hallo.$s#$b#Tschüss?$s", false)).toEqual([]);
+    // Distinct missing tokens ($s and #$b#) -> one issue each.
+    const broken = validate("Hi.$s#$b#Bye?$s", "Hallo. Tschüss?", false);
+    expect(broken.map((i) => i.ruleId)).toEqual(["token-missing", "token-missing"]);
+    expect(broken.map((i) => i.message).sort()).toEqual([
+      "Missing token #$b#",
+      "Missing token $s",
+    ]);
+  });
 });

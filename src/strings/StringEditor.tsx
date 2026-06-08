@@ -12,6 +12,7 @@
  */
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import { validate } from "./validation";
+import { describeToken, extractProtectedTokens } from "./protectedTokens";
 
 export interface EditorRow {
   key: string;
@@ -42,10 +43,8 @@ function Kbd({ children }: { children: string }) {
   );
 }
 
-const TOKEN_RE = /\{\{([^}]+)\}\}/g;
-
 function tokensOf(text: string): string[] {
-  return Array.from(text.matchAll(TOKEN_RE), (match) => match[0]);
+  return Array.from(new Set(extractProtectedTokens(text)));
 }
 
 export function StringEditor({
@@ -124,7 +123,7 @@ export function StringEditor({
             Tokens:{" "}
             {sourceTokens.map((token, i) => (
               <code key={i} className="editor__token">
-                {token}
+                {describeToken(token)}
               </code>
             ))}
           </div>
