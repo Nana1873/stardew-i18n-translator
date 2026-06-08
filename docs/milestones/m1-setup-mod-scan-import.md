@@ -9,7 +9,7 @@ Implement the core project setup flow, recursively scan the Stardew Valley Mods 
 * **Mod Directory Scanner:** Recursive scanner searching for folders containing `manifest.json`.
 * **Manifest & UpdateKeys Parser:** Extract mod metadata (name, author, version, Nexus Mod ID from `UpdateKeys`).
 * **i18n Loader:** Read `i18n/default.json` and import existing target language translations (`i18n/<lang>.json`).
-* **Mod List UI:** A list view displaying detected mods, translation status, and file counts.
+* **Mod List UI:** A **tree** view (SSE-AT style) grouping detected mods by package (top-level Mods subfolder); multi-component downloads expand to per-component rows with a derived, aggregated parent row; single-component mods render flat. Shows translation status, file counts, progress.
 
 ## Out of Scope
 * The main String Table/Editor UI grid.
@@ -20,12 +20,12 @@ Implement the core project setup flow, recursively scan the Stardew Valley Mods 
 ## Acceptance Criteria
 1. User can choose directories, and paths are validated (must contain `manifest.json` under Mod subfolders).
 2. Missing or target language files are correctly recognized (e.g. "default.json exists, de.json missing").
-3. Mod list table renders correctly with columns: Mod Name, Nexus ID, Status, and Translation Progress percentage.
+3. Mod list **tree** renders correctly with the columns from [SPEC.md §7.3](../../SPEC.md): Status | Mod | Version | Nexus (clickable link) | Dateien (file count) | Fortschritt (progress %). Multi-component downloads (e.g. Ridgeside Village → `[CP]`/`[CC]`/SMAPI) group under an expandable parent that aggregates status/progress and surfaces the real Nexus ID from its `[CP]` component (ignoring `Nexus:-1`); single-component mods render flat.
 4. If glossary extraction fails or is skipped, the scanner still functions completely.
 5. All file parsing and scanner logic has unit tests with mock fixtures.
 
 ## Risks
-* **Varying Manifest Structures:** Mods may have incomplete manifest files. (Mitigation: Implement safe fallback defaults and log warnings without crashing).
+* **Varying Manifest Structures:** Mods may have incomplete manifests, multi-component layouts (one download = several `manifest.json`, e.g. Ridgeside Village's `[CP]`/`[CC]`/`[FTM]`/SMAPI parts), or sentinel `Nexus:-1` UpdateKeys. (Mitigation: each manifest = one mod; skip components without `i18n/`; treat non-positive Nexus IDs as "no ID"; safe fallbacks + warnings, no crash. See [SPEC.md §6 Edge Cases](../../SPEC.md).)
 * **Massive Mod Folders:** Some users have 300+ mods, causing scanning bottlenecks. (Mitigation: Use asynchronous scanning, and do not block the UI thread).
 
 ## Suggested Issue Breakdown
@@ -42,8 +42,8 @@ Implement the core project setup flow, recursively scan the Stardew Valley Mods 
 * **Goal:** Read base English/default key-values and import existing target translations, handling missing files gracefully.
 * **Suggested Agent:** Codex.
 
-### Issue 6: Display mod list table
-* **Goal:** Bind the scan results to the left panel Mod List UI, showing progress bars and metadata.
+### Issue 6: Display mod list tree (grouped by package)
+* **Goal:** Bind scan results to the left-panel Mod List tree: group mods by `packageId`, render multi-component packages as expandable parents with derived aggregate rows, single-component mods flat, with progress bars and metadata.
 * **Suggested Agent:** Claude Code.
 
 ## Agent Handoff Notes

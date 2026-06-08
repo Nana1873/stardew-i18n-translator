@@ -19,7 +19,7 @@ graph LR
 ## 2. Step-by-Step Instructions
 
 ### Step 1: Initialize
-* Read [SPEC.md](file:///SPEC.md) and [SCOPE_GUARDRAILS.md](file:///SCOPE_GUARDRAILS.md) to understand scope limits.
+* Read [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md) to understand scope limits.
 * Work strictly on one issue.
 
 ### Step 2: Request/Formulate Plan
@@ -35,4 +35,4 @@ graph LR
 * Ensure tests run successfully.
 
 ### Step 5: Handoff
-* Write a final response summary using the [Handoff Template](file:///docs/agents/handoff-template.md).
+* Write a final response summary using the [Handoff Template](../../docs/agents/handoff-template.md).

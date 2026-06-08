@@ -4,9 +4,9 @@ This document defines strict boundaries for the **Stardew i18n Translator** proj
 
 ## Core Rules
 
-1. **Source of Truth:** [SPEC.md](file:///SPEC.md) is the absolute authority for features and requirements.
-2. **Code Freeze:** No application code is allowed to be written or scaffolded before [ADR 0001: Tech Stack Decision](file:///docs/adr/0001-tech-stack-decision.md) is accepted and approved.
-3. **Strict Validation:** If a feature or requirement is not explicitly defined in [SPEC.md](file:///SPEC.md), **do not implement it**. 
+1. **Source of Truth:** [SPEC.md](SPEC.md) is the absolute authority for features and requirements.
+2. **Code Freeze:** No application code is allowed to be written or scaffolded before [ADR 0001: Tech Stack Decision](docs/adr/0001-tech-stack-decision.md) is accepted and approved.
+3. **Strict Validation:** If a feature or requirement is not explicitly defined in [SPEC.md](SPEC.md), **do not implement it**. 
 4. **Ambiguity Resolution:** If a feature is ambiguous or unclear, move it to the deferred features milestone (`v1.1` or `v2`) or open an issue/discussion. Do not guess.
 
 ## Core v1 Technical Guardrails

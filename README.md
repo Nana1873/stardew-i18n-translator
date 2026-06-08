@@ -4,13 +4,17 @@ Early-stage planning repository for **Stardew i18n Translator** (`stardew-i18n-t
 
 > [!IMPORTANT]
 > **Status:** Private early-stage planning.  
-> **Current Phase:** `M0 - Tech Stack Decision`  
-> **Warning:** Do NOT implement application code before [ADR 0001: Tech Stack Decision](file:///docs/adr/0001-tech-stack-decision.md) is accepted and approved.
+> **Current Phase:** `M0 complete` → next: `M1 - Setup + Mod Scan + Import`  
+> **Stack:** [ADR 0001](docs/adr/0001-tech-stack-decision.md) is **Accepted** (Tauri / Rust + TypeScript). The code freeze is lifted for this stack; do not introduce other frameworks.
 
 ## Documentation
-* [Product & Architecture Specification](file:///SPEC.md) - The source of truth for features and behavior.
-* [Scope Guardrails](file:///SCOPE_GUARDRAILS.md) - Strict rules for keeping the scope bounded.
-* [Agent Workflow Guidance](file:///AGENTS.md) - Rules and expectations for AI agent contributions.
+* [Product & Architecture Specification](SPEC.md) - The source of truth for features and behavior.
+* [Scope Guardrails](SCOPE_GUARDRAILS.md) - Strict rules for keeping the scope bounded.
+* [Agent Workflow Guidance](AGENTS.md) - Rules and expectations for AI agent contributions.
+* [ADR 0001 — Tech Stack Decision](docs/adr/0001-tech-stack-decision.md) - The `M0` deliverable. **Accepted: Tauri (Rust + TypeScript/WebView2)** — chosen for performance and memory on very large mods (e.g. Ridgeside Village ≈ 17.5k strings in one file).
+* **Milestones:** [M0 Tech Stack](docs/milestones/m0-tech-stack-decision.md) · [M1 Setup/Scan/Import](docs/milestones/m1-setup-mod-scan-import.md) · [M2 Table/Editor/Validation](docs/milestones/m2-string-table-editor-validation.md) · [M3 Export](docs/milestones/m3-export.md) · [M4 Claude-Code Batch](docs/milestones/m4-claude-code-batch.md)
+* **Research:** [SMAPI i18n](docs/research/stardew-smapi-i18n.md) · [Nexus & translation-mod automation feasibility](docs/research/nexus-mods-strategy.md) · [Reusable old-project assets](docs/research/reusable-from-old-project.md)
+* **Agent workflows:** [Overview](docs/agents/README.md) · [Antigravity](docs/agents/antigravity-workflow.md) · [Codex](docs/agents/codex-workflow.md) · [Claude Code](docs/agents/claude-code-workflow.md) · [Handoff template](docs/agents/handoff-template.md)
 
 ## Core v1 Scope Summary
 * **Path Configuration:** Find Stardew Valley game directory and choose Mod folder.
