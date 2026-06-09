@@ -38,6 +38,45 @@ pub struct Glossary {
     pub terms: HashMap<String, String>,
 }
 
+/// Official glossary terms (english -> target) that occur as whole words in
+/// `source`. A faithful port of the editor's `matchGlossary` (TS): case-
+/// insensitive, terms shorter than 3 chars skipped, word boundaries required,
+/// capped at 15. Used to inject term guidance into the local-LLM prompt (M6).
+pub fn match_terms(source: &str, glossary: &Glossary) -> Vec<(String, String)> {
+    let lower: Vec<char> = source.to_lowercase().chars().collect();
+    let is_word = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric());
+    let mut out: Vec<(String, String)> = Vec::new();
+
+    for (term, translation) in &glossary.terms {
+        if term.chars().count() < 3 {
+            continue;
+        }
+        let needle: Vec<char> = term.to_lowercase().chars().collect();
+        if let Some(idx) = window_position(&lower, &needle) {
+            let before = if idx == 0 { None } else { lower.get(idx - 1) };
+            let after = lower.get(idx + needle.len());
+            if is_word(before) || is_word(after) {
+                continue;
+            }
+            out.push((term.clone(), translation.clone()));
+            if out.len() >= 15 {
+                break;
+            }
+        }
+    }
+    // Deterministic order (HashMap iteration is not) for stable prompts/tests.
+    out.sort();
+    out
+}
+
+/// First index in `haystack` where `needle` occurs as a contiguous slice.
+fn window_position(haystack: &[char], needle: &[char]) -> Option<usize> {
+    if needle.is_empty() || needle.len() > haystack.len() {
+        return None;
+    }
+    (0..=haystack.len() - needle.len()).find(|&i| &haystack[i..i + needle.len()] == needle)
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GlossaryInfo {
@@ -182,6 +221,27 @@ mod tests {
         assert_eq!(game_locale_suffix("de"), Some("de-DE"));
         assert_eq!(game_locale_suffix("pt"), Some("pt-BR"));
         assert_eq!(game_locale_suffix("xx"), None);
+    }
+
+    #[test]
+    fn match_terms_finds_whole_words_only() {
+        let mut terms = HashMap::new();
+        terms.insert("Parsnip".to_string(), "Pastinake".to_string());
+        terms.insert("Pufferfish".to_string(), "Kugelfisch".to_string());
+        terms.insert("ox".to_string(), "Ochse".to_string()); // < 3 chars: skipped
+        let glossary = Glossary {
+            terms,
+            ..Default::default()
+        };
+
+        // "Parsnip" matches (case-insensitive, whole word); "Pufferfish" absent.
+        let hits = match_terms("I planted a parsnip today.", &glossary);
+        assert_eq!(hits, vec![("Parsnip".to_string(), "Pastinake".to_string())]);
+
+        // Substring inside another word must not match.
+        assert!(match_terms("parsnips everywhere", &glossary).is_empty());
+        // Too-short term is never matched even as a whole word.
+        assert!(match_terms("an ox cart", &glossary).is_empty());
     }
 
     #[test]

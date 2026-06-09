@@ -50,6 +50,21 @@ pub fn missing_tokens(source: &str, target: &str) -> bool {
         .any(|(token, count)| target_counts.get(token).copied().unwrap_or(0) < *count)
 }
 
+/// The protected tokens that `target` is missing (or under-represents) relative
+/// to `source`, each listed once. Empty when nothing is missing. Used by the
+/// local-LLM translator (M6) to flag/retry a result that dropped a token.
+pub fn missing_token_list(source: &str, target: &str) -> Vec<String> {
+    let source_counts = counts(source);
+    let target_counts = counts(target);
+    let mut missing: Vec<String> = source_counts
+        .iter()
+        .filter(|(token, count)| target_counts.get(*token).copied().unwrap_or(0) < **count)
+        .map(|(token, _)| token.clone())
+        .collect();
+    missing.sort();
+    missing
+}
+
 fn counts(value: &str) -> HashMap<String, usize> {
     let mut map = HashMap::new();
     for token in extract(value) {
@@ -210,6 +225,17 @@ mod tests {
         assert!(!missing_tokens("Hi {{name}}", "Hallo {{name}}"));
         // Extra token in target is not a *missing* one.
         assert!(!missing_tokens("Hi", "Hallo {{name}}"));
+    }
+
+    #[test]
+    fn missing_token_list_reports_each_missing_token_once() {
+        // Two `$b` in source, one in target -> `$b` reported; `{{name}}` is fine.
+        assert_eq!(
+            missing_token_list("Hi {{name}}$b more$b", "Hallo {{name}}$b mehr"),
+            vec!["$b".to_string()],
+        );
+        // Nothing missing.
+        assert!(missing_token_list("Hi {{name}}", "Hallo {{name}}").is_empty());
     }
 
     #[test]

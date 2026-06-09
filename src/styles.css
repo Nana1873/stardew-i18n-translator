@@ -736,6 +736,19 @@ body {
   border-color: var(--accent);
 }
 
+/* Local-AI translate button + status message (M6). */
+.editor__ai-btn {
+  border-color: #e0a44e !important;
+  color: #e0a44e;
+}
+
+.editor__ai-msg {
+  display: inline-block;
+  margin-right: 12px;
+  font-size: 12px;
+  color: #e0a44e;
+}
+
 .editor__kbd {
   margin-left: 5px;
   padding: 0 4px;

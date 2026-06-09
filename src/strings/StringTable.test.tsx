@@ -202,6 +202,75 @@ describe("StringTable", () => {
     ).toBeInTheDocument();
   });
 
+  it("AI translate fills the field, flags needs-review, and Save confirms translated", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({ text: "Tschüss!", missingTokens: [] });
+    render(<StringTable mod={MOD} onTranslate={onTranslate} />);
+    fireEvent.doubleClick(await screen.findByText("bye"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    await waitFor(() => expect(textarea.value).toBe("Tschüss!"));
+    expect(onTranslate).toHaveBeenCalledWith("Bye");
+    // Badge shows the unreviewed status.
+    expect(screen.getByText(/Needs review/)).toBeInTheDocument();
+
+    // Explicit Save = the user reviewed it → persisted as translated.
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({ key: "bye", target: "Tschüss!", status: "translated" }),
+      ),
+    );
+  });
+
+  it("navigating away from an AI suggestion auto-saves it as review-needed", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({ text: "Hallo Welt", missingTokens: [] });
+    render(<StringTable mod={MOD} onTranslate={onTranslate} />);
+    fireEvent.doubleClick(await screen.findByText("greeting"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    await waitFor(() =>
+      expect((screen.getByLabelText("Translation") as HTMLTextAreaElement).value).toBe(
+        "Hallo Welt",
+      ),
+    );
+
+    // Next (auto-save without confirming) keeps the review-needed status.
+    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({ key: "greeting", status: "review-needed" }),
+      ),
+    );
+  });
+
+  it("flags dropped tokens returned by the AI", async () => {
+    mockStrings([
+      { key: "g", source: "Hi {{name}}", target: "" },
+      { key: "ok", source: "Yes", target: "" },
+    ]);
+    const onTranslate = vi
+      .fn()
+      .mockResolvedValue({ text: "Hallo", missingTokens: ["{{name}}"] });
+    render(<StringTable mod={MOD} onTranslate={onTranslate} />);
+    fireEvent.doubleClick(await screen.findByText("g"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    expect(await screen.findByText(/AI dropped token\(s\): \{\{name\}\}/)).toBeInTheDocument();
+  });
+
+  it("without an AI configured, Translate shows a configure hint", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("greeting"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    expect(
+      await screen.findByText(/Configure a local AI in Settings/),
+    ).toBeInTheDocument();
+  });
+
   it("right-click → Mark as not translatable persists the status", async () => {
     render(<StringTable mod={MOD} />);
     fireEvent.contextMenu(await screen.findByText("greeting"));

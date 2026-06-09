@@ -210,6 +210,9 @@ export function SettingsDialog({
             <p className="wizard__muted">
               Connect a local AI server (LM Studio, Ollama, or any OpenAI-compatible
               endpoint) to translate strings offline. The app works fully without it.
+              Use a capable <strong>instruct</strong> model (e.g. a 7B+ Qwen/Llama
+              instruct) — tiny or “abliterated” models often ignore the rules and
+              produce junk.
             </p>
             <label className="wizard__field">
               <span>Provider</span>
