@@ -295,6 +295,7 @@ pub fn load_strings(
     let target = read_object(target_path).unwrap_or_default();
     source
         .iter()
+        .filter(|(key, _)| !is_ignored_i18n_key(key))
         .map(|(key, value)| {
             let source_text = value_to_text(value);
             let (effective_target, status) =
@@ -358,6 +359,13 @@ fn value_to_text(value: &Value) -> String {
     }
 }
 
+/// Keys that are i18n metadata, not translatable strings. `$schema` is the
+/// JSON-schema reference SMAPI's i18n loader ignores (it only powers editor
+/// autocompletion), so it must not appear in the table or the key counts.
+fn is_ignored_i18n_key(key: &str) -> bool {
+    key == "$schema"
+}
+
 /// Parse a flat i18n JSON object (lenient), returning its string entries.
 fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
     let body = std::fs::read_to_string(path).ok()?;
@@ -375,10 +383,11 @@ fn count_keys(
     let Some(source) = read_object(default_path) else {
         return (0, 0);
     };
-    let total = source.len();
     let target = read_object(target_path).unwrap_or_default();
+    let total = source.keys().filter(|key| !is_ignored_i18n_key(key)).count();
     let translated = source
         .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
         .filter(|key| {
             match state.get(&translations::entry_key(relative_dir, key)) {
                 // Not-translatable counts as handled, even without target text.
@@ -785,6 +794,27 @@ mod tests {
         assert_eq!(rows[0].target, "");
         assert_eq!(rows[1].key, "alpha");
         assert_eq!(rows[1].target, "Ä");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn ignores_schema_meta_key() {
+        let root = crate::test_support::temp_dir("schema-key");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{ \"$schema\": \"https://smapi.io/schemas/i18n.json\", \"k\": \"Hello\" }",
+        );
+
+        let rows = load_strings(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &ModState::new(),
+            "i18n",
+        );
+        assert_eq!(rows.len(), 1, "$schema must not be a translatable row");
+        assert_eq!(rows[0].key, "k");
 
         std::fs::remove_dir_all(&root).ok();
     }
