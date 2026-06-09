@@ -29,6 +29,11 @@ winreg = "0.52"
 # Faster execution of large mod-folder scans even in dev builds.
 [profile.dev]
 opt-level = 1
+# opt-level > 0 + incremental on Windows can emit duplicate/garbled anon LLVM
+# symbols, causing intermittent LNK2019/LNK2001 link failures that only a
+# `cargo clean` clears. Disabling incremental for our (small) crate avoids it;
+# dependencies compile non-incrementally anyway, so their cache is unaffected.
+incremental = false
 
 [profile.dev.package."*"]
 opt-level = 3
