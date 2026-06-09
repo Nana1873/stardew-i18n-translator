@@ -68,8 +68,27 @@ body {
   cursor: not-allowed;
 }
 
-.toolbar__search {
+.toolbar__filters {
   margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.toolbar__statusfilter {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 6px;
+}
+
+.toolbar__statusfilter:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.toolbar__search {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
