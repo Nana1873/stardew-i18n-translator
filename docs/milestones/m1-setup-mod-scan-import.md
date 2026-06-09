@@ -30,7 +30,7 @@ Implement the core project setup flow, recursively scan the Stardew Valley Mods 
 
 ## Status (shipped vs. open) — 2026-06-09
 
-**Shipped:** setup wizard (Stardew folder → Mods folder → languages → glossary step), settings persistence, Stardew auto-detection (Steam/GOG, registry + `libraryfolders.vdf`), manual folder override, recursive `manifest.json` scanner with lenient JSON (BOM/comments/trailing commas), Nexus-ID extraction (rejecting the `Nexus:-1` sentinel), `i18n/default.json` + `i18n/<lang>.json` import, the package→component mod **tree** with Status | Mod | Version | Nexus | Dateien | Fortschritt, progress/status roll-up, and clickable Nexus links.
+**Shipped:** setup wizard (Stardew folder → Mods folder → languages → glossary step), settings persistence, Stardew auto-detection (Steam/GOG, registry + `libraryfolders.vdf`), manual folder override, recursive `manifest.json` scanner with lenient JSON (BOM/comments/trailing commas), Nexus-ID extraction (rejecting the `Nexus:-1` sentinel), `i18n/default.json` + `i18n/<lang>.json` import, the package→component mod **tree** with Status | Mod | Version | Nexus | Dateien | Fortschritt (a **progress bar + percentage** per row), progress/status roll-up, and clickable Nexus links.
 
 **Glossary (shipped, post-audit):** the glossary extractor is built (SPEC §5). It
 reads a **StardewXnbHack**-unpacked `Content (unpacked)/Strings/*.json` dump
