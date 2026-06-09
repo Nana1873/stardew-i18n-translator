@@ -74,6 +74,29 @@ describe("ModList", () => {
     expect(screen.getByText("└─")).toBeInTheDocument();
   });
 
+  it("renders a progress bar whose fill width matches the percentage", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "p",
+            name: "Half Done",
+            packageId: "Half",
+            totalKeys: 10,
+            translatedKeys: 5,
+            progress: 0.5,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    const fill = document.querySelector(".modrow__bar-fill") as HTMLElement | null;
+    expect(fill).not.toBeNull();
+    expect(fill!.style.width).toBe("50%");
+    expect(screen.getByText("50%")).toBeInTheDocument();
+  });
+
   it("does not draw a connector on a single-component (flat) mod", () => {
     render(
       <ModList

@@ -80,7 +80,18 @@ function ProgressCell({ total, progress }: { total: number; progress: number }) 
   if (total === 0) {
     return <span className="modrow__progress">—</span>;
   }
-  return <span className="modrow__progress">{Math.round(progress * 100)}%</span>;
+  const pct = Math.round(progress * 100);
+  return (
+    <span className="modrow__progress" title={`${pct}%`}>
+      <span className="modrow__bar">
+        <span
+          className={`modrow__bar-fill${pct >= 100 ? " modrow__bar-fill--full" : ""}`}
+          style={{ width: `${pct}%` }}
+        />
+      </span>
+      <span className="modrow__pct">{pct}%</span>
+    </span>
+  );
 }
 
 interface ModListProps {
