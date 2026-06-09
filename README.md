@@ -13,17 +13,18 @@
 * **Export (M3):** per-mod export to `i18n/<lang>.json` in `default.json` key order (UTF-8 no BOM, 2-space), `.bak` backup + atomic write, token-safe per-key skip, summary dialog.
 
 ### Still open for v1 (tracked in the milestone docs)
-* **M2:** column sorting, "Search Translation on Nexus" context action, modal scan-progress dialog. *(text search, status filter, and `Ctrl+A` are now done.)*
+* **M2:** column sorting, modal scan-progress dialog. *(text search, status filter, and `Ctrl+A` are now done.)*
 * **M3:** optional overwrite-confirmation (currently silent `.bak`). *(Export-all is now done.)*
 * **M1:** real glossary extraction (`Content (unpacked)/`) — currently an optional, non-blocking placeholder step.
 * **M4 (not started):** Claude-Code batch export/import (`review-needed` status returns here).
+* **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
 
 ## Documentation
 * [Product & Architecture Specification](SPEC.md) - The source of truth for features and behavior.
 * [Scope Guardrails](SCOPE_GUARDRAILS.md) - Strict rules for keeping the scope bounded.
 * [Agent Workflow Guidance](AGENTS.md) - Rules and expectations for AI agent contributions.
 * [ADR 0001 — Tech Stack Decision](docs/adr/0001-tech-stack-decision.md) - The `M0` deliverable. **Accepted: Tauri (Rust + TypeScript/WebView2)** — chosen for performance and memory on very large mods (e.g. Ridgeside Village ≈ 17.5k strings in one file).
-* **Milestones:** [M0 Tech Stack](docs/milestones/m0-tech-stack-decision.md) · [M1 Setup/Scan/Import](docs/milestones/m1-setup-mod-scan-import.md) · [M2 Table/Editor/Validation](docs/milestones/m2-string-table-editor-validation.md) · [M3 Export](docs/milestones/m3-export.md) · [M4 Claude-Code Batch](docs/milestones/m4-claude-code-batch.md)
+* **Milestones:** [M0 Tech Stack](docs/milestones/m0-tech-stack-decision.md) · [M1 Setup/Scan/Import](docs/milestones/m1-setup-mod-scan-import.md) · [M2 Table/Editor/Validation](docs/milestones/m2-string-table-editor-validation.md) · [M3 Export](docs/milestones/m3-export.md) · [M4 Claude-Code Batch](docs/milestones/m4-claude-code-batch.md) · [M5 Nexus Download (deferred)](docs/milestones/m5-nexus-translation-download.md)
 * **Research:** [SMAPI i18n](docs/research/stardew-smapi-i18n.md) · [Nexus & translation-mod automation feasibility](docs/research/nexus-mods-strategy.md) · [Reusable old-project assets](docs/research/reusable-from-old-project.md)
 * **Agent workflows:** [Overview](docs/agents/README.md) · [Antigravity](docs/agents/antigravity-workflow.md) · [Codex](docs/agents/codex-workflow.md) · [Claude Code](docs/agents/claude-code-workflow.md) · [Handoff template](docs/agents/handoff-template.md)
 
