@@ -131,6 +131,29 @@ describe("StringTable", () => {
     expect(textarea.value).toBe("{{name}}");
   });
 
+  it("filters rows by search text across key/original/target", async () => {
+    render(<StringTable mod={MOD} search="bye" statusFilter="all" />);
+
+    expect(await screen.findByText("bye")).toBeInTheDocument();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+  });
+
+  it("filters rows by status", async () => {
+    render(<StringTable mod={MOD} search="" statusFilter="untranslated" />);
+
+    // Only the untranslated row ("bye", empty target) remains.
+    expect(await screen.findByText("bye")).toBeInTheDocument();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+  });
+
+  it("shows an empty hint when nothing matches the filter", async () => {
+    render(<StringTable mod={MOD} search="zzz-no-match" statusFilter="all" />);
+
+    expect(
+      await screen.findByText("No strings match the current filter."),
+    ).toBeInTheDocument();
+  });
+
   it("right-click → Mark as not translatable persists the status", async () => {
     render(<StringTable mod={MOD} />);
     fireEvent.contextMenu(await screen.findByText("greeting"));

@@ -21,10 +21,10 @@ Implement the main workspace string table, the double-click editing dialog, prot
 2. Double-clicking a row opens a modal dialog that correctly updates the table on save. ✅
 3. Token validation flags missing/added protected tokens (e.g. source has `{{PlayerName}}` or `$b`, target drops it → `token-missing` error). ✅
 4. Editing a string updates its status per SPEC §9 (saving sets `translated`; `not-translatable` via F2; token errors surface as a validation issue, **not** a status). ✅
-5. Multi-select via Ctrl+Click (toggle) and Shift+Click (range). ✅ — `Ctrl+A` (select all visible) is **still open**.
+5. Multi-select via Ctrl+Click (toggle), Shift+Click (range), and `Ctrl+A` (select all visible). ✅
 6. Right-click context menu with the v1 bulk actions (Edit, Copy original/translation, Mark translated, Mark not-translatable, Clear translation). ✅ — "Search Translation on Nexus" mod-level action is **still open**.
-7. Search bar filters results in real-time. ❌ **Still open** (toolbar search is currently disabled).
-8. Status filter shows only strings of the selected status. ❌ **Still open**.
+7. Search bar filters results in real-time (across key/original/target). ✅
+8. Status filter shows only strings of the selected status. ✅
 9. Sorting by column. ❌ **Still open**.
 10. Validation rules are covered by unit tests. ✅
 
@@ -32,11 +32,10 @@ Implement the main workspace string table, the double-click editing dialog, prot
 
 **Shipped (PRs #7–#24):** virtualized string table with full-row status tint, double-click editor (live validation, token chips, status badge, keyboard shortcuts Ctrl+Enter/Esc/Alt+←→/F2/F3/F4), the full protected-token taxonomy compared as multisets, the 4-status model with persisted per-string state and surgical `outdated` detection, multi-select (Ctrl/Shift-click), and the right-click context menu with bulk actions.
 
+**Also shipped (post-audit, 2026-06-09):** toolbar text **search** across key/original/target, **status filter** dropdown, and **Ctrl+A** select-all-visible. Filtering operates on a visible view while selection/editor navigation keep stable data indices.
+
 **Still open for v1 (tracked, not yet built):**
-- Text **search** across key/original/target (toolbar input is disabled).
-- **Status filter** dropdown.
 - **Column sorting**.
-- **Ctrl+A** select-all-visible.
 - **"Search Translation on Nexus"** mod-level context action (SPEC §7.6 / §12).
 - **Scan progress dialog** is simplified to an inline "Scanning…" label (SPEC §7.2 describes a modal).
 
