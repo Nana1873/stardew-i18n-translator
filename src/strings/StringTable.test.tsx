@@ -106,6 +106,25 @@ describe("StringTable", () => {
     );
   });
 
+  it("Reset clears the field and saves the string as untranslated", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("greeting"));
+
+    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("Hallo");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect(textarea.value).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({ key: "greeting", target: "", status: "untranslated" }),
+      ),
+    );
+  });
+
   it("shows a validation error icon when a source token is missing", async () => {
     mockStrings([
       { key: "greet", source: "Hi {{name}}", target: "Hallo", targetPresent: true },

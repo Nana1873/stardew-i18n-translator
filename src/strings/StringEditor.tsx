@@ -4,10 +4,11 @@
  * Opened by double-clicking a string row. Source on the left (read-only),
  * editable target on the right, with prev/next navigation, live validation, a
  * status badge, and keyboard shortcuts. Saving persists the target + status to
- * disk (status defaults to `done`).
+ * disk; the saved status follows the field (empty → untranslated, text →
+ * translated) unless not-translatable is chosen.
  *
  * Shortcuts: Ctrl+Enter save · Esc cancel · Alt+←/→ prev/next · F2 toggle
- * not-translatable · F3 copy original · F4 reset.
+ * not-translatable · F3 copy original · F4 reset (clears the field).
  */
 import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
 import type { StringStatus } from "../tauri/commands";
@@ -79,18 +80,32 @@ export function StringEditor({
     textareaRef.current?.focus();
   }, [row.key, row.file, row.target, row.status]);
 
+  // The status to persist: an explicit not-translatable choice is kept;
+  // otherwise it follows the field (empty → untranslated, text → translated).
+  function effectiveStatus(): StringStatus {
+    if (status === "not-translatable") return "not-translatable";
+    return value.trim() === "" ? "untranslated" : "translated";
+  }
+
   function save() {
-    onSave(value, status);
+    onSave(value, effectiveStatus());
     onClose();
   }
 
   function navigate(delta: number) {
-    if (value !== row.target) onSave(value, status);
+    if (value !== row.target) onSave(value, effectiveStatus());
     onNavigate(delta);
   }
 
   function toggleNotTranslatable() {
     setStatus((current) => (current === "not-translatable" ? "translated" : "not-translatable"));
+  }
+
+  /** Reset (F4): clear the target field; the string becomes untranslated. */
+  function reset() {
+    setValue("");
+    setStatus("translated"); // drop any not-translatable; empty value → untranslated
+    textareaRef.current?.focus();
   }
 
   /** Insert a protected token at the cursor (or replace the selection). */
@@ -128,13 +143,14 @@ export function StringEditor({
       setValue(row.source);
     } else if (event.key === "F4") {
       event.preventDefault();
-      setValue(row.target);
+      reset();
     }
   }
 
   const sourceTokenCounts = countTokens(row.source);
   const valueTokenCounts = countTokens(value);
   const issues = validate(row.source, value, row.targetPresent);
+  const shownStatus = effectiveStatus();
 
   return (
     <div
@@ -154,13 +170,13 @@ export function StringEditor({
               type="button"
               className="editor__status"
               style={{
-                color: STATUS_META[status].color,
-                borderColor: STATUS_META[status].color,
+                color: STATUS_META[shownStatus].color,
+                borderColor: STATUS_META[shownStatus].color,
               }}
               onClick={toggleNotTranslatable}
               title="Toggle translated / not-translatable (F2)"
             >
-              ● {STATUS_META[status].label}
+              ● {STATUS_META[shownStatus].label}
             </button>
             <span className="editor__crumbs">
               {modName} · {row.file} · {index + 1}/{total}
@@ -233,7 +249,7 @@ export function StringEditor({
           <button type="button" onClick={() => setValue(row.source)}>
             Copy original <Kbd>F3</Kbd>
           </button>
-          <button type="button" onClick={() => setValue(row.target)}>
+          <button type="button" onClick={reset}>
             Reset <Kbd>F4</Kbd>
           </button>
           <button type="button" onClick={onClose}>
