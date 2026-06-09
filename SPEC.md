@@ -225,11 +225,11 @@ Calculated per file, aggregated per mod (across all `i18n/` folders), and rolled
 
 ## 7. Main Overview / UI Screens
 
-The v1 UI has exactly **6 screen elements**. No dashboards, no analytics, no multi-page navigation.
+The v1 UI has exactly **7 screen elements** (the Setup Wizard, Scan Dialog, Main Window, String Table, String Edit Dialog, Context Menu, and Settings Dialog — all modal dialogs except the Main Window/String Table). No dashboards, no analytics, no multi-page navigation.
 
 ### 7.1 Setup Wizard
 
-See §4. Modal wizard. Shown on first launch. Re-accessible from toolbar.
+See §4. Modal wizard. Shown on first launch. Re-accessible via the Settings dialog ("Re-run setup…").
 
 ### 7.2 Scan Dialog
 
@@ -366,6 +366,20 @@ Available on one or multiple selected strings in the String Table.
 | Action | Description |
 |--------|-------------|
 | **Export for Claude-Code** | Export selected strings as a batch file for external Claude-Code translation |
+
+### 7.7 Settings Dialog
+
+Modal dialog opened from the toolbar **Settings** button — the single "settings
+section accessible from toolbar" (§19 #5). A flat list of editable settings, **not**
+the step-by-step Setup Wizard:
+
+- **Folders** — current Stardew/Mods paths, with a **Re-run setup…** button that
+  re-opens the Setup Wizard to change them (§4).
+- **Language** — target language (source is fixed to English).
+- **Glossary (optional)** — build status + Build button, or StardewXnbHack guidance.
+- **Local AI (optional)** — local-LLM connection (M6): provider preset, base URL,
+  Test connection, model. Lives here, not in the wizard, because the tool is
+  translation-first and AI is opt-in.
 
 ---
 

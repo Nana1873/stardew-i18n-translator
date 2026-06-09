@@ -883,6 +883,27 @@ body {
   border-color: var(--accent);
 }
 
+/* Settings dialog: a flat list of sections (reuses the wizard modal chrome). */
+.settings__body {
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+}
+
+.settings__section {
+  padding: 4px 0 12px;
+}
+
+.settings__section + .settings__section {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.settings__head {
+  margin: 0 0 4px;
+  font-size: 13px;
+  color: var(--text);
+}
+
 /* --- Export summary dialog --- */
 .exportdlg {
   display: flex;

@@ -83,9 +83,13 @@ URL.
 
 ## Suggested Issue Breakdown
 
-### Issue 15: Local-LLM connection settings + "Test connection" (MVP part 1)
+### Issue 15: Local-LLM connection settings + "Test connection" (MVP part 1) ✅
 * OpenAI-compatible client (`reqwest`, async command), provider presets, `GET /v1/models`
-  discovery, settings persistence, a wizard/settings step with a test button.
+  discovery, settings persistence, and a **Local AI section in a new Settings dialog**
+  with a test button. AI lives in Settings (not the first-launch wizard) because the
+  tool is translation-first and AI is opt-in. This slice also split the toolbar
+  **Settings** button away from re-opening the Setup Wizard: it now opens the Settings
+  dialog (§7.7), and the wizard is re-reachable from there via "Re-run setup…".
 
 ### Issue 16: Translate-one-string command with glossary injection + token retry (MVP part 2)
 * Prompt builder (system rules + glossary subset + source), `POST /v1/chat/completions`,
@@ -97,9 +101,12 @@ URL.
   selection, results → `review-needed`, resume-friendly.
 
 ## Status (shipped vs. open)
-**Open** — milestone defined; building the MVP (Issues 15–16) next. Reprioritized ahead
-of M4/M5 at the user's request (a working glossary makes local-AI pre-translation
-worthwhile now).
+**In progress.** Issue 15 shipped: the OpenAI-compatible connection (`llm` module,
+`llm_models` command, `AppSettings.llm`) and a new **Settings dialog** (§7.7) with a
+**Local AI** section + "Test connection". The toolbar Settings button now opens this
+dialog instead of re-running the Setup Wizard. **Next:** Issue 16 (translate one
+string via Ctrl+F5 → `review-needed`). Reprioritized ahead of M4/M5 at the user's
+request (a working glossary makes local-AI pre-translation worthwhile now).
 
 ## Agent Handoff Notes
 *OpenAI-compatible endpoint only — do not add a provider plugin system (SPEC §19 #6).
