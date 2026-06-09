@@ -64,12 +64,61 @@ pub struct ScanResult {
     pub file_count: usize,
 }
 
-/// Strip a UTF-8 BOM, `//` and `/* */` comments, and trailing commas, then
-/// parse as JSON. Mirrors the lenient parsing real SMAPI mods require.
+/// Strip a UTF-8 BOM, escape raw control characters inside string literals,
+/// drop `//` and `/* */` comments and trailing commas, then parse as JSON.
+/// Mirrors the lenient parsing real SMAPI mods require (Newtonsoft.Json).
 pub fn parse_json_lenient(text: &str) -> Result<Value, String> {
     let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-    let cleaned = strip_json_comments_and_trailing_commas(text);
+    let escaped = escape_control_chars_in_strings(text);
+    let cleaned = strip_json_comments_and_trailing_commas(&escaped);
     serde_json::from_str(&cleaned).map_err(|error| error.to_string())
+}
+
+/// Escape raw control characters (literal newline, carriage return, tab, and
+/// other `U+0000-U+001F`) that appear **inside** JSON string literals.
+///
+/// Stardew/SMAPI mods are parsed by Newtonsoft.Json, which tolerates multi-line
+/// string values (dialogue split across lines with `$q`/`#$b#` commands). The
+/// strict `serde_json` rejects raw control chars in strings, so we convert them
+/// to their JSON escapes first. The decoded value is identical; only the on-disk
+/// representation differs (and round-trips to strictly-valid JSON on export).
+/// Control characters **outside** strings (structural newlines, the indentation
+/// tabs, and line-comment terminators) are left untouched.
+pub fn escape_control_chars_in_strings(text: &str) -> String {
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut in_string = false;
+    let mut escaped = false;
+
+    for ch in text.chars() {
+        if !in_string {
+            if ch == '"' {
+                in_string = true;
+            }
+            out.push(ch);
+            continue;
+        }
+        if escaped {
+            out.push(ch);
+            escaped = false;
+            continue;
+        }
+        match ch {
+            '\\' => {
+                out.push(ch);
+                escaped = true;
+            }
+            '"' => {
+                out.push(ch);
+                in_string = false;
+            }
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// Extract a positive Nexus mod id from SMAPI `UpdateKeys`.
@@ -590,6 +639,25 @@ mod tests {
     fn keeps_comment_markers_inside_strings() {
         let value = parse_json_lenient("{ \"url\": \"http://x/* y */\" }").unwrap();
         assert_eq!(value["url"], "http://x/* y */");
+    }
+
+    #[test]
+    fn accepts_literal_newlines_and_tabs_inside_string_values() {
+        // Newtonsoft (SMAPI) tolerates multi-line dialogue values; serde does
+        // not. The lenient parser must accept them and preserve the value.
+        let input = "{\r\n\t\"k\": \"line one\r\n\tline two\",\r\n\t\"after\": \"ok\" //c\r\n}";
+        let value = parse_json_lenient(input).unwrap();
+        assert_eq!(value["k"], "line one\r\n\tline two");
+        assert_eq!(value["after"], "ok");
+    }
+
+    #[test]
+    fn escape_does_not_touch_structural_whitespace() {
+        // A tab between tokens (outside strings) stays structural; the parse
+        // still yields the two keys.
+        let value = parse_json_lenient("{\n\t\"a\":\t\"1\",\n\t\"b\":\t\"2\"\n}").unwrap();
+        assert_eq!(value["a"], "1");
+        assert_eq!(value["b"], "2");
     }
 
     #[test]
