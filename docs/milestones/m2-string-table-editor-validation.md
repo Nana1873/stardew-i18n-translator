@@ -36,8 +36,11 @@ Implement the main workspace string table, the double-click editing dialog, prot
 
 **Still open for v1 (tracked, not yet built):**
 - **Column sorting**.
-- **"Search Translation on Nexus"** mod-level context action (SPEC §7.6 / §12).
 - **Scan progress dialog** is simplified to an inline "Scanning…" label (SPEC §7.2 describes a modal).
+
+**Moved out of M2:** the **"Search Translation on Nexus"** action is deferred and
+folded into the new [M5 — Nexus Translation Discovery & Download](m5-nexus-translation-download.md)
+(the owner prefers the full SSE-AT-style assisted-download flow over a browser-search stopgap).
 
 ## Risks
 * **Virtualization Requirements:** Large string counts can cause UI lag. (Mitigation: `@tanstack/react-virtual` row virtualization.)
