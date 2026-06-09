@@ -19,6 +19,7 @@ import {
 } from "./tauri/commands";
 import { SetupWizard } from "./setup/SetupWizard";
 import { ModList } from "./mods/ModList";
+import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
 import { STATUS_META } from "./strings/status";
 import { ExportDialog } from "./export/ExportDialog";
@@ -31,6 +32,7 @@ export function App() {
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modsWidth, setModsWidth] = useState(460);
 
@@ -94,8 +96,12 @@ export function App() {
     setScanning(true);
     setScanError(null);
     setSelectedModId(null);
+    setScanDialogOpen(true);
     try {
-      setScan(await scanMods(settings.modsPath, settings.targetLang ?? ""));
+      const result = await scanMods(settings.modsPath, settings.targetLang ?? "");
+      setScan(result);
+      // A clean scan auto-closes; keep the dialog open only to review warnings.
+      if (result.warnings.length === 0) setScanDialogOpen(false);
     } catch (error) {
       setScanError(String(error));
     } finally {
@@ -233,6 +239,14 @@ export function App() {
           initial={settings}
           onComplete={handleComplete}
           onCancel={configured ? () => setWizardOpen(false) : undefined}
+        />
+      )}
+      {scanDialogOpen && (
+        <ScanDialog
+          scanning={scanning}
+          result={scan}
+          error={scanError}
+          onClose={() => setScanDialogOpen(false)}
         />
       )}
       {exportOpen && (

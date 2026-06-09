@@ -41,9 +41,19 @@ uses the game's own deserializers). The setup wizard's glossary step detects the
 unpacked folder and either builds the glossary or links to StardewXnbHack with
 guidance. Still **optional and non-blocking**.
 
-**Still open / simplified for v1 (tracked):**
-- **Scan progress** is shown as an inline "Scanning…" label rather than the modal scan dialog with per-file progress described in SPEC §7.2.
-- **Glossary hints in the editor** (SPEC §7.5) — showing matched terms while translating — are not wired yet (the data + cache exist; surfacing them is a small M2 follow-up).
+**Scan dialog (shipped):** a modal appears while scanning (spinner) and, on
+completion, summarizes the result (mods / files found) and **lists the
+skipped/malformed mods** (SPEC §7.2) — previously only a count. A clean scan
+auto-closes; it stays open only when there are warnings or an error to review.
+Live per-mod/per-file progress is intentionally omitted (real scans are
+sub-second, so streaming progress would add complexity with no UX value).
+
+**Still open (small follow-up, belongs to M2):**
+- **Glossary hints in the editor** (SPEC §7.5) — showing matched terms while
+  translating. The glossary data + cache exist; surfacing them in the editor is
+  a small M2 addition.
+
+M1 is otherwise **complete**.
 
 ## Suggested Issue Breakdown
 
