@@ -59,8 +59,8 @@ Editing overlay with original vs. translation, live validation, clickable token 
 ### Issue 10: Status model and persistence ✅
 The 4 v1 statuses and their transitions, with `sourceHash` tracking for `outdated` detection. Translation state persisted per mod (keyed by UniqueID) separately from the mod's files.
 
-### Issue 10b: Search / filter / sort ❌ (still open)
-Text search, status filter, and column sorting for the string table — deferred; see Status above.
+### Issue 10b: Search / filter / sort ✅
+Text search (key/original/target), status filter, and column sorting (asc → desc → off) for the string table — shipped post-audit; filtering/sorting operate on a visible view while selection/editor navigation keep stable data indices.
 
 ## Agent Handoff Notes
 *Keep the status set at exactly 4 (SPEC §19). `review-needed` is reintroduced only in M4. When building the open search/filter/sort work, keep it inside the existing two-panel layout — no extra panels (SPEC §19 #5).*
