@@ -21,6 +21,25 @@ pub struct AppSettings {
     pub source_lang: String,
     #[serde(default)]
     pub target_lang: Option<String>,
+    /// Optional local-LLM connection (M6). Absent when AI translation is not set up.
+    #[serde(default)]
+    pub llm: Option<LlmSettings>,
+}
+
+/// Local-LLM connection settings (M6, Issue 15). OpenAI-compatible endpoint only.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LlmSettings {
+    /// UI preset hint: `"lmstudio"`, `"ollama"`, or `"custom"`. Not used by the
+    /// backend (the base URL is authoritative) — kept so the wizard can restore it.
+    #[serde(default)]
+    pub provider: String,
+    /// OpenAI-compatible base URL, e.g. `http://localhost:1234/v1`.
+    #[serde(default)]
+    pub base_url: String,
+    /// Selected model id (from `GET /v1/models`).
+    #[serde(default)]
+    pub model: String,
 }
 
 fn default_source_lang() -> String {
@@ -34,6 +53,7 @@ impl Default for AppSettings {
             mods_path: None,
             source_lang: default_source_lang(),
             target_lang: None,
+            llm: None,
         }
     }
 }
@@ -85,9 +105,40 @@ mod tests {
             mods_path: Some(r"E:\SteamLibrary\steamapps\common\Stardew Valley\Mods".to_string()),
             source_lang: "default".to_string(),
             target_lang: Some("de".to_string()),
+            llm: None,
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn llm_settings_roundtrip() {
+        let dir = crate::test_support::temp_dir("settings-llm");
+        let settings = AppSettings {
+            llm: Some(LlmSettings {
+                provider: "lmstudio".to_string(),
+                base_url: "http://localhost:1234/v1".to_string(),
+                model: "llama3.1:8b".to_string(),
+            }),
+            ..AppSettings::default()
+        };
+        save(&dir, &settings).unwrap();
+        assert_eq!(load(&dir), settings);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn settings_without_llm_field_load_with_none() {
+        // A settings.json written before M6 has no `llm` key — it must still load.
+        let dir = crate::test_support::temp_dir("settings-no-llm");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"stardewPath":"X","modsPath":"Y","sourceLang":"default","targetLang":"de"}"#,
+        )
+        .unwrap();
+        assert_eq!(load(&dir).llm, None);
         std::fs::remove_dir_all(&dir).ok();
     }
 

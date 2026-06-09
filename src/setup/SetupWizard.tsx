@@ -1,9 +1,9 @@
 /**
- * Setup Wizard — M1 / Issue 3 (SPEC §4).
+ * Setup Wizard — M1 / Issue 3 (SPEC §4) + M6 / Issue 15 (local-LLM connection).
  *
- * Modal, 4 steps: Stardew folder → Mods folder → languages → optional glossary.
- * Binds to the typed Tauri commands. The Mods-folder step is a generic folder
- * override only — explicitly NOT Vortex/MO2 support (SPEC §4).
+ * Modal, 5 steps: Stardew folder → Mods folder → languages → optional glossary →
+ * optional local AI. Binds to the typed Tauri commands. The Mods-folder step is a
+ * generic folder override only — explicitly NOT Vortex/MO2 support (SPEC §4).
  */
 import { useEffect, useState } from "react";
 import {
@@ -14,13 +14,22 @@ import {
   defaultModsPath,
   detectStardew,
   glossaryStatus,
+  llmModels,
   openUrl,
   pickFolder,
   validateStardewPath,
 } from "../tauri/commands";
 import { SOURCE_LANGUAGE_LABEL, TARGET_LANGUAGES } from "../languages";
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
+const STEP_COUNT = 5;
+
+/** OpenAI-compatible default base URLs. "custom" lets the user type their own. */
+const LLM_PRESETS: Record<string, string> = {
+  lmstudio: "http://localhost:1234/v1",
+  ollama: "http://localhost:11434/v1",
+  custom: "",
+};
 
 interface SetupWizardProps {
   initial: AppSettings | null;
@@ -44,6 +53,38 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
   const [glossary, setGlossary] = useState<GlossaryStatus | null>(null);
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
   const [glossaryBuilt, setGlossaryBuilt] = useState<GlossaryInfo | null>(null);
+
+  const [llmProvider, setLlmProvider] = useState(initial?.llm?.provider || "lmstudio");
+  const [llmBaseUrl, setLlmBaseUrl] = useState(
+    initial?.llm?.baseUrl || LLM_PRESETS.lmstudio,
+  );
+  const [llmModel, setLlmModel] = useState(initial?.llm?.model ?? "");
+  const [llmModelList, setLlmModelList] = useState<string[] | null>(null);
+  const [llmTesting, setLlmTesting] = useState(false);
+  const [llmError, setLlmError] = useState<string | null>(null);
+
+  function pickLlmProvider(provider: string) {
+    setLlmProvider(provider);
+    setLlmModelList(null);
+    setLlmError(null);
+    if (provider !== "custom") setLlmBaseUrl(LLM_PRESETS[provider]);
+  }
+
+  async function testLlmConnection() {
+    setLlmTesting(true);
+    setLlmError(null);
+    setLlmModelList(null);
+    try {
+      const models = await llmModels(llmBaseUrl);
+      setLlmModelList(models);
+      // Keep a still-valid selection; otherwise default to the first model.
+      if (models.length > 0 && !models.includes(llmModel)) setLlmModel(models[0]);
+    } catch (cause) {
+      setLlmError(String(cause));
+    } finally {
+      setLlmTesting(false);
+    }
+  }
 
   // On the glossary step, check whether StardewXnbHack-unpacked content exists.
   useEffect(() => {
@@ -139,11 +180,15 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
   }
 
   function finish() {
+    const url = llmBaseUrl.trim();
     onComplete({
       stardewPath,
       modsPath,
       sourceLang: "default",
       targetLang,
+      // Persist the AI connection only once a model is chosen (i.e. the user
+      // tested and picked one). Skipping the step leaves it null = not configured.
+      llm: url && llmModel ? { provider: llmProvider, baseUrl: url, model: llmModel } : null,
     });
   }
 
@@ -156,7 +201,9 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
       <div className="wizard">
         <header className="wizard__header">
           <h2>Setup</h2>
-          <span className="wizard__progress">Step {step} of 4</span>
+          <span className="wizard__progress">
+            Step {step} of {STEP_COUNT}
+          </span>
         </header>
 
         <div className="wizard__body">
@@ -270,6 +317,80 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
             </section>
           )}
 
+          {step === 5 && (
+            <section aria-label="Local AI">
+              <p>
+                <strong>Optional:</strong> connect a local AI server (LM Studio,
+                Ollama, or any OpenAI-compatible endpoint) to translate strings
+                offline. The app works fully without it — you can skip this step.
+              </p>
+              <label className="wizard__field">
+                <span>Provider</span>
+                <select
+                  value={llmProvider}
+                  onChange={(event) => pickLlmProvider(event.target.value)}
+                  aria-label="AI provider"
+                >
+                  <option value="lmstudio">LM Studio</option>
+                  <option value="ollama">Ollama</option>
+                  <option value="custom">Custom (OpenAI-compatible)</option>
+                </select>
+              </label>
+              <label className="wizard__field">
+                <span>Base URL</span>
+                <input
+                  type="text"
+                  value={llmBaseUrl}
+                  placeholder="http://localhost:1234/v1"
+                  aria-label="AI base URL"
+                  onChange={(event) => {
+                    setLlmBaseUrl(event.target.value);
+                    setLlmModelList(null);
+                    setLlmError(null);
+                  }}
+                />
+              </label>
+              <div className="wizard__row">
+                <button
+                  type="button"
+                  onClick={testLlmConnection}
+                  disabled={llmTesting || !llmBaseUrl.trim()}
+                >
+                  {llmTesting ? "Testing…" : "Test connection"}
+                </button>
+              </div>
+              {llmModelList !== null &&
+                (llmModelList.length > 0 ? (
+                  <>
+                    <p className="wizard__ok">
+                      ✓ Connected — {llmModelList.length} model
+                      {llmModelList.length === 1 ? "" : "s"} available.
+                    </p>
+                    <label className="wizard__field">
+                      <span>Model</span>
+                      <select
+                        value={llmModel}
+                        onChange={(event) => setLlmModel(event.target.value)}
+                        aria-label="AI model"
+                      >
+                        {llmModelList.map((model) => (
+                          <option key={model} value={model}>
+                            {model}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </>
+                ) : (
+                  <p className="wizard__muted">
+                    Connected, but the server reports no loaded models. Load a model
+                    in your AI app, then test again.
+                  </p>
+                ))}
+              {llmError && <p className="wizard__error">{llmError}</p>}
+            </section>
+          )}
+
           {error && <p className="wizard__error">{error}</p>}
         </div>
 
@@ -301,6 +422,11 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
             </button>
           )}
           {step === 4 && (
+            <button type="button" onClick={() => setStep(5)}>
+              Next
+            </button>
+          )}
+          {step === 5 && (
             <button type="button" className="wizard__finish" onClick={finish}>
               Finish
             </button>

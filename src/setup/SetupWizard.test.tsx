@@ -55,7 +55,7 @@ describe("SetupWizard", () => {
     );
   });
 
-  it("walks all 4 steps and completes with the chosen target language", async () => {
+  it("walks all steps and completes; skipping AI leaves llm null", async () => {
     const onComplete = vi.fn();
     render(<SetupWizard initial={null} onComplete={onComplete} />);
 
@@ -75,6 +75,7 @@ describe("SetupWizard", () => {
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 4: glossary
+    fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 5: AI
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
 
     expect(onComplete).toHaveBeenCalledWith({
@@ -82,7 +83,46 @@ describe("SetupWizard", () => {
       modsPath: "E:/SDV/Mods",
       sourceLang: "default",
       targetLang: "de",
+      llm: null,
     });
+  });
+
+  it("tests the local-AI connection and persists the chosen model", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "detect_stardew":
+          return Promise.resolve({ stardewPath: "E:/SDV", modsPath: "E:/SDV/Mods", source: "steam" });
+        case "default_mods_path":
+          return Promise.resolve("E:/SDV/Mods");
+        case "validate_stardew_path":
+          return Promise.resolve(true);
+        case "glossary_status":
+          return Promise.resolve({ unpackedPresent: false, cached: null });
+        case "llm_models":
+          return Promise.resolve(["llama3.1:8b", "qwen2.5"]);
+        default:
+          return Promise.resolve(null);
+      }
+    });
+    const onComplete = vi.fn();
+    render(<SetupWizard initial={null} onComplete={onComplete} />);
+    await gotoGlossaryStep();
+    fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 5: AI
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    // First model is auto-selected after a successful test.
+    expect(await screen.findByText(/2 models available/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llm: {
+          provider: "lmstudio",
+          baseUrl: "http://localhost:1234/v1",
+          model: "llama3.1:8b",
+        },
+      }),
+    );
   });
 
   it("shows StardewXnbHack guidance when no unpacked content is present", async () => {

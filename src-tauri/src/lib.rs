@@ -1,12 +1,14 @@
 //! Stardew i18n Translator — Tauri backend.
 //!
 //! Settings persistence + Stardew auto-detection (M1), the mod scanner and
-//! i18n parser (M1/M2), persisted translation state (M2), and the i18n exporter
-//! (M3). Kept minimal per SCOPE_GUARDRAILS — no plugin/provider abstractions.
+//! i18n parser (M1/M2), persisted translation state (M2), the i18n exporter
+//! (M3), and the local-LLM connection probe (M6). Kept minimal per
+//! SCOPE_GUARDRAILS — no plugin/provider abstractions.
 
 mod detection;
 mod export;
 mod glossary;
+mod llm;
 mod scanner;
 mod settings;
 mod tokens;
@@ -145,6 +147,16 @@ fn glossary_status(
     })
 }
 
+/// List models from an OpenAI-compatible local server (M6, Issue 15). Doubles as
+/// the "Test connection" probe: success means the server is reachable.
+#[tauri::command]
+async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
+    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
+        return Err("Base URL must start with http:// or https://.".to_string());
+    }
+    llm::list_models(&base_url).await
+}
+
 /// Open an external http(s) URL in the user's default browser (Nexus links).
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -191,6 +203,7 @@ pub fn run() {
             build_glossary,
             glossary_status,
             load_glossary,
+            llm_models,
             open_url,
             load_settings,
             save_settings
