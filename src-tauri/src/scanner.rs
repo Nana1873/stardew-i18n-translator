@@ -64,14 +64,83 @@ pub struct ScanResult {
     pub file_count: usize,
 }
 
-/// Strip a UTF-8 BOM, escape raw control characters inside string literals,
-/// drop `//` and `/* */` comments and trailing commas, then parse as JSON.
-/// Mirrors the lenient parsing real SMAPI mods require (Newtonsoft.Json).
+/// Make the lenient transformations real SMAPI mods require (Newtonsoft.Json)
+/// and parse as JSON. In order: strip a UTF-8 BOM; drop `//` + `/* */` comments
+/// and trailing commas; quote bare (unquoted) object keys; escape raw control
+/// characters inside string literals.
+///
+/// Comments are removed **first** so the later string-aware passes are never
+/// fooled by quotes that live inside a comment (e.g. `/// foo"` or a
+/// commented-out `//"value",` line).
 pub fn parse_json_lenient(text: &str) -> Result<Value, String> {
     let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
-    let escaped = escape_control_chars_in_strings(text);
-    let cleaned = strip_json_comments_and_trailing_commas(&escaped);
-    serde_json::from_str(&cleaned).map_err(|error| error.to_string())
+    let cleaned = strip_json_comments_and_trailing_commas(text);
+    let quoted = quote_bare_keys(&cleaned);
+    let escaped = escape_control_chars_in_strings(&quoted);
+    serde_json::from_str(&escaped).map_err(|error| error.to_string())
+}
+
+/// Quote bare (unquoted, JavaScript-style) object keys: `Key: "v"` -> `"Key": "v"`.
+/// Newtonsoft accepts unquoted property names; serde does not. Operates only
+/// outside string literals, and only in key position (right after `{` or `,`),
+/// so string values and array elements are untouched. Must run **after** comment
+/// removal. i18n keys may contain `.`/`-`/`_`/`$`.
+pub fn quote_bare_keys(text: &str) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut i = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+    // True right after `{` or `,` (a key is expected next), through whitespace.
+    let mut expect_key = false;
+
+    while i < chars.len() {
+        let c = chars[i];
+        if in_string {
+            out.push(c);
+            if escaped {
+                escaped = false;
+            } else if c == '\\' {
+                escaped = true;
+            } else if c == '"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if c == '"' {
+            in_string = true;
+            expect_key = false;
+            out.push(c);
+            i += 1;
+        } else if c == '{' || c == ',' {
+            expect_key = true;
+            out.push(c);
+            i += 1;
+        } else if c.is_whitespace() {
+            out.push(c);
+            i += 1;
+        } else if expect_key && (c.is_ascii_alphabetic() || c == '_' || c == '$') {
+            let start = i;
+            while i < chars.len() {
+                let d = chars[i];
+                if d.is_ascii_alphanumeric() || matches!(d, '_' | '.' | '$' | '-') {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            out.push('"');
+            out.extend(&chars[start..i]);
+            out.push('"');
+            expect_key = false;
+        } else {
+            expect_key = false;
+            out.push(c);
+            i += 1;
+        }
+    }
+    out
 }
 
 /// Escape raw control characters (literal newline, carriage return, tab, and
@@ -586,7 +655,11 @@ pub fn strip_json_comments_and_trailing_commas(text: &str) -> String {
         }
         index += 1;
     }
-    chunks.push(chars[segment_start..].iter().collect::<String>());
+    // Only flush the trailing segment if it is real content — a `//` or `/* */`
+    // comment that runs to EOF with no terminating newline must not be re-added.
+    if !in_line_comment && !in_block_comment {
+        chunks.push(chars[segment_start..].iter().collect::<String>());
+    }
     let without_comments: Vec<char> = chunks.join("").chars().collect();
 
     // Pass 2: drop commas immediately before `}` or `]`.
@@ -658,6 +731,39 @@ mod tests {
         let value = parse_json_lenient(input).unwrap();
         assert_eq!(value["k"], "line one\r\n\tline two");
         assert_eq!(value["after"], "ok");
+    }
+
+    #[test]
+    fn strips_trailing_line_comment_without_newline_at_eof() {
+        // A `//` comment that ends the file (no trailing newline) must be
+        // dropped, not re-added after the closing brace.
+        let value = parse_json_lenient("{\n  \"k\": \"v\"\n}\n//trailing \"comment\" at eof").unwrap();
+        assert_eq!(value["k"], "v");
+        assert_eq!(value.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn accepts_unquoted_bare_keys() {
+        // Newtonsoft accepts JS-style unquoted property names; serde does not.
+        let input = "{\n  // by: someone\n  Foo: \"1\", Bar.Baz-2: \"2\",\n}";
+        let value = parse_json_lenient(input).unwrap();
+        assert_eq!(value["Foo"], "1");
+        assert_eq!(value["Bar.Baz-2"], "2");
+    }
+
+    #[test]
+    fn comment_quotes_do_not_desync_string_tracking() {
+        // A quote inside a comment must not be treated as a string boundary.
+        let input = "{\n  /// GENERIC DIALOGUE\"\n  //\"commented out value\",\n  \"k\": \"v\"\n}";
+        let value = parse_json_lenient(input).unwrap();
+        assert_eq!(value["k"], "v");
+        assert_eq!(value.as_object().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn quote_bare_keys_leaves_string_values_and_urls_untouched() {
+        let value = parse_json_lenient("{ \"url\": \"https://x.io/a:b\" }").unwrap();
+        assert_eq!(value["url"], "https://x.io/a:b");
     }
 
     #[test]
