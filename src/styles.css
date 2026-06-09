@@ -232,6 +232,14 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.modrow__tree {
+  flex: 0 0 auto;
+  font-family: "Cascadia Code", Consolas, monospace;
+  color: var(--text-muted);
+  opacity: 0.65;
+  white-space: pre;
+}
+
 .modrow__name {
   overflow: hidden;
   text-overflow: ellipsis;

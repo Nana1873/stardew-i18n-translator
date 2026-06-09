@@ -203,9 +203,14 @@ function ModRow({
       <StatusDot status={mod.status} />
       <span
         className="modrow__name"
-        style={{ paddingLeft: depth ? 16 + depth * 14 : undefined }}
+        style={{ paddingLeft: child ? 6 + (depth - 1) * 14 : undefined }}
         title={mod.name}
       >
+        {child && (
+          <span className="modrow__tree" aria-hidden>
+            {lastChild ? "└─ " : "├─ "}
+          </span>
+        )}
         {mod.name}
       </span>
       <span className="modrow__version">{mod.version}</span>

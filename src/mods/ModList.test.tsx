@@ -61,4 +61,28 @@ describe("ModList", () => {
     // [CP] child that owns it (SPEC §7.3).
     expect(screen.getAllByRole("link", { name: "7286" })).toHaveLength(2);
   });
+
+  it("draws ├─/└─ tree connectors on the components of a package", () => {
+    const mods = [
+      mod({ uniqueId: "cp", name: "[CP] RSV", packageId: "Ridgeside" }),
+      mod({ uniqueId: "cc", name: "[CC] RSV", packageId: "Ridgeside" }),
+    ];
+    render(<ModList mods={mods} selectedId={null} onSelect={() => {}} />);
+
+    // First child gets ├─, the last child gets └─.
+    expect(screen.getByText("├─")).toBeInTheDocument();
+    expect(screen.getByText("└─")).toBeInTheDocument();
+  });
+
+  it("does not draw a connector on a single-component (flat) mod", () => {
+    render(
+      <ModList
+        mods={[mod({ uniqueId: "solo", name: "Solo Mod", packageId: "Solo" })]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.queryByText("├─")).toBeNull();
+    expect(screen.queryByText("└─")).toBeNull();
+  });
 });
