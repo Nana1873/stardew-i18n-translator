@@ -328,6 +328,7 @@ Opened by **double-clicking** a string row.
 | **Right pane** | Target text (editable text area) |
 | **Glossary hints** | Matched glossary terms (if glossary is available) |
 | **Validation panel** | Live validation results |
+| **Translate** | Translate the source with the configured local AI (M6); fills the target as `review-needed`. Shown always; hints to configure AI if none is set up |
 | **Navigation** | Previous / Next buttons to move through strings without closing |
 | **Reset** | Clear target text back to empty (or to last imported value) |
 | **Save** | Save changes, close dialog |
@@ -344,6 +345,7 @@ Opened by **double-clicking** a string row.
 | `F2` | Toggle not-translatable |
 | `F3` | Copy original to target |
 | `F4` | Reset target |
+| `Ctrl+F5` | Translate with the local AI (M6) |
 
 ### 7.6 Context Menu (Right-Click)
 
@@ -402,7 +404,7 @@ the step-by-step Setup Wizard:
 
 ### String-Level Status
 
-v1 uses **4 statuses** (simplified from an earlier 6-status draft — see the scope note). Three describe a string's state; `outdated` is derived automatically.
+v1 uses **5 statuses**. Three describe a hand-edited string's state; `outdated` is derived automatically; `review-needed` is the AI-workflow status.
 
 | Status | Color | Meaning | How it's set |
 |--------|-------|---------|--------------|
@@ -410,12 +412,13 @@ v1 uses **4 statuses** (simplified from an earlier 6-status draft — see the sc
 | `translated` | 🟢 Green | Has a translation (your edit, or an imported existing `<lang>.json` value) | Saving in the editor; or "Mark as translated" |
 | `outdated` | 🟣 Purple | The English source changed since this string was translated | **Automatic** on re-scan (see below) — never set manually |
 | `not-translatable` | ⚪ Gray | Explicitly marked as not needing translation (proper nouns, IDs) | F2 in the editor; or "Mark as not translatable" |
+| `review-needed` | 🟠 Amber | An unreviewed machine suggestion (AI) awaiting a human pass | Set by an AI translation (M6 local LLM / M4 batch import); **confirmed → `translated`** by an explicit Save in the editor |
 
-> **Scope note (2026-06-08):** An earlier draft had 6 statuses (`imported`, `review-needed`, `done`, …). These were collapsed to match the actual workflow: `imported`/`done` → **`translated`**; `review-needed` is **deferred to M4** (where AI-batch results genuinely need a review pass and the status is reintroduced). Legacy stored values are normalized to the v1 set on load.
+> **Scope note:** An earlier draft had 6 statuses (`imported`, `review-needed`, `done`, …). `imported`/`done` collapsed to **`translated`**; `review-needed` returns with the **AI translation workflows** — the M6 local-LLM engine (implemented) and the M4 Claude-Code batch — where machine output needs a human review pass. It is never set by hand. Legacy stored values are normalized to this set on load.
 
 ### `outdated` Detection (automatic, surgical)
 
-When a string is saved, its `sourceHash` (SHA-256 of the **English source text of that key**) is stored alongside the target. On re-scan, a `translated` string whose stored `sourceHash` no longer matches the current `default.json` value for that key becomes `outdated`.
+When a string is saved, its `sourceHash` (SHA-256 of the **English source text of that key**) is stored alongside the target. On re-scan, a `translated` or `review-needed` string whose stored `sourceHash` no longer matches the current `default.json` value for that key becomes `outdated`.
 
 This is **per-string**, not per-mod: a mod update flags **only** the handful of strings whose English text actually changed. New keys arrive as `untranslated`; unchanged translations stay `translated`; `not-translatable` is never affected.
 
@@ -1045,7 +1048,7 @@ The following are **explicitly excluded** from v1:
 
 1. **The SSE-AT test.** Before adding a UI element, ask: "Would SSE Auto Translator have this?" If no, it probably doesn't belong in v1.
 
-2. **The 4-status rule.** v1 has 4 statuses (`untranslated`, `translated`, `outdated`, `not-translatable`). Do not add more. `review-needed` returns only with the **AI translation workflows** — the M4 Claude-Code batch and the M6 local-LLM engine — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing.
+2. **The status rule.** v1 has exactly 5 statuses (`untranslated`, `translated`, `outdated`, `not-translatable`, `review-needed`). Do not add more. `review-needed` exists only for the **AI translation workflows** — the M6 local-LLM engine and the M4 Claude-Code batch — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing (an explicit Save confirms it to `translated`).
 
 3. **The 4-validation-rule rule.** v1 has exactly 4 validation rules. Adding a rule requires justifying why it prevents broken mods, not just improves quality.
 

@@ -10,7 +10,9 @@
 
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+use crate::tokens;
 
 /// OpenAI-compatible `GET /v1/models` response: `{ "data": [ { "id": "…" }, … ] }`.
 #[derive(Deserialize)]
@@ -74,6 +76,242 @@ pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
     Ok(parse_model_ids(&body))
 }
 
+// ---------------------------------------------------------------------------
+// Translation (Issue 16): translate one string via POST /v1/chat/completions.
+// ---------------------------------------------------------------------------
+
+/// Result of a single-string translation. `missing_tokens` is non-empty when the
+/// model dropped a protected token even after one stricter retry — the UI flags
+/// it for a manual fix (never a silent corruption).
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationResult {
+    pub text: String,
+    pub missing_tokens: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ChatMessage {
+    role: &'static str,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    temperature: f32,
+    stream: bool,
+    /// Hard cap on generated tokens. Without it a weak model can run away for
+    /// thousands of tokens (observed: a 4-word source produced a 6000-token
+    /// essay), which both wastes time and trips the request timeout.
+    max_tokens: u32,
+    /// Stop sequences. For a single-line source we stop at the first newline:
+    /// a newline is a protected token, so a one-line source must translate to
+    /// one line — this turns a chatty model's runaway into just the translation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop: Option<Vec<String>>,
+}
+
+/// A bounded output-token budget for translating `source`. Generous (≈2× the
+/// source character count, so well above a real translation's need) but capped,
+/// so a runaway model is stopped quickly instead of hanging.
+fn output_token_budget(source: &str) -> u32 {
+    ((source.chars().count() as u32).saturating_mul(2)).clamp(64, 1024)
+}
+
+/// Stop sequences for translating `source`. A source with no newline must
+/// translate to a single line (newlines are protected tokens), so we stop at the
+/// first `\n` — cutting off a model that keeps talking after the translation.
+/// Multi-line sources get no stop (their own newlines are legitimate).
+fn stop_sequences(source: &str) -> Option<Vec<String>> {
+    if source.contains('\n') {
+        None
+    } else {
+        Some(vec!["\n".to_string()])
+    }
+}
+
+#[derive(Deserialize)]
+struct ChatResponse {
+    #[serde(default)]
+    choices: Vec<ChatChoice>,
+}
+
+#[derive(Deserialize)]
+struct ChatChoice {
+    message: ChatChoiceMessage,
+}
+
+#[derive(Deserialize)]
+struct ChatChoiceMessage {
+    #[serde(default)]
+    content: String,
+}
+
+/// Build the chat messages for one translation. Pure (no I/O) so it is unit-
+/// tested. `glossary_pairs` are injected as exact-term guidance; `retry_missing`,
+/// when present, adds a stricter reminder listing tokens a prior attempt dropped.
+fn build_messages(
+    source: &str,
+    target_language: &str,
+    glossary_pairs: &[(String, String)],
+    retry_missing: Option<&[String]>,
+) -> Vec<ChatMessage> {
+    let mut system = String::new();
+    system.push_str(&format!(
+        "You are a professional translator for Stardew Valley mods. \
+         Translate the user's text from English into {target_language}.\n\
+         Rules:\n\
+         - Output ONLY the translation. No quotes, no explanations, no notes.\n\
+         - Preserve every placeholder/token EXACTLY as written and untranslated, \
+           e.g. {{{{Token}}}}, {{0}}, $b, ${{a^b}}$, [item], %item ... %%, @, ^, #$b#. \
+           Do not add, remove, reorder, or alter them.\n\
+         - Keep the same line breaks.\n\
+         - Translate naturally and concisely; keep game terminology consistent."
+    ));
+
+    if !glossary_pairs.is_empty() {
+        system.push_str(
+            "\nOfficial glossary — use these exact target terms when the word appears:",
+        );
+        for (en, target) in glossary_pairs {
+            system.push_str(&format!("\n- {en} -> {target}"));
+        }
+    }
+
+    if let Some(missing) = retry_missing {
+        if !missing.is_empty() {
+            system.push_str(&format!(
+                "\nIMPORTANT: your previous attempt dropped these required tokens: {}. \
+                 You MUST include every one of them verbatim in the translation.",
+                missing.join(", ")
+            ));
+        }
+    }
+
+    vec![
+        ChatMessage {
+            role: "system",
+            content: system,
+        },
+        ChatMessage {
+            role: "user",
+            content: source.to_string(),
+        },
+    ]
+}
+
+/// POST one chat completion and return the assistant's (trimmed) content.
+async fn chat(
+    base_url: &str,
+    model: &str,
+    messages: Vec<ChatMessage>,
+    max_tokens: u32,
+    stop: Option<Vec<String>>,
+) -> Result<String, String> {
+    let url = {
+        let trimmed = base_url.trim().trim_end_matches('/');
+        format!("{trimmed}/chat/completions")
+    };
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| format!("Could not create HTTP client: {error}"))?;
+
+    let response = client
+        .post(&url)
+        .json(&ChatRequest {
+            model: model.to_string(),
+            messages,
+            temperature: 0.2,
+            stream: false,
+            max_tokens,
+            stop,
+        })
+        .send()
+        .await
+        .map_err(|error| {
+            if error.is_timeout() {
+                format!(
+                    "The model timed out — it may be too slow or stuck. Try a smaller/faster \
+                     instruct model, or a shorter string. ({url})"
+                )
+            } else {
+                format!("Could not reach {url} — is the server running? ({error})")
+            }
+        })?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server returned {} for {url}.", response.status()));
+    }
+
+    let parsed: ChatResponse = response
+        .json()
+        .await
+        .map_err(|error| format!("Could not parse the model response: {error}"))?;
+
+    parsed
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| "The model returned an empty response.".to_string())
+}
+
+/// Translate one source string. Validates protected tokens against the source;
+/// on a dropped token, retries once with a stricter reminder and returns the
+/// better of the two attempts (with any still-missing tokens flagged).
+pub async fn translate(
+    base_url: &str,
+    model: &str,
+    source: &str,
+    target_language: &str,
+    glossary_pairs: &[(String, String)],
+) -> Result<TranslationResult, String> {
+    let budget = output_token_budget(source);
+    let stop = stop_sequences(source);
+    let first = chat(
+        base_url,
+        model,
+        build_messages(source, target_language, glossary_pairs, None),
+        budget,
+        stop.clone(),
+    )
+    .await?;
+    let missing = tokens::missing_token_list(source, &first);
+    if missing.is_empty() {
+        return Ok(TranslationResult {
+            text: first,
+            missing_tokens: vec![],
+        });
+    }
+
+    let second = chat(
+        base_url,
+        model,
+        build_messages(source, target_language, glossary_pairs, Some(&missing)),
+        budget,
+        stop,
+    )
+    .await?;
+    let missing_second = tokens::missing_token_list(source, &second);
+
+    // Prefer the retry only if it is at least as good as the first attempt.
+    if missing_second.len() <= missing.len() {
+        Ok(TranslationResult {
+            text: second,
+            missing_tokens: missing_second,
+        })
+    } else {
+        Ok(TranslationResult {
+            text: first,
+            missing_tokens: missing,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +340,52 @@ mod tests {
         assert_eq!(models_url("http://localhost:1234/v1"), "http://localhost:1234/v1/models");
         assert_eq!(models_url("http://localhost:1234/v1/"), "http://localhost:1234/v1/models");
         assert_eq!(models_url("  http://localhost:11434/v1  "), "http://localhost:11434/v1/models");
+    }
+
+    #[test]
+    fn messages_carry_target_language_rules_and_source() {
+        let messages = build_messages("Hello {{name}}", "German", &[], None);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert!(messages[0].content.contains("into German"));
+        assert!(messages[0].content.contains("Preserve every placeholder/token"));
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, "Hello {{name}}");
+    }
+
+    #[test]
+    fn glossary_pairs_are_injected_into_the_system_prompt() {
+        let pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
+        let messages = build_messages("A parsnip", "German", &pairs, None);
+        assert!(messages[0].content.contains("Official glossary"));
+        assert!(messages[0].content.contains("Parsnip -> Pastinake"));
+    }
+
+    #[test]
+    fn single_line_source_stops_at_newline() {
+        // One-line source → stop at the first newline (cuts a chatty model off).
+        assert_eq!(stop_sequences("UI Info Suite Options"), Some(vec!["\n".to_string()]));
+        // Multi-line source → no stop (its newlines are legitimate).
+        assert_eq!(stop_sequences("Hello#$b#World\nmore"), None);
+    }
+
+    #[test]
+    fn output_budget_is_bounded() {
+        // Short source → the floor (so a runaway is cut off quickly).
+        assert_eq!(output_token_budget("UI Info Suite Options"), 64);
+        // Long source → scales, but stays capped.
+        let long = "x".repeat(5000);
+        assert_eq!(output_token_budget(&long), 1024);
+        // Mid-length source → ~2× the character count.
+        assert_eq!(output_token_budget(&"y".repeat(100)), 200);
+    }
+
+    #[test]
+    fn retry_reminder_lists_the_dropped_tokens() {
+        let missing = vec!["{{name}}".to_string(), "$b".to_string()];
+        let messages = build_messages("Hi {{name}}$b", "German", &[], Some(&missing));
+        assert!(messages[0].content.contains("dropped these required tokens"));
+        assert!(messages[0].content.contains("{{name}}"));
+        assert!(messages[0].content.contains("$b"));
     }
 }
