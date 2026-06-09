@@ -157,6 +157,24 @@ export function exportMod(
   return invoke<ExportResult>("export_mod", { modUniqueId, files });
 }
 
+export interface GlossaryInfo {
+  targetLang: string;
+  termCount: number;
+}
+
+export interface GlossaryStatus {
+  unpackedPresent: boolean;
+  cached: GlossaryInfo | null;
+}
+
+export function buildGlossary(stardewPath: string, targetLang: string): Promise<GlossaryInfo> {
+  return invoke<GlossaryInfo>("build_glossary", { stardewPath, targetLang });
+}
+
+export function glossaryStatus(stardewPath: string): Promise<GlossaryStatus> {
+  return invoke<GlossaryStatus>("glossary_status", { stardewPath });
+}
+
 export function openUrl(url: string): Promise<void> {
   return invoke<void>("open_url", { url });
 }

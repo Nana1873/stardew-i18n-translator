@@ -15,7 +15,7 @@
 ### Still open for v1 (tracked in the milestone docs)
 * **M2:** modal scan-progress dialog. *(text search, status filter, `Ctrl+A`, and column sorting are now done.)*
 * **M3:** optional overwrite-confirmation (currently silent `.bak`). *(Export-all is now done.)*
-* **M1:** real glossary extraction (`Content (unpacked)/`) — currently an optional, non-blocking placeholder step.
+* **M1:** modal scan-progress dialog. *(Glossary extraction is now built — reads a StardewXnbHack-unpacked `Content (unpacked)/`; editor glossary hints are a small M2 follow-up.)*
 * **M4 (not started):** Claude-Code batch export/import (`review-needed` status returns here).
 * **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
 

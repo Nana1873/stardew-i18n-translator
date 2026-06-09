@@ -32,9 +32,18 @@ Implement the core project setup flow, recursively scan the Stardew Valley Mods 
 
 **Shipped:** setup wizard (Stardew folder → Mods folder → languages → glossary step), settings persistence, Stardew auto-detection (Steam/GOG, registry + `libraryfolders.vdf`), manual folder override, recursive `manifest.json` scanner with lenient JSON (BOM/comments/trailing commas), Nexus-ID extraction (rejecting the `Nexus:-1` sentinel), `i18n/default.json` + `i18n/<lang>.json` import, the package→component mod **tree** with Status | Mod | Version | Nexus | Dateien | Fortschritt, progress/status roll-up, and clickable Nexus links.
 
+**Glossary (shipped, post-audit):** the glossary extractor is built (SPEC §5). It
+reads a **StardewXnbHack**-unpacked `Content (unpacked)/Strings/*.json` dump
+(base English ↔ target locale), pairs short term-like values by key, and caches
+the result. We do **not** decode XNB ourselves — a spike showed off-the-shelf LZX
+crates aren't byte-perfect for XNA, so we integrate with StardewXnbHack (which
+uses the game's own deserializers). The setup wizard's glossary step detects the
+unpacked folder and either builds the glossary or links to StardewXnbHack with
+guidance. Still **optional and non-blocking**.
+
 **Still open / simplified for v1 (tracked):**
-- **Glossary extraction** is a skippable placeholder step only ("not yet available"). It is **optional and non-blocking** by design (SPEC §5), so the core loop is unaffected — but the actual `Content (unpacked)/` extractor + caching is not built.
 - **Scan progress** is shown as an inline "Scanning…" label rather than the modal scan dialog with per-file progress described in SPEC §7.2.
+- **Glossary hints in the editor** (SPEC §7.5) — showing matched terms while translating — are not wired yet (the data + cache exist; surfacing them is a small M2 follow-up).
 
 ## Suggested Issue Breakdown
 

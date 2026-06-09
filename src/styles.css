@@ -777,6 +777,11 @@ body {
   color: var(--accent);
 }
 
+.wizard__muted {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
 .wizard__error {
   color: #e06c6c;
   font-size: 12px;

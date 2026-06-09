@@ -5,11 +5,16 @@
  * Binds to the typed Tauri commands. The Mods-folder step is a generic folder
  * override only — explicitly NOT Vortex/MO2 support (SPEC §4).
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   type AppSettings,
+  type GlossaryInfo,
+  type GlossaryStatus,
+  buildGlossary,
   defaultModsPath,
   detectStardew,
+  glossaryStatus,
+  openUrl,
   pickFolder,
   validateStardewPath,
 } from "../tauri/commands";
@@ -35,6 +40,39 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
   );
   const [modsPath, setModsPath] = useState(initial?.modsPath ?? "");
   const [targetLang, setTargetLang] = useState(initial?.targetLang ?? "");
+
+  const [glossary, setGlossary] = useState<GlossaryStatus | null>(null);
+  const [glossaryBuilding, setGlossaryBuilding] = useState(false);
+  const [glossaryBuilt, setGlossaryBuilt] = useState<GlossaryInfo | null>(null);
+
+  // On the glossary step, check whether StardewXnbHack-unpacked content exists.
+  useEffect(() => {
+    if (step !== 4 || !stardewPath) return;
+    let active = true;
+    setGlossary(null);
+    glossaryStatus(stardewPath)
+      .then((status) => {
+        if (active) setGlossary(status);
+      })
+      .catch(() => {
+        if (active) setGlossary({ unpackedPresent: false, cached: null });
+      });
+    return () => {
+      active = false;
+    };
+  }, [step, stardewPath]);
+
+  async function handleBuildGlossary() {
+    setGlossaryBuilding(true);
+    setError(null);
+    try {
+      setGlossaryBuilt(await buildGlossary(stardewPath, targetLang));
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setGlossaryBuilding(false);
+    }
+  }
 
   async function autoDetect() {
     setBusy(true);
@@ -182,10 +220,53 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
             <section aria-label="Glossary">
               <p>
                 <strong>Optional:</strong> build the official game glossary for
-                translation hints. This is not required — the app works fully
-                without it, and glossary building is not yet available. You can
-                skip this step.
+                translation hints. The app works fully without it — you can skip
+                this step.
               </p>
+              {glossary === null ? (
+                <p className="wizard__muted">Checking for unpacked game content…</p>
+              ) : glossaryBuilt ? (
+                <p className="wizard__ok">
+                  ✓ Glossary built: {glossaryBuilt.termCount} terms (
+                  {glossaryBuilt.targetLang}).
+                </p>
+              ) : glossary.unpackedPresent ? (
+                <>
+                  <div className="wizard__row">
+                    <button
+                      type="button"
+                      onClick={handleBuildGlossary}
+                      disabled={glossaryBuilding || !targetLang}
+                    >
+                      {glossaryBuilding ? "Building…" : "Build glossary"}
+                    </button>
+                  </div>
+                  {glossary.cached && (
+                    <p className="wizard__muted">
+                      Cached: {glossary.cached.termCount} terms (
+                      {glossary.cached.targetLang}).
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="wizard__muted">
+                    No unpacked game content found. The glossary is built from a{" "}
+                    <code>Content (unpacked)/</code> folder created by
+                    StardewXnbHack — run it once, then re-open Setup.
+                  </p>
+                  <div className="wizard__row">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void openUrl("https://github.com/Pathoschild/StardewXnbHack")
+                      }
+                    >
+                      Get StardewXnbHack ↗
+                    </button>
+                  </div>
+                </>
+              )}
             </section>
           )}
 
