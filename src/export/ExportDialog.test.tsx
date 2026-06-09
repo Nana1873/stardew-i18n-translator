@@ -45,6 +45,15 @@ describe("ExportDialog", () => {
     expect(screen.getByText("disk full")).toBeInTheDocument();
   });
 
+  it("reports the mod count for an export-all run", () => {
+    const { container } = render(
+      <ExportDialog modName="All mods" modsWritten={3} result={RESULT} error={null} onClose={() => {}} />,
+    );
+    const summary = container.querySelector(".exportdlg__body p")?.textContent ?? "";
+    expect(summary).toContain("in");
+    expect(summary).toContain("3 mods");
+  });
+
   it("calls onClose when Close is clicked", () => {
     const onClose = vi.fn();
     render(<ExportDialog modName="Test Mod" result={RESULT} error={null} onClose={onClose} />);
