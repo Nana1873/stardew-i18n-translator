@@ -126,6 +126,11 @@ fn build_glossary(
 }
 
 #[tauri::command]
+fn load_glossary(app: AppHandle) -> Result<Option<glossary::Glossary>, String> {
+    Ok(glossary::load(&config_dir(&app)?))
+}
+
+#[tauri::command]
 fn glossary_status(
     app: AppHandle,
     stardew_path: String,
@@ -185,6 +190,7 @@ pub fn run() {
             export_mod,
             build_glossary,
             glossary_status,
+            load_glossary,
             open_url,
             load_settings,
             save_settings

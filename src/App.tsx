@@ -13,6 +13,7 @@ import {
   type ScannedMod,
   type StringStatus,
   exportMod,
+  loadGlossary,
   loadSettings,
   saveSettings,
   scanMods,
@@ -45,6 +46,13 @@ export function App() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
+  const [glossary, setGlossaryTerms] = useState<Record<string, string> | null>(null);
+
+  function refreshGlossary() {
+    loadGlossary()
+      .then((g) => setGlossaryTerms(g && g.termCount > 0 ? g.terms : null))
+      .catch(() => setGlossaryTerms(null));
+  }
 
   function startResize(event: ReactMouseEvent) {
     event.preventDefault();
@@ -76,6 +84,7 @@ export function App() {
       .finally(() => {
         if (active) setLoaded(true);
       });
+    refreshGlossary();
     return () => {
       active = false;
     };
@@ -89,6 +98,7 @@ export function App() {
     }
     setSettings(next);
     setWizardOpen(false);
+    refreshGlossary(); // the wizard may have just built the glossary
   }
 
   async function handleScan() {
@@ -232,7 +242,12 @@ export function App() {
           aria-label="Resize mod list"
           onMouseDown={startResize}
         />
-        <StringTablePanel mod={selectedMod} search={search} statusFilter={statusFilter} />
+        <StringTablePanel
+          mod={selectedMod}
+          search={search}
+          statusFilter={statusFilter}
+          glossary={glossary}
+        />
       </main>
       {wizardOpen && (
         <SetupWizard
@@ -355,10 +370,12 @@ function StringTablePanel({
   mod,
   search,
   statusFilter,
+  glossary,
 }: {
   mod: ScannedMod | null;
   search: string;
   statusFilter: StringStatus | "all";
+  glossary: Record<string, string> | null;
 }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
@@ -366,7 +383,13 @@ function StringTablePanel({
         Strings{mod && <> · <StringTableHeader mod={mod} /></>}
       </div>
       {mod ? (
-        <StringTable key={mod.uniqueId} mod={mod} search={search} statusFilter={statusFilter} />
+        <StringTable
+          key={mod.uniqueId}
+          mod={mod}
+          search={search}
+          statusFilter={statusFilter}
+          glossary={glossary}
+        />
       ) : (
         <div className="panel__empty">Select a mod to view its strings.</div>
       )}

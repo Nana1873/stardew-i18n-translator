@@ -44,10 +44,12 @@ export function StringTable({
   mod,
   search = "",
   statusFilter = "all",
+  glossary = null,
 }: {
   mod: ScannedMod;
   search?: string;
   statusFilter?: StringStatus | "all";
+  glossary?: Record<string, string> | null;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -286,6 +288,7 @@ export function StringTable({
           index={editingIndex}
           total={data.length}
           modName={mod.name}
+          glossary={glossary}
           onSave={(value, status) => void saveRow(editingIndex, value, status)}
           onClose={() => setEditingIndex(null)}
           onNavigate={(delta) =>

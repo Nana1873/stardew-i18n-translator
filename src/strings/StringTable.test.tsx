@@ -125,6 +125,17 @@ describe("StringTable", () => {
     );
   });
 
+  it("shows glossary hints in the editor and inserts the term on click", async () => {
+    render(<StringTable mod={MOD} glossary={{ Bye: "Tschüss" }} />);
+    fireEvent.doubleClick(await screen.findByText("bye"));
+
+    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    expect(textarea.value).toBe("");
+
+    fireEvent.click(await screen.findByRole("button", { name: /Bye/ }));
+    expect(textarea.value).toBe("Tschüss");
+  });
+
   it("shows a validation error icon when a source token is missing", async () => {
     mockStrings([
       { key: "greet", source: "Hi {{name}}", target: "Hallo", targetPresent: true },
