@@ -117,6 +117,46 @@ export function saveString(
   });
 }
 
+export interface ExportFileInput {
+  relativeDir: string;
+  defaultPath: string;
+  targetPath: string;
+}
+
+export interface SkippedKey {
+  relativeDir: string;
+  key: string;
+  reason: string;
+}
+
+export interface ExportFileResult {
+  relativeDir: string;
+  targetPath: string;
+  written: boolean;
+  backedUp: boolean;
+  writtenKeys: number;
+  untranslated: number;
+  notTranslatable: number;
+  outdated: number;
+}
+
+export interface ExportResult {
+  files: ExportFileResult[];
+  skipped: SkippedKey[];
+  filesWritten: number;
+  totalWrittenKeys: number;
+  totalUntranslated: number;
+  totalNotTranslatable: number;
+  totalOutdated: number;
+}
+
+export function exportMod(
+  modUniqueId: string,
+  files: ExportFileInput[],
+): Promise<ExportResult> {
+  return invoke<ExportResult>("export_mod", { modUniqueId, files });
+}
+
 export function openUrl(url: string): Promise<void> {
   return invoke<void>("open_url", { url });
 }

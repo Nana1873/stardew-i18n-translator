@@ -1,13 +1,14 @@
 //! Stardew i18n Translator — Tauri backend.
 //!
-//! Milestone 1: settings persistence and Stardew install auto-detection
-//! (SPEC §4, §14). The mod scanner, i18n parser, and exporter arrive in their
-//! own M1–M3 issues. Kept minimal per SCOPE_GUARDRAILS — no plugin/provider
-//! abstractions.
+//! Settings persistence + Stardew auto-detection (M1), the mod scanner and
+//! i18n parser (M1/M2), persisted translation state (M2), and the i18n exporter
+//! (M3). Kept minimal per SCOPE_GUARDRAILS — no plugin/provider abstractions.
 
 mod detection;
+mod export;
 mod scanner;
 mod settings;
+mod tokens;
 mod translations;
 
 use std::path::{Path, PathBuf};
@@ -99,6 +100,15 @@ fn save_string(
     )
 }
 
+#[tauri::command]
+fn export_mod(
+    app: AppHandle,
+    mod_unique_id: String,
+    files: Vec<export::ExportFileInput>,
+) -> Result<export::ExportResult, String> {
+    export::export_mod(&config_dir(&app)?, &mod_unique_id, &files)
+}
+
 /// Open an external http(s) URL in the user's default browser (Nexus links).
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -141,6 +151,7 @@ pub fn run() {
             scan_mods,
             load_strings,
             save_string,
+            export_mod,
             open_url,
             load_settings,
             save_settings

@@ -8,8 +8,10 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import {
   type AppSettings,
+  type ExportResult,
   type ScanResult,
   type ScannedMod,
+  exportMod,
   loadSettings,
   saveSettings,
   scanMods,
@@ -17,6 +19,7 @@ import {
 import { SetupWizard } from "./setup/SetupWizard";
 import { ModList } from "./mods/ModList";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
+import { ExportDialog } from "./export/ExportDialog";
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -28,6 +31,11 @@ export function App() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modsWidth, setModsWidth] = useState(460);
+
+  const [exporting, setExporting] = useState(false);
+  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
 
   function startResize(event: ReactMouseEvent) {
     event.preventDefault();
@@ -91,12 +99,35 @@ export function App() {
   const configured = Boolean(settings?.stardewPath);
   const selectedMod = scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
 
+  async function handleExport() {
+    if (!selectedMod) return;
+    setExporting(true);
+    setExportResult(null);
+    setExportError(null);
+    setExportOpen(true);
+    try {
+      const files = selectedMod.i18nFiles.map((file) => ({
+        relativeDir: file.relativeDir,
+        defaultPath: file.defaultPath,
+        targetPath: file.targetPath,
+      }));
+      setExportResult(await exportMod(selectedMod.uniqueId, files));
+    } catch (error) {
+      setExportError(String(error));
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="app">
       <Toolbar
         onScan={handleScan}
         scanEnabled={configured && !scanning}
         scanning={scanning}
+        onExport={handleExport}
+        exportEnabled={Boolean(selectedMod) && !exporting}
+        exporting={exporting}
         onOpenSettings={() => setWizardOpen(true)}
         settingsEnabled={loaded}
       />
@@ -140,6 +171,14 @@ export function App() {
           onCancel={configured ? () => setWizardOpen(false) : undefined}
         />
       )}
+      {exportOpen && (
+        <ExportDialog
+          modName={selectedMod?.name ?? ""}
+          result={exporting ? null : exportResult}
+          error={exportError}
+          onClose={() => setExportOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -148,12 +187,18 @@ function Toolbar({
   onScan,
   scanEnabled,
   scanning,
+  onExport,
+  exportEnabled,
+  exporting,
   onOpenSettings,
   settingsEnabled,
 }: {
   onScan: () => void;
   scanEnabled: boolean;
   scanning: boolean;
+  onExport: () => void;
+  exportEnabled: boolean;
+  exporting: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
 }) {
@@ -164,9 +209,13 @@ function Toolbar({
         <button type="button" onClick={onScan} disabled={!scanEnabled}>
           {scanning ? "Scanning…" : "Scan"}
         </button>
-        {/* Export is enabled by its own M3 issue. */}
-        <button type="button" disabled>
-          Export
+        <button
+          type="button"
+          onClick={onExport}
+          disabled={!exportEnabled}
+          title="Export the selected mod's translations to i18n/<lang>.json"
+        >
+          {exporting ? "Exporting…" : "Export"}
         </button>
         <button type="button" onClick={onOpenSettings} disabled={!settingsEnabled}>
           Settings
