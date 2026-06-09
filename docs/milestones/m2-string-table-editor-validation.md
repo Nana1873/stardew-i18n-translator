@@ -25,7 +25,7 @@ Implement the main workspace string table, the double-click editing dialog, prot
 6. Right-click context menu with the v1 bulk actions (Edit, Copy original/translation, Mark translated, Mark not-translatable, Clear translation). ✅ — "Search Translation on Nexus" mod-level action is **still open**.
 7. Search bar filters results in real-time (across key/original/target). ✅
 8. Status filter shows only strings of the selected status. ✅
-9. Sorting by column. ❌ **Still open**.
+9. Sorting by column (Key / Original / Translation / File; click to cycle asc → desc → off). ✅
 10. Validation rules are covered by unit tests. ✅
 
 ## Status (shipped vs. open) — 2026-06-09
@@ -35,7 +35,6 @@ Implement the main workspace string table, the double-click editing dialog, prot
 **Also shipped (post-audit, 2026-06-09):** toolbar text **search** across key/original/target, **status filter** dropdown, and **Ctrl+A** select-all-visible. Filtering operates on a visible view while selection/editor navigation keep stable data indices.
 
 **Still open for v1 (tracked, not yet built):**
-- **Column sorting**.
 - **Scan progress dialog** is simplified to an inline "Scanning…" label (SPEC §7.2 describes a modal).
 
 **Moved out of M2:** the **"Search Translation on Nexus"** action is deferred and
