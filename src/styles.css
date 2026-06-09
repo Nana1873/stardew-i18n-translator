@@ -345,6 +345,30 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.stringrow__sort {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.stringrow__sort:hover {
+  color: var(--text);
+}
+
+.stringrow__sort--active {
+  color: var(--text);
+}
+
 .stringrow--data {
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
 }
