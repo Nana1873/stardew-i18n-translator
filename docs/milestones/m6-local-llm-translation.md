@@ -67,9 +67,12 @@ URL.
    tests (with the HTTP layer mocked — no live model required in CI).
 
 ## Risks
-* **Model quality varies wildly.** Small local models hallucinate and ignore token
-  rules. *Mitigation:* token validation + one retry + `review-needed` default (output
-  is always a suggestion, never auto-`translated`).
+* **Model quality varies wildly.** Small/“abliterated” models hallucinate, ignore the
+  rules, and can run away (observed: a 4-word source → a 6000-token essay, which then
+  tripped the request timeout). *Mitigations:* a bounded `max_tokens` budget (≈2× source
+  chars, capped) so a runaway is cut off fast; token validation + one retry;
+  `review-needed` default (output is always a suggestion); a Settings hint to use a
+  capable instruct model; timeouts are reported as such (not “server unreachable”).
 * **Throughput** on large mods (640+ strings). *Mitigation (batch follow-up):* only
   `untranslated`/`outdated`, serial or low concurrency (local GPU is the bottleneck),
   progress + cancel.

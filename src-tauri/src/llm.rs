@@ -102,6 +102,17 @@ struct ChatRequest {
     messages: Vec<ChatMessage>,
     temperature: f32,
     stream: bool,
+    /// Hard cap on generated tokens. Without it a weak model can run away for
+    /// thousands of tokens (observed: a 4-word source produced a 6000-token
+    /// essay), which both wastes time and trips the request timeout.
+    max_tokens: u32,
+}
+
+/// A bounded output-token budget for translating `source`. Generous (≈2× the
+/// source character count, so well above a real translation's need) but capped,
+/// so a runaway model is stopped quickly instead of hanging.
+fn output_token_budget(source: &str) -> u32 {
+    ((source.chars().count() as u32).saturating_mul(2)).clamp(64, 1024)
 }
 
 #[derive(Deserialize)]
@@ -175,7 +186,12 @@ fn build_messages(
 }
 
 /// POST one chat completion and return the assistant's (trimmed) content.
-async fn chat(base_url: &str, model: &str, messages: Vec<ChatMessage>) -> Result<String, String> {
+async fn chat(
+    base_url: &str,
+    model: &str,
+    messages: Vec<ChatMessage>,
+    max_tokens: u32,
+) -> Result<String, String> {
     let url = {
         let trimmed = base_url.trim().trim_end_matches('/');
         format!("{trimmed}/chat/completions")
@@ -192,10 +208,20 @@ async fn chat(base_url: &str, model: &str, messages: Vec<ChatMessage>) -> Result
             messages,
             temperature: 0.2,
             stream: false,
+            max_tokens,
         })
         .send()
         .await
-        .map_err(|error| format!("Could not reach {url} — is the server running? ({error})"))?;
+        .map_err(|error| {
+            if error.is_timeout() {
+                format!(
+                    "The model timed out — it may be too slow or stuck. Try a smaller/faster \
+                     instruct model, or a shorter string. ({url})"
+                )
+            } else {
+                format!("Could not reach {url} — is the server running? ({error})")
+            }
+        })?;
 
     if !response.status().is_success() {
         return Err(format!("Server returned {} for {url}.", response.status()));
@@ -225,7 +251,14 @@ pub async fn translate(
     target_language: &str,
     glossary_pairs: &[(String, String)],
 ) -> Result<TranslationResult, String> {
-    let first = chat(base_url, model, build_messages(source, target_language, glossary_pairs, None)).await?;
+    let budget = output_token_budget(source);
+    let first = chat(
+        base_url,
+        model,
+        build_messages(source, target_language, glossary_pairs, None),
+        budget,
+    )
+    .await?;
     let missing = tokens::missing_token_list(source, &first);
     if missing.is_empty() {
         return Ok(TranslationResult {
@@ -238,6 +271,7 @@ pub async fn translate(
         base_url,
         model,
         build_messages(source, target_language, glossary_pairs, Some(&missing)),
+        budget,
     )
     .await?;
     let missing_second = tokens::missing_token_list(source, &second);
@@ -303,6 +337,17 @@ mod tests {
         let messages = build_messages("A parsnip", "German", &pairs, None);
         assert!(messages[0].content.contains("Official glossary"));
         assert!(messages[0].content.contains("Parsnip -> Pastinake"));
+    }
+
+    #[test]
+    fn output_budget_is_bounded() {
+        // Short source → the floor (so a runaway is cut off quickly).
+        assert_eq!(output_token_budget("UI Info Suite Options"), 64);
+        // Long source → scales, but stays capped.
+        let long = "x".repeat(5000);
+        assert_eq!(output_token_budget(&long), 1024);
+        // Mid-length source → ~2× the character count.
+        assert_eq!(output_token_budget(&"y".repeat(100)), 200);
     }
 
     #[test]
