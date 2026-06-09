@@ -161,7 +161,7 @@ body {
 
 .modrow {
   display: grid;
-  grid-template-columns: 20px minmax(70px, 1fr) 48px 52px 40px 64px;
+  grid-template-columns: 20px minmax(70px, 1fr) 48px 52px 40px 84px;
   align-items: center;
   gap: 6px;
   padding: 3px 8px;
@@ -276,9 +276,41 @@ body {
 }
 
 .modrow__version,
-.modrow__files,
+.modrow__files {
+  color: var(--text-muted);
+}
+
 .modrow__progress {
   color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.modrow__bar {
+  flex: 1;
+  height: 5px;
+  min-width: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.modrow__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+}
+
+.modrow__bar-fill--full {
+  background: #5ec488;
+}
+
+.modrow__pct {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
 }
 
 .panel__warn {

@@ -290,7 +290,7 @@ Shown in the right panel when a mod (or specific file within a mod) is selected.
 
 Features:
 - Sortable by any column.
-- Filterable by status (untranslated, review-needed, done, all).
+- Filterable by status (untranslated, translated, outdated, not-translatable, all).
 - Text search across key, original, and target.
 - Multi-select with **Ctrl+Click** (toggle) and **Shift+Click** (range).
 - **Ctrl+A** to select all visible.
