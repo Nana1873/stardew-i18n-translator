@@ -28,6 +28,14 @@ Implement the core project setup flow, recursively scan the Stardew Valley Mods 
 * **Varying Manifest Structures:** Mods may have incomplete manifests, multi-component layouts (one download = several `manifest.json`, e.g. Ridgeside Village's `[CP]`/`[CC]`/`[FTM]`/SMAPI parts), or sentinel `Nexus:-1` UpdateKeys. (Mitigation: each manifest = one mod; skip components without `i18n/`; treat non-positive Nexus IDs as "no ID"; safe fallbacks + warnings, no crash. See [SPEC.md §6 Edge Cases](../../SPEC.md).)
 * **Massive Mod Folders:** Some users have 300+ mods, causing scanning bottlenecks. (Mitigation: Use asynchronous scanning, and do not block the UI thread).
 
+## Status (shipped vs. open) — 2026-06-09
+
+**Shipped:** setup wizard (Stardew folder → Mods folder → languages → glossary step), settings persistence, Stardew auto-detection (Steam/GOG, registry + `libraryfolders.vdf`), manual folder override, recursive `manifest.json` scanner with lenient JSON (BOM/comments/trailing commas), Nexus-ID extraction (rejecting the `Nexus:-1` sentinel), `i18n/default.json` + `i18n/<lang>.json` import, the package→component mod **tree** with Status | Mod | Version | Nexus | Dateien | Fortschritt, progress/status roll-up, and clickable Nexus links.
+
+**Still open / simplified for v1 (tracked):**
+- **Glossary extraction** is a skippable placeholder step only ("not yet available"). It is **optional and non-blocking** by design (SPEC §5), so the core loop is unaffected — but the actual `Content (unpacked)/` extractor + caching is not built.
+- **Scan progress** is shown as an inline "Scanning…" label rather than the modal scan dialog with per-file progress described in SPEC §7.2.
+
 ## Suggested Issue Breakdown
 
 ### Issue 3: Implement setup wizard for Stardew and Mods paths

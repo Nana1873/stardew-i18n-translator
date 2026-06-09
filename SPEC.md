@@ -392,7 +392,7 @@ v1 uses **4 statuses** (simplified from an earlier 6-status draft — see the sc
 
 | Status | Color | Meaning | How it's set |
 |--------|-------|---------|--------------|
-| `untranslated` | 🔴 Red | No target text yet | Initial; or "Reset" / "Mark as needs translation" |
+| `untranslated` | 🔴 Red | No target text yet | Initial; or editor "Reset" (F4); or context-menu "Clear translation" |
 | `translated` | 🟢 Green | Has a translation (your edit, or an imported existing `<lang>.json` value) | Saving in the editor; or "Mark as translated" |
 | `outdated` | 🟣 Purple | The English source changed since this string was translated | **Automatic** on re-scan (see below) — never set manually |
 | `not-translatable` | ⚪ Gray | Explicitly marked as not needing translation (proper nouns, IDs) | F2 in the editor; or "Mark as not translatable" |
