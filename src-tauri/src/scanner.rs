@@ -391,8 +391,9 @@ fn resolve_string(
 ) -> (String, String) {
     if let Some(stored) = state.get(&translations::entry_key(relative_dir, key)) {
         let status = normalize_status(&stored.status);
-        // Only a `translated` string can go stale when its source changes.
-        let status = if status == "translated"
+        // A `translated` or (AI-suggested) `review-needed` string goes stale when
+        // its source changes — both are translations tied to a source hash.
+        let status = if (status == "translated" || status == "review-needed")
             && stored.source_hash != translations::source_hash(source_text)
         {
             "outdated".to_string()
@@ -410,13 +411,17 @@ fn resolve_string(
     (imported_text, status.to_string())
 }
 
-/// Map any stored status (including legacy values) to the v1 set:
-/// `untranslated` | `translated` | `not-translatable`. (`outdated` is derived.)
+/// Map any stored status (including legacy values) to the recognized set:
+/// `untranslated` | `translated` | `not-translatable` | `review-needed`.
+/// (`outdated` is derived from the source hash, never stored.) `review-needed`
+/// is an AI suggestion awaiting review (M6); legacy `done`/`imported` collapse
+/// to `translated`.
 fn normalize_status(stored: &str) -> String {
     match stored {
         "not-translatable" => "not-translatable",
         "untranslated" => "untranslated",
-        _ => "translated", // done | review-needed | imported | translated | outdated
+        "review-needed" => "review-needed",
+        _ => "translated", // done | imported | translated | outdated
     }
     .to_string()
 }

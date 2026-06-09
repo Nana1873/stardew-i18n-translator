@@ -56,6 +56,8 @@ pub struct ExportFileResult {
     pub not_translatable: usize,
     /// Exported, but stale (source changed since translating) — review advised.
     pub outdated: usize,
+    /// Exported, but an unreviewed AI suggestion (M6) — review advised.
+    pub review_needed: usize,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -68,6 +70,7 @@ pub struct ExportResult {
     pub total_untranslated: usize,
     pub total_not_translatable: usize,
     pub total_outdated: usize,
+    pub total_review_needed: usize,
 }
 
 /// Export every i18n file of one mod. Returns a per-file + aggregate summary.
@@ -111,6 +114,9 @@ pub fn export_mod(
             if row.status == "outdated" {
                 file_result.outdated += 1;
             }
+            if row.status == "review-needed" {
+                file_result.review_needed += 1;
+            }
             out.insert(row.key, Value::String(row.target));
         }
 
@@ -125,6 +131,7 @@ pub fn export_mod(
         result.total_untranslated += file_result.untranslated;
         result.total_not_translatable += file_result.not_translatable;
         result.total_outdated += file_result.outdated;
+        result.total_review_needed += file_result.review_needed;
         result.files.push(file_result);
     }
 
@@ -310,6 +317,32 @@ mod tests {
         let body = read(&i18n.join("de.json"));
         assert!(body.contains("\"ok\""));
         assert!(!body.contains("\"bad\""));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn exports_review_needed_strings_but_counts_them() {
+        let root = crate::test_support::temp_dir("export-review");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
+        // An AI suggestion (review-needed) has content -> exported, but flagged.
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "Hallo".into(),
+                status: "review-needed".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert_eq!(result.total_written_keys, 1);
+        assert_eq!(result.total_review_needed, 1);
+        assert!(read(&i18n.join("de.json")).contains("\"Hallo\""));
 
         std::fs::remove_dir_all(&root).ok();
     }

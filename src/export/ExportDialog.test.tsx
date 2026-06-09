@@ -13,6 +13,7 @@ const RESULT: ExportResult = {
       untranslated: 1,
       notTranslatable: 1,
       outdated: 1,
+      reviewNeeded: 1,
     },
   ],
   skipped: [{ relativeDir: "i18n", key: "bad", reason: "missing required token(s)" }],
@@ -21,6 +22,7 @@ const RESULT: ExportResult = {
   totalUntranslated: 1,
   totalNotTranslatable: 1,
   totalOutdated: 1,
+  totalReviewNeeded: 1,
 };
 
 describe("ExportDialog", () => {
@@ -31,6 +33,7 @@ describe("ExportDialog", () => {
     expect(screen.getByText(/Untranslated/)).toBeInTheDocument();
     expect(screen.getByText(/Not\s*translatable/)).toBeInTheDocument();
     expect(screen.getByText(/Outdated/)).toBeInTheDocument();
+    expect(screen.getByText(/Needs review/)).toBeInTheDocument();
     // Skipped key is listed with its name.
     expect(screen.getByText("bad")).toBeInTheDocument();
     // Backup note appears because a file was backed up.

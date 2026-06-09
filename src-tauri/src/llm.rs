@@ -10,7 +10,9 @@
 
 use std::time::Duration;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+
+use crate::tokens;
 
 /// OpenAI-compatible `GET /v1/models` response: `{ "data": [ { "id": "…" }, … ] }`.
 #[derive(Deserialize)]
@@ -74,6 +76,186 @@ pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
     Ok(parse_model_ids(&body))
 }
 
+// ---------------------------------------------------------------------------
+// Translation (Issue 16): translate one string via POST /v1/chat/completions.
+// ---------------------------------------------------------------------------
+
+/// Result of a single-string translation. `missing_tokens` is non-empty when the
+/// model dropped a protected token even after one stricter retry — the UI flags
+/// it for a manual fix (never a silent corruption).
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TranslationResult {
+    pub text: String,
+    pub missing_tokens: Vec<String>,
+}
+
+#[derive(Serialize)]
+struct ChatMessage {
+    role: &'static str,
+    content: String,
+}
+
+#[derive(Serialize)]
+struct ChatRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    temperature: f32,
+    stream: bool,
+}
+
+#[derive(Deserialize)]
+struct ChatResponse {
+    #[serde(default)]
+    choices: Vec<ChatChoice>,
+}
+
+#[derive(Deserialize)]
+struct ChatChoice {
+    message: ChatChoiceMessage,
+}
+
+#[derive(Deserialize)]
+struct ChatChoiceMessage {
+    #[serde(default)]
+    content: String,
+}
+
+/// Build the chat messages for one translation. Pure (no I/O) so it is unit-
+/// tested. `glossary_pairs` are injected as exact-term guidance; `retry_missing`,
+/// when present, adds a stricter reminder listing tokens a prior attempt dropped.
+fn build_messages(
+    source: &str,
+    target_language: &str,
+    glossary_pairs: &[(String, String)],
+    retry_missing: Option<&[String]>,
+) -> Vec<ChatMessage> {
+    let mut system = String::new();
+    system.push_str(&format!(
+        "You are a professional translator for Stardew Valley mods. \
+         Translate the user's text from English into {target_language}.\n\
+         Rules:\n\
+         - Output ONLY the translation. No quotes, no explanations, no notes.\n\
+         - Preserve every placeholder/token EXACTLY as written and untranslated, \
+           e.g. {{{{Token}}}}, {{0}}, $b, ${{a^b}}$, [item], %item ... %%, @, ^, #$b#. \
+           Do not add, remove, reorder, or alter them.\n\
+         - Keep the same line breaks.\n\
+         - Translate naturally and concisely; keep game terminology consistent."
+    ));
+
+    if !glossary_pairs.is_empty() {
+        system.push_str(
+            "\nOfficial glossary — use these exact target terms when the word appears:",
+        );
+        for (en, target) in glossary_pairs {
+            system.push_str(&format!("\n- {en} -> {target}"));
+        }
+    }
+
+    if let Some(missing) = retry_missing {
+        if !missing.is_empty() {
+            system.push_str(&format!(
+                "\nIMPORTANT: your previous attempt dropped these required tokens: {}. \
+                 You MUST include every one of them verbatim in the translation.",
+                missing.join(", ")
+            ));
+        }
+    }
+
+    vec![
+        ChatMessage {
+            role: "system",
+            content: system,
+        },
+        ChatMessage {
+            role: "user",
+            content: source.to_string(),
+        },
+    ]
+}
+
+/// POST one chat completion and return the assistant's (trimmed) content.
+async fn chat(base_url: &str, model: &str, messages: Vec<ChatMessage>) -> Result<String, String> {
+    let url = {
+        let trimmed = base_url.trim().trim_end_matches('/');
+        format!("{trimmed}/chat/completions")
+    };
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| format!("Could not create HTTP client: {error}"))?;
+
+    let response = client
+        .post(&url)
+        .json(&ChatRequest {
+            model: model.to_string(),
+            messages,
+            temperature: 0.2,
+            stream: false,
+        })
+        .send()
+        .await
+        .map_err(|error| format!("Could not reach {url} — is the server running? ({error})"))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Server returned {} for {url}.", response.status()));
+    }
+
+    let parsed: ChatResponse = response
+        .json()
+        .await
+        .map_err(|error| format!("Could not parse the model response: {error}"))?;
+
+    parsed
+        .choices
+        .into_iter()
+        .next()
+        .map(|choice| choice.message.content.trim().to_string())
+        .filter(|text| !text.is_empty())
+        .ok_or_else(|| "The model returned an empty response.".to_string())
+}
+
+/// Translate one source string. Validates protected tokens against the source;
+/// on a dropped token, retries once with a stricter reminder and returns the
+/// better of the two attempts (with any still-missing tokens flagged).
+pub async fn translate(
+    base_url: &str,
+    model: &str,
+    source: &str,
+    target_language: &str,
+    glossary_pairs: &[(String, String)],
+) -> Result<TranslationResult, String> {
+    let first = chat(base_url, model, build_messages(source, target_language, glossary_pairs, None)).await?;
+    let missing = tokens::missing_token_list(source, &first);
+    if missing.is_empty() {
+        return Ok(TranslationResult {
+            text: first,
+            missing_tokens: vec![],
+        });
+    }
+
+    let second = chat(
+        base_url,
+        model,
+        build_messages(source, target_language, glossary_pairs, Some(&missing)),
+    )
+    .await?;
+    let missing_second = tokens::missing_token_list(source, &second);
+
+    // Prefer the retry only if it is at least as good as the first attempt.
+    if missing_second.len() <= missing.len() {
+        Ok(TranslationResult {
+            text: second,
+            missing_tokens: missing_second,
+        })
+    } else {
+        Ok(TranslationResult {
+            text: first,
+            missing_tokens: missing,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -102,5 +284,33 @@ mod tests {
         assert_eq!(models_url("http://localhost:1234/v1"), "http://localhost:1234/v1/models");
         assert_eq!(models_url("http://localhost:1234/v1/"), "http://localhost:1234/v1/models");
         assert_eq!(models_url("  http://localhost:11434/v1  "), "http://localhost:11434/v1/models");
+    }
+
+    #[test]
+    fn messages_carry_target_language_rules_and_source() {
+        let messages = build_messages("Hello {{name}}", "German", &[], None);
+        assert_eq!(messages.len(), 2);
+        assert_eq!(messages[0].role, "system");
+        assert!(messages[0].content.contains("into German"));
+        assert!(messages[0].content.contains("Preserve every placeholder/token"));
+        assert_eq!(messages[1].role, "user");
+        assert_eq!(messages[1].content, "Hello {{name}}");
+    }
+
+    #[test]
+    fn glossary_pairs_are_injected_into_the_system_prompt() {
+        let pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
+        let messages = build_messages("A parsnip", "German", &pairs, None);
+        assert!(messages[0].content.contains("Official glossary"));
+        assert!(messages[0].content.contains("Parsnip -> Pastinake"));
+    }
+
+    #[test]
+    fn retry_reminder_lists_the_dropped_tokens() {
+        let missing = vec!["{{name}}".to_string(), "$b".to_string()];
+        let messages = build_messages("Hi {{name}}$b", "German", &[], Some(&missing));
+        assert!(messages[0].content.contains("dropped these required tokens"));
+        assert!(messages[0].content.contains("{{name}}"));
+        assert!(messages[0].content.contains("$b"));
     }
 }

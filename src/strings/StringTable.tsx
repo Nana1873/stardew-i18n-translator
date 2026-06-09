@@ -19,6 +19,7 @@ import {
   type ScannedMod,
   type StringRow,
   type StringStatus,
+  type TranslationResult,
   loadStrings,
   saveString,
 } from "../tauri/commands";
@@ -45,11 +46,13 @@ export function StringTable({
   search = "",
   statusFilter = "all",
   glossary = null,
+  onTranslate,
 }: {
   mod: ScannedMod;
   search?: string;
   statusFilter?: StringStatus | "all";
   glossary?: Record<string, string> | null;
+  onTranslate?: (source: string) => Promise<TranslationResult>;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -289,6 +292,7 @@ export function StringTable({
           total={data.length}
           modName={mod.name}
           glossary={glossary}
+          onTranslate={onTranslate}
           onSave={(value, status) => void saveRow(editingIndex, value, status)}
           onClose={() => setEditingIndex(null)}
           onNavigate={(delta) =>

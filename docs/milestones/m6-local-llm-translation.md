@@ -91,22 +91,32 @@ URL.
   **Settings** button away from re-opening the Setup Wizard: it now opens the Settings
   dialog (§7.7), and the wizard is re-reachable from there via "Re-run setup…".
 
-### Issue 16: Translate-one-string command with glossary injection + token retry (MVP part 2)
+### Issue 16: Translate-one-string command with glossary injection + token retry (MVP part 2) ✅
 * Prompt builder (system rules + glossary subset + source), `POST /v1/chat/completions`,
-  token validation + one stricter retry, editor "Translate with local AI" button →
-  `review-needed`. Unit tests with the HTTP layer mocked.
+  token validation + one stricter retry, editor **Translate** button + **Ctrl+F5** →
+  fills the target as `review-needed`. An explicit Save confirms it to `translated`;
+  navigating away auto-saves it as `review-needed`. No AI configured → the button shows
+  a "Configure a local AI in Settings" hint. Export counts/flags `review-needed`
+  (exported, since it has content) like `outdated`. Pure pieces (prompt builder,
+  glossary matching, missing-token list) are unit-tested; the HTTP call is not exercised
+  in CI.
 
 ### Issue 17 (follow-up): Batch / whole-mod translation
 * Progress dialog (X/Y, cancel), translate all `untranslated`/`outdated` in a mod or
   selection, results → `review-needed`, resume-friendly.
 
 ## Status (shipped vs. open)
-**In progress.** Issue 15 shipped: the OpenAI-compatible connection (`llm` module,
-`llm_models` command, `AppSettings.llm`) and a new **Settings dialog** (§7.7) with a
-**Local AI** section + "Test connection". The toolbar Settings button now opens this
-dialog instead of re-running the Setup Wizard. **Next:** Issue 16 (translate one
-string via Ctrl+F5 → `review-needed`). Reprioritized ahead of M4/M5 at the user's
-request (a working glossary makes local-AI pre-translation worthwhile now).
+**MVP shipped.** Issue 15 (connection settings + Settings dialog §7.7) and Issue 16
+(translate one string via the **Translate** button / **Ctrl+F5** → `review-needed`,
+glossary injection + token retry) are done. **Open:** Issue 17 — batch / whole-mod
+translation with a progress dialog, cancel, and resume.
+
+### Future (post-v1): paid cloud APIs
+Because the client is OpenAI-compatible, paid endpoints (OpenAI, Anthropic via an
+OpenAI-compatible gateway, etc.) are mostly a matter of adding an **API-key header**
+field to the connection settings. Deferred: SPEC §19 #7 forbids API keys in v1 (the
+tool must work fully offline). v1 stays **local-LLM only**; cloud APIs are an opt-in
+extension once v1 is solid.
 
 ## Agent Handoff Notes
 *OpenAI-compatible endpoint only — do not add a provider plugin system (SPEC §19 #6).

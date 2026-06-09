@@ -85,7 +85,9 @@ export type StringStatus =
   | "untranslated"
   | "translated"
   | "outdated"
-  | "not-translatable";
+  | "not-translatable"
+  // AI suggestion (M6 local LLM) awaiting human review; confirmed → translated.
+  | "review-needed";
 
 export interface StringRow {
   key: string;
@@ -149,6 +151,7 @@ export interface ExportFileResult {
   untranslated: number;
   notTranslatable: number;
   outdated: number;
+  reviewNeeded: number;
 }
 
 export interface ExportResult {
@@ -159,6 +162,7 @@ export interface ExportResult {
   totalUntranslated: number;
   totalNotTranslatable: number;
   totalOutdated: number;
+  totalReviewNeeded: number;
 }
 
 export function exportMod(
@@ -204,6 +208,30 @@ export function loadGlossary(): Promise<Glossary | null> {
  */
 export function llmModels(baseUrl: string): Promise<string[]> {
   return invoke<string[]>("llm_models", { baseUrl });
+}
+
+export interface TranslationResult {
+  text: string;
+  /** Protected tokens the model still dropped after one retry (UI flags these). */
+  missingTokens: string[];
+}
+
+/**
+ * Translate one source string via the configured local LLM (M6). Injects
+ * matching glossary terms and validates protected tokens with one retry.
+ */
+export function translateString(
+  baseUrl: string,
+  model: string,
+  source: string,
+  targetLanguage: string,
+): Promise<TranslationResult> {
+  return invoke<TranslationResult>("translate_string", {
+    baseUrl,
+    model,
+    source,
+    targetLanguage,
+  });
 }
 
 export function openUrl(url: string): Promise<void> {

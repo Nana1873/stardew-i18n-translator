@@ -12,12 +12,15 @@ import {
   type ScanResult,
   type ScannedMod,
   type StringStatus,
+  type TranslationResult,
   exportMod,
   loadGlossary,
   loadSettings,
   saveSettings,
   scanMods,
+  translateString,
 } from "./tauri/commands";
+import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { ModList } from "./mods/ModList";
@@ -138,6 +141,23 @@ export function App() {
   const configured = Boolean(settings?.stardewPath);
   const selectedMod = scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
 
+  // A local-AI translate callback, only when a model is configured (M6). Passed
+  // to the editor; absent → the editor shows a "configure AI" hint on Ctrl+F5.
+  const llm = settings?.llm;
+  const aiReady = Boolean(llm?.baseUrl && llm?.model);
+  const translate = aiReady
+    ? (source: string): Promise<TranslationResult> => {
+        const language =
+          TARGET_LANGUAGES.find((l) => l.code === settings?.targetLang)?.label.replace(
+            / \(.*\)$/,
+            "",
+          ) ??
+          settings?.targetLang ??
+          "the target language";
+        return translateString(llm!.baseUrl, llm!.model, source, language);
+      }
+    : undefined;
+
   function filesOf(mod: ScannedMod) {
     return mod.i18nFiles.map((file) => ({
       relativeDir: file.relativeDir,
@@ -179,6 +199,7 @@ export function App() {
         totalUntranslated: 0,
         totalNotTranslatable: 0,
         totalOutdated: 0,
+        totalReviewNeeded: 0,
       };
       let modsWritten = 0;
       for (const mod of scan.mods) {
@@ -197,6 +218,7 @@ export function App() {
         merged.totalUntranslated += result.totalUntranslated;
         merged.totalNotTranslatable += result.totalNotTranslatable;
         merged.totalOutdated += result.totalOutdated;
+        merged.totalReviewNeeded += result.totalReviewNeeded;
         if (result.filesWritten > 0) modsWritten += 1;
       }
       setExportResult(merged);
@@ -274,6 +296,7 @@ export function App() {
           search={search}
           statusFilter={statusFilter}
           glossary={glossary}
+          onTranslate={translate}
         />
       </main>
       {wizardOpen && (
@@ -409,11 +432,13 @@ function StringTablePanel({
   search,
   statusFilter,
   glossary,
+  onTranslate,
 }: {
   mod: ScannedMod | null;
   search: string;
   statusFilter: StringStatus | "all";
   glossary: Record<string, string> | null;
+  onTranslate?: (source: string) => Promise<TranslationResult>;
 }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
@@ -427,6 +452,7 @@ function StringTablePanel({
           search={search}
           statusFilter={statusFilter}
           glossary={glossary}
+          onTranslate={onTranslate}
         />
       ) : (
         <div className="panel__empty">Select a mod to view its strings.</div>
