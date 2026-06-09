@@ -150,6 +150,24 @@ describe("StringTable", () => {
     expect(textarea.value).toBe("{{name}}");
   });
 
+  it("sorts rows by a column when its header is clicked", async () => {
+    mockStrings([
+      { key: "zebra", source: "Z", target: "z", targetPresent: true },
+      { key: "alpha", source: "A", target: "a", targetPresent: true },
+    ]);
+    render(<StringTable mod={MOD} />);
+
+    // Default order: zebra then alpha (file order).
+    await screen.findByText("zebra");
+    const keysBefore = screen.getAllByText(/zebra|alpha/).map((n) => n.textContent);
+    expect(keysBefore[0]).toBe("zebra");
+
+    // Click "Key" header → ascending → alpha first.
+    fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
+    const keysAfter = screen.getAllByText(/zebra|alpha/).map((n) => n.textContent);
+    expect(keysAfter[0]).toBe("alpha");
+  });
+
   it("filters rows by search text across key/original/target", async () => {
     render(<StringTable mod={MOD} search="bye" statusFilter="all" />);
 

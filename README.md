@@ -13,7 +13,7 @@
 * **Export (M3):** per-mod export to `i18n/<lang>.json` in `default.json` key order (UTF-8 no BOM, 2-space), `.bak` backup + atomic write, token-safe per-key skip, summary dialog.
 
 ### Still open for v1 (tracked in the milestone docs)
-* **M2:** column sorting, modal scan-progress dialog. *(text search, status filter, and `Ctrl+A` are now done.)*
+* **M2:** modal scan-progress dialog. *(text search, status filter, `Ctrl+A`, and column sorting are now done.)*
 * **M3:** optional overwrite-confirmation (currently silent `.bak`). *(Export-all is now done.)*
 * **M1:** real glossary extraction (`Content (unpacked)/`) — currently an optional, non-blocking placeholder step.
 * **M4 (not started):** Claude-Code batch export/import (`review-needed` status returns here).
