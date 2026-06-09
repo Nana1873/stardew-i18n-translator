@@ -1,11 +1,22 @@
 # Stardew i18n Translator
 
-Early-stage planning repository for **Stardew i18n Translator** (`stardew-i18n-translator`), a local desktop tool for Stardew Valley / SMAPI mod translations.
+**Stardew i18n Translator** (`stardew-i18n-translator`) is a local desktop tool for translating Stardew Valley / SMAPI mod `i18n` files.
 
 > [!IMPORTANT]
 > **Status:** Private early development.  
-> **Current Phase:** `M2 complete` — string table, editor dialog, protected-token validation, persisted **4-status model** (`untranslated` · `translated` · `outdated` · `not-translatable`) with surgical `outdated` detection, and multi-select + right-click context menu (bulk status / copy). Next: **M3 — export** clean `i18n/<lang>.json`.  
+> **Current Phase:** `M3 merged` — the v1 core loop **Setup → Scan → Edit → Export** works end-to-end. See the honest done/open list below.  
 > **Stack:** [ADR 0001](docs/adr/0001-tech-stack-decision.md) is **Accepted** (Tauri / Rust + TypeScript). The code freeze is lifted for this stack; do not introduce other frameworks.
+
+### Implemented so far
+* **Setup & scan (M1):** wizard, settings persistence, Stardew auto-detection (Steam/GOG), recursive `manifest.json` scanner (lenient JSON), Nexus-ID extraction (rejecting `Nexus:-1`), package→component mod **tree**, `i18n/default.json` + `<lang>.json` import.
+* **Edit & validate (M2):** virtualized string table with full-row status tint, double-click editor (live validation, token chips, keyboard shortcuts), the full **protected-token taxonomy** compared as **multisets**, persisted **4-status model** (`untranslated` · `translated` · `outdated` · `not-translatable`) with surgical `outdated` detection, multi-select + right-click bulk actions.
+* **Export (M3):** per-mod export to `i18n/<lang>.json` in `default.json` key order (UTF-8 no BOM, 2-space), `.bak` backup + atomic write, token-safe per-key skip, summary dialog.
+
+### Still open for v1 (tracked in the milestone docs)
+* **M2:** text search, status filter, column sorting, `Ctrl+A`, "Search Translation on Nexus" context action, modal scan-progress dialog.
+* **M3:** "Export **all** mods" (currently selected-mod only); optional overwrite-confirmation (currently silent `.bak`).
+* **M1:** real glossary extraction (`Content (unpacked)/`) — currently an optional, non-blocking placeholder step.
+* **M4 (not started):** Claude-Code batch export/import (`review-needed` status returns here).
 
 ## Documentation
 * [Product & Architecture Specification](SPEC.md) - The source of truth for features and behavior.
