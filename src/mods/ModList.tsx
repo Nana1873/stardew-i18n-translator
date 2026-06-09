@@ -27,6 +27,14 @@ function deriveStatus(total: number, translated: number): ModStatus {
   return "untranslated";
 }
 
+const byName = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+
+/** The label a group sorts/filters by (package name, or the lone mod's name). */
+function groupLabel(group: PackageGroup): string {
+  return group.mods.length === 1 ? group.mods[0].name : group.packageId;
+}
+
 function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
   const order: string[] = [];
   const byId = new Map<string, ScannedMod[]>();
@@ -39,8 +47,9 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       order.push(mod.packageId);
     }
   }
-  return order.map((packageId) => {
+  const groups = order.map((packageId) => {
     const group = byId.get(packageId)!;
+    group.sort((a, b) => byName(a.name, b.name)); // components A→Z within a package
     const totalKeys = group.reduce((sum, mod) => sum + mod.totalKeys, 0);
     const translatedKeys = group.reduce((sum, mod) => sum + mod.translatedKeys, 0);
     return {
@@ -54,6 +63,9 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       status: deriveStatus(totalKeys, translatedKeys),
     };
   });
+  // Packages A→Z (no priority/load order — flat alphabetical, SPEC §7.3).
+  groups.sort((a, b) => byName(groupLabel(a), groupLabel(b)));
+  return groups;
 }
 
 function StatusDot({ status }: { status: ModStatus }) {
@@ -98,10 +110,21 @@ interface ModListProps {
   mods: ScannedMod[];
   selectedId: string | null;
   onSelect: (uniqueId: string) => void;
+  /** Filter packages/components by name (case-insensitive). */
+  query?: string;
 }
 
-export function ModList({ mods, selectedId, onSelect }: ModListProps) {
+export function ModList({ mods, selectedId, onSelect, query = "" }: ModListProps) {
   const groups = groupByPackage(mods);
+  const q = query.trim().toLowerCase();
+  const visible = q
+    ? groups.filter(
+        (group) =>
+          group.packageId.toLowerCase().includes(q) ||
+          group.mods.some((mod) => mod.name.toLowerCase().includes(q)),
+      )
+    : groups;
+
   return (
     <div className="modlist" role="tree" aria-label="Mods">
       <div className="modrow modrow--head">
@@ -112,23 +135,27 @@ export function ModList({ mods, selectedId, onSelect }: ModListProps) {
         <span>Files</span>
         <span>Progress</span>
       </div>
-      {groups.map((group) =>
-        group.mods.length === 1 ? (
-          <ModRow
-            key={group.mods[0].uniqueId}
-            mod={group.mods[0]}
-            depth={0}
-            selectedId={selectedId}
-            onSelect={onSelect}
-          />
-        ) : (
-          <PackageNode
-            key={group.packageId}
-            group={group}
-            selectedId={selectedId}
-            onSelect={onSelect}
-          />
-        ),
+      {visible.length === 0 ? (
+        <div className="panel__empty">No mods match “{query}”.</div>
+      ) : (
+        visible.map((group) =>
+          group.mods.length === 1 ? (
+            <ModRow
+              key={group.mods[0].uniqueId}
+              mod={group.mods[0]}
+              depth={0}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ) : (
+            <PackageNode
+              key={group.packageId}
+              group={group}
+              selectedId={selectedId}
+              onSelect={onSelect}
+            />
+          ),
+        )
       )}
     </div>
   );

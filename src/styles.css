@@ -159,6 +159,16 @@ body {
   overflow: auto;
 }
 
+.modlist__search {
+  margin: 6px 8px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
 .modrow {
   display: grid;
   grid-template-columns: 20px minmax(70px, 1fr) 48px 52px 40px 84px;

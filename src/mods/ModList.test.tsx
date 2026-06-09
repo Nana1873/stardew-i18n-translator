@@ -97,6 +97,37 @@ describe("ModList", () => {
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
 
+  it("sorts packages alphabetically by name", () => {
+    render(
+      <ModList
+        mods={[
+          mod({ uniqueId: "z", name: "Zebra Mod", packageId: "Zebra" }),
+          mod({ uniqueId: "a", name: "Alpha Mod", packageId: "Alpha" }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    const names = screen.getAllByText(/Zebra Mod|Alpha Mod/).map((n) => n.textContent);
+    expect(names[0]).toBe("Alpha Mod");
+    expect(names[1]).toBe("Zebra Mod");
+  });
+
+  it("filters the list by query (and shows an empty hint on no match)", () => {
+    const mods = [
+      mod({ uniqueId: "z", name: "Zebra Mod", packageId: "Zebra" }),
+      mod({ uniqueId: "a", name: "Alpha Mod", packageId: "Alpha" }),
+    ];
+    const { rerender } = render(
+      <ModList mods={mods} selectedId={null} onSelect={() => {}} query="alpha" />,
+    );
+    expect(screen.getByText("Alpha Mod")).toBeInTheDocument();
+    expect(screen.queryByText("Zebra Mod")).toBeNull();
+
+    rerender(<ModList mods={mods} selectedId={null} onSelect={() => {}} query="zzz" />);
+    expect(screen.getByText(/No mods match/)).toBeInTheDocument();
+  });
+
   it("does not draw a connector on a single-component (flat) mod", () => {
     render(
       <ModList

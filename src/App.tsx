@@ -35,6 +35,7 @@ export function App() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
+  const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(460);
 
   const [exporting, setExporting] = useState(false);
@@ -223,11 +224,22 @@ export function App() {
               <span className="panel__warn"> · {scan.warnings.length} skipped</span>
             )}
           </div>
+          {scan && (
+            <input
+              className="modlist__search"
+              type="search"
+              placeholder="Filter mods…"
+              aria-label="Filter mods"
+              value={modQuery}
+              onChange={(event) => setModQuery(event.target.value)}
+            />
+          )}
           {scan ? (
             <ModList
               mods={scan.mods}
               selectedId={selectedModId}
               onSelect={setSelectedModId}
+              query={modQuery}
             />
           ) : (
             <div className="panel__empty">
