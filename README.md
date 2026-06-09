@@ -14,7 +14,7 @@
 
 ### Still open for v1 (tracked in the milestone docs)
 * **M2:** column sorting, "Search Translation on Nexus" context action, modal scan-progress dialog. *(text search, status filter, and `Ctrl+A` are now done.)*
-* **M3:** "Export **all** mods" (currently selected-mod only); optional overwrite-confirmation (currently silent `.bak`).
+* **M3:** optional overwrite-confirmation (currently silent `.bak`). *(Export-all is now done.)*
 * **M1:** real glossary extraction (`Content (unpacked)/`) — currently an optional, non-blocking placeholder step.
 * **M4 (not started):** Claude-Code batch export/import (`review-needed` status returns here).
 
