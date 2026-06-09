@@ -10,11 +10,22 @@ export interface DetectedInstall {
   source: string;
 }
 
+export interface LlmSettings {
+  /** UI preset hint: "lmstudio" | "ollama" | "custom". */
+  provider: string;
+  /** OpenAI-compatible base URL, e.g. http://localhost:1234/v1. */
+  baseUrl: string;
+  /** Selected model id. */
+  model: string;
+}
+
 export interface AppSettings {
   stardewPath: string | null;
   modsPath: string | null;
   sourceLang: string;
   targetLang: string | null;
+  /** Optional local-LLM connection (M6); null until AI translation is set up. */
+  llm?: LlmSettings | null;
 }
 
 export function detectStardew(): Promise<DetectedInstall | null> {
@@ -185,6 +196,14 @@ export interface Glossary {
 
 export function loadGlossary(): Promise<Glossary | null> {
   return invoke<Glossary | null>("load_glossary");
+}
+
+/**
+ * List models from an OpenAI-compatible local server (M6). Doubles as the
+ * "Test connection" probe — resolving means the server is reachable.
+ */
+export function llmModels(baseUrl: string): Promise<string[]> {
+  return invoke<string[]>("llm_models", { baseUrl });
 }
 
 export function openUrl(url: string): Promise<void> {

@@ -19,6 +19,7 @@ import {
   scanMods,
 } from "./tauri/commands";
 import { SetupWizard } from "./setup/SetupWizard";
+import { SettingsDialog } from "./settings/SettingsDialog";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
@@ -28,6 +29,7 @@ import { ExportDialog } from "./export/ExportDialog";
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
   const [scan, setScan] = useState<ScanResult | null>(null);
@@ -92,14 +94,27 @@ export function App() {
   }, []);
 
   async function handleComplete(next: AppSettings) {
+    // The wizard does not edit the AI connection — carry the existing one through
+    // so re-running setup to change folders never wipes the local-AI config.
+    const merged: AppSettings = { ...next, llm: settings?.llm ?? null };
+    await persist(merged);
+    setWizardOpen(false);
+    refreshGlossary(); // the wizard may have just built the glossary
+  }
+
+  async function handleSaveSettings(next: AppSettings) {
+    await persist(next);
+    setSettingsOpen(false);
+    refreshGlossary(); // settings may have just built the glossary
+  }
+
+  async function persist(next: AppSettings) {
     try {
       await saveSettings(next);
     } catch {
       /* keep in-memory settings even if persistence fails */
     }
     setSettings(next);
-    setWizardOpen(false);
-    refreshGlossary(); // the wizard may have just built the glossary
   }
 
   async function handleScan() {
@@ -204,7 +219,7 @@ export function App() {
         onExportAll={handleExportAll}
         exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
-        onOpenSettings={() => setWizardOpen(true)}
+        onOpenSettings={() => (settings ? setSettingsOpen(true) : setWizardOpen(true))}
         settingsEnabled={loaded}
         search={search}
         onSearch={setSearch}
@@ -266,6 +281,17 @@ export function App() {
           initial={settings}
           onComplete={handleComplete}
           onCancel={configured ? () => setWizardOpen(false) : undefined}
+        />
+      )}
+      {settingsOpen && settings && (
+        <SettingsDialog
+          settings={settings}
+          onSave={handleSaveSettings}
+          onClose={() => setSettingsOpen(false)}
+          onReRunSetup={() => {
+            setSettingsOpen(false);
+            setWizardOpen(true);
+          }}
         />
       )}
       {scanDialogOpen && (
