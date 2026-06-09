@@ -986,6 +986,32 @@ The following are **explicitly excluded** from v1:
 
 ---
 
+### Milestone 6 — Local-LLM Translation (Ollama / LM Studio)
+
+**Goal:** User can translate strings in-app, fully offline, against a locally running model server.
+
+**Prerequisite:** Milestones 1–3 complete (a working glossary makes local-AI pre-translation worthwhile). Reprioritized ahead of M4/M5 at the user's request. See [docs/milestones/m6-local-llm-translation.md](docs/milestones/m6-local-llm-translation.md) for the full breakdown.
+
+**Scope:**
+- One OpenAI-compatible HTTP client (`POST /v1/chat/completions`, `GET /v1/models`) covering Ollama, LM Studio, and any compatible endpoint. **No provider plugin system** (§19 #6) — URL/port presets + a custom URL only.
+- Connection settings: provider preset, base URL, model (discovered from `/v1/models`), "Test connection".
+- Translate-one-string command (MVP): prompt = system rules + injected glossary subset + source; low temperature; result validated through `tokens.rs`, one stricter retry on dropped tokens, then flagged.
+- Glossary injection (prompt-level) + soft validation. Degrades to no-injection when no glossary is built (§19 #8).
+- Local-AI output → status `review-needed` (same as M4 imports; §19 #2).
+- Batch / whole-mod translation with progress + cancel is the follow-up after the single-string MVP proves the pipeline.
+
+**Acceptance Criteria:**
+
+- [ ] Settings store provider preset + base URL + model; "Test connection" reports reachability and the answering model.
+- [ ] A single string can be translated via the local server and lands in the editor as `review-needed`.
+- [ ] Relevant glossary terms are injected; translation still works with no glossary built.
+- [ ] Results run through the protected-token validator; dropped tokens trigger one retry, then a visible flag (never silent corruption).
+- [ ] Server-down / no-model-loaded produces a clear, non-crashing error.
+- [ ] Prompt-building, glossary-injection, and token-retry logic are unit-tested with the HTTP layer mocked (no live model in CI).
+- [ ] Fully offline: localhost only, no API key (§19 #7).
+
+---
+
 ## 18. Technical Risks
 
 | Risk | Impact | Mitigation |
@@ -997,6 +1023,7 @@ The following are **explicitly excluded** from v1:
 | **Technology stack lock-in** | Wrong framework choice could limit future development. | Milestone 0 is a dedicated decision gate. Evaluate before coding. |
 | **Token false positives** | `{{...}}` regex may match non-token content. | Token validation compares source vs target sets. False positives on both sides cancel out. Manual override via `not-translatable` status. |
 | **Export key order** | JSON libraries may not preserve insertion order. | Use ordered map / manual serialization. Test with real mod files. |
+| **Local-LLM quality (M6)** | Small local models hallucinate and drop protected tokens. | Token validation + one stricter retry; output is always `review-needed`, never auto-`translated`. Glossary injected as guidance, not hard substitution. |
 
 ---
 
@@ -1004,7 +1031,7 @@ The following are **explicitly excluded** from v1:
 
 1. **The SSE-AT test.** Before adding a UI element, ask: "Would SSE Auto Translator have this?" If no, it probably doesn't belong in v1.
 
-2. **The 4-status rule.** v1 has 4 statuses (`untranslated`, `translated`, `outdated`, `not-translatable`). Do not add more. `review-needed` returns only with the M4 Claude-Code batch (AI results need a review pass).
+2. **The 4-status rule.** v1 has 4 statuses (`untranslated`, `translated`, `outdated`, `not-translatable`). Do not add more. `review-needed` returns only with the **AI translation workflows** — the M4 Claude-Code batch and the M6 local-LLM engine — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing.
 
 3. **The 4-validation-rule rule.** v1 has exactly 4 validation rules. Adding a rule requires justifying why it prevents broken mods, not just improves quality.
 
