@@ -175,6 +175,18 @@ export function glossaryStatus(stardewPath: string): Promise<GlossaryStatus> {
   return invoke<GlossaryStatus>("glossary_status", { stardewPath });
 }
 
+export interface Glossary {
+  sourceLang: string;
+  targetLang: string;
+  termCount: number;
+  /** english term -> target term. */
+  terms: Record<string, string>;
+}
+
+export function loadGlossary(): Promise<Glossary | null> {
+  return invoke<Glossary | null>("load_glossary");
+}
+
 export function openUrl(url: string): Promise<void> {
   return invoke<void>("open_url", { url });
 }

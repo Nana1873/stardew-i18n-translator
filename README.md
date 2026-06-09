@@ -13,9 +13,7 @@
 * **Export (M3):** per-mod export to `i18n/<lang>.json` in `default.json` key order (UTF-8 no BOM, 2-space), `.bak` backup + atomic write, token-safe per-key skip, summary dialog.
 
 ### Still open for v1 (tracked in the milestone docs)
-* **M2:** glossary hints in the editor (small follow-up — glossary data already exists). *(text search, status filter, `Ctrl+A`, and column sorting are now done.)*
-* **M3:** optional overwrite-confirmation (currently silent `.bak`). *(Export-all is now done.)*
-* **M1:** complete. *(Glossary extraction reads a StardewXnbHack-unpacked `Content (unpacked)/`; the modal scan dialog lists skipped mods. Editor glossary hints are a small M2 follow-up.)*
+* **M1–M3 are functionally complete.** Only an optional M3 overwrite-confirmation dialog remains (currently a silent `.bak` backup instead).
 * **M4 (not started):** Claude-Code batch export/import (`review-needed` status returns here).
 * **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
 

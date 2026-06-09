@@ -5,8 +5,8 @@ Implement the main workspace string table, the double-click editing dialog, prot
 
 ## Scope
 * **String Table Grid:** A high-density, virtualized grid showing key, source string, target string, and a per-row validation/status indicator (full-row status tint).
-* **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `not-translatable`, or all). *(Still open — see Status below.)*
-* **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, live token validation, status badge, and clickable token chips.
+* **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `not-translatable`, or all).
+* **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, live token validation, status badge, clickable token chips, and **glossary hints** (official game terms found in the source, click to insert the translation — SPEC §7.5).
 * **Protected-Token Validation:** The 4 v1 rules from [SPEC.md §10](../../SPEC.md): `token-missing` (error), `token-added` (warning), `empty-target` (warning), `json-invalid` (error). A **"token" is any Stardew/SMAPI protected token**, not just `{{...}}`: Content Patcher `{{...}}` (nested-aware), gender switch `${male^female}$`, mail commands `[#]` / `%item … %%`, dialogue break `#$b#`, bracket tokens `[…]`, **positional placeholders `{0}`**, dialogue commands `$b`/`$s`/`$e`, single-char `@`/`^`. Tokens are compared as **multisets** (counts matter), so a dropped *second* `$b` is caught too. See `src/strings/protectedTokens.ts` (and the Rust port `src-tauri/src/tokens.rs`).
 * **Status Model:** Implement the **4** v1 string statuses from [SPEC.md §9](../../SPEC.md) — `untranslated`, `translated`, `outdated`, `not-translatable` — and their transitions during editing. (`outdated` is derived automatically, never set by hand. The earlier 6-status draft — `imported`/`done`/`review-needed` — was collapsed: `imported`/`done` → `translated`; `review-needed` returns only in M4.)
 * **Outdated Logic:** Detect modified source strings via per-string `sourceHash` (SHA-256 of the English source at save time), compared on re-scan.
@@ -27,15 +27,15 @@ Implement the main workspace string table, the double-click editing dialog, prot
 8. Status filter shows only strings of the selected status. ✅
 9. Sorting by column (Key / Original / Translation / File; click to cycle asc → desc → off). ✅
 10. Validation rules are covered by unit tests. ✅
+11. Editor glossary hints: matched official terms shown, click inserts the translation (when a glossary is built). ✅
 
 ## Status (shipped vs. open) — 2026-06-09
 
 **Shipped (PRs #7–#24):** virtualized string table with full-row status tint, double-click editor (live validation, token chips, status badge, keyboard shortcuts Ctrl+Enter/Esc/Alt+←→/F2/F3/F4), the full protected-token taxonomy compared as multisets, the 4-status model with persisted per-string state and surgical `outdated` detection, multi-select (Ctrl/Shift-click), and the right-click context menu with bulk actions.
 
-**Also shipped (post-audit, 2026-06-09):** toolbar text **search** across key/original/target, **status filter** dropdown, and **Ctrl+A** select-all-visible. Filtering operates on a visible view while selection/editor navigation keep stable data indices.
+**Also shipped (post-audit, 2026-06-09):** toolbar text **search** across key/original/target, **status filter** dropdown, **Ctrl+A** select-all-visible, **column sorting**, and **editor glossary hints** (matched official terms, click to insert). Filtering/sorting operate on a visible view while selection/editor navigation keep stable data indices.
 
-**Still open for v1 (tracked, not yet built):**
-- **Scan progress dialog** is simplified to an inline "Scanning…" label (SPEC §7.2 describes a modal).
+**Still open for v1:** none — M2 is functionally complete.
 
 **Moved out of M2:** the **"Search Translation on Nexus"** action is deferred and
 folded into the new [M5 — Nexus Translation Discovery & Download](m5-nexus-translation-download.md)

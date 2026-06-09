@@ -628,6 +628,28 @@ body {
   background: rgba(74, 157, 107, 0.22);
 }
 
+.editor__glossary {
+  padding: 8px 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+}
+
+.editor__gloss {
+  background: rgba(200, 184, 138, 0.12);
+  color: #c8b88a;
+  border: 1px solid rgba(200, 184, 138, 0.3);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-right: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.editor__gloss:hover {
+  background: rgba(200, 184, 138, 0.25);
+}
+
 .editor__panes {
   display: grid;
   grid-template-columns: 1fr 1fr;

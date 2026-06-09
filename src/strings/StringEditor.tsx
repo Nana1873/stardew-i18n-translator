@@ -31,10 +31,32 @@ interface StringEditorProps {
   index: number;
   total: number;
   modName: string;
+  /** Official game glossary (english -> target), if built. */
+  glossary?: Record<string, string> | null;
   /** Persist the edited target + status for this row. */
   onSave: (value: string, status: StringStatus) => void;
   onClose: () => void;
   onNavigate: (delta: number) => void;
+}
+
+/** Official glossary terms that occur as whole words in the source text. */
+function matchGlossary(
+  source: string,
+  glossary: Record<string, string> | null | undefined,
+): Array<{ term: string; translation: string }> {
+  if (!glossary) return [];
+  const lower = source.toLowerCase();
+  const out: Array<{ term: string; translation: string }> = [];
+  const isWord = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+  for (const [term, translation] of Object.entries(glossary)) {
+    if (term.length < 3) continue;
+    const idx = lower.indexOf(term.toLowerCase());
+    if (idx === -1) continue;
+    if (isWord(lower[idx - 1]) || isWord(lower[idx + term.length])) continue;
+    out.push({ term, translation });
+    if (out.length >= 15) break;
+  }
+  return out;
 }
 
 /** The status to save into: keep an explicit not-translatable choice, otherwise
@@ -65,6 +87,7 @@ export function StringEditor({
   index,
   total,
   modName,
+  glossary,
   onSave,
   onClose,
   onNavigate,
@@ -151,6 +174,7 @@ export function StringEditor({
   const valueTokenCounts = countTokens(value);
   const issues = validate(row.source, value, row.targetPresent);
   const shownStatus = effectiveStatus();
+  const glossaryMatches = matchGlossary(row.source, glossary);
 
   return (
     <div
@@ -203,6 +227,23 @@ export function StringEditor({
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {glossaryMatches.length > 0 && (
+          <div className="editor__glossary">
+            Glossary (click to insert):{" "}
+            {glossaryMatches.map((match, i) => (
+              <button
+                key={i}
+                type="button"
+                className="editor__gloss"
+                title={`Insert “${match.translation}”`}
+                onClick={() => insertToken(match.translation)}
+              >
+                {match.term} → {match.translation}
+              </button>
+            ))}
           </div>
         )}
 
