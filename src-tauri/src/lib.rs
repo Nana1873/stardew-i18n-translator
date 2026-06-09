@@ -6,6 +6,7 @@
 
 mod detection;
 mod export;
+mod glossary;
 mod scanner;
 mod settings;
 mod tokens;
@@ -109,6 +110,36 @@ fn export_mod(
     export::export_mod(&config_dir(&app)?, &mod_unique_id, &files)
 }
 
+#[tauri::command]
+fn build_glossary(
+    app: AppHandle,
+    stardew_path: String,
+    target_lang: String,
+) -> Result<glossary::GlossaryInfo, String> {
+    let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
+    let built = glossary::build(&unpacked, &target_lang)?;
+    glossary::save(&config_dir(&app)?, &built)?;
+    Ok(glossary::GlossaryInfo {
+        target_lang: built.target_lang,
+        term_count: built.term_count,
+    })
+}
+
+#[tauri::command]
+fn glossary_status(
+    app: AppHandle,
+    stardew_path: String,
+) -> Result<glossary::GlossaryStatus, String> {
+    let cached = glossary::load(&config_dir(&app)?).map(|g| glossary::GlossaryInfo {
+        target_lang: g.target_lang,
+        term_count: g.term_count,
+    });
+    Ok(glossary::GlossaryStatus {
+        unpacked_present: glossary::unpacked_present(Path::new(&stardew_path)),
+        cached,
+    })
+}
+
 /// Open an external http(s) URL in the user's default browser (Nexus links).
 #[tauri::command]
 fn open_url(url: String) -> Result<(), String> {
@@ -152,6 +183,8 @@ pub fn run() {
             load_strings,
             save_string,
             export_mod,
+            build_glossary,
+            glossary_status,
             open_url,
             load_settings,
             save_settings
