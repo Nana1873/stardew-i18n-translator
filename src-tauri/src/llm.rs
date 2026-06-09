@@ -106,6 +106,11 @@ struct ChatRequest {
     /// thousands of tokens (observed: a 4-word source produced a 6000-token
     /// essay), which both wastes time and trips the request timeout.
     max_tokens: u32,
+    /// Stop sequences. For a single-line source we stop at the first newline:
+    /// a newline is a protected token, so a one-line source must translate to
+    /// one line — this turns a chatty model's runaway into just the translation.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    stop: Option<Vec<String>>,
 }
 
 /// A bounded output-token budget for translating `source`. Generous (≈2× the
@@ -113,6 +118,18 @@ struct ChatRequest {
 /// so a runaway model is stopped quickly instead of hanging.
 fn output_token_budget(source: &str) -> u32 {
     ((source.chars().count() as u32).saturating_mul(2)).clamp(64, 1024)
+}
+
+/// Stop sequences for translating `source`. A source with no newline must
+/// translate to a single line (newlines are protected tokens), so we stop at the
+/// first `\n` — cutting off a model that keeps talking after the translation.
+/// Multi-line sources get no stop (their own newlines are legitimate).
+fn stop_sequences(source: &str) -> Option<Vec<String>> {
+    if source.contains('\n') {
+        None
+    } else {
+        Some(vec!["\n".to_string()])
+    }
 }
 
 #[derive(Deserialize)]
@@ -191,6 +208,7 @@ async fn chat(
     model: &str,
     messages: Vec<ChatMessage>,
     max_tokens: u32,
+    stop: Option<Vec<String>>,
 ) -> Result<String, String> {
     let url = {
         let trimmed = base_url.trim().trim_end_matches('/');
@@ -209,6 +227,7 @@ async fn chat(
             temperature: 0.2,
             stream: false,
             max_tokens,
+            stop,
         })
         .send()
         .await
@@ -252,11 +271,13 @@ pub async fn translate(
     glossary_pairs: &[(String, String)],
 ) -> Result<TranslationResult, String> {
     let budget = output_token_budget(source);
+    let stop = stop_sequences(source);
     let first = chat(
         base_url,
         model,
         build_messages(source, target_language, glossary_pairs, None),
         budget,
+        stop.clone(),
     )
     .await?;
     let missing = tokens::missing_token_list(source, &first);
@@ -272,6 +293,7 @@ pub async fn translate(
         model,
         build_messages(source, target_language, glossary_pairs, Some(&missing)),
         budget,
+        stop,
     )
     .await?;
     let missing_second = tokens::missing_token_list(source, &second);
@@ -337,6 +359,14 @@ mod tests {
         let messages = build_messages("A parsnip", "German", &pairs, None);
         assert!(messages[0].content.contains("Official glossary"));
         assert!(messages[0].content.contains("Parsnip -> Pastinake"));
+    }
+
+    #[test]
+    fn single_line_source_stops_at_newline() {
+        // One-line source → stop at the first newline (cuts a chatty model off).
+        assert_eq!(stop_sequences("UI Info Suite Options"), Some(vec!["\n".to_string()]));
+        // Multi-line source → no stop (its newlines are legitimate).
+        assert_eq!(stop_sequences("Hello#$b#World\nmore"), None);
     }
 
     #[test]
