@@ -38,6 +38,8 @@ export function App() {
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+  const [exportTitle, setExportTitle] = useState("");
+  const [exportModsWritten, setExportModsWritten] = useState<number | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
@@ -104,19 +106,69 @@ export function App() {
   const configured = Boolean(settings?.stardewPath);
   const selectedMod = scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
 
-  async function handleExport() {
-    if (!selectedMod) return;
+  function filesOf(mod: ScannedMod) {
+    return mod.i18nFiles.map((file) => ({
+      relativeDir: file.relativeDir,
+      defaultPath: file.defaultPath,
+      targetPath: file.targetPath,
+    }));
+  }
+
+  function beginExport(title: string) {
     setExporting(true);
     setExportResult(null);
     setExportError(null);
+    setExportModsWritten(null);
+    setExportTitle(title);
     setExportOpen(true);
+  }
+
+  async function handleExport() {
+    if (!selectedMod) return;
+    beginExport(selectedMod.name);
     try {
-      const files = selectedMod.i18nFiles.map((file) => ({
-        relativeDir: file.relativeDir,
-        defaultPath: file.defaultPath,
-        targetPath: file.targetPath,
-      }));
-      setExportResult(await exportMod(selectedMod.uniqueId, files));
+      setExportResult(await exportMod(selectedMod.uniqueId, filesOf(selectedMod)));
+    } catch (error) {
+      setExportError(String(error));
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  async function handleExportAll() {
+    if (!scan) return;
+    beginExport("All mods");
+    try {
+      const merged: ExportResult = {
+        files: [],
+        skipped: [],
+        filesWritten: 0,
+        totalWrittenKeys: 0,
+        totalUntranslated: 0,
+        totalNotTranslatable: 0,
+        totalOutdated: 0,
+      };
+      let modsWritten = 0;
+      for (const mod of scan.mods) {
+        if (mod.i18nFiles.length === 0) continue;
+        const result = await exportMod(mod.uniqueId, filesOf(mod));
+        merged.files.push(...result.files);
+        // Prefix each skipped key with its mod so the summary stays unambiguous.
+        merged.skipped.push(
+          ...result.skipped.map((skip) => ({
+            ...skip,
+            relativeDir: `${mod.name} · ${skip.relativeDir}`,
+          })),
+        );
+        merged.filesWritten += result.filesWritten;
+        merged.totalWrittenKeys += result.totalWrittenKeys;
+        merged.totalUntranslated += result.totalUntranslated;
+        merged.totalNotTranslatable += result.totalNotTranslatable;
+        merged.totalOutdated += result.totalOutdated;
+        if (result.filesWritten > 0) modsWritten += 1;
+      }
+      setExportResult(merged);
+      setExportModsWritten(modsWritten);
     } catch (error) {
       setExportError(String(error));
     } finally {
@@ -132,6 +184,8 @@ export function App() {
         scanning={scanning}
         onExport={handleExport}
         exportEnabled={Boolean(selectedMod) && !exporting}
+        onExportAll={handleExportAll}
+        exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
         onOpenSettings={() => setWizardOpen(true)}
         settingsEnabled={loaded}
@@ -183,7 +237,8 @@ export function App() {
       )}
       {exportOpen && (
         <ExportDialog
-          modName={selectedMod?.name ?? ""}
+          modName={exportTitle}
+          modsWritten={exportModsWritten}
           result={exporting ? null : exportResult}
           error={exportError}
           onClose={() => setExportOpen(false)}
@@ -199,6 +254,8 @@ function Toolbar({
   scanning,
   onExport,
   exportEnabled,
+  onExportAll,
+  exportAllEnabled,
   exporting,
   onOpenSettings,
   settingsEnabled,
@@ -213,6 +270,8 @@ function Toolbar({
   scanning: boolean;
   onExport: () => void;
   exportEnabled: boolean;
+  onExportAll: () => void;
+  exportAllEnabled: boolean;
   exporting: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
@@ -236,6 +295,14 @@ function Toolbar({
           title="Export the selected mod's translations to i18n/<lang>.json"
         >
           {exporting ? "Exporting…" : "Export"}
+        </button>
+        <button
+          type="button"
+          onClick={onExportAll}
+          disabled={!exportAllEnabled}
+          title="Export every scanned mod's translations"
+        >
+          Export All
         </button>
         <button type="button" onClick={onOpenSettings} disabled={!settingsEnabled}>
           Settings

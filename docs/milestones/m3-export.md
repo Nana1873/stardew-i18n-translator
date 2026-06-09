@@ -20,15 +20,16 @@ Implement safe export features to write translations back to `i18n/<lang>.json` 
 4. Strings with **error-level** issues (`token-missing`) are **skipped** individually (not a hard block on the whole file); all other strings export normally, and the summary reports what was skipped and why. Untranslated and not-translatable strings are omitted (SMAPI falls back to `default.json`). See [SPEC.md §10 / §17 M3](../../SPEC.md). ✅ — *(`json-invalid` cannot occur from a Rust `String`, which is always valid UTF-8, so that error is moot at export time.)*
 5. Key order matches `default.json`. ✅
 6. File write + backup operations are covered by tests (real temp dirs). ✅
-7. **Export all mods** (not just the selected mod). ❌ **Still open** — only single-selected-mod export is implemented.
+7. **Export all mods** (not just the selected mod). ✅ — toolbar "Export All" iterates every scanned mod and shows an aggregated summary.
 8. **Overwrite-confirmation dialog.** ⚠️ Replaced by an automatic `.bak` backup + atomic temp-then-rename write (safer, no prompt). Revisit if an explicit confirm is wanted.
 
 ## Status (shipped vs. open) — 2026-06-09
 
 **Shipped (PR #24):** per-mod export of saved translations to `i18n/<lang>.json` in `default.json` key order; UTF-8 no BOM, 2-space indent; `.bak` backup of an existing target; atomic write (`.tmp` → verify → rename); omit untranslated + not-translatable; skip + report `token-missing` keys; export outdated-but-present strings and flag them; Rust port of the protected-token reader (`tokens.rs`); toolbar **Export** button + **ExportDialog** summary. 9 new Rust tests + a frontend dialog test.
 
+**Also shipped (post-audit):** **Export All** (toolbar) iterates every scanned mod, writing each mod's `i18n/<lang>.json` and showing one aggregated summary (mods/files/keys written, plus per-mod-prefixed skipped keys).
+
 **Still open for v1:**
-- **Export all mods** at once (currently exports the selected mod only).
 - Optional explicit **overwrite confirmation** (currently silent `.bak` backup instead).
 
 ## Risks
