@@ -48,12 +48,10 @@ auto-closes; it stays open only when there are warnings or an error to review.
 Live per-mod/per-file progress is intentionally omitted (real scans are
 sub-second, so streaming progress would add complexity with no UX value).
 
-**Still open (small follow-up, belongs to M2):**
-- **Glossary hints in the editor** (SPEC §7.5) — showing matched terms while
-  translating. The glossary data + cache exist; surfacing them in the editor is
-  a small M2 addition.
+Editor glossary hints (SPEC §7.5) — which consume this glossary — shipped as
+part of M2.
 
-M1 is otherwise **complete**.
+M1 is **complete**.
 
 ## Suggested Issue Breakdown
 
