@@ -11,6 +11,7 @@ import {
   type ExportResult,
   type ScanResult,
   type ScannedMod,
+  type StringStatus,
   exportMod,
   loadSettings,
   saveSettings,
@@ -19,6 +20,7 @@ import {
 import { SetupWizard } from "./setup/SetupWizard";
 import { ModList } from "./mods/ModList";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
+import { STATUS_META } from "./strings/status";
 import { ExportDialog } from "./export/ExportDialog";
 
 export function App() {
@@ -36,6 +38,9 @@ export function App() {
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
+
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
 
   function startResize(event: ReactMouseEvent) {
     event.preventDefault();
@@ -130,6 +135,11 @@ export function App() {
         exporting={exporting}
         onOpenSettings={() => setWizardOpen(true)}
         settingsEnabled={loaded}
+        search={search}
+        onSearch={setSearch}
+        statusFilter={statusFilter}
+        onStatusFilter={setStatusFilter}
+        searchEnabled={Boolean(selectedMod)}
       />
       <main className="workspace">
         <section
@@ -162,7 +172,7 @@ export function App() {
           aria-label="Resize mod list"
           onMouseDown={startResize}
         />
-        <StringTablePanel mod={selectedMod} />
+        <StringTablePanel mod={selectedMod} search={search} statusFilter={statusFilter} />
       </main>
       {wizardOpen && (
         <SetupWizard
@@ -192,6 +202,11 @@ function Toolbar({
   exporting,
   onOpenSettings,
   settingsEnabled,
+  search,
+  onSearch,
+  statusFilter,
+  onStatusFilter,
+  searchEnabled,
 }: {
   onScan: () => void;
   scanEnabled: boolean;
@@ -201,6 +216,11 @@ function Toolbar({
   exporting: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
+  search: string;
+  onSearch: (value: string) => void;
+  statusFilter: StringStatus | "all";
+  onStatusFilter: (value: StringStatus | "all") => void;
+  searchEnabled: boolean;
 }) {
   return (
     <header className="toolbar" role="banner">
@@ -221,25 +241,51 @@ function Toolbar({
           Settings
         </button>
       </div>
-      <input
-        className="toolbar__search"
-        type="search"
-        placeholder="Search…"
-        aria-label="Search strings"
-        disabled
-      />
+      <div className="toolbar__filters">
+        <select
+          className="toolbar__statusfilter"
+          aria-label="Filter by status"
+          value={statusFilter}
+          onChange={(event) => onStatusFilter(event.target.value as StringStatus | "all")}
+          disabled={!searchEnabled}
+        >
+          <option value="all">All statuses</option>
+          {(Object.keys(STATUS_META) as StringStatus[]).map((status) => (
+            <option key={status} value={status}>
+              {STATUS_META[status].label}
+            </option>
+          ))}
+        </select>
+        <input
+          className="toolbar__search"
+          type="search"
+          placeholder="Search…"
+          aria-label="Search strings"
+          value={search}
+          onChange={(event) => onSearch(event.target.value)}
+          disabled={!searchEnabled}
+        />
+      </div>
     </header>
   );
 }
 
-function StringTablePanel({ mod }: { mod: ScannedMod | null }) {
+function StringTablePanel({
+  mod,
+  search,
+  statusFilter,
+}: {
+  mod: ScannedMod | null;
+  search: string;
+  statusFilter: StringStatus | "all";
+}) {
   return (
     <section className="panel panel--strings" aria-label="String table">
       <div className="panel__header">
         Strings{mod && <> · <StringTableHeader mod={mod} /></>}
       </div>
       {mod ? (
-        <StringTable key={mod.uniqueId} mod={mod} />
+        <StringTable key={mod.uniqueId} mod={mod} search={search} statusFilter={statusFilter} />
       ) : (
         <div className="panel__empty">Select a mod to view its strings.</div>
       )}
