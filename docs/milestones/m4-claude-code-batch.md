@@ -31,16 +31,37 @@ Implement the offline AI translation batch workflow, allowing users to export un
 
 ## Suggested Issue Breakdown
 
-### Issue 13: Export Claude-Code translation batch JSON
+### Issue 13: Export Claude-Code translation batch JSON ✅
 
-- **Goal:** Create utility to extract the user-selected strings (typically `untranslated` or `outdated`) into an offline batch JSON file, including translation context and instructions.
-- **Suggested Agent:** Codex or Claude Code.
+- Context-menu action **"Export for Claude Code (N)"** on the selection (same
+  eligibility as the M6 AI batch: `untranslated`/`outdated` only; Ctrl+A =
+  whole mod), save-dialog destination, embedded instruction block + glossary
+  excerpt (matched terms only, capped at 60), strings grouped by i18n
+  directory (`files`) so multi-i18n-folder mods stay unambiguous (SPEC §11).
 
-### Issue 14: Import Claude-Code result JSON
+### Issue 14: Import Claude-Code result JSON ✅
 
-- **Goal:** Create parser to read the translated batch JSON, merge values back into the application store, and run post-import token validation.
-- **Suggested Agent:** Claude Code.
+- Toolbar **"Import batch…"** (file picker, lenient JSON parse for LLM
+  artifacts), per-directory key matching, all accepted values staged as
+  `review-needed` in **one** atomic state write (`save_many`), table reload +
+  fresh counts, summary dialog. Safety: `translated`/`not-translatable`
+  strings are never overwritten (stale-batch protection, skipped + counted);
+  dropped-token and identical-to-source values are imported but flagged; a
+  batch file translated in place is accepted like a result file.
+
+## Status (shipped vs. open)
+
+**Complete.** Both issues shipped together: the batch exporter (context menu →
+save dialog) and the result importer (toolbar → summary). Core logic lives in
+`src-tauri/src/batch.rs` (`build_batch` / `apply_batch`, both pure and
+unit-tested); dialogs in `src/claude/ClaudeBatchDialog.tsx`. The drag-and-drop
+import variant from SPEC §11 was skipped (the toolbar button covers the flow;
+revisit only on demand).
 
 ## Agent Handoff Notes
 
-_Make sure the exported file contains a markdown/text instruction block that the user can copy-paste directly to Claude Code/Codex to trigger the automated translation._
+_The exported file contains the instruction block inline (`instructions`), so
+the user can hand the whole file to Claude Code/Codex verbatim. Import accepts
+both the `…-claude-result` format and an in-place-translated `…-claude-batch`
+file. Reuse `batch::apply_batch` for any future import path — it enforces the
+never-overwrite-manual-work rule and the flag-don't-reject validation._

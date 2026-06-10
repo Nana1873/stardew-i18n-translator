@@ -16,6 +16,8 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type ClaudeBatchItem,
+  type ClaudeExportOutcome,
   type SaveStringEntry,
   type ScannedMod,
   type StringRow,
@@ -27,6 +29,7 @@ import {
 } from "../tauri/commands";
 import { StringEditor } from "./StringEditor";
 import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
+import { ClaudeExportDialog } from "../claude/ClaudeBatchDialog";
 import { validate, worstSeverity } from "./validation";
 import { STATUS_META } from "./status";
 
@@ -58,16 +61,25 @@ export function StringTable({
   statusFilter = "all",
   glossary = null,
   onTranslate,
+  onClaudeExport,
   onCountsChange,
+  reloadToken = 0,
 }: {
   mod: ScannedMod;
   search?: string;
   statusFilter?: StringStatus | "all";
   glossary?: Record<string, string> | null;
   onTranslate?: (source: string) => Promise<TranslationResult>;
+  /** Export the given strings as an offline Claude-Code batch (M4); absent
+   * when no target language is configured. Resolves null on picker cancel. */
+  onClaudeExport?: (
+    items: ClaudeBatchItem[],
+  ) => Promise<ClaudeExportOutcome | null>;
   /** Reports the working translated-key count after edits, so the mod list
    * and header stay fresh without a rescan. */
   onCountsChange?: (translatedKeys: number) => void;
+  /** Bump to force a reload from disk (e.g. after a batch import). */
+  reloadToken?: number;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -80,6 +92,11 @@ export function StringTable({
   } | null>(null);
   /** Items of a running batch AI translation (M6 Issue 17); null = no batch. */
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
+  /** Outcome (or failure) of a Claude-Code batch export (M4); null = closed. */
+  const [claudeExport, setClaudeExport] = useState<{
+    outcome: ClaudeExportOutcome | null;
+    error: string | null;
+  } | null>(null);
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   // Current rows, readable from async batch callbacks without stale closures.
@@ -106,7 +123,12 @@ export function StringTable({
         for (const row of fileRows)
           all.push({ ...row, file: file.relativeDir });
       }
-      if (active) setRows(all);
+      if (active) {
+        setRows(all);
+        // Keep header/mod-list counts honest after a forced reload (a batch
+        // import changes state on disk without going through saveRow).
+        onCountsChange?.(countTranslated(all));
+      }
     })().catch((cause) => {
       if (active) {
         setRows([]);
@@ -116,7 +138,8 @@ export function StringTable({
     return () => {
       active = false;
     };
-  }, [mod.uniqueId, mod.i18nFiles]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mod.uniqueId, mod.i18nFiles, reloadToken]);
 
   const multiFile = mod.i18nFiles.length > 1;
   const data = rows ?? [];
@@ -329,6 +352,24 @@ export function StringTable({
     onCountsChange?.(countTranslated(rowsRef.current ?? []));
   }
 
+  /** Export the eligible selection as an offline Claude-Code batch (M4).
+   * Same eligibility as the AI batch: only strings that still need work. */
+  async function startClaudeExport() {
+    const items: ClaudeBatchItem[] = batchEligible.map((i) => {
+      const row = data[i]!;
+      return { relativeDir: row.file, key: row.key, source: row.source };
+    });
+    setMenu(null);
+    if (!onClaudeExport || items.length === 0) return;
+    try {
+      const outcome = await onClaudeExport(items);
+      // null = the user cancelled the save dialog — nothing to report.
+      if (outcome) setClaudeExport({ outcome, error: null });
+    } catch (cause) {
+      setClaudeExport({ outcome: null, error: String(cause) });
+    }
+  }
+
   if (rows === null) {
     return <div className="panel__empty">Loading strings…</div>;
   }
@@ -519,8 +560,34 @@ export function StringTable({
                 {batchEligible.length > 0 ? ` (${batchEligible.length})` : ""}
               </button>
             </li>
+            <li>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!onClaudeExport || batchEligible.length === 0}
+                title={
+                  !onClaudeExport
+                    ? "Choose a target language first"
+                    : batchEligible.length === 0
+                      ? "No untranslated or outdated strings selected"
+                      : "Write an offline translation batch for Claude Code"
+                }
+                onClick={() => void startClaudeExport()}
+              >
+                Export for Claude Code
+                {batchEligible.length > 0 ? ` (${batchEligible.length})` : ""}
+              </button>
+            </li>
           </ul>
         </>
+      )}
+      {claudeExport && (
+        <ClaudeExportDialog
+          outcome={claudeExport.outcome}
+          error={claudeExport.error}
+          modName={mod.name}
+          onClose={() => setClaudeExport(null)}
+        />
       )}
       {batch && onTranslate && (
         <BatchTranslateDialog

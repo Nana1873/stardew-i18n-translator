@@ -5,6 +5,7 @@
 //! (M3), and the local-LLM connection probe (M6). Kept minimal per
 //! SCOPE_GUARDRAILS — no plugin/provider abstractions.
 
+mod batch;
 mod detection;
 mod export;
 mod glossary;
@@ -151,6 +152,114 @@ fn export_mod(
     export::export_mod(&config_dir(&app)?, &mod_unique_id, &files)
 }
 
+/// Outcome of a Claude-Code batch export (M4): where the file landed and what
+/// it contains. `None` from the command means the user cancelled the picker.
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct ClaudeExportOutcome {
+    path: String,
+    string_count: usize,
+    glossary_terms: usize,
+}
+
+/// Write the selected strings as an offline Claude-Code translation batch
+/// (M4, SPEC §11). Opens a save dialog; embeds instructions + a glossary
+/// excerpt so the file can be handed to Claude Code verbatim.
+#[tauri::command]
+fn export_claude_batch(
+    app: AppHandle,
+    mod_unique_id: String,
+    mod_name: String,
+    target_lang: String,
+    target_language: String,
+    items: Vec<batch::BatchExportItem>,
+) -> Result<Option<ClaudeExportOutcome>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export Claude-Code translation batch")
+        .set_file_name(format!("{mod_unique_id}.claude-batch.json"))
+        .add_filter("JSON", &["json"])
+        .blocking_save_file();
+    let Some(picked) = picked else { return Ok(None) };
+    let dest = picked
+        .into_path()
+        .map_err(|error| format!("Could not read the selected path: {error}"))?;
+
+    let glossary = glossary::load(&config_dir(&app)?);
+    let batch_json = batch::build_batch(
+        &mod_name,
+        &mod_unique_id,
+        &target_lang,
+        &target_language,
+        &items,
+        glossary.as_ref(),
+    );
+    let glossary_terms = batch_json["glossary"]
+        .as_object()
+        .map(|terms| terms.len())
+        .unwrap_or(0);
+    let mut body = serde_json::to_string_pretty(&batch_json)
+        .map_err(|error| format!("Could not serialize the batch: {error}"))?;
+    body.push('\n');
+    std::fs::write(&dest, body.as_bytes())
+        .map_err(|error| format!("Could not write {}: {error}", dest.display()))?;
+
+    Ok(Some(ClaudeExportOutcome {
+        path: dest.display().to_string(),
+        string_count: items.len(),
+        glossary_terms,
+    }))
+}
+
+/// Import a translated Claude-Code batch/result file for one mod (M4). Opens
+/// a file picker; matches keys against the mod's current strings; stages all
+/// accepted values as `review-needed` in ONE state write. `None` = cancelled.
+#[tauri::command]
+fn import_claude_batch(
+    app: AppHandle,
+    mod_unique_id: String,
+    files: Vec<export::ExportFileInput>,
+) -> Result<Option<batch::ImportSummary>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Import Claude-Code translation result")
+        .add_filter("JSON", &["json"])
+        .blocking_pick_file();
+    let Some(picked) = picked else { return Ok(None) };
+    let source = picked
+        .into_path()
+        .map_err(|error| format!("Could not read the selected path: {error}"))?;
+
+    let body = std::fs::read_to_string(&source)
+        .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+    // Lenient parse: LLM output sometimes carries trailing commas or comments.
+    let parsed = scanner::parse_json_lenient(&body)
+        .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
+
+    let config = config_dir(&app)?;
+    let state = translations::load(&config, &mod_unique_id)?;
+    let mut rows_by_dir = std::collections::HashMap::new();
+    for file in &files {
+        rows_by_dir.insert(
+            file.relative_dir.clone(),
+            scanner::load_strings(
+                Path::new(&file.default_path),
+                Path::new(&file.target_path),
+                &state,
+                &file.relative_dir,
+            ),
+        );
+    }
+
+    let prepared = batch::apply_batch(&parsed, &rows_by_dir)?;
+    if !prepared.entries.is_empty() {
+        translations::save_many(&config, &mod_unique_id, prepared.entries)?;
+    }
+    Ok(Some(prepared.summary))
+}
+
 #[tauri::command]
 fn build_glossary(
     app: AppHandle,
@@ -270,6 +379,8 @@ pub fn run() {
             save_string,
             save_strings,
             export_mod,
+            export_claude_batch,
+            import_claude_batch,
             build_glossary,
             glossary_status,
             load_glossary,

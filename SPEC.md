@@ -509,21 +509,21 @@ The tool exports a structured batch file that the user processes externally with
 
 ### Export
 
-1. User selects strings in the String Table → right-click → "Export for Claude-Code".
+1. User selects strings in the String Table → right-click → **"Export for Claude Code (N)"** (same eligibility as the local-AI batch: only `untranslated`/`outdated` strings; Ctrl+A = whole mod). A save dialog picks the destination.
 2. Tool writes a JSON batch file containing:
-   - Instructions for Claude Code (translation rules, token preservation).
-   - Glossary excerpt (if glossary is available).
-   - Source strings (key + source text).
-   - Expected output format.
+   - Instructions for Claude Code (translation rules, token preservation, expected reply format).
+   - Glossary excerpt (only official terms that occur in the exported strings, capped; empty when no glossary is built).
+   - Source strings, **grouped by i18n directory** (`files`) — multi-component mods can have several `i18n/` folders, so a flat key map is ambiguous.
 3. User opens the batch file with Claude Code and runs the translation.
 
 ### Import
 
-1. User imports the Claude Code result file via toolbar button or drag-and-drop.
-2. Tool parses the result JSON (mapping keys → translated strings).
-3. Target text is filled for each matched key.
-4. Status is set to `review-needed` for all imported strings.
-5. Validation runs on all imported strings.
+1. User imports the Claude Code result file via the toolbar button **"Import batch…"** (file picker; lenient JSON parsing tolerates LLM artifacts like trailing commas).
+2. Tool matches keys per i18n directory against the current `default.json`.
+3. Every accepted value is staged as **`review-needed`** in one atomic state write; the table reloads.
+4. Strings that are now `translated`/`not-translatable` locally are **never overwritten** (stale-batch protection) — they are skipped and counted.
+5. Validation runs on all imported strings; values that drop a protected token or are identical to the English source are imported anyway but flagged in the summary (never auto-rejected).
+6. A file translated **in place** (still carrying the `…-claude-batch` format marker) is accepted like a result file.
 
 ### Export File Format
 
@@ -533,19 +533,21 @@ The tool exports a structured batch file that the user processes externally with
   "version": 1,
   "metadata": {
     "mod": "My Mod Name",
-    "file": "i18n/default.json",
+    "modUniqueId": "author.mymod",
     "sourceLang": "en",
     "targetLang": "de",
     "exportedAt": "2026-06-07T22:00:00Z"
   },
-  "instructions": "Translate the following Stardew Valley mod strings from English to German. ...",
+  "instructions": "Translate the Stardew Valley mod strings in `files` from English into German. ...",
   "glossary": {
     "Stardrop": "Sterntautropfen",
     "Junimo": "Junimo"
   },
-  "strings": {
-    "greeting": "Hello {{PlayerName}}!",
-    "item-desc": "A rare {{ItemName}} worth {{Price}}g."
+  "files": {
+    "i18n": {
+      "greeting": "Hello {{PlayerName}}!",
+      "item-desc": "A rare {{ItemName}} worth {{Price}}g."
+    }
   }
 }
 ```
@@ -556,9 +558,11 @@ The tool exports a structured batch file that the user processes externally with
 {
   "format": "stardew-translator-claude-result",
   "version": 1,
-  "strings": {
-    "greeting": "Hallo {{PlayerName}}!",
-    "item-desc": "Ein seltenes {{ItemName}} im Wert von {{Price}}g."
+  "files": {
+    "i18n": {
+      "greeting": "Hallo {{PlayerName}}!",
+      "item-desc": "Ein seltenes {{ItemName}} im Wert von {{Price}}g."
+    }
   }
 }
 ```
