@@ -7,9 +7,10 @@
  * disk; the saved status follows the field (empty → untranslated, text →
  * translated) unless not-translatable is chosen.
  *
- * Shortcuts: Ctrl+Enter save · Esc cancel · Alt+←/→ prev/next · F2 toggle
- * not-translatable · F3 copy original · F4 reset (clears the field) · Ctrl+F5
- * translate with the local AI (M6).
+ * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
+ * fast path) · Esc cancel · Alt+←/→ prev/next · F2 toggle not-translatable ·
+ * F3 copy original · F4 reset (clears the field) · Ctrl+F5 translate with the
+ * local AI (M6).
  */
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -139,16 +140,28 @@ export function StringEditor({
     return "translated";
   }
 
+  /** The status an explicit Save confirms to (the user has reviewed it). */
+  function confirmedStatus(): StringStatus {
+    return status === "not-translatable"
+      ? "not-translatable"
+      : value.trim() === ""
+        ? "untranslated"
+        : "translated";
+  }
+
   /** Explicit Save (Ctrl+Enter): the user has reviewed it → confirm to translated. */
   function save() {
-    const confirmed: StringStatus =
-      status === "not-translatable"
-        ? "not-translatable"
-        : value.trim() === ""
-          ? "untranslated"
-          : "translated";
-    onSave(value, confirmed);
+    onSave(value, confirmedStatus());
     onClose();
+  }
+
+  /** Save & next (Ctrl+Shift+Enter): confirm like Save, then jump to the next
+   * string instead of closing — the fast path for working through a long
+   * review-needed backlog. Closes on the last string. */
+  function saveAndNext() {
+    onSave(value, confirmedStatus());
+    if (index < total - 1) onNavigate(1);
+    else onClose();
   }
 
   /** Edit the target by hand: it is now the user's own text, no longer a pending AI suggestion. */
@@ -229,10 +242,11 @@ export function StringEditor({
     });
   }
 
-  function onKeyDown(event: ReactKeyboardEvent) {
+  function onKeyDown(event: KeyboardEvent | ReactKeyboardEvent) {
     if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
       event.preventDefault();
-      save();
+      if (event.shiftKey) saveAndNext();
+      else save();
     } else if (event.key === "Escape") {
       event.preventDefault();
       onClose();
@@ -257,6 +271,19 @@ export function StringEditor({
     }
   }
 
+  const onKeyDownRef = useRef(onKeyDown);
+  onKeyDownRef.current = onKeyDown;
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      onKeyDownRef.current(event);
+    };
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+    };
+  }, []);
+
   const sourceTokenCounts = countTokens(row.source);
   const valueTokenCounts = countTokens(value);
   const issues = validate(row.source, value, row.targetPresent);
@@ -269,7 +296,6 @@ export function StringEditor({
       role="dialog"
       aria-modal="true"
       aria-label="Edit string"
-      onKeyDown={onKeyDown}
     >
       <div className="editor">
         <header className="editor__meta">
@@ -410,6 +436,14 @@ export function StringEditor({
           </button>
           <button type="button" className="editor__save" onClick={save}>
             Save <Kbd>Ctrl+Enter</Kbd>
+          </button>
+          <button
+            type="button"
+            className="editor__save"
+            onClick={saveAndNext}
+            title="Confirm this string and jump to the next one"
+          >
+            Save & next <Kbd>Ctrl+Shift+Enter</Kbd>
           </button>
         </footer>
       </div>

@@ -38,9 +38,10 @@ interface Row extends StringRow {
   file: string;
 }
 
-type SortCol = "file" | "key" | "source" | "target";
+type SortCol = "status" | "file" | "key" | "source" | "target";
 
 function sortField(row: Row, col: SortCol): string {
+  if (col === "status") return row.status;
   if (col === "file") return row.file;
   if (col === "key") return row.key;
   if (col === "source") return row.source;
@@ -55,10 +56,18 @@ function countTranslated(rows: Row[]): number {
   ).length;
 }
 
-/** Unreviewed AI suggestions among the working translations — shown next to
- * the coverage percentage so "100%" never hides pending review work. */
-function countReviewNeeded(rows: Row[]): number {
-  return rows.filter((row) => row.status === "review-needed").length;
+/** Per-status row counts — drives the status-filter dropdown labels and the
+ * needs-review tail in the header. */
+function countByStatus(rows: Row[]): Record<StringStatus, number> {
+  const counts: Record<StringStatus, number> = {
+    untranslated: 0,
+    translated: 0,
+    outdated: 0,
+    "not-translatable": 0,
+    "review-needed": 0,
+  };
+  for (const row of rows) counts[row.status] += 1;
+  return counts;
 }
 
 export function StringTable({
@@ -81,9 +90,13 @@ export function StringTable({
   onClaudeExport?: (
     items: ClaudeBatchItem[],
   ) => Promise<ClaudeExportOutcome | null>;
-  /** Reports the working translated-key + needs-review counts after edits,
-   * so the mod list and header stay fresh without a rescan. */
-  onCountsChange?: (translatedKeys: number, reviewNeeded: number) => void;
+  /** Reports the working translated-key count and per-status counts after
+   * edits, so the mod list, header, and filter dropdown stay fresh without a
+   * rescan. */
+  onCountsChange?: (
+    translatedKeys: number,
+    byStatus: Record<StringStatus, number>,
+  ) => void;
   /** Bump to force a reload from disk (e.g. after a batch import). */
   reloadToken?: number;
 }) {
@@ -133,7 +146,7 @@ export function StringTable({
         setRows(all);
         // Keep header/mod-list counts honest after a forced reload (a batch
         // import changes state on disk without going through saveRow).
-        onCountsChange?.(countTranslated(all), countReviewNeeded(all));
+        onCountsChange?.(countTranslated(all), countByStatus(all));
       }
     })().catch((cause) => {
       if (active) {
@@ -229,7 +242,7 @@ export function StringTable({
       i === index ? { ...r, target, status, targetPresent: true } : r,
     );
     setRows(next);
-    onCountsChange?.(countTranslated(next), countReviewNeeded(next));
+    onCountsChange?.(countTranslated(next), countByStatus(next));
   }
 
   // `dataIndex` is the row's index into `data`; `pos` is its position in the
@@ -290,7 +303,7 @@ export function StringTable({
         : r,
     );
     setRows(next);
-    onCountsChange?.(countTranslated(next), countReviewNeeded(next));
+    onCountsChange?.(countTranslated(next), countByStatus(next));
     setMenu(null);
   }
 
@@ -356,7 +369,7 @@ export function StringTable({
   function closeBatch() {
     setBatch(null);
     const current = rowsRef.current ?? [];
-    onCountsChange?.(countTranslated(current), countReviewNeeded(current));
+    onCountsChange?.(countTranslated(current), countByStatus(current));
   }
 
   /** Export the eligible selection as an offline Claude-Code batch (M4).
@@ -393,6 +406,12 @@ export function StringTable({
   return (
     <div className={`stringtable${multiFile ? " stringtable--multifile" : ""}`}>
       <div className="stringrow stringrow--head">
+        <SortHeader
+          label="Status"
+          col="status"
+          sort={sort}
+          onSort={toggleSort}
+        />
         {multiFile && (
           <SortHeader label="File" col="file" sort={sort} onSort={toggleSort} />
         )}
@@ -431,7 +450,7 @@ export function StringTable({
               const dataIndex = entry.index;
               return (
                 <RowView
-                  key={`${entry.row.file} ${entry.row.key}`}
+                  key={`${entry.row.file} ${entry.row.key}`}
                   row={entry.row}
                   multiFile={multiFile}
                   selected={selection.has(dataIndex)}
@@ -671,7 +690,7 @@ function RowView({
         right: 0,
         height,
         transform: `translateY(${top}px)`,
-        boxShadow: `inset 3px 0 0 ${status.color}`,
+        boxShadow: `inset 6px 0 0 ${status.color}`,
         backgroundColor: selected
           ? "rgba(106, 176, 255, 0.30)"
           : `${status.color}24`,
@@ -681,6 +700,18 @@ function RowView({
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
     >
+      <span>
+        <span
+          className="stringrow__chip"
+          style={{
+            color: status.color,
+            borderColor: `${status.color}73`,
+            backgroundColor: `${status.color}1f`,
+          }}
+        >
+          {status.label}
+        </span>
+      </span>
       {multiFile && (
         <span className="stringrow__file" title={row.file}>
           {row.file}
@@ -714,8 +745,16 @@ function RowView({
 
 /** Header strip above the table: counts + a hint. The coverage percentage
  * counts every working translation (it measures what export would write) —
- * the needs-review tail keeps it from hiding unreviewed AI suggestions. */
-export function StringTableHeader({ mod }: { mod: ScannedMod }) {
+ * the needs-review tail keeps it from hiding unreviewed AI suggestions, and
+ * clicking it filters the table to exactly those strings. */
+export function StringTableHeader({
+  mod,
+  onShowReview,
+}: {
+  mod: ScannedMod;
+  /** Set the status filter to review-needed (clicking the amber tail). */
+  onShowReview?: () => void;
+}) {
   const summary = useMemo(
     () =>
       mod.totalKeys > 0
@@ -723,12 +762,22 @@ export function StringTableHeader({ mod }: { mod: ScannedMod }) {
         : "no strings",
     [mod],
   );
-  const reviewNeeded = mod.reviewNeeded ?? 0;
+  const reviewNeeded = mod.statusCounts?.["review-needed"] ?? 0;
   return (
     <span className="panel__muted">
       {mod.name} · {summary}
       {reviewNeeded > 0 && (
-        <span className="panel__review"> · {reviewNeeded} need review</span>
+        <>
+          {" · "}
+          <button
+            type="button"
+            className="panel__review"
+            title="Show only strings that need review"
+            onClick={onShowReview}
+          >
+            {reviewNeeded} need review
+          </button>
+        </>
       )}
     </span>
   );

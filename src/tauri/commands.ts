@@ -70,9 +70,10 @@ export interface ScannedMod {
   /** 0–1. */
   progress: number;
   status: ModStatus;
-  /** Unreviewed AI suggestions among the working translations. Not part of
-   * the scan payload — filled client-side once the mod's rows are loaded. */
-  reviewNeeded?: number;
+  /** Per-status string counts. Not part of the scan payload — filled
+   * client-side once the mod's rows are loaded; drives the needs-review
+   * header tail and the status-filter counts. */
+  statusCounts?: Record<StringStatus, number>;
 }
 
 export interface ScanResult {

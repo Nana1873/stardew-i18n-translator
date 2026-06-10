@@ -167,7 +167,7 @@ export function App() {
   function handleCountsChange(
     modId: string,
     translatedKeys: number,
-    reviewNeeded: number,
+    statusCounts: Record<StringStatus, number>,
   ) {
     setScan((prev) => {
       if (!prev) return prev;
@@ -188,7 +188,7 @@ export function App() {
             translatedKeys,
             progress,
             status,
-            reviewNeeded,
+            statusCounts,
           } as ScannedMod;
         }),
       };
@@ -353,6 +353,7 @@ export function App() {
         onSearch={setSearch}
         statusFilter={statusFilter}
         onStatusFilter={setStatusFilter}
+        statusCounts={selectedMod?.statusCounts ?? null}
         searchEnabled={Boolean(selectedMod)}
       />
       <main className="workspace">
@@ -408,6 +409,7 @@ export function App() {
           onTranslate={translate}
           onClaudeExport={claudeExport}
           onCountsChange={handleCountsChange}
+          onShowReview={() => setStatusFilter("review-needed")}
           reloadToken={reloadToken}
         />
       </main>
@@ -475,6 +477,7 @@ function Toolbar({
   onSearch,
   statusFilter,
   onStatusFilter,
+  statusCounts,
   searchEnabled,
 }: {
   onScan: () => void;
@@ -493,6 +496,8 @@ function Toolbar({
   onSearch: (value: string) => void;
   statusFilter: StringStatus | "all";
   onStatusFilter: (value: StringStatus | "all") => void;
+  /** Per-status counts of the selected mod (shown in the filter options). */
+  statusCounts: Record<StringStatus, number> | null;
   searchEnabled: boolean;
 }) {
   return (
@@ -548,6 +553,7 @@ function Toolbar({
           {(Object.keys(STATUS_META) as StringStatus[]).map((status) => (
             <option key={status} value={status}>
               {STATUS_META[status].label}
+              {statusCounts ? ` (${statusCounts[status] ?? 0})` : ""}
             </option>
           ))}
         </select>
@@ -573,6 +579,7 @@ function StringTablePanel({
   onTranslate,
   onClaudeExport,
   onCountsChange,
+  onShowReview,
   reloadToken,
 }: {
   mod: ScannedMod | null;
@@ -587,8 +594,10 @@ function StringTablePanel({
   onCountsChange?: (
     modId: string,
     translatedKeys: number,
-    reviewNeeded: number,
+    statusCounts: Record<StringStatus, number>,
   ) => void;
+  /** Filter the table down to the strings that still need review. */
+  onShowReview?: () => void;
   reloadToken?: number;
 }) {
   return (
@@ -598,7 +607,7 @@ function StringTablePanel({
         {mod && (
           <>
             {" "}
-            · <StringTableHeader mod={mod} />
+            · <StringTableHeader mod={mod} onShowReview={onShowReview} />
           </>
         )}
       </div>
@@ -614,8 +623,8 @@ function StringTablePanel({
             onClaudeExport ? (items) => onClaudeExport(mod, items) : undefined
           }
           reloadToken={reloadToken}
-          onCountsChange={(translatedKeys, reviewNeeded) =>
-            onCountsChange?.(mod.uniqueId, translatedKeys, reviewNeeded)
+          onCountsChange={(translatedKeys, statusCounts) =>
+            onCountsChange?.(mod.uniqueId, translatedKeys, statusCounts)
           }
         />
       ) : (
