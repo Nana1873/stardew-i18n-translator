@@ -440,4 +440,52 @@ describe("StringTable", () => {
       screen.getByRole("menuitem", { name: /Translate missing with local AI/ }),
     ).toBeDisabled();
   });
+
+  it("exports only eligible rows as a Claude batch and shows the outcome", async () => {
+    const onClaudeExport = vi.fn().mockResolvedValue({
+      path: "C:/out/a.b.claude-batch.json",
+      stringCount: 1,
+      glossaryTerms: 2,
+    });
+    render(<StringTable mod={MOD} onClaudeExport={onClaudeExport} />);
+
+    // Select both rows; only "bye" (untranslated) is eligible.
+    fireEvent.click(await screen.findByText("greeting"));
+    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByText("bye"));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
+    );
+
+    await screen.findByText("Batch exported");
+    expect(onClaudeExport).toHaveBeenCalledWith([
+      { relativeDir: "i18n", key: "bye", source: "Bye" },
+    ]);
+    expect(
+      screen.getByText("C:/out/a.b.claude-batch.json"),
+    ).toBeInTheDocument();
+  });
+
+  it("a cancelled Claude export (null outcome) shows no dialog", async () => {
+    const onClaudeExport = vi.fn().mockResolvedValue(null);
+    render(<StringTable mod={MOD} onClaudeExport={onClaudeExport} />);
+
+    fireEvent.click(await screen.findByText("bye"));
+    fireEvent.contextMenu(screen.getByText("bye"));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
+    );
+
+    await waitFor(() => expect(onClaudeExport).toHaveBeenCalled());
+    expect(screen.queryByText("Batch exported")).not.toBeInTheDocument();
+  });
+
+  it("the Claude export menu item is disabled without a target language", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.contextMenu(await screen.findByText("bye"));
+
+    expect(
+      screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
+    ).toBeDisabled();
+  });
 });
