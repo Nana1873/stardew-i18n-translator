@@ -164,7 +164,11 @@ export function App() {
 
   /** Keep the mod list / header counts fresh after edits (no rescan needed).
    * `i18nFiles` keeps its reference so the string table does not reload. */
-  function handleCountsChange(modId: string, translatedKeys: number) {
+  function handleCountsChange(
+    modId: string,
+    translatedKeys: number,
+    reviewNeeded: number,
+  ) {
     setScan((prev) => {
       if (!prev) return prev;
       return {
@@ -179,7 +183,13 @@ export function App() {
               : translatedKeys >= mod.totalKeys
                 ? "translated"
                 : "untranslated";
-          return { ...mod, translatedKeys, progress, status } as ScannedMod;
+          return {
+            ...mod,
+            translatedKeys,
+            progress,
+            status,
+            reviewNeeded,
+          } as ScannedMod;
         }),
       };
     });
@@ -574,7 +584,11 @@ function StringTablePanel({
     mod: ScannedMod,
     items: ClaudeBatchItem[],
   ) => Promise<ClaudeExportOutcome | null>;
-  onCountsChange?: (modId: string, translatedKeys: number) => void;
+  onCountsChange?: (
+    modId: string,
+    translatedKeys: number,
+    reviewNeeded: number,
+  ) => void;
   reloadToken?: number;
 }) {
   return (
@@ -600,8 +614,8 @@ function StringTablePanel({
             onClaudeExport ? (items) => onClaudeExport(mod, items) : undefined
           }
           reloadToken={reloadToken}
-          onCountsChange={(translatedKeys) =>
-            onCountsChange?.(mod.uniqueId, translatedKeys)
+          onCountsChange={(translatedKeys, reviewNeeded) =>
+            onCountsChange?.(mod.uniqueId, translatedKeys, reviewNeeded)
           }
         />
       ) : (

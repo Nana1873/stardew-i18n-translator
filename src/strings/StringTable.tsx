@@ -55,6 +55,12 @@ function countTranslated(rows: Row[]): number {
   ).length;
 }
 
+/** Unreviewed AI suggestions among the working translations — shown next to
+ * the coverage percentage so "100%" never hides pending review work. */
+function countReviewNeeded(rows: Row[]): number {
+  return rows.filter((row) => row.status === "review-needed").length;
+}
+
 export function StringTable({
   mod,
   search = "",
@@ -75,9 +81,9 @@ export function StringTable({
   onClaudeExport?: (
     items: ClaudeBatchItem[],
   ) => Promise<ClaudeExportOutcome | null>;
-  /** Reports the working translated-key count after edits, so the mod list
-   * and header stay fresh without a rescan. */
-  onCountsChange?: (translatedKeys: number) => void;
+  /** Reports the working translated-key + needs-review counts after edits,
+   * so the mod list and header stay fresh without a rescan. */
+  onCountsChange?: (translatedKeys: number, reviewNeeded: number) => void;
   /** Bump to force a reload from disk (e.g. after a batch import). */
   reloadToken?: number;
 }) {
@@ -127,7 +133,7 @@ export function StringTable({
         setRows(all);
         // Keep header/mod-list counts honest after a forced reload (a batch
         // import changes state on disk without going through saveRow).
-        onCountsChange?.(countTranslated(all));
+        onCountsChange?.(countTranslated(all), countReviewNeeded(all));
       }
     })().catch((cause) => {
       if (active) {
@@ -223,7 +229,7 @@ export function StringTable({
       i === index ? { ...r, target, status, targetPresent: true } : r,
     );
     setRows(next);
-    onCountsChange?.(countTranslated(next));
+    onCountsChange?.(countTranslated(next), countReviewNeeded(next));
   }
 
   // `dataIndex` is the row's index into `data`; `pos` is its position in the
@@ -284,7 +290,7 @@ export function StringTable({
         : r,
     );
     setRows(next);
-    onCountsChange?.(countTranslated(next));
+    onCountsChange?.(countTranslated(next), countReviewNeeded(next));
     setMenu(null);
   }
 
@@ -349,7 +355,8 @@ export function StringTable({
 
   function closeBatch() {
     setBatch(null);
-    onCountsChange?.(countTranslated(rowsRef.current ?? []));
+    const current = rowsRef.current ?? [];
+    onCountsChange?.(countTranslated(current), countReviewNeeded(current));
   }
 
   /** Export the eligible selection as an offline Claude-Code batch (M4).
@@ -705,7 +712,9 @@ function RowView({
   );
 }
 
-/** Header strip above the table: counts + a hint. */
+/** Header strip above the table: counts + a hint. The coverage percentage
+ * counts every working translation (it measures what export would write) —
+ * the needs-review tail keeps it from hiding unreviewed AI suggestions. */
 export function StringTableHeader({ mod }: { mod: ScannedMod }) {
   const summary = useMemo(
     () =>
@@ -714,9 +723,13 @@ export function StringTableHeader({ mod }: { mod: ScannedMod }) {
         : "no strings",
     [mod],
   );
+  const reviewNeeded = mod.reviewNeeded ?? 0;
   return (
     <span className="panel__muted">
       {mod.name} · {summary}
+      {reviewNeeded > 0 && (
+        <span className="panel__review"> · {reviewNeeded} need review</span>
+      )}
     </span>
   );
 }

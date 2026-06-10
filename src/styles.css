@@ -330,6 +330,11 @@ body {
   color: #d6a85f;
 }
 
+/* Needs-review tail in the strings header (review-needed amber). */
+.panel__review {
+  color: #e0a44e;
+}
+
 /* --- Selected-mod summary (placeholder until M2 string table) --- */
 .panel__selected {
   padding: 14px 16px;
