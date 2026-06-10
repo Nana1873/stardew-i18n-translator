@@ -8,12 +8,17 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import {
   type AppSettings,
+  type ClaudeBatchItem,
+  type ClaudeExportOutcome,
+  type ClaudeImportSummary,
   type ExportResult,
   type ScanResult,
   type ScannedMod,
   type StringStatus,
   type TranslationResult,
+  exportClaudeBatch,
   exportMod,
+  importClaudeBatch,
   loadGlossary,
   loadSettings,
   saveSettings,
@@ -28,6 +33,7 @@ import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
 import { STATUS_META } from "./strings/status";
 import { ExportDialog } from "./export/ExportDialog";
+import { ClaudeImportDialog } from "./claude/ClaudeBatchDialog";
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -57,6 +63,13 @@ export function App() {
   const [glossary, setGlossaryTerms] = useState<Record<string, string> | null>(
     null,
   );
+
+  // Claude-Code batch import (M4): summary dialog + table reload trigger.
+  const [importSummary, setImportSummary] =
+    useState<ClaudeImportSummary | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
   function refreshGlossary() {
     loadGlossary()
@@ -172,27 +185,66 @@ export function App() {
     });
   }
 
+  // Human-readable target language ("German"), for AI prompts + batch files.
+  const languageLabel =
+    TARGET_LANGUAGES.find(
+      (l) => l.code === settings?.targetLang,
+    )?.label.replace(/ \(.*\)$/, "") ??
+    settings?.targetLang ??
+    "the target language";
+
   // A local-AI translate callback, only when a model is configured (M6). Passed
   // to the editor; absent → the editor shows a "configure AI" hint on Ctrl+F5.
   const llm = settings?.llm;
   const aiReady = Boolean(llm?.baseUrl && llm?.model);
   const translate = aiReady
-    ? (source: string): Promise<TranslationResult> => {
-        const language =
-          TARGET_LANGUAGES.find(
-            (l) => l.code === settings?.targetLang,
-          )?.label.replace(/ \(.*\)$/, "") ??
-          settings?.targetLang ??
-          "the target language";
-        return translateString(
+    ? (source: string): Promise<TranslationResult> =>
+        translateString(
           llm!.baseUrl,
           llm!.model,
           source,
-          language,
+          languageLabel,
           llm!.temperature,
-        );
-      }
+        )
     : undefined;
+
+  // Claude-Code batch export (M4): needs a target language for the batch
+  // metadata/instructions; absent → the menu item explains why it's disabled.
+  const targetLang = settings?.targetLang;
+  const claudeExport = targetLang
+    ? (
+        mod: ScannedMod,
+        items: ClaudeBatchItem[],
+      ): Promise<ClaudeExportOutcome | null> =>
+        exportClaudeBatch(
+          mod.uniqueId,
+          mod.name,
+          targetLang,
+          languageLabel,
+          items,
+        )
+    : undefined;
+
+  /** Import a translated Claude-Code batch for the selected mod (M4). */
+  async function handleImportBatch() {
+    if (!selectedMod) return;
+    setImportSummary(null);
+    setImportError(null);
+    try {
+      const summary = await importClaudeBatch(
+        selectedMod.uniqueId,
+        filesOf(selectedMod),
+      );
+      if (!summary) return; // picker cancelled
+      setImportSummary(summary);
+      setImportOpen(true);
+      // State on disk changed behind the table's back — force a reload.
+      setReloadToken((token) => token + 1);
+    } catch (error) {
+      setImportError(String(error));
+      setImportOpen(true);
+    }
+  }
 
   function filesOf(mod: ScannedMod) {
     return mod.i18nFiles.map((file) => ({
@@ -281,6 +333,8 @@ export function App() {
         onExportAll={handleExportAll}
         exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
+        onImportBatch={() => void handleImportBatch()}
+        importBatchEnabled={Boolean(selectedMod)}
         onOpenSettings={() =>
           settings ? setSettingsOpen(true) : setWizardOpen(true)
         }
@@ -342,7 +396,9 @@ export function App() {
           statusFilter={statusFilter}
           glossary={glossary}
           onTranslate={translate}
+          onClaudeExport={claudeExport}
           onCountsChange={handleCountsChange}
+          reloadToken={reloadToken}
         />
       </main>
       {wizardOpen && (
@@ -380,6 +436,14 @@ export function App() {
           onClose={() => setExportOpen(false)}
         />
       )}
+      {importOpen && (
+        <ClaudeImportDialog
+          summary={importSummary}
+          error={importError}
+          modName={selectedMod?.name ?? ""}
+          onClose={() => setImportOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -393,6 +457,8 @@ function Toolbar({
   onExportAll,
   exportAllEnabled,
   exporting,
+  onImportBatch,
+  importBatchEnabled,
   onOpenSettings,
   settingsEnabled,
   search,
@@ -409,6 +475,8 @@ function Toolbar({
   onExportAll: () => void;
   exportAllEnabled: boolean;
   exporting: boolean;
+  onImportBatch: () => void;
+  importBatchEnabled: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
   search: string;
@@ -439,6 +507,14 @@ function Toolbar({
           title="Export every scanned mod's translations"
         >
           Export All
+        </button>
+        <button
+          type="button"
+          onClick={onImportBatch}
+          disabled={!importBatchEnabled}
+          title="Import a translated Claude-Code batch result for the selected mod"
+        >
+          Import batch…
         </button>
         <button
           type="button"
@@ -485,14 +561,21 @@ function StringTablePanel({
   statusFilter,
   glossary,
   onTranslate,
+  onClaudeExport,
   onCountsChange,
+  reloadToken,
 }: {
   mod: ScannedMod | null;
   search: string;
   statusFilter: StringStatus | "all";
   glossary: Record<string, string> | null;
   onTranslate?: (source: string) => Promise<TranslationResult>;
+  onClaudeExport?: (
+    mod: ScannedMod,
+    items: ClaudeBatchItem[],
+  ) => Promise<ClaudeExportOutcome | null>;
   onCountsChange?: (modId: string, translatedKeys: number) => void;
+  reloadToken?: number;
 }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
@@ -513,6 +596,10 @@ function StringTablePanel({
           statusFilter={statusFilter}
           glossary={glossary}
           onTranslate={onTranslate}
+          onClaudeExport={
+            onClaudeExport ? (items) => onClaudeExport(mod, items) : undefined
+          }
+          reloadToken={reloadToken}
           onCountsChange={(translatedKeys) =>
             onCountsChange?.(mod.uniqueId, translatedKeys)
           }

@@ -200,6 +200,67 @@ export function exportMod(
   return invoke<ExportResult>("export_mod", { modUniqueId, files });
 }
 
+/** One string of a Claude-Code batch export (M4). */
+export interface ClaudeBatchItem {
+  relativeDir: string;
+  key: string;
+  source: string;
+}
+
+export interface ClaudeExportOutcome {
+  path: string;
+  stringCount: number;
+  glossaryTerms: number;
+}
+
+/**
+ * Write the selected strings as an offline Claude-Code translation batch
+ * (M4, SPEC §11). The backend opens a save dialog; resolves null on cancel.
+ */
+export function exportClaudeBatch(
+  modUniqueId: string,
+  modName: string,
+  targetLang: string,
+  targetLanguage: string,
+  items: ClaudeBatchItem[],
+): Promise<ClaudeExportOutcome | null> {
+  return invoke<ClaudeExportOutcome | null>("export_claude_batch", {
+    modUniqueId,
+    modName,
+    targetLang,
+    targetLanguage,
+    items,
+  });
+}
+
+export interface ClaudeImportSummary {
+  /** Staged as review-needed. */
+  imported: number;
+  /** Untouched — already translated/not-translatable locally. */
+  skippedTranslated: number;
+  /** Unknown key/directory, non-string or empty value. */
+  unmatched: number;
+  /** Imported, but missing a protected token (validation flags them). */
+  tokenIssues: number;
+  /** Imported, but identical to the English source. */
+  identicalToSource: number;
+  totalInFile: number;
+}
+
+/**
+ * Import a translated Claude-Code batch/result file for one mod (M4). The
+ * backend opens a file picker; resolves null on cancel.
+ */
+export function importClaudeBatch(
+  modUniqueId: string,
+  files: ExportFileInput[],
+): Promise<ClaudeImportSummary | null> {
+  return invoke<ClaudeImportSummary | null>("import_claude_batch", {
+    modUniqueId,
+    files,
+  });
+}
+
 export interface GlossaryInfo {
   targetLang: string;
   termCount: number;

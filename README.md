@@ -4,7 +4,7 @@
 
 > [!IMPORTANT]
 > **Status:** Private early development.  
-> **Current Phase:** `M6 complete` — the v1 core loop **Setup → Scan → Edit → Export** works end-to-end, plus local-AI translation (single string + batch). See the honest done/open list below.  
+> **Current Phase:** `M4 + M6 complete` — the v1 core loop **Setup → Scan → Edit → Export** works end-to-end, plus both AI workflows (local LLM + offline Claude-Code batch). See the honest done/open list below.  
 > **Stack:** [ADR 0001](docs/adr/0001-tech-stack-decision.md) is **Accepted** (Tauri / Rust + TypeScript). The code freeze is lifted for this stack; do not introduce other frameworks.
 
 ### Implemented so far
@@ -13,11 +13,11 @@
 - **Edit & validate (M2):** virtualized string table with full-row status tint, double-click editor (live validation, token chips, keyboard shortcuts), the full **protected-token taxonomy** compared as **multisets**, persisted **5-status model** (`untranslated` · `translated` · `outdated` · `not-translatable` · `review-needed`) with surgical `outdated` detection, multi-select + right-click bulk actions (single atomic bulk save).
 - **Export (M3):** per-mod export + **Export All** to `i18n/<lang>.json` in `default.json` key order (UTF-8 no BOM, 2-space), `.bak` backup + atomic write, token-safe per-key skip, summary dialog.
 - **Local AI (M6):** local-LLM connection settings (Ollama / LM Studio / any OpenAI-compatible `localhost` endpoint, no API key) with "Test connection" + optional temperature, single-string translation in the editor (**Translate** / Ctrl+F5), and **batch translation** of all missing strings in a selection (context menu, progress + cancel, resume-friendly) — with glossary injection, protected-token retry, and a glossary-respect soft check. Results always land as `review-needed`.
+- **Claude-Code batch (M4):** offline export of the missing strings in a selection as a self-contained JSON batch (instructions + glossary excerpt embedded; context menu → "Export for Claude Code") and re-import of the translated result (toolbar → "Import batch…") — imported values land as `review-needed`, and locally translated strings are never overwritten by a stale batch.
 
 ### Still open for v1 (tracked in the milestone docs)
 
-- **M1–M3 are functionally complete.** Only an optional M3 overwrite-confirmation dialog remains (currently a silent `.bak` backup instead).
-- **M4 (not started):** Claude-Code batch export/import (same `review-needed` flow as M6).
+- **M1–M4 + M6 are functionally complete.** Only an optional M3 overwrite-confirmation dialog remains (currently a silent `.bak` backup instead).
 - **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
 
 ## Documentation
