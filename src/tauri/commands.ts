@@ -70,6 +70,9 @@ export interface ScannedMod {
   /** 0–1. */
   progress: number;
   status: ModStatus;
+  /** Unreviewed AI suggestions among the working translations. Not part of
+   * the scan payload — filled client-side once the mod's rows are loaded. */
+  reviewNeeded?: number;
 }
 
 export interface ScanResult {
@@ -242,6 +245,8 @@ export interface ClaudeImportSummary {
   unmatched: number;
   /** Imported, but missing a protected token (validation flags them). */
   tokenIssues: number;
+  /** The keys behind tokenIssues — searchable in the table. */
+  tokenIssueKeys: string[];
   /** Imported, but identical to the English source. */
   identicalToSource: number;
   totalInFile: number;

@@ -154,6 +154,9 @@ pub struct ImportSummary {
     /// Imported, but missing a protected token vs. the current source —
     /// the row shows a validation error and export would skip it until fixed.
     pub token_issues: usize,
+    /// The keys behind `token_issues`, so the user can search/jump to them
+    /// (prefixed with the i18n directory when the mod has more than one).
+    pub token_issue_keys: Vec<String>,
     /// Imported, but byte-identical to the English source (probably
     /// untranslated; sometimes legitimate, e.g. "OK").
     pub identical_to_source: usize,
@@ -195,6 +198,7 @@ pub fn apply_batch(
         summary: ImportSummary::default(),
     };
     let summary = &mut prepared.summary;
+    let multi_dir = rows_by_dir.len() > 1;
 
     for (dir, group) in files {
         let Some(group) = group.as_object() else {
@@ -219,6 +223,11 @@ pub fn apply_batch(
             }
             if tokens::missing_tokens(&row.source, text) {
                 summary.token_issues += 1;
+                summary.token_issue_keys.push(if multi_dir {
+                    format!("{dir} · {key}")
+                } else {
+                    key.clone()
+                });
             }
             if text.trim() == row.source.trim() {
                 summary.identical_to_source += 1;
@@ -379,6 +388,8 @@ mod tests {
         let prepared = apply_batch(&result, &rows).unwrap();
         assert_eq!(prepared.summary.imported, 2, "flagged, not rejected");
         assert_eq!(prepared.summary.token_issues, 1);
+        // The affected key is named, so the user can search/jump to it.
+        assert_eq!(prepared.summary.token_issue_keys, vec!["tok".to_string()]);
         assert_eq!(prepared.summary.identical_to_source, 1);
     }
 

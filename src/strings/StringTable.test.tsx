@@ -18,7 +18,7 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-import { StringTable } from "./StringTable";
+import { StringTable, StringTableHeader } from "./StringTable";
 import type { ScannedMod } from "../tauri/commands";
 
 const MOD: ScannedMod = {
@@ -378,7 +378,7 @@ describe("StringTable", () => {
       target: { value: "Tschüss" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(2));
+    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(2, 0));
 
     // Bulk: clearing both translations drops the count to 0.
     onCountsChange.mockClear();
@@ -388,7 +388,7 @@ describe("StringTable", () => {
     fireEvent.click(
       screen.getByRole("menuitem", { name: "Clear translation" }),
     );
-    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(0));
+    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(0, 0));
   });
 
   it("batch-translates only untranslated/outdated rows in the selection as review-needed", async () => {
@@ -427,9 +427,10 @@ describe("StringTable", () => {
       }),
     );
 
-    // Closing the dialog reports the fresh working count (both non-empty now).
+    // Closing the dialog reports the fresh working count (both non-empty now,
+    // one of them an unreviewed AI suggestion).
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onCountsChange).toHaveBeenCalledWith(2);
+    expect(onCountsChange).toHaveBeenCalledWith(2, 1);
   });
 
   it("the batch menu item is disabled without an AI configured", async () => {
@@ -487,5 +488,16 @@ describe("StringTable", () => {
     expect(
       screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
     ).toBeDisabled();
+  });
+
+  it("the header shows a needs-review tail so 100% never hides pending review", () => {
+    const { rerender } = render(
+      <StringTableHeader mod={{ ...MOD, reviewNeeded: 277 }} />,
+    );
+    expect(screen.getByText(/277 need review/)).toBeInTheDocument();
+
+    // Without unreviewed suggestions there is no tail.
+    rerender(<StringTableHeader mod={{ ...MOD, reviewNeeded: 0 }} />);
+    expect(screen.queryByText(/need review/)).not.toBeInTheDocument();
   });
 });

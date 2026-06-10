@@ -132,6 +132,21 @@ export function ClaudeImportDialog({
                   </li>
                 )}
               </ul>
+              {summary.tokenIssueKeys.length > 0 && (
+                <div className="exportdlg__skipped">
+                  <span className="exportdlg__muted">
+                    Keys with missing tokens (paste one into the search box to
+                    jump to it; export skips these until fixed):
+                  </span>
+                  <ul>
+                    {summary.tokenIssueKeys.map((key) => (
+                      <li key={key}>
+                        <code>{key}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           ) : null}
         </div>
