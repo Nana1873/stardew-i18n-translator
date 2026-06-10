@@ -23,6 +23,7 @@ function row(overrides: Partial<EditorRow> = {}): EditorRow {
 function renderEditor(
   overrides: Partial<EditorRow> = {},
   onTranslate?: (source: string) => Promise<TranslationResult>,
+  position: { index: number; total: number } = { index: 0, total: 2 },
 ) {
   const onSave = vi.fn();
   const onClose = vi.fn();
@@ -30,8 +31,8 @@ function renderEditor(
   render(
     <StringEditor
       row={row(overrides)}
-      index={0}
-      total={2}
+      index={position.index}
+      total={position.total}
       modName="Test Mod"
       onTranslate={onTranslate}
       onSave={onSave}
@@ -121,5 +122,30 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
     expect(onSave).toHaveBeenCalledWith("", "untranslated");
+  });
+
+  it("Save & next confirms the string and jumps to the next one", () => {
+    const { onSave, onNavigate, onClose } = renderEditor({
+      status: "review-needed",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onNavigate).toHaveBeenCalledWith(1);
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("Save & next on the last string closes instead of navigating", () => {
+    const { onSave, onNavigate, onClose } = renderEditor({}, undefined, {
+      index: 1,
+      total: 2,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
   });
 });

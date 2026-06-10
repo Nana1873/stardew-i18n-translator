@@ -330,9 +330,21 @@ body {
   color: #d6a85f;
 }
 
-/* Needs-review tail in the strings header (review-needed amber). */
+/* Needs-review tail in the strings header (review-needed amber). A button:
+   clicking filters the table to the unreviewed strings. */
 .panel__review {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
   color: #e0a44e;
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.panel__review:hover {
+  color: #f0bc74;
 }
 
 /* --- Selected-mod summary (placeholder until M2 string table) --- */
@@ -381,7 +393,9 @@ body {
 
 .stringrow {
   display: grid;
-  grid-template-columns: minmax(130px, 24%) minmax(0, 1fr) minmax(0, 1fr) 22px;
+  grid-template-columns:
+    92px minmax(130px, 22%) minmax(0, 1fr) minmax(0, 1fr)
+    22px;
   gap: 10px;
   align-items: center;
   padding: 0 12px;
@@ -390,8 +404,23 @@ body {
 
 .stringtable--multifile .stringrow {
   grid-template-columns:
-    90px minmax(110px, 20%) minmax(0, 1fr) minmax(0, 1fr)
+    92px 90px minmax(110px, 18%) minmax(0, 1fr) minmax(0, 1fr)
     22px;
+}
+
+/* Named status chip — full-contrast color on a small surface, so statuses
+   stay distinguishable even though the row tint is subtle. */
+.stringrow__chip {
+  display: inline-block;
+  max-width: 100%;
+  padding: 1px 8px;
+  border: 1px solid;
+  border-radius: 9px;
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .stringrow--head {

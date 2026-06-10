@@ -378,7 +378,12 @@ describe("StringTable", () => {
       target: { value: "Tschüss" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(2, 0));
+    await waitFor(() =>
+      expect(onCountsChange).toHaveBeenCalledWith(
+        2,
+        expect.objectContaining({ translated: 2, "review-needed": 0 }),
+      ),
+    );
 
     // Bulk: clearing both translations drops the count to 0.
     onCountsChange.mockClear();
@@ -388,7 +393,12 @@ describe("StringTable", () => {
     fireEvent.click(
       screen.getByRole("menuitem", { name: "Clear translation" }),
     );
-    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(0, 0));
+    await waitFor(() =>
+      expect(onCountsChange).toHaveBeenCalledWith(
+        0,
+        expect.objectContaining({ untranslated: 2 }),
+      ),
+    );
   });
 
   it("batch-translates only untranslated/outdated rows in the selection as review-needed", async () => {
@@ -430,7 +440,10 @@ describe("StringTable", () => {
     // Closing the dialog reports the fresh working count (both non-empty now,
     // one of them an unreviewed AI suggestion).
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onCountsChange).toHaveBeenCalledWith(2, 1);
+    expect(onCountsChange).toHaveBeenCalledWith(
+      2,
+      expect.objectContaining({ "review-needed": 1 }),
+    );
   });
 
   it("the batch menu item is disabled without an AI configured", async () => {
@@ -490,14 +503,40 @@ describe("StringTable", () => {
     ).toBeDisabled();
   });
 
-  it("the header shows a needs-review tail so 100% never hides pending review", () => {
+  it("the header shows a clickable needs-review tail so 100% never hides pending review", () => {
+    const counts = {
+      untranslated: 3,
+      translated: 0,
+      outdated: 0,
+      "not-translatable": 0,
+      "review-needed": 277,
+    };
+    const onShowReview = vi.fn();
     const { rerender } = render(
-      <StringTableHeader mod={{ ...MOD, reviewNeeded: 277 }} />,
+      <StringTableHeader
+        mod={{ ...MOD, statusCounts: counts }}
+        onShowReview={onShowReview}
+      />,
     );
-    expect(screen.getByText(/277 need review/)).toBeInTheDocument();
+    // Clicking the tail filters the table down to the unreviewed strings.
+    fireEvent.click(screen.getByRole("button", { name: /277 need review/ }));
+    expect(onShowReview).toHaveBeenCalled();
 
     // Without unreviewed suggestions there is no tail.
-    rerender(<StringTableHeader mod={{ ...MOD, reviewNeeded: 0 }} />);
+    rerender(
+      <StringTableHeader
+        mod={{ ...MOD, statusCounts: { ...counts, "review-needed": 0 } }}
+        onShowReview={onShowReview}
+      />,
+    );
     expect(screen.queryByText(/need review/)).not.toBeInTheDocument();
+  });
+
+  it("each row shows a named status chip", async () => {
+    render(<StringTable mod={MOD} />);
+
+    // greeting = translated, bye = untranslated — both named, not just tinted.
+    expect(await screen.findByText("Translated")).toBeInTheDocument();
+    expect(screen.getByText("Untranslated")).toBeInTheDocument();
   });
 });
