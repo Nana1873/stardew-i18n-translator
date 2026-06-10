@@ -19,6 +19,9 @@ serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
+# Safe external-URL opening (ShellExecute, no shell parsing). The previous
+# `cmd /C start <url>` would let cmd metacharacters in a URL execute commands.
+tauri-plugin-opener = "2"
 # Local-LLM client (M6): OpenAI-compatible HTTP only. rustls avoids an OpenSSL
 # build dependency on Windows.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
