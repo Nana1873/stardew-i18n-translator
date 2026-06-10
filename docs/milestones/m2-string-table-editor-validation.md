@@ -1,22 +1,26 @@
 # Milestone M2: String Table + Editor + Validation
 
 ## Goal
+
 Implement the main workspace string table, the double-click editing dialog, protected-token validation, the persisted status model, and (still open) search/filter/sort.
 
 ## Scope
-* **String Table Grid:** A high-density, virtualized grid showing key, source string, target string, and a per-row validation/status indicator (full-row status tint).
-* **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `not-translatable`, or all).
-* **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, live token validation, status badge, clickable token chips, and **glossary hints** (official game terms found in the source, click to insert the translation — SPEC §7.5).
-* **Protected-Token Validation:** The 4 v1 rules from [SPEC.md §10](../../SPEC.md): `token-missing` (error), `token-added` (warning), `empty-target` (warning), `json-invalid` (error). A **"token" is any Stardew/SMAPI protected token**, not just `{{...}}`: Content Patcher `{{...}}` (nested-aware), gender switch `${male^female}$`, mail commands `[#]` / `%item … %%`, dialogue break `#$b#`, bracket tokens `[…]`, **positional placeholders `{0}`**, dialogue commands `$b`/`$s`/`$e`, single-char `@`/`^`. Tokens are compared as **multisets** (counts matter), so a dropped *second* `$b` is caught too. See `src/strings/protectedTokens.ts` (and the Rust port `src-tauri/src/tokens.rs`).
-* **Status Model:** Implement the **4** v1 string statuses from [SPEC.md §9](../../SPEC.md) — `untranslated`, `translated`, `outdated`, `not-translatable` — and their transitions during editing. (`outdated` is derived automatically, never set by hand. The earlier 6-status draft — `imported`/`done`/`review-needed` — was collapsed: `imported`/`done` → `translated`; `review-needed` returns only in M4.)
-* **Outdated Logic:** Detect modified source strings via per-string `sourceHash` (SHA-256 of the English source at save time), compared on re-scan.
+
+- **String Table Grid:** A high-density, virtualized grid showing key, source string, target string, and a per-row validation/status indicator (full-row status tint).
+- **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `not-translatable`, or all).
+- **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, live token validation, status badge, clickable token chips, and **glossary hints** (official game terms found in the source, click to insert the translation — SPEC §7.5).
+- **Protected-Token Validation:** The 4 v1 rules from [SPEC.md §10](../../SPEC.md): `token-missing` (error), `token-added` (warning), `empty-target` (warning), `json-invalid` (error). A **"token" is any Stardew/SMAPI protected token**, not just `{{...}}`: Content Patcher `{{...}}` (nested-aware), gender switch `${male^female}$`, mail commands `[#]` / `%item … %%`, dialogue break `#$b#`, bracket tokens `[…]`, **positional placeholders `{0}`**, dialogue commands `$b`/`$s`/`$e`, single-char `@`/`^`. Tokens are compared as **multisets** (counts matter), so a dropped _second_ `$b` is caught too. See `src/strings/protectedTokens.ts` (and the Rust port `src-tauri/src/tokens.rs`).
+- **Status Model:** Implement the v1 string statuses from [SPEC.md §9](../../SPEC.md) — `untranslated`, `translated`, `outdated`, `not-translatable`, plus the AI-workflow status `review-needed` — and their transitions during editing. (`outdated` is derived automatically, never set by hand. The earlier 6-status draft — `imported`/`done` — collapsed into `translated`; `review-needed` is set only by the AI workflows: M6 local-LLM, later M4 batch import.)
+- **Outdated Logic:** Detect modified source strings via per-string `sourceHash` (SHA-256 of the English source at save time), compared on re-scan.
 
 ## Out of Scope
-* Exporters, file saving, backups, or JSON generation (that is M3).
-* Offline AI translations (Claude-Code batch export/import — M4).
-* API calls.
+
+- Exporters, file saving, backups, or JSON generation (that is M3).
+- Offline AI translations (Claude-Code batch export/import — M4).
+- API calls.
 
 ## Acceptance Criteria
+
 1. String table handles high-density data (thousands of strings) without lag (row virtualization). ✅
 2. Double-clicking a row opens a modal dialog that correctly updates the table on save. ✅
 3. Token validation flags missing/added protected tokens (e.g. source has `{{PlayerName}}` or `$b`, target drops it → `token-missing` error). ✅
@@ -42,25 +46,32 @@ folded into the new [M5 — Nexus Translation Discovery & Download](m5-nexus-tra
 (the owner prefers the full SSE-AT-style assisted-download flow over a browser-search stopgap).
 
 ## Risks
-* **Virtualization Requirements:** Large string counts can cause UI lag. (Mitigation: `@tanstack/react-virtual` row virtualization.)
-* **Complex Token Syntax:** Real content mods (e.g. Ridgeside) lean heavily on dialogue/Content Patcher tokens, not just `{{...}}`. (Mitigation: the full taxonomy above is treated as protected and compared as multisets; no inner parsing of token contents.)
+
+- **Virtualization Requirements:** Large string counts can cause UI lag. (Mitigation: `@tanstack/react-virtual` row virtualization.)
+- **Complex Token Syntax:** Real content mods (e.g. Ridgeside) lean heavily on dialogue/Content Patcher tokens, not just `{{...}}`. (Mitigation: the full taxonomy above is treated as protected and compared as multisets; no inner parsing of token contents.)
 
 ## Issue Breakdown (as shipped)
 
 ### Issue 7: String table ✅
+
 Virtualized grid bound to scanner data, full-row status tint, selection.
 
 ### Issue 8: Double-click string editor dialog ✅
+
 Editing overlay with original vs. translation, live validation, clickable token chips, status badge, keyboard shortcuts.
 
 ### Issue 9: Protected-token validation ✅
+
 `extractProtectedTokens` reader for the full Stardew taxonomy; `token-missing` (error) / `token-added` (warning) via **multiset** comparison; plus `empty-target` and `json-invalid`.
 
 ### Issue 10: Status model and persistence ✅
+
 The 4 v1 statuses and their transitions, with `sourceHash` tracking for `outdated` detection. Translation state persisted per mod (keyed by UniqueID) separately from the mod's files.
 
 ### Issue 10b: Search / filter / sort ✅
+
 Text search (key/original/target), status filter, and column sorting (asc → desc → off) for the string table — shipped post-audit; filtering/sorting operate on a visible view while selection/editor navigation keep stable data indices.
 
 ## Agent Handoff Notes
-*Keep the status set at exactly 4 (SPEC §19). `review-needed` is reintroduced only in M4. When building the open search/filter/sort work, keep it inside the existing two-panel layout — no extra panels (SPEC §19 #5).*
+
+_Keep the status set at exactly 5 (SPEC §19 #2): the 4 editing statuses plus `review-needed`, which only the AI workflows set (M6 local-LLM; later M4 batch import). Keep all table work inside the existing two-panel layout — no extra panels (SPEC §19 #5)._

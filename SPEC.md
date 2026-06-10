@@ -499,7 +499,7 @@ Tokens are compared as **multisets** (counts matter, order does not): every toke
 ## 11. Claude-Code Batch Workflow
 
 > [!NOTE]
-> This is the **only AI workflow in v1**. Direct in-app AI translation (API calls from the tool) is deferred to v1.1+. The Claude-Code batch workflow does not require API keys in the tool — the user runs Claude Code externally.
+> This is one of **two AI workflows in v1** — the other is the M6 local-LLM translation (§17 M6), which talks to a local OpenAI-compatible server (Ollama / LM Studio) on `localhost`. Neither requires an API key, and both land results as `review-needed`. **Cloud** AI APIs (keys, external network) remain deferred to v1.1+. The Claude-Code batch workflow needs no keys in the tool — the user runs Claude Code externally.
 
 ### Concept
 

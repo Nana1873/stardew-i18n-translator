@@ -14,7 +14,7 @@ To ensure consistency, code quality, and strict scope control, you MUST follow t
   3. The specific milestone documentation in `docs/milestones/` for your active issue.
 * **Single-Issue Focus:** Work only on the assigned GitHub issue. Do not attempt to fix unrelated bugs, implement unrelated features, or execute general refactoring unless it is explicitly requested in the active issue.
 * **No Scope Creep:** Do not implement features scheduled for future milestones (`v1.1` or `v2`). If you find yourself building something not in [SPEC.md](SPEC.md), stop immediately.
-* **No Framework/Dependency Choice:** Do not scaffold, install, or reference framework dependencies (Tauri, Electron, PySide, etc.) until [ADR 0001: Tech Stack Decision](docs/adr/0001-tech-stack-decision.md) has been fully written, reviewed, and marked as `Accepted`.
+* **Stack is Fixed:** The tech stack is decided and accepted — Tauri (Rust backend + TypeScript/React frontend), see [ADR 0001](docs/adr/0001-tech-stack-decision.md). Do not introduce other frameworks (Electron, PySide, etc.) or swap core dependencies without a new ADR.
 * **Propose Plans:** For any task that isn't trivially simple, outline your proposed changes in an implementation plan or task file first. Wait for user review if required.
 
 ## 2. Commit and Code Hygiene
