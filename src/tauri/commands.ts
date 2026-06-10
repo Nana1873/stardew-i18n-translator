@@ -17,6 +17,8 @@ export interface LlmSettings {
   baseUrl: string;
   /** Selected model id. */
   model: string;
+  /** Optional sampling temperature; absent = low default (0.2). */
+  temperature?: number | null;
 }
 
 export interface AppSettings {
@@ -239,6 +241,8 @@ export interface TranslationResult {
   text: string;
   /** Protected tokens the model still dropped after one retry (UI flags these). */
   missingTokens: string[];
+  /** Injected glossary terms the result appears not to use ("En -> Target"). Soft hint. */
+  glossaryMisses: string[];
 }
 
 /**
@@ -250,12 +254,14 @@ export function translateString(
   model: string,
   source: string,
   targetLanguage: string,
+  temperature?: number | null,
 ): Promise<TranslationResult> {
   return invoke<TranslationResult>("translate_string", {
     baseUrl,
     model,
     source,
     targetLanguage,
+    temperature: temperature ?? null,
   });
 }
 
