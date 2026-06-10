@@ -13,6 +13,11 @@
  *  - single-character tokens: `@` (player name), `^` / `\n` (line break)
  *
  * The order of the readers matters — more specific shapes are tried first.
+ *
+ * Note: `\n` is extracted (the editor shows it as a chip) but it is **layout,
+ * not syntax** — validation reports a count difference as the soft
+ * `newline-mismatch` warning, never as the blocking `token-missing` error
+ * (translations rewrap freely; see validation.ts / the Rust tokens.rs).
  */
 const positionalPlaceholderPattern = /^\{\d+\}/;
 const simpleDialogueCommandPattern = /^\$(?:[a-zA-Z]+|\d+)/;
