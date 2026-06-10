@@ -230,9 +230,11 @@ describe("StringTable", () => {
   });
 
   it("AI translate fills the field, flags needs-review, and Save confirms translated", async () => {
-    const onTranslate = vi
-      .fn()
-      .mockResolvedValue({ text: "Tschüss!", missingTokens: [] });
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Tschüss!",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("bye"));
 
@@ -260,9 +262,11 @@ describe("StringTable", () => {
   });
 
   it("navigating away from an AI suggestion auto-saves it as review-needed", async () => {
-    const onTranslate = vi
-      .fn()
-      .mockResolvedValue({ text: "Hallo Welt", missingTokens: [] });
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Hallo Welt",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("greeting"));
 
@@ -288,9 +292,11 @@ describe("StringTable", () => {
       { key: "g", source: "Hi {{name}}", target: "" },
       { key: "ok", source: "Yes", target: "" },
     ]);
-    const onTranslate = vi
-      .fn()
-      .mockResolvedValue({ text: "Hallo", missingTokens: ["{{name}}"] });
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Hallo",
+      missingTokens: ["{{name}}"],
+      glossaryMisses: [],
+    });
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("g"));
 
@@ -383,5 +389,55 @@ describe("StringTable", () => {
       screen.getByRole("menuitem", { name: "Clear translation" }),
     );
     await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(0));
+  });
+
+  it("batch-translates only untranslated/outdated rows in the selection as review-needed", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "KI-Text",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
+    const onCountsChange = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        onTranslate={onTranslate}
+        onCountsChange={onCountsChange}
+      />,
+    );
+
+    // Select both rows; only "bye" (untranslated) is eligible — "greeting" is
+    // already translated and must not be re-translated.
+    fireEvent.click(await screen.findByText("greeting"));
+    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByText("bye"));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate missing with local AI/ }),
+    );
+
+    await screen.findByText("Batch translation complete");
+    expect(onTranslate).toHaveBeenCalledTimes(1);
+    expect(onTranslate).toHaveBeenCalledWith("Bye");
+    expect(invokeMock).toHaveBeenCalledWith(
+      "save_string",
+      expect.objectContaining({
+        key: "bye",
+        target: "KI-Text",
+        status: "review-needed",
+      }),
+    );
+
+    // Closing the dialog reports the fresh working count (both non-empty now).
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(onCountsChange).toHaveBeenCalledWith(2);
+  });
+
+  it("the batch menu item is disabled without an AI configured", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.contextMenu(await screen.findByText("bye"));
+
+    expect(
+      screen.getByRole("menuitem", { name: /Translate missing with local AI/ }),
+    ).toBeDisabled();
   });
 });

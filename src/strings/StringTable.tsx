@@ -26,6 +26,7 @@ import {
   saveStrings,
 } from "../tauri/commands";
 import { StringEditor } from "./StringEditor";
+import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
 import { validate, worstSeverity } from "./validation";
 import { STATUS_META } from "./status";
 
@@ -77,8 +78,15 @@ export function StringTable({
     col: SortCol;
     dir: "asc" | "desc";
   } | null>(null);
+  /** Items of a running batch AI translation (M6 Issue 17); null = no batch. */
+  const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
+  // Current rows, readable from async batch callbacks without stale closures.
+  const rowsRef = useRef<Row[] | null>(null);
+  useEffect(() => {
+    rowsRef.current = rows;
+  }, [rows]);
 
   useEffect(() => {
     let active = true;
@@ -266,6 +274,61 @@ export function StringTable({
     setMenu(null);
   }
 
+  /** Selected rows the batch AI translation would process: only strings that
+   * still need work (untranslated/outdated). Translated, not-translatable and
+   * unreviewed AI suggestions are skipped — that also makes a re-run after a
+   * cancel resume exactly where it stopped. */
+  const batchEligible = [...selection]
+    .sort((a, b) => a - b)
+    .filter((i) => {
+      const row = data[i];
+      return (
+        row && (row.status === "untranslated" || row.status === "outdated")
+      );
+    });
+
+  function startBatch() {
+    const items: BatchItem[] = batchEligible.map((i) => {
+      const row = data[i]!;
+      return { index: i, key: row.key, file: row.file, source: row.source };
+    });
+    setMenu(null);
+    if (items.length > 0) setBatch(items);
+  }
+
+  /** Persist one batch result as an unreviewed AI suggestion. Functional row
+   * update — the batch loop runs across many renders, so a captured `data`
+   * snapshot would clobber earlier results. */
+  async function applyBatchResult(item: BatchItem, text: string) {
+    await saveString(
+      mod.uniqueId,
+      item.file,
+      item.key,
+      text,
+      "review-needed",
+      item.source,
+    );
+    setRows((current) =>
+      current
+        ? current.map((row, i) =>
+            i === item.index
+              ? {
+                  ...row,
+                  target: text,
+                  status: "review-needed" as StringStatus,
+                  targetPresent: true,
+                }
+              : row,
+          )
+        : current,
+    );
+  }
+
+  function closeBatch() {
+    setBatch(null);
+    onCountsChange?.(countTranslated(rowsRef.current ?? []));
+  }
+
   if (rows === null) {
     return <div className="panel__empty">Loading strings…</div>;
   }
@@ -437,8 +500,36 @@ export function StringTable({
                 Clear translation
               </button>
             </li>
+            <li className="ctxmenu__sep" />
+            <li>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={!onTranslate || batchEligible.length === 0}
+                title={
+                  !onTranslate
+                    ? "Configure a local AI in Settings"
+                    : batchEligible.length === 0
+                      ? "No untranslated or outdated strings selected"
+                      : undefined
+                }
+                onClick={startBatch}
+              >
+                Translate missing with local AI
+                {batchEligible.length > 0 ? ` (${batchEligible.length})` : ""}
+              </button>
+            </li>
           </ul>
         </>
+      )}
+      {batch && onTranslate && (
+        <BatchTranslateDialog
+          items={batch}
+          modName={mod.name}
+          onTranslate={onTranslate}
+          onResult={applyBatchResult}
+          onClose={closeBatch}
+        />
       )}
     </div>
   );

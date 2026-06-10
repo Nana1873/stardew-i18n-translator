@@ -93,9 +93,11 @@ describe("StringEditor", () => {
   });
 
   it("AI translate then navigate saves the suggestion as review-needed", async () => {
-    const onTranslate = vi
-      .fn()
-      .mockResolvedValue({ text: "Hallo Welt", missingTokens: [] });
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Hallo Welt",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
     const { onSave } = renderEditor(
       { target: "", status: "untranslated" },
       onTranslate,

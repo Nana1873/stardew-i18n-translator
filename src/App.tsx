@@ -184,7 +184,13 @@ export function App() {
           )?.label.replace(/ \(.*\)$/, "") ??
           settings?.targetLang ??
           "the target language";
-        return translateString(llm!.baseUrl, llm!.model, source, language);
+        return translateString(
+          llm!.baseUrl,
+          llm!.model,
+          source,
+          language,
+          llm!.temperature,
+        );
       }
     : undefined;
 

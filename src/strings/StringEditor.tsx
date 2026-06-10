@@ -171,11 +171,19 @@ export function StringEditor({
       setStatus("translated"); // drop any not-translatable choice
       setReviewNeeded(true); // an AI suggestion awaiting review
       setDirty(true);
-      setTranslateMsg(
-        result.missingTokens.length > 0
-          ? `AI dropped token(s): ${result.missingTokens.join(", ")} — fix before saving.`
-          : null,
-      );
+      const notes: string[] = [];
+      if (result.missingTokens.length > 0) {
+        notes.push(
+          `AI dropped token(s): ${result.missingTokens.join(", ")} — fix before saving.`,
+        );
+      }
+      if (result.glossaryMisses.length > 0) {
+        // Soft hint only — inflections make exact glossary matching too strict.
+        notes.push(
+          `Glossary terms possibly not used: ${result.glossaryMisses.join(", ")}.`,
+        );
+      }
+      setTranslateMsg(notes.length > 0 ? notes.join(" ") : null);
       textareaRef.current?.focus();
     } catch (cause) {
       setTranslateMsg(String(cause));

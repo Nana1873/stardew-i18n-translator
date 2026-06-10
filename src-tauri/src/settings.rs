@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 
 const SETTINGS_FILE: &str = "settings.json";
 
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
@@ -27,7 +27,7 @@ pub struct AppSettings {
 }
 
 /// Local-LLM connection settings (M6, Issue 15). OpenAI-compatible endpoint only.
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmSettings {
     /// UI preset hint: `"lmstudio"`, `"ollama"`, or `"custom"`. Not used by the
@@ -40,6 +40,10 @@ pub struct LlmSettings {
     /// Selected model id (from `GET /v1/models`).
     #[serde(default)]
     pub model: String,
+    /// Optional sampling temperature (M6 scope). `None` = the default (0.2,
+    /// low — translation wants consistency, not creativity).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub temperature: Option<f32>,
 }
 
 fn default_source_lang() -> String {
@@ -120,11 +124,28 @@ mod tests {
                 provider: "lmstudio".to_string(),
                 base_url: "http://localhost:1234/v1".to_string(),
                 model: "llama3.1:8b".to_string(),
+                temperature: Some(0.4),
             }),
             ..AppSettings::default()
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn llm_settings_without_temperature_load_with_none() {
+        // An llm block written before the temperature field existed must load.
+        let dir = crate::test_support::temp_dir("settings-no-temp");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"llm":{"provider":"ollama","baseUrl":"http://localhost:11434/v1","model":"qwen2.5"}}"#,
+        )
+        .unwrap();
+        let llm = load(&dir).llm.unwrap();
+        assert_eq!(llm.temperature, None);
+        assert_eq!(llm.model, "qwen2.5");
         std::fs::remove_dir_all(&dir).ok();
     }
 
