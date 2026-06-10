@@ -243,4 +243,26 @@ mod tests {
         assert!(extract("Just some plain words.").is_empty());
         assert!(!missing_tokens("Hello world", "Hallo Welt"));
     }
+
+    /// Drift guard against the TS extractor: both suites run the same fixture
+    /// (`tests/fixtures/token-cases.json`). The two implementations are
+    /// hand-synced ports — a divergence means the editor's live validation and
+    /// the export skip rule disagree, the worst kind of inconsistency.
+    #[test]
+    fn shared_fixture_cases_match() {
+        let body = include_str!("../../tests/fixtures/token-cases.json");
+        let parsed: serde_json::Value = serde_json::from_str(body).unwrap();
+        let cases = parsed["cases"].as_array().expect("fixture has cases");
+        assert!(cases.len() >= 10, "fixture should stay comprehensive");
+        for case in cases {
+            let value = case["value"].as_str().unwrap();
+            let expected: Vec<String> = case["tokens"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|token| token.as_str().unwrap().to_string())
+                .collect();
+            assert_eq!(extract(value), expected, "extract({value:?})");
+        }
+    }
 }

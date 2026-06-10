@@ -18,6 +18,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_opener::OpenerExt;
 
 use detection::DetectedInstall;
 use scanner::ScanResult;
@@ -226,17 +227,16 @@ async fn translate_string(
 }
 
 /// Open an external http(s) URL in the user's default browser (Nexus links).
+/// Uses the opener plugin (ShellExecute) — never a shell, so URL contents can
+/// not be interpreted as commands (`cmd /C start` would parse `&`, `^`, …).
 #[tauri::command]
-fn open_url(url: String) -> Result<(), String> {
+fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     if !(url.starts_with("https://") || url.starts_with("http://")) {
         return Err("Only http(s) URLs are allowed.".to_string());
     }
-    #[cfg(windows)]
-    std::process::Command::new("cmd")
-        .args(["/C", "start", "", &url])
-        .spawn()
-        .map_err(|error| format!("Could not open URL: {error}"))?;
-    Ok(())
+    app.opener()
+        .open_url(&url, None::<String>)
+        .map_err(|error| format!("Could not open URL: {error}"))
 }
 
 #[tauri::command]
@@ -259,6 +259,7 @@ fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             detect_stardew,
             validate_stardew_path,
