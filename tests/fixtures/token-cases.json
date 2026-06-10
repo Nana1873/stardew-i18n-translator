@@ -1,0 +1,61 @@
+{
+  "comment": "Shared protected-token extraction cases, consumed by BOTH suites: src-tauri/src/tokens.rs (Rust) and src/strings/tokenCases.test.ts (TS). The two extractors are hand-synced ports; this file is the drift guard. Add new cases here, never only in one suite.",
+  "cases": [
+    {
+      "value": "Just some plain words.",
+      "tokens": []
+    },
+    {
+      "value": "Hi {{name}}, welcome!#$b#See you @ soon^bye",
+      "tokens": ["{{name}}", "#$b#", "@", "^"]
+    },
+    {
+      "value": "{{Lookup:{{Other}}}}",
+      "tokens": ["{{Lookup:{{Other}}}}"]
+    },
+    {
+      "value": "${he^she}$ got [#] and %item 388 5 %%",
+      "tokens": ["${he^she}$", "[#]", "%item 388 5 %%"]
+    },
+    {
+      "value": "%action warp 10 12 %% then done",
+      "tokens": ["%action warp 10 12 %%"]
+    },
+    {
+      "value": "Reward: {0} gold and {1} wood",
+      "tokens": ["{0}", "{1}"]
+    },
+    {
+      "value": "Pause$b then $s smile and $1 flag",
+      "tokens": ["$b", "$s", "$1"]
+    },
+    {
+      "value": "Take this! [128] [buff 5]",
+      "tokens": ["[128]", "[buff 5]"]
+    },
+    {
+      "value": "line one\nline two",
+      "tokens": ["\n"]
+    },
+    {
+      "value": "@, your farm^is nice",
+      "tokens": ["@", "^"]
+    },
+    {
+      "value": "Mixed {{i18n:some.key}} with {0} and #$e#",
+      "tokens": ["{{i18n:some.key}}", "{0}", "#$e#"]
+    },
+    {
+      "value": "Doubled $b twice $b",
+      "tokens": ["$b", "$b"]
+    },
+    {
+      "value": "An unclosed {{token never matches",
+      "tokens": []
+    },
+    {
+      "value": "Price tag 100% plain",
+      "tokens": []
+    }
+  ]
+}

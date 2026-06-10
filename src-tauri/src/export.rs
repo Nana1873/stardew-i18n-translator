@@ -58,6 +58,11 @@ pub struct ExportFileResult {
     pub outdated: usize,
     /// Exported, but an unreviewed AI suggestion (M6) — review advised.
     pub review_needed: usize,
+    /// Keys present in the **existing** target file but absent from
+    /// `default.json` (SMAPI ignores them). They are dropped from the rewritten
+    /// file — reported here so a community translation is never pruned
+    /// silently. The pre-export content survives in `<file>.bak`.
+    pub orphan_keys: Vec<String>,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -71,6 +76,9 @@ pub struct ExportResult {
     pub total_not_translatable: usize,
     pub total_outdated: usize,
     pub total_review_needed: usize,
+    /// Total keys dropped from existing target files because `default.json`
+    /// no longer (or never) contains them.
+    pub total_orphan_keys: usize,
 }
 
 /// Export every i18n file of one mod. Returns a per-file + aggregate summary.
@@ -93,6 +101,7 @@ pub fn export_mod(
         let mut file_result = ExportFileResult {
             relative_dir: file.relative_dir.clone(),
             target_path: file.target_path.clone(),
+            orphan_keys: orphan_keys(default_path, target_path),
             ..Default::default()
         };
 
@@ -134,10 +143,29 @@ pub fn export_mod(
         result.total_not_translatable += file_result.not_translatable;
         result.total_outdated += file_result.outdated;
         result.total_review_needed += file_result.review_needed;
+        result.total_orphan_keys += file_result.orphan_keys.len();
         result.files.push(file_result);
     }
 
     Ok(result)
+}
+
+/// Keys in the existing target file that `default.json` does not contain
+/// (matched with SMAPI key semantics: case-insensitive, trimmed). These get
+/// dropped by the rewrite, so the summary must surface them.
+fn orphan_keys(default_path: &Path, target_path: &Path) -> Vec<String> {
+    let Some(target) = scanner::read_object(target_path) else {
+        return Vec::new();
+    };
+    let source = scanner::read_object(default_path).unwrap_or_default();
+    let source_folded: std::collections::HashSet<String> =
+        source.keys().map(|key| scanner::folded_key(key)).collect();
+    target
+        .keys()
+        .filter(|key| key.as_str() != "$schema")
+        .filter(|key| !source_folded.contains(&scanner::folded_key(key)))
+        .cloned()
+        .collect()
 }
 
 /// Serialize `map` and write it to `target_path` safely: back up an existing
@@ -345,6 +373,33 @@ mod tests {
         assert_eq!(result.total_written_keys, 1);
         assert_eq!(result.total_review_needed, 1);
         assert!(read(&i18n.join("de.json")).contains("\"Hallo\""));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn reports_orphan_keys_dropped_from_an_existing_target() {
+        let root = crate::test_support::temp_dir("export-orphans");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"kept\": \"Hello\" }");
+        // The existing community translation has an extra key the mod no
+        // longer ships ("legacy") and a case-variant of a real key (not an
+        // orphan, per SMAPI's case-insensitive keys).
+        write(
+            &i18n.join("de.json"),
+            "{ \"KEPT\": \"Hallo\", \"legacy\": \"Alt\" }",
+        );
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert_eq!(result.files[0].orphan_keys, vec!["legacy".to_string()]);
+        assert_eq!(result.total_orphan_keys, 1);
+
+        // The rewritten file keeps the canonical key, drops the orphan; the
+        // pre-export content survives in the .bak.
+        let body = read(&i18n.join("de.json"));
+        assert!(body.contains("\"kept\""));
+        assert!(!body.contains("legacy"));
+        assert!(read(&i18n.join("de.json.bak")).contains("legacy"));
 
         std::fs::remove_dir_all(&root).ok();
     }

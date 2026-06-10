@@ -14,6 +14,7 @@ const RESULT: ExportResult = {
       notTranslatable: 1,
       outdated: 1,
       reviewNeeded: 1,
+      orphanKeys: ["legacy.key"],
     },
   ],
   skipped: [
@@ -25,6 +26,7 @@ const RESULT: ExportResult = {
   totalNotTranslatable: 1,
   totalOutdated: 1,
   totalReviewNeeded: 1,
+  totalOrphanKeys: 1,
 };
 
 describe("ExportDialog", () => {
@@ -45,6 +47,11 @@ describe("ExportDialog", () => {
     expect(screen.getByText(/Needs review/)).toBeInTheDocument();
     // Skipped key is listed with its name.
     expect(screen.getByText("bad")).toBeInTheDocument();
+    // Orphan key (dropped from the existing file) is reported by name.
+    expect(
+      screen.getByText(/Removed \(key no longer in default\.json/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("legacy.key")).toBeInTheDocument();
     // Backup note appears because a file was backed up.
     expect(screen.getByText(/backed up/)).toBeInTheDocument();
   });

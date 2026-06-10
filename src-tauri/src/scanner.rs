@@ -371,7 +371,8 @@ pub fn load_strings(
     let Some(source) = read_object(default_path) else {
         return Vec::new();
     };
-    let target = read_object(target_path).unwrap_or_default();
+    let target_map = read_object(target_path).unwrap_or_default();
+    let target = TargetLookup::new(&target_map);
     source
         .iter()
         .filter(|(key, _)| !is_ignored_i18n_key(key))
@@ -383,7 +384,7 @@ pub fn load_strings(
                 key: key.clone(),
                 source: source_text,
                 target: effective_target,
-                target_present: target.contains_key(key),
+                target_present: target.contains(key),
                 status,
             }
         })
@@ -450,8 +451,45 @@ fn is_ignored_i18n_key(key: &str) -> bool {
     key == "$schema"
 }
 
+/// SMAPI reads translation keys **case-insensitively and trimmed** — an
+/// existing `<lang>.json` whose keys differ from `default.json` only in case
+/// or surrounding whitespace works in game, so it must import here too.
+pub(crate) fn folded_key(key: &str) -> String {
+    key.trim().to_lowercase()
+}
+
+/// Lookup over a target i18n object with SMAPI key semantics: exact key first,
+/// then a case-insensitive/trimmed match (first such key wins).
+pub(crate) struct TargetLookup<'a> {
+    map: &'a serde_json::Map<String, Value>,
+    folded: HashMap<String, &'a String>,
+}
+
+impl<'a> TargetLookup<'a> {
+    pub(crate) fn new(map: &'a serde_json::Map<String, Value>) -> Self {
+        let mut folded: HashMap<String, &'a String> = HashMap::new();
+        for key in map.keys() {
+            folded.entry(folded_key(key)).or_insert(key);
+        }
+        Self { map, folded }
+    }
+
+    pub(crate) fn get(&self, key: &str) -> Option<&'a Value> {
+        if let Some(value) = self.map.get(key) {
+            return Some(value);
+        }
+        self.folded
+            .get(&folded_key(key))
+            .and_then(|actual| self.map.get(*actual))
+    }
+
+    pub(crate) fn contains(&self, key: &str) -> bool {
+        self.get(key).is_some()
+    }
+}
+
 /// Parse a flat i18n JSON object (lenient), returning its string entries.
-fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
+pub(crate) fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
     let body = std::fs::read_to_string(path).ok()?;
     parse_json_lenient(&body).ok()?.as_object().cloned()
 }
@@ -467,7 +505,8 @@ fn count_keys(
     let Some(source) = read_object(default_path) else {
         return (0, 0);
     };
-    let target = read_object(target_path).unwrap_or_default();
+    let target_map = read_object(target_path).unwrap_or_default();
+    let target = TargetLookup::new(&target_map);
     let total = source.keys().filter(|key| !is_ignored_i18n_key(key)).count();
     let translated = source
         .keys()
@@ -479,7 +518,7 @@ fn count_keys(
                     stored.status == "not-translatable" || !stored.target.trim().is_empty()
                 }
                 None => target
-                    .get(*key)
+                    .get(key)
                     .and_then(Value::as_str)
                     .is_some_and(|value| !value.trim().is_empty()),
             }
@@ -915,6 +954,41 @@ mod tests {
         assert_eq!(rows[0].target, "");
         assert_eq!(rows[1].key, "alpha");
         assert_eq!(rows[1].target, "Ä");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn imports_target_keys_case_insensitively_and_trimmed() {
+        // SMAPI reads translation keys case-insensitively (and trims), so an
+        // existing de.json with different casing/whitespace must still import.
+        let root = crate::test_support::temp_dir("case-fold");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{ \"greeting\": \"Hello\", \"bye\": \"Bye\" }",
+        );
+        write(
+            &i18n.join("de.json"),
+            "{ \"GREETING\": \"Hallo\", \" bye \": \"Tschüss\" }",
+        );
+
+        let rows = load_strings(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &ModState::new(),
+            "i18n",
+        );
+        assert_eq!(rows[0].target, "Hallo");
+        assert_eq!(rows[0].status, "translated");
+        assert!(rows[0].target_present);
+        assert_eq!(rows[1].target, "Tschüss");
+
+        // Counts agree: both keys are translated.
+        let state = ModState::new();
+        let (total, translated) =
+            count_keys(&i18n.join("default.json"), &i18n.join("de.json"), &state, "i18n");
+        assert_eq!((total, translated), (2, 2));
 
         std::fs::remove_dir_all(&root).ok();
     }

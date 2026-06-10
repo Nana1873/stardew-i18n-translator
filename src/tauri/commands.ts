@@ -176,6 +176,9 @@ export interface ExportFileResult {
   notTranslatable: number;
   outdated: number;
   reviewNeeded: number;
+  /** Keys in the existing target file that default.json no longer contains —
+   * dropped by the rewrite (kept in .bak), reported so nothing is pruned silently. */
+  orphanKeys: string[];
 }
 
 export interface ExportResult {
@@ -187,6 +190,7 @@ export interface ExportResult {
   totalNotTranslatable: number;
   totalOutdated: number;
   totalReviewNeeded: number;
+  totalOrphanKeys: number;
 }
 
 export function exportMod(
