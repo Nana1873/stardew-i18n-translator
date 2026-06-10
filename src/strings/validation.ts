@@ -1,33 +1,54 @@
 /**
  * v1 string validation — M2 / Issue 9 (SPEC §10).
  *
- * Exactly four rules, focused on preventing broken mods (not translation
- * quality). "Token" here means any Stardew/SMAPI protected token (Content
- * Patcher `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
+ * Five rules, focused on preventing broken mods (not translation quality).
+ * "Token" here means any Stardew/SMAPI protected token (Content Patcher
+ * `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
  * `[...]`, ...) — see protectedTokens.ts. Tokens are compared as multisets, so
  * a dropped second `$b` is caught too.
- *  - token-missing  (error)   a source token is absent (or under-represented)
- *  - token-added    (warning) the target has a token not in the source
- *  - empty-target   (warning) the key is present in the target file but empty
- *  - json-invalid   (error)   the value cannot be serialized to valid JSON
- *                              (export-serialization safety; e.g. lone surrogate)
+ *  - token-missing    (error)   a source token is absent (or under-represented)
+ *  - token-added      (warning) the target has a token not in the source
+ *  - newline-mismatch (warning) the line-break count differs — layout, not
+ *                                syntax: a translation rewraps freely (German
+ *                                runs longer than English), so `\n` is exempt
+ *                                from the token error rules and never blocks
+ *                                export
+ *  - empty-target     (warning) the key is present in the target file but empty
+ *  - json-invalid     (error)   the value cannot be serialized to valid JSON
+ *                                (export-serialization safety; e.g. lone surrogate)
  */
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
 
 export type Severity = "error" | "warning";
 
 export interface ValidationIssue {
-  ruleId: "token-missing" | "token-added" | "empty-target" | "json-invalid";
+  ruleId:
+    | "token-missing"
+    | "token-added"
+    | "newline-mismatch"
+    | "empty-target"
+    | "json-invalid";
   severity: Severity;
   message: string;
 }
 
+/** Newlines are layout, not syntax — kept out of the token error multisets
+ * and reported via the softer newline-mismatch warning instead. */
+const NEWLINE = "\n";
+
 function tokenCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>();
   for (const token of extractProtectedTokens(text)) {
+    if (token === NEWLINE) continue;
     counts.set(token, (counts.get(token) ?? 0) + 1);
   }
   return counts;
+}
+
+function newlineCount(text: string): number {
+  let count = 0;
+  for (const char of text) if (char === NEWLINE) count += 1;
+  return count;
 }
 
 /** True if the string contains an unpaired UTF-16 surrogate (invalid JSON). */
@@ -72,6 +93,15 @@ export function validate(
           message: `Unexpected token ${describeToken(token)}`,
         });
       }
+    }
+    const sourceNewlines = newlineCount(source);
+    const targetNewlines = newlineCount(target);
+    if (sourceNewlines !== targetNewlines) {
+      issues.push({
+        ruleId: "newline-mismatch",
+        severity: "warning",
+        message: `Line breaks differ (original ${sourceNewlines}, translation ${targetNewlines}) — fine if the text rewraps`,
+      });
     }
     if (hasLoneSurrogate(target)) {
       issues.push({
