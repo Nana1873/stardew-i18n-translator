@@ -25,11 +25,11 @@ The tool is deliberately **small in scope**. It focuses exclusively on SMAPI `i1
 
 ## 2. Target User
 
-| User | Description |
-|------|-------------|
-| **Mod translators** | Community members translating popular SMAPI mods into their language. May handle 10–200 mods. |
-| **Mod authors** | Developers preparing or reviewing translations for their own mods. |
-| **Bilingual players** | Players who want to quickly translate a few mods for personal use. |
+| User                  | Description                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| **Mod translators**   | Community members translating popular SMAPI mods into their language. May handle 10–200 mods. |
+| **Mod authors**       | Developers preparing or reviewing translations for their own mods.                            |
+| **Bilingual players** | Players who want to quickly translate a few mods for personal use.                            |
 
 **Assumed skill level:** Comfortable with file systems and JSON. Not necessarily developers. Should not need to know Git, CLI tools, or API concepts to use the core workflow.
 
@@ -66,12 +66,12 @@ The setup wizard runs on first launch and can be re-triggered from settings.
 
 ### Steps
 
-| Step | Required | Description | Details |
-|------|----------|-------------|---------|
-| 1 | ✅ | **Stardew Valley folder** | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder. |
-| 2 | ✅ | **Mods folder** | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied. |
-| 3 | ✅ | **Source & target language** | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh). |
-| 4 | ❌ | **Build glossary** *(optional)* | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary. |
+| Step | Required | Description                     | Details                                                                                                                                                                                                                                                                                     |
+| ---- | -------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | ✅       | **Stardew Valley folder**       | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder.                                                                                             |
+| 2    | ✅       | **Mods folder**                 | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied. |
+| 3    | ✅       | **Source & target language**    | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh).                                                                                                                                                   |
+| 4    | ❌       | **Build glossary** _(optional)_ | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary.                                                                                                                        |
 
 ### Auto-detection Paths (Windows)
 
@@ -85,9 +85,9 @@ Steam path is read from the Windows registry (`HKCU\Software\Valve\Steam\SteamPa
 
 ### What is NOT in setup for v1
 
-| Item | Reason |
-|------|--------|
-| Nexus API key | v1 uses only Nexus ID detection from `manifest.json`. No API calls needed. Deferred to v1.1+. |
+| Item                | Reason                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. No API calls needed. Deferred to v1.1+.     |
 | AI provider API key | In-app AI translation is not in v1. Claude-Code batch (Milestone 4) needs no API key in the tool. |
 
 ---
@@ -100,7 +100,7 @@ The glossary is a **multilingual dictionary of official Stardew Valley game term
 
 1. **Manual translation hints** — Shown in the string editor when glossary terms appear in source text.
 2. **AI prompt hints** — Included in Claude-Code batch exports so AI uses official terms.
-3. **Validation** *(v1.1+)* — Flag deviations from official terminology.
+3. **Validation** _(v1.1+)_ — Flag deviations from official terminology.
 
 ### Non-Blocking Principle
 
@@ -113,39 +113,39 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 **Data sources (Stardew 1.6+):**
 
-| Asset | Content | Priority |
-|-------|---------|----------|
-| `Data/Objects` | Item names (objects, crops, fish, minerals) | High |
-| `Data/BigCraftables` | Craftable item names | High |
-| `Data/Characters` | NPC display names | High |
-| `Strings/StringsFromCSFiles` | Seasons, days, UI terms, location names | High |
-| `Strings/Objects` | Resolved object display strings | High |
-| `Data/Weapons` | Weapon names | Medium |
-| `Data/Tools` | Tool names | Medium |
-| `Strings/Characters` | Resolved character strings | Medium |
-| `Strings/UI` | Menu/UI strings | Medium |
-| `Data/Boots` | Boot names | Low |
-| `Data/Hats` | Hat names | Low |
-| `Data/Furniture` | Furniture names | Low |
+| Asset                        | Content                                     | Priority |
+| ---------------------------- | ------------------------------------------- | -------- |
+| `Data/Objects`               | Item names (objects, crops, fish, minerals) | High     |
+| `Data/BigCraftables`         | Craftable item names                        | High     |
+| `Data/Characters`            | NPC display names                           | High     |
+| `Strings/StringsFromCSFiles` | Seasons, days, UI terms, location names     | High     |
+| `Strings/Objects`            | Resolved object display strings             | High     |
+| `Data/Weapons`               | Weapon names                                | Medium   |
+| `Data/Tools`                 | Tool names                                  | Medium   |
+| `Strings/Characters`         | Resolved character strings                  | Medium   |
+| `Strings/UI`                 | Menu/UI strings                             | Medium   |
+| `Data/Boots`                 | Boot names                                  | Low      |
+| `Data/Hats`                  | Hat names                                   | Low      |
+| `Data/Furniture`             | Furniture names                             | Low      |
 
 **1.6 indirection:** Many display names in data files use `[LocalizedText Strings\<file>:<key>]` tokens. The extractor must resolve these by reading the corresponding `Strings/` file.
 
 **Locale mapping (game → SMAPI i18n):**
 
-| Game locale suffix | SMAPI i18n code |
-|-------------------|-----------------|
-| *(base, no suffix)* | `default` (English) |
-| `.de-DE` | `de` |
-| `.es-ES` | `es` |
-| `.fr-FR` | `fr` |
-| `.hu-HU` | `hu` |
-| `.it-IT` | `it` |
-| `.ja-JP` | `ja` |
-| `.ko-KR` | `ko` |
-| `.pt-BR` | `pt` |
-| `.ru-RU` | `ru` |
-| `.tr-TR` | `tr` |
-| `.zh-CN` | `zh` |
+| Game locale suffix  | SMAPI i18n code     |
+| ------------------- | ------------------- |
+| _(base, no suffix)_ | `default` (English) |
+| `.de-DE`            | `de`                |
+| `.es-ES`            | `es`                |
+| `.fr-FR`            | `fr`                |
+| `.hu-HU`            | `hu`                |
+| `.it-IT`            | `it`                |
+| `.ja-JP`            | `ja`                |
+| `.ko-KR`            | `ko`                |
+| `.pt-BR`            | `pt`                |
+| `.ru-RU`            | `ru`                |
+| `.tr-TR`            | `tr`                |
+| `.zh-CN`            | `zh`                |
 
 ### Extraction Strategy (v1)
 
@@ -163,13 +163,13 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 ### Glossary Scope
 
-| Include | Exclude |
-|---------|---------|
-| Item names | Dialogue prose |
-| NPC display names | Event scripts |
-| Location names | Description paragraphs |
-| Season/day names | Quest text |
-| Common UI terms | Mail content |
+| Include           | Exclude                |
+| ----------------- | ---------------------- |
+| Item names        | Dialogue prose         |
+| NPC display names | Event scripts          |
+| Location names    | Description paragraphs |
+| Season/day names  | Quest text             |
+| Common UI terms   | Mail content           |
 
 Dialogue and narrative prose would pollute matching. The glossary is strictly **named entities and identifiers**.
 
@@ -186,7 +186,7 @@ Dialogue and narrative prose would pollute matching. The glossary is strictly **
 5. Extract Nexus ID from `UpdateKeys` entries matching `Nexus:<id>` (trim whitespace, e.g. `Nexus: 7286`). **Only a positive integer is a real ID** — sentinel/placeholder values such as `Nexus:-1` (used by multi-component mods to suppress update checks on sub-mods) must be treated as **no Nexus ID** (display `—`, no link). In a multi-component download, the real ID typically lives on only one component (e.g. the `[CP]` pack).
 6. Search for `i18n/` folders relative to the manifest's parent directory.
 7. Within each `i18n/` folder, find `default.json` and any existing `<target_lang>.json`.
-8. **Assign a package:** record each mod's *package* = the top-level folder under the Mods root that contains it (e.g. `Ridgeside Village`). Mods sharing a package group under one tree node in the UI (see §7.3). A package with one component is shown flat; with several, as an expandable parent.
+8. **Assign a package:** record each mod's _package_ = the top-level folder under the Mods root that contains it (e.g. `Ridgeside Village`). Mods sharing a package group under one tree node in the UI (see §7.3). A package with one component is shown flat; with several, as an expandable parent.
 
 ### Import
 
@@ -199,19 +199,19 @@ Dialogue and narrative prose would pollute matching. The glossary is strictly **
 
 ### Edge Cases
 
-| Case | Handling |
-|------|----------|
-| **Nested mods** (sub-mods with own `manifest.json`) | Each manifest = separate mod. Associate `i18n/` with nearest parent manifest. |
-| **Multiple `i18n/` folders** per mod (Content Patcher sub-packs) | Each `i18n/` folder is a separate translation file unit under the same mod. |
-| **Empty `default.json`** (`{}`) | Mark mod as "no translatable strings" (gray). |
-| **Missing `i18n/` folder** | Skip mod — no translatable content. |
-| **Malformed `manifest.json`** | Skip mod, log warning. Do not crash scanner. |
-| **BOM in JSON** | Strip UTF-8 BOM before parsing. |
-| **Comments in JSON** | Use lenient parser or strip `//` comments. Log if comments detected. |
-| **Missing `UniqueID`** | Use folder name as fallback identity. Log warning. |
+| Case                                                                                                    | Handling                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Nested mods** (sub-mods with own `manifest.json`)                                                     | Each manifest = separate mod. Associate `i18n/` with nearest parent manifest.                                                                                       |
+| **Multiple `i18n/` folders** per mod (Content Patcher sub-packs)                                        | Each `i18n/` folder is a separate translation file unit under the same mod.                                                                                         |
+| **Empty `default.json`** (`{}`)                                                                         | Mark mod as "no translatable strings" (gray).                                                                                                                       |
+| **Missing `i18n/` folder**                                                                              | Skip mod — no translatable content.                                                                                                                                 |
+| **Malformed `manifest.json`**                                                                           | Skip mod, log warning. Do not crash scanner.                                                                                                                        |
+| **BOM in JSON**                                                                                         | Strip UTF-8 BOM before parsing.                                                                                                                                     |
+| **Comments in JSON**                                                                                    | Use lenient parser or strip `//` comments. Log if comments detected.                                                                                                |
+| **Missing `UniqueID`**                                                                                  | Use folder name as fallback identity. Log warning.                                                                                                                  |
 | **Multi-component mod** (one download = several manifests, e.g. `[CP]`/`[CC]`/`[FTM]`/SMAPI components) | Each manifest = a separate mod row. Components without `i18n/` are skipped. Real-world example: Ridgeside Village = 4 manifests, 3 with i18n (`[CP]` ≈ 17.5k keys). |
-| **`Nexus:-1` (or non-positive) UpdateKey** | Sentinel, not a real ID → treat as no Nexus ID (`—`, no link). Common on the non-`[CP]` components of multi-part mods. |
-| **Symlinks / junctions** | Follow, but detect cycles. |
+| **`Nexus:-1` (or non-positive) UpdateKey**                                                              | Sentinel, not a real ID → treat as no Nexus ID (`—`, no link). Common on the non-`[CP]` components of multi-part mods.                                              |
+| **Symlinks / junctions**                                                                                | Follow, but detect cycles.                                                                                                                                          |
 
 ### Progress Calculation
 
@@ -235,19 +235,19 @@ See §4. Modal wizard. Shown on first launch. Re-accessible via the Settings dia
 
 Modal dialog during mod scanning.
 
-| Element | Content |
-|---------|---------|
-| Progress bar | Overall scan progress |
-| Current mod | Name of mod being scanned |
-| Current file | File path being parsed |
+| Element      | Content                                   |
+| ------------ | ----------------------------------------- |
+| Progress bar | Overall scan progress                     |
+| Current mod  | Name of mod being scanned                 |
+| Current file | File path being parsed                    |
 | Scan results | Summary: X mods found, Y files, Z strings |
-| Errors | List of skipped/malformed mods |
+| Errors       | List of skipped/malformed mods            |
 
 ### 7.3 Main Window
 
 **Two-panel layout:**
 
-**Left panel — Mod List Tree** *(grouped by package, SSE-AT style)*
+**Left panel — Mod List Tree** _(grouped by package, SSE-AT style)_
 
 A two-level tree, mirroring SSE-AT's Mod → Plugin tree:
 
@@ -256,14 +256,14 @@ A two-level tree, mirroring SSE-AT's Mod → Plugin tree:
 
 A package containing a **single** component renders as one flat row (no expand arrow). A package with **multiple** components renders as an expandable parent node with one child row per component.
 
-| Column | Package (parent) row | Component (child / single) row |
-|--------|----------------------|--------------------------------|
-| **Status** | Worst-case roll-up across components (see §9) | Color-coded icon (see §9) |
-| **Mod** | Package folder name (e.g. `Ridgeside Village`) | Component name from manifest |
-| **Version** | *(blank, or the `[CP]` component's version)* | Version string from manifest |
-| **Nexus** | Real Nexus ID rolled up from a component (typically the `[CP]` one; ignores `Nexus:-1`) as a clickable link, or `—` | Component's own valid Nexus ID, or `—` |
-| **Dateien** | Sum of translatable `i18n/` files across components | Number of translatable `i18n/` files |
-| **Fortschritt** | Aggregated progress across components | Progress bar + percentage |
+| Column          | Package (parent) row                                                                                                | Component (child / single) row         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
+| **Status**      | Worst-case roll-up across components (see §9)                                                                       | Color-coded icon (see §9)              |
+| **Mod**         | Package folder name (e.g. `Ridgeside Village`)                                                                      | Component name from manifest           |
+| **Version**     | _(blank, or the `[CP]` component's version)_                                                                        | Version string from manifest           |
+| **Nexus**       | Real Nexus ID rolled up from a component (typically the `[CP]` one; ignores `Nexus:-1`) as a clickable link, or `—` | Component's own valid Nexus ID, or `—` |
+| **Dateien**     | Sum of translatable `i18n/` files across components                                                                 | Number of translatable `i18n/` files   |
+| **Fortschritt** | Aggregated progress across components                                                                               | Progress bar + percentage              |
 
 No other columns. No priority column. Selecting a component (or a single-component package) loads its strings into the right panel; selecting a multi-component parent shows the aggregate and does not itself load a string table.
 
@@ -272,6 +272,7 @@ No other columns. No priority column. Selecting a component (or a single-compone
 See §7.4.
 
 **Toolbar:**
+
 - Scan / Re-scan
 - Export (selected mod / all)
 - Settings
@@ -281,14 +282,15 @@ See §7.4.
 
 Shown in the right panel when a mod (or specific file within a mod) is selected.
 
-| Column | Content |
-|--------|---------|
-| **Key** | i18n string key (monospace font) |
-| **Original** | Source text from `default.json` |
+| Column          | Content                                       |
+| --------------- | --------------------------------------------- |
+| **Key**         | i18n string key (monospace font)              |
+| **Original**    | Source text from `default.json`               |
 | **Target Text** | Translated text (editable cell or via dialog) |
-| **Validation** | Validation status icon(s). Hover for details. |
+| **Validation**  | Validation status icon(s). Hover for details. |
 
 Features:
+
 - Sortable by any column.
 - Filterable by status (untranslated, translated, outdated, not-translatable, all).
 - Text search across key, original, and target.
@@ -321,31 +323,31 @@ Opened by **double-clicking** a string row.
 └─────────────────────────────────────────────────────────┘
 ```
 
-| Element | Description |
-|---------|-------------|
-| **Metadata bar** | Mod name, file path, key, status badge, detected tokens |
-| **Left pane** | Source text (read-only) |
-| **Right pane** | Target text (editable text area) |
-| **Glossary hints** | Matched glossary terms (if glossary is available) |
-| **Validation panel** | Live validation results |
-| **Translate** | Translate the source with the configured local AI (M6); fills the target as `review-needed`. Shown always; hints to configure AI if none is set up |
-| **Navigation** | Previous / Next buttons to move through strings without closing |
-| **Reset** | Clear target text back to empty (or to last imported value) |
-| **Save** | Save changes, close dialog |
-| **Cancel** | Discard changes (Esc) |
+| Element              | Description                                                                                                                                        |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Metadata bar**     | Mod name, file path, key, status badge, detected tokens                                                                                            |
+| **Left pane**        | Source text (read-only)                                                                                                                            |
+| **Right pane**       | Target text (editable text area)                                                                                                                   |
+| **Glossary hints**   | Matched glossary terms (if glossary is available)                                                                                                  |
+| **Validation panel** | Live validation results                                                                                                                            |
+| **Translate**        | Translate the source with the configured local AI (M6); fills the target as `review-needed`. Shown always; hints to configure AI if none is set up |
+| **Navigation**       | Previous / Next buttons to move through strings without closing                                                                                    |
+| **Reset**            | Clear target text back to empty (or to last imported value)                                                                                        |
+| **Save**             | Save changes, close dialog                                                                                                                         |
+| **Cancel**           | Discard changes (Esc)                                                                                                                              |
 
 **Keyboard shortcuts:**
 
-| Shortcut | Action |
-|----------|--------|
-| `Ctrl+Enter` | Save and close |
-| `Esc` | Cancel and close |
-| `Alt+Left` | Previous string |
-| `Alt+Right` | Next string |
-| `F2` | Toggle not-translatable |
-| `F3` | Copy original to target |
-| `F4` | Reset target |
-| `Ctrl+F5` | Translate with the local AI (M6) |
+| Shortcut     | Action                           |
+| ------------ | -------------------------------- |
+| `Ctrl+Enter` | Save and close                   |
+| `Esc`        | Cancel and close                 |
+| `Alt+Left`   | Previous string                  |
+| `Alt+Right`  | Next string                      |
+| `F2`         | Toggle not-translatable          |
+| `F3`         | Copy original to target          |
+| `F4`         | Reset target                     |
+| `Ctrl+F5`    | Translate with the local AI (M6) |
 
 ### 7.6 Context Menu (Right-Click)
 
@@ -353,20 +355,20 @@ Available on one or multiple selected strings in the String Table.
 
 **v1 context menu:**
 
-| Action | Description |
-|--------|-------------|
-| **Edit String** | Open in String Editor (single selection only) |
-| **Copy Original** | Copy source text to clipboard |
-| **Copy Translation** | Copy target text to clipboard |
-| **Mark as Translated** | Set status to `translated` for all selected |
-| **Mark as Not Translatable** | Set status to `not-translatable` for all selected |
-| **Clear Translation** | Clear target text and set status to `untranslated` (explicitly destructive) |
-| **Search Translation on Nexus** | Opens browser to Nexus search for this mod + target language *(mod-level context menu only)* |
+| Action                          | Description                                                                                  |
+| ------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Edit String**                 | Open in String Editor (single selection only)                                                |
+| **Copy Original**               | Copy source text to clipboard                                                                |
+| **Copy Translation**            | Copy target text to clipboard                                                                |
+| **Mark as Translated**          | Set status to `translated` for all selected                                                  |
+| **Mark as Not Translatable**    | Set status to `not-translatable` for all selected                                            |
+| **Clear Translation**           | Clear target text and set status to `untranslated` (explicitly destructive)                  |
+| **Search Translation on Nexus** | Opens browser to Nexus search for this mod + target language _(mod-level context menu only)_ |
 
 **Added in Milestone 4 (Claude-Code):**
 
-| Action | Description |
-|--------|-------------|
+| Action                     | Description                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------- |
 | **Export for Claude-Code** | Export selected strings as a batch file for external Claude-Code translation |
 
 ### 7.7 Settings Dialog
@@ -406,13 +408,13 @@ the step-by-step Setup Wizard:
 
 v1 uses **5 statuses**. Three describe a hand-edited string's state; `outdated` is derived automatically; `review-needed` is the AI-workflow status.
 
-| Status | Color | Meaning | How it's set |
-|--------|-------|---------|--------------|
-| `untranslated` | 🔴 Red | No target text yet | Initial; or editor "Reset" (F4); or context-menu "Clear translation" |
-| `translated` | 🟢 Green | Has a translation (your edit, or an imported existing `<lang>.json` value) | Saving in the editor; or "Mark as translated" |
-| `outdated` | 🟣 Purple | The English source changed since this string was translated | **Automatic** on re-scan (see below) — never set manually |
-| `not-translatable` | ⚪ Gray | Explicitly marked as not needing translation (proper nouns, IDs) | F2 in the editor; or "Mark as not translatable" |
-| `review-needed` | 🟠 Amber | An unreviewed machine suggestion (AI) awaiting a human pass | Set by an AI translation (M6 local LLM / M4 batch import); **confirmed → `translated`** by an explicit Save in the editor |
+| Status             | Color     | Meaning                                                                    | How it's set                                                                                                              |
+| ------------------ | --------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `untranslated`     | 🔴 Red    | No target text yet                                                         | Initial; or editor "Reset" (F4); or context-menu "Clear translation"                                                      |
+| `translated`       | 🟢 Green  | Has a translation (your edit, or an imported existing `<lang>.json` value) | Saving in the editor; or "Mark as translated"                                                                             |
+| `outdated`         | 🟣 Purple | The English source changed since this string was translated                | **Automatic** on re-scan (see below) — never set manually                                                                 |
+| `not-translatable` | ⚪ Gray   | Explicitly marked as not needing translation (proper nouns, IDs)           | F2 in the editor; or "Mark as not translatable"                                                                           |
+| `review-needed`    | 🟠 Amber  | An unreviewed machine suggestion (AI) awaiting a human pass                | Set by an AI translation (M6 local LLM / M4 batch import); **confirmed → `translated`** by an explicit Save in the editor |
 
 > **Scope note:** An earlier draft had 6 statuses (`imported`, `review-needed`, `done`, …). `imported`/`done` collapsed to **`translated`**; `review-needed` returns with the **AI translation workflows** — the M6 local-LLM engine (implemented) and the M4 Claude-Code batch — where machine output needs a human review pass. It is never set by hand. Legacy stored values are normalized to this set on load.
 
@@ -426,11 +428,11 @@ This is **per-string**, not per-mod: a mod update flags **only** the handful of 
 
 Coarse health indicator derived from the working translation counts:
 
-| Aggregate | Condition |
-|-----------|-----------|
-| 🔴 Red | Any key is untranslated |
-| 🟢 Green | All keys are translated or not-translatable |
-| ⚪ Gray | No translatable strings (empty `default.json`) |
+| Aggregate | Condition                                      |
+| --------- | ---------------------------------------------- |
+| 🔴 Red    | Any key is untranslated                        |
+| 🟢 Green  | All keys are translated or not-translatable    |
+| ⚪ Gray   | No translatable strings (empty `default.json`) |
 
 The **package** (parent tree node, §7.3) uses the same roll-up across its component mods. (Per-string `outdated` is shown in the string table's status bar, not the coarse mod dot.)
 
@@ -444,33 +446,33 @@ Validation runs per string. Results are shown in the String Table and String Edi
 
 v1 validation focuses on **preventing broken mods** — not on translation quality.
 
-| Rule ID | Severity | Check |
-|---------|----------|-------|
-| `token-missing` | Error | A **protected token** present in the source is missing (or under-represented) in the target. This will break the mod at runtime. |
-| `token-added` | Warning | The target contains a **protected token** not present in the source. Likely a typo. |
-| `empty-target` | Warning | Key exists in target file but value is empty string. |
-| `json-invalid` | Error | **Export-serialization safety.** The value cannot be safely serialized to valid JSON — e.g. an invalid/unpaired Unicode surrogate or stray control character (typically from an imported file). A correct serializer escapes normal characters (quotes, backslashes, newlines) automatically, so well-formed input never trips this; the rule exists only to *guarantee the exported `<lang>.json` is always valid JSON*. Affected strings are skipped on export (per the severity table below). |
+| Rule ID         | Severity | Check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `token-missing` | Error    | A **protected token** present in the source is missing (or under-represented) in the target. This will break the mod at runtime.                                                                                                                                                                                                                                                                                                                                                                 |
+| `token-added`   | Warning  | The target contains a **protected token** not present in the source. Likely a typo.                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `empty-target`  | Warning  | Key exists in target file but value is empty string.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `json-invalid`  | Error    | **Export-serialization safety.** The value cannot be safely serialized to valid JSON — e.g. an invalid/unpaired Unicode surrogate or stray control character (typically from an imported file). A correct serializer escapes normal characters (quotes, backslashes, newlines) automatically, so well-formed input never trips this; the rule exists only to _guarantee the exported `<lang>.json` is always valid JSON_. Affected strings are skipped on export (per the severity table below). |
 
 **4 rules total for v1.** Quality and style checks are deferred to v1.1+.
 
 ### Deferred Validation Rules (v1.1+)
 
-| Rule ID | Severity | Target Version |
-|---------|----------|----------------|
-| `token-case-changed` | Warning | v1.1 |
-| `newline-mismatch` | Warning | v1.1 |
-| `bracket-token-missing` | Warning | v1.1 |
-| `glossary-deviation` | Info | v1.1 (requires glossary) |
-| `extra-key` | Info | v1.1 |
-| `identical-to-source` | Info | v1.1 |
-| `escape-suspicious` | Warning | v1.1 |
+| Rule ID                 | Severity | Target Version           |
+| ----------------------- | -------- | ------------------------ |
+| `token-case-changed`    | Warning  | v1.1                     |
+| `newline-mismatch`      | Warning  | v1.1                     |
+| `bracket-token-missing` | Warning  | v1.1                     |
+| `glossary-deviation`    | Info     | v1.1 (requires glossary) |
+| `extra-key`             | Info     | v1.1                     |
+| `identical-to-source`   | Info     | v1.1                     |
+| `escape-suspicious`     | Warning  | v1.1                     |
 
 ### Severity Levels and Export Behavior
 
-| Level | Meaning | Export behavior |
-|-------|---------|----------------|
-| **Error** | Will break the mod at runtime | **Blocks export** for affected strings. Tool exports all other strings and reports which were skipped. |
-| **Warning** | Should be reviewed but is not technically dangerous | **Does not block export.** Shown in export summary. |
+| Level       | Meaning                                             | Export behavior                                                                                        |
+| ----------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| **Error**   | Will break the mod at runtime                       | **Blocks export** for affected strings. Tool exports all other strings and reports which were skipped. |
+| **Warning** | Should be reviewed but is not technically dangerous | **Does not block export.** Shown in export summary.                                                    |
 
 > [!IMPORTANT]
 > **Missing translations (`untranslated` strings) do NOT block export.** The tool exports all strings that have target text. Untranslated keys are simply omitted from the export file (SMAPI falls back to `default.json` for missing keys). The export summary shows how many strings were skipped.
@@ -479,16 +481,16 @@ v1 validation focuses on **preventing broken mods** — not on translation quali
 
 `token-missing` / `token-added` operate on **protected tokens** — anything a translation must preserve or the mod breaks at runtime. This extends beyond SMAPI i18n `{{...}}` to the Stardew dialogue/Content Patcher tokens that dominate real content mods (e.g. Ridgeside). Recognized kinds (ported from the previous project's token extractor):
 
-| Kind | Examples |
-|------|----------|
-| Content Patcher / i18n | `{{PlayerName}}`, `{{i18n:key}}` (nested-aware) |
-| Gender switch | `${male^female}$` |
-| Mail commands | `[#]`, `%item … %%`, `%action … %%` |
-| Dialogue page break | `#$b#`, `#$…#` |
-| Bracket tokens | `[ … ]` |
-| Positional placeholders | `{0}` |
-| Dialogue commands | `$b`, `$s`, `$e`, `$1` … |
-| Single-character | `@` (player name), `^` / `\n` (line break) |
+| Kind                    | Examples                                        |
+| ----------------------- | ----------------------------------------------- |
+| Content Patcher / i18n  | `{{PlayerName}}`, `{{i18n:key}}` (nested-aware) |
+| Gender switch           | `${male^female}$`                               |
+| Mail commands           | `[#]`, `%item … %%`, `%action … %%`             |
+| Dialogue page break     | `#$b#`, `#$…#`                                  |
+| Bracket tokens          | `[ … ]`                                         |
+| Positional placeholders | `{0}`                                           |
+| Dialogue commands       | `$b`, `$s`, `$e`, `$1` …                        |
+| Single-character        | `@` (player name), `^` / `\n` (line break)      |
 
 Tokens are compared as **multisets** (counts matter, order does not): every token in the source must appear in the target the same number of times. This catches a dropped second `$b`, not just a missing distinct token.
 
@@ -499,7 +501,7 @@ Tokens are compared as **multisets** (counts matter, order does not): every toke
 ## 11. Claude-Code Batch Workflow
 
 > [!NOTE]
-> This is the **only AI workflow in v1**. Direct in-app AI translation (API calls from the tool) is deferred to v1.1+. The Claude-Code batch workflow does not require API keys in the tool — the user runs Claude Code externally.
+> This is one of **two AI workflows in v1** — the other is the M6 local-LLM translation (§17 M6), which talks to a local OpenAI-compatible server (Ollama / LM Studio) on `localhost`. Neither requires an API key, and both land results as `review-needed`. **Cloud** AI APIs (keys, external network) remain deferred to v1.1+. The Claude-Code batch workflow needs no keys in the tool — the user runs Claude Code externally.
 
 ### Concept
 
@@ -571,36 +573,36 @@ Stardew Valley mod translations **do exist on Nexus Mods** as separate mod pages
 
 **What is confirmed:**
 
-| Fact | Status |
-|------|--------|
-| Translation mod pages exist as separate Nexus entries for Stardew mods | ✅ Confirmed |
+| Fact                                                                                | Status       |
+| ----------------------------------------------------------------------------------- | ------------ |
+| Translation mod pages exist as separate Nexus entries for Stardew mods              | ✅ Confirmed |
 | The Nexus REST API v1 provides mod details by ID, file listings, and download links | ✅ Confirmed |
-| API key validation works via `GET /v1/users/validate.json` | ✅ Confirmed |
-| API daily rate limit is ~2,500 requests/day | ✅ Confirmed |
+| API key validation works via `GET /v1/users/validate.json`                          | ✅ Confirmed |
+| API daily rate limit is ~2,500 requests/day                                         | ✅ Confirmed |
 
 **What is uncertain:**
 
-| Question | Status |
-|----------|--------|
-| Does the Nexus API expose a machine-readable relationship from original mod → translation mod? | ❓ Not confirmed — likely no direct link field |
-| Does the API expose language/locale metadata on mods or files? | ❓ Not confirmed — no language field found in API docs |
-| Does Stardew Valley's Nexus section have a dedicated "Translations" category? | ❓ Needs verification via `GET /v1/games/stardewvalley/categories.json` |
-| Can the Nexus v2 GraphQL API provide better translation metadata? | ❓ Sparse public documentation, unknown |
+| Question                                                                                       | Status                                                                  |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Does the Nexus API expose a machine-readable relationship from original mod → translation mod? | ❓ Not confirmed — likely no direct link field                          |
+| Does the API expose language/locale metadata on mods or files?                                 | ❓ Not confirmed — no language field found in API docs                  |
+| Does Stardew Valley's Nexus section have a dedicated "Translations" category?                  | ❓ Needs verification via `GET /v1/games/stardewvalley/categories.json` |
+| Can the Nexus v2 GraphQL API provide better translation metadata?                              | ❓ Sparse public documentation, unknown                                 |
 
 **What is known to NOT work:**
 
-| Limitation | Detail |
-|------------|--------|
-| No direct "find translations of mod X" API endpoint | The API does not link translation mods to their parent mods |
-| No "Translation" file category | File categories are: Main, Update, Optional, Old, Miscellaneous, Deleted, Archived |
-| No language filter in search/listing endpoints | Cannot filter mods by language via API |
+| Limitation                                          | Detail                                                                             |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| No direct "find translations of mod X" API endpoint | The API does not link translation mods to their parent mods                        |
+| No "Translation" file category                      | File categories are: Main, Update, Optional, Old, Miscellaneous, Deleted, Archived |
+| No language filter in search/listing endpoints      | Cannot filter mods by language via API                                             |
 
 ### v1 Scope — No API Calls
 
-| Feature | Detail |
-|---------|--------|
-| **Nexus ID detection** | Extract from `manifest.json` → `UpdateKeys` matching `Nexus:<id>`. |
-| **Nexus ID display** | Show in mod list as clickable link: `https://www.nexusmods.com/stardewvalley/mods/<id>` |
+| Feature                                  | Detail                                                                                                                                                                                      |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Nexus ID detection**                   | Extract from `manifest.json` → `UpdateKeys` matching `Nexus:<id>`.                                                                                                                          |
+| **Nexus ID display**                     | Show in mod list as clickable link: `https://www.nexusmods.com/stardewvalley/mods/<id>`                                                                                                     |
 | **"Search Translation on Nexus" action** | Right-click a mod → opens the user's browser to `nexusmods.com/stardewvalley/mods/?search=<modname>+<target_language>`. No in-app results, no scraping — just a convenient browser handoff. |
 
 v1 does **not** store or validate a Nexus API key. No Nexus API calls are made.
@@ -638,22 +640,22 @@ Once a confirmed original→translation mapping exists:
 
 ### In Scope
 
-| File | Location | Format |
-|------|----------|--------|
+| File           | Location                  | Format                       |
+| -------------- | ------------------------- | ---------------------------- |
 | `default.json` | `<mod>/i18n/default.json` | Flat JSON key-value (source) |
-| `<lang>.json` | `<mod>/i18n/<lang>.json` | Flat JSON key-value (target) |
+| `<lang>.json`  | `<mod>/i18n/<lang>.json`  | Flat JSON key-value (target) |
 
 This covers the standard SMAPI i18n system used by the vast majority of translatable mods, including Content Patcher content packs.
 
 ### Out of Scope (v1)
 
-| File | Reason |
-|------|--------|
+| File                             | Reason                                       |
+| -------------------------------- | -------------------------------------------- |
 | `content.json` (Content Patcher) | Complex token system, not a translation file |
-| `Data/*.json` (mod data files) | Arbitrary structure, no standard format |
-| `Dialogue/*.json` | Game-specific format with control codes |
-| `*.xnb` files | Binary format, requires special tooling |
-| Non-`i18n/` JSON | Unbounded scope, no reliable detection |
+| `Data/*.json` (mod data files)   | Arbitrary structure, no standard format      |
+| `Dialogue/*.json`                | Game-specific format with control codes      |
+| `*.xnb` files                    | Binary format, requires special tooling      |
+| Non-`i18n/` JSON                 | Unbounded scope, no reliable detection       |
 
 ### Future Expansion Path
 
@@ -711,12 +713,12 @@ AppState
 
 ### Persistence
 
-| Data | Storage | Format |
-|------|---------|--------|
-| Settings | App data directory | JSON config file |
-| Glossary cache | App data directory | JSON per language pair (nullable) |
-| Translation state | App data directory | JSON per mod (keyed by UniqueID) |
-| Export output | Mod's `i18n/` folder | Standard `<lang>.json` |
+| Data              | Storage              | Format                            |
+| ----------------- | -------------------- | --------------------------------- |
+| Settings          | App data directory   | JSON config file                  |
+| Glossary cache    | App data directory   | JSON per language pair (nullable) |
+| Translation state | App data directory   | JSON per mod (keyed by UniqueID)  |
+| Export output     | Mod's `i18n/` folder | Standard `<lang>.json`            |
 
 Translation state is stored **separately** from the mod's actual files. The export step writes the final `i18n/<lang>.json` to the mod folder. This means:
 
@@ -771,26 +773,26 @@ First AI step — requires core workflow to be complete:
 
 ### Deferred to v1.1+
 
-| Feature | Target |
-|---------|--------|
-| In-app AI translation (API calls from tool) | v1.1 |
-| AI Translate button in String Editor | v1.1 |
-| Batch in-app AI from context menu / toolbar | v1.1 |
-| Nexus API key storage and validation | v1.1 |
-| Nexus mod info enrichment | v1.1 |
-| `glossary-deviation` validation | v1.1 |
-| `token-case-changed` validation | v1.1 |
-| `newline-mismatch` validation | v1.1 |
-| `bracket-token-missing` validation | v1.1 |
-| `identical-to-source` validation | v1.1 |
-| `escape-suspicious` validation | v1.1 |
-| `extra-key` validation | v1.1 |
-| Inline cell editing in string table | v1.1 |
-| Drag-and-drop import | v1.1 |
-| Finalize-and-propagate identical strings | v2 |
-| Assisted Nexus translation discovery | v2 |
-| Nexus translation download + import | v2 |
-| Dark mode / light mode toggle | v1.1 |
+| Feature                                     | Target |
+| ------------------------------------------- | ------ |
+| In-app AI translation (API calls from tool) | v1.1   |
+| AI Translate button in String Editor        | v1.1   |
+| Batch in-app AI from context menu / toolbar | v1.1   |
+| Nexus API key storage and validation        | v1.1   |
+| Nexus mod info enrichment                   | v1.1   |
+| `glossary-deviation` validation             | v1.1   |
+| `token-case-changed` validation             | v1.1   |
+| `newline-mismatch` validation               | v1.1   |
+| `bracket-token-missing` validation          | v1.1   |
+| `identical-to-source` validation            | v1.1   |
+| `escape-suspicious` validation              | v1.1   |
+| `extra-key` validation                      | v1.1   |
+| Inline cell editing in string table         | v1.1   |
+| Drag-and-drop import                        | v1.1   |
+| Finalize-and-propagate identical strings    | v2     |
+| Assisted Nexus translation discovery        | v2     |
+| Nexus translation download + import         | v2     |
+| Dark mode / light mode toggle               | v1.1   |
 
 ---
 
@@ -798,32 +800,32 @@ First AI step — requires core workflow to be complete:
 
 The following are **explicitly excluded** from v1:
 
-| Feature | Reason |
-|---------|--------|
-| In-app AI translation (API calls) | Deferred to v1.1 — v1 uses Claude-Code batch only |
-| Nexus API key / API calls | v1 uses only Nexus ID from manifest + clickable links |
-| Automatic Nexus translation discovery/download | Deferred to v2 (see §12) |
-| Git integration | Adds complexity without core workflow value |
-| Full mod manager | Out of scope — tool manages translations only |
-| Vortex/MO2 profile detection | User can point to any folder manually |
-| Publishing/uploading translations | Out of scope |
-| Complex glossary editor | v1 auto-generates glossary; no manual editing UI |
-| Cloud sync | Local-first tool |
-| Translation memory (cross-mod) | v2+ |
-| Multiple simultaneous target languages | v1 works with one target language at a time |
-| Dashboard / studio UI | Compact tables only |
-| Card-based mod manager | SSE-AT style tables only |
-| Kanban board | Not a project management tool |
-| Analytics screen | Progress bar is sufficient |
-| Plugin/provider abstraction | v1 hardcodes; abstract later |
-| Complex navigation system | Two-panel layout + dialogs only |
-| `content.json` parsing | i18n files only in v1 |
-| `Data/*.json` mod file translation | i18n files only in v1 |
-| In-app XNB decoder | Deferred to future version |
-| Multiple settings screens | One settings section accessible from toolbar |
-| More than 4 status values | Intentionally capped (v1) |
-| Project save/load system | State persisted automatically, no project files |
-| Quality/style validation rules | v1 validates only safety (tokens, JSON). Quality rules deferred to v1.1. |
+| Feature                                        | Reason                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------------ |
+| In-app AI translation (API calls)              | Deferred to v1.1 — v1 uses Claude-Code batch only                        |
+| Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                    |
+| Automatic Nexus translation discovery/download | Deferred to v2 (see §12)                                                 |
+| Git integration                                | Adds complexity without core workflow value                              |
+| Full mod manager                               | Out of scope — tool manages translations only                            |
+| Vortex/MO2 profile detection                   | User can point to any folder manually                                    |
+| Publishing/uploading translations              | Out of scope                                                             |
+| Complex glossary editor                        | v1 auto-generates glossary; no manual editing UI                         |
+| Cloud sync                                     | Local-first tool                                                         |
+| Translation memory (cross-mod)                 | v2+                                                                      |
+| Multiple simultaneous target languages         | v1 works with one target language at a time                              |
+| Dashboard / studio UI                          | Compact tables only                                                      |
+| Card-based mod manager                         | SSE-AT style tables only                                                 |
+| Kanban board                                   | Not a project management tool                                            |
+| Analytics screen                               | Progress bar is sufficient                                               |
+| Plugin/provider abstraction                    | v1 hardcodes; abstract later                                             |
+| Complex navigation system                      | Two-panel layout + dialogs only                                          |
+| `content.json` parsing                         | i18n files only in v1                                                    |
+| `Data/*.json` mod file translation             | i18n files only in v1                                                    |
+| In-app XNB decoder                             | Deferred to future version                                               |
+| Multiple settings screens                      | One settings section accessible from toolbar                             |
+| More than 4 status values                      | Intentionally capped (v1)                                                |
+| Project save/load system                       | State persisted automatically, no project files                          |
+| Quality/style validation rules                 | v1 validates only safety (tokens, JSON). Quality rules deferred to v1.1. |
 
 ---
 
@@ -838,13 +840,14 @@ The following are **explicitly excluded** from v1:
 
 **Candidates:**
 
-| Option | Backend | Frontend | Pros | Cons |
-|--------|---------|----------|------|------|
-| **Tauri** | Rust | HTML/CSS/JS (or framework) | Small binary, fast, native file access, strong Rust ecosystem for JSON/XNB parsing. Old project used this. | Rust learning curve, smaller ecosystem for desktop UI patterns. |
-| **Electron** | Node.js | HTML/CSS/JS (or framework) | Large ecosystem, many examples, fast prototyping. | Large binary, higher memory usage. |
-| **Python + PySide6** | Python | Qt6 | SSE-AT uses this. Proven for similar tools. | Python distribution complexity, slower for large datasets. |
+| Option               | Backend | Frontend                   | Pros                                                                                                       | Cons                                                            |
+| -------------------- | ------- | -------------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Tauri**            | Rust    | HTML/CSS/JS (or framework) | Small binary, fast, native file access, strong Rust ecosystem for JSON/XNB parsing. Old project used this. | Rust learning curve, smaller ecosystem for desktop UI patterns. |
+| **Electron**         | Node.js | HTML/CSS/JS (or framework) | Large ecosystem, many examples, fast prototyping.                                                          | Large binary, higher memory usage.                              |
+| **Python + PySide6** | Python  | Qt6                        | SSE-AT uses this. Proven for similar tools.                                                                | Python distribution complexity, slower for large datasets.      |
 
 **Evaluation criteria:**
+
 1. Developer familiarity and velocity.
 2. Desktop distribution (single binary? installer?).
 3. File system access performance (scanning 200+ mod folders).
@@ -860,6 +863,7 @@ The following are **explicitly excluded** from v1:
 **Goal:** User can configure paths, scan mods, and see the mod list with imported translations.
 
 **Scope:**
+
 - Project initialization with chosen tech stack
 - App window with toolbar and two-panel layout (string table empty)
 - Setup wizard (Steps 1–4: game path, mods path, languages, optional glossary)
@@ -904,6 +908,7 @@ The following are **explicitly excluded** from v1:
 **Goal:** User can browse, edit, and validate strings.
 
 **Scope:**
+
 - String table (Key | Original | Target Text | Validation)
 - String editor dialog (full layout per §7.5)
 - Token extraction (`{{...}}`)
@@ -949,6 +954,7 @@ The following are **explicitly excluded** from v1:
 **Goal:** User can export clean translation files.
 
 **Scope:**
+
 - Export `i18n/<lang>.json` per mod
 - Preserve key order from `default.json`
 - UTF-8 without BOM
@@ -984,6 +990,7 @@ The following are **explicitly excluded** from v1:
 **Prerequisite:** Milestones 1–3 complete. Core workflow works end-to-end.
 
 **Scope:**
+
 - Claude-Code batch export (JSON format per §11)
 - "Export for Claude-Code" added to context menu
 - Claude-Code batch import (toolbar button)
@@ -1010,6 +1017,7 @@ The following are **explicitly excluded** from v1:
 **Prerequisite:** Milestones 1–3 complete (a working glossary makes local-AI pre-translation worthwhile). Reprioritized ahead of M4/M5 at the user's request. See [docs/milestones/m6-local-llm-translation.md](docs/milestones/m6-local-llm-translation.md) for the full breakdown.
 
 **Scope:**
+
 - One OpenAI-compatible HTTP client (`POST /v1/chat/completions`, `GET /v1/models`) covering Ollama, LM Studio, and any compatible endpoint. **No provider plugin system** (§19 #6) — URL/port presets + a custom URL only.
 - Connection settings: provider preset, base URL, model (discovered from `/v1/models`), "Test connection".
 - Translate-one-string command (MVP): prompt = system rules + injected glossary subset + source; low temperature; result validated through `tokens.rs`, one stricter retry on dropped tokens, then flagged.
@@ -1031,16 +1039,16 @@ The following are **explicitly excluded** from v1:
 
 ## 18. Technical Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| **`Content (unpacked)/` not available** | Glossary cannot be built. | Glossary is optional. Tool works fully without it. Show guidance if user wants glossary. |
-| **Game content format changes** | 1.6 changed data file structure. Future updates may break extractor. | Isolate extraction logic. Version-check game files. Fail gracefully to no glossary. |
-| **Large mod collections** | 200+ mods with 10,000+ strings may cause UI lag. | Virtualized/paginated table rendering. Lazy loading of string data. |
-| **Non-standard mod JSON** | Comments, BOM, trailing commas. | Lenient JSON parser. BOM stripping. Log warnings for non-standard files. Skip truly broken files. |
-| **Technology stack lock-in** | Wrong framework choice could limit future development. | Milestone 0 is a dedicated decision gate. Evaluate before coding. |
-| **Token false positives** | `{{...}}` regex may match non-token content. | Token validation compares source vs target sets. False positives on both sides cancel out. Manual override via `not-translatable` status. |
-| **Export key order** | JSON libraries may not preserve insertion order. | Use ordered map / manual serialization. Test with real mod files. |
-| **Local-LLM quality (M6)** | Small local models hallucinate and drop protected tokens. | Token validation + one stricter retry; output is always `review-needed`, never auto-`translated`. Glossary injected as guidance, not hard substitution. |
+| Risk                                    | Impact                                                               | Mitigation                                                                                                                                              |
+| --------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`Content (unpacked)/` not available** | Glossary cannot be built.                                            | Glossary is optional. Tool works fully without it. Show guidance if user wants glossary.                                                                |
+| **Game content format changes**         | 1.6 changed data file structure. Future updates may break extractor. | Isolate extraction logic. Version-check game files. Fail gracefully to no glossary.                                                                     |
+| **Large mod collections**               | 200+ mods with 10,000+ strings may cause UI lag.                     | Virtualized/paginated table rendering. Lazy loading of string data.                                                                                     |
+| **Non-standard mod JSON**               | Comments, BOM, trailing commas.                                      | Lenient JSON parser. BOM stripping. Log warnings for non-standard files. Skip truly broken files.                                                       |
+| **Technology stack lock-in**            | Wrong framework choice could limit future development.               | Milestone 0 is a dedicated decision gate. Evaluate before coding.                                                                                       |
+| **Token false positives**               | `{{...}}` regex may match non-token content.                         | Token validation compares source vs target sets. False positives on both sides cancel out. Manual override via `not-translatable` status.               |
+| **Export key order**                    | JSON libraries may not preserve insertion order.                     | Use ordered map / manual serialization. Test with real mod files.                                                                                       |
+| **Local-LLM quality (M6)**              | Small local models hallucinate and drop protected tokens.            | Token validation + one stricter retry; output is always `review-needed`, never auto-`translated`. Glossary injected as guidance, not hard substitution. |
 
 ---
 
@@ -1072,89 +1080,89 @@ The following are **explicitly excluded** from v1:
 
 ### ✅ Confirmed Facts
 
-| Fact | Source |
-|------|--------|
-| SMAPI mods use `i18n/default.json` as the English source and `i18n/<lang>.json` for translations. | [SMAPI Wiki — Translation API](https://stardewvalleywiki.com/Modding:Modder_Guide/APIs/Translation) |
-| i18n files are flat JSON key-value objects. No nesting. | SMAPI Wiki |
-| SMAPI supports 12 languages: de, es, fr, hu, it, ja, ko, pt, ru, tr, zh + default (English). | SMAPI Wiki |
-| `default.json` is always the English fallback. | SMAPI Wiki |
-| SMAPI fallback order: `pt-BR.json` → `pt.json` → `default.json`. | SMAPI Wiki |
-| `manifest.json` requires: Name, Author, Version, Description, UniqueID. | [SMAPI Wiki — Manifest](https://stardewvalleywiki.com/Modding:Modder_Guide/APIs/Manifest) |
-| `UpdateKeys` format is `Site:ID`, e.g., `Nexus:1234`, `GitHub:Owner/Repo`. | SMAPI Wiki — Manifest |
-| SMAPI tokens use `{{tokenName}}` syntax (double curly braces). | SMAPI Wiki — Translation API |
-| Content Patcher mods use the same `i18n/` system and reference strings via `{{i18n:key}}`. | [Content Patcher docs](https://stardewvalleywiki.com/Modding:Content_Patcher) |
-| Game content locale suffixes use `xx-XX` format (e.g., `.de-DE`), different from SMAPI's short codes. | SMAPI Wiki |
-| Stardew 1.6 uses `[LocalizedText Strings\<file>:<key>]` token indirection for display names. | Community documentation, old project research |
-| `Content (unpacked)/` is created by SMAPI on first run and contains JSON versions of game data. | Community documentation |
-| Stardew mod translations exist on Nexus as separate mod pages (same pattern as Skyrim translations). | Nexus Mods website, community practice |
-| Nexus Mods REST API v1 has no endpoint to query "translations of mod X" or expose language metadata. | [Nexus API Swagger](https://app.swaggerhub.com/apis-docs/NexusMods/nexus-mods_public_api_params_in_headers/1.0) |
-| Nexus API file categories are: Main, Update, Optional, Old, Miscellaneous, Deleted, Archived. No "Translation" file category. | Nexus API documentation |
-| Nexus API validates keys via `GET /v1/users/validate.json`. | Nexus API documentation |
-| Nexus API daily limit is ~2,500 requests/day. | Nexus API documentation |
-| SSE Auto Translator uses a Scan → Import → Translate → Review → Export workflow. | [SSE-AT GitHub](https://github.com/Cutleast/SSE-Auto-Translator) |
-| SSE-AT uses PySide6 (Qt) with dark theme, compact tables, and a string editor dialog. | SSE-AT source code |
-| SSE-AT uses color-coded status: Red (needs translation), Yellow (partial), Green (complete), Blue (imported). | SSE-AT source code |
+| Fact                                                                                                                          | Source                                                                                                          |
+| ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| SMAPI mods use `i18n/default.json` as the English source and `i18n/<lang>.json` for translations.                             | [SMAPI Wiki — Translation API](https://stardewvalleywiki.com/Modding:Modder_Guide/APIs/Translation)             |
+| i18n files are flat JSON key-value objects. No nesting.                                                                       | SMAPI Wiki                                                                                                      |
+| SMAPI supports 12 languages: de, es, fr, hu, it, ja, ko, pt, ru, tr, zh + default (English).                                  | SMAPI Wiki                                                                                                      |
+| `default.json` is always the English fallback.                                                                                | SMAPI Wiki                                                                                                      |
+| SMAPI fallback order: `pt-BR.json` → `pt.json` → `default.json`.                                                              | SMAPI Wiki                                                                                                      |
+| `manifest.json` requires: Name, Author, Version, Description, UniqueID.                                                       | [SMAPI Wiki — Manifest](https://stardewvalleywiki.com/Modding:Modder_Guide/APIs/Manifest)                       |
+| `UpdateKeys` format is `Site:ID`, e.g., `Nexus:1234`, `GitHub:Owner/Repo`.                                                    | SMAPI Wiki — Manifest                                                                                           |
+| SMAPI tokens use `{{tokenName}}` syntax (double curly braces).                                                                | SMAPI Wiki — Translation API                                                                                    |
+| Content Patcher mods use the same `i18n/` system and reference strings via `{{i18n:key}}`.                                    | [Content Patcher docs](https://stardewvalleywiki.com/Modding:Content_Patcher)                                   |
+| Game content locale suffixes use `xx-XX` format (e.g., `.de-DE`), different from SMAPI's short codes.                         | SMAPI Wiki                                                                                                      |
+| Stardew 1.6 uses `[LocalizedText Strings\<file>:<key>]` token indirection for display names.                                  | Community documentation, old project research                                                                   |
+| `Content (unpacked)/` is created by SMAPI on first run and contains JSON versions of game data.                               | Community documentation                                                                                         |
+| Stardew mod translations exist on Nexus as separate mod pages (same pattern as Skyrim translations).                          | Nexus Mods website, community practice                                                                          |
+| Nexus Mods REST API v1 has no endpoint to query "translations of mod X" or expose language metadata.                          | [Nexus API Swagger](https://app.swaggerhub.com/apis-docs/NexusMods/nexus-mods_public_api_params_in_headers/1.0) |
+| Nexus API file categories are: Main, Update, Optional, Old, Miscellaneous, Deleted, Archived. No "Translation" file category. | Nexus API documentation                                                                                         |
+| Nexus API validates keys via `GET /v1/users/validate.json`.                                                                   | Nexus API documentation                                                                                         |
+| Nexus API daily limit is ~2,500 requests/day.                                                                                 | Nexus API documentation                                                                                         |
+| SSE Auto Translator uses a Scan → Import → Translate → Review → Export workflow.                                              | [SSE-AT GitHub](https://github.com/Cutleast/SSE-Auto-Translator)                                                |
+| SSE-AT uses PySide6 (Qt) with dark theme, compact tables, and a string editor dialog.                                         | SSE-AT source code                                                                                              |
+| SSE-AT uses color-coded status: Red (needs translation), Yellow (partial), Green (complete), Blue (imported).                 | SSE-AT source code                                                                                              |
 
 ### ⚠️ Assumptions (Reasonable, Low Risk)
 
-| Assumption | Basis | Risk |
-|------------|-------|------|
-| `default.json` is always English. | Universal convention. SMAPI docs say "default" is the fallback but don't strictly require English. | Very low. No known mod uses a non-English default. |
-| `Content (unpacked)/` will exist for most users. | SMAPI creates it on first game run. Most modded Stardew players use SMAPI. | Low. Tool works without it (glossary optional). |
-| Unpacked content files are valid JSON readable without special libraries. | Community reports. | Low. Test with actual game files in Milestone 1. |
-| Game data file format is stable within Stardew 1.6.x minor versions. | ConcernedApe's update patterns. | Medium. Major updates (1.7?) could change format. |
-| `pt-BR.json` and `pt.json` are both used in the wild. | SMAPI supports both with fallback. | Low. Tool should handle both. |
-| All i18n files use UTF-8 encoding. | SMAPI requirement. | Very low. Defensive encoding detection as fallback. |
-| Nexus Mods game domain for Stardew Valley is `stardewvalley`. | Standard domain format. | Very low. |
+| Assumption                                                                | Basis                                                                                              | Risk                                                |
+| ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `default.json` is always English.                                         | Universal convention. SMAPI docs say "default" is the fallback but don't strictly require English. | Very low. No known mod uses a non-English default.  |
+| `Content (unpacked)/` will exist for most users.                          | SMAPI creates it on first game run. Most modded Stardew players use SMAPI.                         | Low. Tool works without it (glossary optional).     |
+| Unpacked content files are valid JSON readable without special libraries. | Community reports.                                                                                 | Low. Test with actual game files in Milestone 1.    |
+| Game data file format is stable within Stardew 1.6.x minor versions.      | ConcernedApe's update patterns.                                                                    | Medium. Major updates (1.7?) could change format.   |
+| `pt-BR.json` and `pt.json` are both used in the wild.                     | SMAPI supports both with fallback.                                                                 | Low. Tool should handle both.                       |
+| All i18n files use UTF-8 encoding.                                        | SMAPI requirement.                                                                                 | Very low. Defensive encoding detection as fallback. |
+| Nexus Mods game domain for Stardew Valley is `stardewvalley`.             | Standard domain format.                                                                            | Very low.                                           |
 
 ### ❓ Open Research Questions
 
-| Question | Impact on v1 | Proposed Resolution |
-|----------|-------------|---------------------|
-| **Does Stardew Valley's Nexus section have a "Translations" mod category?** | Affects v2 assisted translation discovery heuristics. | Check `GET /v1/games/stardewvalley/categories.json` during Milestone 1. Not blocking for v1. |
-| **How prevalent are `{{Gender:male\|female}}` switch tokens in mods?** | May need special validation in v1.1. | Survey 10–20 popular mods during Milestone 1. If rare, treat as regular `{{...}}` token. |
-| **Are there mods using language-subfolder mode (`i18n/de/dialogue.json`) instead of flat `i18n/de.json`?** | Affects scanner scope. | Survey mods during Milestone 1. If very rare, defer support. |
-| **What is the exact format of unpacked `Data/Objects.json` in Stardew 1.6?** | Affects glossary extraction parsing. | Read actual file from test installation during Milestone 1. |
-| **Does the Nexus v2 GraphQL API expose translation metadata?** | Affects long-term Nexus strategy. | Monitor. Not blocking for v1. |
-| **How does `Data/AdditionalLanguages` work for custom game languages?** | May need to support non-standard language codes. | Out of scope for v1. Standard 12 languages only. |
+| Question                                                                                                   | Impact on v1                                          | Proposed Resolution                                                                          |
+| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| **Does Stardew Valley's Nexus section have a "Translations" mod category?**                                | Affects v2 assisted translation discovery heuristics. | Check `GET /v1/games/stardewvalley/categories.json` during Milestone 1. Not blocking for v1. |
+| **How prevalent are `{{Gender:male\|female}}` switch tokens in mods?**                                     | May need special validation in v1.1.                  | Survey 10–20 popular mods during Milestone 1. If rare, treat as regular `{{...}}` token.     |
+| **Are there mods using language-subfolder mode (`i18n/de/dialogue.json`) instead of flat `i18n/de.json`?** | Affects scanner scope.                                | Survey mods during Milestone 1. If very rare, defer support.                                 |
+| **What is the exact format of unpacked `Data/Objects.json` in Stardew 1.6?**                               | Affects glossary extraction parsing.                  | Read actual file from test installation during Milestone 1.                                  |
+| **Does the Nexus v2 GraphQL API expose translation metadata?**                                             | Affects long-term Nexus strategy.                     | Monitor. Not blocking for v1.                                                                |
+| **How does `Data/AdditionalLanguages` work for custom game languages?**                                    | May need to support non-standard language codes.      | Out of scope for v1. Standard 12 languages only.                                             |
 
 ---
 
 ## Appendix A — Stardew Language Code Reference
 
-| SMAPI i18n | Game Locale | Language | i18n Filename |
-|------------|-------------|----------|---------------|
-| `default` | *(base)* | English | `default.json` |
-| `de` | `de-DE` | German (Deutsch) | `de.json` |
-| `es` | `es-ES` | Spanish (Español) | `es.json` |
-| `fr` | `fr-FR` | French (Français) | `fr.json` |
-| `hu` | `hu-HU` | Hungarian (Magyar) | `hu.json` |
-| `it` | `it-IT` | Italian (Italiano) | `it.json` |
-| `ja` | `ja-JP` | Japanese (日本語) | `ja.json` |
-| `ko` | `ko-KR` | Korean (한국어) | `ko.json` |
-| `pt` | `pt-BR` | Portuguese (Português) | `pt.json` / `pt-BR.json` |
-| `ru` | `ru-RU` | Russian (Русский) | `ru.json` |
-| `tr` | `tr-TR` | Turkish (Türkçe) | `tr.json` |
-| `zh` | `zh-CN` | Chinese (中文) | `zh.json` |
+| SMAPI i18n | Game Locale | Language               | i18n Filename            |
+| ---------- | ----------- | ---------------------- | ------------------------ |
+| `default`  | _(base)_    | English                | `default.json`           |
+| `de`       | `de-DE`     | German (Deutsch)       | `de.json`                |
+| `es`       | `es-ES`     | Spanish (Español)      | `es.json`                |
+| `fr`       | `fr-FR`     | French (Français)      | `fr.json`                |
+| `hu`       | `hu-HU`     | Hungarian (Magyar)     | `hu.json`                |
+| `it`       | `it-IT`     | Italian (Italiano)     | `it.json`                |
+| `ja`       | `ja-JP`     | Japanese (日本語)      | `ja.json`                |
+| `ko`       | `ko-KR`     | Korean (한국어)        | `ko.json`                |
+| `pt`       | `pt-BR`     | Portuguese (Português) | `pt.json` / `pt-BR.json` |
+| `ru`       | `ru-RU`     | Russian (Русский)      | `ru.json`                |
+| `tr`       | `tr-TR`     | Turkish (Türkçe)       | `tr.json`                |
+| `zh`       | `zh-CN`     | Chinese (中文)         | `zh.json`                |
 
 ---
 
 ## Appendix B — Glossary Term-Bearing Assets (Stardew 1.6)
 
-| Asset Path | Content | Priority |
-|------------|---------|----------|
-| `Data/Objects` | All items (objects, crops, fish, minerals, cooked items) | High |
-| `Data/BigCraftables` | Craftable machines and decorations | High |
-| `Data/Characters` | NPC display names | High |
-| `Strings/StringsFromCSFiles` | Seasons, days, common UI, location names | High |
-| `Strings/Objects` | Resolved item display names | High |
-| `Data/Weapons` | Swords, daggers, clubs | Medium |
-| `Data/Tools` | Axe, Pickaxe, Hoe, etc. | Medium |
-| `Strings/Characters` | Resolved character strings | Medium |
-| `Strings/UI` | Menu/UI strings | Medium |
-| `Data/Boots` | Footwear items | Low |
-| `Data/Hats` | Hat items | Low |
-| `Data/Furniture` | Furniture items | Low |
+| Asset Path                   | Content                                                  | Priority |
+| ---------------------------- | -------------------------------------------------------- | -------- |
+| `Data/Objects`               | All items (objects, crops, fish, minerals, cooked items) | High     |
+| `Data/BigCraftables`         | Craftable machines and decorations                       | High     |
+| `Data/Characters`            | NPC display names                                        | High     |
+| `Strings/StringsFromCSFiles` | Seasons, days, common UI, location names                 | High     |
+| `Strings/Objects`            | Resolved item display names                              | High     |
+| `Data/Weapons`               | Swords, daggers, clubs                                   | Medium   |
+| `Data/Tools`                 | Axe, Pickaxe, Hoe, etc.                                  | Medium   |
+| `Strings/Characters`         | Resolved character strings                               | Medium   |
+| `Strings/UI`                 | Menu/UI strings                                          | Medium   |
+| `Data/Boots`                 | Footwear items                                           | Low      |
+| `Data/Hats`                  | Hat items                                                | Low      |
+| `Data/Furniture`             | Furniture items                                          | Low      |
 
 ---
 
@@ -1186,10 +1194,10 @@ The old Stardew Translator project (`E:\DevProjects\Stardew Translator`) provide
 
 ## Appendix D — Version Roadmap Summary
 
-| Version | Scope |
-|---------|-------|
-| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export |
-| **v1 (M4)** | Claude-Code Batch Export/Import |
-| **v1.1** | In-app AI translation, Nexus API key + mod enrichment, extended validation rules (11 rules), inline editing, drag-and-drop |
-| **v2** | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate |
-| **v3** | Streamlined Nexus download/import, data file translation, in-app XNB reader |
+| Version        | Scope                                                                                                                      |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                              |
+| **v1 (M4)**    | Claude-Code Batch Export/Import                                                                                            |
+| **v1.1**       | In-app AI translation, Nexus API key + mod enrichment, extended validation rules (11 rules), inline editing, drag-and-drop |
+| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate   |
+| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                |

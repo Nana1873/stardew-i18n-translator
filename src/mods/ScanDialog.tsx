@@ -15,9 +15,17 @@ interface ScanDialogProps {
   onClose: () => void;
 }
 
-export function ScanDialog({ scanning, result, error, onClose }: ScanDialogProps) {
+export function ScanDialog({
+  scanning,
+  result,
+  error,
+  onClose,
+}: ScanDialogProps) {
   return (
-    <div className="editor__backdrop" onMouseDown={scanning ? undefined : onClose}>
+    <div
+      className="editor__backdrop"
+      onMouseDown={scanning ? undefined : onClose}
+    >
       <div
         className="scandlg"
         role="dialog"
@@ -25,7 +33,13 @@ export function ScanDialog({ scanning, result, error, onClose }: ScanDialogProps
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="scandlg__head">
-          <strong>{scanning ? "Scanning mods…" : error ? "Scan failed" : "Scan complete"}</strong>
+          <strong>
+            {scanning
+              ? "Scanning mods…"
+              : error
+                ? "Scan failed"
+                : "Scan complete"}
+          </strong>
         </div>
 
         <div className="scandlg__body">
@@ -56,7 +70,9 @@ export function ScanDialog({ scanning, result, error, onClose }: ScanDialogProps
                   </ul>
                 </div>
               ) : (
-                <p className="scandlg__muted">No problems — every mod parsed cleanly.</p>
+                <p className="scandlg__muted">
+                  No problems — every mod parsed cleanly.
+                </p>
               )}
             </>
           ) : null}

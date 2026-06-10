@@ -16,7 +16,9 @@ const RESULT: ExportResult = {
       reviewNeeded: 1,
     },
   ],
-  skipped: [{ relativeDir: "i18n", key: "bad", reason: "missing required token(s)" }],
+  skipped: [
+    { relativeDir: "i18n", key: "bad", reason: "missing required token(s)" },
+  ],
   filesWritten: 1,
   totalWrittenKeys: 3,
   totalUntranslated: 1,
@@ -27,7 +29,14 @@ const RESULT: ExportResult = {
 
 describe("ExportDialog", () => {
   it("summarizes written keys, omissions, outdated and skipped", () => {
-    render(<ExportDialog modName="Test Mod" result={RESULT} error={null} onClose={() => {}} />);
+    render(
+      <ExportDialog
+        modName="Test Mod"
+        result={RESULT}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
 
     expect(screen.getByText("Export complete")).toBeInTheDocument();
     expect(screen.getByText(/Untranslated/)).toBeInTheDocument();
@@ -42,7 +51,12 @@ describe("ExportDialog", () => {
 
   it("shows the failure message on error", () => {
     render(
-      <ExportDialog modName="Test Mod" result={null} error="disk full" onClose={() => {}} />,
+      <ExportDialog
+        modName="Test Mod"
+        result={null}
+        error="disk full"
+        onClose={() => {}}
+      />,
     );
     expect(screen.getByText("Export failed")).toBeInTheDocument();
     expect(screen.getByText("disk full")).toBeInTheDocument();
@@ -50,16 +64,30 @@ describe("ExportDialog", () => {
 
   it("reports the mod count for an export-all run", () => {
     const { container } = render(
-      <ExportDialog modName="All mods" modsWritten={3} result={RESULT} error={null} onClose={() => {}} />,
+      <ExportDialog
+        modName="All mods"
+        modsWritten={3}
+        result={RESULT}
+        error={null}
+        onClose={() => {}}
+      />,
     );
-    const summary = container.querySelector(".exportdlg__body p")?.textContent ?? "";
+    const summary =
+      container.querySelector(".exportdlg__body p")?.textContent ?? "";
     expect(summary).toContain("in");
     expect(summary).toContain("3 mods");
   });
 
   it("calls onClose when Close is clicked", () => {
     const onClose = vi.fn();
-    render(<ExportDialog modName="Test Mod" result={RESULT} error={null} onClose={onClose} />);
+    render(
+      <ExportDialog
+        modName="Test Mod"
+        result={RESULT}
+        error={null}
+        onClose={onClose}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
   });

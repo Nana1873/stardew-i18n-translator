@@ -4,7 +4,11 @@ describe("validate", () => {
   it("flags a missing source token as an error", () => {
     const issues = validate("Hello {{name}}", "Hallo", false);
     expect(issues).toEqual([
-      { ruleId: "token-missing", severity: "error", message: "Missing token {{name}}" },
+      {
+        ruleId: "token-missing",
+        severity: "error",
+        message: "Missing token {{name}}",
+      },
     ]);
     expect(worstSeverity(issues)).toBe("error");
   });
@@ -21,7 +25,9 @@ describe("validate", () => {
   });
 
   it("flags an empty but present target as a warning", () => {
-    expect(validate("Hi", "", true).map((i) => i.ruleId)).toEqual(["empty-target"]);
+    expect(validate("Hi", "", true).map((i) => i.ruleId)).toEqual([
+      "empty-target",
+    ]);
   });
 
   it("does not flag an untranslated (absent) target", () => {
@@ -34,7 +40,11 @@ describe("validate", () => {
   });
 
   it("flags a dropped @ player-name token (Stardew dialogue)", () => {
-    const issues = validate("Thank you, @. Really!", "Thank you, . Really!", false);
+    const issues = validate(
+      "Thank you, @. Really!",
+      "Thank you, . Really!",
+      false,
+    );
     expect(issues).toEqual([
       {
         ruleId: "token-missing",
@@ -51,10 +61,15 @@ describe("validate", () => {
   });
 
   it("treats a #$b# dialogue break and $s command as protected tokens", () => {
-    expect(validate("Hi.$s#$b#Bye?$s", "Hallo.$s#$b#Tschüss?$s", false)).toEqual([]);
+    expect(
+      validate("Hi.$s#$b#Bye?$s", "Hallo.$s#$b#Tschüss?$s", false),
+    ).toEqual([]);
     // Distinct missing tokens ($s and #$b#) -> one issue each.
     const broken = validate("Hi.$s#$b#Bye?$s", "Hallo. Tschüss?", false);
-    expect(broken.map((i) => i.ruleId)).toEqual(["token-missing", "token-missing"]);
+    expect(broken.map((i) => i.ruleId)).toEqual([
+      "token-missing",
+      "token-missing",
+    ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
       "Missing token #$b#",
       "Missing token $s",

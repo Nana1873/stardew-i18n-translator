@@ -21,22 +21,27 @@ graph TD
 ## 2. Step-by-Step Instructions
 
 ### Step 1: Repo Scan
-* Always start by listing the directory structure and scanning the root docs: [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md).
-* Verify that your current git worktree is clean before starting.
+
+- Always start by listing the directory structure and scanning the root docs: [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md).
+- Verify that your current git worktree is clean before starting.
 
 ### Step 2: Implement Scoped Changes
-* Keep edits focused strictly on the assigned issue.
-* Do not touch or modify the user's real Stardew Valley game folders or active SMAPI Mods folders outside of the workspace directory.
-* Use only the mocks and test folder (`tests/fixtures/`) for validation.
+
+- Keep edits focused strictly on the assigned issue.
+- Do not touch or modify the user's real Stardew Valley game folders or active SMAPI Mods folders outside of the workspace directory.
+- Use only the mocks and test folder (`tests/fixtures/`) for validation.
 
 ### Step 3: Security & Code Safety
-* Do not run destructive terminal commands (e.g. force-deleting directories outside the workspace, editing system files).
-* Do not use or commit real Nexus API keys or real game assets in test configurations.
+
+- Do not run destructive terminal commands (e.g. force-deleting directories outside the workspace, editing system files).
+- Do not use or commit real Nexus API keys or real game assets in test configurations.
 
 ### Step 4: Local Verification
-* Run code formatting, lints, and test suites locally.
-* Keep compiler warnings to zero.
+
+- Run code formatting, lints, and test suites locally.
+- Keep compiler warnings to zero.
 
 ### Step 5: Clean Handoff
-* Commit changes locally using clear, scoped commit messages.
-* Write a final response summary using the [Handoff Template](../../docs/agents/handoff-template.md).
+
+- Commit changes locally using clear, scoped commit messages.
+- Write a final response summary using the [Handoff Template](../../docs/agents/handoff-template.md).

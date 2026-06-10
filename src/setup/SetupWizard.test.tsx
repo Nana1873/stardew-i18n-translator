@@ -34,11 +34,17 @@ beforeEach(() => {
 
 async function gotoGlossaryStep() {
   fireEvent.click(screen.getByRole("button", { name: "Auto-detect" }));
-  await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).toBeEnabled());
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 2
-  await waitFor(() => expect(screen.getByRole("button", { name: "Next" })).toBeEnabled());
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 3
-  fireEvent.change(screen.getByLabelText("Target language"), { target: { value: "de" } });
+  fireEvent.change(screen.getByLabelText("Target language"), {
+    target: { value: "de" },
+  });
   fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 4
 }
 
@@ -98,7 +104,11 @@ describe("SetupWizard", () => {
     invokeMock.mockImplementation((cmd: string) => {
       switch (cmd) {
         case "detect_stardew":
-          return Promise.resolve({ stardewPath: "E:/SDV", modsPath: "E:/SDV/Mods", source: "steam" });
+          return Promise.resolve({
+            stardewPath: "E:/SDV",
+            modsPath: "E:/SDV/Mods",
+            source: "steam",
+          });
         case "default_mods_path":
           return Promise.resolve("E:/SDV/Mods");
         case "validate_stardew_path":
@@ -114,7 +124,9 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();
 
-    fireEvent.click(await screen.findByRole("button", { name: "Build glossary" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Build glossary" }),
+    );
     expect(await screen.findByText(/42 terms/)).toBeInTheDocument();
   });
 

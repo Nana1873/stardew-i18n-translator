@@ -1,0 +1,38 @@
+# CI — runs the same checks AGENTS.md expects from every contribution:
+# frontend (typecheck + vitest + prettier) and the Rust backend test suite.
+# The real-Mods-folder smoke test is opt-in via SIT_REAL_MODS_SCAN and is
+# skipped automatically here.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend (tsc, vitest, prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4 # version comes from package.json "packageManager"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm test
+      - run: pnpm format:check
+
+  rust:
+    name: Rust backend (cargo test)
+    runs-on: windows-latest # matches the development/target platform
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo test --locked
+        working-directory: src-tauri

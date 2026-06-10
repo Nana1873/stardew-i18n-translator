@@ -19,20 +19,25 @@ graph LR
 ## 2. Step-by-Step Instructions
 
 ### Step 1: Initialize
-* Read [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md) to understand scope limits.
-* Work strictly on one issue.
+
+- Read [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md) to understand scope limits.
+- Work strictly on one issue.
 
 ### Step 2: Request/Formulate Plan
-* Outline target edits in a code draft or short plan.
-* Keep changes minimal. Prefer narrow diffs over massive file rewrites.
+
+- Outline target edits in a code draft or short plan.
+- Keep changes minimal. Prefer narrow diffs over massive file rewrites.
 
 ### Step 3: Enforce Scope
-* Do not allow the implementation of `v1.1` or `v2` features.
-* If you discover ambiguity, document the questions in the issue/discussion and stop. Do not guess or make assumptions.
+
+- Do not allow the implementation of `v1.1` or `v2` features.
+- If you discover ambiguity, document the questions in the issue/discussion and stop. Do not guess or make assumptions.
 
 ### Step 4: Write Tests
-* Every code file added or modified must have corresponding unit tests.
-* Ensure tests run successfully.
+
+- Every code file added or modified must have corresponding unit tests.
+- Ensure tests run successfully.
 
 ### Step 5: Handoff
-* Write a final response summary using the [Handoff Template](../../docs/agents/handoff-template.md).
+
+- Write a final response summary using the [Handoff Template](../../docs/agents/handoff-template.md).
