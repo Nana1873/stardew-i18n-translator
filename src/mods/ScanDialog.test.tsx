@@ -12,7 +12,9 @@ const RESULT: ScanResult = {
 
 describe("ScanDialog", () => {
   it("shows a spinner while scanning", () => {
-    render(<ScanDialog scanning result={null} error={null} onClose={() => {}} />);
+    render(
+      <ScanDialog scanning result={null} error={null} onClose={() => {}} />,
+    );
     expect(screen.getByText("Scanning mods…")).toBeInTheDocument();
     expect(screen.getByText(/Reading your Mods folder/)).toBeInTheDocument();
     // No Close button while scanning.
@@ -20,7 +22,14 @@ describe("ScanDialog", () => {
   });
 
   it("summarizes counts and lists skipped mods on completion", () => {
-    render(<ScanDialog scanning={false} result={RESULT} error={null} onClose={() => {}} />);
+    render(
+      <ScanDialog
+        scanning={false}
+        result={RESULT}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
     expect(screen.getByText("Scan complete")).toBeInTheDocument();
     expect(screen.getByText(/12/)).toBeInTheDocument();
     expect(screen.getByText(/1 skipped:/)).toBeInTheDocument();
@@ -29,7 +38,12 @@ describe("ScanDialog", () => {
 
   it("shows the error message on failure", () => {
     render(
-      <ScanDialog scanning={false} result={null} error="Mods folder not found" onClose={() => {}} />,
+      <ScanDialog
+        scanning={false}
+        result={null}
+        error="Mods folder not found"
+        onClose={() => {}}
+      />,
     );
     expect(screen.getByText("Scan failed")).toBeInTheDocument();
     expect(screen.getByText("Mods folder not found")).toBeInTheDocument();
@@ -37,7 +51,14 @@ describe("ScanDialog", () => {
 
   it("calls onClose when Close is clicked", () => {
     const onClose = vi.fn();
-    render(<ScanDialog scanning={false} result={RESULT} error={null} onClose={onClose} />);
+    render(
+      <ScanDialog
+        scanning={false}
+        result={RESULT}
+        error={null}
+        onClose={onClose}
+      />,
+    );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
   });

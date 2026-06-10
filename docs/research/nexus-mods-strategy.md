@@ -10,15 +10,15 @@
 
 SSE-AT ([Cutleast/SSE-Auto-Translator](https://github.com/Cutleast/SSE-Auto-Translator)) automates translation of an entire Skyrim Special Edition modlist. Confirmed mechanics:
 
-| Mechanism | Detail |
-|-----------|--------|
+| Mechanism                        | Detail                                                                                                                                                                                                                                                                     |
+| -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Mod-page translation listing** | For each installed mod, SSE-AT finds translations that are uploaded as **separate Nexus mod pages** and **linked on the original mod page**. Nexus has no API field for this relationship, so tools must **parse/scrape the mod page** to read its "Translations" listing. |
-| **Community masterlist** | Translations that are *not* linked on the original page cannot be found automatically. SSE-AT relies on volunteer-maintained **masterlists** — curated JSON files mapping an original mod to its translation mod(s). This is the fallback for unlinked translations. |
-| **String database** | A combined database of vanilla + already-installed translated strings. For mods whose strings are fully covered by this corpus, SSE-AT can auto-generate a translation with no standalone translation mod at all. |
-| **Nexus API key** | Required for all API access (mod metadata, file lists, download links). |
-| **Premium for direct download** | The Nexus `download_link` endpoint returns a direct URL **only for Premium users**. Non-Premium users get a `403` ("…this is for premium users only") and must initiate the download from the website via an `nxm://` handoff. |
-| **User confirmation** | The user reviews and selects translations; the process is semi-automatic, not silent. |
-| **Output format** | Converts everything into **DSD (Dynamic String Distributor)** format and bundles a single "Output Mod" at the end of the load order. |
+| **Community masterlist**         | Translations that are _not_ linked on the original page cannot be found automatically. SSE-AT relies on volunteer-maintained **masterlists** — curated JSON files mapping an original mod to its translation mod(s). This is the fallback for unlinked translations.       |
+| **String database**              | A combined database of vanilla + already-installed translated strings. For mods whose strings are fully covered by this corpus, SSE-AT can auto-generate a translation with no standalone translation mod at all.                                                          |
+| **Nexus API key**                | Required for all API access (mod metadata, file lists, download links).                                                                                                                                                                                                    |
+| **Premium for direct download**  | The Nexus `download_link` endpoint returns a direct URL **only for Premium users**. Non-Premium users get a `403` ("…this is for premium users only") and must initiate the download from the website via an `nxm://` handoff.                                             |
+| **User confirmation**            | The user reviews and selects translations; the process is semi-automatic, not silent.                                                                                                                                                                                      |
+| **Output format**                | Converts everything into **DSD (Dynamic String Distributor)** format and bundles a single "Output Mod" at the end of the load order.                                                                                                                                       |
 
 **Workflow:** Scan modlist → look up translations (mod-page listing + masterlist + string DB) → user confirms → download (API/Premium or `nxm://` handoff) → convert to DSD → install output mod.
 
@@ -43,24 +43,24 @@ These are Skyrim/SSE-specific and have no Stardew analog — do not copy:
 - **DSD / Dynamic String Distributor** output format. Stardew uses plain `i18n/<lang>.json`; no equivalent injection layer is needed.
 - **ESP/ESM plugin string tables, BSA/BA2 archives, load order, "Output Mod at end of list."** Stardew has no plugin string tables and no load-order-based string injection.
 - **MO2/Vortex modlist integration.** Out of scope for this project by hard requirement — Stardew uses a flat `Mods/` folder.
-- **Vanilla string-coverage auto-translation at SSE scale.** Skyrim shares a massive vanilla string corpus across mods; Stardew mod `i18n` keys are mostly mod-specific, so the "fully covered by vanilla" trick yields little. (A weak analog — cross-mod *translation memory* — is a possible far-future feature, not v1–v3 core.)
+- **Vanilla string-coverage auto-translation at SSE scale.** Skyrim shares a massive vanilla string corpus across mods; Stardew mod `i18n` keys are mostly mod-specific, so the "fully covered by vanilla" trick yields little. (A weak analog — cross-mod _translation memory_ — is a possible far-future feature, not v1–v3 core.)
 
 ---
 
 ## 4. What is technically possible for Stardew
 
-| Capability | Feasible? | How |
-|-----------|-----------|-----|
-| Detect a mod's Nexus ID | ✅ Reliable, offline | Parse `manifest.json` → `UpdateKeys` → `Nexus:<id>`. No API. |
-| Open the mod / a search on Nexus in a browser | ✅ Reliable, offline | Construct a URL and hand off to the OS browser. |
-| Validate a Nexus API key | ✅ With key | `GET /v1/users/validate.json`. |
-| Enrich mod info (name, endorsements, etc.) | ✅ With key | `GET /v1/games/stardewvalley/mods/<id>.json`. |
-| **Auto-discover "the German translation of mod X" purely via API** | ❌ Not reliable | The Nexus API (v1 REST and v2 GraphQL) exposes **no** translation relationship and **no** language/locale metadata on mods or files. Confirmed by current feature requests asking Nexus to add it. The only API-based discovery is **keyword search** over titles/descriptions (e.g. `<modname> + "Deutsch"/"German"/"DE"`), which is heuristic and noisy. |
-| Discover via mod-page "Translations" listing | ⚠️ Possible but scraping | Nexus mod pages can list translations, but reading them requires HTML scraping. This project's principle is **no scraping by default**. |
-| Persist a user-confirmed `original → translation` mapping | ✅ Reliable | Store locally after the user confirms once. |
-| List files of a confirmed translation mod | ✅ With key | `GET /v1/games/stardewvalley/mods/<id>/files.json`. |
-| Direct one-click download of a translation file | ⚠️ Conditional | `download_link` endpoint requires **Nexus Premium**. Non-Premium must use the `nxm://` / website handoff. |
-| Import `i18n/<lang>.json` from a downloaded translation mod | ✅ Reliable | Stardew translation mods typically ship `i18n/<lang>.json` directly; these fit the existing data model. |
+| Capability                                                         | Feasible?                | How                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------ | ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Detect a mod's Nexus ID                                            | ✅ Reliable, offline     | Parse `manifest.json` → `UpdateKeys` → `Nexus:<id>`. No API.                                                                                                                                                                                                                                                                                               |
+| Open the mod / a search on Nexus in a browser                      | ✅ Reliable, offline     | Construct a URL and hand off to the OS browser.                                                                                                                                                                                                                                                                                                            |
+| Validate a Nexus API key                                           | ✅ With key              | `GET /v1/users/validate.json`.                                                                                                                                                                                                                                                                                                                             |
+| Enrich mod info (name, endorsements, etc.)                         | ✅ With key              | `GET /v1/games/stardewvalley/mods/<id>.json`.                                                                                                                                                                                                                                                                                                              |
+| **Auto-discover "the German translation of mod X" purely via API** | ❌ Not reliable          | The Nexus API (v1 REST and v2 GraphQL) exposes **no** translation relationship and **no** language/locale metadata on mods or files. Confirmed by current feature requests asking Nexus to add it. The only API-based discovery is **keyword search** over titles/descriptions (e.g. `<modname> + "Deutsch"/"German"/"DE"`), which is heuristic and noisy. |
+| Discover via mod-page "Translations" listing                       | ⚠️ Possible but scraping | Nexus mod pages can list translations, but reading them requires HTML scraping. This project's principle is **no scraping by default**.                                                                                                                                                                                                                    |
+| Persist a user-confirmed `original → translation` mapping          | ✅ Reliable              | Store locally after the user confirms once.                                                                                                                                                                                                                                                                                                                |
+| List files of a confirmed translation mod                          | ✅ With key              | `GET /v1/games/stardewvalley/mods/<id>/files.json`.                                                                                                                                                                                                                                                                                                        |
+| Direct one-click download of a translation file                    | ⚠️ Conditional           | `download_link` endpoint requires **Nexus Premium**. Non-Premium must use the `nxm://` / website handoff.                                                                                                                                                                                                                                                  |
+| Import `i18n/<lang>.json` from a downloaded translation mod        | ✅ Reliable              | Stardew translation mods typically ship `i18n/<lang>.json` directly; these fit the existing data model.                                                                                                                                                                                                                                                    |
 
 **Key finding:** Pure-API automatic discovery is **not reliable** for Stardew (no relationship/language metadata). Reliable automation requires a **user-confirmed mapping** (and optionally a community masterlist). The SPEC's existing v2 wording that implies "category filtering" finds translations is over-optimistic — Stardew's Nexus section has no "Translation" mod/file category and no language filter. Discovery realistically = heuristic search + human confirmation.
 
@@ -89,12 +89,12 @@ No API key, no scraping, no downloads. **This matches the current SPEC §12 v1 s
 
 ## 7. Staged automation roadmap (does not change v1)
 
-| Stage | Capability | Dependency / Risk |
-|-------|-----------|-------------------|
-| **v1** | Nexus ID detection · clickable link · browser-assisted search | None. Offline. |
-| **v1.1** | Optional Nexus API key · key validation · optional mod-info enrichment | Needs user-supplied key. Rate limit ~2,500/day. |
-| **v2** | Assisted discovery: heuristic keyword search → show candidates → **user confirms** → store `originalModNexusId → translationModNexusId` mapping | Discovery is heuristic, not exhaustive. Optional masterlist import can supplement. |
-| **v3** | After confirmed mapping: one-click file listing → download → import `i18n/<lang>.json`; mark imported strings `imported`/review-needed; missing new keys stay `untranslated` | Direct download needs **Premium**; otherwise `nxm://`/website handoff. |
+| Stage    | Capability                                                                                                                                                                   | Dependency / Risk                                                                  |
+| -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| **v1**   | Nexus ID detection · clickable link · browser-assisted search                                                                                                                | None. Offline.                                                                     |
+| **v1.1** | Optional Nexus API key · key validation · optional mod-info enrichment                                                                                                       | Needs user-supplied key. Rate limit ~2,500/day.                                    |
+| **v2**   | Assisted discovery: heuristic keyword search → show candidates → **user confirms** → store `originalModNexusId → translationModNexusId` mapping                              | Discovery is heuristic, not exhaustive. Optional masterlist import can supplement. |
+| **v3**   | After confirmed mapping: one-click file listing → download → import `i18n/<lang>.json`; mark imported strings `imported`/review-needed; missing new keys stay `untranslated` | Direct download needs **Premium**; otherwise `nxm://`/website handoff.             |
 
 ---
 
@@ -117,4 +117,4 @@ The v1 data model already supports this; only **two lightweight, forward-compati
 
 Concretely: the existing `imported` string status + per-string source snapshot already cover "import a downloaded translation and flag for review." A future Nexus import path is just another producer of `imported` strings. No v1 abstraction, provider system, or API client is required or permitted.
 
-**Conclusion:** The current SPEC §12 strategy is sound and appropriately conservative. The only refinement this research suggests is wording: future discovery is **heuristic search + user-confirmed mapping (optionally masterlist-backed)**, *not* reliable category/API-driven auto-discovery — because Nexus exposes no translation/language metadata.
+**Conclusion:** The current SPEC §12 strategy is sound and appropriately conservative. The only refinement this research suggests is wording: future discovery is **heuristic search + user-confirmed mapping (optionally masterlist-backed)**, _not_ reliable category/API-driven auto-discovery — because Nexus exposes no translation/language metadata.

@@ -47,7 +47,12 @@ describe("ModList", () => {
 
   it("groups a multi-component package under an expandable parent", () => {
     const mods = [
-      mod({ uniqueId: "cp", name: "[CP] RSV", packageId: "Ridgeside", nexusId: 7286 }),
+      mod({
+        uniqueId: "cp",
+        name: "[CP] RSV",
+        packageId: "Ridgeside",
+        nexusId: 7286,
+      }),
       mod({ uniqueId: "cc", name: "[CC] RSV", packageId: "Ridgeside" }),
     ];
     render(<ModList mods={mods} selectedId={null} onSelect={() => {}} />);
@@ -56,7 +61,9 @@ describe("ModList", () => {
     expect(screen.getByText("Ridgeside")).toBeInTheDocument();
     expect(screen.getByText("[CP] RSV")).toBeInTheDocument();
     expect(screen.getByText("[CC] RSV")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Collapse" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Collapse" }),
+    ).toBeInTheDocument();
     // The real Nexus id is surfaced both on the parent (rolled up) and on the
     // [CP] child that owns it (SPEC §7.3).
     expect(screen.getAllByRole("link", { name: "7286" })).toHaveLength(2);
@@ -91,7 +98,9 @@ describe("ModList", () => {
         onSelect={() => {}}
       />,
     );
-    const fill = document.querySelector(".modrow__bar-fill") as HTMLElement | null;
+    const fill = document.querySelector(
+      ".modrow__bar-fill",
+    ) as HTMLElement | null;
     expect(fill).not.toBeNull();
     expect(fill!.style.width).toBe("50%");
     expect(screen.getByText("50%")).toBeInTheDocument();
@@ -108,7 +117,9 @@ describe("ModList", () => {
         onSelect={() => {}}
       />,
     );
-    const names = screen.getAllByText(/Zebra Mod|Alpha Mod/).map((n) => n.textContent);
+    const names = screen
+      .getAllByText(/Zebra Mod|Alpha Mod/)
+      .map((n) => n.textContent);
     expect(names[0]).toBe("Alpha Mod");
     expect(names[1]).toBe("Zebra Mod");
   });
@@ -119,12 +130,19 @@ describe("ModList", () => {
       mod({ uniqueId: "a", name: "Alpha Mod", packageId: "Alpha" }),
     ];
     const { rerender } = render(
-      <ModList mods={mods} selectedId={null} onSelect={() => {}} query="alpha" />,
+      <ModList
+        mods={mods}
+        selectedId={null}
+        onSelect={() => {}}
+        query="alpha"
+      />,
     );
     expect(screen.getByText("Alpha Mod")).toBeInTheDocument();
     expect(screen.queryByText("Zebra Mod")).toBeNull();
 
-    rerender(<ModList mods={mods} selectedId={null} onSelect={() => {}} query="zzz" />);
+    rerender(
+      <ModList mods={mods} selectedId={null} onSelect={() => {}} query="zzz" />,
+    );
     expect(screen.getByText(/No mods match/)).toBeInTheDocument();
   });
 

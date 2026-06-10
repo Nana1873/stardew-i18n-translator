@@ -94,7 +94,11 @@ describe("SettingsDialog", () => {
       <SettingsDialog
         settings={{
           ...baseSettings,
-          llm: { provider: "ollama", baseUrl: "http://localhost:11434/v1", model: "qwen2.5" },
+          llm: {
+            provider: "ollama",
+            baseUrl: "http://localhost:11434/v1",
+            model: "qwen2.5",
+          },
         }}
         onSave={onSave}
         onClose={() => {}}
@@ -104,7 +108,11 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        llm: { provider: "ollama", baseUrl: "http://localhost:11434/v1", model: "qwen2.5" },
+        llm: {
+          provider: "ollama",
+          baseUrl: "http://localhost:11434/v1",
+          model: "qwen2.5",
+        },
       }),
     );
   });

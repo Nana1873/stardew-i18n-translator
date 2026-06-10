@@ -51,7 +51,10 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
     const group = byId.get(packageId)!;
     group.sort((a, b) => byName(a.name, b.name)); // components A→Z within a package
     const totalKeys = group.reduce((sum, mod) => sum + mod.totalKeys, 0);
-    const translatedKeys = group.reduce((sum, mod) => sum + mod.translatedKeys, 0);
+    const translatedKeys = group.reduce(
+      (sum, mod) => sum + mod.translatedKeys,
+      0,
+    );
     return {
       packageId,
       mods: group,
@@ -82,13 +85,24 @@ function StatusDot({ status }: { status: ModStatus }) {
         ? "Has untranslated strings"
         : "No translatable strings";
   return (
-    <span className="modrow__status" style={{ color }} title={title} aria-label={status}>
+    <span
+      className="modrow__status"
+      style={{ color }}
+      title={title}
+      aria-label={status}
+    >
       ●
     </span>
   );
 }
 
-function ProgressCell({ total, progress }: { total: number; progress: number }) {
+function ProgressCell({
+  total,
+  progress,
+}: {
+  total: number;
+  progress: number;
+}) {
   if (total === 0) {
     return <span className="modrow__progress">—</span>;
   }
@@ -114,7 +128,12 @@ interface ModListProps {
   query?: string;
 }
 
-export function ModList({ mods, selectedId, onSelect, query = "" }: ModListProps) {
+export function ModList({
+  mods,
+  selectedId,
+  onSelect,
+  query = "",
+}: ModListProps) {
   const groups = groupByPackage(mods);
   const q = query.trim().toLowerCase();
   const visible = q
@@ -173,7 +192,11 @@ function PackageNode({
   const [open, setOpen] = useState(true);
   return (
     <>
-      <div className="modrow modrow--package" role="treeitem" aria-expanded={open}>
+      <div
+        className="modrow modrow--package"
+        role="treeitem"
+        aria-expanded={open}
+      >
         <StatusDot status={group.status} />
         <span className="modrow__name">
           <button

@@ -25,7 +25,9 @@ describe("App shell", () => {
     render(<App />);
 
     expect(screen.getByText("Stardew i18n Translator")).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Mod list" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Mod list" }),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "String table" }),
     ).toBeInTheDocument();
