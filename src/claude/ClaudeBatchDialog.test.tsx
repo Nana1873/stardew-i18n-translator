@@ -47,6 +47,7 @@ describe("ClaudeImportDialog", () => {
           skippedTranslated: 2,
           unmatched: 1,
           tokenIssues: 1,
+          tokenIssueKeys: ["FestivalToday"],
           identicalToSource: 1,
           totalInFile: 8,
         }}
@@ -62,6 +63,11 @@ describe("ClaudeImportDialog", () => {
     expect(screen.getByText(/Missing protected tokens/)).toBeInTheDocument();
     expect(
       screen.getByText(/Identical to the English source/),
+    ).toBeInTheDocument();
+    // The affected key is named so the user can search/jump to it.
+    expect(screen.getByText("FestivalToday")).toBeInTheDocument();
+    expect(
+      screen.getByText(/paste one into the search box/),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
