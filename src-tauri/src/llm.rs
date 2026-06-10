@@ -82,12 +82,15 @@ pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
 
 /// Result of a single-string translation. `missing_tokens` is non-empty when the
 /// model dropped a protected token even after one stricter retry — the UI flags
-/// it for a manual fix (never a silent corruption).
+/// it for a manual fix (never a silent corruption). `glossary_misses` lists
+/// injected official terms the model appears not to have used — a **soft**
+/// warning only (German inflection makes exact matching too strict to enforce).
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct TranslationResult {
     pub text: String,
     pub missing_tokens: Vec<String>,
+    pub glossary_misses: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -130,6 +133,31 @@ fn stop_sequences(source: &str) -> Option<Vec<String>> {
     } else {
         Some(vec!["\n".to_string()])
     }
+}
+
+/// The default sampling temperature: low — translation wants consistency.
+const DEFAULT_TEMPERATURE: f32 = 0.2;
+
+/// The temperature to request: the user's setting, clamped to a sane sampling
+/// range, or the low default.
+fn effective_temperature(setting: Option<f32>) -> f32 {
+    setting
+        .filter(|t| t.is_finite())
+        .map(|t| t.clamp(0.0, 2.0))
+        .unwrap_or(DEFAULT_TEMPERATURE)
+}
+
+/// Injected glossary terms the translation appears not to use, as
+/// `"English -> Target"` labels. **Soft** check: a case-insensitive substring
+/// match on the target term, so inflected forms still count (German
+/// "Pastinaken" contains "Pastinake"). Misses are a hint, never an error.
+fn glossary_misses(target: &str, glossary_pairs: &[(String, String)]) -> Vec<String> {
+    let haystack = target.to_lowercase();
+    glossary_pairs
+        .iter()
+        .filter(|(_, term)| !haystack.contains(&term.to_lowercase()))
+        .map(|(en, term)| format!("{en} -> {term}"))
+        .collect()
 }
 
 #[derive(Deserialize)]
@@ -207,6 +235,7 @@ async fn chat(
     base_url: &str,
     model: &str,
     messages: Vec<ChatMessage>,
+    temperature: f32,
     max_tokens: u32,
     stop: Option<Vec<String>>,
 ) -> Result<String, String> {
@@ -224,7 +253,7 @@ async fn chat(
         .json(&ChatRequest {
             model: model.to_string(),
             messages,
-            temperature: 0.2,
+            temperature,
             stream: false,
             max_tokens,
             stop,
@@ -262,36 +291,44 @@ async fn chat(
 
 /// Translate one source string. Validates protected tokens against the source;
 /// on a dropped token, retries once with a stricter reminder and returns the
-/// better of the two attempts (with any still-missing tokens flagged).
+/// better of the two attempts (with any still-missing tokens flagged). Injected
+/// glossary terms that the result does not appear to use are reported softly.
 pub async fn translate(
     base_url: &str,
     model: &str,
     source: &str,
     target_language: &str,
     glossary_pairs: &[(String, String)],
+    temperature: Option<f32>,
 ) -> Result<TranslationResult, String> {
     let budget = output_token_budget(source);
     let stop = stop_sequences(source);
+    let temperature = effective_temperature(temperature);
+    let result = |text: String, missing_tokens: Vec<String>| TranslationResult {
+        glossary_misses: glossary_misses(&text, glossary_pairs),
+        text,
+        missing_tokens,
+    };
+
     let first = chat(
         base_url,
         model,
         build_messages(source, target_language, glossary_pairs, None),
+        temperature,
         budget,
         stop.clone(),
     )
     .await?;
     let missing = tokens::missing_token_list(source, &first);
     if missing.is_empty() {
-        return Ok(TranslationResult {
-            text: first,
-            missing_tokens: vec![],
-        });
+        return Ok(result(first, vec![]));
     }
 
     let second = chat(
         base_url,
         model,
         build_messages(source, target_language, glossary_pairs, Some(&missing)),
+        temperature,
         budget,
         stop,
     )
@@ -300,15 +337,9 @@ pub async fn translate(
 
     // Prefer the retry only if it is at least as good as the first attempt.
     if missing_second.len() <= missing.len() {
-        Ok(TranslationResult {
-            text: second,
-            missing_tokens: missing_second,
-        })
+        Ok(result(second, missing_second))
     } else {
-        Ok(TranslationResult {
-            text: first,
-            missing_tokens: missing,
-        })
+        Ok(result(first, missing))
     }
 }
 
@@ -378,6 +409,33 @@ mod tests {
         assert_eq!(output_token_budget(&long), 1024);
         // Mid-length source → ~2× the character count.
         assert_eq!(output_token_budget(&"y".repeat(100)), 200);
+    }
+
+    #[test]
+    fn effective_temperature_defaults_and_clamps() {
+        assert_eq!(effective_temperature(None), 0.2);
+        assert_eq!(effective_temperature(Some(0.7)), 0.7);
+        // Out-of-range / nonsense values are clamped or fall back.
+        assert_eq!(effective_temperature(Some(-1.0)), 0.0);
+        assert_eq!(effective_temperature(Some(99.0)), 2.0);
+        assert_eq!(effective_temperature(Some(f32::NAN)), 0.2);
+    }
+
+    #[test]
+    fn glossary_misses_are_soft_and_inflection_tolerant() {
+        let pairs = vec![
+            ("Parsnip".to_string(), "Pastinake".to_string()),
+            ("Spring".to_string(), "Frühling".to_string()),
+        ];
+        // Inflected form ("Pastinaken") still counts as used; "Frühling" absent.
+        assert_eq!(
+            glossary_misses("Ich pflanze Pastinaken an.", &pairs),
+            vec!["Spring -> Frühling".to_string()],
+        );
+        // Case-insensitive.
+        assert!(glossary_misses("FRÜHLING und pastinake", &pairs).is_empty());
+        // No injected pairs -> no misses.
+        assert!(glossary_misses("anything", &[]).is_empty());
     }
 
     #[test]

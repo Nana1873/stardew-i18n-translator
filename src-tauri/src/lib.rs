@@ -197,7 +197,8 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
 
 /// Translate one source string via the configured local LLM (M6, Issue 16).
 /// Injects matching official-glossary terms into the prompt and validates the
-/// result's protected tokens (with one stricter retry).
+/// result's protected tokens (with one stricter retry). `temperature` is the
+/// optional user setting (None = low default).
 #[tauri::command]
 async fn translate_string(
     app: AppHandle,
@@ -205,6 +206,7 @@ async fn translate_string(
     model: String,
     source: String,
     target_language: String,
+    temperature: Option<f32>,
 ) -> Result<llm::TranslationResult, String> {
     if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
         return Err("Base URL must start with http:// or https://.".to_string());
@@ -212,7 +214,15 @@ async fn translate_string(
     let glossary_pairs = glossary::load(&config_dir(&app)?)
         .map(|g| glossary::match_terms(&source, &g))
         .unwrap_or_default();
-    llm::translate(&base_url, &model, &source, &target_language, &glossary_pairs).await
+    llm::translate(
+        &base_url,
+        &model,
+        &source,
+        &target_language,
+        &glossary_pairs,
+        temperature,
+    )
+    .await
 }
 
 /// Open an external http(s) URL in the user's default browser (Nexus links).

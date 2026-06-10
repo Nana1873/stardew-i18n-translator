@@ -113,17 +113,29 @@ URL.
   glossary matching, missing-token list) are unit-tested; the HTTP call is not exercised
   in CI.
 
-### Issue 17 (follow-up): Batch / whole-mod translation
+### Issue 17 (follow-up): Batch / whole-mod translation ✅
 
-- Progress dialog (X/Y, cancel), translate all `untranslated`/`outdated` in a mod or
-  selection, results → `review-needed`, resume-friendly.
+- Context-menu action **"Translate missing with local AI (N)"** on the selection
+  (Ctrl+A = whole mod): translates only `untranslated`/`outdated` strings —
+  `translated`, `not-translatable`, and unreviewed suggestions are skipped.
+- Serial requests (the local GPU is the bottleneck), progress dialog (X/Y, current
+  key, progress bar), **Cancel** finishes the in-flight string and stops.
+- Every result is saved **immediately** as `review-needed`, so the run is
+  resume-friendly: after a cancel/crash/server error, re-running picks up exactly
+  the strings that still need work.
+- Summary lists results that dropped protected tokens (fix manually) and counts
+  results that possibly ignored injected glossary terms (soft).
 
 ## Status (shipped vs. open)
 
-**MVP shipped.** Issue 15 (connection settings + Settings dialog §7.7) and Issue 16
+**Complete.** Issue 15 (connection settings + Settings dialog §7.7), Issue 16
 (translate one string via the **Translate** button / **Ctrl+F5** → `review-needed`,
-glossary injection + token retry) are done. **Open:** Issue 17 — batch / whole-mod
-translation with a progress dialog, cancel, and resume.
+glossary injection + token retry), and Issue 17 (batch translation via the context
+menu with progress/cancel/resume) are done. The two MVP scope gaps were closed with
+Issue 17: the optional **temperature** setting (Settings → Local AI; empty = 0.2
+default) and the **glossary-respect soft check** (inflection-tolerant substring
+match; misses surface as a hint in the editor and a count in the batch summary,
+never an error).
 
 ### Future (post-v1): paid cloud APIs
 

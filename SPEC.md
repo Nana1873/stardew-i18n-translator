@@ -1019,11 +1019,11 @@ The following are **explicitly excluded** from v1:
 **Scope:**
 
 - One OpenAI-compatible HTTP client (`POST /v1/chat/completions`, `GET /v1/models`) covering Ollama, LM Studio, and any compatible endpoint. **No provider plugin system** (§19 #6) — URL/port presets + a custom URL only.
-- Connection settings: provider preset, base URL, model (discovered from `/v1/models`), "Test connection".
+- Connection settings: provider preset, base URL, model (discovered from `/v1/models`), "Test connection", optional temperature (empty = 0.2 default).
 - Translate-one-string command (MVP): prompt = system rules + injected glossary subset + source; low temperature; result validated through `tokens.rs`, one stricter retry on dropped tokens, then flagged.
-- Glossary injection (prompt-level) + soft validation. Degrades to no-injection when no glossary is built (§19 #8).
+- Glossary injection (prompt-level) + soft validation: an inflection-tolerant check whether injected terms were used, surfaced as a hint (editor message / batch summary count), never an error. Degrades to no-injection when no glossary is built (§19 #8).
 - Local-AI output → status `review-needed` (same as M4 imports; §19 #2).
-- Batch / whole-mod translation with progress + cancel is the follow-up after the single-string MVP proves the pipeline.
+- Batch translation of the selection (Ctrl+A = whole mod) via the context menu: only `untranslated`/`outdated` strings, serial requests, progress dialog with cancel (finishes the in-flight string), each result saved immediately — resume-friendly by construction.
 
 **Acceptance Criteria:**
 

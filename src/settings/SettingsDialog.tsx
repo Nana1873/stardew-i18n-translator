@@ -55,6 +55,10 @@ export function SettingsDialog({
   const [llmModelList, setLlmModelList] = useState<string[] | null>(null);
   const [llmTesting, setLlmTesting] = useState(false);
   const [llmError, setLlmError] = useState<string | null>(null);
+  // Kept as the raw input string; parsed/validated on save ("" = default).
+  const [llmTemperature, setLlmTemperature] = useState(
+    settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
+  );
 
   // Check for StardewXnbHack-unpacked content (drives the glossary section).
   useEffect(() => {
@@ -109,13 +113,23 @@ export function SettingsDialog({
 
   function save() {
     const url = llmBaseUrl.trim();
+    // "" or a non-number = use the backend default (0.2).
+    const parsedTemperature = Number.parseFloat(llmTemperature);
+    const temperature = Number.isFinite(parsedTemperature)
+      ? parsedTemperature
+      : null;
     onSave({
       ...settings,
       targetLang: targetLang || null,
       // Persist the AI connection only once a model is chosen; otherwise null.
       llm:
         url && llmModel
-          ? { provider: llmProvider, baseUrl: url, model: llmModel }
+          ? {
+              provider: llmProvider,
+              baseUrl: url,
+              model: llmModel,
+              temperature,
+            }
           : null,
     });
   }
@@ -295,6 +309,19 @@ export function SettingsDialog({
                   model in your AI app, then test again.
                 </p>
               ))}
+            <label className="wizard__field">
+              <span>Temperature (optional)</span>
+              <input
+                type="number"
+                min="0"
+                max="2"
+                step="0.1"
+                value={llmTemperature}
+                placeholder="0.2 (default)"
+                aria-label="AI temperature"
+                onChange={(event) => setLlmTemperature(event.target.value)}
+              />
+            </label>
             {llmError && <p className="wizard__error">{llmError}</p>}
           </section>
         </div>

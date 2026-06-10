@@ -1025,6 +1025,22 @@ body {
   border-top: 1px solid var(--border);
 }
 
+/* --- Batch AI translation dialog (M6 Issue 17) --- */
+.batchdlg__bar {
+  height: 8px;
+  margin: 8px 0 12px;
+  border-radius: 4px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.batchdlg__fill {
+  height: 100%;
+  border-radius: 4px;
+  background: #e0a44e; /* review-needed amber — batch output awaits review */
+  transition: width 0.2s ease;
+}
+
 /* --- Scan dialog --- */
 .scandlg {
   display: flex;

@@ -69,6 +69,7 @@ describe("SettingsDialog", () => {
           provider: "lmstudio",
           baseUrl: "http://localhost:1234/v1",
           model: "llama3.1:8b",
+          temperature: null,
         },
       }),
     );
@@ -112,7 +113,48 @@ describe("SettingsDialog", () => {
           provider: "ollama",
           baseUrl: "http://localhost:11434/v1",
           model: "qwen2.5",
+          temperature: null,
         },
+      }),
+    );
+  });
+
+  it("saves a custom temperature and restores it on open", async () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          llm: {
+            provider: "ollama",
+            baseUrl: "http://localhost:11434/v1",
+            model: "qwen2.5",
+            temperature: 0.5,
+          },
+        }}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const field = screen.getByLabelText("AI temperature") as HTMLInputElement;
+    expect(field.value).toBe("0.5");
+
+    fireEvent.change(field, { target: { value: "0.7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llm: expect.objectContaining({ temperature: 0.7 }),
+      }),
+    );
+
+    // Clearing the field falls back to the default (persisted as null).
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        llm: expect.objectContaining({ temperature: null }),
       }),
     );
   });
