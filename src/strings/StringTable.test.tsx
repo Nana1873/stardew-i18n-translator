@@ -45,7 +45,13 @@ const MOD: ScannedMod = {
 };
 
 function mockStrings(
-  rows: Array<{ key: string; source: string; target: string; targetPresent?: boolean; status?: string }>,
+  rows: Array<{
+    key: string;
+    source: string;
+    target: string;
+    targetPresent?: boolean;
+    status?: string;
+  }>,
 ) {
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === "load_strings") {
@@ -110,7 +116,9 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} />);
     fireEvent.doubleClick(await screen.findByText("greeting"));
 
-    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText(
+      "Translation",
+    ) as HTMLTextAreaElement;
     expect(textarea.value).toBe("Hallo");
 
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
@@ -120,7 +128,11 @@ describe("StringTable", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
         "save_string",
-        expect.objectContaining({ key: "greeting", target: "", status: "untranslated" }),
+        expect.objectContaining({
+          key: "greeting",
+          target: "",
+          status: "untranslated",
+        }),
       ),
     );
   });
@@ -129,7 +141,9 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} glossary={{ Bye: "Tschüss" }} />);
     fireEvent.doubleClick(await screen.findByText("bye"));
 
-    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText(
+      "Translation",
+    ) as HTMLTextAreaElement;
     expect(textarea.value).toBe("");
 
     fireEvent.click(await screen.findByRole("button", { name: /Bye/ }));
@@ -138,12 +152,19 @@ describe("StringTable", () => {
 
   it("shows a validation error icon when a source token is missing", async () => {
     mockStrings([
-      { key: "greet", source: "Hi {{name}}", target: "Hallo", targetPresent: true },
+      {
+        key: "greet",
+        source: "Hi {{name}}",
+        target: "Hallo",
+        targetPresent: true,
+      },
       { key: "ok", source: "Yes", target: "Ja", targetPresent: true },
     ]);
     render(<StringTable mod={MOD} />);
 
-    expect(await screen.findByTitle("Missing token {{name}}")).toBeInTheDocument();
+    expect(
+      await screen.findByTitle("Missing token {{name}}"),
+    ).toBeInTheDocument();
   });
 
   it("inserts a protected token at the cursor when its chip is clicked", async () => {
@@ -154,7 +175,9 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} />);
 
     fireEvent.doubleClick(await screen.findByText("g"));
-    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText(
+      "Translation",
+    ) as HTMLTextAreaElement;
     expect(textarea.value).toBe("");
 
     fireEvent.click(screen.getByRole("button", { name: "{{name}}" }));
@@ -170,12 +193,16 @@ describe("StringTable", () => {
 
     // Default order: zebra then alpha (file order).
     await screen.findByText("zebra");
-    const keysBefore = screen.getAllByText(/zebra|alpha/).map((n) => n.textContent);
+    const keysBefore = screen
+      .getAllByText(/zebra|alpha/)
+      .map((n) => n.textContent);
     expect(keysBefore[0]).toBe("zebra");
 
     // Click "Key" header → ascending → alpha first.
     fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
-    const keysAfter = screen.getAllByText(/zebra|alpha/).map((n) => n.textContent);
+    const keysAfter = screen
+      .getAllByText(/zebra|alpha/)
+      .map((n) => n.textContent);
     expect(keysAfter[0]).toBe("alpha");
   });
 
@@ -203,12 +230,16 @@ describe("StringTable", () => {
   });
 
   it("AI translate fills the field, flags needs-review, and Save confirms translated", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({ text: "Tschüss!", missingTokens: [] });
+    const onTranslate = vi
+      .fn()
+      .mockResolvedValue({ text: "Tschüss!", missingTokens: [] });
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("bye"));
 
     fireEvent.click(screen.getByRole("button", { name: "Translate" }));
-    const textarea = screen.getByLabelText("Translation") as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText(
+      "Translation",
+    ) as HTMLTextAreaElement;
     await waitFor(() => expect(textarea.value).toBe("Tschüss!"));
     expect(onTranslate).toHaveBeenCalledWith("Bye");
     // Badge shows the unreviewed status.
@@ -219,21 +250,27 @@ describe("StringTable", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
         "save_string",
-        expect.objectContaining({ key: "bye", target: "Tschüss!", status: "translated" }),
+        expect.objectContaining({
+          key: "bye",
+          target: "Tschüss!",
+          status: "translated",
+        }),
       ),
     );
   });
 
   it("navigating away from an AI suggestion auto-saves it as review-needed", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({ text: "Hallo Welt", missingTokens: [] });
+    const onTranslate = vi
+      .fn()
+      .mockResolvedValue({ text: "Hallo Welt", missingTokens: [] });
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("greeting"));
 
     fireEvent.click(screen.getByRole("button", { name: "Translate" }));
     await waitFor(() =>
-      expect((screen.getByLabelText("Translation") as HTMLTextAreaElement).value).toBe(
-        "Hallo Welt",
-      ),
+      expect(
+        (screen.getByLabelText("Translation") as HTMLTextAreaElement).value,
+      ).toBe("Hallo Welt"),
     );
 
     // Next (auto-save without confirming) keeps the review-needed status.
@@ -258,7 +295,9 @@ describe("StringTable", () => {
     fireEvent.doubleClick(await screen.findByText("g"));
 
     fireEvent.click(screen.getByRole("button", { name: "Translate" }));
-    expect(await screen.findByText(/AI dropped token\(s\): \{\{name\}\}/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/AI dropped token\(s\): \{\{name\}\}/),
+    ).toBeInTheDocument();
   });
 
   it("without an AI configured, Translate shows a configure hint", async () => {
@@ -271,17 +310,78 @@ describe("StringTable", () => {
     ).toBeInTheDocument();
   });
 
-  it("right-click → Mark as not translatable persists the status", async () => {
+  it("right-click → Mark as not translatable persists via one bulk save", async () => {
     render(<StringTable mod={MOD} />);
     fireEvent.contextMenu(await screen.findByText("greeting"));
 
-    fireEvent.click(screen.getByRole("menuitem", { name: "Mark as not translatable" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Mark as not translatable" }),
+    );
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
-        "save_string",
-        expect.objectContaining({ key: "greeting", status: "not-translatable" }),
+        "save_strings",
+        expect.objectContaining({
+          modUniqueId: "a.b",
+          entries: [
+            expect.objectContaining({
+              key: "greeting",
+              status: "not-translatable",
+            }),
+          ],
+        }),
       ),
     );
+  });
+
+  it("bulk action saves every selected row in ONE save_strings call", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.click(await screen.findByText("greeting"));
+    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByText("bye"));
+
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Mark as not translatable" }),
+    );
+
+    await waitFor(() => {
+      const calls = invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "save_strings",
+      );
+      expect(calls).toHaveLength(1);
+      const args = calls[0][1] as { entries: Array<{ key: string }> };
+      expect(args.entries.map((e) => e.key).sort()).toEqual([
+        "bye",
+        "greeting",
+      ]);
+    });
+    // No racy per-string saves alongside the bulk call.
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "save_string",
+      expect.anything(),
+    );
+  });
+
+  it("reports fresh translated counts after an edit and after a bulk action", async () => {
+    const onCountsChange = vi.fn();
+    render(<StringTable mod={MOD} onCountsChange={onCountsChange} />);
+
+    // Edit: translating "bye" brings the working count to 2 of 2.
+    fireEvent.doubleClick(await screen.findByText("bye"));
+    fireEvent.change(screen.getByLabelText("Translation"), {
+      target: { value: "Tschüss" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(2));
+
+    // Bulk: clearing both translations drops the count to 0.
+    onCountsChange.mockClear();
+    fireEvent.click(screen.getByText("greeting"));
+    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
+    fireEvent.contextMenu(screen.getByText("bye"));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Clear translation" }),
+    );
+    await waitFor(() => expect(onCountsChange).toHaveBeenCalledWith(0));
   });
 });
