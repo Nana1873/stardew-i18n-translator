@@ -77,7 +77,10 @@ export interface ScanResult {
   fileCount: number;
 }
 
-export function scanMods(modsPath: string, targetLang: string): Promise<ScanResult> {
+export function scanMods(
+  modsPath: string,
+  targetLang: string,
+): Promise<ScanResult> {
   return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
 }
 
@@ -128,6 +131,25 @@ export function saveString(
     status,
     source,
   });
+}
+
+export interface SaveStringEntry {
+  relativeDir: string;
+  key: string;
+  target: string;
+  status: StringStatus;
+  source: string;
+}
+
+/**
+ * Save many strings of one mod in a single backend write. Bulk actions must
+ * use this — N parallel saveString calls race the per-mod state file.
+ */
+export function saveStrings(
+  modUniqueId: string,
+  entries: SaveStringEntry[],
+): Promise<void> {
+  return invoke<void>("save_strings", { modUniqueId, entries });
 }
 
 export interface ExportFileInput {
@@ -182,7 +204,10 @@ export interface GlossaryStatus {
   cached: GlossaryInfo | null;
 }
 
-export function buildGlossary(stardewPath: string, targetLang: string): Promise<GlossaryInfo> {
+export function buildGlossary(
+  stardewPath: string,
+  targetLang: string,
+): Promise<GlossaryInfo> {
   return invoke<GlossaryInfo>("build_glossary", { stardewPath, targetLang });
 }
 

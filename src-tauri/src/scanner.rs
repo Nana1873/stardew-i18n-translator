@@ -51,7 +51,7 @@ pub struct ScannedMod {
     pub total_keys: usize,
     pub translated_keys: usize,
     pub progress: f64,
-    /// "none" (no keys) | "untranslated" (some missing) | "imported" (all present).
+    /// "none" (no keys) | "untranslated" (some missing) | "translated" (all present).
     pub status: String,
 }
 
@@ -246,16 +246,26 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     }
 
     // Associate each i18n/ folder with the nearest ancestor manifest, merging
-    // saved translation state (cached per mod).
+    // saved translation state (cached per mod). A corrupted state file becomes
+    // a scan warning (counts degrade to the imported values); it is NOT
+    // silently treated as empty, and saves elsewhere refuse to overwrite it.
     let mut state_cache: HashMap<String, ModState> = HashMap::new();
     for i18n_dir in &i18n_dirs {
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             continue;
         };
         if let Some(scanned) = mods.get_mut(&owner) {
-            let state = state_cache
-                .entry(scanned.unique_id.clone())
-                .or_insert_with(|| translations::load(config_dir, &scanned.unique_id));
+            let unique_id = scanned.unique_id.clone();
+            let state = match state_cache.entry(unique_id.clone()) {
+                std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                std::collections::hash_map::Entry::Vacant(slot) => {
+                    let loaded = translations::load(config_dir, &unique_id).unwrap_or_else(|error| {
+                        warnings.push(error);
+                        ModState::new()
+                    });
+                    slot.insert(loaded)
+                }
+            };
             if let Some(file) = build_i18n_file(&owner, i18n_dir, target_lang, state) {
                 scanned.i18n_files.push(file);
             }
@@ -947,7 +957,7 @@ mod tests {
             },
         )
         .unwrap();
-        let state = translations::load(&root, "mod.id");
+        let state = translations::load(&root, "mod.id").unwrap();
 
         let default_path = i18n.join("default.json");
         let target_path = i18n.join("de.json");
@@ -979,10 +989,15 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
-    /// Real-machine smoke check against the user's Mods folder, if present.
+    /// Real-machine smoke check against a local Mods folder. Opt-in: set
+    /// `SIT_REAL_MODS_SCAN` to the Mods path (skipped otherwise, e.g. in CI).
     #[test]
     fn reports_scan_on_real_mods() {
-        let mods = Path::new(r"E:\SteamLibrary\steamapps\common\Stardew Valley\Mods");
+        let Ok(mods_path) = std::env::var("SIT_REAL_MODS_SCAN") else {
+            eprintln!("scan: SIT_REAL_MODS_SCAN not set — skipped");
+            return;
+        };
+        let mods = Path::new(&mods_path);
         if !mods.is_dir() {
             eprintln!("scan: real Mods folder absent — skipped");
             return;
