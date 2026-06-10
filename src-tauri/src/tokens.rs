@@ -40,24 +40,39 @@ pub fn extract(value: &str) -> Vec<String> {
     tokens
 }
 
+/// Newlines are **layout, not syntax**: a translation often legitimately needs
+/// a different number of line breaks (German runs ~25% longer than English),
+/// and a changed `\n` count never breaks the mod at runtime. They are still
+/// *extracted* (the editor shows them as chips and the frontend raises the
+/// `newline-mismatch` **warning**), but they are excluded from the
+/// missing-token **error** — which would skip the string on export and make
+/// the AI retry pointlessly (SPEC §10).
+fn is_layout_token(token: &str) -> bool {
+    token == "\n"
+}
+
 /// True if `target` is missing (or under-represents) any protected token that
-/// appears in `source` — the export `token-missing` skip rule.
+/// appears in `source` — the export `token-missing` skip rule. Layout tokens
+/// (newlines) are exempt; they surface as a warning, never an error.
 pub fn missing_tokens(source: &str, target: &str) -> bool {
     let source_counts = counts(source);
     let target_counts = counts(target);
     source_counts
         .iter()
+        .filter(|(token, _)| !is_layout_token(token))
         .any(|(token, count)| target_counts.get(token).copied().unwrap_or(0) < *count)
 }
 
 /// The protected tokens that `target` is missing (or under-represents) relative
 /// to `source`, each listed once. Empty when nothing is missing. Used by the
 /// local-LLM translator (M6) to flag/retry a result that dropped a token.
+/// Layout tokens (newlines) are exempt, like in [`missing_tokens`].
 pub fn missing_token_list(source: &str, target: &str) -> Vec<String> {
     let source_counts = counts(source);
     let target_counts = counts(target);
     let mut missing: Vec<String> = source_counts
         .iter()
+        .filter(|(token, _)| !is_layout_token(token))
         .filter(|(token, count)| target_counts.get(*token).copied().unwrap_or(0) < **count)
         .map(|(token, _)| token.clone())
         .collect();
@@ -242,6 +257,17 @@ mod tests {
     fn plain_text_has_no_tokens() {
         assert!(extract("Just some plain words.").is_empty());
         assert!(!missing_tokens("Hello world", "Hallo Welt"));
+    }
+
+    #[test]
+    fn newline_differences_are_layout_not_missing_tokens() {
+        // A translation may rewrap lines freely (German runs longer) — fewer
+        // or more newlines must never block export or trigger an AI retry.
+        assert!(!missing_tokens("line one\nline two\nline three", "Zeile eins\nZeile zwei"));
+        assert!(missing_token_list("a\nb\nc", "abc").is_empty());
+        // Real tokens are still enforced even when newlines also differ.
+        assert!(missing_tokens("Hi {{name}}\nmore", "Hallo"));
+        assert_eq!(missing_token_list("Hi {{name}}\nmore", "Hallo"), vec!["{{name}}"]);
     }
 
     /// Drift guard against the TS extractor: both suites run the same fixture
