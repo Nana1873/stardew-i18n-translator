@@ -16,12 +16,14 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type SaveStringEntry,
   type ScannedMod,
   type StringRow,
   type StringStatus,
   type TranslationResult,
   loadStrings,
   saveString,
+  saveStrings,
 } from "../tauri/commands";
 import { StringEditor } from "./StringEditor";
 import { validate, worstSeverity } from "./validation";
@@ -41,25 +43,40 @@ function sortField(row: Row, col: SortCol): string {
   return row.target;
 }
 
+/** Working translated count, matching the scanner's count_keys: an explicit
+ * not-translatable counts as handled, otherwise a non-empty target counts. */
+function countTranslated(rows: Row[]): number {
+  return rows.filter(
+    (row) => row.status === "not-translatable" || row.target.trim() !== "",
+  ).length;
+}
+
 export function StringTable({
   mod,
   search = "",
   statusFilter = "all",
   glossary = null,
   onTranslate,
+  onCountsChange,
 }: {
   mod: ScannedMod;
   search?: string;
   statusFilter?: StringStatus | "all";
   glossary?: Record<string, string> | null;
   onTranslate?: (source: string) => Promise<TranslationResult>;
+  /** Reports the working translated-key count after edits, so the mod list
+   * and header stay fresh without a rescan. */
+  onCountsChange?: (translatedKeys: number) => void;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [sort, setSort] = useState<{ col: SortCol; dir: "asc" | "desc" } | null>(null);
+  const [sort, setSort] = useState<{
+    col: SortCol;
+    dir: "asc" | "desc";
+  } | null>(null);
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -78,7 +95,8 @@ export function StringTable({
           file.defaultPath,
           file.targetPath,
         );
-        for (const row of fileRows) all.push({ ...row, file: file.relativeDir });
+        for (const row of fileRows)
+          all.push({ ...row, file: file.relativeDir });
       }
       if (active) setRows(all);
     })().catch((cause) => {
@@ -112,10 +130,14 @@ export function StringTable({
       const dir = sort.dir === "asc" ? 1 : -1;
       out.sort(
         (a, b) =>
-          sortField(a.row, sort.col).localeCompare(sortField(b.row, sort.col), undefined, {
-            sensitivity: "base",
-            numeric: true,
-          }) * dir,
+          sortField(a.row, sort.col).localeCompare(
+            sortField(b.row, sort.col),
+            undefined,
+            {
+              sensitivity: "base",
+              numeric: true,
+            },
+          ) * dir,
       );
     }
     return out;
@@ -146,7 +168,10 @@ export function StringTable({
 
   /** Ctrl+A / Cmd+A selects every currently visible row. */
   function onBodyKeyDown(event: ReactKeyboardEvent) {
-    if ((event.ctrlKey || event.metaKey) && (event.key === "a" || event.key === "A")) {
+    if (
+      (event.ctrlKey || event.metaKey) &&
+      (event.key === "a" || event.key === "A")
+    ) {
       event.preventDefault();
       setSelection(new Set(visible.map((entry) => entry.index)));
     }
@@ -155,12 +180,19 @@ export function StringTable({
   async function saveRow(index: number, target: string, status: StringStatus) {
     const row = data[index];
     if (!row) return;
-    await saveString(mod.uniqueId, row.file, row.key, target, status, row.source);
-    setRows((current) =>
-      current
-        ? current.map((r, i) => (i === index ? { ...r, target, status, targetPresent: true } : r))
-        : current,
+    await saveString(
+      mod.uniqueId,
+      row.file,
+      row.key,
+      target,
+      status,
+      row.source,
     );
+    const next = data.map((r, i) =>
+      i === index ? { ...r, target, status, targetPresent: true } : r,
+    );
+    setRows(next);
+    onCountsChange?.(countTranslated(next));
   }
 
   // `dataIndex` is the row's index into `data`; `pos` is its position in the
@@ -196,31 +228,32 @@ export function StringTable({
     setMenu({ x: event.clientX, y: event.clientY });
   }
 
-  /** Apply a status to all selected rows (optionally clearing the target). */
+  /** Apply a status to all selected rows (optionally clearing the target).
+   * One bulk backend write — parallel per-string saves would race the per-mod
+   * state file and lose updates. */
   async function applyStatus(status: StringStatus, clearTarget: boolean) {
     const indices = [...selection];
-    await Promise.all(
-      indices.map((i) => {
-        const r = data[i];
-        if (!r) return Promise.resolve();
-        return saveString(
-          mod.uniqueId,
-          r.file,
-          r.key,
-          clearTarget ? "" : r.target,
-          status,
-          r.source,
-        );
-      }),
-    );
+    const entries: SaveStringEntry[] = [];
+    for (const i of indices) {
+      const r = data[i];
+      if (!r) continue;
+      entries.push({
+        relativeDir: r.file,
+        key: r.key,
+        target: clearTarget ? "" : r.target,
+        status,
+        source: r.source,
+      });
+    }
+    await saveStrings(mod.uniqueId, entries);
     const touched = new Set(indices);
-    setRows((current) =>
-      current
-        ? current.map((r, i) =>
-            touched.has(i) ? { ...r, status, target: clearTarget ? "" : r.target } : r,
-          )
-        : current,
+    const next = data.map((r, i) =>
+      touched.has(i)
+        ? { ...r, status, target: clearTarget ? "" : r.target }
+        : r,
     );
+    setRows(next);
+    onCountsChange?.(countTranslated(next));
     setMenu(null);
   }
 
@@ -243,15 +276,28 @@ export function StringTable({
     return <div className="panel__empty">No translatable strings.</div>;
   }
 
-  const editingRow = editingIndex === null ? null : (data[editingIndex] ?? null);
+  const editingRow =
+    editingIndex === null ? null : (data[editingIndex] ?? null);
 
   return (
     <div className={`stringtable${multiFile ? " stringtable--multifile" : ""}`}>
       <div className="stringrow stringrow--head">
-        {multiFile && <SortHeader label="File" col="file" sort={sort} onSort={toggleSort} />}
+        {multiFile && (
+          <SortHeader label="File" col="file" sort={sort} onSort={toggleSort} />
+        )}
         <SortHeader label="Key" col="key" sort={sort} onSort={toggleSort} />
-        <SortHeader label="Original" col="source" sort={sort} onSort={toggleSort} />
-        <SortHeader label="Translation" col="target" sort={sort} onSort={toggleSort} />
+        <SortHeader
+          label="Original"
+          col="source"
+          sort={sort}
+          onSort={toggleSort}
+        />
+        <SortHeader
+          label="Translation"
+          col="target"
+          sort={sort}
+          onSort={toggleSort}
+        />
         <span title="Validation" aria-label="Validation" />
       </div>
       <div
@@ -261,9 +307,13 @@ export function StringTable({
         onKeyDown={onBodyKeyDown}
       >
         {visible.length === 0 ? (
-          <div className="panel__empty">No strings match the current filter.</div>
+          <div className="panel__empty">
+            No strings match the current filter.
+          </div>
         ) : (
-          <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
+          <div
+            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+          >
             {virtualizer.getVirtualItems().map((item) => {
               const entry = visible[item.index];
               if (!entry) return null;
@@ -277,7 +327,9 @@ export function StringTable({
                   top={item.start}
                   height={item.size}
                   onSelect={(event) => selectRow(dataIndex, item.index, event)}
-                  onContextMenu={(event) => openMenu(dataIndex, item.index, event)}
+                  onContextMenu={(event) =>
+                    openMenu(dataIndex, item.index, event)
+                  }
                   onOpen={() => setEditingIndex(dataIndex)}
                 />
               );
@@ -301,7 +353,9 @@ export function StringTable({
               const pos = visible.findIndex((entry) => entry.index === current);
               if (pos === -1) return current;
               const next = pos + delta;
-              return next >= 0 && next < visible.length ? visible[next].index : current;
+              return next >= 0 && next < visible.length
+                ? visible[next].index
+                : current;
             })
           }
         />
@@ -316,7 +370,11 @@ export function StringTable({
               setMenu(null);
             }}
           />
-          <ul className="ctxmenu" style={{ left: menu.x, top: menu.y }} role="menu">
+          <ul
+            className="ctxmenu"
+            style={{ left: menu.x, top: menu.y }}
+            role="menu"
+          >
             {selection.size > 1 && (
               <li className="ctxmenu__count">{selection.size} selected</li>
             )}
@@ -334,12 +392,20 @@ export function StringTable({
               </button>
             </li>
             <li>
-              <button type="button" role="menuitem" onClick={() => copySelection("source")}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => copySelection("source")}
+              >
                 Copy original
               </button>
             </li>
             <li>
-              <button type="button" role="menuitem" onClick={() => copySelection("target")}>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => copySelection("target")}
+              >
                 Copy translation
               </button>
             </li>
@@ -395,7 +461,9 @@ function SortHeader({
     <button
       type="button"
       className={`stringrow__sort${active ? " stringrow__sort--active" : ""}`}
-      aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}
+      aria-sort={
+        active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
+      }
       onClick={() => onSort(col)}
     >
       {label}
@@ -439,7 +507,9 @@ function RowView({
         height,
         transform: `translateY(${top}px)`,
         boxShadow: `inset 3px 0 0 ${status.color}`,
-        backgroundColor: selected ? "rgba(106, 176, 255, 0.30)" : `${status.color}24`,
+        backgroundColor: selected
+          ? "rgba(106, 176, 255, 0.30)"
+          : `${status.color}24`,
       }}
       title={status.label}
       onClick={onSelect}

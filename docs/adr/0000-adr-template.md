@@ -1,8 +1,8 @@
 # ADR [Number]: [Title]
 
-* **Status:** [Draft | Proposed | Accepted | Rejected | Superseded]
-* **Date:** [YYYY-MM-DD]
-* **Author(s):** [Name/Agent Name]
+- **Status:** [Draft | Proposed | Accepted | Rejected | Superseded]
+- **Date:** [YYYY-MM-DD]
+- **Author(s):** [Name/Agent Name]
 
 ## Context
 
@@ -15,21 +15,23 @@
 ## Options Considered
 
 ### Option 1: [Name]
-* **Description:** [Brief details]
-* **Pros:** [Bullet points]
-* **Cons:** [Bullet points]
+
+- **Description:** [Brief details]
+- **Pros:** [Bullet points]
+- **Cons:** [Bullet points]
 
 ### Option 2: [Name]
-* **Description:** [Brief details]
-* **Pros:** [Bullet points]
-* **Cons:** [Bullet points]
+
+- **Description:** [Brief details]
+- **Pros:** [Bullet points]
+- **Cons:** [Bullet points]
 
 ## Consequences
 
-* **Positive:** [What gets better?]
-* **Negative:** [What compromises or trade-offs are introduced?]
-* **Risks:** [Any new risks introduced by this choice?]
+- **Positive:** [What gets better?]
+- **Negative:** [What compromises or trade-offs are introduced?]
+- **Risks:** [Any new risks introduced by this choice?]
 
 ## Open Questions
 
-* [Are there unresolved details or assumptions that need further validation?]
+- [Are there unresolved details or assumptions that need further validation?]

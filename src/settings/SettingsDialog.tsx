@@ -45,7 +45,9 @@ export function SettingsDialog({
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
   const [glossaryError, setGlossaryError] = useState<string | null>(null);
 
-  const [llmProvider, setLlmProvider] = useState(settings.llm?.provider || "lmstudio");
+  const [llmProvider, setLlmProvider] = useState(
+    settings.llm?.provider || "lmstudio",
+  );
   const [llmBaseUrl, setLlmBaseUrl] = useState(
     settings.llm?.baseUrl || LLM_PRESETS.lmstudio,
   );
@@ -60,7 +62,9 @@ export function SettingsDialog({
     let active = true;
     glossaryStatus(settings.stardewPath)
       .then((status) => active && setGlossary(status))
-      .catch(() => active && setGlossary({ unpackedPresent: false, cached: null }));
+      .catch(
+        () => active && setGlossary({ unpackedPresent: false, cached: null }),
+      );
     return () => {
       active = false;
     };
@@ -94,7 +98,8 @@ export function SettingsDialog({
     try {
       const models = await llmModels(llmBaseUrl);
       setLlmModelList(models);
-      if (models.length > 0 && !models.includes(llmModel)) setLlmModel(models[0]);
+      if (models.length > 0 && !models.includes(llmModel))
+        setLlmModel(models[0]);
     } catch (cause) {
       setLlmError(String(cause));
     } finally {
@@ -108,12 +113,20 @@ export function SettingsDialog({
       ...settings,
       targetLang: targetLang || null,
       // Persist the AI connection only once a model is chosen; otherwise null.
-      llm: url && llmModel ? { provider: llmProvider, baseUrl: url, model: llmModel } : null,
+      llm:
+        url && llmModel
+          ? { provider: llmProvider, baseUrl: url, model: llmModel }
+          : null,
     });
   }
 
   return (
-    <div className="wizard__backdrop" role="dialog" aria-modal="true" aria-label="Settings">
+    <div
+      className="wizard__backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Settings"
+    >
       <div className="wizard">
         <header className="wizard__header">
           <h2>Settings</h2>
@@ -165,7 +178,9 @@ export function SettingsDialog({
           <section className="settings__section" aria-label="Glossary">
             <h3 className="settings__head">Glossary (optional)</h3>
             {glossary === null ? (
-              <p className="wizard__muted">Checking for unpacked game content…</p>
+              <p className="wizard__muted">
+                Checking for unpacked game content…
+              </p>
             ) : glossary.unpackedPresent ? (
               <>
                 <div className="wizard__row">
@@ -188,13 +203,16 @@ export function SettingsDialog({
               <>
                 <p className="wizard__muted">
                   No unpacked game content found. The glossary is built from a{" "}
-                  <code>Content (unpacked)/</code> folder created by StardewXnbHack.
+                  <code>Content (unpacked)/</code> folder created by
+                  StardewXnbHack.
                 </p>
                 <div className="wizard__row">
                   <button
                     type="button"
                     onClick={() =>
-                      void openUrl("https://github.com/Pathoschild/StardewXnbHack")
+                      void openUrl(
+                        "https://github.com/Pathoschild/StardewXnbHack",
+                      )
                     }
                   >
                     Get StardewXnbHack ↗
@@ -208,11 +226,11 @@ export function SettingsDialog({
           <section className="settings__section" aria-label="Local AI">
             <h3 className="settings__head">Local AI (optional)</h3>
             <p className="wizard__muted">
-              Connect a local AI server (LM Studio, Ollama, or any OpenAI-compatible
-              endpoint) to translate strings offline. The app works fully without it.
-              Use a capable <strong>instruct</strong> model (e.g. a 7B+ Qwen/Llama
-              instruct) — tiny or “abliterated” models often ignore the rules and
-              produce junk.
+              Connect a local AI server (LM Studio, Ollama, or any
+              OpenAI-compatible endpoint) to translate strings offline. The app
+              works fully without it. Use a capable <strong>instruct</strong>{" "}
+              model (e.g. a 7B+ Qwen/Llama instruct) — tiny or “abliterated”
+              models often ignore the rules and produce junk.
             </p>
             <label className="wizard__field">
               <span>Provider</span>
@@ -273,8 +291,8 @@ export function SettingsDialog({
                 </>
               ) : (
                 <p className="wizard__muted">
-                  Connected, but the server reports no loaded models. Load a model in
-                  your AI app, then test again.
+                  Connected, but the server reports no loaded models. Load a
+                  model in your AI app, then test again.
                 </p>
               ))}
             {llmError && <p className="wizard__error">{llmError}</p>}

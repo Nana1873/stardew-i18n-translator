@@ -22,7 +22,10 @@ body,
 
 body {
   font-family:
-    "Segoe UI", system-ui, -apple-system, sans-serif;
+    "Segoe UI",
+    system-ui,
+    -apple-system,
+    sans-serif;
   font-size: 13px;
   background: var(--bg);
   color: var(--text);
@@ -381,7 +384,9 @@ body {
 }
 
 .stringtable--multifile .stringrow {
-  grid-template-columns: 90px minmax(110px, 20%) minmax(0, 1fr) minmax(0, 1fr) 22px;
+  grid-template-columns:
+    90px minmax(110px, 20%) minmax(0, 1fr) minmax(0, 1fr)
+    22px;
 }
 
 .stringrow--head {
@@ -1019,7 +1024,6 @@ body {
   padding: 12px 16px;
   border-top: 1px solid var(--border);
 }
-
 
 /* --- Scan dialog --- */
 .scandlg {

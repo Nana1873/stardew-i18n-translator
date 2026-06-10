@@ -96,7 +96,10 @@ function readGenderSwitch(value: string, offset: number): Token | null {
 
 function readMailCommand(value: string, offset: number): Token | null {
   if (value.startsWith("[#]", offset)) return token(value, offset, offset + 3);
-  if (!value.startsWith("%item ", offset) && !value.startsWith("%action ", offset)) {
+  if (
+    !value.startsWith("%item ", offset) &&
+    !value.startsWith("%action ", offset)
+  ) {
     return null;
   }
   const end = value.indexOf("%%", offset);
@@ -115,12 +118,18 @@ function readBracketToken(value: string, offset: number): Token | null {
   return end >= 0 ? token(value, offset, end + 1) : null;
 }
 
-function readPositionalPlaceholder(value: string, offset: number): Token | null {
+function readPositionalPlaceholder(
+  value: string,
+  offset: number,
+): Token | null {
   const match = positionalPlaceholderPattern.exec(value.slice(offset));
   return match ? token(value, offset, offset + match[0].length) : null;
 }
 
-function readSimpleDialogueCommand(value: string, offset: number): Token | null {
+function readSimpleDialogueCommand(
+  value: string,
+  offset: number,
+): Token | null {
   const match = simpleDialogueCommandPattern.exec(value.slice(offset));
   return match ? token(value, offset, offset + match[0].length) : null;
 }

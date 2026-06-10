@@ -71,7 +71,9 @@ fn load_strings(
     default_path: String,
     target_path: String,
 ) -> Result<Vec<scanner::StringRow>, String> {
-    let state = translations::load(&config_dir(&app)?, &mod_unique_id);
+    // A corrupted state file is surfaced to the user (instead of silently
+    // showing everything untranslated and inviting an overwrite).
+    let state = translations::load(&config_dir(&app)?, &mod_unique_id)?;
     Ok(scanner::load_strings(
         Path::new(&default_path),
         Path::new(&target_path),
@@ -101,6 +103,42 @@ fn save_string(
         translations::entry_key(&relative_dir, &key),
         entry,
     )
+}
+
+/// One string of a bulk save (mirrors the frontend's `SaveStringEntry`).
+#[derive(serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct SaveStringInput {
+    relative_dir: String,
+    key: String,
+    target: String,
+    status: String,
+    source: String,
+}
+
+/// Save many strings of one mod in a single load-modify-write cycle. The bulk
+/// actions (context menu) must use this instead of N parallel `save_string`
+/// calls, which would race the per-mod state file and lose updates.
+#[tauri::command]
+fn save_strings(
+    app: AppHandle,
+    mod_unique_id: String,
+    entries: Vec<SaveStringInput>,
+) -> Result<(), String> {
+    let entries = entries
+        .into_iter()
+        .map(|input| {
+            (
+                translations::entry_key(&input.relative_dir, &input.key),
+                translations::StoredString {
+                    source_hash: translations::source_hash(&input.source),
+                    target: input.target,
+                    status: input.status,
+                },
+            )
+        })
+        .collect();
+    translations::save_many(&config_dir(&app)?, &mod_unique_id, entries)
 }
 
 #[tauri::command]
@@ -219,6 +257,7 @@ pub fn run() {
             scan_mods,
             load_strings,
             save_string,
+            save_strings,
             export_mod,
             build_glossary,
             glossary_status,

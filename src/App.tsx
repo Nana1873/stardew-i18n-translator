@@ -48,11 +48,15 @@ export function App() {
   const [exportError, setExportError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportTitle, setExportTitle] = useState("");
-  const [exportModsWritten, setExportModsWritten] = useState<number | null>(null);
+  const [exportModsWritten, setExportModsWritten] = useState<number | null>(
+    null,
+  );
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
-  const [glossary, setGlossaryTerms] = useState<Record<string, string> | null>(null);
+  const [glossary, setGlossaryTerms] = useState<Record<string, string> | null>(
+    null,
+  );
 
   function refreshGlossary() {
     loadGlossary()
@@ -127,7 +131,10 @@ export function App() {
     setSelectedModId(null);
     setScanDialogOpen(true);
     try {
-      const result = await scanMods(settings.modsPath, settings.targetLang ?? "");
+      const result = await scanMods(
+        settings.modsPath,
+        settings.targetLang ?? "",
+      );
       setScan(result);
       // A clean scan auto-closes; keep the dialog open only to review warnings.
       if (result.warnings.length === 0) setScanDialogOpen(false);
@@ -139,7 +146,31 @@ export function App() {
   }
 
   const configured = Boolean(settings?.stardewPath);
-  const selectedMod = scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
+  const selectedMod =
+    scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
+
+  /** Keep the mod list / header counts fresh after edits (no rescan needed).
+   * `i18nFiles` keeps its reference so the string table does not reload. */
+  function handleCountsChange(modId: string, translatedKeys: number) {
+    setScan((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        mods: prev.mods.map((mod) => {
+          if (mod.uniqueId !== modId) return mod;
+          const progress =
+            mod.totalKeys > 0 ? translatedKeys / mod.totalKeys : 0;
+          const status =
+            mod.totalKeys === 0
+              ? "none"
+              : translatedKeys >= mod.totalKeys
+                ? "translated"
+                : "untranslated";
+          return { ...mod, translatedKeys, progress, status } as ScannedMod;
+        }),
+      };
+    });
+  }
 
   // A local-AI translate callback, only when a model is configured (M6). Passed
   // to the editor; absent → the editor shows a "configure AI" hint on Ctrl+F5.
@@ -148,10 +179,9 @@ export function App() {
   const translate = aiReady
     ? (source: string): Promise<TranslationResult> => {
         const language =
-          TARGET_LANGUAGES.find((l) => l.code === settings?.targetLang)?.label.replace(
-            / \(.*\)$/,
-            "",
-          ) ??
+          TARGET_LANGUAGES.find(
+            (l) => l.code === settings?.targetLang,
+          )?.label.replace(/ \(.*\)$/, "") ??
           settings?.targetLang ??
           "the target language";
         return translateString(llm!.baseUrl, llm!.model, source, language);
@@ -179,7 +209,9 @@ export function App() {
     if (!selectedMod) return;
     beginExport(selectedMod.name);
     try {
-      setExportResult(await exportMod(selectedMod.uniqueId, filesOf(selectedMod)));
+      setExportResult(
+        await exportMod(selectedMod.uniqueId, filesOf(selectedMod)),
+      );
     } catch (error) {
       setExportError(String(error));
     } finally {
@@ -241,7 +273,9 @@ export function App() {
         onExportAll={handleExportAll}
         exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
-        onOpenSettings={() => (settings ? setSettingsOpen(true) : setWizardOpen(true))}
+        onOpenSettings={() =>
+          settings ? setSettingsOpen(true) : setWizardOpen(true)
+        }
         settingsEnabled={loaded}
         search={search}
         onSearch={setSearch}
@@ -258,7 +292,10 @@ export function App() {
           <div className="panel__header">
             Mods{scan ? ` · ${scan.modCount}` : ""}
             {scan && scan.warnings.length > 0 && (
-              <span className="panel__warn"> · {scan.warnings.length} skipped</span>
+              <span className="panel__warn">
+                {" "}
+                · {scan.warnings.length} skipped
+              </span>
             )}
           </div>
           {scan && (
@@ -297,6 +334,7 @@ export function App() {
           statusFilter={statusFilter}
           glossary={glossary}
           onTranslate={translate}
+          onCountsChange={handleCountsChange}
         />
       </main>
       {wizardOpen && (
@@ -394,7 +432,11 @@ function Toolbar({
         >
           Export All
         </button>
-        <button type="button" onClick={onOpenSettings} disabled={!settingsEnabled}>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          disabled={!settingsEnabled}
+        >
           Settings
         </button>
       </div>
@@ -403,7 +445,9 @@ function Toolbar({
           className="toolbar__statusfilter"
           aria-label="Filter by status"
           value={statusFilter}
-          onChange={(event) => onStatusFilter(event.target.value as StringStatus | "all")}
+          onChange={(event) =>
+            onStatusFilter(event.target.value as StringStatus | "all")
+          }
           disabled={!searchEnabled}
         >
           <option value="all">All statuses</option>
@@ -433,17 +477,25 @@ function StringTablePanel({
   statusFilter,
   glossary,
   onTranslate,
+  onCountsChange,
 }: {
   mod: ScannedMod | null;
   search: string;
   statusFilter: StringStatus | "all";
   glossary: Record<string, string> | null;
   onTranslate?: (source: string) => Promise<TranslationResult>;
+  onCountsChange?: (modId: string, translatedKeys: number) => void;
 }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
       <div className="panel__header">
-        Strings{mod && <> · <StringTableHeader mod={mod} /></>}
+        Strings
+        {mod && (
+          <>
+            {" "}
+            · <StringTableHeader mod={mod} />
+          </>
+        )}
       </div>
       {mod ? (
         <StringTable
@@ -453,6 +505,9 @@ function StringTablePanel({
           statusFilter={statusFilter}
           glossary={glossary}
           onTranslate={onTranslate}
+          onCountsChange={(translatedKeys) =>
+            onCountsChange?.(mod.uniqueId, translatedKeys)
+          }
         />
       ) : (
         <div className="panel__empty">Select a mod to view its strings.</div>

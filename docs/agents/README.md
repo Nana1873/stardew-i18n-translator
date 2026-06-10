@@ -2,9 +2,9 @@
 
 This directory contains specialized workflow manuals and templates for the AI coding agents that build and maintain this repository:
 
-* **[Google Antigravity Workflow](../../docs/agents/antigravity-workflow.md):** Best for planning-heavy tasks, system integration, validation, and architecture-sensitive issues.
-* **[OpenAI Codex Workflow](../../docs/agents/codex-workflow.md):** Best for isolated components, refactoring, writing unit tests, and PR-style implementations.
-* **[Claude Code Workflow](../../docs/agents/claude-code-workflow.md):** Best for local workspace analysis, multi-file edits, milestone tasks, and local command execution.
+- **[Google Antigravity Workflow](../../docs/agents/antigravity-workflow.md):** Best for planning-heavy tasks, system integration, validation, and architecture-sensitive issues.
+- **[OpenAI Codex Workflow](../../docs/agents/codex-workflow.md):** Best for isolated components, refactoring, writing unit tests, and PR-style implementations.
+- **[Claude Code Workflow](../../docs/agents/claude-code-workflow.md):** Best for local workspace analysis, multi-file edits, milestone tasks, and local command execution.
 
 ## Handing Off Work
 

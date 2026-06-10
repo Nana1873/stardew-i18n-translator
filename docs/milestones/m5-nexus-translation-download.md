@@ -7,6 +7,7 @@
 > v1 core loop. Owner has **Nexus Premium** (direct API download is available).
 
 ## Intended workflow (SSE-AT parity, owner's description)
+
 1. **Scan** the Mods folder (existing).
 2. **Check Nexus** for each mod whether a translation **for the configured
    target language** is available.
@@ -19,6 +20,7 @@
    model + per-string `sourceHash` outdated detection already supports step 4.
 
 ## Hard constraints (from research — must shape the design)
+
 See [docs/research/nexus-mods-strategy.md](../research/nexus-mods-strategy.md).
 
 - **API key required.** Every API call needs a personal Nexus key (Settings).
@@ -26,7 +28,7 @@ See [docs/research/nexus-mods-strategy.md](../research/nexus-mods-strategy.md).
   translation of mod X" endpoint. Discovery (step 2) is **heuristic keyword
   search** (`<mod name>` + language terms like `Deutsch`/`German`/`DE`) over
   titles/descriptions → **candidate list the user confirms**. Many mods (the long
-  tail) simply have no translation. So step 2 is *assistive*, not exhaustive.
+  tail) simply have no translation. So step 2 is _assistive_, not exhaustive.
 - **Confirmed-mapping store.** Persist `originalModNexusId → translationModNexusId`
   once the user confirms, so re-runs are reliable. Optionally support a shared
   community "masterlist" file later.
@@ -35,6 +37,7 @@ See [docs/research/nexus-mods-strategy.md](../research/nexus-mods-strategy.md).
 - **No silent downloads, no default scraping** (research §8).
 
 ## Scope (when built)
+
 - Settings: optional Nexus API key + `GET /v1/users/validate.json`.
 - Discovery: heuristic search → candidate list → user confirms → store mapping.
 - Download: list files → download (Premium API) → extract → import
@@ -43,11 +46,13 @@ See [docs/research/nexus-mods-strategy.md](../research/nexus-mods-strategy.md).
   updates (reuses existing model — no new status).
 
 ## Out of scope (even here)
+
 - Becoming a mod manager (enable/disable mods, profiles, load order).
 - DSD/plugin-string/BSA concepts from Skyrim (no Stardew analog).
 - Silent/background downloads; default Nexus page scraping.
 
 ## Note
+
 The v1 "Search Translation on Nexus" browser-handoff (SPEC §7.6) is **folded into
 this milestone** rather than shipped as a standalone stopgap, per the owner's
 preference for the full assisted-download flow.

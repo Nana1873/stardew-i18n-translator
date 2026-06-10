@@ -29,7 +29,11 @@ interface SetupWizardProps {
   onCancel?: () => void;
 }
 
-export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps) {
+export function SetupWizard({
+  initial,
+  onComplete,
+  onCancel,
+}: SetupWizardProps) {
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +89,9 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
         setModsPath(found.modsPath);
       } else {
         setStardewValid(null);
-        setError("Could not auto-detect Stardew Valley. Use Browse to locate it.");
+        setError(
+          "Could not auto-detect Stardew Valley. Use Browse to locate it.",
+        );
       }
     } catch {
       setError("Auto-detection failed. Use Browse to locate the folder.");
@@ -152,7 +158,12 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
   const canLeaveStep3 = targetLang !== "";
 
   return (
-    <div className="wizard__backdrop" role="dialog" aria-modal="true" aria-label="Setup">
+    <div
+      className="wizard__backdrop"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Setup"
+    >
       <div className="wizard">
         <header className="wizard__header">
           <h2>Setup</h2>
@@ -178,8 +189,9 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
           {step === 2 && (
             <section aria-label="Mods folder">
               <p>
-                The Mods folder defaults to <code>&lt;Stardew Valley&gt;/Mods</code>.
-                Override it only if the default is wrong.
+                The Mods folder defaults to{" "}
+                <code>&lt;Stardew Valley&gt;/Mods</code>. Override it only if
+                the default is wrong.
               </p>
               <div className="wizard__row">
                 <button type="button" onClick={browseMods} disabled={busy}>
@@ -224,7 +236,9 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
                 this step.
               </p>
               {glossary === null ? (
-                <p className="wizard__muted">Checking for unpacked game content…</p>
+                <p className="wizard__muted">
+                  Checking for unpacked game content…
+                </p>
               ) : glossaryBuilt ? (
                 <p className="wizard__ok">
                   ✓ Glossary built: {glossaryBuilt.termCount} terms (
@@ -259,7 +273,9 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
                     <button
                       type="button"
                       onClick={() =>
-                        void openUrl("https://github.com/Pathoschild/StardewXnbHack")
+                        void openUrl(
+                          "https://github.com/Pathoschild/StardewXnbHack",
+                        )
                       }
                     >
                       Get StardewXnbHack ↗
@@ -286,17 +302,29 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
             </button>
           )}
           {step === 1 && (
-            <button type="button" onClick={goToModsStep} disabled={!canLeaveStep1}>
+            <button
+              type="button"
+              onClick={goToModsStep}
+              disabled={!canLeaveStep1}
+            >
               Next
             </button>
           )}
           {step === 2 && (
-            <button type="button" onClick={() => setStep(3)} disabled={!canLeaveStep2}>
+            <button
+              type="button"
+              onClick={() => setStep(3)}
+              disabled={!canLeaveStep2}
+            >
               Next
             </button>
           )}
           {step === 3 && (
-            <button type="button" onClick={() => setStep(4)} disabled={!canLeaveStep3}>
+            <button
+              type="button"
+              onClick={() => setStep(4)}
+              disabled={!canLeaveStep3}
+            >
               Next
             </button>
           )}
@@ -313,10 +341,14 @@ export function SetupWizard({ initial, onComplete, onCancel }: SetupWizardProps)
 
 function PathDisplay({ path, valid }: { path: string; valid: boolean | null }) {
   if (!path) {
-    return <p className="wizard__path wizard__path--empty">No folder selected.</p>;
+    return (
+      <p className="wizard__path wizard__path--empty">No folder selected.</p>
+    );
   }
   return (
-    <p className={`wizard__path${valid === false ? " wizard__path--invalid" : ""}`}>
+    <p
+      className={`wizard__path${valid === false ? " wizard__path--invalid" : ""}`}
+    >
       <code>{path}</code>
       {valid === true && <span className="wizard__ok"> ✓</span>}
       {valid === false && (

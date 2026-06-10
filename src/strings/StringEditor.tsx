@@ -11,7 +11,12 @@
  * not-translatable · F3 copy original · F4 reset (clears the field) · Ctrl+F5
  * translate with the local AI (M6).
  */
-import { type KeyboardEvent as ReactKeyboardEvent, useEffect, useRef, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import type { StringStatus, TranslationResult } from "../tauri/commands";
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
@@ -50,7 +55,8 @@ function matchGlossary(
   if (!glossary) return [];
   const lower = source.toLowerCase();
   const out: Array<{ term: string; translation: string }> = [];
-  const isWord = (c: string | undefined) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
+  const isWord = (c: string | undefined) =>
+    c !== undefined && /[\p{L}\p{N}]/u.test(c);
   for (const [term, translation] of Object.entries(glossary)) {
     if (term.length < 3) continue;
     const idx = lower.indexOf(term.toLowerCase());
@@ -97,10 +103,18 @@ export function StringEditor({
   onNavigate,
 }: StringEditorProps) {
   const [value, setValue] = useState(row.target);
-  const [status, setStatus] = useState<StringStatus>(initialSaveStatus(row.status));
+  const [status, setStatus] = useState<StringStatus>(
+    initialSaveStatus(row.status),
+  );
   // True while the current target is an unreviewed AI suggestion (M6). Cleared
   // when the user edits the field; confirmed away by Save → translated.
-  const [reviewNeeded, setReviewNeeded] = useState(row.status === "review-needed");
+  const [reviewNeeded, setReviewNeeded] = useState(
+    row.status === "review-needed",
+  );
+  // True once the user changed anything (text, status toggle, AI translate).
+  // Navigation auto-saves on dirty — a text-equality check alone would drop
+  // status-only changes like F2 not-translatable.
+  const [dirty, setDirty] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -110,6 +124,7 @@ export function StringEditor({
     setValue(row.target);
     setStatus(initialSaveStatus(row.status));
     setReviewNeeded(row.status === "review-needed");
+    setDirty(false);
     setTranslateMsg(null);
     textareaRef.current?.focus();
   }, [row.key, row.file, row.target, row.status]);
@@ -140,6 +155,7 @@ export function StringEditor({
   function editValue(next: string) {
     setValue(next);
     setReviewNeeded(false);
+    setDirty(true);
   }
 
   async function handleTranslate() {
@@ -154,6 +170,7 @@ export function StringEditor({
       setValue(result.text);
       setStatus("translated"); // drop any not-translatable choice
       setReviewNeeded(true); // an AI suggestion awaiting review
+      setDirty(true);
       setTranslateMsg(
         result.missingTokens.length > 0
           ? `AI dropped token(s): ${result.missingTokens.join(", ")} — fix before saving.`
@@ -168,12 +185,17 @@ export function StringEditor({
   }
 
   function navigate(delta: number) {
-    if (value !== row.target) onSave(value, effectiveStatus());
+    // Save on any user change — including status-only ones (F2), which a pure
+    // text comparison would silently drop.
+    if (dirty || value !== row.target) onSave(value, effectiveStatus());
     onNavigate(delta);
   }
 
   function toggleNotTranslatable() {
-    setStatus((current) => (current === "not-translatable" ? "translated" : "not-translatable"));
+    setStatus((current) =>
+      current === "not-translatable" ? "translated" : "not-translatable",
+    );
+    setDirty(true);
   }
 
   /** Reset (F4): clear the target field; the string becomes untranslated. */
@@ -181,6 +203,7 @@ export function StringEditor({
     setValue("");
     setStatus("translated"); // drop any not-translatable; empty value → untranslated
     setReviewNeeded(false);
+    setDirty(true);
     textareaRef.current?.focus();
   }
 
@@ -274,7 +297,9 @@ export function StringEditor({
                   key={i}
                   type="button"
                   className={`editor__token${satisfied ? " editor__token--done" : ""}`}
-                  title={satisfied ? `${token} — all present` : `Insert ${token}`}
+                  title={
+                    satisfied ? `${token} — all present` : `Insert ${token}`
+                  }
                   onClick={() => insertToken(token)}
                 >
                   {describeToken(token)}
@@ -324,16 +349,25 @@ export function StringEditor({
             <span className="editor__valid-ok">✓ All checks passed</span>
           ) : (
             issues.map((issue, i) => (
-              <span key={i} className={`editor__issue editor__issue--${issue.severity}`}>
+              <span
+                key={i}
+                className={`editor__issue editor__issue--${issue.severity}`}
+              >
                 {issue.message}
               </span>
             ))
           )}
-          {translateMsg && <span className="editor__ai-msg">{translateMsg}</span>}
+          {translateMsg && (
+            <span className="editor__ai-msg">{translateMsg}</span>
+          )}
         </div>
 
         <footer className="editor__footer">
-          <button type="button" onClick={() => navigate(-1)} disabled={index === 0}>
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
+            disabled={index === 0}
+          >
             ◀ Prev <Kbd>Alt+←</Kbd>
           </button>
           <button

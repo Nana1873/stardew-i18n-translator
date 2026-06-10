@@ -79,7 +79,9 @@ pub fn export_mod(
     unique_id: &str,
     files: &[ExportFileInput],
 ) -> Result<ExportResult, String> {
-    let state = translations::load(config_dir, unique_id);
+    // A corrupted state file aborts the export — exporting with a silently
+    // empty state would write a near-empty <lang>.json over a good one.
+    let state = translations::load(config_dir, unique_id)?;
     let mut result = ExportResult::default();
 
     for file in files {
