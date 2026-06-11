@@ -205,9 +205,27 @@ kbd,
   margin-top: 3px;
 }
 
+/* Self-contained gold primary — outside the toolbar, `.toolbar button` base
+   styles don't apply, so the button must carry its full shape itself. */
 .dash__scan {
   padding: 8px 16px;
   font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  background: var(--gold-tint);
+  color: var(--gold-hi);
+  border: 1px solid rgba(227, 169, 78, 0.5);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.dash__scan:hover:not(:disabled) {
+  background: rgba(227, 169, 78, 0.24);
+}
+
+.dash__scan:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dash__empty {
