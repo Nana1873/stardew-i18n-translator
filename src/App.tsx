@@ -467,6 +467,10 @@ export function App() {
             onClaudeExport={claudeExport}
             onCountsChange={handleCountsChange}
             onShowReview={() => setStatusFilter("review-needed")}
+            onClearFilters={() => {
+              setSearch("");
+              setStatusFilter("all");
+            }}
             reloadToken={reloadToken}
           />
         </main>
@@ -562,17 +566,19 @@ function Toolbar({
 }) {
   return (
     <header className="toolbar" role="banner">
-      {/* Brand button toggles dashboard ⇄ work view — the toolbar is the
-          only navigation chrome (SPEC §7.0/§7.8). */}
+      {/* Toggles dashboard ⇄ work view, labelled with the destination so the
+          navigation explains itself (the app name lives in the OS title bar).
+          The toolbar is the only navigation chrome (SPEC §7.8). */}
       <button
         type="button"
-        className={`toolbar__title${homeActive ? " toolbar__title--active" : ""}`}
+        className="toolbar__title"
         onClick={onHome}
         title={
           homeActive ? "Switch to the mod list" : "Switch to the dashboard"
         }
       >
-        <span aria-hidden>⌂</span> Stardew i18n Translator
+        <span aria-hidden>{homeActive ? "▤" : "⌂"}</span>{" "}
+        {homeActive ? "Mod list" : "Dashboard"}
       </button>
       <div className="toolbar__actions">
         <button
@@ -717,6 +723,7 @@ function StringTablePanel({
   onClaudeExport,
   onCountsChange,
   onShowReview,
+  onClearFilters,
   reloadToken,
 }: {
   mod: ScannedMod | null;
@@ -736,6 +743,8 @@ function StringTablePanel({
   ) => void;
   /** Filter the table down to the strings that still need review. */
   onShowReview?: () => void;
+  /** Reset search + status filter (the no-results escape hatch). */
+  onClearFilters?: () => void;
   reloadToken?: number;
 }) {
   return (
@@ -768,6 +777,7 @@ function StringTablePanel({
           onClaudeExport={
             onClaudeExport ? (items) => onClaudeExport(mod, items) : undefined
           }
+          onClearFilters={onClearFilters}
           reloadToken={reloadToken}
           onCountsChange={(translatedKeys, statusCounts) =>
             onCountsChange?.(mod.uniqueId, translatedKeys, statusCounts)

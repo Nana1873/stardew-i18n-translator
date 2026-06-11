@@ -40,8 +40,9 @@ describe("App shell", () => {
     invokeMock.mockResolvedValue(CONFIGURED);
     render(<App />);
 
+    // The nav toggle is labelled with its destination (work view from here).
     expect(
-      screen.getByRole("button", { name: /Stardew i18n Translator/ }),
+      screen.getByRole("button", { name: /Mod list/ }),
     ).toBeInTheDocument();
     // Landing screen is the dashboard (SPEC §7.0 rollout ④), not the panels.
     expect(screen.getByRole("main", { name: "Dashboard" })).toBeInTheDocument();
@@ -55,19 +56,17 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("the brand button toggles between dashboard and work view", async () => {
+  it("the nav toggle switches views and renames to its destination", async () => {
     invokeMock.mockResolvedValue(CONFIGURED);
     render(<App />);
 
-    const brand = screen.getByRole("button", {
-      name: /Stardew i18n Translator/,
-    });
-    fireEvent.click(brand);
+    fireEvent.click(screen.getByRole("button", { name: /Mod list/ }));
     expect(
       await screen.findByRole("region", { name: "Mod list" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(brand);
+    // In the work view the same button now offers the way back.
+    fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
     expect(
       await screen.findByRole("main", { name: "Dashboard" }),
     ).toBeInTheDocument();
