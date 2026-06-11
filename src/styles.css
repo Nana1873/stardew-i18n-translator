@@ -1215,7 +1215,10 @@ kbd,
   color: #5b5446;
 }
 
-.editor__token {
+/* Token chips = blue, glossary chips = gold (docs/design/ §05). Scoped as
+   `.editor button.…` — bare classes would lose against the `.editor button`
+   base rule and render as plain gray buttons. */
+.editor button.editor__token {
   background: rgba(106, 176, 255, 0.12);
   color: var(--token);
   border: 1px solid rgba(106, 176, 255, 0.3);
@@ -1226,22 +1229,22 @@ kbd,
   cursor: pointer;
 }
 
-.editor__token:hover {
+.editor button.editor__token:hover:not(:disabled) {
   background: rgba(106, 176, 255, 0.25);
 }
 
-.editor__token--done {
+.editor button.editor__token--done {
   color: #7fd1a3;
   border-color: rgba(94, 196, 136, 0.4);
   background: rgba(94, 196, 136, 0.12);
   opacity: 0.8;
 }
 
-.editor__token--done:hover {
+.editor button.editor__token--done:hover:not(:disabled) {
   background: rgba(94, 196, 136, 0.22);
 }
 
-.editor__gloss {
+.editor button.editor__gloss {
   background: rgba(217, 195, 137, 0.14);
   color: var(--key);
   border: 1px solid rgba(217, 195, 137, 0.3);
@@ -1251,7 +1254,7 @@ kbd,
   cursor: pointer;
 }
 
-.editor__gloss:hover {
+.editor button.editor__gloss:hover:not(:disabled) {
   background: rgba(217, 195, 137, 0.28);
 }
 
@@ -1402,18 +1405,22 @@ kbd,
   color: var(--warning);
 }
 
+/* Compact shortcut chip inside a button (docs/design/ §05). The glyphs
+   ⌃ ⇧ ↵ are NOT in Cascadia/Consolas — "Segoe UI Symbol" (a Windows system
+   font) must lead the stack or they render as tofu boxes. */
 .editor__kbd {
-  margin-left: 5px;
-  padding: 0 4px;
-  font-family: var(--mono);
-  font-size: 9.5px;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-family: "Segoe UI Symbol", "Segoe UI", var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
   color: var(--text-dim);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
   border-radius: 3px;
 }
 
-.editor__save .editor__kbd {
+.editor button.editor__save .editor__kbd {
   color: var(--on-gold);
   background: rgba(0, 0, 0, 0.18);
   border-color: transparent;
