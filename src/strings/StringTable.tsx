@@ -31,7 +31,7 @@ import { StringEditor } from "./StringEditor";
 import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
 import { ClaudeExportDialog } from "../claude/ClaudeBatchDialog";
 import { validate, worstSeverity } from "./validation";
-import { STATUS_META } from "./status";
+import { STATUS_META, statusTint } from "./status";
 
 interface Row extends StringRow {
   /** Originating i18n file (shown when a mod has more than one). */
@@ -216,7 +216,8 @@ export function StringTable({
     overscan: 16,
   });
 
-  /** Ctrl+A / Cmd+A selects every currently visible row. */
+  /** Ctrl+A / Cmd+A selects every currently visible row; Enter opens the
+   * single selected row in the editor. */
   function onBodyKeyDown(event: ReactKeyboardEvent) {
     if (
       (event.ctrlKey || event.metaKey) &&
@@ -224,6 +225,9 @@ export function StringTable({
     ) {
       event.preventDefault();
       setSelection(new Set(visible.map((entry) => entry.index)));
+    } else if (event.key === "Enter" && selection.size === 1) {
+      event.preventDefault();
+      setEditingIndex([...selection][0] ?? null);
     }
   }
 
@@ -467,6 +471,7 @@ export function StringTable({
           </div>
         )}
       </div>
+      <TableFooter byStatus={countByStatus(data)} />
       {editingRow && editingIndex !== null && (
         <StringEditor
           row={editingRow}
@@ -628,6 +633,44 @@ export function StringTable({
   );
 }
 
+/** Footer status bar (SPEC §7.4): per-status counts + interaction hints.
+ * Untranslated/translated always show; the exception statuses only when
+ * present, so the bar stays calm on a finished mod. */
+function TableFooter({ byStatus }: { byStatus: Record<StringStatus, number> }) {
+  const order: StringStatus[] = [
+    "untranslated",
+    "translated",
+    "review-needed",
+    "outdated",
+    "not-translatable",
+  ];
+  return (
+    <div className="stringtable__foot">
+      {order.map((status) => {
+        const count = byStatus[status];
+        if (
+          count === 0 &&
+          status !== "untranslated" &&
+          status !== "translated"
+        ) {
+          return null;
+        }
+        const meta = STATUS_META[status];
+        return (
+          <span key={status}>
+            <b style={{ color: meta.color }}>{count}</b>{" "}
+            {meta.label.toLowerCase()}
+          </span>
+        );
+      })}
+      <span className="stringtable__hint">
+        Double-click or <kbd className="kbd">Enter</kbd> to edit ·{" "}
+        <kbd className="kbd">Ctrl+A</kbd> select all
+      </span>
+    </div>
+  );
+}
+
 function SortHeader({
   label,
   col,
@@ -680,6 +723,9 @@ function RowView({
   const issues = validate(row.source, row.target, row.targetPresent);
   const severity = worstSeverity(issues);
   const status = STATUS_META[row.status];
+  // Status = 3px left edge + glyph chip; selection adds a gold inset ring.
+  // Both live in one inline box-shadow (inline would override CSS anyway).
+  const edge = `inset 3px 0 0 ${status.edge}`;
   return (
     <div
       className={`stringrow stringrow--data${selected ? " stringrow--selected" : ""}`}
@@ -690,27 +736,28 @@ function RowView({
         right: 0,
         height,
         transform: `translateY(${top}px)`,
-        boxShadow: `inset 6px 0 0 ${status.color}`,
-        backgroundColor: selected
-          ? "rgba(106, 176, 255, 0.30)"
-          : `${status.color}24`,
+        boxShadow: selected
+          ? `${edge}, inset 0 0 0 1px rgba(227, 169, 78, 0.3)`
+          : edge,
       }}
       title={status.label}
       onClick={onSelect}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
     >
-      <span>
+      <span className="stringrow__status">
         <span
-          className="stringrow__chip"
+          className="stringrow__glyph"
+          aria-hidden
           style={{
             color: status.color,
-            borderColor: `${status.color}73`,
-            backgroundColor: `${status.color}1f`,
+            borderColor: statusTint(status.color, 0.45),
+            backgroundColor: statusTint(status.color, 0.16),
           }}
         >
-          {status.label}
+          {status.glyph}
         </span>
+        <span className="stringrow__chip">{status.label}</span>
       </span>
       {multiFile && (
         <span className="stringrow__file" title={row.file}>
@@ -775,7 +822,7 @@ export function StringTableHeader({
             title="Show only strings that need review"
             onClick={onShowReview}
           >
-            {reviewNeeded} need review
+            <span aria-hidden>⚑</span> {reviewNeeded} need review
           </button>
         </>
       )}

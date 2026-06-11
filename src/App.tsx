@@ -31,7 +31,7 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
-import { STATUS_META } from "./strings/status";
+import { STATUS_META, statusTint } from "./strings/status";
 import { ExportDialog } from "./export/ExportDialog";
 import { ClaudeImportDialog } from "./claude/ClaudeBatchDialog";
 
@@ -351,9 +351,6 @@ export function App() {
         settingsEnabled={loaded}
         search={search}
         onSearch={setSearch}
-        statusFilter={statusFilter}
-        onStatusFilter={setStatusFilter}
-        statusCounts={selectedMod?.statusCounts ?? null}
         searchEnabled={Boolean(selectedMod)}
       />
       <main className="workspace">
@@ -405,6 +402,7 @@ export function App() {
           mod={selectedMod}
           search={search}
           statusFilter={statusFilter}
+          onStatusFilter={setStatusFilter}
           glossary={glossary}
           onTranslate={translate}
           onClaudeExport={claudeExport}
@@ -475,9 +473,6 @@ function Toolbar({
   settingsEnabled,
   search,
   onSearch,
-  statusFilter,
-  onStatusFilter,
-  statusCounts,
   searchEnabled,
 }: {
   onScan: () => void;
@@ -494,17 +489,18 @@ function Toolbar({
   settingsEnabled: boolean;
   search: string;
   onSearch: (value: string) => void;
-  statusFilter: StringStatus | "all";
-  onStatusFilter: (value: StringStatus | "all") => void;
-  /** Per-status counts of the selected mod (shown in the filter options). */
-  statusCounts: Record<StringStatus, number> | null;
   searchEnabled: boolean;
 }) {
   return (
     <header className="toolbar" role="banner">
       <span className="toolbar__title">Stardew i18n Translator</span>
       <div className="toolbar__actions">
-        <button type="button" onClick={onScan} disabled={!scanEnabled}>
+        <button
+          type="button"
+          className="toolbar__primary"
+          onClick={onScan}
+          disabled={!scanEnabled}
+        >
           {scanning ? "Scanning…" : "Scan"}
         </button>
         <button
@@ -540,23 +536,6 @@ function Toolbar({
         </button>
       </div>
       <div className="toolbar__filters">
-        <select
-          className="toolbar__statusfilter"
-          aria-label="Filter by status"
-          value={statusFilter}
-          onChange={(event) =>
-            onStatusFilter(event.target.value as StringStatus | "all")
-          }
-          disabled={!searchEnabled}
-        >
-          <option value="all">All statuses</option>
-          {(Object.keys(STATUS_META) as StringStatus[]).map((status) => (
-            <option key={status} value={status}>
-              {STATUS_META[status].label}
-              {statusCounts ? ` (${statusCounts[status] ?? 0})` : ""}
-            </option>
-          ))}
-        </select>
         <input
           className="toolbar__search"
           type="search"
@@ -571,10 +550,79 @@ function Toolbar({
   );
 }
 
+/** Status filter chips above the table (SPEC §7.4): one pill per status with
+ * glyph + live count, plus "All". Replaces the old toolbar dropdown. */
+function FilterChips({
+  value,
+  onChange,
+  counts,
+  total,
+}: {
+  value: StringStatus | "all";
+  onChange: (value: StringStatus | "all") => void;
+  counts: Record<StringStatus, number> | null;
+  total: number;
+}) {
+  const order: StringStatus[] = [
+    "untranslated",
+    "translated",
+    "review-needed",
+    "outdated",
+    "not-translatable",
+  ];
+  const allActive = value === "all";
+  return (
+    <div className="filterchips" role="group" aria-label="Filter by status">
+      <button
+        type="button"
+        className={`filterchip${allActive ? " filterchip--active" : ""}`}
+        aria-pressed={allActive}
+        style={
+          allActive
+            ? {
+                background: "var(--gold-tint)",
+                color: "#f0e0bd",
+                borderColor: "rgba(227, 169, 78, 0.45)",
+              }
+            : undefined
+        }
+        onClick={() => onChange("all")}
+      >
+        All <span className="filterchip__count">{total}</span>
+      </button>
+      {order.map((status) => {
+        const meta = STATUS_META[status];
+        const count = counts?.[status] ?? 0;
+        const active = value === status;
+        return (
+          <button
+            key={status}
+            type="button"
+            className={`filterchip${active ? " filterchip--active" : ""}`}
+            aria-pressed={active}
+            aria-label={`${meta.label} (${count})`}
+            title={meta.label}
+            style={{
+              color: meta.color,
+              borderColor: statusTint(meta.color, active ? 0.6 : 0.3),
+              background: statusTint(meta.color, active ? 0.2 : 0.1),
+            }}
+            onClick={() => onChange(active ? "all" : status)}
+          >
+            <span aria-hidden>{meta.glyph}</span>
+            <span className="filterchip__count">{count}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 function StringTablePanel({
   mod,
   search,
   statusFilter,
+  onStatusFilter,
   glossary,
   onTranslate,
   onClaudeExport,
@@ -585,6 +633,7 @@ function StringTablePanel({
   mod: ScannedMod | null;
   search: string;
   statusFilter: StringStatus | "all";
+  onStatusFilter: (value: StringStatus | "all") => void;
   glossary: Record<string, string> | null;
   onTranslate?: (source: string) => Promise<TranslationResult>;
   onClaudeExport?: (
@@ -611,6 +660,14 @@ function StringTablePanel({
           </>
         )}
       </div>
+      {mod && (
+        <FilterChips
+          value={statusFilter}
+          onChange={onStatusFilter}
+          counts={mod.statusCounts ?? null}
+          total={mod.totalKeys}
+        />
+      )}
       {mod ? (
         <StringTable
           key={mod.uniqueId}

@@ -71,19 +71,32 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
   return groups;
 }
 
-function StatusDot({ status }: { status: ModStatus }) {
+/** Progress dot: gray = untouched, gold = in progress, green = complete
+ * (SPEC §7.0 — gold marks active work, green only at 100%). */
+function StatusDot({
+  status,
+  progress,
+}: {
+  status: ModStatus;
+  progress: number;
+}) {
+  const done = status === "translated";
   const color =
-    status === "translated"
-      ? "#4a9d6b"
-      : status === "untranslated"
-        ? "#e06c6c"
-        : "var(--text-muted)";
+    status === "none"
+      ? "var(--text-dim)"
+      : done
+        ? "#5ec488"
+        : progress > 0
+          ? "var(--gold)"
+          : "#9aa0a6";
   const title =
-    status === "translated"
-      ? "All strings translated"
-      : status === "untranslated"
-        ? "Has untranslated strings"
-        : "No translatable strings";
+    status === "none"
+      ? "No translatable strings"
+      : done
+        ? "All strings translated"
+        : progress > 0
+          ? "Translation in progress"
+          : "Not started";
   return (
     <span
       className="modrow__status"
@@ -197,7 +210,7 @@ function PackageNode({
         role="treeitem"
         aria-expanded={open}
       >
-        <StatusDot status={group.status} />
+        <StatusDot status={group.status} progress={group.progress} />
         <span className="modrow__name">
           <button
             type="button"
@@ -261,7 +274,7 @@ function ModRow({
       aria-selected={selected}
       onClick={() => onSelect(mod.uniqueId)}
     >
-      <StatusDot status={mod.status} />
+      <StatusDot status={mod.status} progress={mod.progress} />
       <span
         className="modrow__name"
         style={{ paddingLeft: child ? 6 + (depth - 1) * 14 : undefined }}
