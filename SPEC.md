@@ -310,7 +310,8 @@ See §7.4.
 
 **Toolbar:**
 
-- Brand button = Home (§7.8); highlighted while the dashboard is shown
+- Brand button toggles dashboard ⇄ work view (§7.8); highlighted while the
+  dashboard is shown
 - Scan / Re-scan (gold-tinted primary)
 - Export (selected mod / all), Import batch…
 - Settings
@@ -453,8 +454,8 @@ the step-by-step Setup Wizard:
 ### 7.8 Dashboard Home (v1.5)
 
 The landing screen — answers "where do I stand?" before any table loads.
-Reached via the toolbar brand button; opening any mod switches to the work
-view (§7.3).
+The toolbar brand button toggles between dashboard and work view; opening any
+mod also switches to the work view (§7.3).
 
 | Block              | Content                                                                                                                               |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |

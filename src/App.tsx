@@ -378,7 +378,7 @@ export function App() {
     <div className="app">
       <Toolbar
         homeActive={view === "home"}
-        onHome={() => setView("home")}
+        onHome={() => setView(view === "home" ? "work" : "home")}
         onScan={handleScan}
         scanEnabled={configured && !scanning}
         scanning={scanning}
@@ -562,12 +562,15 @@ function Toolbar({
 }) {
   return (
     <header className="toolbar" role="banner">
-      {/* Brand = Home: the toolbar is the only navigation chrome (SPEC §7.0). */}
+      {/* Brand button toggles dashboard ⇄ work view — the toolbar is the
+          only navigation chrome (SPEC §7.0/§7.8). */}
       <button
         type="button"
         className={`toolbar__title${homeActive ? " toolbar__title--active" : ""}`}
         onClick={onHome}
-        title="Dashboard"
+        title={
+          homeActive ? "Switch to the mod list" : "Switch to the dashboard"
+        }
       >
         <span aria-hidden>⌂</span> Stardew i18n Translator
       </button>
