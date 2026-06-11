@@ -225,7 +225,44 @@ Calculated per file, aggregated per mod (across all `i18n/` folders), and rolled
 
 ## 7. Main Overview / UI Screens
 
-The v1 UI has exactly **7 screen elements** (the Setup Wizard, Scan Dialog, Main Window, String Table, String Edit Dialog, Context Menu, and Settings Dialog — all modal dialogs except the Main Window/String Table). No dashboards, no analytics, no multi-page navigation.
+The v1 UI has exactly **7 screen elements** (the Setup Wizard, Scan Dialog, Main Window, String Table, String Edit Dialog, Context Menu, and Settings Dialog — all modal dialogs except the Main Window/String Table). No analytics, no multi-page navigation.
+
+> **v1.5 redesign (2026-06).** After real-world use, the UI was redesigned with
+> Claude Design ("dashboard home + two-panel work view" concept; reference HTML
+> in `docs/design/`). §7.0 records the design system; §7.3–§7.5 and §7.7 are
+> updated to match. Rollout order: ① design tokens + restyle of all existing
+> screens, ② status model 5→4 (replace `not-translatable` with a "Keep
+> original" action, §9), ③ `//` comments in `default.json` as section dividers,
+> ④ dashboard home screen + cross-mod review queue. Until ④ lands, the app
+> keeps launching straight into the work view.
+
+### 7.0 Visual design system (v1.5)
+
+Warm dark theme ("subtle Stardew warmth"). Drop-in `:root` tokens — every
+value below is used by the mockups in `docs/design/`:
+
+| Token group | Values                                                                                                                                                                                          |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Surfaces    | `--bg #1a1713` (app) · `--surface #221e18` (panels/cards) · `--surface-2 #2a251d` (toolbar, row heads) · `--surface-3 #15120e` (inputs, wells) · `--border #3d362b` · `--border-strong #4e463a` |
+| Text        | `--text #ece6da` · `--text-muted #a89e8d` · `--text-dim #7a7060`                                                                                                                                |
+| Brand       | `--gold #e3a94e` · `--gold-hi #e8bd6f` · `--gold-tint rgba(227,169,78,.16)` · `--on-gold #231d12` · `--key #d9c389` (keys/code) · `--token #82bbff` (token chips)                               |
+| Status      | untranslated `#9aa0a6` ○ · translated `#5ec488` ✓ · review-needed `#ec8b3f` ⚑ · outdated `#b98cdb` ↻                                                                                            |
+| Semantic    | error `#e06c6c` · warning `#e3a94e` · link `#6ab0ff`                                                                                                                                            |
+| Type        | Segoe UI (system); monospace for keys/tokens/shortcuts; `tabular-nums` for all counts                                                                                                           |
+| Metrics     | table rows 30px · section dividers 26px · radii 4/7/11/20                                                                                                                                       |
+
+Hard rules (these resolve the readability complaints that triggered the redesign):
+
+1. **Status = hue + glyph + 3px left row edge.** Any one signal alone is
+   sufficient (colorblind-safe). Status never tints the full row background.
+2. **Only hover and selection tint a row** (selection = gold). Statuses can
+   therefore never smear together over hundreds of rows.
+3. **Gold is exclusively the brand/selection color** — never a status — so
+   selection and "needs review" (orange `#ec8b3f`) cannot be confused.
+4. **No GPU-blurred shadows in the virtualized table** (17k+ rows must stay
+   smooth); depth comes from the three surface steps.
+5. **Zero layout shift in the editor** across Save & next (§7.5): token,
+   glossary, and validation rows are reserved slots, present on every string.
 
 ### 7.1 Setup Wizard
 
@@ -273,26 +310,34 @@ See §7.4.
 
 **Toolbar:**
 
-- Scan / Re-scan
-- Export (selected mod / all)
+- Scan / Re-scan (gold-tinted primary)
+- Export (selected mod / all), Import batch…
 - Settings
-- Search bar with status filter dropdown
+- Search bar (right-aligned)
+- _(v1.5)_ The status filter moved out of the toolbar into the string panel's
+  filter-chip row (§7.4). Once the dashboard (rollout ④) lands, the toolbar
+  gains a Home/brand button and a global "N to review" pill.
 
 ### 7.4 String Table
 
 Shown in the right panel when a mod (or specific file within a mod) is selected.
 
-| Column          | Content                                       |
-| --------------- | --------------------------------------------- |
-| **Key**         | i18n string key (monospace font)              |
-| **Original**    | Source text from `default.json`               |
-| **Target Text** | Translated text (editable cell or via dialog) |
-| **Validation**  | Validation status icon(s). Hover for details. |
+| Column          | Content                                                         |
+| --------------- | --------------------------------------------------------------- |
+| **Status**      | 16px glyph chip + short label (○ ✓ ⚑ ↻), plus 3px left row edge |
+| **Key**         | i18n string key (monospace font)                                |
+| **Original**    | Source text from `default.json`                                 |
+| **Target Text** | Translated text (editable cell or via dialog)                   |
+| **Validation**  | Validation status icon(s). Hover for details.                   |
 
 Features:
 
 - Sortable by any column.
-- Filterable by status (untranslated, translated, outdated, not-translatable, all).
+- **Filter-chip row** above the table (v1.5): one pill per status with glyph +
+  live count, plus "All N"; replaces the old toolbar dropdown. The active chip
+  is highlighted; chips with count 0 stay visible but muted.
+- **Footer status bar** (v1.5): per-status counts + keyboard hints
+  (Enter/double-click to edit).
 - Text search across key, original, and target.
 - Multi-select with **Ctrl+Click** (toggle) and **Shift+Click** (range).
 - **Ctrl+A** to select all visible.
@@ -323,18 +368,25 @@ Opened by **double-clicking** a string row.
 └─────────────────────────────────────────────────────────┘
 ```
 
-| Element              | Description                                                                                                                                        |
-| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Metadata bar**     | Mod name, file path, key, status badge, detected tokens                                                                                            |
-| **Left pane**        | Source text (read-only)                                                                                                                            |
-| **Right pane**       | Target text (editable text area)                                                                                                                   |
-| **Glossary hints**   | Matched glossary terms (if glossary is available)                                                                                                  |
-| **Validation panel** | Live validation results                                                                                                                            |
-| **Translate**        | Translate the source with the configured local AI (M6); fills the target as `review-needed`. Shown always; hints to configure AI if none is set up |
-| **Navigation**       | Previous / Next buttons to move through strings without closing                                                                                    |
-| **Reset**            | Clear target text back to empty (or to last imported value)                                                                                        |
-| **Save**             | Save changes, close dialog                                                                                                                         |
-| **Cancel**           | Discard changes (Esc)                                                                                                                              |
+| Element             | Description                                                                                                                                        |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Metadata bar**    | Key (monospace) + status pill (glyph + label); mod/file/position crumbs                                                                            |
+| **Tokens slot**     | _Reserved_ row: clickable token chips, or "— none —"                                                                                               |
+| **Glossary slot**   | _Reserved_ row: matched glossary terms, or "— no hints —"                                                                                          |
+| **Left pane**       | Source text (read-only)                                                                                                                            |
+| **Right pane**      | Target text (editable text area, gold focus ring)                                                                                                  |
+| **Validation slot** | _Reserved_ line (fixed min-height): live validation results, or "✓ No issues"                                                                      |
+| **Translate**       | Translate the source with the configured local AI (M6); fills the target as `review-needed`. Shown always; hints to configure AI if none is set up |
+| **Save & next**     | Gold primary: confirm this string, jump to the next (closes on the last)                                                                           |
+| **Save**            | Save changes, close dialog                                                                                                                         |
+| **Navigation**      | Previous / Next to move through strings without closing (auto-saves changes)                                                                       |
+| **Reset**           | Clear target text back to empty (or to last imported value)                                                                                        |
+| **Cancel**          | Discard changes (Esc)                                                                                                                              |
+
+**Zero-layout-shift contract (v1.5):** the token, glossary, and validation
+rows are always rendered (empty-state text when N/A) and the action bar sits
+below a fixed-height body — so during a Save & next run the buttons never move
+under the cursor, whatever the next string contains.
 
 **Keyboard shortcuts:**
 
@@ -383,7 +435,11 @@ the step-by-step Setup Wizard:
 - **Glossary (optional)** — build status + Build button, or StardewXnbHack guidance.
 - **Local AI (optional)** — local-LLM connection (M6): provider preset, base URL,
   Test connection, model. Lives here, not in the wizard, because the tool is
-  translation-first and AI is opt-in.
+  translation-first and AI is opt-in. The Test-connection result is an explicit
+  state: green confirmed line on success, red diagnostic + Retry on failure.
+- _(v1.5, planned)_ The flat list becomes a left-nav settings window
+  (Folders & language · Local AI · Glossary) per `docs/design/`; content and
+  semantics stay as above.
 
 ---
 

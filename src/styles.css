@@ -1,11 +1,35 @@
+/* Design system v1.5 (SPEC §7.0, docs/design/): warm dark theme, gold brand.
+   Hard rules: status = hue + glyph + 3px row edge (never a full-row tint);
+   only hover/selection tint rows; gold is brand/selection only — never a
+   status; no blurred shadows inside the virtualized table. */
 :root {
-  --bg: #1e1f22;
-  --bg-panel: #25272b;
-  --bg-toolbar: #2b2d31;
-  --border: #3a3d42;
-  --text: #e3e5e8;
-  --text-muted: #9aa0a6;
-  --accent: #4a9d6b;
+  /* Surfaces */
+  --bg: #1a1713;
+  --surface: #221e18;
+  --surface-2: #2a251d;
+  --surface-3: #15120e;
+  --border: #3d362b;
+  --border-strong: #4e463a;
+
+  /* Text */
+  --text: #ece6da;
+  --text-muted: #a89e8d;
+  --text-dim: #7a7060;
+
+  /* Brand — harvest gold (selection, primary actions, progress) */
+  --gold: #e3a94e;
+  --gold-hi: #e8bd6f;
+  --gold-tint: rgba(227, 169, 78, 0.16);
+  --on-gold: #231d12;
+  --key: #d9c389;
+  --token: #82bbff;
+
+  /* Semantic */
+  --error: #e06c6c;
+  --warning: #e3a94e;
+  --link: #6ab0ff;
+
+  --mono: "Cascadia Code", Consolas, monospace;
   color-scheme: dark;
 }
 
@@ -31,6 +55,30 @@ body {
   color: var(--text);
 }
 
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #4a4236;
+  border-radius: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+kbd,
+.kbd {
+  font-family: var(--mono);
+  font-size: 10px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0 4px;
+  color: #bb9a5c;
+}
+
 .app {
   display: flex;
   flex-direction: column;
@@ -41,14 +89,22 @@ body {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 10px;
-  background: var(--bg-toolbar);
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--surface-2);
   border-bottom: 1px solid var(--border);
 }
 
 .toolbar__title {
-  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px;
+  font-weight: 700;
+  color: #f0e0bd;
+  background: var(--gold-tint);
+  border: 1px solid rgba(227, 169, 78, 0.4);
+  border-radius: 6px;
 }
 
 .toolbar__actions {
@@ -57,13 +113,18 @@ body {
 }
 
 .toolbar button {
-  background: #3a3d42;
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+  color: #ddd5c5;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 10px;
-  font-size: 13px;
+  border-radius: 6px;
+  padding: 5px 11px;
+  font-size: 12.5px;
+  font-family: inherit;
   cursor: pointer;
+}
+
+.toolbar button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.09);
 }
 
 .toolbar button:disabled {
@@ -71,32 +132,35 @@ body {
   cursor: not-allowed;
 }
 
+/* Scan — the one gold-tinted primary in the toolbar. */
+.toolbar__primary,
+.toolbar button.toolbar__primary {
+  background: var(--gold-tint);
+  color: var(--gold-hi);
+  border-color: rgba(227, 169, 78, 0.5);
+  font-weight: 600;
+}
+
+.toolbar__primary:hover:not(:disabled),
+.toolbar button.toolbar__primary:hover:not(:disabled) {
+  background: rgba(227, 169, 78, 0.24);
+}
+
 .toolbar__filters {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.toolbar__statusfilter {
-  background: var(--bg);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 6px;
-}
-
-.toolbar__statusfilter:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  gap: 8px;
 }
 
 .toolbar__search {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  font-family: inherit;
   min-width: 200px;
 }
 
@@ -111,7 +175,7 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg-panel);
+  background: var(--surface);
 }
 
 .panel--mods {
@@ -122,6 +186,7 @@ body {
 .panel--strings {
   flex: 1;
   min-width: 0;
+  background: #1d1a14;
 }
 
 /* Draggable divider between the two panels. */
@@ -133,17 +198,17 @@ body {
 
 .splitter:hover,
 .splitter:active {
-  background: var(--accent);
+  background: var(--gold);
 }
 
 .panel__header {
-  padding: 6px 10px;
+  padding: 7px 12px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: #9a8f5f;
   border-bottom: 1px solid var(--border);
   text-transform: uppercase;
   font-size: 11px;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
 }
 
 .panel__empty {
@@ -163,13 +228,14 @@ body {
 }
 
 .modlist__search {
-  margin: 6px 8px;
+  margin: 8px 10px;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 4px 8px;
+  border-radius: 6px;
+  padding: 5px 9px;
   font-size: 12px;
+  font-family: inherit;
 }
 
 .modrow {
@@ -177,7 +243,7 @@ body {
   grid-template-columns: 20px minmax(70px, 1fr) 48px 52px 40px 84px;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px;
+  padding: 4px 10px;
   font-size: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   cursor: default;
@@ -186,11 +252,12 @@ body {
 .modrow--head {
   position: sticky;
   top: 0;
-  background: var(--bg-toolbar);
-  color: var(--text-muted);
+  z-index: 1;
+  background: #1f1b15;
+  color: var(--text-dim);
   text-transform: uppercase;
-  font-size: 10px;
-  letter-spacing: 0.03em;
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
   border-bottom: 1px solid var(--border);
 }
 
@@ -213,32 +280,37 @@ body {
 }
 
 .modrow--mod:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
 }
 
-.modrow--selected {
-  background: rgba(106, 176, 255, 0.28);
+.modrow--selected,
+.modrow--mod.modrow--selected:hover {
+  background: var(--gold-tint);
+  box-shadow: inset 3px 0 0 var(--gold);
+  color: #f3ecde;
+  font-weight: 600;
 }
 
 .modrow--package {
   font-weight: 600;
-  background: #2f3338;
+  background: #2c2820;
   border-top: 1px solid var(--border);
 }
 
 /* Children of a multi-component package: a left accent rail + faint tint so the
    group reads as one unit, clearly distinct from surrounding standalone mods. */
 .modrow--child {
-  background: rgba(106, 176, 255, 0.05);
-  box-shadow: inset 3px 0 0 rgba(106, 176, 255, 0.5);
+  background: rgba(227, 169, 78, 0.04);
+  box-shadow: inset 3px 0 0 rgba(227, 169, 78, 0.45);
 }
 
 .modrow--child:hover {
-  background: rgba(106, 176, 255, 0.1);
+  background: rgba(227, 169, 78, 0.09);
 }
 
 .modrow--child.modrow--selected {
-  background: rgba(106, 176, 255, 0.34);
+  background: var(--gold-tint);
+  box-shadow: inset 3px 0 0 var(--gold);
 }
 
 .modrow--child-last {
@@ -247,7 +319,7 @@ body {
 
 .modrow__tree {
   flex: 0 0 auto;
-  font-family: "Cascadia Code", Consolas, monospace;
+  font-family: var(--mono);
   color: var(--text-muted);
   opacity: 0.65;
   white-space: pre;
@@ -278,13 +350,13 @@ body {
 }
 
 .modrow__nexus {
-  color: #6ab0ff;
+  color: var(--link);
   text-decoration: none;
   cursor: pointer;
 }
 
 .modrow__nexus--none {
-  color: var(--text-muted);
+  color: var(--text-dim);
   cursor: default;
 }
 
@@ -312,7 +384,7 @@ body {
 .modrow__bar-fill {
   display: block;
   height: 100%;
-  background: var(--accent);
+  background: var(--gold);
   border-radius: 3px;
 }
 
@@ -327,24 +399,30 @@ body {
 }
 
 .panel__warn {
-  color: #d6a85f;
+  color: var(--warning);
 }
 
-/* Needs-review tail in the strings header (review-needed amber). A button:
+/* Needs-review tail in the strings header (review-needed orange). A button:
    clicking filters the table to the unreviewed strings. */
 .panel__review {
-  padding: 0;
-  border: none;
-  background: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: rgba(236, 139, 63, 0.14);
+  color: #ec8b3f;
+  border: 1px solid rgba(236, 139, 63, 0.45);
+  border-radius: 20px;
+  padding: 1px 10px;
   font: inherit;
-  color: #e0a44e;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
   cursor: pointer;
-  text-decoration: underline dotted;
-  text-underline-offset: 3px;
 }
 
 .panel__review:hover {
-  color: #f0bc74;
+  background: rgba(236, 139, 63, 0.24);
 }
 
 /* --- Selected-mod summary (placeholder until M2 string table) --- */
@@ -361,6 +439,9 @@ body {
 .panel__muted {
   color: var(--text-muted);
   font-size: 12px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .panel__filelist {
@@ -374,7 +455,41 @@ body {
 }
 
 .panel__ok {
-  color: var(--accent);
+  color: #5ec488;
+}
+
+/* --- Status filter chips (v1.5; replaces the toolbar dropdown) --- */
+.filterchips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: #211d17;
+}
+
+.filterchip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 3px 11px;
+  font-size: 11.5px;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.filterchip--active {
+  font-weight: 600;
+}
+
+.filterchip__count {
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
 }
 
 /* --- String table --- */
@@ -394,43 +509,58 @@ body {
 .stringrow {
   display: grid;
   grid-template-columns:
-    92px minmax(130px, 22%) minmax(0, 1fr) minmax(0, 1fr)
+    118px minmax(130px, 22%) minmax(0, 1fr) minmax(0, 1fr)
     22px;
-  gap: 10px;
+  gap: 12px;
   align-items: center;
-  padding: 0 12px;
-  font-size: 12px;
+  padding: 0 14px;
+  font-size: 12.5px;
 }
 
 .stringtable--multifile .stringrow {
   grid-template-columns:
-    92px 90px minmax(110px, 18%) minmax(0, 1fr) minmax(0, 1fr)
+    118px 90px minmax(110px, 18%) minmax(0, 1fr) minmax(0, 1fr)
     22px;
 }
 
-/* Named status chip — full-contrast color on a small surface, so statuses
-   stay distinguishable even though the row tint is subtle. */
-.stringrow__chip {
-  display: inline-block;
-  max-width: 100%;
-  padding: 1px 8px;
+/* Status cell: 16px glyph chip + short label. Status color never tints the
+   whole row — the 3px left edge (inline box-shadow) is the second signal. */
+.stringrow__status {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.stringrow__glyph {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
   border: 1px solid;
-  border-radius: 9px;
-  font-size: 11px;
-  line-height: 16px;
+}
+
+.stringrow__chip {
+  color: var(--text-dim);
+  font-size: 10.5px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .stringrow--head {
-  height: 26px;
+  height: 27px;
   align-items: center;
-  background: var(--bg-toolbar);
-  color: var(--text-muted);
+  background: var(--surface);
+  color: var(--text-dim);
   text-transform: uppercase;
   font-size: 10px;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.05em;
   border-bottom: 1px solid var(--border);
 }
 
@@ -455,15 +585,22 @@ body {
 }
 
 .stringrow__sort--active {
-  color: var(--text);
+  color: #cfc7b6;
 }
 
 .stringrow--data {
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
 }
 
 .stringrow--data:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* Selection is the only strong row tint — gold, so it can never be confused
+   with the orange review-needed status. */
+.stringrow--selected,
+.stringrow--data.stringrow--selected:hover {
+  background: rgba(227, 169, 78, 0.15);
 }
 
 .stringrow__file,
@@ -481,16 +618,17 @@ body {
 }
 
 .stringrow__key {
-  font-family: "Cascadia Code", Consolas, monospace;
-  color: #c8b88a;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--key);
 }
 
 .stringrow__tgt--empty {
-  color: var(--text-muted);
+  color: #6f6757;
 }
 
 .stringrow__tgt--modified {
-  color: var(--accent);
+  color: #7fd1a3;
 }
 
 .stringrow__tgt--modified::after {
@@ -505,34 +643,29 @@ body {
 }
 
 .val--error {
-  color: #e06c6c;
+  color: var(--error);
 }
 
 .val--warning {
-  color: #d6a85f;
+  color: var(--warning);
 }
 
-.editor__valid-ok {
-  color: var(--accent);
-  font-size: 12px;
+/* Footer status bar: per-status counts + keyboard hints (v1.5). */
+.stringtable__foot {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
 }
 
-.editor__issue {
-  display: inline-block;
-  margin-right: 12px;
-  font-size: 12px;
-}
-
-.editor__issue--error {
-  color: #e06c6c;
-}
-
-.editor__issue--warning {
-  color: #d6a85f;
-}
-
-.stringrow--selected {
-  background: rgba(106, 176, 255, 0.22);
+.stringtable__hint {
+  margin-left: auto;
+  color: var(--text-dim);
 }
 
 /* --- Right-click context menu --- */
@@ -549,10 +682,10 @@ body {
   padding: 4px 0;
   min-width: 190px;
   list-style: none;
-  background: var(--bg-toolbar);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  background: #262119;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
 }
 
 .ctxmenu button {
@@ -563,6 +696,7 @@ body {
   color: var(--text);
   padding: 5px 14px;
   font-size: 12px;
+  font-family: inherit;
   cursor: pointer;
 }
 
@@ -591,7 +725,7 @@ body {
 .editor__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(10, 8, 5, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -603,29 +737,29 @@ body {
   width: 860px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6);
 }
 
 .editor__meta {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border);
+  padding: 14px 18px 10px;
 }
 
 .editor__title code {
+  font-family: var(--mono);
   font-size: 14px;
-  color: #c8b88a;
+  color: #e6cf8f;
 }
 
 .editor__crumbs {
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 
 .editor__meta-right {
@@ -634,30 +768,58 @@ body {
   gap: 12px;
 }
 
+/* Status pill (glyph + label); click toggles not-translatable (F2). */
 .editor__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 1px 9px;
-  font-size: 11px;
+  border: 1px solid;
+  border-radius: 20px;
+  padding: 3px 11px;
+  font-size: 11.5px;
+  font-weight: 600;
+  font-family: inherit;
   cursor: pointer;
+  flex: none;
 }
 
-.editor__tokens {
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
+/* Reserved slot rows (tokens, glossary): always rendered, fixed min-height —
+   the editor never changes geometry between strings (SPEC §7.5). */
+.editor__slot {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 12px;
+  align-items: center;
+  min-height: 34px;
+  padding: 4px 18px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.editor__slot-label {
+  font-size: 11.5px;
+  color: var(--text-dim);
+}
+
+.editor__slot-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.editor__slot-empty {
+  font-size: 11.5px;
+  color: #5b5446;
 }
 
 .editor__token {
   background: rgba(106, 176, 255, 0.12);
-  color: #6ab0ff;
+  color: var(--token);
   border: 1px solid rgba(106, 176, 255, 0.3);
-  border-radius: 3px;
-  padding: 1px 6px;
-  margin-right: 4px;
-  font-family: "Cascadia Code", Consolas, monospace;
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-family: var(--mono);
   font-size: 11px;
   cursor: pointer;
 }
@@ -667,43 +829,35 @@ body {
 }
 
 .editor__token--done {
-  color: var(--accent);
-  border-color: rgba(74, 157, 107, 0.5);
-  background: rgba(74, 157, 107, 0.12);
-  opacity: 0.7;
+  color: #7fd1a3;
+  border-color: rgba(94, 196, 136, 0.4);
+  background: rgba(94, 196, 136, 0.12);
+  opacity: 0.8;
 }
 
 .editor__token--done:hover {
-  background: rgba(74, 157, 107, 0.22);
-}
-
-.editor__glossary {
-  padding: 8px 16px;
-  font-size: 12px;
-  color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
+  background: rgba(94, 196, 136, 0.22);
 }
 
 .editor__gloss {
-  background: rgba(200, 184, 138, 0.12);
-  color: #c8b88a;
-  border: 1px solid rgba(200, 184, 138, 0.3);
-  border-radius: 3px;
-  padding: 1px 6px;
-  margin-right: 4px;
+  background: rgba(217, 195, 137, 0.14);
+  color: var(--key);
+  border: 1px solid rgba(217, 195, 137, 0.3);
+  border-radius: 4px;
+  padding: 2px 8px;
   font-size: 11px;
   cursor: pointer;
 }
 
 .editor__gloss:hover {
-  background: rgba(200, 184, 138, 0.25);
+  background: rgba(217, 195, 137, 0.28);
 }
 
 .editor__panes {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  padding: 14px 16px;
+  gap: 13px;
+  padding: 12px 18px 0;
   flex: 1;
   min-height: 220px;
 }
@@ -711,43 +865,73 @@ body {
 .editor__pane {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .editor__pane span {
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 
 .editor__pane textarea {
   flex: 1;
   resize: none;
-  background: var(--bg);
-  color: var(--text);
+  background: var(--surface-3);
+  color: #f1eadc;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 8px;
+  border-radius: 7px;
+  padding: 11px;
   font-family: inherit;
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
+}
+
+.editor__pane textarea:focus {
+  outline: none;
+  border: 1.5px solid var(--gold);
+  box-shadow: 0 0 0 3px rgba(227, 169, 78, 0.12);
 }
 
 .editor__pane textarea[readonly] {
+  color: #bdb39e;
+}
+
+/* Reserved validation line: fixed min-height, "✓ No issues" when clean. */
+.editor__validation {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-height: 30px;
+  padding: 6px 18px 0;
+  font-size: 12px;
   color: var(--text-muted);
 }
 
-.editor__validation {
-  padding: 6px 16px;
+.editor__valid-ok {
+  color: #5b5446;
   font-size: 12px;
-  color: var(--text-muted);
-  border-top: 1px solid var(--border);
+}
+
+.editor__issue {
+  display: inline-block;
+  font-size: 12px;
+}
+
+.editor__issue--error {
+  color: var(--error);
+}
+
+.editor__issue--warning {
+  color: var(--warning);
 }
 
 .editor__footer {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 12px 16px;
+  margin-top: 12px;
+  padding: 13px 18px 14px;
   border-top: 1px solid var(--border);
 }
 
@@ -756,13 +940,18 @@ body {
 }
 
 .editor button {
-  background: #3a3d42;
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd5c5;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 5px 12px;
-  font-size: 13px;
+  border-radius: 7px;
+  padding: 8px 13px;
+  font-size: 12.5px;
+  font-family: inherit;
   cursor: pointer;
+}
+
+.editor button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .editor button:disabled {
@@ -770,45 +959,70 @@ body {
   cursor: not-allowed;
 }
 
+/* Secondary actions as square icon buttons (tooltips carry the shortcut). */
+.editor button.editor__iconbtn {
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  font-size: 14px;
+  color: var(--text-muted);
+}
+
+/* The gold primary: Save & next never moves under the cursor. */
 .editor__save {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--gold);
+  border: none;
+  color: var(--on-gold);
+  font-weight: 700;
+}
+
+.editor__save:hover:not(:disabled) {
+  background: var(--gold-hi);
+}
+
+.editor button.editor__save:hover:not(:disabled) {
+  background: var(--gold-hi);
 }
 
 /* Local-AI translate button + status message (M6). */
-.editor__ai-btn {
-  border-color: #e0a44e !important;
-  color: #e0a44e;
+.editor button.editor__ai-btn {
+  background: rgba(94, 196, 136, 0.14);
+  color: #7fd1a3;
+  border-color: rgba(94, 196, 136, 0.4);
+}
+
+.editor button.editor__ai-btn:hover:not(:disabled) {
+  background: rgba(94, 196, 136, 0.24);
 }
 
 .editor__ai-msg {
   display: inline-block;
-  margin-right: 12px;
   font-size: 12px;
-  color: #e0a44e;
+  color: var(--warning);
 }
 
 .editor__kbd {
   margin-left: 5px;
   padding: 0 4px;
-  font-family: inherit;
-  font-size: 10px;
-  color: var(--text-muted);
-  background: rgba(255, 255, 255, 0.08);
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
   border-radius: 3px;
 }
 
 .editor__save .editor__kbd {
-  color: rgba(255, 255, 255, 0.85);
-  border-color: rgba(255, 255, 255, 0.35);
+  color: var(--on-gold);
+  background: rgba(0, 0, 0, 0.18);
+  border-color: transparent;
 }
 
 /* --- Setup Wizard --- */
 .wizard__backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(10, 8, 5, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -819,10 +1033,10 @@ body {
   flex-direction: column;
   width: 560px;
   max-width: calc(100vw - 32px);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: #262119;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 
 .wizard__header {
@@ -836,6 +1050,7 @@ body {
 .wizard__header h2 {
   margin: 0;
   font-size: 16px;
+  color: #f3eee2;
 }
 
 .wizard__progress {
@@ -857,23 +1072,24 @@ body {
 .wizard__field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   margin: 12px 0;
 }
 
 .wizard__field span {
-  color: var(--text-muted);
-  font-size: 12px;
+  color: var(--text-dim);
+  font-size: 11.5px;
 }
 
 .wizard__field input,
 .wizard__field select {
-  background: var(--bg);
+  background: var(--surface-3);
   color: var(--text);
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 6px 8px;
-  font-size: 13px;
+  border-radius: 7px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  font-family: inherit;
 }
 
 .wizard__path {
@@ -886,11 +1102,11 @@ body {
 }
 
 .wizard__path--invalid .wizard__bad {
-  color: #e06c6c;
+  color: var(--error);
 }
 
 .wizard__ok {
-  color: var(--accent);
+  color: #5ec488;
 }
 
 .wizard__muted {
@@ -899,7 +1115,7 @@ body {
 }
 
 .wizard__error {
-  color: #e06c6c;
+  color: var(--error);
   font-size: 12px;
 }
 
@@ -916,13 +1132,18 @@ body {
 }
 
 .wizard button {
-  background: #3a3d42;
-  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  color: #ddd5c5;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 5px 12px;
-  font-size: 13px;
+  border-radius: 7px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-family: inherit;
   cursor: pointer;
+}
+
+.wizard button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .wizard button:disabled {
@@ -931,8 +1152,14 @@ body {
 }
 
 .wizard__finish {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--gold);
+  border-color: var(--gold);
+  color: var(--on-gold);
+  font-weight: 700;
+}
+
+.wizard button.wizard__finish:hover:not(:disabled) {
+  background: var(--gold-hi);
 }
 
 /* Settings dialog: a flat list of sections (reuses the wizard modal chrome). */
@@ -963,10 +1190,10 @@ body {
   width: 560px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: #262119;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 
 .exportdlg__head {
@@ -974,8 +1201,13 @@ body {
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
+}
+
+.exportdlg__head h2,
+.scandlg__head h2 {
+  color: #f3eee2;
 }
 
 .exportdlg__body {
@@ -990,7 +1222,7 @@ body {
 .exportdlg__error {
   padding: 14px 16px;
   margin: 0;
-  color: #e06c6c;
+  color: var(--error);
   white-space: pre-wrap;
 }
 
@@ -1005,8 +1237,9 @@ body {
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 13px;
+  gap: 8px;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
 }
 
 .exportdlg__dot {
@@ -1025,10 +1258,10 @@ body {
   background: #9aa0a6;
 }
 .exportdlg__dot--warn {
-  background: #b07cd6;
+  background: #b98cdb;
 }
 .exportdlg__dot--err {
-  background: #e06c6c;
+  background: var(--error);
 }
 
 .exportdlg__skipped {
@@ -1045,7 +1278,8 @@ body {
 
 .exportdlg__skipped code,
 .exportdlg__backup code {
-  color: #c8b88a;
+  font-family: var(--mono);
+  color: var(--key);
 }
 
 .exportdlg__backup {
@@ -1055,8 +1289,27 @@ body {
 .exportdlg__foot {
   display: flex;
   justify-content: flex-end;
+  gap: 8px;
   padding: 12px 16px;
   border-top: 1px solid var(--border);
+}
+
+.exportdlg__foot button,
+.scandlg__foot button {
+  background: var(--gold);
+  color: var(--on-gold);
+  border: none;
+  border-radius: 7px;
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-family: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.exportdlg__foot button:hover,
+.scandlg__foot button:hover {
+  background: var(--gold-hi);
 }
 
 /* --- Batch AI translation dialog (M6 Issue 17) --- */
@@ -1064,14 +1317,14 @@ body {
   height: 8px;
   margin: 8px 0 12px;
   border-radius: 4px;
-  background: var(--border);
+  background: rgba(255, 255, 255, 0.08);
   overflow: hidden;
 }
 
 .batchdlg__fill {
   height: 100%;
   border-radius: 4px;
-  background: #e0a44e; /* review-needed amber — batch output awaits review */
+  background: #ec8b3f; /* review-needed orange — batch output awaits review */
   transition: width 0.2s ease;
 }
 
@@ -1082,14 +1335,14 @@ body {
   width: 560px;
   max-width: calc(100vw - 32px);
   max-height: calc(100vh - 48px);
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: #262119;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 
 .scandlg__head {
-  padding: 12px 16px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
 }
 
@@ -1113,7 +1366,7 @@ body {
   width: 16px;
   height: 16px;
   border: 2px solid rgba(255, 255, 255, 0.18);
-  border-top-color: var(--accent);
+  border-top-color: var(--gold);
   border-radius: 50%;
   animation: scandlg-spin 0.7s linear infinite;
 }
@@ -1125,7 +1378,7 @@ body {
 }
 
 .scandlg__error {
-  color: #e06c6c;
+  color: var(--error);
   white-space: pre-wrap;
 }
 

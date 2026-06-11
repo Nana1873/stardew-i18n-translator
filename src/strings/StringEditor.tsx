@@ -21,7 +21,7 @@ import {
 import type { StringStatus, TranslationResult } from "../tauri/commands";
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
-import { STATUS_META } from "./status";
+import { STATUS_META, statusTint } from "./status";
 
 export interface EditorRow {
   key: string;
@@ -303,64 +303,80 @@ export function StringEditor({
             <code>{row.key}</code>
           </span>
           <span className="editor__meta-right">
+            <span className="editor__crumbs">
+              {modName} · {row.file} · {index + 1}/{total}
+            </span>
             <button
               type="button"
               className="editor__status"
               style={{
                 color: STATUS_META[shownStatus].color,
-                borderColor: STATUS_META[shownStatus].color,
+                borderColor: statusTint(STATUS_META[shownStatus].color, 0.5),
+                background: statusTint(STATUS_META[shownStatus].color, 0.14),
               }}
               onClick={toggleNotTranslatable}
               title="Toggle translated / not-translatable (F2)"
             >
-              ● {STATUS_META[shownStatus].label}
+              <span aria-hidden>{STATUS_META[shownStatus].glyph}</span>{" "}
+              {STATUS_META[shownStatus].label}
             </button>
-            <span className="editor__crumbs">
-              {modName} · {row.file} · {index + 1}/{total}
-            </span>
           </span>
         </header>
 
-        {sourceTokenCounts.size > 0 && (
-          <div className="editor__tokens">
-            Tokens (click to insert):{" "}
-            {[...sourceTokenCounts].map(([token, required], i) => {
-              const satisfied = (valueTokenCounts.get(token) ?? 0) >= required;
-              return (
+        {/* Reserved slots (SPEC §7.5): tokens + glossary rows exist on every
+            string — empty-state text when N/A — so the panes and the action
+            bar never move during a Save & next run. */}
+        <div className="editor__slot">
+          <span className="editor__slot-label">Tokens</span>
+          <span className="editor__slot-body">
+            {sourceTokenCounts.size > 0 ? (
+              [...sourceTokenCounts].map(([token, required], i) => {
+                const satisfied =
+                  (valueTokenCounts.get(token) ?? 0) >= required;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    className={`editor__token${satisfied ? " editor__token--done" : ""}`}
+                    title={
+                      satisfied
+                        ? `${token} — all present`
+                        : `Insert ${token} at the cursor`
+                    }
+                    onClick={() => insertToken(token)}
+                  >
+                    {describeToken(token)}
+                    {required > 1 ? ` ×${required}` : ""}
+                    {satisfied ? " ✓" : ""}
+                  </button>
+                );
+              })
+            ) : (
+              <span className="editor__slot-empty">— none —</span>
+            )}
+          </span>
+        </div>
+
+        <div className="editor__slot">
+          <span className="editor__slot-label">Glossary</span>
+          <span className="editor__slot-body">
+            {glossaryMatches.length > 0 ? (
+              glossaryMatches.map((match, i) => (
                 <button
                   key={i}
                   type="button"
-                  className={`editor__token${satisfied ? " editor__token--done" : ""}`}
-                  title={
-                    satisfied ? `${token} — all present` : `Insert ${token}`
-                  }
-                  onClick={() => insertToken(token)}
+                  className="editor__gloss"
+                  title={`Insert “${match.translation}” at the cursor`}
+                  onClick={() => insertToken(match.translation)}
                 >
-                  {describeToken(token)}
-                  {required > 1 ? ` ×${required}` : ""}
-                  {satisfied ? " ✓" : ""}
+                  {match.term} → {match.translation}
                 </button>
-              );
-            })}
-          </div>
-        )}
-
-        {glossaryMatches.length > 0 && (
-          <div className="editor__glossary">
-            Glossary (click to insert):{" "}
-            {glossaryMatches.map((match, i) => (
-              <button
-                key={i}
-                type="button"
-                className="editor__gloss"
-                title={`Insert “${match.translation}”`}
-                onClick={() => insertToken(match.translation)}
-              >
-                {match.term} → {match.translation}
-              </button>
-            ))}
-          </div>
-        )}
+              ))
+            ) : (
+              <span className="editor__slot-empty">— no hints —</span>
+            )}
+          </span>
+        </div>
 
         <div className="editor__panes">
           <label className="editor__pane">
@@ -378,9 +394,10 @@ export function StringEditor({
           </label>
         </div>
 
+        {/* Reserved validation line (fixed min-height — see editor__slot note). */}
         <div className="editor__validation">
           {issues.length === 0 ? (
-            <span className="editor__valid-ok">✓ All checks passed</span>
+            <span className="editor__valid-ok">✓ No issues</span>
           ) : (
             issues.map((issue, i) => (
               <span
@@ -399,17 +416,14 @@ export function StringEditor({
         <footer className="editor__footer">
           <button
             type="button"
-            onClick={() => navigate(-1)}
-            disabled={index === 0}
+            className="editor__save"
+            onClick={saveAndNext}
+            title="Confirm this string and jump to the next one"
           >
-            ◀ Prev <Kbd>Alt+←</Kbd>
+            Save & next <Kbd>Ctrl+Shift+Enter</Kbd>
           </button>
-          <button
-            type="button"
-            onClick={() => navigate(1)}
-            disabled={index >= total - 1}
-          >
-            Next ▶ <Kbd>Alt+→</Kbd>
+          <button type="button" onClick={save}>
+            Save <Kbd>Ctrl+Enter</Kbd>
           </button>
           <button
             type="button"
@@ -425,25 +439,52 @@ export function StringEditor({
             {translating ? "Translating…" : "Translate"} <Kbd>Ctrl+F5</Kbd>
           </button>
           <span className="editor__spacer" />
-          <button type="button" onClick={() => editValue(row.source)}>
-            Copy original <Kbd>F3</Kbd>
-          </button>
-          <button type="button" onClick={reset}>
-            Reset <Kbd>F4</Kbd>
-          </button>
-          <button type="button" onClick={onClose}>
-            Cancel <Kbd>Esc</Kbd>
-          </button>
-          <button type="button" className="editor__save" onClick={save}>
-            Save <Kbd>Ctrl+Enter</Kbd>
+          <button
+            type="button"
+            className="editor__iconbtn"
+            onClick={() => navigate(-1)}
+            disabled={index === 0}
+            aria-label="Prev"
+            title="Previous string — saves changes (Alt+←)"
+          >
+            ‹
           </button>
           <button
             type="button"
-            className="editor__save"
-            onClick={saveAndNext}
-            title="Confirm this string and jump to the next one"
+            className="editor__iconbtn"
+            onClick={() => navigate(1)}
+            disabled={index >= total - 1}
+            aria-label="Next"
+            title="Next string — saves changes (Alt+→)"
           >
-            Save & next <Kbd>Ctrl+Shift+Enter</Kbd>
+            ›
+          </button>
+          <button
+            type="button"
+            className="editor__iconbtn"
+            onClick={() => editValue(row.source)}
+            aria-label="Copy original"
+            title="Copy original into the translation (F3)"
+          >
+            ⧉
+          </button>
+          <button
+            type="button"
+            className="editor__iconbtn"
+            onClick={reset}
+            aria-label="Reset"
+            title="Clear the translation (F4)"
+          >
+            ↺
+          </button>
+          <button
+            type="button"
+            className="editor__iconbtn"
+            onClick={onClose}
+            aria-label="Cancel"
+            title="Close without saving (Esc)"
+          >
+            ✕
           </button>
         </footer>
       </div>
