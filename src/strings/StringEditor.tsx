@@ -5,12 +5,12 @@
  * editable target on the right, with prev/next navigation, live validation, a
  * status badge, and keyboard shortcuts. Saving persists the target + status to
  * disk; the saved status follows the field (empty → untranslated, text →
- * translated) unless not-translatable is chosen.
+ * translated).
  *
  * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
- * fast path) · Esc cancel · Alt+←/→ prev/next · F2 toggle not-translatable ·
- * F3 copy original · F4 reset (clears the field) · Ctrl+F5 translate with the
- * local AI (M6).
+ * fast path) · Esc cancel · Alt+←/→ prev/next · F2/F3 keep original (copies
+ * the source — an explicit identical translation, SPEC §9) · F4 reset (clears
+ * the field) · Ctrl+F5 translate with the local AI (M6).
  */
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -69,12 +69,6 @@ function matchGlossary(
   return out;
 }
 
-/** The status to save into: keep an explicit not-translatable choice, otherwise
- * saving marks the string translated. */
-function initialSaveStatus(status: StringStatus): StringStatus {
-  return status === "not-translatable" ? "not-translatable" : "translated";
-}
-
 /** Small shortcut hint on a button; aria-hidden so the accessible name stays clean. */
 function Kbd({ children }: { children: string }) {
   return (
@@ -104,17 +98,13 @@ export function StringEditor({
   onNavigate,
 }: StringEditorProps) {
   const [value, setValue] = useState(row.target);
-  const [status, setStatus] = useState<StringStatus>(
-    initialSaveStatus(row.status),
-  );
   // True while the current target is an unreviewed AI suggestion (M6). Cleared
   // when the user edits the field; confirmed away by Save → translated.
   const [reviewNeeded, setReviewNeeded] = useState(
     row.status === "review-needed",
   );
-  // True once the user changed anything (text, status toggle, AI translate).
-  // Navigation auto-saves on dirty — a text-equality check alone would drop
-  // status-only changes like F2 not-translatable.
+  // True once the user changed anything (text, AI translate). Navigation
+  // auto-saves on dirty.
   const [dirty, setDirty] = useState(false);
   const [translating, setTranslating] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
@@ -123,18 +113,16 @@ export function StringEditor({
   // Reset the field whenever the row changes (including via prev/next).
   useEffect(() => {
     setValue(row.target);
-    setStatus(initialSaveStatus(row.status));
     setReviewNeeded(row.status === "review-needed");
     setDirty(false);
     setTranslateMsg(null);
     textareaRef.current?.focus();
   }, [row.key, row.file, row.target, row.status]);
 
-  // The status to persist on auto-save (navigation): an explicit not-translatable
-  // choice is kept; an unreviewed AI suggestion stays review-needed; otherwise it
-  // follows the field (empty → untranslated, text → translated).
+  // The status to persist on auto-save (navigation): an unreviewed AI
+  // suggestion stays review-needed; otherwise it follows the field
+  // (empty → untranslated, text → translated).
   function effectiveStatus(): StringStatus {
-    if (status === "not-translatable") return "not-translatable";
     if (value.trim() === "") return "untranslated";
     if (reviewNeeded) return "review-needed";
     return "translated";
@@ -142,11 +130,7 @@ export function StringEditor({
 
   /** The status an explicit Save confirms to (the user has reviewed it). */
   function confirmedStatus(): StringStatus {
-    return status === "not-translatable"
-      ? "not-translatable"
-      : value.trim() === ""
-        ? "untranslated"
-        : "translated";
+    return value.trim() === "" ? "untranslated" : "translated";
   }
 
   /** Explicit Save (Ctrl+Enter): the user has reviewed it → confirm to translated. */
@@ -181,7 +165,6 @@ export function StringEditor({
     try {
       const result = await onTranslate(row.source);
       setValue(result.text);
-      setStatus("translated"); // drop any not-translatable choice
       setReviewNeeded(true); // an AI suggestion awaiting review
       setDirty(true);
       const notes: string[] = [];
@@ -206,23 +189,19 @@ export function StringEditor({
   }
 
   function navigate(delta: number) {
-    // Save on any user change — including status-only ones (F2), which a pure
-    // text comparison would silently drop.
     if (dirty || value !== row.target) onSave(value, effectiveStatus());
     onNavigate(delta);
   }
 
-  function toggleNotTranslatable() {
-    setStatus((current) =>
-      current === "not-translatable" ? "translated" : "not-translatable",
-    );
-    setDirty(true);
+  /** Keep original (F2/F3): copy the source into the field — kept English is
+   * an explicit identical translation, so outdated detection still applies. */
+  function keepOriginal() {
+    editValue(row.source);
   }
 
   /** Reset (F4): clear the target field; the string becomes untranslated. */
   function reset() {
     setValue("");
-    setStatus("translated"); // drop any not-translatable; empty value → untranslated
     setReviewNeeded(false);
     setDirty(true);
     textareaRef.current?.focus();
@@ -256,12 +235,9 @@ export function StringEditor({
     } else if (event.altKey && event.key === "ArrowRight") {
       event.preventDefault();
       navigate(1);
-    } else if (event.key === "F2") {
+    } else if (event.key === "F2" || event.key === "F3") {
       event.preventDefault();
-      toggleNotTranslatable();
-    } else if (event.key === "F3") {
-      event.preventDefault();
-      editValue(row.source);
+      keepOriginal();
     } else if (event.key === "F4") {
       event.preventDefault();
       reset();
@@ -306,20 +282,18 @@ export function StringEditor({
             <span className="editor__crumbs">
               {modName} · {row.file} · {index + 1}/{total}
             </span>
-            <button
-              type="button"
+            <span
               className="editor__status"
               style={{
                 color: STATUS_META[shownStatus].color,
                 borderColor: statusTint(STATUS_META[shownStatus].color, 0.5),
                 background: statusTint(STATUS_META[shownStatus].color, 0.14),
               }}
-              onClick={toggleNotTranslatable}
-              title="Toggle translated / not-translatable (F2)"
+              title="Status this string will be saved with"
             >
               <span aria-hidden>{STATUS_META[shownStatus].glyph}</span>{" "}
               {STATUS_META[shownStatus].label}
-            </button>
+            </span>
           </span>
         </header>
 
@@ -462,9 +436,9 @@ export function StringEditor({
           <button
             type="button"
             className="editor__iconbtn"
-            onClick={() => editValue(row.source)}
-            aria-label="Copy original"
-            title="Copy original into the translation (F3)"
+            onClick={keepOriginal}
+            aria-label="Keep original"
+            title="Keep the original text — copies it as the translation (F2)"
           >
             ⧉
           </button>

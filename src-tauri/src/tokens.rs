@@ -263,11 +263,17 @@ mod tests {
     fn newline_differences_are_layout_not_missing_tokens() {
         // A translation may rewrap lines freely (German runs longer) — fewer
         // or more newlines must never block export or trigger an AI retry.
-        assert!(!missing_tokens("line one\nline two\nline three", "Zeile eins\nZeile zwei"));
+        assert!(!missing_tokens(
+            "line one\nline two\nline three",
+            "Zeile eins\nZeile zwei"
+        ));
         assert!(missing_token_list("a\nb\nc", "abc").is_empty());
         // Real tokens are still enforced even when newlines also differ.
         assert!(missing_tokens("Hi {{name}}\nmore", "Hallo"));
-        assert_eq!(missing_token_list("Hi {{name}}\nmore", "Hallo"), vec!["{{name}}"]);
+        assert_eq!(
+            missing_token_list("Hi {{name}}\nmore", "Hallo"),
+            vec!["{{name}}"]
+        );
     }
 
     /// Drift guard against the TS extractor: both suites run the same fixture

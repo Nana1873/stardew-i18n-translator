@@ -8,7 +8,7 @@
 //! **`review-needed`** (machine output always needs a human pass, SPEC §19 #2).
 //!
 //! Safety rules on import:
-//!  - Strings that are now `translated` / `not-translatable` are **never**
+//!  - Strings that are now `translated` are **never**
 //!    overwritten (a stale batch must not clobber newer manual work) — they
 //!    are skipped and counted.
 //!  - Dropped protected tokens and identical-to-source values are imported
@@ -100,10 +100,7 @@ pub fn build_batch(
     );
     metadata.insert("sourceLang".into(), Value::String("en".to_string()));
     metadata.insert("targetLang".into(), Value::String(target_lang.to_string()));
-    metadata.insert(
-        "exportedAt".into(),
-        Value::String(now_iso8601()),
-    );
+    metadata.insert("exportedAt".into(), Value::String(now_iso8601()));
 
     let mut root = Map::new();
     root.insert("format".into(), Value::String(BATCH_FORMAT.to_string()));
@@ -145,8 +142,8 @@ fn now_iso8601() -> String {
 pub struct ImportSummary {
     /// Values staged as `review-needed`.
     pub imported: usize,
-    /// Untouched: the string is now `translated`/`not-translatable` locally
-    /// (a stale batch never overwrites newer manual work).
+    /// Untouched: the string is now `translated` locally (a stale batch
+    /// never overwrites newer manual work).
     pub skipped_translated: usize,
     /// Entries that matched nothing: unknown directory/key, non-string or
     /// empty value.
@@ -178,9 +175,7 @@ pub fn apply_batch(
     result: &Value,
     rows_by_dir: &HashMap<String, Vec<StringRow>>,
 ) -> Result<PreparedImport, String> {
-    let object = result
-        .as_object()
-        .ok_or("The file is not a JSON object.")?;
+    let object = result.as_object().ok_or("The file is not a JSON object.")?;
     let format = object.get("format").and_then(Value::as_str).unwrap_or("");
     if format != RESULT_FORMAT && format != BATCH_FORMAT {
         return Err(format!(
@@ -217,7 +212,9 @@ pub fn apply_batch(
                 continue;
             };
             // Never overwrite confirmed local work with machine output.
-            if row.status == "translated" || row.status == "not-translatable" {
+            // (Rows come from load_strings, which migrates legacy
+            // not-translatable entries to translated — SPEC §9 v1.5.)
+            if row.status == "translated" {
                 summary.skipped_translated += 1;
                 continue;
             }
@@ -307,7 +304,10 @@ mod tests {
         let batch = build_batch("M", "m", "de", "German", &items, Some(&glossary));
 
         assert_eq!(batch["glossary"]["Parsnip"], "Pastinake");
-        assert!(batch["glossary"].get("Junimo").is_none(), "unmatched term excluded");
+        assert!(
+            batch["glossary"].get("Junimo").is_none(),
+            "unmatched term excluded"
+        );
     }
 
     #[test]
@@ -319,7 +319,9 @@ mod tests {
                 row("open", "Hello {{name}}", "untranslated"),
                 row("stale", "Changed", "outdated"),
                 row("done", "Done", "translated"),
-                row("fixed", "Fixed", "not-translatable"),
+                // Kept-original (was not-translatable pre-v1.5): load_strings
+                // resolves it to translated, so a batch must not overwrite it.
+                row("fixed", "Fixed", "translated"),
             ],
         );
         let result = serde_json::json!({
@@ -407,10 +409,7 @@ mod tests {
         // The LLM may translate the values inside the original batch file
         // instead of producing a separate result file — accept that too.
         let mut rows = HashMap::new();
-        rows.insert(
-            "i18n".to_string(),
-            vec![row("k", "Hello", "untranslated")],
-        );
+        rows.insert("i18n".to_string(), vec![row("k", "Hello", "untranslated")]);
         let result = serde_json::json!({
             "format": BATCH_FORMAT,
             "version": 1,

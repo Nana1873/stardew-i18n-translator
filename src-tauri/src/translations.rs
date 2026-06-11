@@ -70,7 +70,10 @@ fn state_path(config_dir: &Path, unique_id: &str) -> PathBuf {
 /// A sibling path with `suffix` appended to the full file name
 /// (`Some.Mod.json` + `.bak` -> `Some.Mod.json.bak`).
 fn sibling(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
     name.push(suffix);
     path.with_file_name(name)
 }
@@ -182,7 +185,13 @@ mod tests {
             status: "done".into(),
             source_hash: source_hash("Hello"),
         };
-        save_one(&dir, "Some.Mod", entry_key("i18n", "greeting"), entry.clone()).unwrap();
+        save_one(
+            &dir,
+            "Some.Mod",
+            entry_key("i18n", "greeting"),
+            entry.clone(),
+        )
+        .unwrap();
 
         let state = load(&dir, "Some.Mod").unwrap();
         assert_eq!(state.get(&entry_key("i18n", "greeting")), Some(&entry));
@@ -268,7 +277,8 @@ mod tests {
 
         // Second save overwrites — the pre-overwrite content lands in .bak.
         save_one(&dir, "Backup.Mod", entry_key("i18n", "k2"), entry("v2")).unwrap();
-        let backup: ModState = serde_json::from_str(&std::fs::read_to_string(&bak).unwrap()).unwrap();
+        let backup: ModState =
+            serde_json::from_str(&std::fs::read_to_string(&bak).unwrap()).unwrap();
         assert!(backup.contains_key(&entry_key("i18n", "k1")));
         assert!(!backup.contains_key(&entry_key("i18n", "k2")));
         std::fs::remove_dir_all(&dir).ok();

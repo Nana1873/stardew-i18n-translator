@@ -48,12 +48,10 @@ function sortField(row: Row, col: SortCol): string {
   return row.target;
 }
 
-/** Working translated count, matching the scanner's count_keys: an explicit
- * not-translatable counts as handled, otherwise a non-empty target counts. */
+/** Working translated count, matching the scanner's count_keys: a non-empty
+ * target counts (kept-original strings carry the source text, so they count). */
 function countTranslated(rows: Row[]): number {
-  return rows.filter(
-    (row) => row.status === "not-translatable" || row.target.trim() !== "",
-  ).length;
+  return rows.filter((row) => row.target.trim() !== "").length;
 }
 
 /** Per-status row counts — drives the status-filter dropdown labels and the
@@ -63,7 +61,6 @@ function countByStatus(rows: Row[]): Record<StringStatus, number> {
     untranslated: 0,
     translated: 0,
     outdated: 0,
-    "not-translatable": 0,
     "review-needed": 0,
   };
   for (const row of rows) counts[row.status] += 1;
@@ -282,10 +279,17 @@ export function StringTable({
     setMenu({ x: event.clientX, y: event.clientY });
   }
 
-  /** Apply a status to all selected rows (optionally clearing the target).
-   * One bulk backend write — parallel per-string saves would race the per-mod
-   * state file and lose updates. */
-  async function applyStatus(status: StringStatus, clearTarget: boolean) {
+  /** Apply a status to all selected rows. `write` picks the target text:
+   * `keep` leaves it, `clear` empties it, `source` copies the original
+   * ("Keep original" — an explicit identical translation, SPEC §9). One bulk
+   * backend write — parallel per-string saves would race the per-mod state
+   * file and lose updates. */
+  async function applyStatus(
+    status: StringStatus,
+    write: "keep" | "clear" | "source",
+  ) {
+    const text = (r: Row) =>
+      write === "clear" ? "" : write === "source" ? r.source : r.target;
     const indices = [...selection];
     const entries: SaveStringEntry[] = [];
     for (const i of indices) {
@@ -294,7 +298,7 @@ export function StringTable({
       entries.push({
         relativeDir: r.file,
         key: r.key,
-        target: clearTarget ? "" : r.target,
+        target: text(r),
         status,
         source: r.source,
       });
@@ -302,9 +306,7 @@ export function StringTable({
     await saveStrings(mod.uniqueId, entries);
     const touched = new Set(indices);
     const next = data.map((r, i) =>
-      touched.has(i)
-        ? { ...r, status, target: clearTarget ? "" : r.target }
-        : r,
+      touched.has(i) ? { ...r, status, target: text(r) } : r,
     );
     setRows(next);
     onCountsChange?.(countTranslated(next), countByStatus(next));
@@ -321,9 +323,9 @@ export function StringTable({
   }
 
   /** Selected rows the batch AI translation would process: only strings that
-   * still need work (untranslated/outdated). Translated, not-translatable and
-   * unreviewed AI suggestions are skipped — that also makes a re-run after a
-   * cancel resume exactly where it stopped. */
+   * still need work (untranslated/outdated). Translated strings and unreviewed
+   * AI suggestions are skipped — that also makes a re-run after a cancel
+   * resume exactly where it stopped. */
   const batchEligible = [...selection]
     .sort((a, b) => a - b)
     .filter((i) => {
@@ -549,7 +551,7 @@ export function StringTable({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => void applyStatus("translated", false)}
+                onClick={() => void applyStatus("translated", "keep")}
               >
                 Mark as translated
               </button>
@@ -558,16 +560,17 @@ export function StringTable({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => void applyStatus("not-translatable", false)}
+                title="Copy the original as the translation — names, commands, etc. stay English on purpose"
+                onClick={() => void applyStatus("translated", "source")}
               >
-                Mark as not translatable
+                Keep original text
               </button>
             </li>
             <li>
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => void applyStatus("untranslated", true)}
+                onClick={() => void applyStatus("untranslated", "clear")}
               >
                 Clear translation
               </button>
@@ -642,7 +645,6 @@ function TableFooter({ byStatus }: { byStatus: Record<StringStatus, number> }) {
     "translated",
     "review-needed",
     "outdated",
-    "not-translatable",
   ];
   return (
     <div className="stringtable__foot">
