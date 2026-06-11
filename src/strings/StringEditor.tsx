@@ -31,6 +31,8 @@ export interface EditorRow {
   file: string;
   targetPresent: boolean;
   status: StringStatus;
+  /** Nearest standalone `//` heading in default.json, if present. */
+  section?: string | null;
 }
 
 interface StringEditorProps {
@@ -41,7 +43,10 @@ interface StringEditorProps {
   /** Official game glossary (english -> target), if built. */
   glossary?: Record<string, string> | null;
   /** Translate the source via the local AI (M6); absent when no AI is configured. */
-  onTranslate?: (source: string) => Promise<TranslationResult>;
+  onTranslate?: (
+    source: string,
+    section?: string | null,
+  ) => Promise<TranslationResult>;
   /** Persist the edited target + status for this row. */
   onSave: (value: string, status: StringStatus) => void;
   onClose: () => void;
@@ -164,7 +169,7 @@ export function StringEditor({
     setTranslating(true);
     setTranslateMsg(null);
     try {
-      const result = await onTranslate(row.source);
+      const result = await onTranslate(row.source, row.section);
       setValue(result.text);
       setReviewNeeded(true); // an AI suggestion awaiting review
       setDirty(true);

@@ -259,7 +259,7 @@ describe("StringTable", () => {
       "Translation",
     ) as HTMLTextAreaElement;
     await waitFor(() => expect(textarea.value).toBe("Tschüss!"));
-    expect(onTranslate).toHaveBeenCalledWith("Bye");
+    expect(onTranslate).toHaveBeenCalledWith("Bye", undefined);
     // Badge shows the unreviewed status.
     expect(screen.getByText(/Needs review/)).toBeInTheDocument();
 
@@ -444,7 +444,7 @@ describe("StringTable", () => {
 
     await screen.findByText("Batch translation complete");
     expect(onTranslate).toHaveBeenCalledTimes(1);
-    expect(onTranslate).toHaveBeenCalledWith("Bye");
+    expect(onTranslate).toHaveBeenCalledWith("Bye", undefined);
     expect(invokeMock).toHaveBeenCalledWith(
       "save_string",
       expect.objectContaining({
@@ -472,51 +472,54 @@ describe("StringTable", () => {
     ).toBeDisabled();
   });
 
-  it("exports only eligible rows as a Claude batch and shows the outcome", async () => {
-    const onClaudeExport = vi.fn().mockResolvedValue({
-      path: "C:/out/a.b.claude-batch.json",
+  it("exports only eligible rows as an LLM batch and shows the outcome", async () => {
+    mockStrings([
+      { key: "greeting", source: "Hello", target: "Hallo" },
+      { key: "bye", source: "Bye", target: "", section: "NPC dialogue" },
+    ]);
+    const onLlmBatchExport = vi.fn().mockResolvedValue({
+      path: "C:/out/a.b.llm-batch.json",
       stringCount: 1,
       glossaryTerms: 2,
     });
-    render(<StringTable mod={MOD} onClaudeExport={onClaudeExport} />);
+    render(<StringTable mod={MOD} onLlmBatchExport={onLlmBatchExport} />);
 
     // Select both rows; only "bye" (untranslated) is eligible.
     fireEvent.click(await screen.findByText("greeting"));
     fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
     fireEvent.contextMenu(screen.getByText("bye"));
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
-    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
 
     await screen.findByText("Batch exported");
-    expect(onClaudeExport).toHaveBeenCalledWith([
-      { relativeDir: "i18n", key: "bye", source: "Bye" },
+    expect(onLlmBatchExport).toHaveBeenCalledWith([
+      {
+        relativeDir: "i18n",
+        key: "bye",
+        source: "Bye",
+        section: "NPC dialogue",
+      },
     ]);
-    expect(
-      screen.getByText("C:/out/a.b.claude-batch.json"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("C:/out/a.b.llm-batch.json")).toBeInTheDocument();
   });
 
-  it("a cancelled Claude export (null outcome) shows no dialog", async () => {
-    const onClaudeExport = vi.fn().mockResolvedValue(null);
-    render(<StringTable mod={MOD} onClaudeExport={onClaudeExport} />);
+  it("a cancelled LLM batch export (null outcome) shows no dialog", async () => {
+    const onLlmBatchExport = vi.fn().mockResolvedValue(null);
+    render(<StringTable mod={MOD} onLlmBatchExport={onLlmBatchExport} />);
 
     fireEvent.click(await screen.findByText("bye"));
     fireEvent.contextMenu(screen.getByText("bye"));
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
-    );
+    fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
 
-    await waitFor(() => expect(onClaudeExport).toHaveBeenCalled());
+    await waitFor(() => expect(onLlmBatchExport).toHaveBeenCalled());
     expect(screen.queryByText("Batch exported")).not.toBeInTheDocument();
   });
 
-  it("the Claude export menu item is disabled without a target language", async () => {
+  it("the LLM batch export menu item is disabled without a target language", async () => {
     render(<StringTable mod={MOD} />);
     fireEvent.contextMenu(await screen.findByText("bye"));
 
     expect(
-      screen.getByRole("menuitem", { name: /Export for Claude Code/ }),
+      screen.getByRole("menuitem", { name: /Export LLM batch/ }),
     ).toBeDisabled();
   });
 

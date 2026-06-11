@@ -212,31 +212,33 @@ export function exportMod(
   return invoke<ExportResult>("export_mod", { modUniqueId, files });
 }
 
-/** One string of a Claude-Code batch export (M4). */
-export interface ClaudeBatchItem {
+/** One string of an external LLM batch export (M4). */
+export interface LlmBatchItem {
   relativeDir: string;
   key: string;
   source: string;
+  /** Nearest standalone `//` heading in default.json, used as AI context. */
+  section?: string | null;
 }
 
-export interface ClaudeExportOutcome {
+export interface LlmExportOutcome {
   path: string;
   stringCount: number;
   glossaryTerms: number;
 }
 
 /**
- * Write the selected strings as an offline Claude-Code translation batch
+ * Write the selected strings as an external LLM translation batch
  * (M4, SPEC §11). The backend opens a save dialog; resolves null on cancel.
  */
-export function exportClaudeBatch(
+export function exportLlmBatch(
   modUniqueId: string,
   modName: string,
   targetLang: string,
   targetLanguage: string,
-  items: ClaudeBatchItem[],
-): Promise<ClaudeExportOutcome | null> {
-  return invoke<ClaudeExportOutcome | null>("export_claude_batch", {
+  items: LlmBatchItem[],
+): Promise<LlmExportOutcome | null> {
+  return invoke<LlmExportOutcome | null>("export_llm_batch", {
     modUniqueId,
     modName,
     targetLang,
@@ -245,7 +247,7 @@ export function exportClaudeBatch(
   });
 }
 
-export interface ClaudeImportSummary {
+export interface LlmImportSummary {
   /** Staged as review-needed. */
   imported: number;
   /** Untouched — already translated locally. */
@@ -262,14 +264,14 @@ export interface ClaudeImportSummary {
 }
 
 /**
- * Import a translated Claude-Code batch/result file for one mod (M4). The
+ * Import a translated LLM batch/result file for one mod (M4). The
  * backend opens a file picker; resolves null on cancel.
  */
-export function importClaudeBatch(
+export function importLlmBatch(
   modUniqueId: string,
   files: ExportFileInput[],
-): Promise<ClaudeImportSummary | null> {
-  return invoke<ClaudeImportSummary | null>("import_claude_batch", {
+): Promise<LlmImportSummary | null> {
+  return invoke<LlmImportSummary | null>("import_llm_batch", {
     modUniqueId,
     files,
   });
@@ -333,6 +335,7 @@ export function translateString(
   model: string,
   source: string,
   targetLanguage: string,
+  section?: string | null,
   temperature?: number | null,
 ): Promise<TranslationResult> {
   return invoke<TranslationResult>("translate_string", {
@@ -340,6 +343,7 @@ export function translateString(
     model,
     source,
     targetLanguage,
+    section: section ?? null,
     temperature: temperature ?? null,
   });
 }

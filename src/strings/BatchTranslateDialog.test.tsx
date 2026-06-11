@@ -8,7 +8,13 @@ import { BatchTranslateDialog, type BatchItem } from "./BatchTranslateDialog";
 import type { TranslationResult } from "../tauri/commands";
 
 const ITEMS: BatchItem[] = [
-  { index: 0, key: "first.key", file: "i18n", source: "One" },
+  {
+    index: 0,
+    key: "first.key",
+    file: "i18n",
+    source: "One",
+    section: "Dialogue",
+  },
   { index: 1, key: "second.key", file: "i18n", source: "Two" },
 ];
 
@@ -17,7 +23,10 @@ function ok(text: string): TranslationResult {
 }
 
 function renderDialog(
-  onTranslate: (source: string) => Promise<TranslationResult>,
+  onTranslate: (
+    source: string,
+    section?: string | null,
+  ) => Promise<TranslationResult>,
   onResult = vi.fn().mockResolvedValue(undefined),
 ) {
   const onClose = vi.fn();
@@ -44,6 +53,8 @@ describe("BatchTranslateDialog", () => {
 
     await screen.findByText("Batch translation complete");
     expect(calls).toEqual(["One", "Two"]);
+    expect(onTranslate).toHaveBeenNthCalledWith(1, "One", "Dialogue");
+    expect(onTranslate).toHaveBeenNthCalledWith(2, "Two", undefined);
     expect(onResult).toHaveBeenNthCalledWith(1, ITEMS[0], "X-One");
     expect(onResult).toHaveBeenNthCalledWith(2, ITEMS[1], "X-Two");
     expect(screen.getByText(/saved as “Needs review”/)).toBeInTheDocument();

@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
@@ -35,9 +36,25 @@ beforeEach(() => {
   invokeMock.mockReset();
 });
 
+const EMPTY_SCAN = {
+  mods: [],
+  warnings: [],
+  modCount: 0,
+  fileCount: 0,
+};
+
+function mockConfigured(scanResult: unknown = EMPTY_SCAN) {
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+    if (cmd === "scan_mods") return Promise.resolve(scanResult);
+    if (cmd === "load_glossary") return Promise.resolve(null);
+    return Promise.resolve(null);
+  });
+}
+
 describe("App shell", () => {
   it("renders the toolbar and the dashboard landing", async () => {
-    invokeMock.mockResolvedValue(CONFIGURED);
+    mockConfigured();
     render(<App />);
 
     // The nav toggle is labelled with its destination (work view from here).
@@ -54,10 +71,36 @@ describe("App shell", () => {
     expect(
       screen.queryByRole("dialog", { name: "Setup" }),
     ).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("starts only one automatic scan under React StrictMode", async () => {
+    mockConfigured();
+    render(
+      <StrictMode>
+        <App />
+      </StrictMode>,
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+    ).toHaveLength(1);
   });
 
   it("the nav toggle switches views and renames to its destination", async () => {
-    invokeMock.mockResolvedValue(CONFIGURED);
+    mockConfigured();
     render(<App />);
 
     fireEvent.click(screen.getByRole("button", { name: /Mod list/ }));
@@ -73,62 +116,59 @@ describe("App shell", () => {
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
-    invokeMock.mockResolvedValue({
-      stardewPath: null,
-      modsPath: null,
-      sourceLang: "default",
-      targetLang: null,
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          stardewPath: null,
+          modsPath: null,
+          sourceLang: "default",
+          targetLang: null,
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      return Promise.resolve(null);
     });
     render(<App />);
 
     expect(
       await screen.findByRole("dialog", { name: "Setup" }),
     ).toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", expect.anything());
   });
 
-  it("scans and shows the discovered mods", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
-      if (cmd === "scan_mods")
-        return Promise.resolve({
-          mods: [
+  it("automatically scans and shows discovered mods on configured startup", async () => {
+    mockConfigured({
+      mods: [
+        {
+          uniqueId: "a.b",
+          name: "Test Mod",
+          version: "1.0",
+          nexusId: 7286,
+          packageId: "Test Mod",
+          folderPath: "E:/SDV/Mods/Test Mod",
+          i18nFiles: [
             {
-              uniqueId: "a.b",
-              name: "Test Mod",
-              version: "1.0",
-              nexusId: 7286,
-              packageId: "Test Mod",
-              folderPath: "E:/SDV/Mods/Test Mod",
-              i18nFiles: [
-                {
-                  relativeDir: "i18n",
-                  defaultPath: "x/i18n/default.json",
-                  targetPath: "x/i18n/de.json",
-                  targetExists: false,
-                  totalKeys: 5,
-                  translatedKeys: 0,
-                  reviewNeeded: 2,
-                },
-              ],
+              relativeDir: "i18n",
+              defaultPath: "x/i18n/default.json",
+              targetPath: "x/i18n/de.json",
+              targetExists: false,
               totalKeys: 5,
               translatedKeys: 0,
               reviewNeeded: 2,
-              progress: 0,
-              status: "untranslated",
             },
           ],
-          warnings: [],
-          modCount: 1,
-          fileCount: 1,
-        });
-      return Promise.resolve(null);
+          totalKeys: 5,
+          translatedKeys: 0,
+          reviewNeeded: 2,
+          progress: 0,
+          status: "untranslated",
+        },
+      ],
+      warnings: [],
+      modCount: 1,
+      fileCount: 1,
     });
 
     render(<App />);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
 
     // The dashboard reflects the scan (queue + toolbar pill)…
     expect(await screen.findByText(/1 mods scanned/)).toBeInTheDocument();
@@ -191,10 +231,6 @@ describe("App shell", () => {
     });
 
     render(<App />);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
 
     // The queue lists the mod; clicking it opens the work view on its
     // review backlog (status filter pre-set to review-needed).
@@ -203,5 +239,65 @@ describe("App shell", () => {
       await screen.findByRole("region", { name: "String table" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("Hallo KI")).toBeInTheDocument();
+  });
+
+  it("opens the scan dialog when an automatic scan has warnings", async () => {
+    mockConfigured({
+      ...EMPTY_SCAN,
+      warnings: ["Skipped broken manifest"],
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Scan" }),
+    ).toHaveTextContent("Skipped broken manifest");
+  });
+
+  it("opens the scan dialog when an automatic scan fails", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "scan_mods") return Promise.reject("Mods folder not found");
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Scan" }),
+    ).toHaveTextContent("Mods folder not found");
+  });
+
+  it("keeps the progress dialog for a manual re-scan", async () => {
+    let finishScan: (result: typeof EMPTY_SCAN) => void = () => {};
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods")
+        return new Promise((resolve) => {
+          finishScan = resolve;
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    // Finish the silent startup scan first.
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toHaveLength(1),
+    );
+    finishScan(EMPTY_SCAN);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
+    expect(
+      await screen.findByRole("dialog", { name: "Scan" }),
+    ).toHaveTextContent("Scanning mods");
+    finishScan(EMPTY_SCAN);
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull(),
+    );
   });
 });

@@ -156,33 +156,33 @@ fn export_mod(
     export::export_mod(&config_dir(&app)?, &mod_unique_id, &files)
 }
 
-/// Outcome of a Claude-Code batch export (M4): where the file landed and what
+/// Outcome of an external LLM batch export (M4): where the file landed and what
 /// it contains. `None` from the command means the user cancelled the picker.
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
-struct ClaudeExportOutcome {
+struct LlmExportOutcome {
     path: String,
     string_count: usize,
     glossary_terms: usize,
 }
 
-/// Write the selected strings as an offline Claude-Code translation batch
+/// Write the selected strings as an external LLM translation batch
 /// (M4, SPEC §11). Opens a save dialog; embeds instructions + a glossary
-/// excerpt so the file can be handed to Claude Code verbatim.
+/// excerpt so the file can be handed to any LLM verbatim.
 #[tauri::command]
-fn export_claude_batch(
+fn export_llm_batch(
     app: AppHandle,
     mod_unique_id: String,
     mod_name: String,
     target_lang: String,
     target_language: String,
     items: Vec<batch::BatchExportItem>,
-) -> Result<Option<ClaudeExportOutcome>, String> {
+) -> Result<Option<LlmExportOutcome>, String> {
     let picked = app
         .dialog()
         .file()
-        .set_title("Export Claude-Code translation batch")
-        .set_file_name(format!("{mod_unique_id}.claude-batch.json"))
+        .set_title("Export LLM translation batch")
+        .set_file_name(format!("{mod_unique_id}.llm-batch.json"))
         .add_filter("JSON", &["json"])
         .blocking_save_file();
     let Some(picked) = picked else {
@@ -211,18 +211,18 @@ fn export_claude_batch(
     std::fs::write(&dest, body.as_bytes())
         .map_err(|error| format!("Could not write {}: {error}", dest.display()))?;
 
-    Ok(Some(ClaudeExportOutcome {
+    Ok(Some(LlmExportOutcome {
         path: dest.display().to_string(),
         string_count: items.len(),
         glossary_terms,
     }))
 }
 
-/// Import a translated Claude-Code batch/result file for one mod (M4). Opens
+/// Import a translated LLM batch/result file for one mod (M4). Opens
 /// a file picker; matches keys against the mod's current strings; stages all
 /// accepted values as `review-needed` in ONE state write. `None` = cancelled.
 #[tauri::command]
-fn import_claude_batch(
+fn import_llm_batch(
     app: AppHandle,
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
@@ -230,7 +230,7 @@ fn import_claude_batch(
     let picked = app
         .dialog()
         .file()
-        .set_title("Import Claude-Code translation result")
+        .set_title("Import LLM translation result")
         .add_filter("JSON", &["json"])
         .blocking_pick_file();
     let Some(picked) = picked else {
@@ -324,6 +324,7 @@ async fn translate_string(
     model: String,
     source: String,
     target_language: String,
+    section: Option<String>,
     temperature: Option<f32>,
 ) -> Result<llm::TranslationResult, String> {
     if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
@@ -337,6 +338,7 @@ async fn translate_string(
         &model,
         &source,
         &target_language,
+        section.as_deref(),
         &glossary_pairs,
         temperature,
     )
@@ -387,8 +389,8 @@ pub fn run() {
             save_string,
             save_strings,
             export_mod,
-            export_claude_batch,
-            import_claude_batch,
+            export_llm_batch,
+            import_llm_batch,
             build_glossary,
             glossary_status,
             load_glossary,

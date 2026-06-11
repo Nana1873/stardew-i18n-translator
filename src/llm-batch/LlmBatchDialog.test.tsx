@@ -1,13 +1,13 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { vi } from "vitest";
-import { ClaudeExportDialog, ClaudeImportDialog } from "./ClaudeBatchDialog";
+import { LlmExportDialog, LlmImportDialog } from "./LlmBatchDialog";
 
-describe("ClaudeExportDialog", () => {
-  it("shows the written path and the import hint", () => {
+describe("LlmExportDialog", () => {
+  it("shows the written path and complete external LLM workflow", () => {
     render(
-      <ClaudeExportDialog
+      <LlmExportDialog
         outcome={{
-          path: "C:/batches/my.mod.claude-batch.json",
+          path: "C:/batches/my.mod.llm-batch.json",
           stringCount: 12,
           glossaryTerms: 3,
         }}
@@ -18,14 +18,19 @@ describe("ClaudeExportDialog", () => {
     );
     expect(screen.getByText("Batch exported")).toBeInTheDocument();
     expect(
-      screen.getByText("C:/batches/my.mod.claude-batch.json"),
+      screen.getByText("C:/batches/my.mod.llm-batch.json"),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Open ChatGPT, Claude, Gemini/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Follow the "instructions"/)).toBeInTheDocument();
     expect(screen.getByText(/Import batch…/)).toBeInTheDocument();
+    expect(screen.getByText(/Needs review/)).toBeInTheDocument();
   });
 
   it("shows the failure message on error", () => {
     render(
-      <ClaudeExportDialog
+      <LlmExportDialog
         outcome={null}
         error="disk full"
         modName="My Mod"
@@ -37,11 +42,11 @@ describe("ClaudeExportDialog", () => {
   });
 });
 
-describe("ClaudeImportDialog", () => {
+describe("LlmImportDialog", () => {
   it("summarizes imported, protected, unmatched and flagged strings", () => {
     const onClose = vi.fn();
     render(
-      <ClaudeImportDialog
+      <LlmImportDialog
         summary={{
           imported: 5,
           skippedTranslated: 2,
@@ -76,16 +81,16 @@ describe("ClaudeImportDialog", () => {
 
   it("shows the failure message on error", () => {
     render(
-      <ClaudeImportDialog
+      <LlmImportDialog
         summary={null}
-        error="Not a Claude-Code batch/result file"
+        error="Not an LLM batch/result file"
         modName="My Mod"
         onClose={() => {}}
       />,
     );
     expect(screen.getByText("Batch import failed")).toBeInTheDocument();
     expect(
-      screen.getByText(/Not a Claude-Code batch\/result file/),
+      screen.getByText(/Not an LLM batch\/result file/),
     ).toBeInTheDocument();
   });
 });
