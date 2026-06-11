@@ -11,7 +11,6 @@ const RESULT: ExportResult = {
       backedUp: true,
       writtenKeys: 3,
       untranslated: 1,
-      notTranslatable: 1,
       outdated: 1,
       reviewNeeded: 1,
       orphanKeys: ["legacy.key"],
@@ -23,7 +22,6 @@ const RESULT: ExportResult = {
   filesWritten: 1,
   totalWrittenKeys: 3,
   totalUntranslated: 1,
-  totalNotTranslatable: 1,
   totalOutdated: 1,
   totalReviewNeeded: 1,
   totalOrphanKeys: 1,
@@ -42,7 +40,6 @@ describe("ExportDialog", () => {
 
     expect(screen.getByText("Export complete")).toBeInTheDocument();
     expect(screen.getByText(/Untranslated/)).toBeInTheDocument();
-    expect(screen.getByText(/Not\s*translatable/)).toBeInTheDocument();
     expect(screen.getByText(/Outdated/)).toBeInTheDocument();
     expect(screen.getByText(/Needs review/)).toBeInTheDocument();
     // Skipped key is listed with its name.

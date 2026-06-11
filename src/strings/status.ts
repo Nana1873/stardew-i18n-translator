@@ -30,12 +30,6 @@ export const STATUS_META: Record<
     color: "#b98cdb",
     edge: "#b98cdb",
   },
-  "not-translatable": {
-    label: "Not translatable",
-    glyph: "⊘",
-    color: "#8f8675",
-    edge: "rgba(143, 134, 117, 0.5)",
-  },
   "review-needed": {
     label: "Needs review",
     glyph: "⚑",

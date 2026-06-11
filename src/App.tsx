@@ -297,7 +297,6 @@ export function App() {
         filesWritten: 0,
         totalWrittenKeys: 0,
         totalUntranslated: 0,
-        totalNotTranslatable: 0,
         totalOutdated: 0,
         totalReviewNeeded: 0,
         totalOrphanKeys: 0,
@@ -317,7 +316,6 @@ export function App() {
         merged.filesWritten += result.filesWritten;
         merged.totalWrittenKeys += result.totalWrittenKeys;
         merged.totalUntranslated += result.totalUntranslated;
-        merged.totalNotTranslatable += result.totalNotTranslatable;
         merged.totalOutdated += result.totalOutdated;
         merged.totalReviewNeeded += result.totalReviewNeeded;
         merged.totalOrphanKeys += result.totalOrphanKeys;
@@ -568,7 +566,6 @@ function FilterChips({
     "translated",
     "review-needed",
     "outdated",
-    "not-translatable",
   ];
   const allActive = value === "all";
   return (

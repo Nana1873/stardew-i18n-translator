@@ -390,16 +390,16 @@ under the cursor, whatever the next string contains.
 
 **Keyboard shortcuts:**
 
-| Shortcut     | Action                           |
-| ------------ | -------------------------------- |
-| `Ctrl+Enter` | Save and close                   |
-| `Esc`        | Cancel and close                 |
-| `Alt+Left`   | Previous string                  |
-| `Alt+Right`  | Next string                      |
-| `F2`         | Toggle not-translatable          |
-| `F3`         | Copy original to target          |
-| `F4`         | Reset target                     |
-| `Ctrl+F5`    | Translate with the local AI (M6) |
+| Shortcut     | Action                                               |
+| ------------ | ---------------------------------------------------- |
+| `Ctrl+Enter` | Save and close                                       |
+| `Esc`        | Cancel and close                                     |
+| `Alt+Left`   | Previous string                                      |
+| `Alt+Right`  | Next string                                          |
+| `F2`         | Keep original (copies the source as the translation) |
+| `F3`         | Alias of `F2` (legacy "copy original")               |
+| `F4`         | Reset target                                         |
+| `Ctrl+F5`    | Translate with the local AI (M6)                     |
 
 ### 7.6 Context Menu (Right-Click)
 
@@ -413,7 +413,7 @@ Available on one or multiple selected strings in the String Table.
 | **Copy Original**               | Copy source text to clipboard                                                                |
 | **Copy Translation**            | Copy target text to clipboard                                                                |
 | **Mark as Translated**          | Set status to `translated` for all selected                                                  |
-| **Mark as Not Translatable**    | Set status to `not-translatable` for all selected                                            |
+| **Keep Original Text**          | Copy the source as the translation for all selected (`translated`, see §9 v1.5)              |
 | **Clear Translation**           | Clear target text and set status to `untranslated` (explicitly destructive)                  |
 | **Search Translation on Nexus** | Opens browser to Nexus search for this mod + target language _(mod-level context menu only)_ |
 
@@ -462,33 +462,32 @@ the step-by-step Setup Wizard:
 
 ### String-Level Status
 
-v1 uses **5 statuses**. Three describe a hand-edited string's state; `outdated` is derived automatically; `review-needed` is the AI-workflow status.
+v1.5 uses **4 statuses** (glyphs per §7.0). Two describe a hand-edited string's state; `outdated` is derived automatically; `review-needed` is the AI-workflow status.
 
-| Status             | Color     | Meaning                                                                    | How it's set                                                                                                              |
-| ------------------ | --------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `untranslated`     | 🔴 Red    | No target text yet                                                         | Initial; or editor "Reset" (F4); or context-menu "Clear translation"                                                      |
-| `translated`       | 🟢 Green  | Has a translation (your edit, or an imported existing `<lang>.json` value) | Saving in the editor; or "Mark as translated"                                                                             |
-| `outdated`         | 🟣 Purple | The English source changed since this string was translated                | **Automatic** on re-scan (see below) — never set manually                                                                 |
-| `not-translatable` | ⚪ Gray   | Explicitly marked as not needing translation (proper nouns, IDs)           | F2 in the editor; or "Mark as not translatable"                                                                           |
-| `review-needed`    | 🟠 Amber  | An unreviewed machine suggestion (AI) awaiting a human pass                | Set by an AI translation (M6 local LLM / M4 batch import); **confirmed → `translated`** by an explicit Save in the editor |
+| Status          | Presentation | Meaning                                                                            | How it's set                                                                                                              |
+| --------------- | ------------ | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `untranslated`  | ○ Gray       | No target text yet                                                                 | Initial; or editor "Reset" (F4); or context-menu "Clear translation"                                                      |
+| `translated`    | ✓ Green      | Has a translation (your edit, an imported `<lang>.json` value, or a kept-original) | Saving in the editor; "Mark as translated"; **"Keep original"** (F2 / context menu) copies the source as the translation  |
+| `outdated`      | ↻ Purple     | The English source changed since this string was translated                        | **Automatic** on re-scan (see below) — never set manually                                                                 |
+| `review-needed` | ⚑ Orange     | An unreviewed machine suggestion (AI) awaiting a human pass                        | Set by an AI translation (M6 local LLM / M4 batch import); **confirmed → `translated`** by an explicit Save in the editor |
 
-> **Scope note:** An earlier draft had 6 statuses (`imported`, `review-needed`, `done`, …). `imported`/`done` collapsed to **`translated`**; `review-needed` returns with the **AI translation workflows** — the M6 local-LLM engine (implemented) and the M4 Claude-Code batch — where machine output needs a human review pass. It is never set by hand. Legacy stored values are normalized to this set on load.
+> **Scope note:** An earlier draft had 6 statuses (`imported`, `review-needed`, `done`, …). `imported`/`done` collapsed to **`translated`**. **v1.5 removed `not-translatable`:** strings that should stay English (proper nouns, commands) are handled by the **"Keep original"** action, which stores the source text as an explicit identical translation. That is strictly better — the string is covered by `outdated` detection (a changed source re-surfaces it) and exports as an explicit key instead of a silent omission. Legacy stored `not-translatable` values are migrated on load: an empty stored target resolves to the current source as `translated`; a non-empty one keeps its text and the regular staleness check applies.
 
 ### `outdated` Detection (automatic, surgical)
 
 When a string is saved, its `sourceHash` (SHA-256 of the **English source text of that key**) is stored alongside the target. On re-scan, a `translated` or `review-needed` string whose stored `sourceHash` no longer matches the current `default.json` value for that key becomes `outdated`.
 
-This is **per-string**, not per-mod: a mod update flags **only** the handful of strings whose English text actually changed. New keys arrive as `untranslated`; unchanged translations stay `translated`; `not-translatable` is never affected.
+This is **per-string**, not per-mod: a mod update flags **only** the handful of strings whose English text actually changed. New keys arrive as `untranslated`; unchanged translations stay `translated`.
 
 ### Mod-Level Status (Aggregate)
 
 Coarse health indicator derived from the working translation counts:
 
-| Aggregate | Condition                                      |
-| --------- | ---------------------------------------------- |
-| 🔴 Red    | Any key is untranslated                        |
-| 🟢 Green  | All keys are translated or not-translatable    |
-| ⚪ Gray   | No translatable strings (empty `default.json`) |
+| Aggregate | Condition                                    |
+| --------- | -------------------------------------------- |
+| ⚪ Gray   | Not started (0%), or no translatable strings |
+| 🟡 Gold   | In progress (some keys still untranslated)   |
+| 🟢 Green  | All keys have a working translation          |
 
 The **package** (parent tree node, §7.3) uses the same roll-up across its component mods. (Per-string `outdated` is shown in the string table's status bar, not the coarse mod dot.)
 
@@ -579,7 +578,7 @@ The tool exports a structured batch file that the user processes externally with
 1. User imports the Claude Code result file via the toolbar button **"Import batch…"** (file picker; lenient JSON parsing tolerates LLM artifacts like trailing commas).
 2. Tool matches keys per i18n directory against the current `default.json`.
 3. Every accepted value is staged as **`review-needed`** in one atomic state write; the table reloads.
-4. Strings that are now `translated`/`not-translatable` locally are **never overwritten** (stale-batch protection) — they are skipped and counted.
+4. Strings that are now `translated` locally (including kept-originals) are **never overwritten** (stale-batch protection) — they are skipped and counted.
 5. Validation runs on all imported strings; values that drop a protected token or are identical to the English source are imported anyway but flagged in the summary (never auto-rejected).
 6. A file translated **in place** (still carrying the `…-claude-batch` format marker) is accepted like a result file.
 
@@ -808,7 +807,7 @@ Core workflow — no AI, no Nexus API:
 - [ ] Mod list **tree** grouped by package/download folder (multi-component mods expand to components; single-component mods render flat) with Status | Mod | Version | Nexus | Dateien | Fortschritt
 - [ ] String table with Key | Original | Target Text | Validation
 - [ ] String editor dialog (double-click)
-- [ ] Status model: 4 statuses with color coding (`untranslated`, `translated`, `outdated`, `not-translatable`)
+- [ ] Status model: 4 statuses with color coding (`untranslated`, `translated`, `outdated`, `review-needed`)
 - [ ] `outdated` detection via `sourceHash` / `sourceTextAtTranslation`
 - [ ] Token validation (`token-missing`, `token-added`)
 - [ ] Empty target validation (`empty-target`)
@@ -1108,7 +1107,7 @@ The following are **explicitly excluded** from v1:
 | **Large mod collections**               | 200+ mods with 10,000+ strings may cause UI lag.                     | Virtualized/paginated table rendering. Lazy loading of string data.                                                                                     |
 | **Non-standard mod JSON**               | Comments, BOM, trailing commas.                                      | Lenient JSON parser. BOM stripping. Log warnings for non-standard files. Skip truly broken files.                                                       |
 | **Technology stack lock-in**            | Wrong framework choice could limit future development.               | Milestone 0 is a dedicated decision gate. Evaluate before coding.                                                                                       |
-| **Token false positives**               | `{{...}}` regex may match non-token content.                         | Token validation compares source vs target sets. False positives on both sides cancel out. Manual override via `not-translatable` status.               |
+| **Token false positives**               | `{{...}}` regex may match non-token content.                         | Token validation compares source vs target sets. False positives on both sides cancel out. Manual override via "Keep original" (identical translation). |
 | **Export key order**                    | JSON libraries may not preserve insertion order.                     | Use ordered map / manual serialization. Test with real mod files.                                                                                       |
 | **Local-LLM quality (M6)**              | Small local models hallucinate and drop protected tokens.            | Token validation + one stricter retry; output is always `review-needed`, never auto-`translated`. Glossary injected as guidance, not hard substitution. |
 
@@ -1118,7 +1117,7 @@ The following are **explicitly excluded** from v1:
 
 1. **The SSE-AT test.** Before adding a UI element, ask: "Would SSE Auto Translator have this?" If no, it probably doesn't belong in v1.
 
-2. **The status rule.** v1 has exactly 5 statuses (`untranslated`, `translated`, `outdated`, `not-translatable`, `review-needed`). Do not add more. `review-needed` exists only for the **AI translation workflows** — the M6 local-LLM engine and the M4 Claude-Code batch — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing (an explicit Save confirms it to `translated`).
+2. **The status rule.** v1.5 has exactly 4 statuses (`untranslated`, `translated`, `outdated`, `review-needed`). Do not add more. v1's fifth status (`not-translatable`) was **removed**, not just renamed — "keep it English" became the "Keep original" _action_ that stores an identical translation — one fewer status to scan for, and full `outdated` coverage. `review-needed` exists only for the **AI translation workflows** — the M6 local-LLM engine and the M4 Claude-Code batch — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing (an explicit Save confirms it to `translated`).
 
 3. **The 5-validation-rule rule.** v1 has exactly 5 validation rules (§10; `newline-mismatch` was pulled forward because treating `\n` as a hard token error blocked valid translations). Adding a rule requires justifying why it prevents broken mods, not just improves quality.
 

@@ -259,10 +259,11 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             let state = match state_cache.entry(unique_id.clone()) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(slot) => {
-                    let loaded = translations::load(config_dir, &unique_id).unwrap_or_else(|error| {
-                        warnings.push(error);
-                        ModState::new()
-                    });
+                    let loaded =
+                        translations::load(config_dir, &unique_id).unwrap_or_else(|error| {
+                            warnings.push(error);
+                            ModState::new()
+                        });
                     slot.insert(loaded)
                 }
             };
@@ -298,7 +299,8 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
 }
 
 fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<ScannedMod, String> {
-    let body = std::fs::read_to_string(manifest).map_err(|e| format!("unreadable manifest: {e}"))?;
+    let body =
+        std::fs::read_to_string(manifest).map_err(|e| format!("unreadable manifest: {e}"))?;
     let value = parse_json_lenient(&body).map_err(|e| format!("invalid manifest JSON: {e}"))?;
     let object = value.as_object().ok_or("manifest is not an object")?;
 
@@ -355,7 +357,7 @@ pub struct StringRow {
     pub target: String,
     /// Whether the key exists in the target file (distinguishes "" from absent).
     pub target_present: bool,
-    /// untranslated | imported | review-needed | done | outdated | not-translatable
+    /// untranslated | translated | review-needed | outdated (v1.5 model, SPEC §9)
     pub status: String,
 }
 
@@ -401,6 +403,13 @@ fn resolve_string(
     key: &str,
 ) -> (String, String) {
     if let Some(stored) = state.get(&translations::entry_key(relative_dir, key)) {
+        // Legacy `not-translatable` (pre-v1.5 status model): kept-English is
+        // now an explicit identical translation ("Keep original"). An empty
+        // stored target takes the *current* source text — that pair can't be
+        // stale, so it skips the outdated check below.
+        if stored.status == "not-translatable" && stored.target.trim().is_empty() {
+            return (source_text.to_string(), "translated".to_string());
+        }
         let status = normalize_status(&stored.status);
         // A `translated` or (AI-suggested) `review-needed` string goes stale when
         // its source changes — both are translations tied to a source hash.
@@ -423,16 +432,16 @@ fn resolve_string(
 }
 
 /// Map any stored status (including legacy values) to the recognized set:
-/// `untranslated` | `translated` | `not-translatable` | `review-needed`.
-/// (`outdated` is derived from the source hash, never stored.) `review-needed`
-/// is an AI suggestion awaiting review (M6); legacy `done`/`imported` collapse
-/// to `translated`.
+/// `untranslated` | `translated` | `review-needed`. (`outdated` is derived
+/// from the source hash, never stored.) `review-needed` is an AI suggestion
+/// awaiting review (M6); legacy `done`/`imported`/`not-translatable` collapse
+/// to `translated` — kept-English is an explicit identical translation since
+/// v1.5 (resolve_string fills an empty legacy target with the source).
 fn normalize_status(stored: &str) -> String {
     match stored {
-        "not-translatable" => "not-translatable",
         "untranslated" => "untranslated",
         "review-needed" => "review-needed",
-        _ => "translated", // done | imported | translated | outdated
+        _ => "translated", // done | imported | translated | outdated | not-translatable
     }
     .to_string()
 }
@@ -507,13 +516,17 @@ fn count_keys(
     };
     let target_map = read_object(target_path).unwrap_or_default();
     let target = TargetLookup::new(&target_map);
-    let total = source.keys().filter(|key| !is_ignored_i18n_key(key)).count();
+    let total = source
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .count();
     let translated = source
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
         .filter(|key| {
             match state.get(&translations::entry_key(relative_dir, key)) {
-                // Not-translatable counts as handled, even without target text.
+                // Legacy not-translatable counts as handled even without target
+                // text — it resolves to keep-original (source text) on load.
                 Some(stored) => {
                     stored.status == "not-translatable" || !stored.target.trim().is_empty()
                 }
@@ -580,7 +593,8 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys) = count_keys(&default_path, &target_path, state, &relative_dir);
+    let (total_keys, translated_keys) =
+        count_keys(&default_path, &target_path, state, &relative_dir);
     Some(ScannedI18nFile {
         target_exists: target_path.is_file(),
         default_path: default_path.display().to_string(),
@@ -625,7 +639,9 @@ fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut Vec<PathBu
             }
 
             if file_type.is_dir() || file_type.is_symlink() {
-                let is_i18n = path.file_name().is_some_and(|n| n.eq_ignore_ascii_case("i18n"));
+                let is_i18n = path
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("i18n"));
                 if is_i18n {
                     if path.join("default.json").is_file() {
                         i18n_dirs.push(path);
@@ -655,7 +671,11 @@ pub fn strip_json_comments_and_trailing_commas(text: &str) -> String {
 
     while index < len {
         let ch = chars[index];
-        let next = if index + 1 < len { chars[index + 1] } else { '\0' };
+        let next = if index + 1 < len {
+            chars[index + 1]
+        } else {
+            '\0'
+        };
 
         if in_line_comment {
             if ch == '\n' || ch == '\r' {
@@ -749,7 +769,11 @@ pub fn strip_json_comments_and_trailing_commas(text: &str) -> String {
                 .copied()
                 .unwrap_or('\0');
             if next_non_ws == '}' || next_non_ws == ']' {
-                out.push(without_comments[segment_start..index].iter().collect::<String>());
+                out.push(
+                    without_comments[segment_start..index]
+                        .iter()
+                        .collect::<String>(),
+                );
                 segment_start = index + 1;
             }
         }
@@ -791,7 +815,8 @@ mod tests {
     fn strips_trailing_line_comment_without_newline_at_eof() {
         // A `//` comment that ends the file (no trailing newline) must be
         // dropped, not re-added after the closing brace.
-        let value = parse_json_lenient("{\n  \"k\": \"v\"\n}\n//trailing \"comment\" at eof").unwrap();
+        let value =
+            parse_json_lenient("{\n  \"k\": \"v\"\n}\n//trailing \"comment\" at eof").unwrap();
         assert_eq!(value["k"], "v");
         assert_eq!(value.as_object().unwrap().len(), 1);
     }
@@ -862,7 +887,10 @@ mod tests {
                 &pkg.join(name).join("manifest.json"),
                 &format!("{{ \"Name\": \"{name}\", \"Version\": \"1.0\", \"UniqueID\": \"id.{name}\", \"UpdateKeys\": [ \"{nexus}\" ] }}"),
             );
-            write(&pkg.join(name).join("i18n").join("default.json"), "{ \"k\": \"v\" }");
+            write(
+                &pkg.join(name).join("i18n").join("default.json"),
+                "{ \"k\": \"v\" }",
+            );
         }
         // [FTM] component: manifest but no i18n -> excluded.
         write(
@@ -876,7 +904,10 @@ mod tests {
 
         assert_eq!(result.mod_count, 3, "only components with i18n are listed");
         assert!(result.warnings.iter().any(|w| w.contains("Broken")));
-        assert!(result.mods.iter().all(|m| m.package_id == "Ridgeside Village"));
+        assert!(result
+            .mods
+            .iter()
+            .all(|m| m.package_id == "Ridgeside Village"));
         let cp = result.mods.iter().find(|m| m.name == "[CP] RSV").unwrap();
         assert_eq!(cp.nexus_id, Some(7286));
         assert_eq!(cp.i18n_files.len(), 1);
@@ -896,7 +927,10 @@ mod tests {
             &mod_dir.join("manifest.json"),
             "{ \"UniqueID\": \"a.b\", \"Name\": \"Mod\" }",
         );
-        write(&mod_dir.join("i18n").join("default.json"), "{ \"k\": \"v\" }");
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
         write(&mod_dir.join("i18n").join("de.json"), "{ \"k\": \"w\" }");
 
         let result = scan_mods(&root, "de", &root);
@@ -939,7 +973,10 @@ mod tests {
         let root = crate::test_support::temp_dir("load-strings");
         let i18n = root.join("i18n");
         // Intentionally non-alphabetical to prove order is preserved.
-        write(&i18n.join("default.json"), "{ \"zeta\": \"Z\", \"alpha\": \"A\" }");
+        write(
+            &i18n.join("default.json"),
+            "{ \"zeta\": \"Z\", \"alpha\": \"A\" }",
+        );
         write(&i18n.join("de.json"), "{ \"alpha\": \"Ä\" }");
 
         let rows = load_strings(
@@ -986,8 +1023,12 @@ mod tests {
 
         // Counts agree: both keys are translated.
         let state = ModState::new();
-        let (total, translated) =
-            count_keys(&i18n.join("default.json"), &i18n.join("de.json"), &state, "i18n");
+        let (total, translated) = count_keys(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &state,
+            "i18n",
+        );
         assert_eq!((total, translated), (2, 2));
 
         std::fs::remove_dir_all(&root).ok();
@@ -1049,11 +1090,67 @@ mod tests {
     }
 
     #[test]
+    fn legacy_not_translatable_migrates_to_keep_original() {
+        // Pre-v1.5 status model: `not-translatable` entries become "keep
+        // original" — translated, with an empty stored target resolving to
+        // the current source text (SPEC §9).
+        let root = crate::test_support::temp_dir("load-keep-original");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{ \"empty\": \"Parsnip\", \"kept\": \"Junimo Hut\" }",
+        );
+
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "empty"),
+            translations::StoredString {
+                target: String::new(),
+                status: "not-translatable".into(),
+                source_hash: translations::source_hash("Parsnip"),
+            },
+        )
+        .unwrap();
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "kept"),
+            translations::StoredString {
+                target: "Junimo Hut".into(),
+                status: "not-translatable".into(),
+                source_hash: translations::source_hash("old source"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id").unwrap();
+
+        let rows = load_strings(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &state,
+            "i18n",
+        );
+        // Empty legacy target -> the current source, never stale.
+        assert_eq!(rows[0].target, "Parsnip");
+        assert_eq!(rows[0].status, "translated");
+        // Non-empty legacy target keeps its text; the stale hash makes the
+        // regular outdated detection kick in (the point of the migration).
+        assert_eq!(rows[1].target, "Junimo Hut");
+        assert_eq!(rows[1].status, "outdated");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn fully_translated_mod_is_translated() {
         let root = crate::test_support::temp_dir("scan-imported");
         let mod_dir = root.join("Mod");
         write(&mod_dir.join("manifest.json"), "{ \"UniqueID\": \"a.b\" }");
-        write(&mod_dir.join("i18n").join("default.json"), "{ \"a\": \"1\" }");
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"a\": \"1\" }",
+        );
         write(&mod_dir.join("i18n").join("de.json"), "{ \"a\": \"eins\" }");
 
         let scanned = &scan_mods(&root, "de", &root).mods[0];

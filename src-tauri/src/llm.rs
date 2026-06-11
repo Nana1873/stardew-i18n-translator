@@ -200,9 +200,8 @@ fn build_messages(
     ));
 
     if !glossary_pairs.is_empty() {
-        system.push_str(
-            "\nOfficial glossary — use these exact target terms when the word appears:",
-        );
+        system
+            .push_str("\nOfficial glossary — use these exact target terms when the word appears:");
         for (en, target) in glossary_pairs {
             system.push_str(&format!("\n- {en} -> {target}"));
         }
@@ -368,9 +367,18 @@ mod tests {
 
     #[test]
     fn models_url_handles_trailing_slash_and_whitespace() {
-        assert_eq!(models_url("http://localhost:1234/v1"), "http://localhost:1234/v1/models");
-        assert_eq!(models_url("http://localhost:1234/v1/"), "http://localhost:1234/v1/models");
-        assert_eq!(models_url("  http://localhost:11434/v1  "), "http://localhost:11434/v1/models");
+        assert_eq!(
+            models_url("http://localhost:1234/v1"),
+            "http://localhost:1234/v1/models"
+        );
+        assert_eq!(
+            models_url("http://localhost:1234/v1/"),
+            "http://localhost:1234/v1/models"
+        );
+        assert_eq!(
+            models_url("  http://localhost:11434/v1  "),
+            "http://localhost:11434/v1/models"
+        );
     }
 
     #[test]
@@ -379,7 +387,9 @@ mod tests {
         assert_eq!(messages.len(), 2);
         assert_eq!(messages[0].role, "system");
         assert!(messages[0].content.contains("into German"));
-        assert!(messages[0].content.contains("Preserve every placeholder/token"));
+        assert!(messages[0]
+            .content
+            .contains("Preserve every placeholder/token"));
         assert_eq!(messages[1].role, "user");
         assert_eq!(messages[1].content, "Hello {{name}}");
     }
@@ -395,7 +405,10 @@ mod tests {
     #[test]
     fn single_line_source_stops_at_newline() {
         // One-line source → stop at the first newline (cuts a chatty model off).
-        assert_eq!(stop_sequences("UI Info Suite Options"), Some(vec!["\n".to_string()]));
+        assert_eq!(
+            stop_sequences("UI Info Suite Options"),
+            Some(vec!["\n".to_string()])
+        );
         // Multi-line source → no stop (its newlines are legitimate).
         assert_eq!(stop_sequences("Hello#$b#World\nmore"), None);
     }
@@ -442,7 +455,9 @@ mod tests {
     fn retry_reminder_lists_the_dropped_tokens() {
         let missing = vec!["{{name}}".to_string(), "$b".to_string()];
         let messages = build_messages("Hi {{name}}$b", "German", &[], Some(&missing));
-        assert!(messages[0].content.contains("dropped these required tokens"));
+        assert!(messages[0]
+            .content
+            .contains("dropped these required tokens"));
         assert!(messages[0].content.contains("{{name}}"));
         assert!(messages[0].content.contains("$b"));
     }

@@ -53,13 +53,13 @@ describe("StringEditor", () => {
     expect(onNavigate).toHaveBeenCalledWith(1);
   });
 
-  it("a status-only change (F2 not-translatable) is saved on navigation", () => {
+  it("F2 keeps the original: copies the source, saved as translated on navigation", () => {
     const { onSave, onNavigate } = renderEditor();
 
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "F2" });
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
-    expect(onSave).toHaveBeenCalledWith("Hallo", "not-translatable");
+    expect(onSave).toHaveBeenCalledWith("Hello", "translated");
     expect(onNavigate).toHaveBeenCalledWith(1);
   });
 

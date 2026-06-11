@@ -196,8 +196,7 @@ fn glossary_path(config_dir: &Path) -> PathBuf {
 }
 
 pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
-    std::fs::create_dir_all(config_dir)
-        .map_err(|e| format!("Could not create config dir: {e}"))?;
+    std::fs::create_dir_all(config_dir).map_err(|e| format!("Could not create config dir: {e}"))?;
     let body = serde_json::to_string(glossary).map_err(|e| format!("serialize glossary: {e}"))?;
     std::fs::write(glossary_path(config_dir), body).map_err(|e| format!("write glossary: {e}"))
 }
@@ -261,9 +260,14 @@ mod tests {
         // Term-like pair kept.
         assert_eq!(glossary.terms.get("Spring"), Some(&"Frühling".to_string()));
         // "Hello there" -> "Hallo zusammen" is short enough (2 words) -> kept.
-        assert_eq!(glossary.terms.get("Hello there"), Some(&"Hallo zusammen".to_string()));
+        assert_eq!(
+            glossary.terms.get("Hello there"),
+            Some(&"Hallo zusammen".to_string())
+        );
         // Prose (ends with '.') excluded.
-        assert!(!glossary.terms.contains_key("A long sentence describing things."));
+        assert!(!glossary
+            .terms
+            .contains_key("A long sentence describing things."));
         // Identical value (no translation) excluded.
         assert!(!glossary.terms.values().any(|v| v == "Junimo"));
         assert_eq!(glossary.target_lang, "de");

@@ -62,7 +62,11 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 #[tauri::command]
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
     let config = config_dir(&app)?;
-    Ok(scanner::scan_mods(Path::new(&mods_path), &target_lang, &config))
+    Ok(scanner::scan_mods(
+        Path::new(&mods_path),
+        &target_lang,
+        &config,
+    ))
 }
 
 #[tauri::command]
@@ -181,7 +185,9 @@ fn export_claude_batch(
         .set_file_name(format!("{mod_unique_id}.claude-batch.json"))
         .add_filter("JSON", &["json"])
         .blocking_save_file();
-    let Some(picked) = picked else { return Ok(None) };
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
     let dest = picked
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
@@ -227,7 +233,9 @@ fn import_claude_batch(
         .set_title("Import Claude-Code translation result")
         .add_filter("JSON", &["json"])
         .blocking_pick_file();
-    let Some(picked) = picked else { return Ok(None) };
+    let Some(picked) = picked else {
+        return Ok(None);
+    };
     let source = picked
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;

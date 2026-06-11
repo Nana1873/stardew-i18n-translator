@@ -79,10 +79,7 @@ fn detect_steam() -> Option<DetectedInstall> {
     }
 
     libraries.into_iter().find_map(|lib| {
-        let candidate = lib
-            .join("steamapps")
-            .join("common")
-            .join("Stardew Valley");
+        let candidate = lib.join("steamapps").join("common").join("Stardew Valley");
         is_stardew_install(&candidate).then(|| make_install(&candidate, "steam"))
     })
 }
@@ -112,7 +109,10 @@ fn steam_dir_from_registry() -> Option<PathBuf> {
 
 fn detect_common() -> Option<DetectedInstall> {
     const CANDIDATES: &[(&str, &str)] = &[
-        (r"C:\Program Files (x86)\GOG Galaxy\Games\Stardew Valley", "gog"),
+        (
+            r"C:\Program Files (x86)\GOG Galaxy\Games\Stardew Valley",
+            "gog",
+        ),
         (r"C:\Program Files\GOG Galaxy\Games\Stardew Valley", "gog"),
         (
             r"C:\Program Files (x86)\Steam\steamapps\common\Stardew Valley",
