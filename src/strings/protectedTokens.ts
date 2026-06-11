@@ -10,6 +10,7 @@
  *  - bracket tokens: `[...]`
  *  - positional placeholders: `{0}`
  *  - dialogue commands: `$b`, `$s`, `$e`, `$1` ...
+ *  - structural characters: `#`, paired `'` quote delimiters
  *  - single-character tokens: `@` (player name), `^` / `\n` (line break)
  *
  * The order of the readers matters — more specific shapes are tried first.
@@ -57,6 +58,8 @@ export function extractProtectedTokens(value: string): string[] {
 export function describeToken(token: string): string {
   if (token === "@") return "@ (player name)";
   if (token === "^") return "^ (line break)";
+  if (token === "#") return "# (dialogue/mail separator)";
+  if (token === "'") return "' (quote delimiter)";
   if (token === "\n") return "newline";
   return token;
 }
@@ -141,8 +144,37 @@ function readSimpleDialogueCommand(
 
 function readSingleCharacterToken(value: string, offset: number): Token | null {
   const char = value[offset];
-  if (char === "@" || char === "^" || char === "\n") {
+  if (
+    char === "@" ||
+    char === "^" ||
+    char === "#" ||
+    char === "\n" ||
+    (char === "'" && isPairedQuoteDelimiter(value, offset))
+  ) {
     return token(value, offset, offset + 1);
   }
   return null;
+}
+
+/** Apostrophes inside words (`don't`, `farmer's`) are prose, not syntax.
+ * Standalone single quotes are protected only when they form a balanced pair,
+ * e.g. `'test'`, so an isolated punctuation apostrophe is not overvalidated. */
+function isPairedQuoteDelimiter(value: string, offset: number): boolean {
+  if (value[offset] !== "'" || isWordApostrophe(value, offset)) return false;
+  let delimiters = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === "'" && !isWordApostrophe(value, index))
+      delimiters += 1;
+  }
+  return delimiters >= 2 && delimiters % 2 === 0;
+}
+
+function isWordApostrophe(value: string, offset: number): boolean {
+  return (
+    isLetterOrDigit(value[offset - 1]) && isLetterOrDigit(value[offset + 1])
+  );
+}
+
+function isLetterOrDigit(char: string | undefined): boolean {
+  return char !== undefined && /[\p{L}\p{N}]/u.test(char);
 }
