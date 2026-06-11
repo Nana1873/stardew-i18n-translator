@@ -16,7 +16,7 @@ Implement the main workspace string table, the double-click editing dialog, prot
 ## Out of Scope
 
 - Exporters, file saving, backups, or JSON generation (that is M3).
-- Offline AI translations (Claude-Code batch export/import — M4).
+- External LLM batch translations (export/import — M4).
 - API calls.
 
 ## Acceptance Criteria

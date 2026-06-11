@@ -53,6 +53,12 @@ auto-closes; it stays open only when there are warnings or an error to review.
 Live per-mod/per-file progress is intentionally omitted (real scans are
 sub-second, so streaming progress would add complexity with no UX value).
 
+**Startup auto-scan (shipped):** when the saved setup is complete (Stardew
+path, Mods path, and target language), launch immediately scans the Mods folder.
+Clean startup scans stay in the dashboard without flashing the modal; warnings
+or errors open the existing Scan dialog. First launch still opens the wizard
+and does not scan.
+
 Editor glossary hints (SPEC §7.5) — which consume this glossary — shipped as
 part of M2.
 

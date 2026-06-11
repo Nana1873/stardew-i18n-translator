@@ -16,8 +16,8 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
-  type ClaudeBatchItem,
-  type ClaudeExportOutcome,
+  type LlmBatchItem,
+  type LlmExportOutcome,
   type SaveStringEntry,
   type ScannedMod,
   type StringRow,
@@ -29,7 +29,7 @@ import {
 } from "../tauri/commands";
 import { StringEditor } from "./StringEditor";
 import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
-import { ClaudeExportDialog } from "../claude/ClaudeBatchDialog";
+import { LlmExportDialog } from "../llm-batch/LlmBatchDialog";
 import { validate, worstSeverity } from "./validation";
 import { STATUS_META, statusTint } from "./status";
 
@@ -79,7 +79,7 @@ export function StringTable({
   statusFilter = "all",
   glossary = null,
   onTranslate,
-  onClaudeExport,
+  onLlmBatchExport,
   onCountsChange,
   onClearFilters,
   reloadToken = 0,
@@ -90,12 +90,15 @@ export function StringTable({
   glossary?: Record<string, string> | null;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
-  onTranslate?: (source: string) => Promise<TranslationResult>;
-  /** Export the given strings as an offline Claude-Code batch (M4); absent
+  onTranslate?: (
+    source: string,
+    section?: string | null,
+  ) => Promise<TranslationResult>;
+  /** Export the given strings as an external LLM batch (M4); absent
    * when no target language is configured. Resolves null on picker cancel. */
-  onClaudeExport?: (
-    items: ClaudeBatchItem[],
-  ) => Promise<ClaudeExportOutcome | null>;
+  onLlmBatchExport?: (
+    items: LlmBatchItem[],
+  ) => Promise<LlmExportOutcome | null>;
   /** Reports the working translated-key count and per-status counts after
    * edits, so the mod list, header, and filter dropdown stay fresh without a
    * rescan. */
@@ -117,9 +120,9 @@ export function StringTable({
   } | null>(null);
   /** Items of a running batch AI translation (M6 Issue 17); null = no batch. */
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
-  /** Outcome (or failure) of a Claude-Code batch export (M4); null = closed. */
-  const [claudeExport, setClaudeExport] = useState<{
-    outcome: ClaudeExportOutcome | null;
+  /** Outcome (or failure) of an external LLM batch export (M4); null = closed. */
+  const [llmBatchExport, setLlmBatchExport] = useState<{
+    outcome: LlmExportOutcome | null;
     error: string | null;
   } | null>(null);
   const anchor = useRef<number | null>(null);
@@ -394,7 +397,13 @@ export function StringTable({
   function startBatch() {
     const items: BatchItem[] = batchEligible.map((i) => {
       const row = data[i]!;
-      return { index: i, key: row.key, file: row.file, source: row.source };
+      return {
+        index: i,
+        key: row.key,
+        file: row.file,
+        source: row.source,
+        ...(row.section ? { section: row.section } : {}),
+      };
     });
     setMenu(null);
     if (items.length > 0) setBatch(items);
@@ -434,21 +443,26 @@ export function StringTable({
     onCountsChange?.(countTranslated(current), countByStatus(current));
   }
 
-  /** Export the eligible selection as an offline Claude-Code batch (M4).
+  /** Export the eligible selection as an external LLM batch (M4).
    * Same eligibility as the AI batch: only strings that still need work. */
-  async function startClaudeExport() {
-    const items: ClaudeBatchItem[] = batchEligible.map((i) => {
+  async function startLlmBatchExport() {
+    const items: LlmBatchItem[] = batchEligible.map((i) => {
       const row = data[i]!;
-      return { relativeDir: row.file, key: row.key, source: row.source };
+      return {
+        relativeDir: row.file,
+        key: row.key,
+        source: row.source,
+        ...(row.section ? { section: row.section } : {}),
+      };
     });
     setMenu(null);
-    if (!onClaudeExport || items.length === 0) return;
+    if (!onLlmBatchExport || items.length === 0) return;
     try {
-      const outcome = await onClaudeExport(items);
+      const outcome = await onLlmBatchExport(items);
       // null = the user cancelled the save dialog — nothing to report.
-      if (outcome) setClaudeExport({ outcome, error: null });
+      if (outcome) setLlmBatchExport({ outcome, error: null });
     } catch (cause) {
-      setClaudeExport({ outcome: null, error: String(cause) });
+      setLlmBatchExport({ outcome: null, error: String(cause) });
     }
   }
 
@@ -702,29 +716,29 @@ export function StringTable({
               <button
                 type="button"
                 role="menuitem"
-                disabled={!onClaudeExport || batchEligible.length === 0}
+                disabled={!onLlmBatchExport || batchEligible.length === 0}
                 title={
-                  !onClaudeExport
+                  !onLlmBatchExport
                     ? "Choose a target language first"
                     : batchEligible.length === 0
                       ? "No untranslated or outdated strings selected"
-                      : "Write an offline translation batch for Claude Code"
+                      : "Write a translation batch for any external LLM"
                 }
-                onClick={() => void startClaudeExport()}
+                onClick={() => void startLlmBatchExport()}
               >
-                Export for Claude Code
+                Export LLM batch
                 {batchEligible.length > 0 ? ` (${batchEligible.length})` : ""}
               </button>
             </li>
           </ul>
         </>
       )}
-      {claudeExport && (
-        <ClaudeExportDialog
-          outcome={claudeExport.outcome}
-          error={claudeExport.error}
+      {llmBatchExport && (
+        <LlmExportDialog
+          outcome={llmBatchExport.outcome}
+          error={llmBatchExport.error}
           modName={mod.name}
-          onClose={() => setClaudeExport(null)}
+          onClose={() => setLlmBatchExport(null)}
         />
       )}
       {batch && onTranslate && (

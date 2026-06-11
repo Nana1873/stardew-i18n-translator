@@ -33,12 +33,18 @@ URL.
   connection" action that pings `/v1/models` and reports reachability + the loaded
   model. Persisted in `AppSettings`.
 - **Translate one string (MVP):** a Rust command that translates a single source
-  string: build the prompt (system rules + injected glossary pairs relevant to
-  that string + source text), `POST /v1/chat/completions` at low temperature, then
+  string: build the prompt (system rules + optional `//` section heading +
+  injected glossary pairs relevant to that string + source text), `POST
+/v1/chat/completions` at low temperature, then
   run the result through the protected-token validator (`tokens.rs`). On dropped
   tokens, retry **once** with a stricter reminder; if it still fails, return the
   result flagged so the user sees it needs a fix. An editor button ("Translate with
   local AI") fills the target field with the suggestion (status → `review-needed`).
+  The system rules also require exact quote-character preservation; for example,
+  `'test'` must not become `„test“`, `“test”`, or `"test"`. German prompts also
+  request Stardew-like simple, direct phrasing without newly invented dash asides
+  (`—`, `–`, or spaced `-`), while preserving existing or linguistically
+  required hyphens.
 - **Glossary injection + validation:** for each source string, find the official
   game terms present (whole-word match, same logic as the editor's `matchGlossary`,
   capped) and inject them as "Use these official translations: en → target" lines.
@@ -136,6 +142,11 @@ Issue 17: the optional **temperature** setting (Settings → Local AI; empty = 0
 default) and the **glossary-respect soft check** (inflection-tolerant substring
 match; misses surface as a hint in the editor and a count in the batch summary,
 never an error).
+
+The v1.5 section-context follow-up is complete: single-string and batch
+translation pass the nearest standalone `//` heading as a short, normalized,
+untrusted purpose/tone label. Files without section comments use the original
+prompt unchanged.
 
 ### Future (post-v1): paid cloud APIs
 

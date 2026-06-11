@@ -1,7 +1,7 @@
 /**
  * Settings dialog — the single "settings section accessible from toolbar"
  * (SPEC §19 #5 / §13). Distinct from the first-launch Setup Wizard: this is a
- * flat list of editable settings, not a step-by-step flow.
+ * left-navigation window of editable settings, not a step-by-step flow.
  *
  * Sections: folders (changed by re-running the wizard, per SPEC §4), target
  * language, the optional glossary, and the optional local-AI connection (M6).
@@ -33,12 +33,21 @@ interface SettingsDialogProps {
   onReRunSetup: () => void;
 }
 
+type SettingsPage = "folders" | "ai" | "glossary";
+
+interface LlmConnectionResult {
+  kind: "connected" | "empty" | "failed";
+  elapsedMs: number;
+  error?: string;
+}
+
 export function SettingsDialog({
   settings,
   onSave,
   onClose,
   onReRunSetup,
 }: SettingsDialogProps) {
+  const [page, setPage] = useState<SettingsPage>("folders");
   const [targetLang, setTargetLang] = useState(settings.targetLang ?? "");
 
   const [glossary, setGlossary] = useState<GlossaryStatus | null>(null);
@@ -54,7 +63,7 @@ export function SettingsDialog({
   const [llmModel, setLlmModel] = useState(settings.llm?.model ?? "");
   const [llmModelList, setLlmModelList] = useState<string[] | null>(null);
   const [llmTesting, setLlmTesting] = useState(false);
-  const [llmError, setLlmError] = useState<string | null>(null);
+  const [llmResult, setLlmResult] = useState<LlmConnectionResult | null>(null);
   // Kept as the raw input string; parsed/validated on save ("" = default).
   const [llmTemperature, setLlmTemperature] = useState(
     settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
@@ -91,21 +100,31 @@ export function SettingsDialog({
   function pickLlmProvider(provider: string) {
     setLlmProvider(provider);
     setLlmModelList(null);
-    setLlmError(null);
+    setLlmResult(null);
     if (provider !== "custom") setLlmBaseUrl(LLM_PRESETS[provider]);
   }
 
   async function testLlmConnection() {
+    const startedAt = performance.now();
     setLlmTesting(true);
-    setLlmError(null);
+    setLlmResult(null);
     setLlmModelList(null);
     try {
       const models = await llmModels(llmBaseUrl);
+      const elapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
       setLlmModelList(models);
+      setLlmResult({
+        kind: models.length > 0 ? "connected" : "empty",
+        elapsedMs,
+      });
       if (models.length > 0 && !models.includes(llmModel))
         setLlmModel(models[0]);
     } catch (cause) {
-      setLlmError(String(cause));
+      setLlmResult({
+        kind: "failed",
+        elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        error: String(cause),
+      });
     } finally {
       setLlmTesting(false);
     }
@@ -141,189 +160,277 @@ export function SettingsDialog({
       aria-modal="true"
       aria-label="Settings"
     >
-      <div className="wizard">
+      <div className="wizard settings">
         <header className="wizard__header">
           <h2>Settings</h2>
         </header>
 
-        <div className="wizard__body settings__body">
-          <section className="settings__section" aria-label="Folders">
-            <h3 className="settings__head">Folders</h3>
-            <p className="wizard__path">
-              <span className="wizard__muted">Stardew Valley: </span>
-              <code>{settings.stardewPath || "—"}</code>
-            </p>
-            <p className="wizard__path">
-              <span className="wizard__muted">Mods: </span>
-              <code>{settings.modsPath || "—"}</code>
-            </p>
-            <div className="wizard__row">
-              <button type="button" onClick={onReRunSetup}>
-                Re-run setup…
-              </button>
-            </div>
-          </section>
-
-          <section className="settings__section" aria-label="Language">
-            <h3 className="settings__head">Language</h3>
-            <label className="wizard__field">
-              <span>Source language</span>
-              <input type="text" value={SOURCE_LANGUAGE_LABEL} disabled />
-            </label>
-            <label className="wizard__field">
-              <span>Target language</span>
-              <select
-                value={targetLang}
-                onChange={(event) => setTargetLang(event.target.value)}
-                aria-label="Target language"
-              >
-                <option value="" disabled>
-                  Choose a language…
-                </option>
-                {TARGET_LANGUAGES.map((language) => (
-                  <option key={language.code} value={language.code}>
-                    {language.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </section>
-
-          <section className="settings__section" aria-label="Glossary">
-            <h3 className="settings__head">Glossary (optional)</h3>
-            {glossary === null ? (
-              <p className="wizard__muted">
-                Checking for unpacked game content…
-              </p>
-            ) : glossary.unpackedPresent ? (
-              <>
-                <div className="wizard__row">
-                  <button
-                    type="button"
-                    onClick={handleBuildGlossary}
-                    disabled={glossaryBuilding || !targetLang}
-                  >
-                    {glossaryBuilding ? "Building…" : "Build glossary"}
-                  </button>
-                </div>
-                {glossary.cached && (
-                  <p className="wizard__ok">
-                    ✓ Cached: {glossary.cached.termCount} terms (
-                    {glossary.cached.targetLang}).
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <p className="wizard__muted">
-                  No unpacked game content found. The glossary is built from a{" "}
-                  <code>Content (unpacked)/</code> folder created by
-                  StardewXnbHack.
-                </p>
-                <div className="wizard__row">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      void openUrl(
-                        "https://github.com/Pathoschild/StardewXnbHack",
-                      )
-                    }
-                  >
-                    Get StardewXnbHack ↗
-                  </button>
-                </div>
-              </>
-            )}
-            {glossaryError && <p className="wizard__error">{glossaryError}</p>}
-          </section>
-
-          <section className="settings__section" aria-label="Local AI">
-            <h3 className="settings__head">Local AI (optional)</h3>
-            <p className="wizard__muted">
-              Connect a local AI server (LM Studio, Ollama, or any
-              OpenAI-compatible endpoint) to translate strings offline. The app
-              works fully without it. Use a capable <strong>instruct</strong>{" "}
-              model (e.g. a 7B+ Qwen/Llama instruct) — tiny or “abliterated”
-              models often ignore the rules and produce junk.
-            </p>
-            <label className="wizard__field">
-              <span>Provider</span>
-              <select
-                value={llmProvider}
-                onChange={(event) => pickLlmProvider(event.target.value)}
-                aria-label="AI provider"
-              >
-                <option value="lmstudio">LM Studio</option>
-                <option value="ollama">Ollama</option>
-                <option value="custom">Custom (OpenAI-compatible)</option>
-              </select>
-            </label>
-            <label className="wizard__field">
-              <span>Base URL</span>
-              <input
-                type="text"
-                value={llmBaseUrl}
-                placeholder="http://localhost:1234/v1"
-                aria-label="AI base URL"
-                onChange={(event) => {
-                  setLlmBaseUrl(event.target.value);
-                  setLlmModelList(null);
-                  setLlmError(null);
-                }}
-              />
-            </label>
-            <div className="wizard__row">
+        <div className="settings__layout">
+          <nav
+            className="settings__nav"
+            aria-label="Settings sections"
+            role="tablist"
+            aria-orientation="vertical"
+          >
+            {(
+              [
+                ["folders", "Folders & language"],
+                ["ai", "Local AI"],
+                ["glossary", "Glossary"],
+              ] as const
+            ).map(([id, label]) => (
               <button
+                key={id}
                 type="button"
-                onClick={testLlmConnection}
-                disabled={llmTesting || !llmBaseUrl.trim()}
+                role="tab"
+                aria-selected={page === id}
+                aria-controls={`settings-panel-${id}`}
+                tabIndex={page === id ? 0 : -1}
+                className={page === id ? "settings__nav-item--active" : ""}
+                onClick={() => setPage(id)}
               >
-                {llmTesting ? "Testing…" : "Test connection"}
+                {label}
               </button>
-            </div>
-            {llmModelList !== null &&
-              (llmModelList.length > 0 ? (
-                <>
-                  <p className="wizard__ok">
-                    ✓ Connected — {llmModelList.length} model
-                    {llmModelList.length === 1 ? "" : "s"} available.
+            ))}
+          </nav>
+
+          <div className="settings__content">
+            {page === "folders" && (
+              <section
+                id="settings-panel-folders"
+                role="tabpanel"
+                aria-label="Folders & language"
+              >
+                <h3 className="settings__title">Folders & language</h3>
+                <p className="settings__intro">
+                  Review the active Stardew installation and translation
+                  language.
+                </p>
+
+                <div className="settings__group">
+                  <h4>Folders</h4>
+                  <p className="wizard__path">
+                    <span className="wizard__muted">Stardew Valley</span>
+                    <code>{settings.stardewPath || "—"}</code>
                   </p>
+                  <p className="wizard__path">
+                    <span className="wizard__muted">Mods</span>
+                    <code>{settings.modsPath || "—"}</code>
+                  </p>
+                  <div className="wizard__row">
+                    <button type="button" onClick={onReRunSetup}>
+                      Re-run setup…
+                    </button>
+                  </div>
+                </div>
+
+                <div className="settings__group">
+                  <h4>Language</h4>
                   <label className="wizard__field">
-                    <span>Model</span>
+                    <span>Source language</span>
+                    <input type="text" value={SOURCE_LANGUAGE_LABEL} disabled />
+                  </label>
+                  <label className="wizard__field">
+                    <span>Target language</span>
                     <select
-                      value={llmModel}
-                      onChange={(event) => setLlmModel(event.target.value)}
-                      aria-label="AI model"
+                      value={targetLang}
+                      onChange={(event) => setTargetLang(event.target.value)}
+                      aria-label="Target language"
                     >
-                      {llmModelList.map((model) => (
-                        <option key={model} value={model}>
-                          {model}
+                      <option value="" disabled>
+                        Choose a language…
+                      </option>
+                      {TARGET_LANGUAGES.map((language) => (
+                        <option key={language.code} value={language.code}>
+                          {language.label}
                         </option>
                       ))}
                     </select>
                   </label>
-                </>
-              ) : (
-                <p className="wizard__muted">
-                  Connected, but the server reports no loaded models. Load a
-                  model in your AI app, then test again.
+                </div>
+              </section>
+            )}
+
+            {page === "glossary" && (
+              <section
+                id="settings-panel-glossary"
+                role="tabpanel"
+                aria-label="Glossary"
+              >
+                <h3 className="settings__title">Glossary</h3>
+                <p className="settings__intro">
+                  Build optional official-term hints from your locally unpacked
+                  Stardew Valley content.
                 </p>
-              ))}
-            <label className="wizard__field">
-              <span>Temperature (optional)</span>
-              <input
-                type="number"
-                min="0"
-                max="2"
-                step="0.1"
-                value={llmTemperature}
-                placeholder="0.2 (default)"
-                aria-label="AI temperature"
-                onChange={(event) => setLlmTemperature(event.target.value)}
-              />
-            </label>
-            {llmError && <p className="wizard__error">{llmError}</p>}
-          </section>
+                {glossary === null ? (
+                  <p className="wizard__muted">
+                    Checking for unpacked game content…
+                  </p>
+                ) : glossary.unpackedPresent ? (
+                  <>
+                    <div className="wizard__row">
+                      <button
+                        type="button"
+                        onClick={handleBuildGlossary}
+                        disabled={glossaryBuilding || !targetLang}
+                      >
+                        {glossaryBuilding ? "Building…" : "Build glossary"}
+                      </button>
+                    </div>
+                    {glossary.cached && (
+                      <p className="wizard__ok">
+                        ✓ Cached: {glossary.cached.termCount} terms (
+                        {glossary.cached.targetLang}).
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p className="wizard__muted">
+                      No unpacked game content found. The glossary is built from
+                      a <code>Content (unpacked)/</code> folder created by
+                      StardewXnbHack.
+                    </p>
+                    <div className="wizard__row">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          void openUrl(
+                            "https://github.com/Pathoschild/StardewXnbHack",
+                          )
+                        }
+                      >
+                        Get StardewXnbHack ↗
+                      </button>
+                    </div>
+                  </>
+                )}
+                {glossaryError && (
+                  <p className="wizard__error">{glossaryError}</p>
+                )}
+              </section>
+            )}
+
+            {page === "ai" && (
+              <section
+                id="settings-panel-ai"
+                role="tabpanel"
+                aria-label="Local AI"
+              >
+                <h3 className="settings__title">Local AI connection</h3>
+                <p className="settings__intro">
+                  Point at a local LLM endpoint (Ollama, LM Studio, or another
+                  OpenAI-compatible server) for on-device translation.
+                </p>
+                <label className="wizard__field">
+                  <span>Provider</span>
+                  <select
+                    value={llmProvider}
+                    onChange={(event) => pickLlmProvider(event.target.value)}
+                    aria-label="AI provider"
+                  >
+                    <option value="lmstudio">LM Studio</option>
+                    <option value="ollama">Ollama</option>
+                    <option value="custom">Custom (OpenAI-compatible)</option>
+                  </select>
+                </label>
+                <label className="wizard__field">
+                  <span>Base URL</span>
+                  <input
+                    type="text"
+                    value={llmBaseUrl}
+                    placeholder="http://localhost:1234/v1"
+                    aria-label="AI base URL"
+                    onChange={(event) => {
+                      setLlmBaseUrl(event.target.value);
+                      setLlmModelList(null);
+                      setLlmResult(null);
+                    }}
+                  />
+                </label>
+                <div className="wizard__row">
+                  <button
+                    type="button"
+                    onClick={testLlmConnection}
+                    disabled={llmTesting || !llmBaseUrl.trim()}
+                  >
+                    {llmTesting
+                      ? "Testing…"
+                      : llmResult?.kind === "failed"
+                        ? "Retry"
+                        : "Test connection"}
+                  </button>
+                </div>
+                {llmModelList !== null &&
+                  (llmModelList.length > 0 ? (
+                    <>
+                      <label className="wizard__field">
+                        <span>Model</span>
+                        <select
+                          value={llmModel}
+                          onChange={(event) => setLlmModel(event.target.value)}
+                          aria-label="AI model"
+                        >
+                          {llmModelList.map((model) => (
+                            <option key={model} value={model}>
+                              {model}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </>
+                  ) : null)}
+                <label className="wizard__field">
+                  <span>Temperature (optional)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="2"
+                    step="0.1"
+                    value={llmTemperature}
+                    placeholder="0.2 (default)"
+                    aria-label="AI temperature"
+                    onChange={(event) => setLlmTemperature(event.target.value)}
+                  />
+                </label>
+
+                {llmResult && (
+                  <div
+                    className={`settings__connection settings__connection--${llmResult.kind}`}
+                    role={llmResult.kind === "failed" ? "alert" : "status"}
+                  >
+                    <span className="settings__connection-icon">
+                      {llmResult.kind === "failed" ? "×" : "✓"}
+                    </span>
+                    <div>
+                      <strong>
+                        {llmResult.kind === "connected"
+                          ? `Connected · responded in ${llmResult.elapsedMs} ms`
+                          : llmResult.kind === "empty"
+                            ? `Connected · responded in ${llmResult.elapsedMs} ms`
+                            : "Connection failed"}
+                      </strong>
+                      <p>
+                        {llmResult.kind === "connected"
+                          ? `${llmModelList?.length ?? 0} model${
+                              llmModelList?.length === 1 ? "" : "s"
+                            } available · ${llmModel || "select a model"}`
+                          : llmResult.kind === "empty"
+                            ? "The server reports no loaded models. Load one in your AI app, then test again."
+                            : llmResult.error}
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <p className="settings__hint">
+                  Optional. The app works fully without AI. A capable instruct
+                  model is recommended; small or heavily modified models may
+                  ignore translation rules.
+                </p>
+              </section>
+            )}
+          </div>
         </div>
 
         <footer className="wizard__footer">

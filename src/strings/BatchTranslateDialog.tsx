@@ -22,12 +22,16 @@ export interface BatchItem {
   key: string;
   file: string;
   source: string;
+  section?: string | null;
 }
 
 interface BatchTranslateDialogProps {
   items: BatchItem[];
   modName: string;
-  onTranslate: (source: string) => Promise<TranslationResult>;
+  onTranslate: (
+    source: string,
+    section?: string | null,
+  ) => Promise<TranslationResult>;
   /** Persist one finished translation (as review-needed) and update the row. */
   onResult: (item: BatchItem, text: string) => Promise<void>;
   onClose: () => void;
@@ -60,7 +64,7 @@ export function BatchTranslateDialog({
         if (!active || cancelRef.current) break;
         setCurrentKey(item.key);
         try {
-          const result = await onTranslate(item.source);
+          const result = await onTranslate(item.source, item.section);
           await onResult(item, result.text);
           if (!active) return;
           setDone((count) => count + 1);
