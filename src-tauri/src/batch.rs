@@ -263,6 +263,7 @@ mod tests {
             target: String::new(),
             target_present: false,
             status: status.into(),
+            section: None,
         }
     }
 

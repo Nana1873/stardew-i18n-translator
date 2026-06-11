@@ -650,6 +650,40 @@ kbd,
   color: var(--warning);
 }
 
+/* Section divider above a run of rows sharing a `// comment` section
+   (SPEC §7.4). Non-selectable — purely orientation. */
+.sectionrow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px 0 17px;
+  background: rgba(227, 169, 78, 0.07);
+  border-top: 1px solid rgba(227, 169, 78, 0.18);
+  border-bottom: 1px solid rgba(227, 169, 78, 0.18);
+  user-select: none;
+}
+
+.sectionrow__title {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #bba76e;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.sectionrow__count {
+  flex: none;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #8a7c52;
+  background: rgba(227, 169, 78, 0.12);
+  border-radius: 4px;
+  padding: 1px 7px;
+}
+
 /* Footer status bar: per-status counts + keyboard hints (v1.5). */
 .stringtable__foot {
   display: flex;
