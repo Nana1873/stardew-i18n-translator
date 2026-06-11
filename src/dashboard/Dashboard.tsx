@@ -88,7 +88,7 @@ export function Dashboard({
         </div>
         <button
           type="button"
-          className="toolbar__primary dash__scan"
+          className="dash__scan"
           onClick={onScan}
           disabled={!scanEnabled}
         >
