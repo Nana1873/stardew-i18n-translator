@@ -28,6 +28,7 @@ import {
 import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
+import { Dashboard } from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
@@ -48,6 +49,20 @@ export function App() {
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(460);
+  // Dashboard home vs. two-panel work view (SPEC §7.0 rollout ④). The brand
+  // button is the only way back home — the toolbar is the only nav chrome.
+  const [view, setView] = useState<"home" | "work">("home");
+  // modId → epoch ms of the last open, persisted so "continue where you left
+  // off" survives restarts. localStorage is fine — it's a convenience cache.
+  const [lastOpened, setLastOpened] = useState<Record<string, number>>(() => {
+    try {
+      return JSON.parse(
+        localStorage.getItem("sit:lastOpened") ?? "{}",
+      ) as Record<string, number>;
+    } catch {
+      return {};
+    }
+  });
 
   const [exporting, setExporting] = useState(false);
   const [exportResult, setExportResult] = useState<ExportResult | null>(null);
@@ -161,6 +176,29 @@ export function App() {
   const configured = Boolean(settings?.stardewPath);
   const selectedMod =
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
+  const reviewTotal =
+    scan?.mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0) ?? 0;
+
+  /** Open a mod in the work view and remember it for the resume cards. */
+  function openMod(uniqueId: string) {
+    setSelectedModId(uniqueId);
+    setView("work");
+    setLastOpened((prev) => {
+      const next = { ...prev, [uniqueId]: Date.now() };
+      try {
+        localStorage.setItem("sit:lastOpened", JSON.stringify(next));
+      } catch {
+        /* cache only */
+      }
+      return next;
+    });
+  }
+
+  /** Jump from the dashboard queue straight into a mod's review backlog. */
+  function openReview(uniqueId: string) {
+    setStatusFilter("review-needed");
+    openMod(uniqueId);
+  }
 
   /** Keep the mod list / header counts fresh after edits (no rescan needed).
    * `i18nFiles` keeps its reference so the string table does not reload. */
@@ -189,6 +227,7 @@ export function App() {
             progress,
             status,
             statusCounts,
+            reviewNeeded: statusCounts["review-needed"] ?? 0,
           } as ScannedMod;
         }),
       };
@@ -330,9 +369,16 @@ export function App() {
     }
   }
 
+  // "German (de-DE)" subtitle fragment for the dashboard.
+  const languageLine = settings?.targetLang
+    ? `${languageLabel} (${settings.targetLang})`
+    : "No target language yet";
+
   return (
     <div className="app">
       <Toolbar
+        homeActive={view === "home"}
+        onHome={() => setView("home")}
         onScan={handleScan}
         scanEnabled={configured && !scanning}
         scanning={scanning}
@@ -347,68 +393,84 @@ export function App() {
           settings ? setSettingsOpen(true) : setWizardOpen(true)
         }
         settingsEnabled={loaded}
+        reviewTotal={reviewTotal}
+        onReview={() => setView("home")}
         search={search}
         onSearch={setSearch}
-        searchEnabled={Boolean(selectedMod)}
+        searchEnabled={Boolean(selectedMod) && view === "work"}
       />
-      <main className="workspace">
-        <section
-          className="panel panel--mods"
-          aria-label="Mod list"
-          style={{ width: modsWidth, flex: "0 0 auto" }}
-        >
-          <div className="panel__header">
-            Mods{scan ? ` · ${scan.modCount}` : ""}
-            {scan && scan.warnings.length > 0 && (
-              <span className="panel__warn">
-                {" "}
-                · {scan.warnings.length} skipped
-              </span>
-            )}
-          </div>
-          {scan && (
-            <input
-              className="modlist__search"
-              type="search"
-              placeholder="Filter mods…"
-              aria-label="Filter mods"
-              value={modQuery}
-              onChange={(event) => setModQuery(event.target.value)}
-            />
-          )}
-          {scan ? (
-            <ModList
-              mods={scan.mods}
-              selectedId={selectedModId}
-              onSelect={setSelectedModId}
-              query={modQuery}
-            />
-          ) : (
-            <div className="panel__empty">
-              {scanError ?? (scanning ? "Scanning…" : "No mods scanned yet.")}
+      {view === "home" ? (
+        <Dashboard
+          scan={scan}
+          scanning={scanning}
+          languageLine={languageLine}
+          onScan={handleScan}
+          scanEnabled={configured && !scanning}
+          onOpenMod={openMod}
+          onOpenReview={openReview}
+          onBrowse={() => setView("work")}
+          lastOpened={lastOpened}
+        />
+      ) : (
+        <main className="workspace">
+          <section
+            className="panel panel--mods"
+            aria-label="Mod list"
+            style={{ width: modsWidth, flex: "0 0 auto" }}
+          >
+            <div className="panel__header">
+              Mods{scan ? ` · ${scan.modCount}` : ""}
+              {scan && scan.warnings.length > 0 && (
+                <span className="panel__warn">
+                  {" "}
+                  · {scan.warnings.length} skipped
+                </span>
+              )}
             </div>
-          )}
-        </section>
-        <div
-          className="splitter"
-          role="separator"
-          aria-orientation="vertical"
-          aria-label="Resize mod list"
-          onMouseDown={startResize}
-        />
-        <StringTablePanel
-          mod={selectedMod}
-          search={search}
-          statusFilter={statusFilter}
-          onStatusFilter={setStatusFilter}
-          glossary={glossary}
-          onTranslate={translate}
-          onClaudeExport={claudeExport}
-          onCountsChange={handleCountsChange}
-          onShowReview={() => setStatusFilter("review-needed")}
-          reloadToken={reloadToken}
-        />
-      </main>
+            {scan && (
+              <input
+                className="modlist__search"
+                type="search"
+                placeholder="Filter mods…"
+                aria-label="Filter mods"
+                value={modQuery}
+                onChange={(event) => setModQuery(event.target.value)}
+              />
+            )}
+            {scan ? (
+              <ModList
+                mods={scan.mods}
+                selectedId={selectedModId}
+                onSelect={openMod}
+                query={modQuery}
+              />
+            ) : (
+              <div className="panel__empty">
+                {scanError ?? (scanning ? "Scanning…" : "No mods scanned yet.")}
+              </div>
+            )}
+          </section>
+          <div
+            className="splitter"
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize mod list"
+            onMouseDown={startResize}
+          />
+          <StringTablePanel
+            mod={selectedMod}
+            search={search}
+            statusFilter={statusFilter}
+            onStatusFilter={setStatusFilter}
+            glossary={glossary}
+            onTranslate={translate}
+            onClaudeExport={claudeExport}
+            onCountsChange={handleCountsChange}
+            onShowReview={() => setStatusFilter("review-needed")}
+            reloadToken={reloadToken}
+          />
+        </main>
+      )}
       {wizardOpen && (
         <SetupWizard
           initial={settings}
@@ -457,6 +519,8 @@ export function App() {
 }
 
 function Toolbar({
+  homeActive,
+  onHome,
   onScan,
   scanEnabled,
   scanning,
@@ -469,10 +533,14 @@ function Toolbar({
   importBatchEnabled,
   onOpenSettings,
   settingsEnabled,
+  reviewTotal,
+  onReview,
   search,
   onSearch,
   searchEnabled,
 }: {
+  homeActive: boolean;
+  onHome: () => void;
   onScan: () => void;
   scanEnabled: boolean;
   scanning: boolean;
@@ -485,13 +553,24 @@ function Toolbar({
   importBatchEnabled: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
+  /** Unreviewed AI suggestions across every scanned mod (0 hides the pill). */
+  reviewTotal: number;
+  onReview: () => void;
   search: string;
   onSearch: (value: string) => void;
   searchEnabled: boolean;
 }) {
   return (
     <header className="toolbar" role="banner">
-      <span className="toolbar__title">Stardew i18n Translator</span>
+      {/* Brand = Home: the toolbar is the only navigation chrome (SPEC §7.0). */}
+      <button
+        type="button"
+        className={`toolbar__title${homeActive ? " toolbar__title--active" : ""}`}
+        onClick={onHome}
+        title="Dashboard"
+      >
+        <span aria-hidden>⌂</span> Stardew i18n Translator
+      </button>
       <div className="toolbar__actions">
         <button
           type="button"
@@ -534,6 +613,16 @@ function Toolbar({
         </button>
       </div>
       <div className="toolbar__filters">
+        {reviewTotal > 0 && (
+          <button
+            type="button"
+            className="panel__review"
+            title="Open the review queue on the dashboard"
+            onClick={onReview}
+          >
+            <span aria-hidden>⚑</span> {reviewTotal} to review
+          </button>
+        )}
         <input
           className="toolbar__search"
           type="search"

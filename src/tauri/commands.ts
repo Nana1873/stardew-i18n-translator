@@ -55,6 +55,8 @@ export interface ScannedI18nFile {
   targetExists: boolean;
   totalKeys: number;
   translatedKeys: number;
+  /** Source keys whose saved status is an unreviewed AI suggestion. */
+  reviewNeeded: number;
 }
 
 export interface ScannedMod {
@@ -67,6 +69,8 @@ export interface ScannedMod {
   i18nFiles: ScannedI18nFile[];
   totalKeys: number;
   translatedKeys: number;
+  /** Unreviewed AI suggestions across all i18n files (dashboard queue). */
+  reviewNeeded: number;
   /** 0–1. */
   progress: number;
   status: ModStatus;
