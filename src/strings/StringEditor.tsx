@@ -392,12 +392,16 @@ export function StringEditor({
             type="button"
             className="editor__save"
             onClick={saveAndNext}
-            title="Confirm this string and jump to the next one"
+            title="Confirm this string and jump to the next one (Ctrl+Shift+Enter)"
           >
-            Save & next <Kbd>Ctrl+Shift+Enter</Kbd>
+            Save & next <Kbd>⌃⇧↵</Kbd>
           </button>
-          <button type="button" onClick={save}>
-            Save <Kbd>Ctrl+Enter</Kbd>
+          <button
+            type="button"
+            onClick={save}
+            title="Save and close (Ctrl+Enter)"
+          >
+            Save <Kbd>⌃↵</Kbd>
           </button>
           <button
             type="button"
@@ -406,11 +410,11 @@ export function StringEditor({
             disabled={translating}
             title={
               onTranslate
-                ? "Translate with the local AI (Ctrl+F5)"
-                : "Configure a local AI in Settings"
+                ? "Translate with the configured local LLM — result lands as “Needs review” (Ctrl+F5)"
+                : "Configure a local AI in Settings first"
             }
           >
-            {translating ? "Translating…" : "Translate"} <Kbd>Ctrl+F5</Kbd>
+            {translating ? "Translating…" : "AI Translate"} <Kbd>⌃F5</Kbd>
           </button>
           <span className="editor__spacer" />
           <button

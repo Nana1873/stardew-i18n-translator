@@ -31,7 +31,15 @@ export function ClaudeExportDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="exportdlg__head">
-          <strong>{error ? "Batch export failed" : "Batch exported"}</strong>
+          <strong>
+            <span
+              className={`dlgicon ${error ? "dlgicon--err" : "dlgicon--gold"}`}
+              aria-hidden
+            >
+              {error ? "✕" : "↑"}
+            </span>
+            {error ? "Batch export failed" : "Batch exported"}
+          </strong>
           <span className="editor__crumbs">{modName}</span>
         </div>
         <div className="exportdlg__body">
@@ -89,7 +97,15 @@ export function ClaudeImportDialog({
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="exportdlg__head">
-          <strong>{error ? "Batch import failed" : "Batch imported"}</strong>
+          <strong>
+            <span
+              className={`dlgicon ${error ? "dlgicon--err" : "dlgicon--gold"}`}
+              aria-hidden
+            >
+              {error ? "✕" : "↓"}
+            </span>
+            {error ? "Batch import failed" : "Batch imported"}
+          </strong>
           <span className="editor__crumbs">{modName}</span>
         </div>
         <div className="exportdlg__body">
