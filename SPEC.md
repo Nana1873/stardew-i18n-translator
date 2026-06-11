@@ -56,7 +56,7 @@ The tool is deliberately **small in scope**. It focuses exclusively on SMAPI `i1
 
 v1 core loop: **Setup → Scan → Browse → Edit → Export.**
 
-AI translation (Claude-Code batch) is available as the last milestone of v1 but is not required for the core loop to work.
+AI translation (external LLM batch) is available as the last milestone of v1 but is not required for the core loop to work.
 
 ---
 
@@ -85,10 +85,10 @@ Steam path is read from the Windows registry (`HKCU\Software\Valve\Steam\SteamPa
 
 ### What is NOT in setup for v1
 
-| Item                | Reason                                                                                            |
-| ------------------- | ------------------------------------------------------------------------------------------------- |
-| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. No API calls needed. Deferred to v1.1+.     |
-| AI provider API key | In-app AI translation is not in v1. Claude-Code batch (Milestone 4) needs no API key in the tool. |
+| Item                | Reason                                                                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------ |
+| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. No API calls needed. Deferred to v1.1+.                |
+| AI provider API key | In-app cloud AI translation is not in v1. The external LLM batch (Milestone 4) needs no API key in the tool. |
 
 ---
 
@@ -99,7 +99,7 @@ Steam path is read from the Windows registry (`HKCU\Software\Valve\Steam\SteamPa
 The glossary is a **multilingual dictionary of official Stardew Valley game terms** — item names, NPC names, location names, seasons, UI strings. It serves three purposes:
 
 1. **Manual translation hints** — Shown in the string editor when glossary terms appear in source text.
-2. **AI prompt hints** — Included in Claude-Code batch exports so AI uses official terms.
+2. **AI prompt hints** — Included in external LLM batch exports so AI uses official terms.
 3. **Validation** _(v1.1+)_ — Flag deviations from official terminology.
 
 ### Non-Blocking Principle
@@ -233,8 +233,9 @@ The v1.5 UI has **8 screen elements** (the Setup Wizard, Scan Dialog, Dashboard 
 > are updated to match. Rollout (all delivered): ① design tokens + restyle of
 > all existing screens, ② status model 5→4 (replace `not-translatable` with a
 > "Keep original" action, §9), ③ `//` comments in `default.json` as section
-> dividers, ④ dashboard home (§7.8) + cross-mod review queue. Still open:
-> settings left-nav restyle (§7.7), section context in AI prompts (§7.4).
+> dividers, ④ dashboard home (§7.8) + cross-mod review queue, ⑤ settings
+> left-nav restyle (§7.7), ⑥ section context in both AI workflows (§7.4).
+> The planned v1.5 redesign rollout is complete.
 
 ### 7.0 Visual design system (v1.5)
 
@@ -271,6 +272,11 @@ See §4. Modal wizard. Shown on first launch. Re-accessible via the Settings dia
 ### 7.2 Scan Dialog
 
 Modal dialog during mod scanning.
+
+When persisted setup is complete, the app scans automatically on launch. A
+clean startup scan updates the dashboard silently (the existing scanning state
+is still visible); the dialog opens only when warnings or an error need review.
+Manual Scan / Re-scan continues to show the progress dialog immediately.
 
 | Element      | Content                                   |
 | ------------ | ----------------------------------------- |
@@ -346,8 +352,11 @@ Features:
   String-aware extraction: `//` inside a value (URLs) or trailing same-line
   comments never start a section. Dividers hide while a column sort is active
   (sections only make sense in file order) and stay under search/status
-  filters with counts of the still-visible rows. _Planned follow-up: pass the
-  section title as context into the AI prompt (M6) and the Claude batch (M4)._
+  filters with counts of the still-visible rows. The nearest section title is
+  also passed as optional purpose/tone context to local-AI single and batch
+  translation. It is treated as an untrusted metadata label, never as an
+  instruction or text to translate. External LLM batch exports carry the same context
+  in a read-only `sections` object that mirrors `files`.
 - Text search across key, original, and target.
 - Multi-select with **Ctrl+Click** (toggle) and **Shift+Click** (range).
 - **Ctrl+A** to select all visible.
@@ -429,9 +438,9 @@ Available on one or multiple selected strings in the String Table.
 
 **Added in Milestone 4 (Claude-Code):**
 
-| Action                     | Description                                                                  |
-| -------------------------- | ---------------------------------------------------------------------------- |
-| **Export for Claude-Code** | Export selected strings as a batch file for external Claude-Code translation |
+| Action               | Description                                                                                |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| **Export LLM batch** | Export selected strings as a batch file for translation with any external file-capable LLM |
 
 ### 7.7 Settings Dialog
 
@@ -447,9 +456,15 @@ the step-by-step Setup Wizard:
   Test connection, model. Lives here, not in the wizard, because the tool is
   translation-first and AI is opt-in. The Test-connection result is an explicit
   state: green confirmed line on success, red diagnostic + Retry on failure.
-- _(v1.5, planned)_ The flat list becomes a left-nav settings window
+- _(v1.5, delivered)_ The flat list is a left-nav settings window
   (Folders & language · Local AI · Glossary) per `docs/design/`; content and
   semantics stay as above.
+- **Configurable shortcuts are deferred to v1.1.** When implemented, Settings
+  gains a **Shortcuts** page that lists every user-facing command, captures a
+  replacement key combination, detects duplicate assignments, rejects reserved
+  or unsupported combinations, and offers per-command plus global
+  **Reset to defaults** actions. v1 keeps the fixed shortcuts from §7.5; a
+  read-only placeholder page is intentionally not shown.
 
 ### 7.8 Dashboard Home (v1.5)
 
@@ -584,23 +599,28 @@ Tokens are compared as **multisets** (counts matter, order does not): every toke
 
 ---
 
-## 11. Claude-Code Batch Workflow
+## 11. External LLM Batch Workflow
 
 > [!NOTE]
-> This is one of **two AI workflows in v1** — the other is the M6 local-LLM translation (§17 M6), which talks to a local OpenAI-compatible server (Ollama / LM Studio) on `localhost`. Neither requires an API key, and both land results as `review-needed`. **Cloud** AI APIs (keys, external network) remain deferred to v1.1+. The Claude-Code batch workflow needs no keys in the tool — the user runs Claude Code externally.
+> This is one of **two AI workflows in v1** — the other is the M6 local-LLM translation (§17 M6), which talks to a local OpenAI-compatible server (Ollama / LM Studio) on `localhost`. Neither requires an API key inside the app, and both land results as `review-needed`. **Cloud** AI APIs (keys, external network initiated by the app) remain deferred to v1.1+. The external batch workflow only writes and reads JSON files; the user separately uploads the file to their chosen LLM.
 
 ### Concept
 
-The tool exports a structured batch file that the user processes externally with Claude Code. The user then imports the results back into the tool.
+The tool exports a structured batch file that the user processes with any external file-capable LLM. The user then imports the downloaded result back into the tool.
 
 ### Export
 
-1. User selects strings in the String Table → right-click → **"Export for Claude Code (N)"** (same eligibility as the local-AI batch: only `untranslated`/`outdated` strings; Ctrl+A = whole mod). A save dialog picks the destination.
+1. User selects strings in the String Table → right-click → **"Export LLM batch (N)"** (same eligibility as the local-AI batch: only `untranslated`/`outdated` strings; Ctrl+A = whole mod). A save dialog picks the destination (`*.llm-batch.json`).
 2. Tool writes a JSON batch file containing:
-   - Instructions for Claude Code (translation rules, token preservation, expected reply format).
+   - Instructions for the external LLM (translation rules, token preservation, exact quote-character preservation, expected reply format). German instructions request Stardew-like simple, direct phrasing without newly invented dash asides (`—`, `–`, or spaced `-`); existing or linguistically required hyphens remain allowed.
    - Glossary excerpt (only official terms that occur in the exported strings, capped; empty when no glossary is built).
+   - Optional section context in `sections`, mirroring `files` by i18n directory and key. This metadata guides purpose/tone and must not be translated.
    - Source strings, **grouped by i18n directory** (`files`) — multi-component mods can have several `i18n/` folders, so a flat key map is ambiguous.
-3. User opens the batch file with Claude Code and runs the translation.
+3. The export result dialog documents the handoff:
+   1. Open ChatGPT, Claude, Gemini, or another LLM with file upload.
+   2. Attach the batch file and ask it to follow the embedded `"instructions"` and return the completed result as a downloadable JSON file.
+   3. Download the result and click **"Import batch…"**.
+   4. Review all imported strings in the **Needs review** queue.
 
 ### Import
 
@@ -609,13 +629,13 @@ The tool exports a structured batch file that the user processes externally with
 3. Every accepted value is staged as **`review-needed`** in one atomic state write; the table reloads.
 4. Strings that are now `translated` locally (including kept-originals) are **never overwritten** (stale-batch protection) — they are skipped and counted.
 5. Validation runs on all imported strings; values that drop a protected token or are identical to the English source are imported anyway but flagged in the summary (never auto-rejected).
-6. A file translated **in place** (still carrying the `…-claude-batch` format marker) is accepted like a result file.
+6. A file translated **in place** (still carrying the `…-llm-batch` format marker) is accepted like a result file. Legacy `…-claude-batch` and `…-claude-result` markers remain import-compatible.
 
 ### Export File Format
 
 ```json
 {
-  "format": "stardew-translator-claude-batch",
+  "format": "stardew-translator-llm-batch",
   "version": 1,
   "metadata": {
     "mod": "My Mod Name",
@@ -642,7 +662,7 @@ The tool exports a structured batch file that the user processes externally with
 
 ```json
 {
-  "format": "stardew-translator-claude-result",
+  "format": "stardew-translator-llm-result",
   "version": 1,
   "files": {
     "i18n": {
@@ -852,12 +872,12 @@ Core workflow — no AI, no Nexus API:
 - [ ] "Search Translation on Nexus" browser action
 - [ ] Progress bar per mod
 
-### v1 Milestone 4 (Claude-Code Batch)
+### v1 Milestone 4 (External LLM Batch)
 
 First AI step — requires core workflow to be complete:
 
-- [ ] Claude-Code batch export (JSON file with instructions + glossary)
-- [ ] Claude-Code batch import (result JSON → target text)
+- [ ] External LLM batch export (JSON file with instructions + glossary)
+- [ ] External LLM batch import (result JSON → target text)
 - [ ] Imported results get status `review-needed`
 - [ ] Post-import validation runs
 
@@ -879,6 +899,7 @@ First AI step — requires core workflow to be complete:
 | `extra-key` validation                      | v1.1   |
 | Inline cell editing in string table         | v1.1   |
 | Drag-and-drop import                        | v1.1   |
+| Configurable keyboard shortcuts in Settings | v1.1   |
 | Finalize-and-propagate identical strings    | v2     |
 | Assisted Nexus translation discovery        | v2     |
 | Nexus translation download + import         | v2     |
@@ -892,7 +913,7 @@ The following are **explicitly excluded** from v1:
 
 | Feature                                        | Reason                                                                   |
 | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| In-app AI translation (API calls)              | Deferred to v1.1 — v1 uses Claude-Code batch only                        |
+| In-app cloud AI translation (API calls)        | Deferred to v1.1 — v1 uses file-based external LLM batches instead       |
 | Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                    |
 | Automatic Nexus translation discovery/download | Deferred to v2 (see §12)                                                 |
 | Git integration                                | Adds complexity without core workflow value                              |
@@ -913,6 +934,7 @@ The following are **explicitly excluded** from v1:
 | `Data/*.json` mod file translation             | i18n files only in v1                                                    |
 | In-app XNB decoder                             | Deferred to future version                                               |
 | Multiple settings screens                      | One settings section accessible from toolbar                             |
+| Configurable keyboard shortcuts                | Deferred to v1.1; v1 uses the fixed shortcuts documented in §7.5         |
 | More than 4 status values                      | Intentionally capped (v1)                                                |
 | Project save/load system                       | State persisted automatically, no project files                          |
 | Quality/style validation rules                 | v1 validates only safety (tokens, JSON). Quality rules deferred to v1.1. |
@@ -1073,26 +1095,26 @@ The following are **explicitly excluded** from v1:
 
 ---
 
-### Milestone 4 — Claude-Code Batch
+### Milestone 4 — External LLM Batch
 
-**Goal:** User can export strings for Claude-Code translation and import results.
+**Goal:** User can export strings for translation with any external file-capable LLM and import results.
 
 **Prerequisite:** Milestones 1–3 complete. Core workflow works end-to-end.
 
 **Scope:**
 
-- Claude-Code batch export (JSON format per §11)
-- "Export for Claude-Code" added to context menu
-- Claude-Code batch import (toolbar button)
+- External LLM batch export (JSON format per §11)
+- "Export LLM batch" added to context menu
+- External LLM batch import (toolbar button)
 - Imported results → status `review-needed`
 - Post-import validation
 - Glossary excerpt included in export (if glossary available)
 
 **Acceptance Criteria:**
 
-- [ ] Claude-Code batch export produces a valid JSON file with instructions.
+- [ ] External LLM batch export produces a valid JSON file with instructions.
 - [ ] Export includes glossary terms (if available) and token lists.
-- [ ] Claude-Code batch import reads result JSON and fills target text.
+- [ ] External LLM batch import reads result JSON and fills target text.
 - [ ] All imported strings get status `review-needed`.
 - [ ] Validation runs on all imported strings.
 - [ ] Strings with validation errors are flagged but not rejected.
@@ -1110,7 +1132,7 @@ The following are **explicitly excluded** from v1:
 
 - One OpenAI-compatible HTTP client (`POST /v1/chat/completions`, `GET /v1/models`) covering Ollama, LM Studio, and any compatible endpoint. **No provider plugin system** (§19 #6) — URL/port presets + a custom URL only.
 - Connection settings: provider preset, base URL, model (discovered from `/v1/models`), "Test connection", optional temperature (empty = 0.2 default).
-- Translate-one-string command (MVP): prompt = system rules + injected glossary subset + source; low temperature; result validated through `tokens.rs`, one stricter retry on dropped tokens, then flagged.
+- Translate-one-string command (MVP): prompt = system rules + injected glossary subset + source; low temperature; result validated through `tokens.rs`, one stricter retry on dropped tokens, then flagged. Both AI workflows explicitly require existing quote characters to remain exact: e.g. `'test'` must not become `„test“`, `“test”`, or `"test"`.
 - Glossary injection (prompt-level) + soft validation: an inflection-tolerant check whether injected terms were used, surfaced as a hint (editor message / batch summary count), never an error. Degrades to no-injection when no glossary is built (§19 #8).
 - Local-AI output → status `review-needed` (same as M4 imports; §19 #2).
 - Batch translation of the selection (Ctrl+A = whole mod) via the context menu: only `untranslated`/`outdated` strings, serial requests, progress dialog with cancel (finishes the in-flight string), each result saved immediately — resume-friendly by construction.
@@ -1146,7 +1168,7 @@ The following are **explicitly excluded** from v1:
 
 1. **The SSE-AT test.** Before adding a UI element, ask: "Would SSE Auto Translator have this?" If no, it probably doesn't belong in v1.
 
-2. **The status rule.** v1.5 has exactly 4 statuses (`untranslated`, `translated`, `outdated`, `review-needed`). Do not add more. v1's fifth status (`not-translatable`) was **removed**, not just renamed — "keep it English" became the "Keep original" _action_ that stores an identical translation — one fewer status to scan for, and full `outdated` coverage. `review-needed` exists only for the **AI translation workflows** — the M6 local-LLM engine and the M4 Claude-Code batch — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing (an explicit Save confirms it to `translated`).
+2. **The status rule.** v1.5 has exactly 4 statuses (`untranslated`, `translated`, `outdated`, `review-needed`). Do not add more. v1's fifth status (`not-translatable`) was **removed**, not just renamed — "keep it English" became the "Keep original" _action_ that stores an identical translation — one fewer status to scan for, and full `outdated` coverage. `review-needed` exists only for the **AI translation workflows** — the M6 local-LLM engine and the M4 external LLM batch — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing (an explicit Save confirms it to `translated`).
 
 3. **The 5-validation-rule rule.** v1 has exactly 5 validation rules (§10; `newline-mismatch` was pulled forward because treating `\n` as a hard token error blocked valid translations). Adding a rule requires justifying why it prevents broken mods, not just improves quality.
 
@@ -1287,7 +1309,7 @@ The old Stardew Translator project (`E:\DevProjects\Stardew Translator`) provide
 | Version        | Scope                                                                                                                      |
 | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                              |
-| **v1 (M4)**    | Claude-Code Batch Export/Import                                                                                            |
+| **v1 (M4)**    | External LLM Batch Export/Import                                                                                           |
 | **v1.1**       | In-app AI translation, Nexus API key + mod enrichment, extended validation rules (11 rules), inline editing, drag-and-drop |
 | **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate   |
 | **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                |

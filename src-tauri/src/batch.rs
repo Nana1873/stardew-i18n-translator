@@ -1,8 +1,8 @@
-//! Claude-Code batch export/import — M4 (SPEC §11).
+//! External LLM batch export/import — M4 (SPEC §11).
 //!
 //! Export writes a self-contained JSON batch (instructions for the external
 //! LLM, a glossary excerpt, and the selected source strings grouped by i18n
-//! directory). The user runs Claude Code / any LLM on it offline — the app
+//! directory). The user uploads it to any external LLM — the app
 //! makes **no** network calls here. Import reads the result file back, matches
 //! keys against the current `default.json`, and stages every accepted value as
 //! **`review-needed`** (machine output always needs a human pass, SPEC §19 #2).
@@ -25,8 +25,10 @@ use crate::scanner::StringRow;
 use crate::tokens;
 use crate::translations::{self, StoredString};
 
-pub const BATCH_FORMAT: &str = "stardew-translator-claude-batch";
-pub const RESULT_FORMAT: &str = "stardew-translator-claude-result";
+pub const BATCH_FORMAT: &str = "stardew-translator-llm-batch";
+pub const RESULT_FORMAT: &str = "stardew-translator-llm-result";
+const LEGACY_BATCH_FORMAT: &str = "stardew-translator-claude-batch";
+const LEGACY_RESULT_FORMAT: &str = "stardew-translator-claude-result";
 
 /// Cap for the glossary excerpt embedded in a batch file.
 const MAX_GLOSSARY_TERMS: usize = 60;
@@ -38,22 +40,46 @@ pub struct BatchExportItem {
     pub relative_dir: String,
     pub key: String,
     pub source: String,
+    #[serde(default)]
+    pub section: Option<String>,
 }
 
 /// The instruction block embedded at the top of every batch file. Written so
-/// the user can hand the whole file to Claude Code (or any LLM) verbatim.
+/// the user can hand the whole file to any external LLM verbatim.
 fn instructions(target_language: &str) -> String {
+    let language_style = language_style_rules(target_language);
     format!(
         "Translate the Stardew Valley mod strings in `files` from English into \
          {target_language}. Translate ONLY the string values; never change keys, \
-         structure, or anything outside `files`. Preserve every placeholder/token \
+         structure, or anything outside `files`. The optional `sections` object \
+         mirrors `files` and contains read-only context headings for tone and purpose; \
+         use it as guidance, but never translate or copy a heading into a value. \
+         Preserve every placeholder/token \
          EXACTLY as written and untranslated: {{{{Token}}}}, {{0}}, $b, #$b#, \
          ${{male^female}}$, [anything in brackets], %item ... %%, @, ^, and line \
-         breaks. Use the `glossary` translations for official game terms. Reply by \
+         breaks. Preserve every existing quote character EXACTLY; never replace \
+         straight quotes/apostrophes with typographic quotes or another quote style: \
+         'test' must keep its ' characters and must never become „test“, “test”, or \
+         \"test\".{language_style} Use the `glossary` translations for official game terms. Reply by \
          writing ONE JSON file with this exact shape: {{ \"format\": \
          \"{RESULT_FORMAT}\", \"version\": 1, \"files\": {{ <same structure as the \
          input, with every value translated> }} }}."
     )
+}
+
+fn language_style_rules(target_language: &str) -> &'static str {
+    if target_language.trim().eq_ignore_ascii_case("german")
+        || target_language.trim().eq_ignore_ascii_case("deutsch")
+    {
+        " For German, match Stardew Valley's simple, warm, direct tone. Do not \
+         introduce em dashes, en dashes, or spaced hyphens as sentence asides \
+         (—, –, or ` - `) when the source does not use them; rewrite with normal \
+         German sentence structure, commas, or full stops instead. Preserve \
+         existing hyphens and use a normal hyphen only where a name or established \
+         German compound genuinely requires one."
+    } else {
+        ""
+    }
 }
 
 /// Build the export batch JSON. Pure (no I/O) so it is unit-tested. The
@@ -69,12 +95,26 @@ pub fn build_batch(
 ) -> Value {
     // Group by i18n directory, preserving the item order within each group.
     let mut files: Map<String, Value> = Map::new();
+    let mut sections: Map<String, Value> = Map::new();
     for item in items {
         let entry = files
             .entry(item.relative_dir.clone())
             .or_insert_with(|| Value::Object(Map::new()));
         if let Some(group) = entry.as_object_mut() {
             group.insert(item.key.clone(), Value::String(item.source.clone()));
+        }
+        if let Some(section) = item
+            .section
+            .as_deref()
+            .map(str::trim)
+            .filter(|section| !section.is_empty())
+        {
+            let entry = sections
+                .entry(item.relative_dir.clone())
+                .or_insert_with(|| Value::Object(Map::new()));
+            if let Some(group) = entry.as_object_mut() {
+                group.insert(item.key.clone(), Value::String(section.to_string()));
+            }
         }
     }
 
@@ -111,6 +151,7 @@ pub fn build_batch(
         Value::String(instructions(target_language)),
     );
     root.insert("glossary".into(), Value::Object(excerpt));
+    root.insert("sections".into(), Value::Object(sections));
     root.insert("files".into(), Value::Object(files));
     Value::Object(root)
 }
@@ -177,9 +218,16 @@ pub fn apply_batch(
 ) -> Result<PreparedImport, String> {
     let object = result.as_object().ok_or("The file is not a JSON object.")?;
     let format = object.get("format").and_then(Value::as_str).unwrap_or("");
-    if format != RESULT_FORMAT && format != BATCH_FORMAT {
+    if ![
+        RESULT_FORMAT,
+        BATCH_FORMAT,
+        LEGACY_RESULT_FORMAT,
+        LEGACY_BATCH_FORMAT,
+    ]
+    .contains(&format)
+    {
         return Err(format!(
-            "Not a Claude-Code batch/result file (expected a \"format\" of \
+            "Not an LLM batch/result file (expected a \"format\" of \
              \"{RESULT_FORMAT}\", found \"{format}\")."
         ));
     }
@@ -253,6 +301,16 @@ mod tests {
             relative_dir: dir.into(),
             key: key.into(),
             source: source.into(),
+            section: None,
+        }
+    }
+
+    fn section_item(dir: &str, key: &str, source: &str, section: &str) -> BatchExportItem {
+        BatchExportItem {
+            relative_dir: dir.into(),
+            key: key.into(),
+            source: source.into(),
+            section: Some(section.into()),
         }
     }
 
@@ -284,12 +342,47 @@ mod tests {
         let instructions = batch["instructions"].as_str().unwrap();
         assert!(instructions.contains("German"));
         assert!(instructions.contains("{{Token}}"));
+        assert!(instructions.contains("optional `sections` object"));
+        assert!(instructions.contains("Preserve every existing quote character EXACTLY"));
+        assert!(instructions.contains("'test'"));
+        assert!(instructions.contains("„test“"));
+        assert!(instructions.contains("Do not introduce em dashes"));
+        assert!(instructions.contains("simple, warm, direct tone"));
         assert!(instructions.contains(RESULT_FORMAT));
         assert_eq!(batch["files"]["i18n"]["greeting"], "Hello {{PlayerName}}!");
         assert_eq!(batch["files"]["sub/i18n"]["other"], "Other");
         // Timestamp is ISO-8601-shaped.
         let exported_at = batch["metadata"]["exportedAt"].as_str().unwrap();
         assert!(exported_at.ends_with('Z') && exported_at.contains('T'));
+    }
+
+    #[test]
+    fn non_german_batch_omits_the_german_dash_style_rule() {
+        let batch = build_batch(
+            "M",
+            "m",
+            "fr",
+            "French",
+            &[item("i18n", "k", "Hello")],
+            None,
+        );
+        let instructions = batch["instructions"].as_str().unwrap();
+        assert!(!instructions.contains("Do not introduce em dashes"));
+    }
+
+    #[test]
+    fn batch_sections_mirror_files_without_changing_translatable_values() {
+        let items = vec![
+            section_item("i18n", "rain", "I love the rain.", "NPC dialogue"),
+            item("i18n", "plain", "Plain label"),
+            section_item("sub/i18n", "price", "Price", "Shop UI"),
+        ];
+        let batch = build_batch("M", "m", "de", "German", &items, None);
+
+        assert_eq!(batch["files"]["i18n"]["rain"], "I love the rain.");
+        assert_eq!(batch["sections"]["i18n"]["rain"], "NPC dialogue");
+        assert!(batch["sections"]["i18n"].get("plain").is_none());
+        assert_eq!(batch["sections"]["sub/i18n"]["price"], "Shop UI");
     }
 
     #[test]
@@ -419,6 +512,22 @@ mod tests {
         });
         let prepared = apply_batch(&result, &rows).unwrap();
         assert_eq!(prepared.summary.imported, 1);
+    }
+
+    #[test]
+    fn import_accepts_legacy_claude_format_markers() {
+        let mut rows = HashMap::new();
+        rows.insert("i18n".to_string(), vec![row("k", "Hello", "untranslated")]);
+
+        for format in [LEGACY_BATCH_FORMAT, LEGACY_RESULT_FORMAT] {
+            let result = serde_json::json!({
+                "format": format,
+                "version": 1,
+                "files": { "i18n": { "k": "Hallo" } }
+            });
+            let prepared = apply_batch(&result, &rows).unwrap();
+            assert_eq!(prepared.summary.imported, 1);
+        }
     }
 
     #[test]

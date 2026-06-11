@@ -8,17 +8,17 @@
 import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
 import {
   type AppSettings,
-  type ClaudeBatchItem,
-  type ClaudeExportOutcome,
-  type ClaudeImportSummary,
+  type LlmBatchItem,
+  type LlmExportOutcome,
+  type LlmImportSummary,
   type ExportResult,
   type ScanResult,
   type ScannedMod,
   type StringStatus,
   type TranslationResult,
-  exportClaudeBatch,
+  exportLlmBatch,
   exportMod,
-  importClaudeBatch,
+  importLlmBatch,
   loadGlossary,
   loadSettings,
   saveSettings,
@@ -34,7 +34,13 @@ import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
 import { STATUS_META, statusTint } from "./strings/status";
 import { ExportDialog } from "./export/ExportDialog";
-import { ClaudeImportDialog } from "./claude/ClaudeBatchDialog";
+import { LlmImportDialog } from "./llm-batch/LlmBatchDialog";
+
+function setupComplete(settings: AppSettings): boolean {
+  return Boolean(
+    settings.stardewPath && settings.modsPath && settings.targetLang,
+  );
+}
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -79,9 +85,10 @@ export function App() {
     null,
   );
 
-  // Claude-Code batch import (M4): summary dialog + table reload trigger.
-  const [importSummary, setImportSummary] =
-    useState<ClaudeImportSummary | null>(null);
+  // External LLM batch import (M4): summary dialog + table reload trigger.
+  const [importSummary, setImportSummary] = useState<LlmImportSummary | null>(
+    null,
+  );
   const [importError, setImportError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
@@ -114,7 +121,9 @@ export function App() {
       .then((loadedSettings) => {
         if (!active) return;
         setSettings(loadedSettings);
-        setWizardOpen(!loadedSettings.stardewPath);
+        const complete = setupComplete(loadedSettings);
+        setWizardOpen(!complete);
+        if (complete) void runScan(loadedSettings, false, () => active);
       })
       .catch(() => {
         if (active) setWizardOpen(true);
@@ -152,28 +161,40 @@ export function App() {
     setSettings(next);
   }
 
-  async function handleScan() {
-    if (!settings?.modsPath) return;
+  async function runScan(
+    scanSettings: AppSettings,
+    showProgress: boolean,
+    isActive: () => boolean = () => true,
+  ) {
+    if (!scanSettings.modsPath || !scanSettings.targetLang) return;
     setScanning(true);
     setScanError(null);
     setSelectedModId(null);
-    setScanDialogOpen(true);
+    setScanDialogOpen(showProgress);
     try {
       const result = await scanMods(
-        settings.modsPath,
-        settings.targetLang ?? "",
+        scanSettings.modsPath,
+        scanSettings.targetLang,
       );
+      if (!isActive()) return;
       setScan(result);
       // A clean scan auto-closes; keep the dialog open only to review warnings.
-      if (result.warnings.length === 0) setScanDialogOpen(false);
+      setScanDialogOpen(result.warnings.length > 0);
     } catch (error) {
+      if (!isActive()) return;
       setScanError(String(error));
+      setScanDialogOpen(true);
     } finally {
-      setScanning(false);
+      if (isActive()) setScanning(false);
     }
   }
 
-  const configured = Boolean(settings?.stardewPath);
+  async function handleScan() {
+    if (!settings) return;
+    await runScan(settings, true);
+  }
+
+  const configured = Boolean(settings && setupComplete(settings));
   const selectedMod =
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
   const reviewTotal =
@@ -247,40 +268,35 @@ export function App() {
   const llm = settings?.llm;
   const aiReady = Boolean(llm?.baseUrl && llm?.model);
   const translate = aiReady
-    ? (source: string): Promise<TranslationResult> =>
+    ? (source: string, section?: string | null): Promise<TranslationResult> =>
         translateString(
           llm!.baseUrl,
           llm!.model,
           source,
           languageLabel,
+          section,
           llm!.temperature,
         )
     : undefined;
 
-  // Claude-Code batch export (M4): needs a target language for the batch
+  // External LLM batch export (M4): needs a target language for the batch
   // metadata/instructions; absent → the menu item explains why it's disabled.
   const targetLang = settings?.targetLang;
-  const claudeExport = targetLang
+  const llmBatchExport = targetLang
     ? (
         mod: ScannedMod,
-        items: ClaudeBatchItem[],
-      ): Promise<ClaudeExportOutcome | null> =>
-        exportClaudeBatch(
-          mod.uniqueId,
-          mod.name,
-          targetLang,
-          languageLabel,
-          items,
-        )
+        items: LlmBatchItem[],
+      ): Promise<LlmExportOutcome | null> =>
+        exportLlmBatch(mod.uniqueId, mod.name, targetLang, languageLabel, items)
     : undefined;
 
-  /** Import a translated Claude-Code batch for the selected mod (M4). */
+  /** Import a translated external LLM batch for the selected mod (M4). */
   async function handleImportBatch() {
     if (!selectedMod) return;
     setImportSummary(null);
     setImportError(null);
     try {
-      const summary = await importClaudeBatch(
+      const summary = await importLlmBatch(
         selectedMod.uniqueId,
         filesOf(selectedMod),
       );
@@ -464,7 +480,7 @@ export function App() {
             onStatusFilter={setStatusFilter}
             glossary={glossary}
             onTranslate={translate}
-            onClaudeExport={claudeExport}
+            onLlmBatchExport={llmBatchExport}
             onCountsChange={handleCountsChange}
             onShowReview={() => setStatusFilter("review-needed")}
             onClearFilters={() => {
@@ -511,7 +527,7 @@ export function App() {
         />
       )}
       {importOpen && (
-        <ClaudeImportDialog
+        <LlmImportDialog
           summary={importSummary}
           error={importError}
           modName={selectedMod?.name ?? ""}
@@ -609,7 +625,7 @@ function Toolbar({
           type="button"
           onClick={onImportBatch}
           disabled={!importBatchEnabled}
-          title="Import a translated Claude-Code batch result for the selected mod"
+          title="Import a translated LLM batch result for the selected mod"
         >
           Import batch…
         </button>
@@ -720,7 +736,7 @@ function StringTablePanel({
   onStatusFilter,
   glossary,
   onTranslate,
-  onClaudeExport,
+  onLlmBatchExport,
   onCountsChange,
   onShowReview,
   onClearFilters,
@@ -731,11 +747,14 @@ function StringTablePanel({
   statusFilter: StringStatus | "all";
   onStatusFilter: (value: StringStatus | "all") => void;
   glossary: Record<string, string> | null;
-  onTranslate?: (source: string) => Promise<TranslationResult>;
-  onClaudeExport?: (
+  onTranslate?: (
+    source: string,
+    section?: string | null,
+  ) => Promise<TranslationResult>;
+  onLlmBatchExport?: (
     mod: ScannedMod,
-    items: ClaudeBatchItem[],
-  ) => Promise<ClaudeExportOutcome | null>;
+    items: LlmBatchItem[],
+  ) => Promise<LlmExportOutcome | null>;
   onCountsChange?: (
     modId: string,
     translatedKeys: number,
@@ -774,8 +793,10 @@ function StringTablePanel({
           statusFilter={statusFilter}
           glossary={glossary}
           onTranslate={onTranslate}
-          onClaudeExport={
-            onClaudeExport ? (items) => onClaudeExport(mod, items) : undefined
+          onLlmBatchExport={
+            onLlmBatchExport
+              ? (items) => onLlmBatchExport(mod, items)
+              : undefined
           }
           onClearFilters={onClearFilters}
           reloadToken={reloadToken}

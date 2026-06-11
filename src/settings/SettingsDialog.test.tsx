@@ -58,8 +58,12 @@ describe("SettingsDialog", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
-    expect(await screen.findByText(/2 models available/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Connected · responded in/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/2 models available/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(onSave).toHaveBeenCalledWith(
@@ -138,6 +142,7 @@ describe("SettingsDialog", () => {
       />,
     );
 
+    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
     const field = screen.getByLabelText("AI temperature") as HTMLInputElement;
     expect(field.value).toBe("0.5");
 
@@ -156,6 +161,78 @@ describe("SettingsDialog", () => {
       expect.objectContaining({
         llm: expect.objectContaining({ temperature: null }),
       }),
+    );
+  });
+
+  it("switches between the three approved settings pages", () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Folders & language" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    expect(
+      screen.getByRole("heading", { name: "Glossary" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("tab", { name: "Shortcuts" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows a retryable diagnostic when the AI connection fails", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({ unpackedPresent: false, cached: null });
+      if (cmd === "llm_models")
+        return Promise.reject("Connection refused (ECONNREFUSED)");
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Connection refused (ECONNREFUSED)",
+    );
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("distinguishes a reachable server with no loaded models", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({ unpackedPresent: false, cached: null });
+      if (cmd === "llm_models") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "server reports no loaded models",
     );
   });
 });

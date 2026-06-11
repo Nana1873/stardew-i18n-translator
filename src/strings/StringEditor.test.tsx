@@ -22,7 +22,10 @@ function row(overrides: Partial<EditorRow> = {}): EditorRow {
 
 function renderEditor(
   overrides: Partial<EditorRow> = {},
-  onTranslate?: (source: string) => Promise<TranslationResult>,
+  onTranslate?: (
+    source: string,
+    section?: string | null,
+  ) => Promise<TranslationResult>,
   position: { index: number; total: number } = { index: 0, total: 2 },
 ) {
   const onSave = vi.fn();
@@ -113,6 +116,28 @@ describe("StringEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
     expect(onSave).toHaveBeenCalledWith("Hallo Welt", "review-needed");
+  });
+
+  it("passes the row section to local AI translation", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Guten Morgen",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
+    renderEditor(
+      {
+        source: "Good morning",
+        target: "",
+        status: "untranslated",
+        section: "NPC dialogue",
+      },
+      onTranslate,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Translate/ }));
+    await waitFor(() =>
+      expect(onTranslate).toHaveBeenCalledWith("Good morning", "NPC dialogue"),
+    );
   });
 
   it("Reset then navigate saves the cleared string as untranslated", () => {

@@ -1,23 +1,23 @@
 /**
- * Claude-Code batch dialogs — M4 (SPEC §11).
+ * External LLM batch dialogs — M4 (SPEC §11).
  *
  * Two small summary dialogs around the offline translation workflow: one
  * confirms what the batch export wrote (and what to do with the file), one
  * reports what an import staged. All imported values land as `review-needed`
  * — machine output always needs a human pass.
  */
-import type {
-  ClaudeExportOutcome,
-  ClaudeImportSummary,
-} from "../tauri/commands";
+import type { LlmExportOutcome, LlmImportSummary } from "../tauri/commands";
 
-export function ClaudeExportDialog({
+const HANDOFF_PROMPT =
+  'Follow the "instructions" in the attached batch JSON and return the completed result as a downloadable JSON file.';
+
+export function LlmExportDialog({
   outcome,
   error,
   modName,
   onClose,
 }: {
-  outcome: ClaudeExportOutcome | null;
+  outcome: LlmExportOutcome | null;
   error: string | null;
   modName: string;
   onClose: () => void;
@@ -27,7 +27,7 @@ export function ClaudeExportDialog({
       <div
         className="exportdlg"
         role="dialog"
-        aria-label="Claude batch export"
+        aria-label="LLM batch export"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="exportdlg__head">
@@ -58,12 +58,25 @@ export function ClaudeExportDialog({
               <p>
                 <code>{outcome.path}</code>
               </p>
-              <p className="exportdlg__muted">
-                Open the file with Claude Code (or any LLM) — it contains the
-                translation instructions. When the translated file is ready,
-                bring it back via <strong>Import batch…</strong> in the toolbar.
-                Imported strings arrive as “Needs review”.
-              </p>
+              <div className="exportdlg__workflow">
+                <strong>Continue in any LLM with file upload</strong>
+                <ol>
+                  <li>Open ChatGPT, Claude, Gemini, or another LLM.</li>
+                  <li>
+                    Attach the exported <code>*.llm-batch.json</code> file and
+                    send this prompt:
+                    <code className="exportdlg__prompt">{HANDOFF_PROMPT}</code>
+                  </li>
+                  <li>
+                    Download the returned JSON file, then click{" "}
+                    <strong>Import batch…</strong> in the toolbar.
+                  </li>
+                  <li>
+                    Review the imported strings in the{" "}
+                    <strong>Needs review</strong> queue.
+                  </li>
+                </ol>
+              </div>
             </>
           ) : null}
         </div>
@@ -77,13 +90,13 @@ export function ClaudeExportDialog({
   );
 }
 
-export function ClaudeImportDialog({
+export function LlmImportDialog({
   summary,
   modName,
   error,
   onClose,
 }: {
-  summary: ClaudeImportSummary | null;
+  summary: LlmImportSummary | null;
   modName: string;
   error: string | null;
   onClose: () => void;
@@ -93,7 +106,7 @@ export function ClaudeImportDialog({
       <div
         className="exportdlg"
         role="dialog"
-        aria-label="Claude batch import"
+        aria-label="LLM batch import"
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="exportdlg__head">

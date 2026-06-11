@@ -1,8 +1,8 @@
-# Milestone M4: Claude-Code Batch
+# Milestone M4: External LLM Batch
 
 ## Goal
 
-Implement the offline AI translation batch workflow, allowing users to export untranslated/outdated strings to a JSON batch, translate them externally using tools like Claude Code, and import the results back into the application.
+Implement the file-based AI translation batch workflow, allowing users to export untranslated/outdated strings to a JSON batch, translate them externally using ChatGPT, Claude, Gemini, or another file-capable LLM, and import the results back into the application.
 
 ## Scope
 
@@ -31,15 +31,21 @@ Implement the offline AI translation batch workflow, allowing users to export un
 
 ## Suggested Issue Breakdown
 
-### Issue 13: Export Claude-Code translation batch JSON ✅
+### Issue 13: Export external LLM translation batch JSON ✅
 
-- Context-menu action **"Export for Claude Code (N)"** on the selection (same
+- Context-menu action **"Export LLM batch (N)"** on the selection (same
   eligibility as the M6 AI batch: `untranslated`/`outdated` only; Ctrl+A =
   whole mod), save-dialog destination, embedded instruction block + glossary
-  excerpt (matched terms only, capped at 60), strings grouped by i18n
-  directory (`files`) so multi-i18n-folder mods stay unambiguous (SPEC §11).
+  excerpt (matched terms only, capped at 60), optional read-only section
+  headings in a parallel `sections` map, and strings grouped by i18n directory
+  (`files`) so multi-i18n-folder mods stay unambiguous (SPEC §11). Instructions
+  require exact quote-character preservation: straight quotes/apostrophes must
+  never be converted to typographic quotation marks. German batches additionally
+  request Stardew-like simple, direct phrasing and forbid newly invented dash
+  asides (`—`, `–`, or spaced `-`); existing or linguistically required
+  hyphens remain allowed.
 
-### Issue 14: Import Claude-Code result JSON ✅
+### Issue 14: Import external LLM result JSON ✅
 
 - Toolbar **"Import batch…"** (file picker, lenient JSON parse for LLM
   artifacts), per-directory key matching, all accepted values staged as
@@ -54,14 +60,18 @@ Implement the offline AI translation batch workflow, allowing users to export un
 **Complete.** Both issues shipped together: the batch exporter (context menu →
 save dialog) and the result importer (toolbar → summary). Core logic lives in
 `src-tauri/src/batch.rs` (`build_batch` / `apply_batch`, both pure and
-unit-tested); dialogs in `src/claude/ClaudeBatchDialog.tsx`. The drag-and-drop
+unit-tested); dialogs in `src/llm-batch/LlmBatchDialog.tsx`. The drag-and-drop
 import variant from SPEC §11 was skipped (the toolbar button covers the flow;
-revisit only on demand).
+revisit only on demand). The v1.5 follow-up is also delivered: section headings
+from standalone `//` comments are exported as read-only context without
+changing the import-compatible `files` structure.
 
 ## Agent Handoff Notes
 
 _The exported file contains the instruction block inline (`instructions`), so
-the user can hand the whole file to Claude Code/Codex verbatim. Import accepts
-both the `…-claude-result` format and an in-place-translated `…-claude-batch`
-file. Reuse `batch::apply_batch` for any future import path — it enforces the
-never-overwrite-manual-work rule and the flag-don't-reject validation._
+the user can upload the whole file to any file-capable LLM. The export dialog
+documents the complete upload → prompt → download → import → review workflow.
+New files use `…-llm-batch` / `…-llm-result`; import also accepts the legacy
+`…-claude-batch` / `…-claude-result` markers. Reuse `batch::apply_batch` for
+any future import path — it enforces the never-overwrite-manual-work rule and
+the flag-don't-reject validation._
