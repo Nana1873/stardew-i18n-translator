@@ -6,8 +6,9 @@
 //!  - Existing target files are copied to `<file>.json.bak` before overwrite.
 //!  - The new content is written to a `.tmp` sibling, re-parsed to verify it is
 //!    valid JSON, then renamed over the target (atomic on the same volume).
-//!  - **Untranslated** keys and **not-translatable** keys are omitted (SMAPI
-//!    falls back to `default.json`).
+//!  - **Untranslated** keys are omitted (SMAPI falls back to `default.json`).
+//!    Kept-original strings (v1.5, SPEC §9) carry the source as their target
+//!    and are written like any other translation.
 //!  - Keys whose translation drops a required source token (`token-missing`)
 //!    are **skipped** individually and reported — never a hard block on the file.
 //!
@@ -52,8 +53,6 @@ pub struct ExportFileResult {
     pub written_keys: usize,
     /// Omitted because they have no translation (fall back to `default.json`).
     pub untranslated: usize,
-    /// Omitted because they are marked not-translatable.
-    pub not_translatable: usize,
     /// Exported, but stale (source changed since translating) — review advised.
     pub outdated: usize,
     /// Exported, but an unreviewed AI suggestion (M6) — review advised.
@@ -73,7 +72,6 @@ pub struct ExportResult {
     pub files_written: usize,
     pub total_written_keys: usize,
     pub total_untranslated: usize,
-    pub total_not_translatable: usize,
     pub total_outdated: usize,
     pub total_review_needed: usize,
     /// Total keys dropped from existing target files because `default.json`
@@ -106,10 +104,6 @@ pub fn export_mod(
         };
 
         for row in rows {
-            if row.status == "not-translatable" {
-                file_result.not_translatable += 1;
-                continue;
-            }
             if row.target.trim().is_empty() {
                 file_result.untranslated += 1;
                 continue;
@@ -140,7 +134,6 @@ pub fn export_mod(
 
         result.total_written_keys += file_result.written_keys;
         result.total_untranslated += file_result.untranslated;
-        result.total_not_translatable += file_result.not_translatable;
         result.total_outdated += file_result.outdated;
         result.total_review_needed += file_result.review_needed;
         result.total_orphan_keys += file_result.orphan_keys.len();
@@ -203,7 +196,10 @@ fn write_target(target_path: &Path, map: &Map<String, Value>) -> Result<bool, St
 /// A sibling path with `suffix` appended to the full file name, so
 /// `i18n/de.json` + `.bak` -> `i18n/de.json.bak` (not `i18n/de.bak`).
 fn sibling(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.file_name().map(|n| n.to_os_string()).unwrap_or_default();
+    let mut name = path
+        .file_name()
+        .map(|n| n.to_os_string())
+        .unwrap_or_default();
     name.push(suffix);
     path.with_file_name(name)
 }
@@ -274,7 +270,10 @@ mod tests {
         assert!(zeta < alpha, "key order should follow default.json");
         assert!(!body.contains("mid"));
         assert!(body.contains("\"Zett\""));
-        assert!(body.ends_with("}\n"), "2-space pretty JSON + trailing newline");
+        assert!(
+            body.ends_with("}\n"),
+            "2-space pretty JSON + trailing newline"
+        );
         assert!(body.contains("\n  \"zeta\""), "2-space indent");
 
         std::fs::remove_dir_all(&root).ok();
@@ -405,8 +404,11 @@ mod tests {
     }
 
     #[test]
-    fn omits_not_translatable_and_does_not_write_empty_file() {
-        let root = crate::test_support::temp_dir("export-empty");
+    fn legacy_not_translatable_exports_the_source_text() {
+        // Pre-v1.5 "not-translatable" state entries migrate to "keep
+        // original": the export writes an explicit identical translation
+        // instead of omitting the key (SPEC §9).
+        let root = crate::test_support::temp_dir("export-keep-original");
         let i18n = root.join("i18n");
         write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
         translations::save_one(
@@ -422,8 +424,23 @@ mod tests {
         .unwrap();
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert_eq!(result.files_written, 1);
+        assert_eq!(result.total_written_keys, 1);
+        let body = read(&i18n.join("de.json"));
+        assert!(body.contains("\"k\": \"Hello\""));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn does_not_write_a_file_with_no_translations() {
+        let root = crate::test_support::temp_dir("export-empty");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
         assert_eq!(result.files_written, 0);
-        assert_eq!(result.total_not_translatable, 1);
+        assert_eq!(result.total_untranslated, 1);
         assert!(!result.files[0].written);
         // Nothing written -> no target file created.
         assert!(!i18n.join("de.json").exists());

@@ -316,12 +316,12 @@ describe("StringTable", () => {
     ).toBeInTheDocument();
   });
 
-  it("right-click → Mark as not translatable persists via one bulk save", async () => {
+  it("right-click → Keep original copies the source as a translated value", async () => {
     render(<StringTable mod={MOD} />);
-    fireEvent.contextMenu(await screen.findByText("greeting"));
+    fireEvent.contextMenu(await screen.findByText("bye"));
 
     fireEvent.click(
-      screen.getByRole("menuitem", { name: "Mark as not translatable" }),
+      screen.getByRole("menuitem", { name: "Keep original text" }),
     );
 
     await waitFor(() =>
@@ -331,8 +331,9 @@ describe("StringTable", () => {
           modUniqueId: "a.b",
           entries: [
             expect.objectContaining({
-              key: "greeting",
-              status: "not-translatable",
+              key: "bye",
+              target: "Bye",
+              status: "translated",
             }),
           ],
         }),
@@ -347,7 +348,7 @@ describe("StringTable", () => {
     fireEvent.contextMenu(screen.getByText("bye"));
 
     fireEvent.click(
-      screen.getByRole("menuitem", { name: "Mark as not translatable" }),
+      screen.getByRole("menuitem", { name: "Mark as translated" }),
     );
 
     await waitFor(() => {
@@ -508,7 +509,6 @@ describe("StringTable", () => {
       untranslated: 3,
       translated: 0,
       outdated: 0,
-      "not-translatable": 0,
       "review-needed": 277,
     };
     const onShowReview = vi.fn();

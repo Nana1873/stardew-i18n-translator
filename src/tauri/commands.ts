@@ -90,11 +90,14 @@ export function scanMods(
   return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
 }
 
+/** v1.5 status model (SPEC §9): 4 statuses. `not-translatable` was removed —
+ * keeping a string in English is now an explicit identical translation
+ * ("Keep original"), so outdated detection covers those strings too. The
+ * backend migrates legacy stored values on load. */
 export type StringStatus =
   | "untranslated"
   | "translated"
   | "outdated"
-  | "not-translatable"
   // AI suggestion (M6 local LLM) awaiting human review; confirmed → translated.
   | "review-needed";
 
@@ -177,7 +180,6 @@ export interface ExportFileResult {
   backedUp: boolean;
   writtenKeys: number;
   untranslated: number;
-  notTranslatable: number;
   outdated: number;
   reviewNeeded: number;
   /** Keys in the existing target file that default.json no longer contains —
@@ -191,7 +193,6 @@ export interface ExportResult {
   filesWritten: number;
   totalWrittenKeys: number;
   totalUntranslated: number;
-  totalNotTranslatable: number;
   totalOutdated: number;
   totalReviewNeeded: number;
   totalOrphanKeys: number;
@@ -240,7 +241,7 @@ export function exportClaudeBatch(
 export interface ClaudeImportSummary {
   /** Staged as review-needed. */
   imported: number;
-  /** Untouched — already translated/not-translatable locally. */
+  /** Untouched — already translated locally. */
   skippedTranslated: number;
   /** Unknown key/directory, non-string or empty value. */
   unmatched: number;
