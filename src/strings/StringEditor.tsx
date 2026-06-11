@@ -69,7 +69,8 @@ function matchGlossary(
   return out;
 }
 
-/** Small shortcut hint on a button; aria-hidden so the accessible name stays clean. */
+/** Compact shortcut chip inside a button (docs/design/ §05); aria-hidden so
+ * the accessible name stays clean. Full combos live in the button tooltips. */
 function Kbd({ children }: { children: string }) {
   return (
     <kbd className="editor__kbd" aria-hidden>
