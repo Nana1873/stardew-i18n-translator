@@ -1405,15 +1405,14 @@ kbd,
   color: var(--warning);
 }
 
-/* Compact shortcut chip inside a button (docs/design/ §05). The glyphs
-   ⌃ ⇧ ↵ are NOT in Cascadia/Consolas — "Segoe UI Symbol" (a Windows system
-   font) must lead the stack or they render as tofu boxes. */
+/* Shortcut chip inside a button. Spelled-out text on purpose: the design's
+   compact mac-style glyphs (⌃⇧↵) are missing from every Windows system font
+   we can rely on and render as tofu/squiggles. */
 .editor__kbd {
   margin-left: 6px;
   padding: 0 5px;
-  font-family: "Segoe UI Symbol", "Segoe UI", var(--mono);
-  font-size: 10.5px;
-  letter-spacing: 0.06em;
+  font-family: var(--mono);
+  font-size: 9.5px;
   color: var(--text-dim);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border);
