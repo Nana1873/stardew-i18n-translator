@@ -3,7 +3,8 @@
 //! A faithful Rust port of the frontend `protectedTokens.ts`. These are the
 //! tokens a translation MUST preserve or the mod breaks at runtime (Content
 //! Patcher `{{...}}`, gender switch `${...}$`, mail commands, dialogue breaks,
-//! brackets, positional `{0}`, dialogue commands `$b`, single-char `@`/`^`).
+//! brackets, positional `{0}`, dialogue commands `$b`, structural `#` / paired
+//! `'` quote delimiters, and single-char `@`/`^`).
 //!
 //! The exporter uses [`missing_tokens`] to skip strings that dropped a required
 //! source token (the `token-missing` error rule). Tokens are compared as
@@ -205,9 +206,31 @@ fn read_simple_dialogue(chars: &[char], offset: usize) -> Option<usize> {
 
 fn read_single_char(chars: &[char], offset: usize) -> Option<usize> {
     match chars.get(offset) {
-        Some('@') | Some('^') | Some('\n') => Some(offset + 1),
+        Some('@') | Some('^') | Some('#') | Some('\n') => Some(offset + 1),
+        Some('\'') if is_paired_quote_delimiter(chars, offset) => Some(offset + 1),
         _ => None,
     }
+}
+
+/// Apostrophes inside words (`don't`, `farmer's`) are prose, not syntax.
+/// Standalone single quotes are protected only when they form a balanced pair.
+fn is_paired_quote_delimiter(chars: &[char], offset: usize) -> bool {
+    if chars.get(offset) != Some(&'\'') || is_word_apostrophe(chars, offset) {
+        return false;
+    }
+    let delimiters = chars
+        .iter()
+        .enumerate()
+        .filter(|(index, ch)| **ch == '\'' && !is_word_apostrophe(chars, *index))
+        .count();
+    delimiters >= 2 && delimiters % 2 == 0
+}
+
+fn is_word_apostrophe(chars: &[char], offset: usize) -> bool {
+    offset > 0
+        && offset + 1 < chars.len()
+        && chars[offset - 1].is_alphanumeric()
+        && chars[offset + 1].is_alphanumeric()
 }
 
 #[cfg(test)]
@@ -218,6 +241,15 @@ mod tests {
     fn extracts_content_patcher_and_dialogue_tokens() {
         let tokens = extract("Hi {{name}}, welcome!#$b#See you @ soon^bye");
         assert_eq!(tokens, vec!["{{name}}", "#$b#", "@", "^"]);
+    }
+
+    #[test]
+    fn extracts_structural_hash_quotes_and_repeated_carets() {
+        assert_eq!(
+            extract("'test' # next^^line"),
+            vec!["'", "'", "#", "^", "^"]
+        );
+        assert!(extract("Don't change the farmer's hat.").is_empty());
     }
 
     #[test]
