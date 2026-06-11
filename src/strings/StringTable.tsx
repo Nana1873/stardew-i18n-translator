@@ -40,6 +40,12 @@ interface Row extends StringRow {
 
 type SortCol = "status" | "file" | "key" | "source" | "target";
 
+/** One virtualized table line: a string row, or a section divider above a run
+ * of rows that share a `// comment` section (SPEC §7.4). */
+type DisplayItem =
+  | { kind: "row"; row: Row; index: number; pos: number }
+  | { kind: "section"; title: string; count: number };
+
 function sortField(row: Row, col: SortCol): string {
   if (col === "status") return row.status;
   if (col === "file") return row.file;
@@ -206,12 +212,59 @@ export function StringTable({
     anchor.current = null;
   }, [search, statusFilter]);
 
+  // Section dividers (SPEC §7.4): a non-selectable header above each run of
+  // rows sharing a `// comment` section. Sorting scrambles the file order, so
+  // dividers only show in the natural order; search/status filters keep them,
+  // with live counts of the still-visible rows. `pos` is the row's position
+  // in `visible`, which selection logic keeps using (dividers don't count).
+  const display = useMemo<DisplayItem[]>(() => {
+    const rows = visible.map((entry, pos) => ({
+      kind: "row" as const,
+      row: entry.row,
+      index: entry.index,
+      pos,
+    }));
+    if (sort) return rows;
+    const out: DisplayItem[] = [];
+    for (let i = 0; i < rows.length; i += 1) {
+      const item = rows[i];
+      const section = item.row.section ?? null;
+      const prev = i > 0 ? rows[i - 1].row : null;
+      const startsRun =
+        section !== null &&
+        (!prev ||
+          (prev.section ?? null) !== section ||
+          prev.file !== item.row.file);
+      if (startsRun) {
+        let count = 0;
+        for (
+          let j = i;
+          j < rows.length &&
+          (rows[j].row.section ?? null) === section &&
+          rows[j].row.file === item.row.file;
+          j += 1
+        ) {
+          count += 1;
+        }
+        out.push({ kind: "section", title: section!, count });
+      }
+      out.push(item);
+    }
+    return out;
+  }, [visible, sort]);
+
   const virtualizer = useVirtualizer({
-    count: visible.length,
+    count: display.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: () => 30,
+    estimateSize: (index) => (display[index]?.kind === "section" ? 26 : 30),
     overscan: 16,
   });
+
+  // Size estimates are cached per position — re-measure when dividers
+  // appear/disappear so 26px/30px rows stay aligned.
+  useEffect(() => {
+    virtualizer.measure();
+  }, [display, virtualizer]);
 
   /** Ctrl+A / Cmd+A selects every currently visible row; Enter opens the
    * single selected row in the editor. */
@@ -451,8 +504,29 @@ export function StringTable({
             style={{ height: virtualizer.getTotalSize(), position: "relative" }}
           >
             {virtualizer.getVirtualItems().map((item) => {
-              const entry = visible[item.index];
+              const entry = display[item.index];
               if (!entry) return null;
+              if (entry.kind === "section") {
+                return (
+                  <div
+                    key={`§ ${item.index} ${entry.title}`}
+                    className="sectionrow"
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      height: item.size,
+                      transform: `translateY(${item.start}px)`,
+                    }}
+                  >
+                    <span className="sectionrow__title">// {entry.title}</span>
+                    <span className="sectionrow__count">
+                      Section · {entry.count}
+                    </span>
+                  </div>
+                );
+              }
               const dataIndex = entry.index;
               return (
                 <RowView
@@ -462,9 +536,9 @@ export function StringTable({
                   selected={selection.has(dataIndex)}
                   top={item.start}
                   height={item.size}
-                  onSelect={(event) => selectRow(dataIndex, item.index, event)}
+                  onSelect={(event) => selectRow(dataIndex, entry.pos, event)}
                   onContextMenu={(event) =>
-                    openMenu(dataIndex, item.index, event)
+                    openMenu(dataIndex, entry.pos, event)
                   }
                   onOpen={() => setEditingIndex(dataIndex)}
                 />

@@ -338,6 +338,14 @@ Features:
   is highlighted; chips with count 0 stay visible but muted.
 - **Footer status bar** (v1.5): per-status counts + keyboard hints
   (Enter/double-click to edit).
+- **Section dividers** (v1.5): standalone `// comment` lines in `default.json`
+  act as section headers — a non-selectable 26px divider row (`// title` +
+  live row count) appears above each run of keys that follow the comment.
+  String-aware extraction: `//` inside a value (URLs) or trailing same-line
+  comments never start a section. Dividers hide while a column sort is active
+  (sections only make sense in file order) and stay under search/status
+  filters with counts of the still-visible rows. _Planned follow-up: pass the
+  section title as context into the AI prompt (M6) and the Claude batch (M4)._
 - Text search across key, original, and target.
 - Multi-select with **Ctrl+Click** (toggle) and **Shift+Click** (range).
 - **Ctrl+A** to select all visible.

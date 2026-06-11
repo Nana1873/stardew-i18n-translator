@@ -6,15 +6,19 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
 }));
 
-// jsdom has no layout, so the real virtualizer renders nothing — return a fixed
-// window of items so the rendering logic is exercised.
+// jsdom has no layout, so the real virtualizer renders nothing — render every
+// item so the rendering logic (rows + section dividers) is exercised.
 vi.mock("@tanstack/react-virtual", () => ({
-  useVirtualizer: () => ({
-    getTotalSize: () => 60,
-    getVirtualItems: () => [
-      { key: 0, index: 0, start: 0, size: 30 },
-      { key: 1, index: 1, start: 30, size: 30 },
-    ],
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 30,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        key: index,
+        index,
+        start: index * 30,
+        size: 30,
+      })),
+    measure: () => {},
   }),
 }));
 
@@ -51,6 +55,7 @@ function mockStrings(
     target: string;
     targetPresent?: boolean;
     status?: string;
+    section?: string;
   }>,
 ) {
   invokeMock.mockImplementation((cmd: string) => {
@@ -538,5 +543,32 @@ describe("StringTable", () => {
     // greeting = translated, bye = untranslated — both named, not just tinted.
     expect(await screen.findByText("Translated")).toBeInTheDocument();
     expect(screen.getByText("Untranslated")).toBeInTheDocument();
+  });
+
+  it("renders section dividers from // comments with live counts", async () => {
+    mockStrings([
+      { key: "a", source: "A", target: "", section: "Tooltips" },
+      { key: "b", source: "B", target: "", section: "Tooltips" },
+      { key: "c", source: "C", target: "" },
+    ]);
+    render(<StringTable mod={MOD} />);
+
+    expect(await screen.findByText("// Tooltips")).toBeInTheDocument();
+    expect(screen.getByText("Section · 2")).toBeInTheDocument();
+    // The sectionless row renders without a divider of its own.
+    expect(screen.getByText("c")).toBeInTheDocument();
+    expect(screen.getAllByText(/Section ·/)).toHaveLength(1);
+  });
+
+  it("sorting hides the dividers (sections only make sense in file order)", async () => {
+    mockStrings([
+      { key: "a", source: "A", target: "", section: "Tooltips" },
+      { key: "b", source: "B", target: "" },
+    ]);
+    render(<StringTable mod={MOD} />);
+    expect(await screen.findByText("// Tooltips")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
+    expect(screen.queryByText("// Tooltips")).not.toBeInTheDocument();
   });
 });
