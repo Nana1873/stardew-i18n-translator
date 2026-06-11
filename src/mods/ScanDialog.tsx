@@ -34,6 +34,18 @@ export function ScanDialog({
       >
         <div className="scandlg__head">
           <strong>
+            <span
+              className={`dlgicon ${
+                scanning
+                  ? "dlgicon--gold"
+                  : error
+                    ? "dlgicon--err"
+                    : "dlgicon--ok"
+              }`}
+              aria-hidden
+            >
+              {scanning ? "⟳" : error ? "✕" : "✓"}
+            </span>
             {scanning
               ? "Scanning mods…"
               : error

@@ -228,12 +228,21 @@ describe("StringTable", () => {
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
   });
 
-  it("shows an empty hint when nothing matches the filter", async () => {
-    render(<StringTable mod={MOD} search="zzz-no-match" statusFilter="all" />);
+  it("shows the no-results state with a Clear-filters escape hatch", async () => {
+    const onClearFilters = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        search="zzz-no-match"
+        statusFilter="all"
+        onClearFilters={onClearFilters}
+      />,
+    );
 
-    expect(
-      await screen.findByText("No strings match the current filter."),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/No strings match/)).toBeInTheDocument();
+    expect(screen.getByText("zzz-no-match")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(onClearFilters).toHaveBeenCalled();
   });
 
   it("AI translate fills the field, flags needs-review, and Save confirms translated", async () => {
@@ -245,7 +254,7 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("bye"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
     const textarea = screen.getByLabelText(
       "Translation",
     ) as HTMLTextAreaElement;
@@ -277,7 +286,7 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("greeting"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
     await waitFor(() =>
       expect(
         (screen.getByLabelText("Translation") as HTMLTextAreaElement).value,
@@ -307,7 +316,7 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} onTranslate={onTranslate} />);
     fireEvent.doubleClick(await screen.findByText("g"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
     expect(
       await screen.findByText(/AI dropped token\(s\): \{\{name\}\}/),
     ).toBeInTheDocument();
@@ -317,7 +326,7 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} />);
     fireEvent.doubleClick(await screen.findByText("greeting"));
 
-    fireEvent.click(screen.getByRole("button", { name: "Translate" }));
+    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
     expect(
       await screen.findByText(/Configure a local AI in Settings/),
     ).toBeInTheDocument();

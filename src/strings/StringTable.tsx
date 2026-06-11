@@ -81,12 +81,15 @@ export function StringTable({
   onTranslate,
   onClaudeExport,
   onCountsChange,
+  onClearFilters,
   reloadToken = 0,
 }: {
   mod: ScannedMod;
   search?: string;
   statusFilter?: StringStatus | "all";
   glossary?: Record<string, string> | null;
+  /** Reset search + status filter (the no-results escape hatch). */
+  onClearFilters?: () => void;
   onTranslate?: (source: string) => Promise<TranslationResult>;
   /** Export the given strings as an offline Claude-Code batch (M4); absent
    * when no target language is configured. Resolves null on picker cancel. */
@@ -496,8 +499,35 @@ export function StringTable({
         onKeyDown={onBodyKeyDown}
       >
         {visible.length === 0 ? (
-          <div className="panel__empty">
-            No strings match the current filter.
+          <div className="tableempty">
+            <span className="tableempty__icon" aria-hidden>
+              ⌕
+            </span>
+            <div className="tableempty__title">
+              {search.trim() ? (
+                <>
+                  No strings match “<code>{search.trim()}</code>”
+                </>
+              ) : (
+                "No strings match the current filter"
+              )}
+            </div>
+            <div className="tableempty__sub">
+              {statusFilter !== "all" && search.trim()
+                ? `Try a different term, or clear the active ${STATUS_META[statusFilter].label.toLowerCase()} filter.`
+                : statusFilter !== "all"
+                  ? `No strings have the ${STATUS_META[statusFilter].label.toLowerCase()} status right now.`
+                  : "Try a different search term."}
+            </div>
+            {onClearFilters && (
+              <button
+                type="button"
+                className="tableempty__btn"
+                onClick={onClearFilters}
+              >
+                Clear filters
+              </button>
+            )}
           </div>
         ) : (
           <div
