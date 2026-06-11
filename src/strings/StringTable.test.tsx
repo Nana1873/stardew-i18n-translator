@@ -40,10 +40,12 @@ const MOD: ScannedMod = {
       targetExists: true,
       totalKeys: 2,
       translatedKeys: 1,
+      reviewNeeded: 0,
     },
   ],
   totalKeys: 2,
   translatedKeys: 1,
+  reviewNeeded: 0,
   progress: 0.5,
   status: "untranslated",
 };

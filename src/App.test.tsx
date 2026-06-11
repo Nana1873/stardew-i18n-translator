@@ -6,6 +6,22 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
 }));
 
+// jsdom has no layout — the real virtualizer measures 0px forever. Render
+// every item instead (same mock as StringTable.test).
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 30,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        key: index,
+        index,
+        start: index * 30,
+        size: 30,
+      })),
+    measure: () => {},
+  }),
+}));
+
 import { App } from "./App";
 
 const CONFIGURED = {
@@ -20,17 +36,16 @@ beforeEach(() => {
 });
 
 describe("App shell", () => {
-  it("renders the toolbar and two-panel layout", async () => {
+  it("renders the toolbar and the dashboard landing", async () => {
     invokeMock.mockResolvedValue(CONFIGURED);
     render(<App />);
 
-    expect(screen.getByText("Stardew i18n Translator")).toBeInTheDocument();
     expect(
-      screen.getByRole("region", { name: "Mod list" }),
+      screen.getByRole("button", { name: /Stardew i18n Translator/ }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "String table" }),
-    ).toBeInTheDocument();
+    // Landing screen is the dashboard (SPEC §7.0 rollout ④), not the panels.
+    expect(screen.getByRole("main", { name: "Dashboard" })).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Mod list" })).toBeNull();
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
@@ -75,10 +90,12 @@ describe("App shell", () => {
                   targetExists: false,
                   totalKeys: 5,
                   translatedKeys: 0,
+                  reviewNeeded: 2,
                 },
               ],
               totalKeys: 5,
               translatedKeys: 0,
+              reviewNeeded: 2,
               progress: 0,
               status: "untranslated",
             },
@@ -96,7 +113,78 @@ describe("App shell", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Scan" }));
 
+    // The dashboard reflects the scan (queue + toolbar pill)…
+    expect(await screen.findByText(/1 mods scanned/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /2 to review/ }),
+    ).toBeInTheDocument();
+
+    // …and Browse switches into the work view with the mod list.
+    fireEvent.click(screen.getByRole("button", { name: /Browse all mods/ }));
     expect(await screen.findByText("Test Mod")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "7286" })).toBeInTheDocument();
+  });
+
+  it("the dashboard review queue jumps into the mod filtered to review-needed", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "scan_mods")
+        return Promise.resolve({
+          mods: [
+            {
+              uniqueId: "a.b",
+              name: "Test Mod",
+              version: "1.0",
+              nexusId: null,
+              packageId: "Test Mod",
+              folderPath: "x",
+              i18nFiles: [
+                {
+                  relativeDir: "i18n",
+                  defaultPath: "x/i18n/default.json",
+                  targetPath: "x/i18n/de.json",
+                  targetExists: true,
+                  totalKeys: 1,
+                  translatedKeys: 1,
+                  reviewNeeded: 1,
+                },
+              ],
+              totalKeys: 1,
+              translatedKeys: 1,
+              reviewNeeded: 1,
+              progress: 1,
+              status: "translated",
+            },
+          ],
+          warnings: [],
+          modCount: 1,
+          fileCount: 1,
+        });
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "Hallo KI",
+            targetPresent: true,
+            status: "review-needed",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
+
+    // The queue lists the mod; clicking it opens the work view on its
+    // review backlog (status filter pre-set to review-needed).
+    fireEvent.click(await screen.findByRole("button", { name: /Test Mod/ }));
+    expect(
+      await screen.findByRole("region", { name: "String table" }),
+    ).toBeInTheDocument();
+    expect(await screen.findByText("Hallo KI")).toBeInTheDocument();
   });
 });
