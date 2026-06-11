@@ -55,6 +55,24 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("the brand button toggles between dashboard and work view", async () => {
+    invokeMock.mockResolvedValue(CONFIGURED);
+    render(<App />);
+
+    const brand = screen.getByRole("button", {
+      name: /Stardew i18n Translator/,
+    });
+    fireEvent.click(brand);
+    expect(
+      await screen.findByRole("region", { name: "Mod list" }),
+    ).toBeInTheDocument();
+
+    fireEvent.click(brand);
+    expect(
+      await screen.findByRole("main", { name: "Dashboard" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
     invokeMock.mockResolvedValue({
       stardewPath: null,
