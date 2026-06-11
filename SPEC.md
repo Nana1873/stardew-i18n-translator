@@ -225,16 +225,16 @@ Calculated per file, aggregated per mod (across all `i18n/` folders), and rolled
 
 ## 7. Main Overview / UI Screens
 
-The v1 UI has exactly **7 screen elements** (the Setup Wizard, Scan Dialog, Main Window, String Table, String Edit Dialog, Context Menu, and Settings Dialog — all modal dialogs except the Main Window/String Table). No analytics, no multi-page navigation.
+The v1.5 UI has **8 screen elements** (the Setup Wizard, Scan Dialog, Dashboard Home, Main Window/Work View, String Table, String Edit Dialog, Context Menu, and Settings Dialog — all modal dialogs except the Dashboard and the Main Window/String Table). The toolbar is the only navigation chrome: brand = Home (§7.8), everything else happens in the work view.
 
 > **v1.5 redesign (2026-06).** After real-world use, the UI was redesigned with
 > Claude Design ("dashboard home + two-panel work view" concept; reference HTML
-> in `docs/design/`). §7.0 records the design system; §7.3–§7.5 and §7.7 are
-> updated to match. Rollout order: ① design tokens + restyle of all existing
-> screens, ② status model 5→4 (replace `not-translatable` with a "Keep
-> original" action, §9), ③ `//` comments in `default.json` as section dividers,
-> ④ dashboard home screen + cross-mod review queue. Until ④ lands, the app
-> keeps launching straight into the work view.
+> in `docs/design/`). §7.0 records the design system; §7.3–§7.5, §7.7 and §7.8
+> are updated to match. Rollout (all delivered): ① design tokens + restyle of
+> all existing screens, ② status model 5→4 (replace `not-translatable` with a
+> "Keep original" action, §9), ③ `//` comments in `default.json` as section
+> dividers, ④ dashboard home (§7.8) + cross-mod review queue. Still open:
+> settings left-nav restyle (§7.7), section context in AI prompts (§7.4).
 
 ### 7.0 Visual design system (v1.5)
 
@@ -310,13 +310,14 @@ See §7.4.
 
 **Toolbar:**
 
+- Brand button = Home (§7.8); highlighted while the dashboard is shown
 - Scan / Re-scan (gold-tinted primary)
 - Export (selected mod / all), Import batch…
 - Settings
-- Search bar (right-aligned)
+- Global "⚑ N to review" pill (hidden at 0) — opens the dashboard review queue
+- Search bar (right-aligned; active in the work view)
 - _(v1.5)_ The status filter moved out of the toolbar into the string panel's
-  filter-chip row (§7.4). Once the dashboard (rollout ④) lands, the toolbar
-  gains a Home/brand button and a global "N to review" pill.
+  filter-chip row (§7.4).
 
 ### 7.4 String Table
 
@@ -448,6 +449,25 @@ the step-by-step Setup Wizard:
 - _(v1.5, planned)_ The flat list becomes a left-nav settings window
   (Folders & language · Local AI · Glossary) per `docs/design/`; content and
   semantics stay as above.
+
+### 7.8 Dashboard Home (v1.5)
+
+The landing screen — answers "where do I stand?" before any table loads.
+Reached via the toolbar brand button; opening any mod switches to the work
+view (§7.3).
+
+| Block              | Content                                                                                                                               |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
+| Greeting           | Time-of-day greeting · target language · mods-scanned count · Scan CTA                                                                |
+| Stat cards (4)     | Overall translated % (with bar) · Needs review (orange) · In progress (mods 1–99%) · Untouched (mods at 0%)                           |
+| Review queue       | Only when unreviewed AI suggestions exist: per-mod backlog bars sorted by size; clicking opens that mod **filtered to review-needed** |
+| Continue cards (3) | Most recently opened mods with progress bars (`localStorage` recency cache) · Resume →                                                |
+| Browse all mods →  | Enters the work view without picking a mod                                                                                            |
+
+The per-mod review counts come from the scan (`ScannedMod.reviewNeeded`,
+counted from saved state) and stay live after edits via the existing
+`onCountsChange` pipeline. The dashboard holds **no state of its own** — it is
+a pure projection of the scan, so it never goes stale.
 
 ---
 

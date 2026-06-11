@@ -34,6 +34,9 @@ pub struct ScannedI18nFile {
     pub total_keys: usize,
     /// Source keys with a non-empty value in the target `<lang>.json`.
     pub translated_keys: usize,
+    /// Source keys whose saved status is an unreviewed AI suggestion
+    /// (`review-needed`) — feeds the dashboard review queue.
+    pub review_needed: usize,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -50,6 +53,8 @@ pub struct ScannedMod {
     /// Aggregates across all i18n files.
     pub total_keys: usize,
     pub translated_keys: usize,
+    /// Unreviewed AI suggestions across all i18n files (dashboard queue).
+    pub review_needed: usize,
     pub progress: f64,
     /// "none" (no keys) | "untranslated" (some missing) | "translated" (all present).
     pub status: String,
@@ -285,6 +290,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             .sort_by(|a, b| a.relative_dir.cmp(&b.relative_dir));
         scanned.total_keys = scanned.i18n_files.iter().map(|f| f.total_keys).sum();
         scanned.translated_keys = scanned.i18n_files.iter().map(|f| f.translated_keys).sum();
+        scanned.review_needed = scanned.i18n_files.iter().map(|f| f.review_needed).sum();
         scanned.progress = progress_of(scanned.total_keys, scanned.translated_keys);
         scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
     }
@@ -326,6 +332,7 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         i18n_files: Vec::new(),
         total_keys: 0,
         translated_keys: 0,
+        review_needed: 0,
         progress: 0.0,
         status: String::new(),
     })
@@ -605,15 +612,17 @@ pub(crate) fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>>
 }
 
 /// (total source keys, source keys with a non-empty **working** target — saved
-/// state takes precedence over the imported `<lang>.json` value).
+/// state takes precedence over the imported `<lang>.json` value — and source
+/// keys whose stored status is an unreviewed AI suggestion). The review count
+/// feeds the dashboard's cross-mod review queue (SPEC §7.0 rollout ④).
 fn count_keys(
     default_path: &Path,
     target_path: &Path,
     state: &ModState,
     relative_dir: &str,
-) -> (usize, usize) {
+) -> (usize, usize, usize) {
     let Some(source) = read_object(default_path) else {
-        return (0, 0);
+        return (0, 0, 0);
     };
     let target_map = read_object(target_path).unwrap_or_default();
     let target = TargetLookup::new(&target_map);
@@ -638,7 +647,16 @@ fn count_keys(
             }
         })
         .count();
-    (total, translated)
+    let review_needed = source
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .filter(|key| {
+            state
+                .get(&translations::entry_key(relative_dir, key))
+                .is_some_and(|stored| stored.status == "review-needed")
+        })
+        .count();
+    (total, translated, review_needed)
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -694,7 +712,7 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys) =
+    let (total_keys, translated_keys, review_needed) =
         count_keys(&default_path, &target_path, state, &relative_dir);
     Some(ScannedI18nFile {
         target_exists: target_path.is_file(),
@@ -703,6 +721,7 @@ fn build_i18n_file(
         relative_dir,
         total_keys,
         translated_keys,
+        review_needed,
     })
 }
 
@@ -1122,15 +1141,15 @@ mod tests {
         assert!(rows[0].target_present);
         assert_eq!(rows[1].target, "Tschüss");
 
-        // Counts agree: both keys are translated.
+        // Counts agree: both keys are translated, none awaiting review.
         let state = ModState::new();
-        let (total, translated) = count_keys(
+        let (total, translated, review) = count_keys(
             &i18n.join("default.json"),
             &i18n.join("de.json"),
             &state,
             "i18n",
         );
-        assert_eq!((total, translated), (2, 2));
+        assert_eq!((total, translated, review), (2, 2, 0));
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1186,6 +1205,35 @@ mod tests {
         write(&default_path, "{ \"k\": \"Hello there\" }");
         let rows = load_strings(&default_path, &target_path, &state, "i18n");
         assert_eq!(rows[0].status, "outdated");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn count_keys_counts_unreviewed_ai_suggestions() {
+        let root = crate::test_support::temp_dir("count-review");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"a\": \"A\", \"b\": \"B\" }");
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "a"),
+            translations::StoredString {
+                target: "KI-Vorschlag".into(),
+                status: "review-needed".into(),
+                source_hash: translations::source_hash("A"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id").unwrap();
+
+        let (total, translated, review) = count_keys(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &state,
+            "i18n",
+        );
+        assert_eq!((total, translated, review), (2, 1, 1));
 
         std::fs::remove_dir_all(&root).ok();
     }
