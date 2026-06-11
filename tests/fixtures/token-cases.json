@@ -42,6 +42,14 @@
       "tokens": ["@", "^"]
     },
     {
+      "value": "'test' # next^^line",
+      "tokens": ["'", "'", "#", "^", "^"]
+    },
+    {
+      "value": "Don't change the farmer's hat.",
+      "tokens": []
+    },
+    {
       "value": "Mixed {{i18n:some.key}} with {0} and #$e#",
       "tokens": ["{{i18n:some.key}}", "{0}", "#$e#"]
     },

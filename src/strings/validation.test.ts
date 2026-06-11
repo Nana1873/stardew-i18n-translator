@@ -76,6 +76,29 @@ describe("validate", () => {
     ]);
   });
 
+  it("protects quote delimiters, standalone #, and repeated ^ markers", () => {
+    const issues = validate(
+      "'Hello' # first^^second",
+      "„Hallo“ first^second",
+      false,
+    );
+    expect(issues.map((issue) => issue.message).sort()).toEqual([
+      "Missing token # (dialogue/mail separator)",
+      "Missing token ' (quote delimiter)",
+      "Missing token ^ (line break)",
+    ]);
+  });
+
+  it("does not treat apostrophes inside words as protected tokens", () => {
+    expect(
+      validate(
+        "Don't touch the farmer's hat.",
+        "Fass den Hut nicht an.",
+        false,
+      ),
+    ).toEqual([]);
+  });
+
   it("a different newline count is a warning, never a blocking error", () => {
     // German rewraps: 3 source line breaks, 2 in the translation — layout only.
     const issues = validate(
