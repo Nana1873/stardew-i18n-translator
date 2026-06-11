@@ -534,6 +534,7 @@ kbd,
   font-size: 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   cursor: default;
+  user-select: none;
 }
 
 .modrow--head {
@@ -877,6 +878,11 @@ kbd,
 
 .stringrow--data {
   border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  /* Rows are list items (click/Shift/Ctrl selects rows, double-click edits) —
+     never show the text I-beam or start a native text selection. Copying
+     text lives in the context menu and the editor. */
+  cursor: default;
+  user-select: none;
 }
 
 .stringrow--data:hover {
