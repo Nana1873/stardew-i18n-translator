@@ -1,0 +1,1741 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+          href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap"
+          rel="stylesheet"
+        />
+        <style>
+          * {
+            box-sizing: border-box;
+          }
+          html,
+          body {
+            margin: 0;
+          }
+          body {
+            background: #15120e;
+          }
+          ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #4a4236;
+            border-radius: 6px;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          .win {
+            border: 1px solid #3d362b;
+            border-radius: 11px;
+            overflow: hidden;
+            box-shadow: 0 18px 50px rgba(0, 0, 0, 0.5);
+            background: #1a1713;
+          }
+          textarea {
+            font-family: inherit;
+            resize: none;
+          }
+          textarea:focus {
+            outline: none;
+          }
+          kbd {
+            font-family: "JetBrains Mono", monospace;
+            font-size: 10px;
+            border: 1px solid #3d362b;
+            border-radius: 3px;
+            padding: 0 4px;
+            color: #bb9a5c;
+          }
+        </style>
+      </helmet>
+
+      <div
+        style="
+          min-height: 100vh;
+          background: #15120e;
+          font-family:
+            &quot;Segoe UI&quot;,
+            system-ui,
+            -apple-system,
+            sans-serif;
+          color: #ece6da;
+          padding: 26px 24px 40px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 14px;
+        "
+      >
+        <div
+          style="
+            width: 1180px;
+            max-width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 16px;
+          "
+        >
+          <div>
+            <div
+              style="
+                font-size: 11px;
+                letter-spacing: 0.14em;
+                text-transform: uppercase;
+                color: #9a8f5f;
+                font-weight: 600;
+              "
+            >
+              Interactive demo
+            </div>
+            <div
+              style="
+                font-size: 17px;
+                font-weight: 700;
+                color: #f3eee2;
+                margin-top: 3px;
+              "
+            >
+              Review loop — keyboard-first, zero layout shift
+            </div>
+          </div>
+          <div
+            style="
+              font-size: 11.5px;
+              color: #8f8675;
+              text-align: right;
+              line-height: 1.7;
+            "
+          >
+            Click a row or press <kbd>Enter</kbd> to edit · <kbd>Ctrl</kbd>+<kbd
+              >Enter</kbd
+            >
+            Save &amp; next<br /><kbd>↑</kbd><kbd>↓</kbd> move ·
+            <kbd>Alt</kbd>+<kbd>←/→</kbd> step · <kbd>Esc</kbd> close ·
+            <kbd>1–5</kbd> filter
+          </div>
+        </div>
+
+        <div class="win" style="width: 1180px; max-width: 100%">
+          <!-- titlebar -->
+          <div
+            style="
+              height: 30px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              padding: 0 12px;
+              background: #15120e;
+              border-bottom: 1px solid #2c271f;
+            "
+          >
+            <div style="display: flex; align-items: center; gap: 8px">
+              <span
+                style="
+                  width: 13px;
+                  height: 13px;
+                  border-radius: 3px;
+                  background: linear-gradient(135deg, #e3a94e, #b9802f);
+                "
+              ></span
+              ><span style="font-size: 11.5px; color: #b3a994"
+                >Stardew i18n Translator</span
+              >
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 16px;
+                color: #7a7060;
+                font-size: 13px;
+              "
+            >
+              <span>—</span><span>▢</span><span>✕</span>
+            </div>
+          </div>
+
+          <!-- toolbar -->
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              padding: 8px 12px;
+              background: #2a251d;
+              border-bottom: 1px solid #3d362b;
+            "
+          >
+            <button onClick="{{ onHome }}" style="{{ homeBtnStyle }}">
+              ⌂ Home
+            </button>
+            <span
+              style="
+                width: 1px;
+                height: 20px;
+                background: #3d362b;
+                margin: 0 2px;
+              "
+            ></span>
+            <button
+              style="
+                background: rgba(227, 169, 78, 0.16);
+                color: #e8bd6f;
+                border: 1px solid rgba(227, 169, 78, 0.5);
+                border-radius: 6px;
+                padding: 5px 12px;
+                font-size: 12.5px;
+                font-family: inherit;
+                cursor: pointer;
+                font-weight: 600;
+              "
+            >
+              Scan
+              <span
+                style="
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  font-size: 9.5px;
+                  color: #bb9a5c;
+                  margin-left: 4px;
+                  border: 1px solid rgba(227, 169, 78, 0.35);
+                  border-radius: 3px;
+                  padding: 0 4px;
+                "
+                >F5</span
+              >
+            </button>
+            <button
+              style="
+                background: rgba(255, 255, 255, 0.05);
+                color: #ddd5c5;
+                border: 1px solid #3d362b;
+                border-radius: 6px;
+                padding: 5px 11px;
+                font-size: 12.5px;
+                font-family: inherit;
+                cursor: pointer;
+              "
+            >
+              Export
+            </button>
+            <button
+              style="
+                background: rgba(255, 255, 255, 0.05);
+                color: #ddd5c5;
+                border: 1px solid #3d362b;
+                border-radius: 6px;
+                padding: 5px 11px;
+                font-size: 12.5px;
+                font-family: inherit;
+                cursor: pointer;
+              "
+            >
+              Settings
+            </button>
+            <div
+              style="
+                margin-left: auto;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+              "
+            >
+              <button
+                onClick="{{ onReviewAll }}"
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 6px;
+                  background: rgba(236, 139, 63, 0.14);
+                  color: #ec8b3f;
+                  border: 1px solid rgba(236, 139, 63, 0.45);
+                  border-radius: 20px;
+                  padding: 4px 12px;
+                  font-size: 12px;
+                  font-family: inherit;
+                  cursor: pointer;
+                  font-weight: 600;
+                "
+              >
+                <span>⚑</span> {{ reviewTotal }} to review
+              </button>
+              <input
+                value="{{ search }}"
+                onChange="{{ onSearch }}"
+                placeholder="Search strings…"
+                style="
+                  background: #1a1713;
+                  color: #ece6da;
+                  border: 1px solid #3d362b;
+                  border-radius: 6px;
+                  padding: 5px 10px;
+                  font-size: 12px;
+                  font-family: inherit;
+                  width: 180px;
+                "
+              />
+            </div>
+          </div>
+
+          <!-- ========== DASHBOARD ========== -->
+          <sc-if value="{{ isDash }}" hint-placeholder-val="{{ true }}">
+            <div
+              style="
+                padding: 22px 26px;
+                background: #1a1713;
+                height: 560px;
+                overflow: auto;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: flex-end;
+                  justify-content: space-between;
+                  gap: 16px;
+                  margin-bottom: 18px;
+                "
+              >
+                <div>
+                  <div
+                    style="font-size: 21px; font-weight: 700; color: #f3eee2"
+                  >
+                    Good evening
+                  </div>
+                  <div
+                    style="font-size: 12.5px; color: #a89e8d; margin-top: 3px"
+                  >
+                    German (de-DE) · 351 mods scanned · last scan 2h ago
+                  </div>
+                </div>
+                <button
+                  style="
+                    background: rgba(227, 169, 78, 0.16);
+                    color: #e8bd6f;
+                    border: 1px solid rgba(227, 169, 78, 0.5);
+                    border-radius: 7px;
+                    padding: 8px 15px;
+                    font-size: 13px;
+                    font-family: inherit;
+                    cursor: pointer;
+                    font-weight: 600;
+                  "
+                >
+                  Scan for changes
+                  <span
+                    style="
+                      font-family: &quot;JetBrains Mono&quot;, monospace;
+                      font-size: 9.5px;
+                      margin-left: 4px;
+                      border: 1px solid rgba(227, 169, 78, 0.35);
+                      border-radius: 3px;
+                      padding: 0 4px;
+                    "
+                    >F5</span
+                  >
+                </button>
+              </div>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(4, 1fr);
+                  gap: 13px;
+                  margin-bottom: 15px;
+                "
+              >
+                <div
+                  style="
+                    background: #221e18;
+                    border: 1px solid #3d362b;
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                  "
+                >
+                  <div
+                    style="
+                      font-size: 10.5px;
+                      letter-spacing: 0.04em;
+                      text-transform: uppercase;
+                      color: #8f8675;
+                    "
+                  >
+                    Overall translated
+                  </div>
+                  <div
+                    style="
+                      font-size: 26px;
+                      font-weight: 700;
+                      color: #f3eee2;
+                      margin-top: 5px;
+                    "
+                  >
+                    48%
+                  </div>
+                  <div
+                    style="
+                      height: 6px;
+                      background: rgba(255, 255, 255, 0.08);
+                      border-radius: 3px;
+                      overflow: hidden;
+                      margin-top: 8px;
+                    "
+                  >
+                    <span
+                      style="
+                        display: block;
+                        width: 48%;
+                        height: 100%;
+                        background: #5ec488;
+                      "
+                    ></span>
+                  </div>
+                </div>
+                <div
+                  style="
+                    background: #221e18;
+                    border: 1px solid rgba(236, 139, 63, 0.35);
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                  "
+                >
+                  <div
+                    style="
+                      font-size: 10.5px;
+                      letter-spacing: 0.04em;
+                      text-transform: uppercase;
+                      color: #c79b67;
+                    "
+                  >
+                    Needs review
+                  </div>
+                  <div
+                    style="
+                      font-size: 26px;
+                      font-weight: 700;
+                      color: #ec8b3f;
+                      margin-top: 5px;
+                    "
+                  >
+                    {{ reviewTotal }}
+                  </div>
+                  <div style="font-size: 11px; color: #8f8675; margin-top: 8px">
+                    in this mod
+                  </div>
+                </div>
+                <div
+                  style="
+                    background: #221e18;
+                    border: 1px solid #3d362b;
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                  "
+                >
+                  <div
+                    style="
+                      font-size: 10.5px;
+                      letter-spacing: 0.04em;
+                      text-transform: uppercase;
+                      color: #8f8675;
+                    "
+                  >
+                    In progress
+                  </div>
+                  <div
+                    style="
+                      font-size: 26px;
+                      font-weight: 700;
+                      color: #f3eee2;
+                      margin-top: 5px;
+                    "
+                  >
+                    6
+                  </div>
+                  <div style="font-size: 11px; color: #8f8675; margin-top: 8px">
+                    mods 1–99%
+                  </div>
+                </div>
+                <div
+                  style="
+                    background: #221e18;
+                    border: 1px solid #3d362b;
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                  "
+                >
+                  <div
+                    style="
+                      font-size: 10.5px;
+                      letter-spacing: 0.04em;
+                      text-transform: uppercase;
+                      color: #8f8675;
+                    "
+                  >
+                    Untouched
+                  </div>
+                  <div
+                    style="
+                      font-size: 26px;
+                      font-weight: 700;
+                      color: #f3eee2;
+                      margin-top: 5px;
+                    "
+                  >
+                    347
+                  </div>
+                  <div style="font-size: 11px; color: #8f8675; margin-top: 8px">
+                    mods at 0%
+                  </div>
+                </div>
+              </div>
+              <div
+                style="
+                  background: linear-gradient(
+                    180deg,
+                    rgba(236, 139, 63, 0.08),
+                    rgba(236, 139, 63, 0.02)
+                  );
+                  border: 1px solid rgba(236, 139, 63, 0.35);
+                  border-radius: 11px;
+                  padding: 17px 19px;
+                "
+              >
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 16px;
+                  "
+                >
+                  <div style="display: flex; align-items: center; gap: 10px">
+                    <span
+                      style="
+                        width: 24px;
+                        height: 24px;
+                        border-radius: 6px;
+                        background: rgba(236, 139, 63, 0.2);
+                        color: #ec8b3f;
+                        border: 1px solid rgba(236, 139, 63, 0.55);
+                        display: inline-flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 13px;
+                      "
+                      >⚑</span
+                    >
+                    <div>
+                      <div
+                        style="
+                          font-size: 14px;
+                          font-weight: 700;
+                          color: #f3eee2;
+                        "
+                      >
+                        Review queue
+                      </div>
+                      <div style="font-size: 11.5px; color: #a89e8d">
+                        {{ reviewTotal }} AI suggestions awaiting your judgement
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick="{{ onReviewAll }}"
+                    style="
+                      background: #ec8b3f;
+                      color: #231d12;
+                      border: none;
+                      border-radius: 7px;
+                      padding: 9px 16px;
+                      font-size: 13px;
+                      font-family: inherit;
+                      cursor: pointer;
+                      font-weight: 700;
+                    "
+                  >
+                    Start review session
+                    <span
+                      style="
+                        font-family: &quot;JetBrains Mono&quot;, monospace;
+                        font-size: 9.5px;
+                        margin-left: 5px;
+                        background: rgba(0, 0, 0, 0.18);
+                        border-radius: 3px;
+                        padding: 0 4px;
+                      "
+                      >R</span
+                    >
+                  </button>
+                </div>
+              </div>
+              <div
+                style="
+                  font-size: 11px;
+                  letter-spacing: 0.06em;
+                  text-transform: uppercase;
+                  color: #9a8f5f;
+                  font-weight: 600;
+                  margin: 18px 0 10px;
+                "
+              >
+                Continue where you left off
+              </div>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(3, 1fr);
+                  gap: 13px;
+                "
+              >
+                <div
+                  onClick="{{ onResume }}"
+                  style="
+                    text-align: left;
+                    background: #221e18;
+                    border: 1px solid #3d362b;
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                    cursor: pointer;
+                    color: inherit;
+                  "
+                >
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                    "
+                  >
+                    <span
+                      style="font-size: 13px; font-weight: 600; color: #ece6da"
+                      >UI Info Suite 2 Alt.</span
+                    ><span
+                      style="font-size: 11px; color: #e3a94e; font-weight: 700"
+                      >100%</span
+                    >
+                  </div>
+                  <div
+                    style="
+                      height: 6px;
+                      background: rgba(255, 255, 255, 0.08);
+                      border-radius: 3px;
+                      overflow: hidden;
+                      margin: 9px 0;
+                    "
+                  >
+                    <span
+                      style="
+                        display: block;
+                        width: 100%;
+                        height: 100%;
+                        background: #5ec488;
+                      "
+                    ></span>
+                  </div>
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                    "
+                  >
+                    <span style="font-size: 11px; color: #8f8675"
+                      >280 strings · 12m ago</span
+                    ><span style="font-size: 12px; color: #e8bd6f">Open →</span>
+                  </div>
+                </div>
+                <div
+                  style="
+                    background: #221e18;
+                    border: 1px solid #3d362b;
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                    opacity: 0.55;
+                  "
+                >
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                    "
+                  >
+                    <span
+                      style="font-size: 13px; font-weight: 600; color: #ece6da"
+                      >[CP] Ridgeside Village</span
+                    ><span
+                      style="font-size: 11px; color: #e3a94e; font-weight: 700"
+                      >62%</span
+                    >
+                  </div>
+                  <div
+                    style="
+                      height: 6px;
+                      background: rgba(255, 255, 255, 0.08);
+                      border-radius: 3px;
+                      overflow: hidden;
+                      margin: 9px 0;
+                    "
+                  >
+                    <span
+                      style="
+                        display: block;
+                        width: 62%;
+                        height: 100%;
+                        background: #e3a94e;
+                      "
+                    ></span>
+                  </div>
+                  <div style="font-size: 11px; color: #8f8675">
+                    17,412 strings · 1h ago
+                  </div>
+                </div>
+                <div
+                  style="
+                    background: #221e18;
+                    border: 1px solid #3d362b;
+                    border-radius: 11px;
+                    padding: 14px 16px;
+                    opacity: 0.55;
+                  "
+                >
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      justify-content: space-between;
+                    "
+                  >
+                    <span
+                      style="font-size: 13px; font-weight: 600; color: #ece6da"
+                      >Alternative Textures</span
+                    ><span
+                      style="font-size: 11px; color: #e3a94e; font-weight: 700"
+                      >35%</span
+                    >
+                  </div>
+                  <div
+                    style="
+                      height: 6px;
+                      background: rgba(255, 255, 255, 0.08);
+                      border-radius: 3px;
+                      overflow: hidden;
+                      margin: 9px 0;
+                    "
+                  >
+                    <span
+                      style="
+                        display: block;
+                        width: 35%;
+                        height: 100%;
+                        background: #e3a94e;
+                      "
+                    ></span>
+                  </div>
+                  <div style="font-size: 11px; color: #8f8675">
+                    35 strings · 3h ago
+                  </div>
+                </div>
+              </div>
+            </div>
+          </sc-if>
+
+          <!-- ========== WORK VIEW ========== -->
+          <sc-if value="{{ isWork }}" hint-placeholder-val="{{ true }}">
+            <div style="position: relative">
+              <div
+                style="
+                  flex: 1;
+                  min-width: 0;
+                  display: flex;
+                  flex-direction: column;
+                  background: #1d1a14;
+                  height: 560px;
+                "
+              >
+                <div
+                  style="
+                    padding: 8px 14px;
+                    font-size: 11px;
+                    letter-spacing: 0.04em;
+                    text-transform: uppercase;
+                    color: #9a8f5f;
+                    font-weight: 600;
+                    border-bottom: 1px solid #3d362b;
+                    display: flex;
+                    align-items: center;
+                    gap: 8px;
+                  "
+                >
+                  STRINGS · UI Info Suite 2 Alternative ·
+                  <span style="color: #c8c0ad">{{ modProgress }}</span>
+                </div>
+                <!-- filter chips -->
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 7px;
+                    padding: 7px 14px;
+                    border-bottom: 1px solid #3d362b;
+                    background: #211d17;
+                  "
+                >
+                  <button onClick="{{ onFilterAll }}" style="{{ chipAll }}">
+                    All <span style="opacity: 0.7">{{ cAll }}</span>
+                  </button>
+                  <button onClick="{{ onFilterUn }}" style="{{ chipUn }}">
+                    <span>○</span> {{ cUn }}
+                  </button>
+                  <button onClick="{{ onFilterTr }}" style="{{ chipTr }}">
+                    <span>✓</span> {{ cTr }}
+                  </button>
+                  <button onClick="{{ onFilterRe }}" style="{{ chipRe }}">
+                    <span>⚑</span> {{ cRe }}
+                  </button>
+                  <button onClick="{{ onFilterOu }}" style="{{ chipOu }}">
+                    <span>↻</span> {{ cOu }}
+                  </button>
+                  <div
+                    style="margin-left: auto; font-size: 11px; color: #7a7060"
+                  >
+                    {{ sessionLabel }}
+                  </div>
+                </div>
+                <!-- column header -->
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 3px 1fr;
+                    background: #221e18;
+                    border-bottom: 1px solid #3d362b;
+                  "
+                >
+                  <span></span>
+                  <div
+                    style="
+                      display: grid;
+                      grid-template-columns: 120px 220px 1fr 1fr;
+                      gap: 14px;
+                      padding: 6px 16px;
+                      font-size: 9.5px;
+                      letter-spacing: 0.05em;
+                      text-transform: uppercase;
+                      color: #7a7060;
+                    "
+                  >
+                    <span>Status</span><span style="color: #cfc7b6">Key</span
+                    ><span>Original</span><span>Translation</span>
+                  </div>
+                </div>
+                <!-- rows -->
+                <div style="overflow: auto; flex: 1; min-height: 0">
+                  <sc-for
+                    list="{{ items }}"
+                    as="item"
+                    hint-placeholder-count="10"
+                  >
+                    <sc-if
+                      value="{{ item.isSection }}"
+                      hint-placeholder-val="{{ false }}"
+                    >
+                      <div
+                        style="
+                          display: flex;
+                          align-items: center;
+                          justify-content: space-between;
+                          height: 26px;
+                          padding: 0 16px 0 18px;
+                          background: rgba(227, 169, 78, 0.07);
+                          border-top: 1px solid rgba(227, 169, 78, 0.18);
+                          border-bottom: 1px solid rgba(227, 169, 78, 0.18);
+                          user-select: none;
+                        "
+                      >
+                        <span
+                          style="
+                            font-family: &quot;JetBrains Mono&quot;, monospace;
+                            font-size: 11px;
+                            color: #bba76e;
+                          "
+                          >// {{ item.title }}</span
+                        ><span
+                          style="
+                            font-size: 9px;
+                            letter-spacing: 0.08em;
+                            text-transform: uppercase;
+                            color: #8a7c52;
+                            background: rgba(227, 169, 78, 0.12);
+                            border-radius: 4px;
+                            padding: 1px 7px;
+                          "
+                          >Section · {{ item.count }}</span
+                        >
+                      </div>
+                    </sc-if>
+                    <sc-if
+                      value="{{ item.isRow }}"
+                      hint-placeholder-val="{{ true }}"
+                    >
+                      <div
+                        onClick="{{ item.onOpen }}"
+                        style="
+                          display: grid;
+                          grid-template-columns: 3px 1fr;
+                          align-items: stretch;
+                          cursor: pointer;
+                        "
+                      >
+                        <span style="background: {{ item.edgeColor }};"></span>
+                        <div
+                          style="display:grid;grid-template-columns:120px 220px 1fr 1fr;gap:14px;padding:0 16px;align-items:center;height:30px;border-bottom:1px solid rgba(255,255,255,0.035);font-size:12.5px;background: {{ item.rowBg }};box-shadow: {{ item.rowRing }};"
+                        >
+                          <span
+                            style="display: flex; align-items: center; gap: 7px"
+                            ><span
+                              style="width:16px;height:16px;flex:none;border-radius:4px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;background: {{ item.chipBg }};color: {{ item.chipColor }};border:1px solid {{ item.chipBorder }};"
+                              >{{ item.glyph }}</span
+                            ><span style="color: #8f8675; font-size: 10.5px"
+                              >{{ item.label }}</span
+                            ></span
+                          >
+                          <span
+                            style="font-family:'JetBrains Mono',monospace;font-size:11.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color: {{ item.keyColor }};"
+                            >{{ item.key }}</span
+                          >
+                          <span
+                            style="
+                              overflow: hidden;
+                              text-overflow: ellipsis;
+                              white-space: nowrap;
+                            "
+                            >{{ item.original }}</span
+                          >
+                          <span
+                            style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color: {{ item.translationColor }};"
+                            >{{ item.translationDisplay }}</span
+                          >
+                        </div>
+                      </div>
+                    </sc-if>
+                  </sc-for>
+                  <sc-if
+                    value="{{ isEmpty }}"
+                    hint-placeholder-val="{{ false }}"
+                  >
+                    <div
+                      style="
+                        height: 300px;
+                        display: flex;
+                        flex-direction: column;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 9px;
+                        text-align: center;
+                      "
+                    >
+                      <span
+                        style="
+                          width: 42px;
+                          height: 42px;
+                          border-radius: 11px;
+                          background: rgba(255, 255, 255, 0.05);
+                          color: #8f8675;
+                          display: inline-flex;
+                          align-items: center;
+                          justify-content: center;
+                          font-size: 20px;
+                        "
+                        >⌕</span
+                      >
+                      <div
+                        style="
+                          font-size: 13.5px;
+                          color: #e7e1d5;
+                          font-weight: 600;
+                        "
+                      >
+                        Nothing matches this filter
+                      </div>
+                      <button
+                        onClick="{{ onFilterAll }}"
+                        style="
+                          margin-top: 2px;
+                          background: rgba(255, 255, 255, 0.05);
+                          color: #ddd5c5;
+                          border: 1px solid #3d362b;
+                          border-radius: 6px;
+                          padding: 5px 12px;
+                          font-size: 12px;
+                          font-family: inherit;
+                          cursor: pointer;
+                        "
+                      >
+                        Clear filters
+                      </button>
+                    </div>
+                  </sc-if>
+                </div>
+                <!-- status bar -->
+                <div
+                  style="
+                    display: flex;
+                    align-items: center;
+                    gap: 16px;
+                    padding: 6px 16px;
+                    border-top: 1px solid #3d362b;
+                    background: #221e18;
+                    font-size: 11px;
+                    color: #8f8675;
+                  "
+                >
+                  <span
+                    ><b style="color: #b6bbc2">{{ cUn }}</b> untranslated</span
+                  ><span
+                    ><b style="color: #5ec488">{{ cTr }}</b> translated</span
+                  ><span
+                    ><b style="color: #ec8b3f">{{ cRe }}</b> need review</span
+                  ><span style="margin-left: auto; color: #7a7060"
+                    >Double-click or <kbd style="color: #bb9a5c">Enter</kbd> to
+                    edit</span
+                  >
+                </div>
+              </div>
+
+              <!-- ========== EDITOR MODAL ========== -->
+              <sc-if value="{{ editing }}" hint-placeholder-val="{{ false }}">
+                <div
+                  onClick="{{ onClose }}"
+                  style="
+                    position: absolute;
+                    inset: 0;
+                    background: rgba(10, 8, 5, 0.55);
+                    display: flex;
+                    align-items: flex-start;
+                    justify-content: center;
+                    padding-top: 34px;
+                  "
+                >
+                  <div
+                    onClick="{{ stop }}"
+                    style="
+                      width: 780px;
+                      max-width: 94%;
+                      background: #1a1713;
+                      border: 1px solid #4e463a;
+                      border-radius: 12px;
+                      box-shadow: 0 28px 70px rgba(0, 0, 0, 0.6);
+                      overflow: hidden;
+                    "
+                  >
+                    <!-- progress header -->
+                    <div
+                      style="
+                        display: flex;
+                        align-items: center;
+                        gap: 14px;
+                        padding: 11px 18px;
+                        background: #211d17;
+                        border-bottom: 1px solid #3d362b;
+                      "
+                    >
+                      <div style="font-size: 12.5px; color: #a89e8d">
+                        Reviewing
+                        <b style="color: #f3eee2">{{ ed.posCur }}</b> of
+                        <b style="color: #f3eee2">{{ reviewTotal }}</b>
+                      </div>
+                      <div
+                        style="
+                          flex: 1;
+                          height: 6px;
+                          background: rgba(255, 255, 255, 0.08);
+                          border-radius: 4px;
+                          overflow: hidden;
+                          max-width: 340px;
+                        "
+                      >
+                        <span
+                          style="display:block;height:100%;background:#ec8b3f;width: {{ ed.progressPct }};"
+                        ></span>
+                      </div>
+                      <div
+                        style="
+                          margin-left: auto;
+                          font-size: 11.5px;
+                          color: #8f8675;
+                          display: flex;
+                          align-items: center;
+                          gap: 7px;
+                        "
+                      >
+                        <span
+                          style="
+                            width: 7px;
+                            height: 7px;
+                            border-radius: 50%;
+                            background: #5ec488;
+                          "
+                        ></span
+                        >local-AI connected
+                      </div>
+                    </div>
+                    <div style="padding: 15px 18px">
+                      <div
+                        style="
+                          display: flex;
+                          align-items: center;
+                          justify-content: space-between;
+                          gap: 12px;
+                          margin-bottom: 13px;
+                        "
+                      >
+                        <div
+                          style="
+                            font-family: &quot;JetBrains Mono&quot;, monospace;
+                            font-size: 14px;
+                            color: #e6cf8f;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                          "
+                        >
+                          {{ ed.key }}
+                        </div>
+                        <span
+                          style="display:inline-flex;align-items:center;gap:6px;background: {{ ed.chipBg }};color: {{ ed.chipColor }};border:1px solid {{ ed.chipBorder }};border-radius:20px;padding:3px 11px;font-size:11.5px;font-weight:600;flex:none;"
+                          ><span>{{ ed.glyph }}</span> {{ ed.label }}</span
+                        >
+                      </div>
+                      <!-- reserved token slot -->
+                      <div
+                        style="
+                          display: grid;
+                          grid-template-columns: 84px 1fr;
+                          gap: 12px;
+                          align-items: center;
+                          min-height: 30px;
+                          padding: 4px 0;
+                          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                        "
+                      >
+                        <span style="font-size: 11.5px; color: #8f8675"
+                          >Tokens</span
+                        >
+                        <span
+                          style="
+                            display: flex;
+                            gap: 6px;
+                            flex-wrap: wrap;
+                            align-items: center;
+                          "
+                        >
+                          <sc-if
+                            value="{{ ed.hasTokens }}"
+                            hint-placeholder-val="{{ false }}"
+                            ><sc-for
+                              list="{{ ed.tokens }}"
+                              as="t"
+                              hint-placeholder-count="2"
+                              ><span
+                                style="
+                                  font-family:
+                                    &quot;JetBrains Mono&quot;, monospace;
+                                  background: rgba(106, 176, 255, 0.12);
+                                  color: #82bbff;
+                                  border: 1px solid rgba(106, 176, 255, 0.3);
+                                  border-radius: 4px;
+                                  padding: 2px 8px;
+                                  font-size: 11px;
+                                "
+                                >{{ t }}</span
+                              ></sc-for
+                            ></sc-if
+                          >
+                          <sc-if
+                            value="{{ ed.noTokens }}"
+                            hint-placeholder-val="{{ true }}"
+                            ><span style="font-size: 11.5px; color: #5b5446"
+                              >— none —</span
+                            ></sc-if
+                          >
+                        </span>
+                      </div>
+                      <!-- reserved glossary slot -->
+                      <div
+                        style="
+                          display: grid;
+                          grid-template-columns: 84px 1fr;
+                          gap: 12px;
+                          align-items: center;
+                          min-height: 30px;
+                          padding: 4px 0;
+                          border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+                          margin-bottom: 13px;
+                        "
+                      >
+                        <span style="font-size: 11.5px; color: #8f8675"
+                          >Glossary</span
+                        >
+                        <span
+                          style="
+                            display: flex;
+                            gap: 6px;
+                            flex-wrap: wrap;
+                            align-items: center;
+                          "
+                        >
+                          <sc-if
+                            value="{{ ed.hasGlossary }}"
+                            hint-placeholder-val="{{ false }}"
+                            ><sc-for
+                              list="{{ ed.glossary }}"
+                              as="g"
+                              hint-placeholder-count="1"
+                              ><span
+                                style="
+                                  background: rgba(217, 195, 137, 0.14);
+                                  color: #d9c389;
+                                  border: 1px solid rgba(217, 195, 137, 0.3);
+                                  border-radius: 4px;
+                                  padding: 2px 8px;
+                                  font-size: 11px;
+                                "
+                                >{{ g }}</span
+                              ></sc-for
+                            ></sc-if
+                          >
+                          <sc-if
+                            value="{{ ed.noGlossary }}"
+                            hint-placeholder-val="{{ true }}"
+                            ><span style="font-size: 11.5px; color: #5b5446"
+                              >— no hints —</span
+                            ></sc-if
+                          >
+                        </span>
+                      </div>
+                      <!-- panes -->
+                      <div
+                        style="
+                          display: grid;
+                          grid-template-columns: 1fr 1fr;
+                          gap: 13px;
+                        "
+                      >
+                        <div>
+                          <div
+                            style="
+                              font-size: 11.5px;
+                              line-height: 16px;
+                              height: 16px;
+                              color: #8f8675;
+                              margin-bottom: 6px;
+                            "
+                          >
+                            Original (English)
+                          </div>
+                          <div
+                            style="
+                              background: #15120e;
+                              border: 1px solid #3d362b;
+                              border-radius: 7px;
+                              padding: 11px;
+                              font-size: 13px;
+                              line-height: 1.5;
+                              color: #bdb39e;
+                              height: 108px;
+                              overflow: auto;
+                            "
+                          >
+                            {{ ed.original }}
+                          </div>
+                        </div>
+                        <div>
+                          <div
+                            style="
+                              font-size: 11.5px;
+                              line-height: 16px;
+                              height: 16px;
+                              color: #8f8675;
+                              margin-bottom: 6px;
+                            "
+                          >
+                            Translation (German)
+                          </div>
+                          <textarea
+                            value="{{ draft }}"
+                            onChange="{{ onDraft }}"
+                            ref="{{ taRef }}"
+                            style="
+                              width: 100%;
+                              background: #15120e;
+                              border: 1.5px solid #e3a94e;
+                              border-radius: 7px;
+                              padding: 11px;
+                              font-size: 13px;
+                              line-height: 1.5;
+                              color: #f1eadc;
+                              height: 108px;
+                              box-shadow: 0 0 0 3px rgba(227, 169, 78, 0.12);
+                            "
+                          ></textarea>
+                        </div>
+                      </div>
+                      <!-- reserved validation -->
+                      <div
+                        style="
+                          min-height: 24px;
+                          margin-top: 9px;
+                          display: flex;
+                          align-items: center;
+                          gap: 8px;
+                        "
+                      >
+                        <span
+                          style="font-size:12px;color: {{ ed.validationColor }};"
+                          >{{ ed.validationText }}</span
+                        >
+                      </div>
+                      <!-- action bar -->
+                      <div
+                        style="
+                          display: flex;
+                          align-items: center;
+                          gap: 8px;
+                          margin-top: 11px;
+                          padding-top: 13px;
+                          border-top: 1px solid #3d362b;
+                        "
+                      >
+                        <button
+                          onClick="{{ onSaveNext }}"
+                          style="
+                            background: #e3a94e;
+                            color: #231d12;
+                            border: none;
+                            border-radius: 7px;
+                            padding: 9px 15px;
+                            font-size: 13px;
+                            font-family: inherit;
+                            cursor: pointer;
+                            font-weight: 700;
+                          "
+                        >
+                          Save &amp; next
+                          <span
+                            style="
+                              font-family:
+                                &quot;JetBrains Mono&quot;, monospace;
+                              font-size: 9.5px;
+                              margin-left: 5px;
+                              background: rgba(0, 0, 0, 0.18);
+                              border-radius: 3px;
+                              padding: 1px 4px;
+                            "
+                            >⌃↵</span
+                          >
+                        </button>
+                        <button
+                          onClick="{{ onSave }}"
+                          style="
+                            background: rgba(255, 255, 255, 0.06);
+                            color: #ddd5c5;
+                            border: 1px solid #3d362b;
+                            border-radius: 7px;
+                            padding: 9px 13px;
+                            font-size: 12.5px;
+                            font-family: inherit;
+                            cursor: pointer;
+                            font-weight: 600;
+                          "
+                        >
+                          Save
+                          <span
+                            style="
+                              font-family:
+                                &quot;JetBrains Mono&quot;, monospace;
+                              font-size: 9.5px;
+                              margin-left: 4px;
+                              color: #8f8675;
+                              border: 1px solid #3d362b;
+                              border-radius: 3px;
+                              padding: 0 4px;
+                            "
+                            >⌃S</span
+                          >
+                        </button>
+                        <button
+                          onClick="{{ onTranslate }}"
+                          style="
+                            background: rgba(94, 196, 136, 0.14);
+                            color: #7fd1a3;
+                            border: 1px solid rgba(94, 196, 136, 0.4);
+                            border-radius: 7px;
+                            padding: 9px 13px;
+                            font-size: 12.5px;
+                            font-family: inherit;
+                            cursor: pointer;
+                          "
+                        >
+                          Translate
+                          <span
+                            style="
+                              font-family:
+                                &quot;JetBrains Mono&quot;, monospace;
+                              font-size: 9.5px;
+                              margin-left: 4px;
+                              border: 1px solid rgba(94, 196, 136, 0.35);
+                              border-radius: 3px;
+                              padding: 0 4px;
+                            "
+                            >F2</span
+                          >
+                        </button>
+                        <div style="flex: 1"></div>
+                        <button
+                          onClick="{{ onClose }}"
+                          title="Close (Esc)"
+                          style="
+                            background: rgba(255, 255, 255, 0.05);
+                            color: #a89e8d;
+                            border: 1px solid #3d362b;
+                            border-radius: 7px;
+                            width: 34px;
+                            height: 34px;
+                            font-size: 13px;
+                            font-family: inherit;
+                            cursor: pointer;
+                          "
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      <div
+                        style="
+                          margin-top: 10px;
+                          font-size: 11px;
+                          color: #6f6757;
+                          display: flex;
+                          gap: 16px;
+                        "
+                      >
+                        <span><kbd>Ctrl+↵</kbd> save &amp; next</span
+                        ><span><kbd>Alt+←/→</kbd> step</span
+                        ><span><kbd>Esc</kbd> close</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </sc-if>
+
+              <!-- toast when queue cleared -->
+              <sc-if value="{{ showDone }}" hint-placeholder-val="{{ false }}">
+                <div
+                  style="
+                    position: absolute;
+                    left: 50%;
+                    bottom: 20px;
+                    transform: translateX(-50%);
+                    background: rgba(94, 196, 136, 0.16);
+                    border: 1px solid rgba(94, 196, 136, 0.5);
+                    color: #9fe0bd;
+                    border-radius: 9px;
+                    padding: 10px 16px;
+                    font-size: 13px;
+                    font-weight: 600;
+                    display: flex;
+                    align-items: center;
+                    gap: 9px;
+                    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+                  "
+                >
+                  <span>✓</span> Review queue cleared — {{ sessionCount }}
+                  judged this session
+                </div>
+              </sc-if>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"$preview":{"width":1232,"height":720}}'
+    >
+      class Component extends DCLogic {
+        constructor(props) {
+          super(props);
+          this.taRef = React.createRef();
+          this._onKey = this.onKey.bind(this);
+          this.state = {
+            view: 'dashboard',
+            filter: 'all',
+            search: '',
+            selectedId: 'r2',
+            editingId: null,
+            draft: '',
+            sessionCount: 0,
+            showDone: false,
+            data: this.seed()
+          };
+        }
+
+        seed() {
+          return [
+            { type:'section', id:'s1', title:'Harvest tooltips' },
+            { type:'row', id:'r1', key:'HarvestPrice', original:'Harvest price', translation:'Erntepreis', status:'translated' },
+            { type:'row', id:'r2', key:'ReadyToHarvest', original:'Ready to harvest!', translation:'Erntebereit!', status:'review' },
+            { type:'row', id:'r3', key:'ShowQuestCount', original:'Show quest counter', translation:'', status:'untranslated' },
+            { type:'row', id:'r4', key:'FestivalToday', original:'Today: {0}', translation:'Heute: {0}', status:'outdated', tokens:['{0}'] },
+            { type:'row', id:'r5', key:'ShowHarvestQuality', original:'Show quality prediction', translation:'Qualitäts-Vorschau zeigen', status:'translated' },
+            { type:'row', id:'r6', key:'ShowHarvestQuality.Note', original:'Note: Other mods that change how crop or forageable quality is calculated may cause inaccurate predictions. Disable this option if quality stars appear incorrect.', translation:'Hinweis: Andere Mods, die die Qualitätsberechnung ändern, können ungenaue Vorhersagen erzeugen. Deaktiviere diese Option, falls die Sterne falsch erscheinen.', status:'review', tokens:['\\n','\\n','\\n'], glossary:['Other → Anderes'], validation:'Line breaks differ (original 3, translation 2) — fine if the text rewraps' },
+            { type:'row', id:'r7', key:'ShowHarvestPricesInShop', original:'Show shop harvest prices', translation:'Erntepreise im Laden zeigen', status:'translated' },
+            { type:'section', id:'s2', title:'NPC dialogue' },
+            { type:'row', id:'r8', key:'Abigail.Spring_Mon', original:'Hi! Have you seen the new books at the store?', translation:'', status:'untranslated' },
+            { type:'row', id:'r9', key:'Abigail.Rain', original:'I love the rain.', translation:'Ich liebe den Regen.', status:'translated' },
+            { type:'row', id:'r10', key:'Maddie.Spring_Tue', original:'Morning! The valley is beautiful today.', translation:'Morgen! Das Tal ist heute wunderschön.', status:'review' },
+            { type:'row', id:'r11', key:'Maddie.Heart_2', original:"You came to visit? That's sweet of you.", translation:'', status:'untranslated' },
+            { type:'row', id:'r12', key:'Sam.Intro', original:"Hey, I'm Sam! Wanna jam sometime?", translation:'Hey, ich bin Sam! Lust, mal zu jammen?', status:'review' }
+          ];
+        }
+
+        ss(s) {
+          const M = {
+            untranslated:{ edge:'rgba(154,160,166,0.5)', glyph:'○', label:'Untransl.', bg:'rgba(154,160,166,0.14)', col:'#b6bbc2', bd:'rgba(154,160,166,0.45)' },
+            translated:{ edge:'#5ec488', glyph:'✓', label:'Translated', bg:'rgba(94,196,136,0.16)', col:'#5ec488', bd:'rgba(94,196,136,0.45)' },
+            review:{ edge:'#ec8b3f', glyph:'⚑', label:'Review', bg:'rgba(236,139,63,0.18)', col:'#ec8b3f', bd:'rgba(236,139,63,0.55)' },
+            outdated:{ edge:'#b98cdb', glyph:'↻', label:'Outdated', bg:'rgba(185,140,219,0.18)', col:'#c79fe4', bd:'rgba(185,140,219,0.55)' }
+          };
+          return M[s] || M.untranslated;
+        }
+
+        rows() { return this.state.data.filter(d => d.type === 'row'); }
+        rowById(id) { return this.rows().find(r => r.id === id); }
+
+        rowVisible(r) {
+          const q = this.state.search.trim().toLowerCase();
+          const f = this.state.filter;
+          const okF = f === 'all' || r.status === f;
+          const okQ = !q || r.key.toLowerCase().includes(q) || r.original.toLowerCase().includes(q) || (r.translation||'').toLowerCase().includes(q);
+          return okF && okQ;
+        }
+
+        visible() {
+          const d = this.state.data;
+          const out = [];
+          for (let i = 0; i < d.length; i++) {
+            const it = d[i];
+            if (it.type === 'section') {
+              let any = false;
+              for (let j = i + 1; j < d.length && d[j].type !== 'section'; j++) {
+                if (this.rowVisible(d[j])) { any = true; break; }
+              }
+              if (any) out.push(it);
+            } else if (this.rowVisible(it)) {
+              out.push(it);
+            }
+          }
+          return out;
+        }
+
+        sectionCount(id) {
+          const d = this.state.data;
+          let i = d.findIndex(x => x.id === id), n = 0;
+          for (let j = i + 1; j < d.length && d[j].type !== 'section'; j++) n++;
+          return n;
+        }
+
+        componentDidMount() { document.addEventListener('keydown', this._onKey); }
+        componentWillUnmount() { document.removeEventListener('keydown', this._onKey); }
+
+        componentDidUpdate(pp, ps) {
+          if (this.state.editingId && this.state.editingId !== ps.editingId) {
+            const el = this.taRef.current;
+            if (el) { el.focus(); const v = el.value; el.setSelectionRange(v.length, v.length); }
+          }
+        }
+
+        onKey(e) {
+          const tag = (e.target && e.target.tagName) || '';
+          if (this.state.editingId) {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); this.saveNext(); }
+            else if (e.key === 'Escape') { e.preventDefault(); this.closeEditor(); }
+            else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); this.step(1); }
+            else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); this.step(-1); }
+            return;
+          }
+          if (this.state.view !== 'work') return;
+          if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+          if (e.key === 'ArrowDown') { e.preventDefault(); this.moveSel(1); }
+          else if (e.key === 'ArrowUp') { e.preventDefault(); this.moveSel(-1); }
+          else if (e.key === 'Enter') { e.preventDefault(); if (this.state.selectedId) this.openEditor(this.state.selectedId); }
+          else if (e.key >= '1' && e.key <= '5') {
+            const map = { '1':'all','2':'untranslated','3':'translated','4':'review','5':'outdated' };
+            this.setState({ filter: map[e.key] });
+          }
+        }
+
+        visibleRows() { return this.visible().filter(x => x.type === 'row'); }
+
+        moveSel(dir) {
+          const vr = this.visibleRows();
+          if (!vr.length) return;
+          let idx = vr.findIndex(r => r.id === this.state.selectedId);
+          idx = Math.max(0, Math.min(vr.length - 1, (idx < 0 ? 0 : idx + dir)));
+          this.setState({ selectedId: vr[idx].id });
+        }
+
+        openEditor(id) {
+          const r = this.rowById(id);
+          if (!r) return;
+          this.setState({ view:'work', editingId:id, selectedId:id, draft:r.translation || '', showDone:false });
+        }
+        closeEditor() { this.setState({ editingId:null }); }
+
+        step(dir) {
+          const vr = this.visibleRows();
+          let idx = vr.findIndex(r => r.id === this.state.editingId);
+          if (idx < 0) return;
+          const ni = idx + dir;
+          if (ni < 0 || ni >= vr.length) return;
+          this.openEditor(vr[ni].id);
+        }
+
+        commit(advance) {
+          const id = this.state.editingId;
+          const data = this.state.data.map(d => d.id === id ? { ...d, translation:this.state.draft, status:'translated' } : d);
+          const wasReview = (this.rowById(id) || {}).status === 'review';
+          this.setState({ data, sessionCount: this.state.sessionCount + (wasReview ? 1 : 0) }, () => {
+            if (!advance) return;
+            // find next review row in full order after current
+            const rows = this.rows();
+            const ci = rows.findIndex(r => r.id === id);
+            let next = null;
+            for (let i = ci + 1; i < rows.length; i++) { if (rows[i].status === 'review') { next = rows[i]; break; } }
+            if (!next) for (let i = 0; i < ci; i++) { if (rows[i].status === 'review') { next = rows[i]; break; } }
+            if (next) {
+              this.openEditor(next.id);
+            } else {
+              this.setState({ editingId:null, showDone:true });
+              setTimeout(() => this.setState({ showDone:false }), 3200);
+            }
+          });
+        }
+
+        saveNext() { this.commit(true); }
+        save() { this.commit(false); this.setState({ editingId: this.state.editingId }); }
+
+        chip(active, c) {
+          if (active) return `display:flex;align-items:center;gap:6px;border-radius:20px;padding:3px 11px;font-size:11.5px;font-family:inherit;cursor:pointer;font-weight:600;background:${c.bg};color:${c.col};border:1px solid ${c.bd};`;
+          return `display:flex;align-items:center;gap:6px;border-radius:20px;padding:3px 11px;font-size:11.5px;font-family:inherit;cursor:pointer;background:rgba(255,255,255,0.04);color:#a89e8d;border:1px solid #3d362b;`;
+        }
+
+        renderVals() {
+          const f = this.state.filter;
+          const rows = this.rows();
+          const cAll = rows.length;
+          const cUn = rows.filter(r => r.status === 'untranslated').length;
+          const cTr = rows.filter(r => r.status === 'translated').length;
+          const cRe = rows.filter(r => r.status === 'review').length;
+          const cOu = rows.filter(r => r.status === 'outdated').length;
+
+          const items = this.visible().map(it => {
+            if (it.type === 'section') return { isSection:true, isRow:false, title:it.title, count:this.sectionCount(it.id) };
+            const st = this.ss(it.status);
+            const sel = it.id === this.state.editingId || it.id === this.state.selectedId;
+            const empty = it.status === 'untranslated' || !it.translation;
+            return {
+              isSection:false, isRow:true, id:it.id, key:it.key, original:it.original, glyph:st.glyph, label:st.label,
+              edgeColor:st.edge, chipBg:st.bg, chipColor:st.col, chipBorder:st.bd,
+              keyColor: sel ? '#e6cf8f' : '#d9c389',
+              translationDisplay: empty ? '—' : it.translation,
+              translationColor: empty ? '#6f6757' : '#d6cfbf',
+              rowBg: sel ? 'rgba(227,169,78,0.15)' : 'transparent',
+              rowRing: sel ? 'inset 0 0 0 1px rgba(227,169,78,0.3)' : 'none',
+              onOpen: () => this.openEditor(it.id)
+            };
+          });
+
+          const ed0 = this.rowById(this.state.editingId);
+          let ed = null;
+          if (ed0) {
+            const st = this.ss(ed0.status);
+            const reviewRows = rows.filter(r => r.status === 'review' || r.id === ed0.id);
+            const posCur = Math.min(this.state.sessionCount + 1, Math.max(cRe, 1));
+            const done = this.state.sessionCount;
+            const total = this.state.sessionCount + cRe;
+            ed = {
+              key:ed0.key, original:ed0.original, glyph:st.glyph, label:st.label,
+              chipBg:st.bg, chipColor:st.col, chipBorder:st.bd,
+              hasTokens: !!(ed0.tokens && ed0.tokens.length), noTokens: !(ed0.tokens && ed0.tokens.length), tokens: ed0.tokens || [],
+              hasGlossary: !!(ed0.glossary && ed0.glossary.length), noGlossary: !(ed0.glossary && ed0.glossary.length), glossary: ed0.glossary || [],
+              validationText: ed0.validation ? ('◑ ' + ed0.validation) : '✓ No issues',
+              validationColor: ed0.validation ? '#e3a94e' : '#5b5446',
+              posCur: done + 1,
+              progressPct: (total > 0 ? Math.round((done / total) * 100) : 100) + '%'
+            };
+          }
+
+          const reviewTotal = cRe;
+          const inactive = 'rgba(255,255,255,0.04)';
+          return {
+            isDash: this.state.view === 'dashboard',
+            isWork: this.state.view === 'work',
+            homeBtnStyle: (this.state.view === 'dashboard'
+              ? 'background:rgba(227,169,78,0.16);color:#f0e0bd;border:1px solid rgba(227,169,78,0.4);font-weight:700;'
+              : 'background:rgba(255,255,255,0.05);color:#ddd5c5;border:1px solid #3d362b;font-weight:600;')
+              + 'border-radius:6px;padding:5px 11px;font-size:13px;font-family:inherit;cursor:pointer;',
+            onHome: () => this.setState({ view:'dashboard', editingId:null }),
+            onReviewAll: () => {
+              this.setState({ view:'work', filter:'review' });
+              const first = this.rows().find(r => r.status === 'review');
+              if (first) setTimeout(() => this.openEditor(first.id), 0);
+            },
+            onResume: () => this.setState({ view:'work', filter:'all', editingId:null }),
+            reviewTotal,
+            search: this.state.search,
+            onSearch: (e) => this.setState({ search: e.target.value }),
+            modProgress: cTr + '/' + cAll + ' · ' + Math.round((cTr / cAll) * 100) + '%',
+            sessionLabel: this.state.sessionCount > 0 ? (this.state.sessionCount + ' judged this session') : 'no edits yet',
+            cAll, cUn, cTr, cRe, cOu,
+            chipAll: this.chip(f === 'all', { bg:'rgba(227,169,78,0.16)', col:'#f0e0bd', bd:'rgba(227,169,78,0.45)' }),
+            chipUn: this.chip(f === 'untranslated', { bg:'rgba(154,160,166,0.16)', col:'#b6bbc2', bd:'rgba(154,160,166,0.45)' }),
+            chipTr: this.chip(f === 'translated', { bg:'rgba(94,196,136,0.16)', col:'#5ec488', bd:'rgba(94,196,136,0.45)' }),
+            chipRe: this.chip(f === 'review', { bg:'rgba(236,139,63,0.18)', col:'#ec8b3f', bd:'rgba(236,139,63,0.55)' }),
+            chipOu: this.chip(f === 'outdated', { bg:'rgba(185,140,219,0.18)', col:'#c79fe4', bd:'rgba(185,140,219,0.55)' }),
+            onFilterAll: () => this.setState({ filter:'all' }),
+            onFilterUn: () => this.setState({ filter:'untranslated' }),
+            onFilterTr: () => this.setState({ filter:'translated' }),
+            onFilterRe: () => this.setState({ filter:'review' }),
+            onFilterOu: () => this.setState({ filter:'outdated' }),
+            items,
+            isEmpty: items.filter(x => x.isRow).length === 0,
+            editing: !!ed,
+            ed: ed || {},
+            draft: this.state.draft,
+            taRef: this.taRef,
+            onDraft: (e) => this.setState({ draft: e.target.value }),
+            onSaveNext: () => this.saveNext(),
+            onSave: () => this.save(),
+            onTranslate: () => {},
+            onClose: () => this.closeEditor(),
+            stop: (e) => e.stopPropagation(),
+            showDone: this.state.showDone,
+            sessionCount: this.state.sessionCount
+          };
+        }
+      }
+    </script>
+  </body>
+</html>
