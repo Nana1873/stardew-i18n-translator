@@ -359,6 +359,9 @@ pub struct StringRow {
     pub target_present: bool,
     /// untranslated | translated | review-needed | outdated (v1.5 model, SPEC §9)
     pub status: String,
+    /// Section this key belongs to — the nearest standalone `//` comment line
+    /// above it in `default.json` (v1.5, SPEC §7.4). None = no section.
+    pub section: Option<String>,
 }
 
 /// Load the paired source/target strings of one i18n file, preserving the key
@@ -370,9 +373,16 @@ pub fn load_strings(
     state: &ModState,
     relative_dir: &str,
 ) -> Vec<StringRow> {
-    let Some(source) = read_object(default_path) else {
+    let Some(body) = std::fs::read_to_string(default_path).ok() else {
         return Vec::new();
     };
+    let Some(source) = parse_json_lenient(&body)
+        .ok()
+        .and_then(|value| value.as_object().cloned())
+    else {
+        return Vec::new();
+    };
+    let sections = extract_sections(&body);
     let target_map = read_object(target_path).unwrap_or_default();
     let target = TargetLookup::new(&target_map);
     source
@@ -388,9 +398,100 @@ pub fn load_strings(
                 target: effective_target,
                 target_present: target.contains(key),
                 status,
+                section: sections.get(&folded_key(key)).cloned(),
             }
         })
         .collect()
+}
+
+/// Section titles from standalone `//` comment lines in `default.json` (v1.5,
+/// SPEC §7.4): a comment line on its own starts a section, and every key after
+/// it (until the next standalone comment) belongs to that section. Returns
+/// folded key → section title. String-aware, so `//` inside a value (URLs) or
+/// a trailing same-line comment never starts a section; `/* */` blocks are
+/// skipped without effect.
+pub(crate) fn extract_sections(text: &str) -> HashMap<String, String> {
+    let text = text.strip_prefix('\u{FEFF}').unwrap_or(text);
+    let chars: Vec<char> = text.chars().collect();
+    let mut sections = HashMap::new();
+    let mut current: Option<String> = None;
+    // Only whitespace seen so far on the current line → a `//` here is a
+    // standalone comment line, not a trailing comment after a value.
+    let mut line_blank = true;
+    let mut i = 0;
+    while i < chars.len() {
+        match chars[i] {
+            '\n' => {
+                line_blank = true;
+                i += 1;
+            }
+            '"' => {
+                line_blank = false;
+                i += 1;
+                let mut key = String::new();
+                let mut escaped = false;
+                while i < chars.len() {
+                    let d = chars[i];
+                    i += 1;
+                    if escaped {
+                        key.push(d);
+                        escaped = false;
+                    } else if d == '\\' {
+                        escaped = true;
+                    } else if d == '"' {
+                        break;
+                    } else {
+                        key.push(d);
+                    }
+                }
+                // A string followed by `:` is a key; a value is followed by
+                // `,` / `}` instead.
+                let mut j = i;
+                while j < chars.len() && chars[j].is_whitespace() {
+                    j += 1;
+                }
+                if chars.get(j) == Some(&':') {
+                    if let Some(section) = &current {
+                        sections.insert(folded_key(&key), section.clone());
+                    }
+                }
+            }
+            '/' if chars.get(i + 1) == Some(&'/') => {
+                let standalone = line_blank;
+                i += 2;
+                let mut comment = String::new();
+                while i < chars.len() && chars[i] != '\n' {
+                    comment.push(chars[i]);
+                    i += 1;
+                }
+                if standalone {
+                    // Trim decoration (`// ==== Title ====`) down to the text.
+                    let title = comment
+                        .trim()
+                        .trim_matches(['=', '-', '/', '*', '#'])
+                        .trim();
+                    if !title.is_empty() {
+                        current = Some(title.to_string());
+                    }
+                }
+            }
+            '/' if chars.get(i + 1) == Some(&'*') => {
+                line_blank = false;
+                i += 2;
+                while i + 1 < chars.len() && !(chars[i] == '*' && chars[i + 1] == '/') {
+                    i += 1;
+                }
+                i = (i + 2).min(chars.len());
+            }
+            c => {
+                if !c.is_whitespace() {
+                    line_blank = false;
+                }
+                i += 1;
+            }
+        }
+    }
+    sections
 }
 
 /// Resolve the effective target + status for one key from saved state, falling
@@ -1086,6 +1187,77 @@ mod tests {
         let rows = load_strings(&default_path, &target_path, &state, "i18n");
         assert_eq!(rows[0].status, "outdated");
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn extract_sections_maps_standalone_comments_to_following_keys() {
+        let body = r#"{
+  // ==== Harvest tooltips ====
+  "HarvestPrice": "Harvest price",
+  "ReadyToHarvest": "Ready! See https://example.com//docs", // trailing note
+  /* block comments never start a section */
+  "StillHarvest": "Still in the first section",
+
+  // NPC dialogue
+  "Abigail.Rain": "I love the rain."
+}"#;
+        let sections = extract_sections(body);
+        assert_eq!(
+            sections
+                .get(&folded_key("HarvestPrice"))
+                .map(String::as_str),
+            Some("Harvest tooltips")
+        );
+        // `//` inside a string value and a trailing comment change nothing.
+        assert_eq!(
+            sections
+                .get(&folded_key("ReadyToHarvest"))
+                .map(String::as_str),
+            Some("Harvest tooltips")
+        );
+        assert_eq!(
+            sections
+                .get(&folded_key("StillHarvest"))
+                .map(String::as_str),
+            Some("Harvest tooltips")
+        );
+        assert_eq!(
+            sections
+                .get(&folded_key("Abigail.Rain"))
+                .map(String::as_str),
+            Some("NPC dialogue")
+        );
+    }
+
+    #[test]
+    fn keys_before_any_comment_have_no_section() {
+        let body = "{\n  \"first\": \"No section\",\n  // Later\n  \"second\": \"Sectioned\"\n}";
+        let sections = extract_sections(body);
+        assert!(sections.get(&folded_key("first")).is_none());
+        assert_eq!(
+            sections.get(&folded_key("second")).map(String::as_str),
+            Some("Later")
+        );
+    }
+
+    #[test]
+    fn load_strings_carries_the_section() {
+        let root = crate::test_support::temp_dir("load-sections");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{\n  \"plain\": \"A\",\n  // Tooltips\n  \"tip\": \"B\"\n}",
+        );
+        let state = ModState::default();
+        let rows = load_strings(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &state,
+            "i18n",
+        );
+        assert_eq!(rows[0].section, None);
+        assert_eq!(rows[1].section.as_deref(), Some("Tooltips"));
         std::fs::remove_dir_all(&root).ok();
     }
 

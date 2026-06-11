@@ -108,6 +108,9 @@ export interface StringRow {
   /** Whether the key exists in the target file (distinguishes "" from absent). */
   targetPresent: boolean;
   status: StringStatus;
+  /** Section this key belongs to — the nearest standalone `//` comment line
+   * above it in default.json (SPEC §7.4); null/absent = no section. */
+  section?: string | null;
 }
 
 export function loadStrings(
