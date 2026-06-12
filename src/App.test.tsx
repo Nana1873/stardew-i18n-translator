@@ -3,8 +3,27 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
+let fileDropHandler:
+  | ((
+      event:
+        | { type: "enter"; paths: string[] }
+        | { type: "over" }
+        | { type: "drop"; paths: string[] }
+        | { type: "leave" },
+    ) => void)
+  | null = null;
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
+}));
+vi.mock("./llm-batch/dragDrop", () => ({
+  listenForFileDrops: vi.fn(
+    (handler: NonNullable<typeof fileDropHandler>): Promise<() => void> => {
+      fileDropHandler = handler;
+      return Promise.resolve(() => {
+        fileDropHandler = null;
+      });
+    },
+  ),
 }));
 
 // jsdom has no layout — the real virtualizer measures 0px forever. Render
@@ -34,6 +53,7 @@ const CONFIGURED = {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  fileDropHandler = null;
   localStorage.clear();
 });
 
@@ -342,6 +362,112 @@ describe("App shell", () => {
       await screen.findByRole("dialog", { name: "Setup" }),
     ).toBeInTheDocument();
     expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", expect.anything());
+  });
+
+  it("imports one dropped JSON result into the selected mod", async () => {
+    const summary = {
+      imported: 1,
+      skippedTranslated: 0,
+      unmatched: 0,
+      tokenIssues: 0,
+      tokenIssueKeys: [],
+      identicalToSource: 0,
+      totalInFile: 1,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "import_llm_batch_path") return Promise.resolve(summary);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+
+    fileDropHandler?.({
+      type: "enter",
+      paths: ["C:/results/test.llm-result.json"],
+    });
+    expect(await screen.findByText("Import into Test Mod")).toBeInTheDocument();
+
+    fileDropHandler?.({
+      type: "drop",
+      paths: ["C:/results/test.llm-result.json"],
+    });
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
+        modUniqueId: "a.b",
+        files: [
+          {
+            relativeDir: "i18n",
+            defaultPath: "x/i18n/default.json",
+            targetPath: "x/i18n/de.json",
+          },
+        ],
+        path: "C:/results/test.llm-result.json",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "LLM batch import" }),
+    ).toHaveTextContent("Imported 1 of 1 string");
+  });
+
+  it("rejects a dropped result when no mod is selected", async () => {
+    mockConfigured(exportScan(false));
+    render(<App />);
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+
+    fileDropHandler?.({
+      type: "enter",
+      paths: ["C:/results/test.json"],
+    });
+    expect(await screen.findByText("Select a mod first")).toBeInTheDocument();
+    fileDropHandler?.({
+      type: "drop",
+      paths: ["C:/results/test.json"],
+    });
+
+    expect(
+      await screen.findByRole("dialog", { name: "LLM batch import" }),
+    ).toHaveTextContent("Select a mod before dropping");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "import_llm_batch_path",
+      expect.anything(),
+    );
+  });
+
+  it("rejects multiple or non-JSON dropped files before invoking Rust", async () => {
+    mockExportConfigured(false);
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+
+    fileDropHandler?.({
+      type: "drop",
+      paths: ["C:/one.json", "C:/two.json"],
+    });
+    expect(
+      await screen.findByRole("dialog", { name: "LLM batch import" }),
+    ).toHaveTextContent("Drop exactly one");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    fileDropHandler?.({ type: "drop", paths: ["C:/result.txt"] });
+    expect(
+      await screen.findByRole("dialog", { name: "LLM batch import" }),
+    ).toHaveTextContent("Only JSON");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "import_llm_batch_path",
+      expect.anything(),
+    );
   });
 
   it("automatically scans and shows discovered mods on configured startup", async () => {

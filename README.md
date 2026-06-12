@@ -81,7 +81,8 @@ queue and are never treated as finished translations automatically.
 3. Upload the generated `*.llm-batch.json` to a file-capable LLM.
 4. Ask it to follow the embedded `instructions` and return the result as a
    file.
-5. Choose **Import batch...** in the app and review the imported suggestions.
+5. Drop the returned JSON onto the app, or choose **Import batch...**, then
+   review the imported suggestions.
 
 The app supports this workflow without connecting to a cloud API or storing an
 API key.
