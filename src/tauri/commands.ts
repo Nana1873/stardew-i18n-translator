@@ -178,6 +178,10 @@ export interface SkippedKey {
   relativeDir: string;
   key: string;
   reason: string;
+  /** UI-only context added after export so the summary can navigate back to
+   * the affected mod. The Rust command does not need to return these fields. */
+  modUniqueId?: string;
+  modName?: string;
 }
 
 export interface ExportFileResult {

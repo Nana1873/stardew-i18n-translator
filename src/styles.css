@@ -507,6 +507,10 @@ kbd,
 }
 
 .panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   padding: 7px 12px;
   font-weight: 600;
   color: #9a8f5f;
@@ -514,6 +518,20 @@ kbd,
   text-transform: uppercase;
   font-size: 11px;
   letter-spacing: 0.05em;
+}
+
+.panel__header-tail {
+  color: var(--text-dim);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.panel__header-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .panel__empty {
@@ -524,6 +542,53 @@ kbd,
   padding: 16px;
   color: var(--text-muted);
   text-align: center;
+}
+
+.workspace-empty {
+  align-self: center;
+  display: flex;
+  width: min(440px, calc(100% - 48px));
+  margin: auto;
+  padding: 34px 36px;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.5;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 45px rgba(0, 0, 0, 0.2);
+}
+
+.workspace-empty__icon {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  margin-bottom: 4px;
+  color: var(--gold);
+  background: var(--gold-tint);
+  border: 1px solid rgba(227, 169, 78, 0.35);
+  border-radius: 10px;
+  font-size: 23px;
+}
+
+.workspace-empty strong {
+  color: var(--text);
+  font-size: 16px;
+}
+
+.workspace-empty button {
+  padding: 0;
+  color: var(--gold-hi);
+  background: none;
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
 }
 
 /* --- Mod list tree --- */
@@ -1169,6 +1234,31 @@ kbd,
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.editor__review {
+  display: grid;
+  grid-template-columns: auto minmax(160px, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 0 18px 10px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.editor__review-track {
+  height: 4px;
+  overflow: hidden;
+  background: var(--surface-3);
+  border-radius: 999px;
+}
+
+.editor__review-fill {
+  display: block;
+  height: 100%;
+  background: var(--gold);
+  border-radius: inherit;
 }
 
 /* Status pill (glyph + label) — shows the status a save would persist. */
@@ -1860,6 +1950,29 @@ kbd,
   gap: 8px;
   font-size: 12.5px;
   font-variant-numeric: tabular-nums;
+}
+
+.exportdlg__link,
+.exportdlg__key-link {
+  padding: 0;
+  color: var(--gold-hi);
+  background: none;
+  border: 0;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.exportdlg__link:disabled,
+.exportdlg__key-link:disabled {
+  color: inherit;
+  text-decoration: none;
+  cursor: default;
+}
+
+.exportdlg__key-link code {
+  color: inherit;
 }
 
 .exportdlg__dot {

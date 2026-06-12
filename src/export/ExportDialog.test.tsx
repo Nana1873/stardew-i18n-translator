@@ -95,4 +95,23 @@ describe("ExportDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
   });
+
+  it("opens a skipped key from both the count and key links", () => {
+    const onInspectSkip = vi.fn();
+    render(
+      <ExportDialog
+        modName="Test Mod"
+        result={RESULT}
+        error={null}
+        onInspectSkip={onInspectSkip}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "1" }));
+    fireEvent.click(screen.getByRole("button", { name: "bad" }));
+
+    expect(onInspectSkip).toHaveBeenNthCalledWith(1, RESULT.skipped[0]);
+    expect(onInspectSkip).toHaveBeenNthCalledWith(2, RESULT.skipped[0]);
+  });
 });
