@@ -911,6 +911,7 @@ First AI step — requires core workflow to be complete:
 | Inline cell editing in string table         | v1.1   |
 | Drag-and-drop import                        | v1.1   |
 | Configurable keyboard shortcuts in Settings | v1.1   |
+| Supported-language compatibility matrix     | v1.1   |
 | Optional cloud-AI credentials               | v1.1+  |
 | Finalize-and-propagate identical strings    | v2     |
 | Assisted Nexus translation discovery        | v2     |
@@ -1322,10 +1323,10 @@ The old Stardew Translator project (`E:\DevProjects\Stardew Translator`) provide
 
 ## Appendix D — Version Roadmap Summary
 
-| Version        | Scope                                                                                                                           |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                   |
-| **v1 (M4)**    | External LLM Batch Export/Import                                                                                                |
-| **v1.1**       | Configurable shortcuts, optional Nexus enrichment, focused quality validation, inline editing, drag-and-drop, optional cloud AI |
-| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate        |
-| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                     |
+| Version        | Scope                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                                                                  |
+| **v1 (M4)**    | External LLM Batch Export/Import                                                                                                                                               |
+| **v1.1**       | Configurable shortcuts, supported-language compatibility verification, optional Nexus enrichment, focused quality validation, inline editing, drag-and-drop, optional cloud AI |
+| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate                                                       |
+| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                                                                    |
