@@ -631,7 +631,10 @@ The tool exports a structured batch file that the user processes with any extern
 
 ### Import
 
-1. User imports the Claude Code result file via the toolbar button **"Import batch…"** (file picker; lenient JSON parsing tolerates LLM artifacts like trailing commas).
+1. User imports the external LLM result by dropping one JSON file onto the app
+   while its target mod is selected, or via the toolbar button **"Import
+   batch…"**. Both paths use the same lenient JSON parser, which tolerates LLM
+   artifacts like trailing commas.
 2. Tool matches keys per i18n directory against the current `default.json`.
 3. Every accepted value is staged as **`review-needed`** in one atomic state write; the table reloads.
 4. Strings that are now `translated` locally (including kept-originals) are **never overwritten** (stale-batch protection) — they are skipped and counted.
@@ -909,7 +912,6 @@ First AI step — requires core workflow to be complete:
 | `escape-suspicious` validation           | v1.1   |
 | `extra-key` validation                   | v1.1   |
 | Inline cell editing in string table      | v1.1   |
-| Drag-and-drop import                     | v1.1   |
 | Supported-language compatibility matrix  | v1.1   |
 | Optional cloud-AI credentials            | v1.1+  |
 | Finalize-and-propagate identical strings | v2     |

@@ -240,17 +240,25 @@ fn import_llm_batch(
     let source = picked
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
+    import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).map(Some)
+}
 
-    let body = std::fs::read_to_string(&source)
+fn import_llm_batch_from_path(
+    app: &AppHandle,
+    mod_unique_id: &str,
+    files: &[export::ExportFileInput],
+    source: &Path,
+) -> Result<batch::ImportSummary, String> {
+    let body = std::fs::read_to_string(source)
         .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
     // Lenient parse: LLM output sometimes carries trailing commas or comments.
     let parsed = scanner::parse_json_lenient(&body)
         .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
 
-    let config = config_dir(&app)?;
-    let state = translations::load(&config, &mod_unique_id)?;
+    let config = config_dir(app)?;
+    let state = translations::load(&config, mod_unique_id)?;
     let mut rows_by_dir = std::collections::HashMap::new();
-    for file in &files {
+    for file in files {
         rows_by_dir.insert(
             file.relative_dir.clone(),
             scanner::load_strings(
@@ -264,9 +272,21 @@ fn import_llm_batch(
 
     let prepared = batch::apply_batch(&parsed, &rows_by_dir)?;
     if !prepared.entries.is_empty() {
-        translations::save_many(&config, &mod_unique_id, prepared.entries)?;
+        translations::save_many(&config, mod_unique_id, prepared.entries)?;
     }
-    Ok(Some(prepared.summary))
+    Ok(prepared.summary)
+}
+
+/// Import a dropped LLM batch/result path through the same safe M4 pipeline as
+/// the picker command.
+#[tauri::command]
+fn import_llm_batch_path(
+    app: AppHandle,
+    mod_unique_id: String,
+    files: Vec<export::ExportFileInput>,
+    path: String,
+) -> Result<batch::ImportSummary, String> {
+    import_llm_batch_from_path(&app, &mod_unique_id, &files, Path::new(&path))
 }
 
 #[tauri::command]
@@ -443,6 +463,7 @@ pub fn run() {
             export_mod,
             export_llm_batch,
             import_llm_batch,
+            import_llm_batch_path,
             build_glossary,
             glossary_status,
             load_glossary,

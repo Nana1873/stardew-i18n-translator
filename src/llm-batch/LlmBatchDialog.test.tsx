@@ -24,6 +24,7 @@ describe("LlmExportDialog", () => {
       screen.getByText(/Open ChatGPT, Claude, Gemini/),
     ).toBeInTheDocument();
     expect(screen.getByText(/Follow the "instructions"/)).toBeInTheDocument();
+    expect(screen.getByText(/drop it onto the app/)).toBeInTheDocument();
     expect(screen.getByText(/Import batch…/)).toBeInTheDocument();
     expect(screen.getByText(/Needs review/)).toBeInTheDocument();
   });

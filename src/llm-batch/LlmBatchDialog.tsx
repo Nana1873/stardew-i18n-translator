@@ -68,8 +68,8 @@ export function LlmExportDialog({
                     <code className="exportdlg__prompt">{HANDOFF_PROMPT}</code>
                   </li>
                   <li>
-                    Download the returned JSON file, then click{" "}
-                    <strong>Import batch…</strong> in the toolbar.
+                    Download the returned JSON file, then drop it onto the app
+                    or click <strong>Import batch…</strong> in the toolbar.
                   </li>
                   <li>
                     Review the imported strings in the{" "}

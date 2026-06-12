@@ -2376,6 +2376,79 @@ kbd,
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
 }
 
+/* Native Tauri file-drop target for external LLM batch results. */
+.batchdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: rgba(10, 8, 5, 0.78);
+  pointer-events: none;
+}
+
+.batchdrop__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: min(520px, 100%);
+  padding: 36px;
+  background: var(--surface);
+  border: 2px dashed var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.batchdrop--valid .batchdrop__card {
+  border-color: var(--green);
+  background: color-mix(in srgb, var(--green) 8%, var(--surface));
+}
+
+.batchdrop--invalid .batchdrop__card {
+  border-color: var(--red);
+  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+}
+
+.batchdrop__icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  color: var(--text);
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font-size: 26px;
+}
+
+.batchdrop--valid .batchdrop__icon {
+  color: var(--green);
+}
+
+.batchdrop--invalid .batchdrop__icon {
+  color: var(--red);
+}
+
+.batchdrop__card strong {
+  font-size: 18px;
+}
+
+.batchdrop__card > span:not(.batchdrop__icon) {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.batchdrop__card code {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--key);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .exportdlg__head {
   display: flex;
   align-items: baseline;

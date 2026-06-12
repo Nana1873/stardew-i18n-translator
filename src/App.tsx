@@ -5,7 +5,12 @@
  * table (still a placeholder until M2). The Setup Wizard opens on first launch
  * and via Settings. Scan runs the Rust scanner and fills the tree.
  */
-import { type MouseEvent as ReactMouseEvent, useEffect, useState } from "react";
+import {
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   type AppSettings,
   type LlmBatchItem,
@@ -20,6 +25,7 @@ import {
   exportLlmBatch,
   exportMod,
   importLlmBatch,
+  importLlmBatchPath,
   loadGlossary,
   loadSettings,
   saveSettings,
@@ -37,6 +43,10 @@ import { STATUS_META, statusTint } from "./strings/status";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { ExportDialog } from "./export/ExportDialog";
 import { LlmImportDialog } from "./llm-batch/LlmBatchDialog";
+import {
+  type FileDragDropEvent,
+  listenForFileDrops,
+} from "./llm-batch/dragDrop";
 import { resolveShortcuts, type ResolvedShortcuts } from "./shortcuts";
 
 function setupComplete(settings: AppSettings): boolean {
@@ -101,6 +111,7 @@ export function App() {
   const [importError, setImportError] = useState<string | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  const [dropPaths, setDropPaths] = useState<string[] | null>(null);
 
   function refreshGlossary() {
     loadGlossary()
@@ -211,12 +222,80 @@ export function App() {
   const shortcuts = resolveShortcuts(settings?.shortcuts);
   const selectedMod =
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
+  const selectedModRef = useRef<ScannedMod | null>(selectedMod);
+  selectedModRef.current = selectedMod;
   const reviewTotal =
     scan?.mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0) ?? 0;
   const inProgressMods =
     scan?.mods.filter(
       (mod) => mod.translatedKeys > 0 && mod.translatedKeys < mod.totalKeys,
     ).length ?? 0;
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let mounted = true;
+    listenForFileDrops((event) => {
+      if (!mounted) return;
+      handleFileDragDrop(event);
+    })
+      .then((stop) => {
+        if (mounted) unlisten = stop;
+        else stop();
+      })
+      .catch(() => {
+        // Browser previews and tests have no native Tauri webview.
+      });
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
+  }, []);
+
+  function handleFileDragDrop(event: FileDragDropEvent) {
+    if (event.type === "enter") {
+      setDropPaths(event.paths);
+    } else if (event.type === "leave") {
+      setDropPaths(null);
+    } else if (event.type === "drop") {
+      setDropPaths(null);
+      void handleDroppedBatch(event.paths);
+    }
+  }
+
+  async function handleDroppedBatch(paths: string[]) {
+    const mod = selectedModRef.current;
+    setImportSummary(null);
+    setImportError(null);
+    if (!mod) {
+      setImportError("Select a mod before dropping an LLM batch result.");
+      setImportOpen(true);
+      return;
+    }
+    if (paths.length !== 1) {
+      setImportError("Drop exactly one LLM batch/result JSON file.");
+      setImportOpen(true);
+      return;
+    }
+    const path = paths[0];
+    if (!path.toLowerCase().endsWith(".json")) {
+      setImportError("Only JSON batch/result files can be imported.");
+      setImportOpen(true);
+      return;
+    }
+    try {
+      const summary = await importLlmBatchPath(
+        mod.uniqueId,
+        filesOf(mod),
+        path,
+      );
+      setImportSummary(summary);
+      setImportOpen(true);
+      setReloadToken((token) => token + 1);
+    } catch (error) {
+      setImportError(String(error));
+      setImportOpen(true);
+    }
+  }
 
   /** Open a mod in the work view and remember it for the resume cards. */
   function openMod(uniqueId: string) {
@@ -674,6 +753,53 @@ export function App() {
           onClose={() => setImportOpen(false)}
         />
       )}
+      {dropPaths && (
+        <LlmBatchDropOverlay
+          paths={dropPaths}
+          modName={selectedMod?.name ?? null}
+        />
+      )}
+    </div>
+  );
+}
+
+function LlmBatchDropOverlay({
+  paths,
+  modName,
+}: {
+  paths: string[];
+  modName: string | null;
+}) {
+  const valid =
+    Boolean(modName) &&
+    paths.length === 1 &&
+    paths[0].toLowerCase().endsWith(".json");
+  let title = `Import into ${modName}`;
+  let detail = "Release to import this LLM batch result.";
+  if (!modName) {
+    title = "Select a mod first";
+    detail = "The result must be matched against one selected mod.";
+  } else if (paths.length !== 1) {
+    title = "Drop one file";
+    detail = "Batch results are imported one JSON file at a time.";
+  } else if (!paths[0].toLowerCase().endsWith(".json")) {
+    title = "JSON files only";
+    detail = "Drop an *.llm-result.json or translated batch JSON file.";
+  }
+  return (
+    <div
+      className={`batchdrop${valid ? " batchdrop--valid" : " batchdrop--invalid"}`}
+      role="status"
+      aria-live="polite"
+    >
+      <div className="batchdrop__card">
+        <span className="batchdrop__icon" aria-hidden>
+          {valid ? "↓" : "×"}
+        </span>
+        <strong>{title}</strong>
+        <span>{detail}</span>
+        {paths.length === 1 && <code>{paths[0]}</code>}
+      </div>
     </div>
   );
 }

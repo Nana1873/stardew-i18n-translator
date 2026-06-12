@@ -58,13 +58,15 @@ Implement the file-based AI translation batch workflow, allowing users to export
 ## Status (shipped vs. open)
 
 **Complete.** Both issues shipped together: the batch exporter (context menu →
-save dialog) and the result importer (toolbar → summary). Core logic lives in
+save dialog) and the result importer (toolbar or v1.1 drag-and-drop → summary).
+Core logic lives in
 `src-tauri/src/batch.rs` (`build_batch` / `apply_batch`, both pure and
-unit-tested); dialogs in `src/llm-batch/LlmBatchDialog.tsx`. The drag-and-drop
-import variant from SPEC §11 was skipped (the toolbar button covers the flow;
-revisit only on demand). The v1.5 follow-up is also delivered: section headings
-from standalone `//` comments are exported as read-only context without
-changing the import-compatible `files` structure.
+unit-tested); dialogs in `src/llm-batch/LlmBatchDialog.tsx`. Drag-and-drop
+accepts exactly one JSON file for the selected mod, shows a full-window
+accept/reject overlay, and reuses the same backend import path as the picker.
+The v1.5 follow-up is also delivered: section headings from standalone `//`
+comments are exported as read-only context without changing the
+import-compatible `files` structure.
 
 ## Agent Handoff Notes
 
@@ -74,4 +76,5 @@ documents the complete upload → prompt → download → import → review work
 New files use `…-llm-batch` / `…-llm-result`; import also accepts the legacy
 `…-claude-batch` / `…-claude-result` markers. Reuse `batch::apply_batch` for
 any future import path — it enforces the never-overwrite-manual-work rule and
-the flag-don't-reject validation._
+the flag-don't-reject validation. The picker and drop commands already share
+one path-based import helper in `src-tauri/src/lib.rs`._
