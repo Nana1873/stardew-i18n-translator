@@ -187,7 +187,73 @@ describe("SettingsDialog", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Version 1.0.1")).toBeInTheDocument();
     expect(screen.getByText("GPL-3.0-or-later")).toBeInTheDocument();
-    expect(screen.queryByRole("tab", { name: "Shortcuts" })).toBeNull();
+    expect(screen.getByRole("tab", { name: "Shortcuts" })).toBeInTheDocument();
+  });
+
+  it("captures, validates, resets, and saves shortcut overrides", () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Shortcuts" }));
+    const saveShortcut = screen.getByRole("button", {
+      name: "Change Save and close",
+    });
+    fireEvent.click(saveShortcut);
+    fireEvent.keyDown(saveShortcut, { key: "s", ctrlKey: true });
+    expect(saveShortcut).toHaveTextContent("Ctrl+S");
+
+    const saveNextShortcut = screen.getByRole("button", {
+      name: "Change Save and open next",
+    });
+    fireEvent.click(saveNextShortcut);
+    fireEvent.keyDown(saveNextShortcut, { key: "s", ctrlKey: true });
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Already assigned to “Save and close”",
+    );
+    expect(saveNextShortcut).toHaveTextContent("Press keys…");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reset Save and close" }),
+    );
+    expect(saveShortcut).toHaveTextContent("Ctrl+Enter");
+
+    fireEvent.click(saveShortcut);
+    fireEvent.keyDown(saveShortcut, { key: "s", ctrlKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        shortcuts: { "editor.save": "Ctrl+S" },
+      }),
+    );
+  });
+
+  it("resets every shortcut to its default", () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          shortcuts: { "editor.save": "Ctrl+S", "editor.reset": "F8" },
+        }}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Shortcuts" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset all" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ shortcuts: {} }),
+    );
   });
 
   it("opens the repository from About", () => {

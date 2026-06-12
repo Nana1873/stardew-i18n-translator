@@ -3,7 +3,10 @@
 //! Stored as `Data/settings.json` beside the portable executable. Loading is
 //! lenient: a missing or unreadable file yields defaults so the app always starts.
 
-use std::path::{Path, PathBuf};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +27,9 @@ pub struct AppSettings {
     /// Optional local-LLM connection (M6). Absent when AI translation is not set up.
     #[serde(default)]
     pub llm: Option<LlmSettings>,
+    /// User overrides for the frontend shortcut catalog (v1.1).
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub shortcuts: BTreeMap<String, String>,
 }
 
 /// Local-LLM connection settings (M6, Issue 15). OpenAI-compatible endpoint only.
@@ -58,6 +64,7 @@ impl Default for AppSettings {
             source_lang: default_source_lang(),
             target_lang: None,
             llm: None,
+            shortcuts: BTreeMap::new(),
         }
     }
 }
@@ -110,6 +117,7 @@ mod tests {
             source_lang: "default".to_string(),
             target_lang: Some("de".to_string()),
             llm: None,
+            shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -160,6 +168,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(load(&dir).llm, None);
+        assert!(load(&dir).shortcuts.is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn settings_without_shortcuts_load_with_empty_overrides() {
+        let dir = crate::test_support::temp_dir("settings-no-shortcuts");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"sourceLang":"default","targetLang":"de"}"#,
+        )
+        .unwrap();
+        assert!(load(&dir).shortcuts.is_empty());
         std::fs::remove_dir_all(&dir).ok();
     }
 

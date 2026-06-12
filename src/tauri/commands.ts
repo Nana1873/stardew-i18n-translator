@@ -3,6 +3,7 @@
  * Keeping invoke calls in one place gives the rest of the UI a plain async API.
  */
 import { invoke } from "@tauri-apps/api/core";
+import type { ShortcutSettings } from "../shortcuts";
 
 export interface DetectedInstall {
   stardewPath: string;
@@ -28,6 +29,8 @@ export interface AppSettings {
   targetLang: string | null;
   /** Optional local-LLM connection (M6); null until AI translation is set up. */
   llm?: LlmSettings | null;
+  /** User overrides for the v1.1 keyboard shortcut catalog. */
+  shortcuts?: ShortcutSettings;
 }
 
 export function detectStardew(): Promise<DetectedInstall | null> {

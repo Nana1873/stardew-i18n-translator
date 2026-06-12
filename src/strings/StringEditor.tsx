@@ -22,6 +22,12 @@ import type { StringStatus, TranslationResult } from "../tauri/commands";
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
 import { STATUS_META, statusTint } from "./status";
+import {
+  DEFAULT_SHORTCUTS,
+  type ResolvedShortcuts,
+  displayShortcut,
+  matchesShortcut,
+} from "../shortcuts";
 
 export interface EditorRow {
   key: string;
@@ -52,6 +58,7 @@ interface StringEditorProps {
   onSave: (value: string, status: StringStatus) => void;
   onClose: () => void;
   onNavigate: (delta: number) => void;
+  shortcuts?: ResolvedShortcuts;
 }
 
 /** Official glossary terms that occur as whole words in the source text. */
@@ -104,6 +111,7 @@ export function StringEditor({
   onSave,
   onClose,
   onNavigate,
+  shortcuts = DEFAULT_SHORTCUTS,
 }: StringEditorProps) {
   const [value, setValue] = useState(row.target);
   // True while the current target is an unreviewed AI suggestion (M6). Cleared
@@ -230,28 +238,30 @@ export function StringEditor({
   }
 
   function onKeyDown(event: KeyboardEvent | ReactKeyboardEvent) {
-    if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+    if (matchesShortcut(event, shortcuts["editor.saveNext"])) {
       event.preventDefault();
-      if (event.shiftKey) saveAndNext();
-      else save();
-    } else if (event.key === "Escape") {
+      saveAndNext();
+    } else if (matchesShortcut(event, shortcuts["editor.save"])) {
       event.preventDefault();
-      onClose();
-    } else if (event.altKey && event.key === "ArrowLeft") {
+      save();
+    } else if (matchesShortcut(event, shortcuts["editor.previous"])) {
       event.preventDefault();
       navigate(-1);
-    } else if (event.altKey && event.key === "ArrowRight") {
+    } else if (matchesShortcut(event, shortcuts["editor.next"])) {
       event.preventDefault();
       navigate(1);
-    } else if (event.key === "F2" || event.key === "F3") {
+    } else if (matchesShortcut(event, shortcuts["editor.keepOriginal"])) {
       event.preventDefault();
       keepOriginal();
-    } else if (event.key === "F4") {
+    } else if (matchesShortcut(event, shortcuts["editor.reset"])) {
       event.preventDefault();
       reset();
-    } else if ((event.ctrlKey || event.metaKey) && event.key === "F5") {
+    } else if (matchesShortcut(event, shortcuts["editor.translate"])) {
       event.preventDefault();
       void handleTranslate();
+    } else if (matchesShortcut(event, shortcuts["editor.close"])) {
+      event.preventDefault();
+      onClose();
     }
   }
 
@@ -423,16 +433,17 @@ export function StringEditor({
             type="button"
             className="editor__save"
             onClick={saveAndNext}
-            title="Confirm this string and jump to the next one (Ctrl+Shift+Enter)"
+            title={`Confirm this string and jump to the next one (${displayShortcut(shortcuts["editor.saveNext"])})`}
           >
-            Save & next <Kbd>Ctrl+Shift+Enter</Kbd>
+            Save & next{" "}
+            <Kbd>{displayShortcut(shortcuts["editor.saveNext"])}</Kbd>
           </button>
           <button
             type="button"
             onClick={save}
-            title="Save and close (Ctrl+Enter)"
+            title={`Save and close (${displayShortcut(shortcuts["editor.save"])})`}
           >
-            Save <Kbd>Ctrl+Enter</Kbd>
+            Save <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
           </button>
           <button
             type="button"
@@ -441,11 +452,12 @@ export function StringEditor({
             disabled={translating}
             title={
               onTranslate
-                ? "Translate with the configured local LLM — result lands as “Needs review” (Ctrl+F5)"
+                ? `Translate with the configured local LLM — result lands as “Needs review” (${displayShortcut(shortcuts["editor.translate"])})`
                 : "Configure a local AI in Settings first"
             }
           >
-            {translating ? "Translating…" : "AI Translate"} <Kbd>Ctrl+F5</Kbd>
+            {translating ? "Translating…" : "AI Translate"}{" "}
+            <Kbd>{displayShortcut(shortcuts["editor.translate"])}</Kbd>
           </button>
           <span className="editor__spacer" />
           <button
@@ -454,7 +466,7 @@ export function StringEditor({
             onClick={() => navigate(-1)}
             disabled={index === 0}
             aria-label="Prev"
-            title="Previous string — saves changes (Alt+←)"
+            title={`Previous string — saves changes (${displayShortcut(shortcuts["editor.previous"])})`}
           >
             ‹
           </button>
@@ -464,7 +476,7 @@ export function StringEditor({
             onClick={() => navigate(1)}
             disabled={index >= total - 1}
             aria-label="Next"
-            title="Next string — saves changes (Alt+→)"
+            title={`Next string — saves changes (${displayShortcut(shortcuts["editor.next"])})`}
           >
             ›
           </button>
@@ -473,7 +485,7 @@ export function StringEditor({
             className="editor__iconbtn"
             onClick={keepOriginal}
             aria-label="Keep original"
-            title="Keep the original text — copies it as the translation (F2)"
+            title={`Keep the original text — copies it as the translation (${displayShortcut(shortcuts["editor.keepOriginal"])})`}
           >
             ⧉
           </button>
@@ -482,7 +494,7 @@ export function StringEditor({
             className="editor__iconbtn"
             onClick={reset}
             aria-label="Reset"
-            title="Clear the translation (F4)"
+            title={`Clear the translation (${displayShortcut(shortcuts["editor.reset"])})`}
           >
             ↺
           </button>
@@ -491,7 +503,7 @@ export function StringEditor({
             className="editor__iconbtn"
             onClick={onClose}
             aria-label="Cancel"
-            title="Close without saving (Esc)"
+            title={`Close without saving (${displayShortcut(shortcuts["editor.close"])})`}
           >
             ✕
           </button>
