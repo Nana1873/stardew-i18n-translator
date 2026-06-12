@@ -1000,6 +1000,43 @@ kbd,
   color: var(--key);
 }
 
+.stringrow__inline-wrap {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.stringrow__inline {
+  width: 100%;
+  min-width: 0;
+  height: 24px;
+  padding: 2px 7px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--gold);
+  border-radius: 4px;
+  outline: none;
+  font: inherit;
+  user-select: text;
+}
+
+.stringrow__inline:focus {
+  box-shadow: 0 0 0 2px rgba(227, 169, 78, 0.2);
+}
+
+.stringrow__inline--error {
+  border-color: var(--error);
+}
+
+.stringrow__inline-saving {
+  position: absolute;
+  right: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  pointer-events: none;
+}
+
 .stringrow__tgt--empty {
   color: #6f6757;
 }
