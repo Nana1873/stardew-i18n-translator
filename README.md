@@ -13,17 +13,18 @@
 ### Implemented so far
 
 - **Setup & scan (M1):** wizard, settings persistence, Stardew auto-detection (Steam/GOG), recursive `manifest.json` scanner (lenient JSON), Nexus-ID extraction (rejecting `Nexus:-1`), package→component mod **tree**, `i18n/default.json` + `<lang>.json` import.
-- **Edit & validate (M2):** virtualized string table with full-row status tint, double-click editor (live validation, token chips, keyboard shortcuts), the full **protected-token taxonomy** compared as **multisets**, persisted **5-status model** (`untranslated` · `translated` · `outdated` · `not-translatable` · `review-needed`) with surgical `outdated` detection, multi-select + right-click bulk actions (single atomic bulk save).
+- **Edit & validate (M2):** virtualized string table with full-row status tint, double-click editor (live validation, token chips, keyboard shortcuts), the full **protected-token taxonomy** compared as **multisets**, persisted **4-status model** (`untranslated` · `translated` · `outdated` · `review-needed`) with surgical `outdated` detection, multi-select + right-click bulk actions (single atomic bulk save), and a **Keep original** action for strings that intentionally stay English.
 - **Export (M3):** per-mod export + **Export All** to `i18n/<lang>.json` in `default.json` key order (UTF-8 no BOM, 2-space), `.bak` backup + atomic write, token-safe per-key skip, summary dialog.
 - **Local AI (M6):** local-LLM connection settings (Ollama / LM Studio / any OpenAI-compatible `localhost` endpoint, no API key) with "Test connection" + optional temperature, single-string translation in the editor (**Translate** / Ctrl+F5), and **batch translation** of all missing strings in a selection (context menu, progress + cancel, resume-friendly) — with glossary injection, protected-token retry, and a glossary-respect soft check. Results always land as `review-needed`.
 - **External LLM batch (M4):** export the missing strings in a selection as a self-contained JSON batch (instructions + glossary excerpt embedded; context menu → "Export LLM batch"), upload it to ChatGPT, Claude, Gemini, or another file-capable LLM, then re-import the translated result (toolbar → "Import batch…"). Imported values land as `review-needed`, and locally translated strings are never overwritten by a stale batch.
 
-### Still open for v1 (tracked in the milestone docs)
+### V1 status
 
-- **M1–M4 + M6 are functionally complete.** The remaining M3 overwrite
-  confirmation shipped: new targets export directly; replacing existing files
-  requires confirmation and retains the automatic `.bak` backup.
+- **M1–M4 + M6 are functionally complete.** The v1 release audit and the
+  remaining M3 overwrite confirmation are complete.
 - **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
+- **Next-version candidates:** see
+  [the audited v1.1 backlog](docs/roadmap/v1.1-candidates.md).
 
 ## Documentation
 

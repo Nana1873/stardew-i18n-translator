@@ -1282,7 +1282,7 @@ mod tests {
     fn keys_before_any_comment_have_no_section() {
         let body = "{\n  \"first\": \"No section\",\n  // Later\n  \"second\": \"Sectioned\"\n}";
         let sections = extract_sections(body);
-        assert!(sections.get(&folded_key("first")).is_none());
+        assert!(!sections.contains_key(&folded_key("first")));
         assert_eq!(
             sections.get(&folded_key("second")).map(String::as_str),
             Some("Later")
