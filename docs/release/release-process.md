@@ -57,16 +57,20 @@ The first distributable version is `1.0.0`.
 4. Run `powershell -File scripts/package-portable.ps1`.
 5. Extract the generated ZIP to a different writable folder.
 6. Verify first launch, persistence, and copying the complete folder.
-7. Create and push the matching version tag, for example `v1.0.0`.
-8. Review the draft GitHub release and its ZIP before publishing it.
+7. Confirm CI is green for the current `main` commit.
+8. Create and push the matching version tag on that exact commit, for example
+   `v1.0.0`.
+9. Review the draft GitHub release and its ZIP before publishing it.
 
 ## Draft Release Automation
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. The workflow repeats
-the frontend and Rust checks, builds the executable, runs the same portable
-packaging script used locally, uploads the ZIP, and creates a draft GitHub
-release. It fails before packaging when the tag does not exactly match
-`v<application version>`. The release must be reviewed and published manually.
+Pushing a `v*` tag runs `.github/workflows/release.yml`. The workflow accepts
+only a tag that points to the current `origin/main` commit, whose regular CI
+checks must already be green. It then performs the production Tauri build once,
+runs the same portable packaging script used locally, uploads the ZIP, and
+creates a draft GitHub release. It fails before building when the tag does not
+exactly match `v<application version>` or does not point to current `main`. The
+release must be reviewed and published manually.
 
 Do not create `v1.0.0` until the real Mods-folder and extracted-ZIP smoke tests
 have passed.
