@@ -32,6 +32,12 @@ import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
 import { LlmExportDialog } from "../llm-batch/LlmBatchDialog";
 import { validate, worstSeverity } from "./validation";
 import { STATUS_META, statusTint } from "./status";
+import {
+  DEFAULT_SHORTCUTS,
+  type ResolvedShortcuts,
+  displayShortcut,
+  matchesShortcut,
+} from "../shortcuts";
 
 interface Row extends StringRow {
   /** Originating i18n file (shown when a mod has more than one). */
@@ -83,6 +89,7 @@ export function StringTable({
   onCountsChange,
   onClearFilters,
   reloadToken = 0,
+  shortcuts = DEFAULT_SHORTCUTS,
 }: {
   mod: ScannedMod;
   search?: string;
@@ -108,6 +115,7 @@ export function StringTable({
   ) => void;
   /** Bump to force a reload from disk (e.g. after a batch import). */
   reloadToken?: number;
+  shortcuts?: ResolvedShortcuts;
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -280,13 +288,13 @@ export function StringTable({
   /** Ctrl+A / Cmd+A selects every currently visible row; Enter opens the
    * single selected row in the editor. */
   function onBodyKeyDown(event: ReactKeyboardEvent) {
-    if (
-      (event.ctrlKey || event.metaKey) &&
-      (event.key === "a" || event.key === "A")
-    ) {
+    if (matchesShortcut(event, shortcuts["table.selectAll"])) {
       event.preventDefault();
       setSelection(new Set(visible.map((entry) => entry.index)));
-    } else if (event.key === "Enter" && selection.size === 1) {
+    } else if (
+      matchesShortcut(event, shortcuts["table.edit"]) &&
+      selection.size === 1
+    ) {
       event.preventDefault();
       openEditor([...selection][0] ?? null);
     }
@@ -613,7 +621,7 @@ export function StringTable({
           </div>
         )}
       </div>
-      <TableFooter byStatus={countByStatus(data)} />
+      <TableFooter byStatus={countByStatus(data)} shortcuts={shortcuts} />
       {editingRow && editingIndex !== null && editorSession && (
         <StringEditor
           row={editingRow}
@@ -641,6 +649,7 @@ export function StringTable({
                 : current;
             })
           }
+          shortcuts={shortcuts}
         />
       )}
       {menu && (
@@ -785,7 +794,13 @@ export function StringTable({
 /** Footer status bar (SPEC §7.4): per-status counts + interaction hints.
  * Untranslated/translated always show; the exception statuses only when
  * present, so the bar stays calm on a finished mod. */
-function TableFooter({ byStatus }: { byStatus: Record<StringStatus, number> }) {
+function TableFooter({
+  byStatus,
+  shortcuts,
+}: {
+  byStatus: Record<StringStatus, number>;
+  shortcuts: ResolvedShortcuts;
+}) {
   const order: StringStatus[] = [
     "untranslated",
     "translated",
@@ -812,8 +827,13 @@ function TableFooter({ byStatus }: { byStatus: Record<StringStatus, number> }) {
         );
       })}
       <span className="stringtable__hint">
-        Double-click or <kbd className="kbd">Enter</kbd> to edit ·{" "}
-        <kbd className="kbd">Ctrl+A</kbd> select all
+        Double-click or{" "}
+        <kbd className="kbd">{displayShortcut(shortcuts["table.edit"])}</kbd> to
+        edit ·{" "}
+        <kbd className="kbd">
+          {displayShortcut(shortcuts["table.selectAll"])}
+        </kbd>{" "}
+        select all
       </span>
     </div>
   );
