@@ -72,6 +72,11 @@ creates a draft GitHub release. It fails before building when the tag does not
 exactly match `v<application version>` or does not point to current `main`. The
 release must be reviewed and published manually.
 
+The regular PR and `main` Rust checks use Cargo's custom `ci` profile. It keeps
+the complete format, Clippy, and test coverage but disables dependency
+optimization and debug symbols to reduce compile time. Local development and
+release profiles are unchanged.
+
 Do not create `v1.0.0` until the real Mods-folder and extracted-ZIP smoke tests
 have passed.
 

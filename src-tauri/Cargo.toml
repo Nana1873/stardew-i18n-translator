@@ -40,3 +40,14 @@ incremental = false
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# CI validates correctness and lints, but does not execute performance-sensitive
+# workloads. Avoid the expensive dependency optimization used by local dev.
+[profile.ci]
+inherits = "dev"
+opt-level = 0
+debug = 0
+incremental = false
+
+[profile.ci.package."*"]
+opt-level = 0
