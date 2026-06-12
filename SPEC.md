@@ -1,7 +1,7 @@
 # Stardew i18n Translator — Product & Architecture Specification
 
 > **Version:** 1.0 — 2026-06-07
-> **Status:** Draft — Awaiting Approval
+> **Status:** Implemented v1 baseline — v1.1 planning
 > **Workflow Reference:** [SSE Auto Translator](https://github.com/Cutleast/SSE-Auto-Translator)
 > **Old Project Reference:** `E:\DevProjects\Stardew Translator` (lessons learned only)
 
@@ -268,6 +268,13 @@ Hard rules (these resolve the readability complaints that triggered the redesign
 ### 7.1 Setup Wizard
 
 See §4. Modal wizard. Shown on first launch. Re-accessible via the Settings dialog ("Re-run setup…").
+
+The v1 wizard uses a persistent four-step rail and progress indicator so users
+can see the complete setup path. Each step presents one focused task with clear
+selected-folder and validation states. The optional glossary step includes an
+in-app how-to covering StardewXnbHack preparation, local extraction, how hints
+are used, the read-only/local-only data guarantee, and how to build it later
+from Settings.
 
 ### 7.2 Scan Dialog
 
@@ -843,64 +850,62 @@ Translation state is stored **separately** from the mod's actual files. The expo
 
 ### v1 Scope (Milestones 1–3)
 
-Core workflow — no AI, no Nexus API:
+Core workflow — no Nexus API:
 
-- [ ] Auto-detect Stardew Valley installation
-- [ ] Manual path override for game and Mods folder
-- [ ] Source/target language selection
-- [ ] Optional game glossary extraction from `Content (unpacked)/`
-- [ ] Glossary caching and rebuild
-- [ ] Recursive mod scanning via `manifest.json`
-- [ ] Nexus ID extraction from `UpdateKeys`
-- [ ] `i18n/default.json` parsing (flat key-value JSON)
-- [ ] Existing translation import (`i18n/<lang>.json`)
-- [ ] Mod list **tree** grouped by package/download folder (multi-component mods expand to components; single-component mods render flat) with Status | Mod | Version | Nexus | Dateien | Fortschritt
-- [ ] String table with Key | Original | Target Text | Validation
-- [ ] String editor dialog (double-click)
-- [ ] Status model: 4 statuses with color coding (`untranslated`, `translated`, `outdated`, `review-needed`)
-- [ ] `outdated` detection via `sourceHash` / `sourceTextAtTranslation`
-- [ ] Token validation (`token-missing`, `token-added`)
-- [ ] Empty target validation (`empty-target`)
-- [ ] JSON safety validation (`json-invalid`)
-- [ ] Right-click context menu with bulk actions
-- [ ] Multi-select (Ctrl+Click, Shift+Click)
-- [ ] Export clean `i18n/<lang>.json` files
-- [ ] Export warns on missing translations, blocks only on token errors
-- [ ] Backup existing target file before overwrite
-- [ ] Search and filter (by text, by status)
-- [ ] Keyboard shortcuts in string editor
-- [ ] Nexus ID displayed as clickable link
-- [ ] "Search Translation on Nexus" browser action
-- [ ] Progress bar per mod
+- [x] Auto-detect Stardew Valley installation
+- [x] Manual path override for game and Mods folder
+- [x] Source/target language selection
+- [x] Optional game glossary extraction from `Content (unpacked)/`
+- [x] Glossary caching and rebuild
+- [x] Recursive mod scanning via `manifest.json`
+- [x] Nexus ID extraction from `UpdateKeys`
+- [x] `i18n/default.json` parsing (flat key-value JSON)
+- [x] Existing translation import (`i18n/<lang>.json`)
+- [x] Mod list **tree** grouped by package/download folder (multi-component mods expand to components; single-component mods render flat) with Status | Mod | Version | Nexus | Dateien | Fortschritt
+- [x] String table with Key | Original | Target Text | Validation
+- [x] String editor dialog (double-click)
+- [x] Status model: 4 statuses with color coding (`untranslated`, `translated`, `outdated`, `review-needed`)
+- [x] `outdated` detection via `sourceHash` / `sourceTextAtTranslation`
+- [x] Token validation (`token-missing`, `token-added`)
+- [x] Empty target validation (`empty-target`)
+- [x] JSON safety validation (`json-invalid`)
+- [x] Right-click context menu with bulk actions
+- [x] Multi-select (Ctrl+Click, Shift+Click)
+- [x] Export clean `i18n/<lang>.json` files
+- [x] Export warns on missing translations, skips only affected token-error strings
+- [x] Backup existing target file before overwrite
+- [x] Search and filter (by text, by status)
+- [x] Keyboard shortcuts in string editor
+- [x] Nexus ID displayed as clickable link
+- [x] Progress bar per mod
+
+The earlier standalone "Search Translation on Nexus" browser action was
+explicitly folded into deferred M5 rather than shipped as a v1 stopgap.
 
 ### v1 Milestone 4 (External LLM Batch)
 
 First AI step — requires core workflow to be complete:
 
-- [ ] External LLM batch export (JSON file with instructions + glossary)
-- [ ] External LLM batch import (result JSON → target text)
-- [ ] Imported results get status `review-needed`
-- [ ] Post-import validation runs
+- [x] External LLM batch export (JSON file with instructions + glossary)
+- [x] External LLM batch import (result JSON → target text)
+- [x] Imported results get status `review-needed`
+- [x] Post-import validation runs
 
 ### Deferred to v1.1+
 
 | Feature                                     | Target |
 | ------------------------------------------- | ------ |
-| In-app AI translation (API calls from tool) | v1.1   |
-| AI Translate button in String Editor        | v1.1   |
-| Batch in-app AI from context menu / toolbar | v1.1   |
 | Nexus API key storage and validation        | v1.1   |
 | Nexus mod info enrichment                   | v1.1   |
 | `glossary-deviation` validation             | v1.1   |
 | `token-case-changed` validation             | v1.1   |
-| `newline-mismatch` validation               | v1.1   |
-| `bracket-token-missing` validation          | v1.1   |
 | `identical-to-source` validation            | v1.1   |
 | `escape-suspicious` validation              | v1.1   |
 | `extra-key` validation                      | v1.1   |
 | Inline cell editing in string table         | v1.1   |
 | Drag-and-drop import                        | v1.1   |
 | Configurable keyboard shortcuts in Settings | v1.1   |
+| Optional cloud-AI credentials               | v1.1+  |
 | Finalize-and-propagate identical strings    | v2     |
 | Assisted Nexus translation discovery        | v2     |
 | Nexus translation download + import         | v2     |
@@ -914,7 +919,7 @@ The following are **explicitly excluded** from v1:
 
 | Feature                                        | Reason                                                                   |
 | ---------------------------------------------- | ------------------------------------------------------------------------ |
-| In-app cloud AI translation (API calls)        | Deferred to v1.1 — v1 uses file-based external LLM batches instead       |
+| In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only   |
 | Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                    |
 | Automatic Nexus translation discovery/download | Deferred to v2 (see §12)                                                 |
 | Git integration                                | Adds complexity without core workflow value                              |
@@ -925,7 +930,7 @@ The following are **explicitly excluded** from v1:
 | Cloud sync                                     | Local-first tool                                                         |
 | Translation memory (cross-mod)                 | v2+                                                                      |
 | Multiple simultaneous target languages         | v1 works with one target language at a time                              |
-| Dashboard / studio UI                          | Compact tables only                                                      |
+| Additional studio/analytics workspaces         | Dashboard + two-panel work view are the intentional UI ceiling           |
 | Card-based mod manager                         | SSE-AT style tables only                                                 |
 | Kanban board                                   | Not a project management tool                                            |
 | Analytics screen                               | Progress bar is sufficient                                               |
@@ -934,7 +939,7 @@ The following are **explicitly excluded** from v1:
 | `content.json` parsing                         | i18n files only in v1                                                    |
 | `Data/*.json` mod file translation             | i18n files only in v1                                                    |
 | In-app XNB decoder                             | Deferred to future version                                               |
-| Multiple settings screens                      | One settings section accessible from toolbar                             |
+| Separate settings windows                      | One left-navigation settings dialog is sufficient                        |
 | Configurable keyboard shortcuts                | Deferred to v1.1; v1 uses the fixed shortcuts documented in §7.5         |
 | More than 4 status values                      | Intentionally capped (v1)                                                |
 | Project save/load system                       | State persisted automatically, no project files                          |
@@ -1307,10 +1312,10 @@ The old Stardew Translator project (`E:\DevProjects\Stardew Translator`) provide
 
 ## Appendix D — Version Roadmap Summary
 
-| Version        | Scope                                                                                                                      |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                              |
-| **v1 (M4)**    | External LLM Batch Export/Import                                                                                           |
-| **v1.1**       | In-app AI translation, Nexus API key + mod enrichment, extended validation rules (11 rules), inline editing, drag-and-drop |
-| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate   |
-| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                |
+| Version        | Scope                                                                                                                           |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                   |
+| **v1 (M4)**    | External LLM Batch Export/Import                                                                                                |
+| **v1.1**       | Configurable shortcuts, optional Nexus enrichment, focused quality validation, inline editing, drag-and-drop, optional cloud AI |
+| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate        |
+| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                     |

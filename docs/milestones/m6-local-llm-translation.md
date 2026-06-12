@@ -123,7 +123,7 @@ URL.
 
 - Context-menu action **"Translate missing with local AI (N)"** on the selection
   (Ctrl+A = whole mod): translates only `untranslated`/`outdated` strings —
-  `translated`, `not-translatable`, and unreviewed suggestions are skipped.
+  `translated` strings and unreviewed suggestions are skipped.
 - Serial requests (the local GPU is the bottleneck), progress dialog (X/Y, current
   key, progress bar), **Cancel** finishes the in-flight string and stops.
 - Every result is saved **immediately** as `review-needed`, so the run is

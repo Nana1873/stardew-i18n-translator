@@ -46,6 +46,13 @@ uses the game's own deserializers). The setup wizard's glossary step detects the
 unpacked folder and either builds the glossary or links to StardewXnbHack with
 guidance. Still **optional and non-blocking**.
 
+**Setup polish (shipped, 2026-06-12):** the first-run wizard now presents a
+four-step navigation rail, explicit progress, clearer path and language states,
+and consistent primary actions. The glossary step includes a compact how-to
+that explains StardewXnbHack preparation, local glossary generation, how hints
+are used, that game files are never modified or uploaded, and that the optional
+step can be completed later from Settings.
+
 **Scan dialog (shipped):** a modal appears while scanning (spinner) and, on
 completion, summarizes the result (mods / files found) and **lists the
 skipped/malformed mods** (SPEC §7.2) — previously only a count. A clean scan

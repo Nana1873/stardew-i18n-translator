@@ -8,7 +8,7 @@ Implement the file-based AI translation batch workflow, allowing users to export
 
 - **Batch Request Exporter:** Export a structured JSON file containing metadata, source language, target language, and a flat map of missing or outdated keys/values across selected mods.
 - **Batch Response Importer:** Import a translated batch JSON file, matching keys back to their respective mods and strings.
-- **Merge & Transition Logic:** Merge imported translations, set their status to **`review-needed`** (per [SPEC.md §11](../../SPEC.md) — imported AI results are never auto-marked done), track the source hash, and run token validation on import. Do not overwrite `done` strings without user confirmation.
+- **Merge & Transition Logic:** Merge imported translations, set their status to **`review-needed`** (per [SPEC.md §11](../../SPEC.md) — imported AI results are never auto-confirmed), track the source hash, and run token validation on import. Never overwrite manually translated strings.
 
 ## Out of Scope
 
@@ -50,8 +50,8 @@ Implement the file-based AI translation batch workflow, allowing users to export
 - Toolbar **"Import batch…"** (file picker, lenient JSON parse for LLM
   artifacts), per-directory key matching, all accepted values staged as
   `review-needed` in **one** atomic state write (`save_many`), table reload +
-  fresh counts, summary dialog. Safety: `translated`/`not-translatable`
-  strings are never overwritten (stale-batch protection, skipped + counted);
+  fresh counts, summary dialog. Safety: `translated` strings are never
+  overwritten (stale-batch protection, skipped + counted);
   dropped-token and identical-to-source values are imported but flagged; a
   batch file translated in place is accepted like a result file.
 

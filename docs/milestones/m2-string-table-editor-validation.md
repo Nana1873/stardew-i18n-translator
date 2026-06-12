@@ -2,15 +2,16 @@
 
 ## Goal
 
-Implement the main workspace string table, the double-click editing dialog, protected-token validation, the persisted status model, and (still open) search/filter/sort.
+Implement the main workspace string table, the double-click editing dialog,
+protected-token validation, the persisted status model, and search/filter/sort.
 
 ## Scope
 
 - **String Table Grid:** A high-density, virtualized grid showing key, source string, target string, and a per-row validation/status indicator (full-row status tint).
-- **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `not-translatable`, or all).
+- **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `review-needed`, or all).
 - **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, live token validation, status badge, clickable token chips, and **glossary hints** (official game terms found in the source, click to insert the translation — SPEC §7.5).
 - **Protected-Token Validation:** The 5 v1 rules from [SPEC.md §10](../../SPEC.md): `token-missing` (error), `token-added` (warning), `newline-mismatch` (warning — `\n` is layout, not syntax, and exempt from the token errors), `empty-target` (warning), `json-invalid` (error). A **"token" is any Stardew/SMAPI protected token**, not just `{{...}}`: Content Patcher `{{...}}` (nested-aware), gender switch `${male^female}$`, mail commands `[#]` / `%item … %%`, dialogue break `#$b#`, bracket tokens `[…]`, **positional placeholders `{0}`**, dialogue commands `$b`/`$s`/`$e`, structural `#`, balanced single-quote delimiters such as `'test'`, and single-char `@`/`^`. Apostrophes inside words such as `don't` are ordinary prose. Tokens are compared as **multisets** (counts matter), so a dropped second `$b` or one character from `^^` is caught too. See `src/strings/protectedTokens.ts` (and the Rust port `src-tauri/src/tokens.rs`).
-- **Status Model:** Implement the v1 string statuses from [SPEC.md §9](../../SPEC.md) — `untranslated`, `translated`, `outdated`, `not-translatable`, plus the AI-workflow status `review-needed` — and their transitions during editing. (`outdated` is derived automatically, never set by hand. The earlier 6-status draft — `imported`/`done` — collapsed into `translated`; `review-needed` is set only by the AI workflows: M6 local-LLM, later M4 batch import.)
+- **Status Model:** Implement the four statuses from [SPEC.md §9](../../SPEC.md) — `untranslated`, `translated`, `outdated`, and the AI-workflow status `review-needed` — and their transitions during editing. (`outdated` is derived automatically, never set by hand. Strings intentionally kept in English use the **Keep original** action and remain covered by `outdated` detection.)
 - **Outdated Logic:** Detect modified source strings via per-string `sourceHash` (SHA-256 of the English source at save time), compared on re-scan.
 
 ## Out of Scope
@@ -24,9 +25,9 @@ Implement the main workspace string table, the double-click editing dialog, prot
 1. String table handles high-density data (thousands of strings) without lag (row virtualization). ✅
 2. Double-clicking a row opens a modal dialog that correctly updates the table on save. ✅
 3. Token validation flags missing/added protected tokens (e.g. source has `{{PlayerName}}` or `$b`, target drops it → `token-missing` error). ✅
-4. Editing a string updates its status per SPEC §9 (saving sets `translated`; `not-translatable` via F2; token errors surface as a validation issue, **not** a status). ✅
+4. Editing a string updates its status per SPEC §9 (saving sets `translated`; F2 **Keep original** copies the source as an explicit translation; token errors surface as validation issues, **not** statuses). ✅
 5. Multi-select via Ctrl+Click (toggle), Shift+Click (range), and `Ctrl+A` (select all visible). ✅
-6. Right-click context menu with the v1 bulk actions (Edit, Copy original/translation, Mark translated, Mark not-translatable, Clear translation). ✅ — "Search Translation on Nexus" mod-level action is **still open**.
+6. Right-click context menu with the v1 bulk actions (Edit, Copy original/translation, Mark translated, Keep original, Clear translation). ✅
 7. Search bar filters results in real-time (across key/original/target). ✅
 8. Status filter shows only strings of the selected status. ✅
 9. Sorting by column (Key / Original / Translation / File; click to cycle asc → desc → off). ✅
@@ -74,4 +75,6 @@ Text search (key/original/target), status filter, and column sorting (asc → de
 
 ## Agent Handoff Notes
 
-_Keep the status set at exactly 5 (SPEC §19 #2): the 4 editing statuses plus `review-needed`, which only the AI workflows set (M6 local-LLM; later M4 batch import). Keep all table work inside the existing two-panel layout — no extra panels (SPEC §19 #5)._
+_Keep the status set at exactly 4 (SPEC §19 #2). `review-needed` is one of
+those four and only the AI workflows set it. Keep all table work inside the
+existing two-panel layout — no extra panels (SPEC §19 #5)._
