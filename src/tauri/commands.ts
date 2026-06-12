@@ -286,6 +286,19 @@ export function importLlmBatch(
   });
 }
 
+/** Import a drag-and-dropped LLM batch/result file for one selected mod. */
+export function importLlmBatchPath(
+  modUniqueId: string,
+  files: ExportFileInput[],
+  path: string,
+): Promise<LlmImportSummary> {
+  return invoke<LlmImportSummary>("import_llm_batch_path", {
+    modUniqueId,
+    files,
+    path,
+  });
+}
+
 export interface GlossaryInfo {
   targetLang: string;
   termCount: number;
