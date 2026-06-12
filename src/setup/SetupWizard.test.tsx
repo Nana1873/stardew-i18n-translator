@@ -49,6 +49,35 @@ async function gotoGlossaryStep() {
 }
 
 describe("SetupWizard", () => {
+  it("presents the four setup steps and updates visible progress", async () => {
+    render(<SetupWizard initial={null} onComplete={() => {}} />);
+
+    expect(
+      screen.getByRole("heading", {
+        name: "Welcome to Stardew i18n Translator",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("navigation", { name: "Setup steps" }),
+    ).toHaveTextContent("Game folder");
+    expect(
+      screen.getByRole("progressbar", { name: "Setup progress" }),
+    ).toHaveAttribute("aria-valuenow", "1");
+
+    fireEvent.click(screen.getByRole("button", { name: "Auto-detect" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+
+    expect(
+      screen.getByRole("progressbar", { name: "Setup progress" }),
+    ).toHaveAttribute("aria-valuenow", "2");
+    expect(screen.getByText("Game folder").closest(".setup__step")).toHaveClass(
+      "setup__step--complete",
+    );
+  });
+
   it("auto-detect fills the path and enables Next", async () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
 
@@ -96,8 +125,12 @@ describe("SetupWizard", () => {
     await gotoGlossaryStep();
 
     expect(
-      await screen.findByRole("button", { name: /Get StardewXnbHack/ }),
+      await screen.findByRole("button", { name: "Open StardewXnbHack" }),
     ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "How the glossary works" }),
+    ).toHaveTextContent("Unpack once");
+    expect(screen.getByText(/never changed or uploaded/)).toBeInTheDocument();
   });
 
   it("builds the glossary when unpacked content is present", async () => {
@@ -127,7 +160,7 @@ describe("SetupWizard", () => {
     fireEvent.click(
       await screen.findByRole("button", { name: "Build glossary" }),
     );
-    expect(await screen.findByText(/42 terms/)).toBeInTheDocument();
+    expect(await screen.findByText(/42 official terms/)).toBeInTheDocument();
   });
 
   it("offers Cancel only when settings already exist", () => {

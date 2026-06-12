@@ -447,7 +447,7 @@ mod tests {
             .collect();
         assert_eq!(
             keys,
-            vec![
+            [
                 translations::entry_key("i18n", "open"),
                 translations::entry_key("i18n", "stale"),
             ]
