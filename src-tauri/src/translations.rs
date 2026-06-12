@@ -1,10 +1,11 @@
 //! Persisted translation state — M2 / Issue 10 (SPEC §14).
 //!
 //! Work-in-progress translations are stored **separately** from the mod's own
-//! files: one JSON per mod (keyed by UniqueID) in the portable `Data/` folder.
-//! The mod's `default.json` is never touched; export (M3) writes the final
-//! `i18n/<lang>.json`. Each entry records the target text, its status, and a
-//! hash of the source text at save time (for `outdated` detection on re-scan).
+//! files: one JSON per mod (keyed by UniqueID) and target language in the
+//! portable `Data/` folder. The mod's `default.json` is never touched; export
+//! (M3) writes the final `i18n/<lang>.json`. Each entry records the target text,
+//! its status, and a hash of the source text at save time (for `outdated`
+//! detection on re-scan).
 //!
 //! Safety rules (this file holds the user's only copy of their work):
 //!  - Writes are **serialized** by a process-wide lock — concurrent bulk saves
@@ -44,6 +45,39 @@ pub fn source_hash(text: &str) -> String {
 /// Composite key for a string within a mod: `<relativeDir>\0<key>`.
 pub fn entry_key(relative_dir: &str, key: &str) -> String {
     format!("{relative_dir}\u{0}{key}")
+}
+
+/// Return the isolated state root for one target language. A pre-v1.1
+/// `Data/translations/` folder is moved once into the first active language,
+/// which is the language stored in settings when upgrading.
+pub fn language_root(config_dir: &Path, target_lang: &str) -> Result<PathBuf, String> {
+    let safe_lang: String = target_lang
+        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if safe_lang.is_empty() {
+        return Err("A target language is required for translation state.".to_string());
+    }
+    let root = config_dir.join("language-state").join(safe_lang);
+    let legacy = config_dir.join("translations");
+    let destination = root.join("translations");
+    if legacy.is_dir() && !destination.exists() {
+        std::fs::create_dir_all(&root).map_err(|error| {
+            format!(
+                "Could not prepare language-specific translation state {}: {error}",
+                root.display()
+            )
+        })?;
+        std::fs::rename(&legacy, &destination).map_err(|error| {
+            format!(
+                "Could not migrate translation state from {} to {}: {error}",
+                legacy.display(),
+                destination.display()
+            )
+        })?;
+    }
+    Ok(root)
 }
 
 /// Process-wide write guard: serializes every load-modify-write cycle and
@@ -216,6 +250,33 @@ mod tests {
         let state = load(&dir, "Bulk.Mod").unwrap();
         assert_eq!(state.len(), 50);
         assert_eq!(state.get(&entry_key("i18n", "k7")).unwrap().target, "v7");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn language_roots_isolate_state_and_migrate_legacy_once() {
+        let dir = crate::test_support::temp_dir("translations-languages");
+        save_one(&dir, "mod.id", entry_key("i18n", "k"), entry("Deutsch")).unwrap();
+
+        let german = language_root(&dir, "de").unwrap();
+        assert_eq!(
+            load(&german, "mod.id").unwrap()[&entry_key("i18n", "k")].target,
+            "Deutsch"
+        );
+        assert!(!dir.join("translations").exists());
+
+        let japanese = language_root(&dir, "ja").unwrap();
+        assert!(load(&japanese, "mod.id").unwrap().is_empty());
+        save_one(&japanese, "mod.id", entry_key("i18n", "k"), entry("日本語")).unwrap();
+
+        assert_eq!(
+            load(&german, "mod.id").unwrap()[&entry_key("i18n", "k")].target,
+            "Deutsch"
+        );
+        assert_eq!(
+            load(&japanese, "mod.id").unwrap()[&entry_key("i18n", "k")].target,
+            "日本語"
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

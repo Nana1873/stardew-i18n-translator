@@ -16,10 +16,10 @@ Stardew i18n Translator/
 ```
 
 The application stores `settings.json`, `glossary.json`, and the
-`translations/` working-state folder inside `Data/`. Copying the complete
-application folder therefore moves the application and its local work together.
-Saved Stardew Valley and Mods paths are absolute and may need to be selected
-again on another computer.
+`language-state/<lang>/translations/` working-state folders inside `Data/`.
+Copying the complete application folder therefore moves the application and
+its language-specific local work together. Saved Stardew Valley and Mods paths
+are absolute and may need to be selected again on another computer.
 
 The application must be extracted to a writable folder. It refuses to start
 when its adjacent `Data/` folder cannot be created or written. No installer,
@@ -48,7 +48,8 @@ The first distributable version is `1.0.0`.
    - launch with an empty `Data/` folder and complete setup;
    - close and reopen the app, then verify settings and the automatic scan;
    - open a large mod and edit/save one string;
-   - confirm the saved state appears under `Data/translations/`;
+   - confirm the saved state appears under
+     `Data/language-state/<lang>/translations/`;
    - build or load a glossary and confirm `Data/glossary.json`;
    - export one mod and confirm its backup/output;
    - export and re-import a small external LLM batch;

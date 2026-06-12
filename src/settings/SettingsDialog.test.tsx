@@ -93,6 +93,40 @@ describe("SettingsDialog", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ llm: null }));
   });
 
+  it("allows every advertised target language to be selected and saved", () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const select = screen.getByLabelText("Target language");
+    const save = screen.getByRole("button", { name: "Save" });
+    for (const code of [
+      "de",
+      "es",
+      "fr",
+      "hu",
+      "it",
+      "ja",
+      "ko",
+      "pt",
+      "ru",
+      "tr",
+      "zh",
+    ]) {
+      fireEvent.change(select, { target: { value: code } });
+      fireEvent.click(save);
+      expect(onSave).toHaveBeenLastCalledWith(
+        expect.objectContaining({ targetLang: code }),
+      );
+    }
+  });
+
   it("keeps a previously saved model selected on open", async () => {
     const onSave = vi.fn();
     render(
