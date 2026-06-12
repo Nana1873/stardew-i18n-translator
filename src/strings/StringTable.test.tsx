@@ -119,6 +119,146 @@ describe("StringTable", () => {
     );
   });
 
+  it("edits a short translation inline and saves once with Enter", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("Hallo"));
+
+    const input = screen.getByLabelText(
+      "Inline translation for greeting",
+    ) as HTMLInputElement;
+    fireEvent.change(input, { target: { value: "Guten Tag" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_string", {
+        modUniqueId: "a.b",
+        relativeDir: "i18n",
+        key: "greeting",
+        target: "Guten Tag",
+        status: "translated",
+        source: "Hello",
+      }),
+    );
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+    ).toHaveLength(1);
+    expect(await screen.findByText("Guten Tag")).toBeInTheDocument();
+  });
+
+  it("cancels an inline edit with Escape without saving", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("Hallo"));
+
+    const input = screen.getByLabelText("Inline translation for greeting");
+    fireEvent.change(input, { target: { value: "Nicht speichern" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(
+      screen.queryByLabelText("Inline translation for greeting"),
+    ).toBeNull();
+    expect(screen.getByText("Hallo")).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+    ).toHaveLength(0);
+  });
+
+  it("saves an empty inline value as untranslated on focus loss", async () => {
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("Hallo"));
+
+    const input = screen.getByLabelText("Inline translation for greeting");
+    fireEvent.change(input, { target: { value: "" } });
+    fireEvent.blur(input);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({
+          key: "greeting",
+          target: "",
+          status: "untranslated",
+        }),
+      ),
+    );
+  });
+
+  it("allows retrying an inline save after a persistence error", async () => {
+    let saveAttempts = 0;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_strings") {
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      }
+      if (cmd === "save_string" && saveAttempts++ === 0) {
+        return Promise.reject(new Error("Disk unavailable"));
+      }
+      return Promise.resolve(undefined);
+    });
+
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("Hallo"));
+    const input = screen.getByLabelText("Inline translation for greeting");
+    fireEvent.change(input, { target: { value: "Guten Tag" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await screen.findByTitle("Error: Disk unavailable");
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+      ).toHaveLength(2),
+    );
+    expect(await screen.findByText("Guten Tag")).toBeInTheDocument();
+  });
+
+  it("updates token validation while editing inline", async () => {
+    mockStrings([
+      {
+        key: "greet",
+        source: "Hi {{name}}",
+        target: "Hallo {{name}}",
+        targetPresent: true,
+      },
+    ]);
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("Hallo {{name}}"));
+
+    fireEvent.change(screen.getByLabelText("Inline translation for greet"), {
+      target: { value: "Hallo" },
+    });
+
+    expect(
+      screen.getByTitle(
+        "Token count mismatch for {{name}} (expected 1, found 0)",
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it("opens the full editor when the translation is too long for inline editing", async () => {
+    mockStrings([
+      {
+        key: "long",
+        source: "A".repeat(161),
+        target: "Lang",
+        targetPresent: true,
+      },
+    ]);
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("Lang"));
+
+    expect(await screen.findByLabelText("Translation")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Inline translation for long")).toBeNull();
+  });
+
   it("Reset clears the field and saves the string as untranslated", async () => {
     render(<StringTable mod={MOD} />);
     fireEvent.doubleClick(await screen.findByText("greeting"));
