@@ -842,9 +842,9 @@ The v1 Windows distribution is a portable folder packaged as ZIP. The
 application validates that its adjacent `Data/` folder is writable on startup.
 Moving the complete folder preserves settings, glossary data, and saved
 translation work. Saved game and Mods paths remain absolute and may need to be
-selected again on another computer. Pre-release AppData state is migrated once
-when the portable `Data/` folder has no user data; portable files are never
-overwritten by migration.
+selected again on another computer. The application never reads or migrates
+state from AppData: a freshly extracted portable folder starts with empty user
+data, and only data inside its adjacent `Data/` folder belongs to that copy.
 
 Translation state is stored **separately** from the mod's actual files. The export step writes the final `i18n/<lang>.json` to the mod folder. This means:
 
