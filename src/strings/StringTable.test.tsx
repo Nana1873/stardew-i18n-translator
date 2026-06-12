@@ -303,6 +303,36 @@ describe("StringTable", () => {
     );
   });
 
+  it("keeps a stable review-session total while saved rows leave the filter", async () => {
+    mockStrings([
+      {
+        key: "first",
+        source: "First",
+        target: "Erste KI",
+        targetPresent: true,
+        status: "review-needed",
+      },
+      {
+        key: "second",
+        source: "Second",
+        target: "Zweite KI",
+        targetPresent: true,
+        status: "review-needed",
+      },
+    ]);
+    render(<StringTable mod={MOD} statusFilter="review-needed" />);
+
+    fireEvent.doubleClick(await screen.findByText("first"));
+    expect(screen.getByText("Reviewing 1 of 2")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+
+    expect(await screen.findByText("Reviewing 2 of 2")).toBeInTheDocument();
+    expect(
+      (screen.getByLabelText("Translation") as HTMLTextAreaElement).value,
+    ).toBe("Zweite KI");
+  });
+
   it("flags dropped tokens returned by the AI", async () => {
     mockStrings([
       { key: "g", source: "Hi {{name}}", target: "" },

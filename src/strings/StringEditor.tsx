@@ -40,6 +40,7 @@ interface StringEditorProps {
   index: number;
   total: number;
   modName: string;
+  reviewProgress?: { current: number; total: number };
   /** Official game glossary (english -> target), if built. */
   glossary?: Record<string, string> | null;
   /** Translate the source via the local AI (M6); absent when no AI is configured. */
@@ -97,6 +98,7 @@ export function StringEditor({
   index,
   total,
   modName,
+  reviewProgress,
   glossary,
   onTranslate,
   onSave,
@@ -302,6 +304,29 @@ export function StringEditor({
             </span>
           </span>
         </header>
+
+        {reviewProgress && (
+          <div className="editor__review">
+            <span>
+              Reviewing {reviewProgress.current} of {reviewProgress.total}
+            </span>
+            <span
+              className="editor__review-track"
+              role="progressbar"
+              aria-label="Review session progress"
+              aria-valuemin={0}
+              aria-valuemax={reviewProgress.total}
+              aria-valuenow={reviewProgress.current}
+            >
+              <span
+                className="editor__review-fill"
+                style={{
+                  width: `${(reviewProgress.current / reviewProgress.total) * 100}%`,
+                }}
+              />
+            </span>
+          </div>
+        )}
 
         {/* Reserved slots (SPEC §7.5): tokens + glossary rows exist on every
             string — empty-state text when N/A — so the panes and the action

@@ -111,7 +111,11 @@ export function StringTable({
 }) {
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [editorSession, setEditorSession] = useState<{
+    indices: number[];
+    position: number;
+    review: boolean;
+  } | null>(null);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [sort, setSort] = useState<{
@@ -139,6 +143,7 @@ export function StringTable({
     setError(null);
     setSelection(new Set());
     setMenu(null);
+    setEditorSession(null);
     (async () => {
       const all: Row[] = [];
       for (const file of mod.i18nFiles) {
@@ -283,8 +288,20 @@ export function StringTable({
       setSelection(new Set(visible.map((entry) => entry.index)));
     } else if (event.key === "Enter" && selection.size === 1) {
       event.preventDefault();
-      setEditingIndex([...selection][0] ?? null);
+      openEditor([...selection][0] ?? null);
     }
+  }
+
+  function openEditor(dataIndex: number | null) {
+    if (dataIndex === null) return;
+    const indices = visible.map((entry) => entry.index);
+    const position = indices.indexOf(dataIndex);
+    if (position === -1) return;
+    setEditorSession({
+      indices,
+      position,
+      review: statusFilter === "review-needed",
+    });
   }
 
   async function saveRow(index: number, target: string, status: StringStatus) {
@@ -476,8 +493,13 @@ export function StringTable({
     return <div className="panel__empty">No translatable strings.</div>;
   }
 
+  const editingIndex = editorSession
+    ? editorSession.indices[editorSession.position]
+    : null;
   const editingRow =
-    editingIndex === null ? null : (data[editingIndex] ?? null);
+    editingIndex === null || editingIndex === undefined
+      ? null
+      : (data[editingIndex] ?? null);
 
   return (
     <div className={`stringtable${multiFile ? " stringtable--multifile" : ""}`}>
@@ -584,7 +606,7 @@ export function StringTable({
                   onContextMenu={(event) =>
                     openMenu(dataIndex, entry.pos, event)
                   }
-                  onOpen={() => setEditingIndex(dataIndex)}
+                  onOpen={() => openEditor(dataIndex)}
                 />
               );
             })}
@@ -592,24 +614,30 @@ export function StringTable({
         )}
       </div>
       <TableFooter byStatus={countByStatus(data)} />
-      {editingRow && editingIndex !== null && (
+      {editingRow && editingIndex !== null && editorSession && (
         <StringEditor
           row={editingRow}
-          index={editingIndex}
-          total={data.length}
+          index={editorSession.position}
+          total={editorSession.indices.length}
           modName={mod.name}
+          reviewProgress={
+            editorSession.review
+              ? {
+                  current: editorSession.position + 1,
+                  total: editorSession.indices.length,
+                }
+              : undefined
+          }
           glossary={glossary}
           onTranslate={onTranslate}
           onSave={(value, status) => void saveRow(editingIndex, value, status)}
-          onClose={() => setEditingIndex(null)}
+          onClose={() => setEditorSession(null)}
           onNavigate={(delta) =>
-            setEditingIndex((current) => {
-              if (current === null) return current;
-              const pos = visible.findIndex((entry) => entry.index === current);
-              if (pos === -1) return current;
-              const next = pos + delta;
-              return next >= 0 && next < visible.length
-                ? visible[next].index
+            setEditorSession((current) => {
+              if (!current) return current;
+              const position = current.position + delta;
+              return position >= 0 && position < current.indices.length
+                ? { ...current, position }
                 : current;
             })
           }
@@ -639,7 +667,7 @@ export function StringTable({
                 role="menuitem"
                 disabled={selection.size !== 1}
                 onClick={() => {
-                  setEditingIndex([...selection][0] ?? null);
+                  openEditor([...selection][0] ?? null);
                   setMenu(null);
                 }}
               >
