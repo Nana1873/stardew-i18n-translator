@@ -2107,7 +2107,7 @@ kbd,
   }
 }
 
-/* Settings dialog (SPEC §7.7 / docs/design §06): one modal, three pages. */
+/* Settings dialog (SPEC §7.7 / docs/design §06): one modal, left navigation. */
 .wizard.settings {
   width: 760px;
   height: min(620px, calc(100vh - 48px));
@@ -2267,6 +2267,34 @@ kbd,
   color: var(--text-dim);
   font-size: 11.5px;
   line-height: 1.5;
+}
+
+.settings__about-version {
+  margin: 2px 0 16px;
+  color: var(--gold-hi);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.settings__facts {
+  margin: 0;
+}
+
+.settings__facts div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings__facts dt {
+  color: var(--text-dim);
+}
+
+.settings__facts dd {
+  margin: 0;
+  color: var(--text);
 }
 
 @media (max-width: 640px) {

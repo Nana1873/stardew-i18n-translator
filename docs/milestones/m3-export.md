@@ -21,7 +21,11 @@ Implement safe export features to write translations back to `i18n/<lang>.json` 
 1. Export writes clean, valid JSON (2-space indent, UTF-8 without BOM, trailing newline). ✅
 2. Existing files are safely copied to `<filename>.json.bak` in the same directory prior to saving. ✅
 3. Export reports untranslated keys in the summary and completes the save anyway (untranslated keys are omitted, never blocking). ✅
-4. Strings with **error-level** issues (`token-missing`) are **skipped** individually (not a hard block on the whole file); all other strings export normally, and the summary reports what was skipped and why. Untranslated strings are omitted (SMAPI falls back to `default.json`); kept-original strings export explicitly. See [SPEC.md §10 / §17 M3](../../SPEC.md). ✅ — _(`json-invalid` cannot occur from a Rust `String`, which is always valid UTF-8, so that error is moot at export time.)_
+4. A missing or additional protected-token occurrence blocks the complete
+   affected mod export before any target or backup is written. The summary
+   reports every affected file, key, token, expected count, and actual count.
+   Untranslated strings are omitted and never block; kept-original strings
+   export explicitly when their token counts remain valid. ✅
 5. Key order matches `default.json`. ✅
 6. File write + backup operations are covered by tests (real temp dirs). ✅
 7. **Export all mods** (not just the selected mod). ✅ — toolbar "Export All" iterates every scanned mod and shows an aggregated summary.
@@ -31,9 +35,14 @@ Implement safe export features to write translations back to `i18n/<lang>.json` 
 
 ## Status (shipped vs. open) — 2026-06-09
 
-**Shipped (PR #24):** per-mod export of saved translations to `i18n/<lang>.json` in `default.json` key order; UTF-8 no BOM, 2-space indent; `.bak` backup of an existing target; atomic write (`.tmp` → verify → rename); omit untranslated strings; export kept-original strings explicitly; skip + report `token-missing` keys; export outdated-but-present strings and flag them; Rust port of the protected-token reader (`tokens.rs`); toolbar **Export** button + **ExportDialog** summary. 9 new Rust tests + a frontend dialog test.
+**Shipped (PR #24 and v1.1 quality update):** per-mod export in
+`default.json` key order; UTF-8 no BOM, 2-space indent; `.bak` backup and atomic
+write; omit untranslated strings; export kept-original strings explicitly;
+preflight the complete mod and block every write when any protected-token count
+differs; report each mismatch with expected and actual counts.
 
-**Also shipped (post-audit):** **Export All** (toolbar) iterates every scanned mod, writing each mod's `i18n/<lang>.json` and showing one aggregated summary (mods/files/keys written, plus per-mod-prefixed skipped keys).
+**Also shipped (post-audit):** **Export All** iterates every scanned mod,
+continues past independently blocked mods, and shows one aggregated summary.
 
 **Still open for v1:** none — M3 is complete.
 

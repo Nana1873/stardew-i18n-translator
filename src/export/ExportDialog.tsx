@@ -3,8 +3,7 @@
  *
  * Shown after the Export action runs. Reports what was written, what was
  * omitted (untranslated), what was exported-but-stale (outdated), and which
- * keys were skipped because their translation dropped a required token. On
- * error, shows the failure message instead.
+ * token-count errors blocked a mod before any files were written.
  */
 import type { ExportResult, SkippedKey } from "../tauri/commands";
 
@@ -37,12 +36,16 @@ export function ExportDialog({
         <div className="exportdlg__head">
           <strong>
             <span
-              className={`dlgicon ${error ? "dlgicon--err" : "dlgicon--ok"}`}
+              className={`dlgicon ${error || result?.blocked ? "dlgicon--err" : "dlgicon--ok"}`}
               aria-hidden
             >
-              {error ? "✕" : "✓"}
+              {error || result?.blocked ? "✕" : "✓"}
             </span>
-            {error ? "Export failed" : "Export complete"}
+            {error
+              ? "Export failed"
+              : result?.blocked
+                ? "Export blocked"
+                : "Export complete"}
           </strong>
           <span className="editor__crumbs">{modName}</span>
         </div>
@@ -79,7 +82,13 @@ function ExportSummary({
   const nothing = result.filesWritten === 0 && result.skipped.length === 0;
   return (
     <div className="exportdlg__body">
-      {nothing ? (
+      {result.blocked ? (
+        <p>
+          One or more mod exports were blocked. No files or backups were written
+          for those mods. Fix every protected-token count mismatch below, then
+          export again.
+        </p>
+      ) : nothing ? (
         <p className="exportdlg__muted">
           Nothing to export — no translated strings yet
           {modsWritten === null ? " for this mod" : ""}.
@@ -128,8 +137,8 @@ function ExportSummary({
         )}
         {result.skipped.length > 0 && (
           <li>
-            <span className="exportdlg__dot exportdlg__dot--err" /> Skipped
-            (missing required token):{" "}
+            <span className="exportdlg__dot exportdlg__dot--err" /> Blocking
+            token errors:{" "}
             <button
               type="button"
               className="exportdlg__link"
@@ -151,7 +160,7 @@ function ExportSummary({
 
       {result.skipped.length > 0 && (
         <div className="exportdlg__skipped">
-          <span className="exportdlg__muted">Skipped keys:</span>
+          <span className="exportdlg__muted">Affected strings:</span>
           <ul>
             {result.skipped.map((skip) => (
               <li key={`${skip.relativeDir}:${skip.key}`}>

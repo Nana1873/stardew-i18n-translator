@@ -53,15 +53,46 @@ fn is_layout_token(token: &str) -> bool {
 }
 
 /// True if `target` is missing (or under-represents) any protected token that
-/// appears in `source` — the export `token-missing` skip rule. Layout tokens
-/// (newlines) are exempt; they surface as a warning, never an error.
+/// appears in `source`. Layout tokens (newlines) are exempt; they surface as a
+/// warning, never an error.
 pub fn missing_tokens(source: &str, target: &str) -> bool {
+    token_differences(source, target)
+        .iter()
+        .any(|difference| difference.target_count < difference.source_count)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TokenDifference {
+    pub token: String,
+    pub source_count: usize,
+    pub target_count: usize,
+}
+
+/// Every protected-token count that differs between source and target.
+/// Newlines remain layout-only and are deliberately excluded.
+pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     let source_counts = counts(source);
     let target_counts = counts(target);
-    source_counts
-        .iter()
-        .filter(|(token, _)| !is_layout_token(token))
-        .any(|(token, count)| target_counts.get(token).copied().unwrap_or(0) < *count)
+    let mut tokens: Vec<String> = source_counts
+        .keys()
+        .chain(target_counts.keys())
+        .filter(|token| !is_layout_token(token))
+        .cloned()
+        .collect();
+    tokens.sort();
+    tokens.dedup();
+    tokens
+        .into_iter()
+        .filter_map(|token| {
+            let source_count = source_counts.get(&token).copied().unwrap_or(0);
+            let target_count = target_counts.get(&token).copied().unwrap_or(0);
+            (source_count != target_count).then_some(TokenDifference {
+                token,
+                source_count,
+                target_count,
+            })
+        })
+        .collect()
 }
 
 /// The protected tokens that `target` is missing (or under-represents) relative
@@ -272,6 +303,26 @@ mod tests {
         assert!(!missing_tokens("Hi {{name}}", "Hallo {{name}}"));
         // Extra token in target is not a *missing* one.
         assert!(!missing_tokens("Hi", "Hallo {{name}}"));
+    }
+
+    #[test]
+    fn token_differences_include_missing_and_added_counts() {
+        assert_eq!(
+            token_differences("Hi {{name}} #", "Hallo {{name}} {{name}}"),
+            vec![
+                TokenDifference {
+                    token: "#".into(),
+                    source_count: 1,
+                    target_count: 0,
+                },
+                TokenDifference {
+                    token: "{{name}}".into(),
+                    source_count: 1,
+                    target_count: 2,
+                },
+            ]
+        );
+        assert!(token_differences("a\nb", "ab").is_empty());
     }
 
     #[test]

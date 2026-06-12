@@ -2,7 +2,9 @@
 name = "stardew-i18n-translator"
 version = "1.0.1"
 description = "Local desktop tool for Stardew Valley / SMAPI mod i18n translations."
-authors = ["Foxy1873"]
+authors = ["Nana"]
+license = "GPL-3.0-or-later"
+repository = "https://github.com/Nana1873/stardew-i18n-translator"
 edition = "2021"
 
 [lib]

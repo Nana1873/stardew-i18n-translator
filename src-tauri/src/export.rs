@@ -9,8 +9,8 @@
 //!  - **Untranslated** keys are omitted (SMAPI falls back to `default.json`).
 //!    Kept-original strings (v1.5, SPEC §9) carry the source as their target
 //!    and are written like any other translation.
-//!  - Keys whose translation drops a required source token (`token-missing`)
-//!    are **skipped** individually and reported — never a hard block on the file.
+//!  - Any protected-token count mismatch blocks the complete mod export before
+//!    backups or target writes begin.
 //!
 //! Saved translation state on disk is the source of truth: every edit is
 //! persisted immediately via `save_string`, so export reads it back here.
@@ -77,6 +77,8 @@ pub struct ExportResult {
     /// Total keys dropped from existing target files because `default.json`
     /// no longer (or never) contains them.
     pub total_orphan_keys: usize,
+    /// Token errors prevented every file in this mod from being written.
+    pub blocked: bool,
 }
 
 /// Export every i18n file of one mod. Returns a per-file + aggregate summary.
@@ -89,6 +91,45 @@ pub fn export_mod(
     // empty state would write a near-empty <lang>.json over a good one.
     let state = translations::load(config_dir, unique_id)?;
     let mut result = ExportResult::default();
+
+    // Validate the complete mod first. A token mismatch must not leave a
+    // partially exported mod or create backups for files that were not replaced.
+    for file in files {
+        let rows = scanner::load_strings(
+            Path::new(&file.default_path),
+            Path::new(&file.target_path),
+            &state,
+            &file.relative_dir,
+        );
+        for row in rows {
+            if row.target.trim().is_empty() {
+                continue;
+            }
+            let differences = tokens::token_differences(&row.source, &row.target);
+            if differences.is_empty() {
+                continue;
+            }
+            let detail = differences
+                .iter()
+                .map(|difference| {
+                    format!(
+                        "{}: expected {}, found {}",
+                        difference.token, difference.source_count, difference.target_count
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            result.skipped.push(SkippedKey {
+                relative_dir: file.relative_dir.clone(),
+                key: row.key,
+                reason: format!("token count mismatch ({detail})"),
+            });
+        }
+    }
+    if !result.skipped.is_empty() {
+        result.blocked = true;
+        return Ok(result);
+    }
 
     for file in files {
         let default_path = Path::new(&file.default_path);
@@ -106,14 +147,6 @@ pub fn export_mod(
         for row in rows {
             if row.target.trim().is_empty() {
                 file_result.untranslated += 1;
-                continue;
-            }
-            if tokens::missing_tokens(&row.source, &row.target) {
-                result.skipped.push(SkippedKey {
-                    relative_dir: file.relative_dir.clone(),
-                    key: row.key,
-                    reason: "missing required token(s)".to_string(),
-                });
                 continue;
             }
             if row.status == "outdated" {
@@ -308,14 +341,15 @@ mod tests {
     }
 
     #[test]
-    fn skips_keys_with_missing_required_token() {
+    fn blocks_the_complete_mod_before_writing_on_any_token_mismatch() {
         let root = crate::test_support::temp_dir("export-skip");
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
             "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye {{name}}\" }",
         );
-        // `ok` keeps the token; `bad` drops it -> skipped with a reason.
+        write(&i18n.join("de.json"), "{ \"old\": \"untouched\" }");
+        // `ok` keeps the token; `bad` drops it -> complete mod is blocked.
         translations::save_one(
             &root,
             "mod.id",
@@ -340,12 +374,69 @@ mod tests {
         .unwrap();
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
-        assert_eq!(result.total_written_keys, 1);
+        assert!(result.blocked);
+        assert_eq!(result.total_written_keys, 0);
         assert_eq!(result.skipped.len(), 1);
         assert_eq!(result.skipped[0].key, "bad");
+        assert!(result.skipped[0].reason.contains("expected 1, found 0"));
         let body = read(&i18n.join("de.json"));
-        assert!(body.contains("\"ok\""));
-        assert!(!body.contains("\"bad\""));
+        assert_eq!(body, "{ \"old\": \"untouched\" }");
+        assert!(!i18n.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn added_token_also_blocks_the_complete_mod() {
+        let root = crate::test_support::temp_dir("export-added-token");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"bad\": \"Hello #\" }");
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "bad"),
+            translations::StoredString {
+                target: "Hallo ##".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello #"),
+            },
+        )
+        .unwrap();
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert!(result.blocked);
+        assert_eq!(result.skipped.len(), 1);
+        assert!(result.skipped[0].reason.contains("expected 1, found 2"));
+        assert!(!i18n.join("de.json").exists());
+        assert!(!i18n.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn untranslated_strings_do_not_block_export() {
+        let root = crate::test_support::temp_dir("export-untranslated-token");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{ \"translated\": \"Hello #\", \"empty\": \"Bye {{name}}\" }",
+        );
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "translated"),
+            translations::StoredString {
+                target: "Hallo #".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello #"),
+            },
+        )
+        .unwrap();
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert!(!result.blocked);
+        assert_eq!(result.total_written_keys, 1);
+        assert_eq!(result.total_untranslated, 1);
 
         std::fs::remove_dir_all(&root).ok();
     }

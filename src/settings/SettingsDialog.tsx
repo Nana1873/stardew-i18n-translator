@@ -18,6 +18,7 @@ import {
   openUrl,
 } from "../tauri/commands";
 import { SOURCE_LANGUAGE_LABEL, TARGET_LANGUAGES } from "../languages";
+import packageInfo from "../../package.json";
 
 const LLM_PRESETS: Record<string, string> = {
   lmstudio: "http://localhost:1234/v1",
@@ -33,7 +34,7 @@ interface SettingsDialogProps {
   onReRunSetup: () => void;
 }
 
-type SettingsPage = "folders" | "ai" | "glossary";
+type SettingsPage = "folders" | "ai" | "glossary" | "about";
 
 interface LlmConnectionResult {
   kind: "connected" | "empty" | "failed";
@@ -177,6 +178,7 @@ export function SettingsDialog({
                 ["folders", "Folders & language"],
                 ["ai", "Local AI"],
                 ["glossary", "Glossary"],
+                ["about", "About"],
               ] as const
             ).map(([id, label]) => (
               <button
@@ -427,6 +429,69 @@ export function SettingsDialog({
                   Optional. The app works fully without AI. A capable instruct
                   model is recommended; small or heavily modified models may
                   ignore translation rules.
+                </p>
+              </section>
+            )}
+
+            {page === "about" && (
+              <section
+                id="settings-panel-about"
+                role="tabpanel"
+                aria-label="About"
+              >
+                <h3 className="settings__title">Stardew i18n Translator</h3>
+                <p className="settings__about-version">
+                  Version {packageInfo.version}
+                </p>
+                <p className="settings__intro">
+                  A portable, local-first desktop tool for translating Stardew
+                  Valley and SMAPI mod i18n files.
+                </p>
+
+                <div className="settings__group">
+                  <h4>Project</h4>
+                  <dl className="settings__facts">
+                    <div>
+                      <dt>Author</dt>
+                      <dd>Nana</dd>
+                    </div>
+                    <div>
+                      <dt>License</dt>
+                      <dd>GPL-3.0-or-later</dd>
+                    </div>
+                    <div>
+                      <dt>Built with</dt>
+                      <dd>Tauri, Rust, React, and TypeScript</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div className="wizard__row">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openUrl(
+                        "https://github.com/Nana1873/stardew-i18n-translator",
+                      )
+                    }
+                  >
+                    Open project on GitHub ↗
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openUrl(
+                        "https://github.com/Nana1873/stardew-i18n-translator/blob/main/LICENSE",
+                      )
+                    }
+                  >
+                    View license ↗
+                  </button>
+                </div>
+
+                <p className="settings__hint">
+                  Stardew Valley is a trademark of ConcernedApe. This community
+                  project is not affiliated with or endorsed by ConcernedApe.
                 </p>
               </section>
             )}

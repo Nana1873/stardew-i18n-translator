@@ -10,7 +10,7 @@ protected-token validation, the persisted status model, and search/filter/sort.
 - **String Table Grid:** A high-density, virtualized grid showing key, source string, target string, and a per-row validation/status indicator (full-row status tint).
 - **Filter Toolbar:** Instant search (by key/original/target text) and a filter by status (per [SPEC.md §9](../../SPEC.md): `untranslated`, `translated`, `outdated`, `review-needed`, or all).
 - **String Editor Dialog:** A modal triggered by double-clicking a row. Shows original text, editable target field, live token validation, status badge, clickable token chips, and **glossary hints** (official game terms found in the source, click to insert the translation — SPEC §7.5).
-- **Protected-Token Validation:** The 5 v1 rules from [SPEC.md §10](../../SPEC.md): `token-missing` (error), `token-added` (warning), `newline-mismatch` (warning — `\n` is layout, not syntax, and exempt from the token errors), `empty-target` (warning), `json-invalid` (error). A **"token" is any Stardew/SMAPI protected token**, not just `{{...}}`: Content Patcher `{{...}}` (nested-aware), gender switch `${male^female}$`, mail commands `[#]` / `%item … %%`, dialogue break `#$b#`, bracket tokens `[…]`, **positional placeholders `{0}`**, dialogue commands `$b`/`$s`/`$e`, structural `#`, balanced single-quote delimiters such as `'test'`, and single-char `@`/`^`. Apostrophes inside words such as `don't` are ordinary prose. Tokens are compared as **multisets** (counts matter), so a dropped second `$b` or one character from `^^` is caught too. See `src/strings/protectedTokens.ts` (and the Rust port `src-tauri/src/tokens.rs`).
+- **Protected-Token Validation:** `token-missing` and `token-added` are errors; `newline-mismatch` remains a warning because `\n` is layout, not syntax. `empty-target` and `json-invalid` retain their existing behavior, while `identical-to-source` and `escape-suspicious` are high-signal warnings. A **"token" is any Stardew/SMAPI protected token**, not just `{{...}}`: Content Patcher `{{...}}` (nested-aware), gender switch `${male^female}$`, mail commands `[#]` / `%item … %%`, dialogue break `#$b#`, bracket tokens `[…]`, **positional placeholders `{0}`**, dialogue commands `$b`/`$s`/`$e`, structural `#`, balanced single-quote delimiters such as `'test'`, and single-char `@`/`^`. Apostrophes inside words such as `don't` are ordinary prose. Tokens are compared as **multisets** (counts matter). See `src/strings/protectedTokens.ts` and `src-tauri/src/tokens.rs`.
 - **Status Model:** Implement the four statuses from [SPEC.md §9](../../SPEC.md) — `untranslated`, `translated`, `outdated`, and the AI-workflow status `review-needed` — and their transitions during editing. (`outdated` is derived automatically, never set by hand. Strings intentionally kept in English use the **Keep original** action and remain covered by `outdated` detection.)
 - **Outdated Logic:** Detect modified source strings via per-string `sourceHash` (SHA-256 of the English source at save time), compared on re-scan.
 
@@ -63,7 +63,10 @@ Editing overlay with original vs. translation, live validation, clickable token 
 
 ### Issue 9: Protected-token validation ✅
 
-`extractProtectedTokens` reader for the full Stardew taxonomy; `token-missing` (error) / `token-added` (warning) via **multiset** comparison; plus `empty-target` and `json-invalid`.
+`extractProtectedTokens` reader for the full Stardew taxonomy; `token-missing`
+and `token-added` are errors via **multiset** comparison; plus
+`newline-mismatch`, `empty-target`, `json-invalid`, `identical-to-source`, and
+`escape-suspicious`. The two quality rules warn but do not block.
 
 ### Issue 10: Status model and persistence ✅
 
