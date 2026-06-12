@@ -5,6 +5,9 @@
   "type": "module",
   "packageManager": "pnpm@11.5.2",
   "description": "Local desktop tool for Stardew Valley / SMAPI mod i18n translations.",
+  "license": "GPL-3.0-or-later",
+  "author": "Nana",
+  "repository": "https://github.com/Nana1873/stardew-i18n-translator",
   "scripts": {
     "dev": "tauri dev",
     "dev:web": "vite --host 127.0.0.1",

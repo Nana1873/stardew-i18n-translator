@@ -65,6 +65,7 @@ const EXPORT_RESULT = {
   totalOutdated: 0,
   totalReviewNeeded: 0,
   totalOrphanKeys: 0,
+  blocked: false,
 };
 
 function exportScan(targetExists: boolean) {

@@ -164,7 +164,7 @@ describe("SettingsDialog", () => {
     );
   });
 
-  it("switches between the three approved settings pages", () => {
+  it("switches between the settings pages", () => {
     render(
       <SettingsDialog
         settings={baseSettings}
@@ -181,9 +181,31 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Glossary" }),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
     expect(
-      screen.queryByRole("tab", { name: "Shortcuts" }),
-    ).not.toBeInTheDocument();
+      screen.getByRole("heading", { name: "Stardew i18n Translator" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Version 1.0.1")).toBeInTheDocument();
+    expect(screen.getByText("GPL-3.0-or-later")).toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Shortcuts" })).toBeNull();
+  });
+
+  it("opens the repository from About", () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open project on GitHub ↗" }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("open_url", {
+      url: "https://github.com/Nana1873/stardew-i18n-translator",
+    });
   });
 
   it("shows a retryable diagnostic when the AI connection fails", async () => {

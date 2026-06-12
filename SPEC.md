@@ -100,7 +100,7 @@ The glossary is a **multilingual dictionary of official Stardew Valley game term
 
 1. **Manual translation hints** — Shown in the string editor when glossary terms appear in source text.
 2. **AI prompt hints** — Included in external LLM batch exports so AI uses official terms.
-3. **Validation** _(v1.1+)_ — Flag deviations from official terminology.
+3. **AI prompt guidance** — Include matching official terms as optional context.
 
 ### Non-Blocking Principle
 
@@ -552,13 +552,15 @@ Validation runs per string. Results are shown in the String Table and String Edi
 
 v1 validation focuses on **preventing broken mods** — not on translation quality.
 
-| Rule ID            | Severity | Check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| ------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `token-missing`    | Error    | A **protected token** present in the source is missing (or under-represented) in the target. This includes structural `#`, balanced single-quote delimiters such as `'test'`, and repeated `^` markers (`^^` counts as two); apostrophes inside words such as `don't` are prose, not tokens. This will break the mod at runtime or corrupt its formatting. **Exemption:** `\n` is layout, not syntax — newline differences are covered by `newline-mismatch` below, never by this error.         |
-| `token-added`      | Warning  | The target contains a **protected token** not present in the source. Likely a typo. (`\n` exempt, as above.)                                                                                                                                                                                                                                                                                                                                                                                     |
-| `newline-mismatch` | Warning  | The line-break count differs between source and target. Purely informational: a translation rewraps freely (German runs ~25% longer than English), and a changed `\n` count never breaks the mod. Pulled forward from v1.1 — see the scope note below.                                                                                                                                                                                                                                           |
-| `empty-target`     | Warning  | Key exists in target file but value is empty string.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `json-invalid`     | Error    | **Export-serialization safety.** The value cannot be safely serialized to valid JSON — e.g. an invalid/unpaired Unicode surrogate or stray control character (typically from an imported file). A correct serializer escapes normal characters (quotes, backslashes, newlines) automatically, so well-formed input never trips this; the rule exists only to _guarantee the exported `<lang>.json` is always valid JSON_. Affected strings are skipped on export (per the severity table below). |
+| Rule ID               | Severity | Check                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `token-missing`       | Error    | A **protected token** present in the source is missing (or under-represented) in the target. This includes structural `#`, balanced single-quote delimiters such as `'test'`, and repeated `^` markers (`^^` counts as two); apostrophes inside words such as `don't` are prose, not tokens. This will break the mod at runtime or corrupt its formatting. **Exemption:** `\n` is layout, not syntax — newline differences are covered by `newline-mismatch` below, never by this error. |
+| `token-added`         | Error    | The target contains more occurrences of a **protected token** than the source. Protected-token counts must match exactly; `\n` remains exempt.                                                                                                                                                                                                                                                                                                                                           |
+| `newline-mismatch`    | Warning  | The line-break count differs between source and target. Purely informational: a translation rewraps freely (German runs ~25% longer than English), and a changed `\n` count never breaks the mod. Pulled forward from v1.1 — see the scope note below.                                                                                                                                                                                                                                   |
+| `empty-target`        | Warning  | Key exists in target file but value is empty string.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `json-invalid`        | Error    | **Export-serialization safety.** The value cannot be safely serialized to valid JSON — e.g. an invalid/unpaired Unicode surrogate or stray control character (typically from an imported file). A correct serializer escapes normal characters automatically, so well-formed input never trips this editor-side rule.                                                                                                                                                                    |
+| `identical-to-source` | Warning  | The non-empty target is exactly identical to the source, including after **Keep original**. This remains visible so accidental Keep original actions are easy to find.                                                                                                                                                                                                                                                                                                                   |
+| `escape-suspicious`   | Warning  | Literal JSON-style escape sequences such as `\n` or `\"` differ between source and target. This is review guidance and never blocks export.                                                                                                                                                                                                                                                                                                                                              |
 
 **5 rules total for v1.** Quality and style checks are deferred to v1.1+.
 
@@ -566,14 +568,11 @@ v1 validation focuses on **preventing broken mods** — not on translation quali
 
 ### Deferred Validation Rules (v1.1+)
 
-| Rule ID                 | Severity | Target Version           |
-| ----------------------- | -------- | ------------------------ |
-| `token-case-changed`    | Warning  | v1.1                     |
-| `bracket-token-missing` | Warning  | v1.1                     |
-| `glossary-deviation`    | Info     | v1.1 (requires glossary) |
-| `extra-key`             | Info     | v1.1                     |
-| `identical-to-source`   | Info     | v1.1                     |
-| `escape-suspicious`     | Warning  | v1.1                     |
+| Rule ID                 | Severity | Target Version |
+| ----------------------- | -------- | -------------- |
+| `token-case-changed`    | Warning  | v1.1           |
+| `bracket-token-missing` | Warning  | v1.1           |
+| `extra-key`             | Info     | v1.1           |
 
 ### Severity Levels and Export Behavior
 
@@ -880,7 +879,7 @@ Core workflow — no Nexus API:
 - [x] Right-click context menu with bulk actions
 - [x] Multi-select (Ctrl+Click, Shift+Click)
 - [x] Export clean `i18n/<lang>.json` files
-- [x] Export warns on missing translations, skips only affected token-error strings
+- [x] Export warns on missing translations and blocks an affected mod before writing when protected-token counts differ
 - [x] Backup existing target file before overwrite
 - [x] Search and filter (by text, by status)
 - [x] Keyboard shortcuts in string editor
@@ -905,7 +904,6 @@ First AI step — requires core workflow to be complete:
 | ------------------------------------------- | ------ |
 | Nexus API key storage and validation        | v1.1   |
 | Nexus mod info enrichment                   | v1.1   |
-| `glossary-deviation` validation             | v1.1   |
 | `token-case-changed` validation             | v1.1   |
 | `identical-to-source` validation            | v1.1   |
 | `escape-suspicious` validation              | v1.1   |
@@ -1088,8 +1086,8 @@ The following are **explicitly excluded** from v1:
 - Backup existing file before overwrite (`.bak`)
 - Export selected mod / all mods
 - Export validation gate:
-  - **Error-level issues** (`token-missing`, `json-invalid`): affected strings are **skipped** from export. All other strings export normally.
-  - **Warning-level issues** (`empty-target`, `token-added`): export continues, shown in summary.
+  - **Protected-token errors** (`token-missing`, `token-added`): the complete affected mod export is blocked before any file or backup is written.
+  - **Other warnings** (`empty-target`, `newline-mismatch`, `identical-to-source`, `escape-suspicious`): export continues and the issues remain visible for review.
   - **Untranslated strings**: omitted from export (SMAPI falls back to `default.json`). Shown in summary.
 - Export summary dialog showing: exported count, skipped count (with reasons), warnings.
 - Overwrite confirmation dialog.
@@ -1184,7 +1182,11 @@ The following are **explicitly excluded** from v1:
 
 2. **The status rule.** v1.5 has exactly 4 statuses (`untranslated`, `translated`, `outdated`, `review-needed`). Do not add more. v1's fifth status (`not-translatable`) was **removed**, not just renamed — "keep it English" became the "Keep original" _action_ that stores an identical translation — one fewer status to scan for, and full `outdated` coverage. `review-needed` exists only for the **AI translation workflows** — the M6 local-LLM engine and the M4 external LLM batch — where machine output genuinely needs a review pass. It is never set by hand and never reached by normal editing (an explicit Save confirms it to `translated`).
 
-3. **The 5-validation-rule rule.** v1 has exactly 5 validation rules (§10; `newline-mismatch` was pulled forward because treating `\n` as a hard token error blocked valid translations). Adding a rule requires justifying why it prevents broken mods, not just improves quality.
+3. **The validation-noise rule.** Token safety rules may block export; quality
+   rules must remain high-signal warnings. `identical-to-source` and
+   `escape-suspicious` are accepted for v1.1. Glossary deviations are not a
+   validation rule because inflection and sentence context make exact term
+   matching noisy.
 
 4. **File scope lock.** v1 handles `i18n/default.json` and `i18n/<lang>.json`. Period. Supporting additional file types requires a scope change approval.
 

@@ -7,7 +7,7 @@
  * `[...]`, ...) — see protectedTokens.ts. Tokens are compared as multisets, so
  * a dropped second `$b` is caught too.
  *  - token-missing    (error)   a source token is absent (or under-represented)
- *  - token-added      (warning) the target has a token not in the source
+ *  - token-added      (error)   the target has more of a token than the source
  *  - newline-mismatch (warning) the line-break count differs — layout, not
  *                                syntax: a translation rewraps freely (German
  *                                runs longer than English), so `\n` is exempt
@@ -16,6 +16,8 @@
  *  - empty-target     (warning) the key is present in the target file but empty
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
+ *  - identical-to-source (warning) target is unchanged from the source
+ *  - escape-suspicious   (warning) literal JSON-style escapes differ
  */
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
 
@@ -27,7 +29,9 @@ export interface ValidationIssue {
     | "token-added"
     | "newline-mismatch"
     | "empty-target"
-    | "json-invalid";
+    | "json-invalid"
+    | "identical-to-source"
+    | "escape-suspicious";
   severity: Severity;
   message: string;
 }
@@ -49,6 +53,22 @@ function newlineCount(text: string): number {
   let count = 0;
   for (const char of text) if (char === NEWLINE) count += 1;
   return count;
+}
+
+function escapeCounts(text: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const match of text.matchAll(/\\(?:["\\nrt])/g)) {
+    const escape = match[0];
+    counts.set(escape, (counts.get(escape) ?? 0) + 1);
+  }
+  return counts;
+}
+
+function escapeSummary(text: string): string {
+  return [...escapeCounts(text)]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([escape, count]) => `${escape} x${count}`)
+    .join(", ");
 }
 
 /** True if the string contains an unpaired UTF-16 surrogate (invalid JSON). */
@@ -78,19 +98,21 @@ export function validate(
     const targetTokens = tokenCounts(target);
     for (const [token, count] of sourceTokens) {
       if ((targetTokens.get(token) ?? 0) < count) {
+        const found = targetTokens.get(token) ?? 0;
         issues.push({
           ruleId: "token-missing",
           severity: "error",
-          message: `Missing token ${describeToken(token)}`,
+          message: `Token count mismatch for ${describeToken(token)} (expected ${count}, found ${found})`,
         });
       }
     }
     for (const [token, count] of targetTokens) {
       if ((sourceTokens.get(token) ?? 0) < count) {
+        const expected = sourceTokens.get(token) ?? 0;
         issues.push({
           ruleId: "token-added",
-          severity: "warning",
-          message: `Unexpected token ${describeToken(token)}`,
+          severity: "error",
+          message: `Token count mismatch for ${describeToken(token)} (expected ${expected}, found ${count})`,
         });
       }
     }
@@ -108,6 +130,20 @@ export function validate(
         ruleId: "json-invalid",
         severity: "error",
         message: "Contains characters that cannot be serialized to valid JSON",
+      });
+    }
+    if (source === target) {
+      issues.push({
+        ruleId: "identical-to-source",
+        severity: "warning",
+        message: "Translation is identical to the original",
+      });
+    }
+    if (escapeSummary(source) !== escapeSummary(target)) {
+      issues.push({
+        ruleId: "escape-suspicious",
+        severity: "warning",
+        message: "Literal escape sequences differ from the original",
       });
     }
   } else if (targetPresent) {
