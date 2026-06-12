@@ -34,6 +34,7 @@ import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
 import { STATUS_META, statusTint } from "./strings/status";
+import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { ExportDialog } from "./export/ExportDialog";
 import { LlmImportDialog } from "./llm-batch/LlmBatchDialog";
 
@@ -79,6 +80,12 @@ export function App() {
   const [exportModsWritten, setExportModsWritten] = useState<number | null>(
     null,
   );
+  const [exportConfirm, setExportConfirm] = useState<{
+    kind: "selected" | "all";
+    title: string;
+    files: number;
+    mods: number | null;
+  } | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
@@ -347,16 +354,83 @@ export function App() {
     };
   }
 
+  function requestExport() {
+    if (!selectedMod) return;
+    const files = selectedMod.i18nFiles.filter(
+      (file) => file.targetExists,
+    ).length;
+    if (files === 0) {
+      void handleExport();
+      return;
+    }
+    setExportConfirm({
+      kind: "selected",
+      title: selectedMod.name,
+      files,
+      mods: null,
+    });
+  }
+
+  function requestExportAll() {
+    if (!scan) return;
+    const affected = scan.mods.filter((mod) =>
+      mod.i18nFiles.some((file) => file.targetExists),
+    );
+    const files = affected.reduce(
+      (sum, mod) =>
+        sum + mod.i18nFiles.filter((file) => file.targetExists).length,
+      0,
+    );
+    if (files === 0) {
+      void handleExportAll();
+      return;
+    }
+    setExportConfirm({
+      kind: "all",
+      title: "All mods",
+      files,
+      mods: affected.length,
+    });
+  }
+
+  function markExportedTargets(modId: string, result: ExportResult) {
+    const written = new Set(
+      result.files
+        .filter((file) => file.written)
+        .map((file) => file.relativeDir),
+    );
+    if (written.size === 0) return;
+    setScan((current) =>
+      current
+        ? {
+            ...current,
+            mods: current.mods.map((mod) =>
+              mod.uniqueId === modId
+                ? {
+                    ...mod,
+                    i18nFiles: mod.i18nFiles.map((file) =>
+                      written.has(file.relativeDir)
+                        ? { ...file, targetExists: true }
+                        : file,
+                    ),
+                  }
+                : mod,
+            ),
+          }
+        : current,
+    );
+  }
+
   async function handleExport() {
     if (!selectedMod) return;
     beginExport(selectedMod.name);
     try {
-      setExportResult(
-        withExportContext(
-          await exportMod(selectedMod.uniqueId, filesOf(selectedMod)),
-          selectedMod,
-        ),
+      const result = await exportMod(
+        selectedMod.uniqueId,
+        filesOf(selectedMod),
       );
+      markExportedTargets(selectedMod.uniqueId, result);
+      setExportResult(withExportContext(result, selectedMod));
     } catch (error) {
       setExportError(String(error));
     } finally {
@@ -382,6 +456,7 @@ export function App() {
       for (const mod of scan.mods) {
         if (mod.i18nFiles.length === 0) continue;
         const result = await exportMod(mod.uniqueId, filesOf(mod));
+        markExportedTargets(mod.uniqueId, result);
         merged.files.push(...result.files);
         // Prefix each skipped key with its mod so the summary stays unambiguous.
         merged.skipped.push(
@@ -430,9 +505,9 @@ export function App() {
         onScan={handleScan}
         scanEnabled={configured && !scanning}
         scanning={scanning}
-        onExport={handleExport}
+        onExport={requestExport}
         exportEnabled={Boolean(selectedMod) && !exporting}
-        onExportAll={handleExportAll}
+        onExportAll={requestExportAll}
         exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
         onImportBatch={() => void handleImportBatch()}
@@ -566,6 +641,20 @@ export function App() {
           error={exportError}
           onInspectSkip={inspectSkippedKey}
           onClose={() => setExportOpen(false)}
+        />
+      )}
+      {exportConfirm && (
+        <ExportConfirmDialog
+          modName={exportConfirm.title}
+          files={exportConfirm.files}
+          mods={exportConfirm.mods}
+          onCancel={() => setExportConfirm(null)}
+          onConfirm={() => {
+            const kind = exportConfirm.kind;
+            setExportConfirm(null);
+            if (kind === "selected") void handleExport();
+            else void handleExportAll();
+          }}
         />
       )}
       {importOpen && (

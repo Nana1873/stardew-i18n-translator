@@ -20,7 +20,9 @@
 
 ### Still open for v1 (tracked in the milestone docs)
 
-- **M1–M4 + M6 are functionally complete.** Only an optional M3 overwrite-confirmation dialog remains (currently a silent `.bak` backup instead).
+- **M1–M4 + M6 are functionally complete.** The remaining M3 overwrite
+  confirmation shipped: new targets export directly; replacing existing files
+  requires confirmation and retains the automatic `.bak` backup.
 - **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
 
 ## Documentation
