@@ -1,6 +1,6 @@
 [package]
 name = "stardew-i18n-translator"
-version = "1.0.0"
+version = "1.0.1"
 description = "Local desktop tool for Stardew Valley / SMAPI mod i18n translations."
 authors = ["Foxy1873"]
 edition = "2021"

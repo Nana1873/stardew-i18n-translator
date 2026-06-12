@@ -25,9 +25,10 @@ The application must be extracted to a writable folder. It refuses to start
 when its adjacent `Data/` folder cannot be created or written. No installer,
 registry entry, Start Menu shortcut, or uninstaller is provided.
 
-On the first portable start only, existing settings, glossary data, and
-translation state from the pre-release AppData location are migrated when
-`Data/` has no user data yet. Existing portable data is never overwritten.
+The application does not read or migrate state from AppData. A freshly
+extracted portable folder starts without user settings, glossary data, or
+translation state. To move an existing workspace, copy the complete application
+folder including its `Data/` directory.
 
 ## Version Source
 

@@ -18,7 +18,7 @@ mod translations;
 use std::path::{Path, PathBuf};
 use std::{fs::OpenOptions, io::Write};
 
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
@@ -418,64 +418,6 @@ fn ensure_portable_data_dir() -> Result<PathBuf, String> {
     Ok(data_dir)
 }
 
-fn has_portable_user_data(data_dir: &Path) -> bool {
-    data_dir.join("settings.json").exists()
-        || data_dir.join("glossary.json").exists()
-        || data_dir.join("translations").exists()
-}
-
-fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
-    std::fs::create_dir_all(destination).map_err(|error| {
-        format!(
-            "Could not create portable directory {}: {error}",
-            destination.display()
-        )
-    })?;
-    for entry in std::fs::read_dir(source)
-        .map_err(|error| format!("Could not read legacy data {}: {error}", source.display()))?
-    {
-        let entry = entry.map_err(|error| format!("Could not read legacy data entry: {error}"))?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-        if source_path.is_dir() {
-            copy_directory(&source_path, &destination_path)?;
-        } else {
-            std::fs::copy(&source_path, &destination_path).map_err(|error| {
-                format!(
-                    "Could not migrate {} to {}: {error}",
-                    source_path.display(),
-                    destination_path.display()
-                )
-            })?;
-        }
-    }
-    Ok(())
-}
-
-fn migrate_legacy_data(legacy_dir: &Path, data_dir: &Path) -> Result<(), String> {
-    if legacy_dir == data_dir || !legacy_dir.is_dir() || has_portable_user_data(data_dir) {
-        return Ok(());
-    }
-
-    for file in ["settings.json", "glossary.json"] {
-        let source = legacy_dir.join(file);
-        if source.is_file() {
-            std::fs::copy(&source, data_dir.join(file)).map_err(|error| {
-                format!(
-                    "Could not migrate legacy data {}: {error}",
-                    source.display()
-                )
-            })?;
-        }
-    }
-
-    let translations = legacy_dir.join("translations");
-    if translations.is_dir() {
-        copy_directory(&translations, &data_dir.join("translations"))?;
-    }
-    Ok(())
-}
-
 fn config_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     portable_data_dir()
 }
@@ -483,10 +425,8 @@ fn config_dir(_app: &AppHandle) -> Result<PathBuf, String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|app| {
-            let data_dir = ensure_portable_data_dir().map_err(std::io::Error::other)?;
-            let legacy_dir = app.path().app_config_dir().map_err(std::io::Error::other)?;
-            migrate_legacy_data(&legacy_dir, &data_dir).map_err(std::io::Error::other)?;
+        .setup(|_| {
+            ensure_portable_data_dir().map_err(std::io::Error::other)?;
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -553,34 +493,5 @@ mod portable_tests {
     #[test]
     fn relative_executable_without_parent_is_rejected() {
         assert!(portable_data_dir_for(Path::new("translator.exe")).is_err());
-    }
-
-    #[test]
-    fn legacy_data_migrates_only_into_an_empty_portable_folder() {
-        let root = crate::test_support::temp_dir("portable-migration");
-        let legacy = root.join("legacy");
-        let portable = root.join("portable");
-        std::fs::create_dir_all(legacy.join("translations")).unwrap();
-        std::fs::create_dir_all(&portable).unwrap();
-        std::fs::write(legacy.join("settings.json"), "{\"targetLang\":\"de\"}").unwrap();
-        std::fs::write(legacy.join("glossary.json"), "{}").unwrap();
-        std::fs::write(legacy.join("translations").join("Example.Mod.json"), "{}").unwrap();
-
-        migrate_legacy_data(&legacy, &portable).unwrap();
-        assert!(portable.join("settings.json").is_file());
-        assert!(portable.join("glossary.json").is_file());
-        assert!(portable
-            .join("translations")
-            .join("Example.Mod.json")
-            .is_file());
-
-        std::fs::write(portable.join("settings.json"), "portable").unwrap();
-        std::fs::write(legacy.join("settings.json"), "legacy changed").unwrap();
-        migrate_legacy_data(&legacy, &portable).unwrap();
-        assert_eq!(
-            std::fs::read_to_string(portable.join("settings.json")).unwrap(),
-            "portable"
-        );
-        std::fs::remove_dir_all(root).ok();
     }
 }
