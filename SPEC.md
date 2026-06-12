@@ -367,7 +367,10 @@ Features:
 - Text search across key, original, and target.
 - Multi-select with **Ctrl+Click** (toggle) and **Shift+Click** (range).
 - **Ctrl+A** to select all visible.
-- Double-click opens String Editor (§7.5).
+- _(v1.1, delivered)_ Double-clicking the translation cell edits short,
+  single-line strings inline. **Enter** and focus loss save, **Escape** cancels,
+  and validation updates while typing. Long or multiline strings, plus
+  double-clicks elsewhere in the row, open the full String Editor (§7.5).
 - Right-click opens Context Menu (§7.6).
 
 ### 7.5 String Edit Dialog
@@ -911,7 +914,6 @@ First AI step — requires core workflow to be complete:
 | `identical-to-source` validation         | v1.1   |
 | `escape-suspicious` validation           | v1.1   |
 | `extra-key` validation                   | v1.1   |
-| Inline cell editing in string table      | v1.1   |
 | Supported-language compatibility matrix  | v1.1   |
 | Optional cloud-AI credentials            | v1.1+  |
 | Finalize-and-propagate identical strings | v2     |
