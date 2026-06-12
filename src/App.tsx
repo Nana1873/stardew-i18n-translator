@@ -37,6 +37,7 @@ import { STATUS_META, statusTint } from "./strings/status";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { ExportDialog } from "./export/ExportDialog";
 import { LlmImportDialog } from "./llm-batch/LlmBatchDialog";
+import { resolveShortcuts, type ResolvedShortcuts } from "./shortcuts";
 
 function setupComplete(settings: AppSettings): boolean {
   return Boolean(
@@ -148,7 +149,11 @@ export function App() {
   async function handleComplete(next: AppSettings) {
     // The wizard does not edit the AI connection — carry the existing one through
     // so re-running setup to change folders never wipes the local-AI config.
-    const merged: AppSettings = { ...next, llm: settings?.llm ?? null };
+    const merged: AppSettings = {
+      ...next,
+      llm: settings?.llm ?? null,
+      shortcuts: settings?.shortcuts ?? {},
+    };
     await persist(merged);
     setWizardOpen(false);
     refreshGlossary(); // the wizard may have just built the glossary
@@ -203,6 +208,7 @@ export function App() {
   }
 
   const configured = Boolean(settings && setupComplete(settings));
+  const shortcuts = resolveShortcuts(settings?.shortcuts);
   const selectedMod =
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
   const reviewTotal =
@@ -606,6 +612,7 @@ export function App() {
               setStatusFilter("all");
             }}
             reloadToken={reloadToken}
+            shortcuts={shortcuts}
           />
         </main>
       )}
@@ -875,6 +882,7 @@ function StringTablePanel({
   onOpenReviewQueue,
   onClearFilters,
   reloadToken,
+  shortcuts,
 }: {
   mod: ScannedMod | null;
   search: string;
@@ -901,6 +909,7 @@ function StringTablePanel({
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
   reloadToken?: number;
+  shortcuts: ResolvedShortcuts;
 }) {
   return (
     <section className="panel panel--strings" aria-label="String table">
@@ -936,6 +945,7 @@ function StringTablePanel({
           }
           onClearFilters={onClearFilters}
           reloadToken={reloadToken}
+          shortcuts={shortcuts}
           onCountsChange={(translatedKeys, statusCounts) =>
             onCountsChange?.(mod.uniqueId, translatedKeys, statusCounts)
           }

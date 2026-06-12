@@ -466,12 +466,12 @@ the step-by-step Setup Wizard:
 - _(v1.5, delivered)_ The flat list is a left-nav settings window
   (Folders & language · Local AI · Glossary) per `docs/design/`; content and
   semantics stay as above.
-- **Configurable shortcuts are deferred to v1.1.** When implemented, Settings
-  gains a **Shortcuts** page that lists every user-facing command, captures a
-  replacement key combination, detects duplicate assignments, rejects reserved
-  or unsupported combinations, and offers per-command plus global
-  **Reset to defaults** actions. v1 keeps the fixed shortcuts from §7.5; a
-  read-only placeholder page is intentionally not shown.
+- _(v1.1, delivered)_ Settings includes a **Shortcuts** page for every
+  user-facing table/editor keyboard command. It captures replacement
+  combinations, rejects duplicate, reserved, and unsupported assignments, and
+  offers per-command plus global **Reset to defaults** actions. Overrides are
+  stored in the portable `Data/settings.json`; absent values use the documented
+  defaults.
 
 ### 7.8 Dashboard Home (v1.5)
 
@@ -900,23 +900,22 @@ First AI step — requires core workflow to be complete:
 
 ### Deferred to v1.1+
 
-| Feature                                     | Target |
-| ------------------------------------------- | ------ |
-| Nexus API key storage and validation        | v1.1   |
-| Nexus mod info enrichment                   | v1.1   |
-| `token-case-changed` validation             | v1.1   |
-| `identical-to-source` validation            | v1.1   |
-| `escape-suspicious` validation              | v1.1   |
-| `extra-key` validation                      | v1.1   |
-| Inline cell editing in string table         | v1.1   |
-| Drag-and-drop import                        | v1.1   |
-| Configurable keyboard shortcuts in Settings | v1.1   |
-| Supported-language compatibility matrix     | v1.1   |
-| Optional cloud-AI credentials               | v1.1+  |
-| Finalize-and-propagate identical strings    | v2     |
-| Assisted Nexus translation discovery        | v2     |
-| Nexus translation download + import         | v2     |
-| Dark mode / light mode toggle               | v1.1   |
+| Feature                                  | Target |
+| ---------------------------------------- | ------ |
+| Nexus API key storage and validation     | v1.1   |
+| Nexus mod info enrichment                | v1.1   |
+| `token-case-changed` validation          | v1.1   |
+| `identical-to-source` validation         | v1.1   |
+| `escape-suspicious` validation           | v1.1   |
+| `extra-key` validation                   | v1.1   |
+| Inline cell editing in string table      | v1.1   |
+| Drag-and-drop import                     | v1.1   |
+| Supported-language compatibility matrix  | v1.1   |
+| Optional cloud-AI credentials            | v1.1+  |
+| Finalize-and-propagate identical strings | v2     |
+| Assisted Nexus translation discovery     | v2     |
+| Nexus translation download + import      | v2     |
+| Dark mode / light mode toggle            | v1.1   |
 
 ---
 

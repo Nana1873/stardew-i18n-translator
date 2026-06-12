@@ -8,7 +8,11 @@
  * AI lives here — not in the wizard — because this is a translation-first tool
  * and AI is opt-in.
  */
-import { useEffect, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  useEffect,
+  useState,
+} from "react";
 import {
   type AppSettings,
   type GlossaryStatus,
@@ -18,6 +22,16 @@ import {
   openUrl,
 } from "../tauri/commands";
 import { SOURCE_LANGUAGE_LABEL, TARGET_LANGUAGES } from "../languages";
+import {
+  DEFAULT_SHORTCUTS,
+  SHORTCUT_COMMANDS,
+  type ResolvedShortcuts,
+  type ShortcutCommand,
+  displayShortcut,
+  resolveShortcuts,
+  shortcutFromEvent,
+  shortcutProblem,
+} from "../shortcuts";
 import packageInfo from "../../package.json";
 
 const LLM_PRESETS: Record<string, string> = {
@@ -34,7 +48,7 @@ interface SettingsDialogProps {
   onReRunSetup: () => void;
 }
 
-type SettingsPage = "folders" | "ai" | "glossary" | "about";
+type SettingsPage = "folders" | "ai" | "glossary" | "shortcuts" | "about";
 
 interface LlmConnectionResult {
   kind: "connected" | "empty" | "failed";
@@ -50,6 +64,9 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const [page, setPage] = useState<SettingsPage>("folders");
   const [targetLang, setTargetLang] = useState(settings.targetLang ?? "");
+  const [shortcuts, setShortcuts] = useState<ResolvedShortcuts>(() =>
+    resolveShortcuts(settings.shortcuts),
+  );
 
   const [glossary, setGlossary] = useState<GlossaryStatus | null>(null);
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
@@ -141,6 +158,11 @@ export function SettingsDialog({
     onSave({
       ...settings,
       targetLang: targetLang || null,
+      shortcuts: Object.fromEntries(
+        SHORTCUT_COMMANDS.filter(
+          (command) => shortcuts[command.id] !== DEFAULT_SHORTCUTS[command.id],
+        ).map((command) => [command.id, shortcuts[command.id]]),
+      ),
       // Persist the AI connection only once a model is chosen; otherwise null.
       llm:
         url && llmModel
@@ -178,6 +200,7 @@ export function SettingsDialog({
                 ["folders", "Folders & language"],
                 ["ai", "Local AI"],
                 ["glossary", "Glossary"],
+                ["shortcuts", "Shortcuts"],
                 ["about", "About"],
               ] as const
             ).map(([id, label]) => (
@@ -433,6 +456,13 @@ export function SettingsDialog({
               </section>
             )}
 
+            {page === "shortcuts" && (
+              <ShortcutsSettings
+                shortcuts={shortcuts}
+                onChange={setShortcuts}
+              />
+            )}
+
             {page === "about" && (
               <section
                 id="settings-panel-about"
@@ -509,5 +539,137 @@ export function SettingsDialog({
         </footer>
       </div>
     </div>
+  );
+}
+
+function ShortcutsSettings({
+  shortcuts,
+  onChange,
+}: {
+  shortcuts: ResolvedShortcuts;
+  onChange: (shortcuts: ResolvedShortcuts) => void;
+}) {
+  const [capturing, setCapturing] = useState<ShortcutCommand | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function capture(
+    command: ShortcutCommand,
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const shortcut = shortcutFromEvent(event.nativeEvent);
+    if (!shortcut) return;
+
+    const problem = shortcutProblem(shortcut);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    const conflict = SHORTCUT_COMMANDS.find(
+      (candidate) =>
+        candidate.id !== command && shortcuts[candidate.id] === shortcut,
+    );
+    if (conflict) {
+      setError(`Already assigned to “${conflict.label}”.`);
+      return;
+    }
+
+    onChange({ ...shortcuts, [command]: shortcut });
+    setCapturing(null);
+    setError(null);
+  }
+
+  function reset(command: ShortcutCommand) {
+    onChange({ ...shortcuts, [command]: DEFAULT_SHORTCUTS[command] });
+    setCapturing(null);
+    setError(null);
+  }
+
+  return (
+    <section
+      id="settings-panel-shortcuts"
+      role="tabpanel"
+      aria-label="Shortcuts"
+    >
+      <div className="settings__title-row">
+        <div>
+          <h3 className="settings__title">Keyboard shortcuts</h3>
+          <p className="settings__intro">
+            Select a shortcut, then press its replacement combination.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            onChange({ ...DEFAULT_SHORTCUTS });
+            setCapturing(null);
+            setError(null);
+          }}
+        >
+          Reset all
+        </button>
+      </div>
+
+      {error && (
+        <p className="settings__shortcut-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <div className="settings__shortcut-list">
+        {SHORTCUT_COMMANDS.map((command, index) => {
+          const startsGroup =
+            index === 0 || SHORTCUT_COMMANDS[index - 1].group !== command.group;
+          const changed =
+            shortcuts[command.id] !== DEFAULT_SHORTCUTS[command.id];
+          return (
+            <div key={command.id}>
+              {startsGroup && (
+                <h4 className="settings__shortcut-group">{command.group}</h4>
+              )}
+              <div className="settings__shortcut-row">
+                <span>{command.label}</span>
+                <button
+                  type="button"
+                  className={
+                    capturing === command.id
+                      ? "settings__shortcut-capture settings__shortcut-capture--active"
+                      : "settings__shortcut-capture"
+                  }
+                  aria-label={`Change ${command.label}`}
+                  aria-pressed={capturing === command.id}
+                  onClick={() => {
+                    setCapturing(command.id);
+                    setError(null);
+                  }}
+                  onKeyDown={(event) => {
+                    if (capturing === command.id) capture(command.id, event);
+                  }}
+                >
+                  {capturing === command.id
+                    ? "Press keys…"
+                    : displayShortcut(shortcuts[command.id])}
+                </button>
+                <button
+                  type="button"
+                  className="settings__shortcut-reset"
+                  aria-label={`Reset ${command.label}`}
+                  disabled={!changed}
+                  onClick={() => reset(command.id)}
+                >
+                  Reset
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="settings__hint">
+        Window and developer combinations such as Alt+F4 and Ctrl+Shift+I are
+        reserved. Plain letters require Ctrl, Shift, or Alt so typing in the
+        editor remains safe.
+      </p>
+    </section>
   );
 }

@@ -7,6 +7,7 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { StringEditor, type EditorRow } from "./StringEditor";
 import type { TranslationResult } from "../tauri/commands";
+import { resolveShortcuts } from "../shortcuts";
 
 function row(overrides: Partial<EditorRow> = {}): EditorRow {
   return {
@@ -173,6 +174,30 @@ describe("StringEditor", () => {
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
     expect(onNavigate).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("uses a configured shortcut instead of the default", () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <StringEditor
+        row={row()}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        onSave={onSave}
+        onClose={onClose}
+        onNavigate={() => {}}
+        shortcuts={resolveShortcuts({ "editor.save": "Ctrl+S" })}
+      />,
+    );
+
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(window, { key: "s", ctrlKey: true });
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
     expect(onClose).toHaveBeenCalled();
   });
 
