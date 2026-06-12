@@ -1,7 +1,7 @@
 //! Persisted translation state — M2 / Issue 10 (SPEC §14).
 //!
 //! Work-in-progress translations are stored **separately** from the mod's own
-//! files: one JSON per mod (keyed by UniqueID) in the app config directory.
+//! files: one JSON per mod (keyed by UniqueID) in the portable `Data/` folder.
 //! The mod's `default.json` is never touched; export (M3) writes the final
 //! `i18n/<lang>.json`. Each entry records the target text, its status, and a
 //! hash of the source text at save time (for `outdated` detection on re-scan).
