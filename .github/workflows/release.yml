@@ -14,6 +14,27 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag points to the current main commit
+        shell: pwsh
+        run: |
+          git fetch origin main:refs/remotes/origin/main
+          $tagCommit = git rev-parse HEAD
+          $mainCommit = git rev-parse origin/main
+          if ($tagCommit -ne $mainCommit) {
+            throw "Release tag must point to the current origin/main commit. Tag: $tagCommit; main: $mainCommit"
+          }
+
+      - name: Verify tag matches application version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
+          if ("v$version" -ne "${{ github.ref_name }}") {
+            throw "Tag ${{ github.ref_name }} does not match application version v$version."
+          }
+
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
@@ -25,22 +46,6 @@ jobs:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm test
-      - run: cargo fmt --check
-        working-directory: src-tauri
-      - run: cargo clippy --locked --all-targets -- -D warnings
-        working-directory: src-tauri
-      - run: cargo test --locked
-        working-directory: src-tauri
-
-      - name: Verify tag matches application version
-        shell: pwsh
-        run: |
-          $version = (Get-Content package.json | ConvertFrom-Json).version
-          if ("v$version" -ne "${{ github.ref_name }}") {
-            throw "Tag ${{ github.ref_name }} does not match application version v$version."
-          }
 
       - name: Build portable executable
         run: pnpm tauri build --no-bundle
