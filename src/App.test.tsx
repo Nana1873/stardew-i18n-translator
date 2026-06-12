@@ -115,6 +115,53 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows the actionable no-mod card in the work view", async () => {
+    mockConfigured();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Mod list/ }));
+    expect(
+      await screen.findByText("Select a mod to start translating"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "open the review queue" }),
+    );
+    expect(
+      await screen.findByRole("main", { name: "Dashboard" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows partially translated mods in the mod-panel header", async () => {
+    mockConfigured({
+      mods: [
+        {
+          uniqueId: "partial.mod",
+          name: "Partial Mod",
+          version: "1.0",
+          nexusId: null,
+          packageId: "Partial Mod",
+          folderPath: "x",
+          i18nFiles: [],
+          totalKeys: 10,
+          translatedKeys: 4,
+          reviewNeeded: 0,
+          progress: 0.4,
+          status: "untranslated",
+        },
+      ],
+      warnings: [],
+      modCount: 1,
+      fileCount: 0,
+    });
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    expect(screen.getByText("1 in progress")).toBeInTheDocument();
+  });
+
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings")

@@ -12,6 +12,7 @@ import {
   type LlmExportOutcome,
   type LlmImportSummary,
   type ExportResult,
+  type SkippedKey,
   type ScanResult,
   type ScannedMod,
   type StringStatus,
@@ -199,6 +200,10 @@ export function App() {
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
   const reviewTotal =
     scan?.mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0) ?? 0;
+  const inProgressMods =
+    scan?.mods.filter(
+      (mod) => mod.translatedKeys > 0 && mod.translatedKeys < mod.totalKeys,
+    ).length ?? 0;
 
   /** Open a mod in the work view and remember it for the resume cards. */
   function openMod(uniqueId: string) {
@@ -328,12 +333,29 @@ export function App() {
     setExportOpen(true);
   }
 
+  function withExportContext(
+    result: ExportResult,
+    mod: ScannedMod,
+  ): ExportResult {
+    return {
+      ...result,
+      skipped: result.skipped.map((skip) => ({
+        ...skip,
+        modUniqueId: mod.uniqueId,
+        modName: mod.name,
+      })),
+    };
+  }
+
   async function handleExport() {
     if (!selectedMod) return;
     beginExport(selectedMod.name);
     try {
       setExportResult(
-        await exportMod(selectedMod.uniqueId, filesOf(selectedMod)),
+        withExportContext(
+          await exportMod(selectedMod.uniqueId, filesOf(selectedMod)),
+          selectedMod,
+        ),
       );
     } catch (error) {
       setExportError(String(error));
@@ -366,6 +388,8 @@ export function App() {
           ...result.skipped.map((skip) => ({
             ...skip,
             relativeDir: `${mod.name} · ${skip.relativeDir}`,
+            modUniqueId: mod.uniqueId,
+            modName: mod.name,
           })),
         );
         merged.filesWritten += result.filesWritten;
@@ -383,6 +407,14 @@ export function App() {
     } finally {
       setExporting(false);
     }
+  }
+
+  function inspectSkippedKey(skip: SkippedKey) {
+    if (skip.modUniqueId) openMod(skip.modUniqueId);
+    else setView("work");
+    setStatusFilter("all");
+    setSearch(skip.key);
+    setExportOpen(false);
   }
 
   // "German (de-DE)" subtitle fragment for the dashboard.
@@ -435,11 +467,19 @@ export function App() {
             style={{ width: modsWidth, flex: "0 0 auto" }}
           >
             <div className="panel__header">
-              Mods{scan ? ` · ${scan.modCount}` : ""}
-              {scan && scan.warnings.length > 0 && (
-                <span className="panel__warn">
-                  {" "}
-                  · {scan.warnings.length} skipped
+              <span>Mods{scan ? ` · ${scan.modCount}` : ""}</span>
+              {scan && (inProgressMods > 0 || scan.warnings.length > 0) && (
+                <span className="panel__header-meta">
+                  {inProgressMods > 0 && (
+                    <span className="panel__header-tail">
+                      {inProgressMods} in progress
+                    </span>
+                  )}
+                  {scan.warnings.length > 0 && (
+                    <span className="panel__warn">
+                      {scan.warnings.length} skipped
+                    </span>
+                  )}
                 </span>
               )}
             </div>
@@ -483,6 +523,7 @@ export function App() {
             onLlmBatchExport={llmBatchExport}
             onCountsChange={handleCountsChange}
             onShowReview={() => setStatusFilter("review-needed")}
+            onOpenReviewQueue={() => setView("home")}
             onClearFilters={() => {
               setSearch("");
               setStatusFilter("all");
@@ -523,6 +564,7 @@ export function App() {
           modsWritten={exportModsWritten}
           result={exporting ? null : exportResult}
           error={exportError}
+          onInspectSkip={inspectSkippedKey}
           onClose={() => setExportOpen(false)}
         />
       )}
@@ -739,6 +781,7 @@ function StringTablePanel({
   onLlmBatchExport,
   onCountsChange,
   onShowReview,
+  onOpenReviewQueue,
   onClearFilters,
   reloadToken,
 }: {
@@ -762,6 +805,8 @@ function StringTablePanel({
   ) => void;
   /** Filter the table down to the strings that still need review. */
   onShowReview?: () => void;
+  /** Return to the dashboard's cross-mod review queue. */
+  onOpenReviewQueue?: () => void;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
   reloadToken?: number;
@@ -805,7 +850,19 @@ function StringTablePanel({
           }
         />
       ) : (
-        <div className="panel__empty">Select a mod to view its strings.</div>
+        <div className="workspace-empty">
+          <span className="workspace-empty__icon" aria-hidden>
+            ▤
+          </span>
+          <strong>Select a mod to start translating</strong>
+          <span>
+            Pick one from the list, or{" "}
+            <button type="button" onClick={onOpenReviewQueue}>
+              open the review queue
+            </button>{" "}
+            to work the backlog across all mods.
+          </span>
+        </div>
       )}
     </section>
   );

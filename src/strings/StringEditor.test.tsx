@@ -27,6 +27,7 @@ function renderEditor(
     section?: string | null,
   ) => Promise<TranslationResult>,
   position: { index: number; total: number } = { index: 0, total: 2 },
+  reviewProgress?: { current: number; total: number },
 ) {
   const onSave = vi.fn();
   const onClose = vi.fn();
@@ -37,6 +38,7 @@ function renderEditor(
       index={position.index}
       total={position.total}
       modName="Test Mod"
+      reviewProgress={reviewProgress}
       onTranslate={onTranslate}
       onSave={onSave}
       onClose={onClose}
@@ -172,5 +174,22 @@ describe("StringEditor", () => {
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
     expect(onNavigate).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows the current review-session position and progress", () => {
+    renderEditor(
+      {},
+      undefined,
+      { index: 2, total: 5 },
+      {
+        current: 3,
+        total: 5,
+      },
+    );
+
+    expect(screen.getByText("Reviewing 3 of 5")).toBeInTheDocument();
+    expect(
+      screen.getByRole("progressbar", { name: "Review session progress" }),
+    ).toHaveAttribute("aria-valuenow", "3");
   });
 });
