@@ -25,7 +25,9 @@ Implement safe export features to write translations back to `i18n/<lang>.json` 
 5. Key order matches `default.json`. ✅
 6. File write + backup operations are covered by tests (real temp dirs). ✅
 7. **Export all mods** (not just the selected mod). ✅ — toolbar "Export All" iterates every scanned mod and shows an aggregated summary.
-8. **Overwrite-confirmation dialog.** ⚠️ Replaced by an automatic `.bak` backup + atomic temp-then-rename write (safer, no prompt). Revisit if an explicit confirm is wanted.
+8. **Overwrite-confirmation dialog.** ✅ Existing target files are counted
+   before selected-mod and Export All runs. New targets export immediately;
+   overwrites require explicit confirmation and explain the `.json.bak` backup.
 
 ## Status (shipped vs. open) — 2026-06-09
 
@@ -33,9 +35,7 @@ Implement safe export features to write translations back to `i18n/<lang>.json` 
 
 **Also shipped (post-audit):** **Export All** (toolbar) iterates every scanned mod, writing each mod's `i18n/<lang>.json` and showing one aggregated summary (mods/files/keys written, plus per-mod-prefixed skipped keys).
 
-**Still open for v1:**
-
-- Optional explicit **overwrite confirmation** (currently silent `.bak` backup instead).
+**Still open for v1:** none — M3 is complete.
 
 ## Risks
 

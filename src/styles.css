@@ -2045,6 +2045,16 @@ kbd,
   background: var(--gold-hi);
 }
 
+.exportdlg__foot button.exportdlg__secondary {
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+}
+
+.exportdlg__foot button.exportdlg__secondary:hover {
+  background: var(--surface);
+}
+
 /* --- Batch AI translation dialog (M6 Issue 17) --- */
 .batchdlg__bar {
   height: 8px;

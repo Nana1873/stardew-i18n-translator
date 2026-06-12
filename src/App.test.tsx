@@ -34,6 +34,7 @@ const CONFIGURED = {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  localStorage.clear();
 });
 
 const EMPTY_SCAN = {
@@ -42,6 +43,74 @@ const EMPTY_SCAN = {
   modCount: 0,
   fileCount: 0,
 };
+
+const EXPORT_RESULT = {
+  files: [
+    {
+      relativeDir: "i18n",
+      targetPath: "x/i18n/de.json",
+      written: true,
+      backedUp: false,
+      writtenKeys: 1,
+      untranslated: 0,
+      outdated: 0,
+      reviewNeeded: 0,
+      orphanKeys: [],
+    },
+  ],
+  skipped: [],
+  filesWritten: 1,
+  totalWrittenKeys: 1,
+  totalUntranslated: 0,
+  totalOutdated: 0,
+  totalReviewNeeded: 0,
+  totalOrphanKeys: 0,
+};
+
+function exportScan(targetExists: boolean) {
+  return {
+    mods: [
+      {
+        uniqueId: "a.b",
+        name: "Test Mod",
+        version: "1.0",
+        nexusId: null,
+        packageId: "Test Mod",
+        folderPath: "x",
+        i18nFiles: [
+          {
+            relativeDir: "i18n",
+            defaultPath: "x/i18n/default.json",
+            targetPath: "x/i18n/de.json",
+            targetExists,
+            totalKeys: 1,
+            translatedKeys: 1,
+            reviewNeeded: 0,
+          },
+        ],
+        totalKeys: 1,
+        translatedKeys: 1,
+        reviewNeeded: 0,
+        progress: 1,
+        status: "translated",
+      },
+    ],
+    warnings: [],
+    modCount: 1,
+    fileCount: 1,
+  };
+}
+
+function mockExportConfigured(targetExists: boolean) {
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+    if (cmd === "load_glossary") return Promise.resolve(null);
+    if (cmd === "scan_mods") return Promise.resolve(exportScan(targetExists));
+    if (cmd === "load_strings") return Promise.resolve([]);
+    if (cmd === "export_mod") return Promise.resolve(EXPORT_RESULT);
+    return Promise.resolve(null);
+  });
+}
 
 function mockConfigured(scanResult: unknown = EMPTY_SCAN) {
   invokeMock.mockImplementation((cmd: string) => {
@@ -160,6 +229,98 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     expect(screen.getByText("1 in progress")).toBeInTheDocument();
+  });
+
+  it("asks before replacing an existing selected-mod translation", async () => {
+    mockExportConfigured(true);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(
+      screen.getByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toHaveTextContent("1 existing translation file");
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
+    ).toHaveLength(0);
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toBeNull();
+  });
+
+  it("continues an overwrite only after confirmation", async () => {
+    mockExportConfigured(true);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("export_mod", {
+        modUniqueId: "a.b",
+        files: [
+          {
+            relativeDir: "i18n",
+            defaultPath: "x/i18n/default.json",
+            targetPath: "x/i18n/de.json",
+          },
+        ],
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Export summary" }),
+    ).toHaveTextContent("Export complete");
+  });
+
+  it("exports a new target immediately, then confirms the next export", async () => {
+    mockExportConfigured(false);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Export summary" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    expect(
+      screen.getByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toBeInTheDocument();
+  });
+
+  it("summarizes affected files and mods before Export All", async () => {
+    mockExportConfigured(true);
+    render(<App />);
+
+    await screen.findByText(/1 mods scanned/);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Export All" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Export All" }));
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    expect(dialog).toHaveTextContent("1 existing translation file");
+    expect(dialog).toHaveTextContent("1 mod");
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
