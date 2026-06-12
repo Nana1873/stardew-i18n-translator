@@ -1,6 +1,6 @@
 //! Persisted application settings (SPEC §14).
 //!
-//! Stored as a single `settings.json` in the app config directory. Loading is
+//! Stored as `Data/settings.json` beside the portable executable. Loading is
 //! lenient: a missing or unreadable file yields defaults so the app always starts.
 
 use std::path::{Path, PathBuf};

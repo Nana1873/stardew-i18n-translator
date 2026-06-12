@@ -16,6 +16,7 @@ mod tokens;
 mod translations;
 
 use std::path::{Path, PathBuf};
+use std::{fs::OpenOptions, io::Write};
 
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::DialogExt;
@@ -368,15 +369,126 @@ fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
     settings::save(&config_dir(&app)?, &settings)
 }
 
-fn config_dir(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_config_dir()
-        .map_err(|error| format!("Could not resolve config directory: {error}"))
+fn portable_data_dir_for(executable: &Path) -> Result<PathBuf, String> {
+    executable
+        .parent()
+        .filter(|directory| !directory.as_os_str().is_empty())
+        .map(|directory| directory.join("Data"))
+        .ok_or_else(|| {
+            format!(
+                "Could not resolve the folder containing {}.",
+                executable.display()
+            )
+        })
+}
+
+fn portable_data_dir() -> Result<PathBuf, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Could not resolve the application executable: {error}"))?;
+    portable_data_dir_for(&executable)
+}
+
+fn ensure_portable_data_dir() -> Result<PathBuf, String> {
+    let data_dir = portable_data_dir()?;
+    std::fs::create_dir_all(&data_dir).map_err(|error| {
+        format!(
+            "Could not create the portable data folder {}: {error}. Move the application to a writable folder.",
+            data_dir.display()
+        )
+    })?;
+
+    let probe = data_dir.join(format!(".write-test-{}", std::process::id()));
+    let write_result = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&probe)
+        .and_then(|mut file| file.write_all(b"portable"));
+    if let Err(error) = write_result {
+        return Err(format!(
+            "The portable data folder {} is not writable: {error}. Move the application to a writable folder.",
+            data_dir.display()
+        ));
+    }
+    std::fs::remove_file(&probe).map_err(|error| {
+        format!(
+            "Could not finalize the portable data-folder check at {}: {error}",
+            data_dir.display()
+        )
+    })?;
+    Ok(data_dir)
+}
+
+fn has_portable_user_data(data_dir: &Path) -> bool {
+    data_dir.join("settings.json").exists()
+        || data_dir.join("glossary.json").exists()
+        || data_dir.join("translations").exists()
+}
+
+fn copy_directory(source: &Path, destination: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(destination).map_err(|error| {
+        format!(
+            "Could not create portable directory {}: {error}",
+            destination.display()
+        )
+    })?;
+    for entry in std::fs::read_dir(source)
+        .map_err(|error| format!("Could not read legacy data {}: {error}", source.display()))?
+    {
+        let entry = entry.map_err(|error| format!("Could not read legacy data entry: {error}"))?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+        if source_path.is_dir() {
+            copy_directory(&source_path, &destination_path)?;
+        } else {
+            std::fs::copy(&source_path, &destination_path).map_err(|error| {
+                format!(
+                    "Could not migrate {} to {}: {error}",
+                    source_path.display(),
+                    destination_path.display()
+                )
+            })?;
+        }
+    }
+    Ok(())
+}
+
+fn migrate_legacy_data(legacy_dir: &Path, data_dir: &Path) -> Result<(), String> {
+    if legacy_dir == data_dir || !legacy_dir.is_dir() || has_portable_user_data(data_dir) {
+        return Ok(());
+    }
+
+    for file in ["settings.json", "glossary.json"] {
+        let source = legacy_dir.join(file);
+        if source.is_file() {
+            std::fs::copy(&source, data_dir.join(file)).map_err(|error| {
+                format!(
+                    "Could not migrate legacy data {}: {error}",
+                    source.display()
+                )
+            })?;
+        }
+    }
+
+    let translations = legacy_dir.join("translations");
+    if translations.is_dir() {
+        copy_directory(&translations, &data_dir.join("translations"))?;
+    }
+    Ok(())
+}
+
+fn config_dir(_app: &AppHandle) -> Result<PathBuf, String> {
+    portable_data_dir()
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .setup(|app| {
+            let data_dir = ensure_portable_data_dir().map_err(std::io::Error::other)?;
+            let legacy_dir = app.path().app_config_dir().map_err(std::io::Error::other)?;
+            migrate_legacy_data(&legacy_dir, &data_dir).map_err(std::io::Error::other)?;
+            Ok(())
+        })
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
@@ -422,5 +534,53 @@ pub(crate) mod test_support {
         let mut dir = std::env::temp_dir();
         dir.push(format!("sit-test-{tag}-{nanos}-{seq}"));
         dir
+    }
+}
+
+#[cfg(test)]
+mod portable_tests {
+    use super::*;
+
+    #[test]
+    fn portable_data_lives_next_to_the_executable() {
+        let executable = Path::new(r"E:\Tools\Stardew Translator\stardew-i18n-translator.exe");
+        assert_eq!(
+            portable_data_dir_for(executable).unwrap(),
+            PathBuf::from(r"E:\Tools\Stardew Translator\Data")
+        );
+    }
+
+    #[test]
+    fn relative_executable_without_parent_is_rejected() {
+        assert!(portable_data_dir_for(Path::new("translator.exe")).is_err());
+    }
+
+    #[test]
+    fn legacy_data_migrates_only_into_an_empty_portable_folder() {
+        let root = crate::test_support::temp_dir("portable-migration");
+        let legacy = root.join("legacy");
+        let portable = root.join("portable");
+        std::fs::create_dir_all(legacy.join("translations")).unwrap();
+        std::fs::create_dir_all(&portable).unwrap();
+        std::fs::write(legacy.join("settings.json"), "{\"targetLang\":\"de\"}").unwrap();
+        std::fs::write(legacy.join("glossary.json"), "{}").unwrap();
+        std::fs::write(legacy.join("translations").join("Example.Mod.json"), "{}").unwrap();
+
+        migrate_legacy_data(&legacy, &portable).unwrap();
+        assert!(portable.join("settings.json").is_file());
+        assert!(portable.join("glossary.json").is_file());
+        assert!(portable
+            .join("translations")
+            .join("Example.Mod.json")
+            .is_file());
+
+        std::fs::write(portable.join("settings.json"), "portable").unwrap();
+        std::fs::write(legacy.join("settings.json"), "legacy changed").unwrap();
+        migrate_legacy_data(&legacy, &portable).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(portable.join("settings.json")).unwrap(),
+            "portable"
+        );
+        std::fs::remove_dir_all(root).ok();
     }
 }

@@ -156,7 +156,7 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 ### Storage
 
-- Cached as a single JSON file per language pair in the app data directory.
+- Cached as `Data/glossary.json` beside the portable executable.
 - Structure: `{ "en_term": "target_term", ... }` with metadata.
 - Rebuildable on demand (e.g., after game update).
 - v1 stores only the active `default → <target>` language pair.
@@ -831,12 +831,20 @@ AppState
 
 ### Persistence
 
-| Data              | Storage              | Format                            |
-| ----------------- | -------------------- | --------------------------------- |
-| Settings          | App data directory   | JSON config file                  |
-| Glossary cache    | App data directory   | JSON per language pair (nullable) |
-| Translation state | App data directory   | JSON per mod (keyed by UniqueID)  |
-| Export output     | Mod's `i18n/` folder | Standard `<lang>.json`            |
+| Data              | Storage                         | Format                           |
+| ----------------- | ------------------------------- | -------------------------------- |
+| Settings          | Portable `Data/` beside the EXE | `settings.json`                  |
+| Glossary cache    | Portable `Data/` beside the EXE | `glossary.json` (nullable)       |
+| Translation state | Portable `Data/translations/`   | JSON per mod (keyed by UniqueID) |
+| Export output     | Mod's `i18n/` folder            | Standard `<lang>.json`           |
+
+The v1 Windows distribution is a portable folder packaged as ZIP. The
+application validates that its adjacent `Data/` folder is writable on startup.
+Moving the complete folder preserves settings, glossary data, and saved
+translation work. Saved game and Mods paths remain absolute and may need to be
+selected again on another computer. Pre-release AppData state is migrated once
+when the portable `Data/` folder has no user data; portable files are never
+overwritten by migration.
 
 Translation state is stored **separately** from the mod's actual files. The export step writes the final `i18n/<lang>.json` to the mod folder. This means:
 
