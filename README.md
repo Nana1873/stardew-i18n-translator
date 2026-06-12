@@ -25,8 +25,9 @@
 - **M5 (deferred):** [Nexus translation discovery + auto-download](docs/milestones/m5-nexus-translation-download.md) (SSE-AT-style; pulls SPEC §12 v1.1→v3 forward). The "Search on Nexus" action is folded into this.
 - **Next-version candidates:** see
   [the audited v1.1 backlog](docs/roadmap/v1.1-candidates.md).
-- **Release packaging:** v1.0.0 ships as a Windows NSIS installer. The build and
-  publication checklist lives in
+- **Release packaging:** v1.0.0 ships as a portable Windows ZIP. Settings,
+  glossary data, and saved translation work stay in `Data/` beside the
+  executable. The build and publication checklist lives in
   [the release process](docs/release/release-process.md).
 
 ## Documentation
