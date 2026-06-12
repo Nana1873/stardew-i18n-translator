@@ -207,6 +207,8 @@ export interface ExportResult {
   totalOutdated: number;
   totalReviewNeeded: number;
   totalOrphanKeys: number;
+  /** Token errors prevented every file in this mod from being written. */
+  blocked: boolean;
 }
 
 export function exportMod(

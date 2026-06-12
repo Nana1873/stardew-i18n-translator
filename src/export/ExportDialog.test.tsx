@@ -25,6 +25,7 @@ const RESULT: ExportResult = {
   totalOutdated: 1,
   totalReviewNeeded: 1,
   totalOrphanKeys: 1,
+  blocked: false,
 };
 
 describe("ExportDialog", () => {
@@ -64,6 +65,28 @@ describe("ExportDialog", () => {
     );
     expect(screen.getByText("Export failed")).toBeInTheDocument();
     expect(screen.getByText("disk full")).toBeInTheDocument();
+  });
+
+  it("explains when token errors block the mod export", () => {
+    render(
+      <ExportDialog
+        modName="Test Mod"
+        result={{
+          ...RESULT,
+          files: [],
+          filesWritten: 0,
+          totalWrittenKeys: 0,
+          blocked: true,
+        }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+    expect(screen.getByText("Export blocked")).toBeInTheDocument();
+    expect(
+      screen.getByText(/No files or backups were written/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Blocking token errors/)).toBeInTheDocument();
   });
 
   it("reports the mod count for an export-all run", () => {

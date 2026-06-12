@@ -451,6 +451,7 @@ export function App() {
         totalOutdated: 0,
         totalReviewNeeded: 0,
         totalOrphanKeys: 0,
+        blocked: false,
       };
       let modsWritten = 0;
       for (const mod of scan.mods) {
@@ -473,6 +474,7 @@ export function App() {
         merged.totalOutdated += result.totalOutdated;
         merged.totalReviewNeeded += result.totalReviewNeeded;
         merged.totalOrphanKeys += result.totalOrphanKeys;
+        merged.blocked ||= result.blocked;
         if (result.filesWritten > 0) modsWritten += 1;
       }
       setExportResult(merged);

@@ -7,16 +7,16 @@ describe("validate", () => {
       {
         ruleId: "token-missing",
         severity: "error",
-        message: "Missing token {{name}}",
+        message: "Token count mismatch for {{name}} (expected 1, found 0)",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
   });
 
-  it("flags an extra target token as a warning", () => {
+  it("flags an extra target token as an error", () => {
     const issues = validate("Hello", "Hallo {{x}}", false);
     expect(issues.map((i) => i.ruleId)).toEqual(["token-added"]);
-    expect(worstSeverity(issues)).toBe("warning");
+    expect(worstSeverity(issues)).toBe("error");
   });
 
   it("passes when the token sets match (order-independent)", () => {
@@ -49,7 +49,8 @@ describe("validate", () => {
       {
         ruleId: "token-missing",
         severity: "error",
-        message: "Missing token @ (player name)",
+        message:
+          "Token count mismatch for @ (player name) (expected 1, found 0)",
       },
     ]);
   });
@@ -57,7 +58,9 @@ describe("validate", () => {
   it("catches a dropped second $b via multiset comparison", () => {
     const issues = validate("a$b b$b c", "a$b b c", false);
     expect(issues.map((i) => i.ruleId)).toEqual(["token-missing"]);
-    expect(issues[0].message).toBe("Missing token $b");
+    expect(issues[0].message).toBe(
+      "Token count mismatch for $b (expected 2, found 1)",
+    );
   });
 
   it("treats a #$b# dialogue break and $s command as protected tokens", () => {
@@ -71,8 +74,8 @@ describe("validate", () => {
       "token-missing",
     ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
-      "Missing token #$b#",
-      "Missing token $s",
+      "Token count mismatch for #$b# (expected 1, found 0)",
+      "Token count mismatch for $s (expected 2, found 0)",
     ]);
   });
 
@@ -83,9 +86,9 @@ describe("validate", () => {
       false,
     );
     expect(issues.map((issue) => issue.message).sort()).toEqual([
-      "Missing token # (dialogue/mail separator)",
-      "Missing token ' (quote delimiter)",
-      "Missing token ^ (line break)",
+      "Token count mismatch for # (dialogue/mail separator) (expected 1, found 0)",
+      "Token count mismatch for ' (quote delimiter) (expected 2, found 0)",
+      "Token count mismatch for ^ (line break) (expected 2, found 1)",
     ]);
   });
 
@@ -115,5 +118,27 @@ describe("validate", () => {
 
   it("matching newline counts produce no issue", () => {
     expect(validate("a\nb", "x\ny", false)).toEqual([]);
+  });
+
+  it("always warns when the translation is identical to the source", () => {
+    expect(validate("Parsnip", "Parsnip", true)).toContainEqual({
+      ruleId: "identical-to-source",
+      severity: "warning",
+      message: "Translation is identical to the original",
+    });
+  });
+
+  it("warns when literal escape sequences differ", () => {
+    const issues = validate(
+      String.raw`First\nSecond`,
+      String.raw`Erste Zeile\\nZweite Zeile`,
+      true,
+    );
+    expect(issues.map((issue) => issue.ruleId)).toContain("escape-suspicious");
+    expect(
+      validate(String.raw`First\nSecond`, String.raw`Erste\nZweite`, true).map(
+        (issue) => issue.ruleId,
+      ),
+    ).not.toContain("escape-suspicious");
   });
 });

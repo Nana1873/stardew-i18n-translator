@@ -170,7 +170,9 @@ describe("StringTable", () => {
     render(<StringTable mod={MOD} />);
 
     expect(
-      await screen.findByTitle("Missing token {{name}}"),
+      await screen.findByTitle(
+        "Token count mismatch for {{name}} (expected 1, found 0)",
+      ),
     ).toBeInTheDocument();
   });
 
