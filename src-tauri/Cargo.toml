@@ -34,7 +34,7 @@ tauri-plugin-log = "2"
 log = "0.4"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.56"
 
 # Faster execution of large mod-folder scans even in dev builds.
 [profile.dev]
