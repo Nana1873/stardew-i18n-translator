@@ -4,7 +4,20 @@ This directory contains specialized workflow manuals and templates for the AI co
 
 - **[Google Antigravity Workflow](../../docs/agents/antigravity-workflow.md):** Best for planning-heavy tasks, system integration, validation, and architecture-sensitive issues.
 - **[OpenAI Codex Workflow](../../docs/agents/codex-workflow.md):** Best for isolated components, refactoring, writing unit tests, and PR-style implementations.
-- **[Claude Code Workflow](../../docs/agents/claude-code-workflow.md):** Best for local workspace analysis, multi-file edits, milestone tasks, and local command execution.
+- **[Claude Code Workflow](../../docs/agents/claude-code-workflow.md):** Best for local workspace analysis, multi-file issue work, and local command execution.
+
+## Planning Source
+
+Active work is tracked in
+[GitHub Issues](https://github.com/Nana1873/stardew-i18n-translator/issues)
+and grouped by
+[GitHub Milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones).
+Repository documentation describes durable product behavior, architecture,
+research, release history, and workflows. Do not create task-plan markdown
+files to mirror issue status.
+
+See [Planning and Status](../development/planning.md) for the repository-wide
+convention.
 
 ## Handing Off Work
 

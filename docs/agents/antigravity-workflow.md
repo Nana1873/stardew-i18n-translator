@@ -24,11 +24,13 @@ graph TD
 ### Step 1: Read Context
 
 - Read the root [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md) before writing any code.
-- Read the target milestone document in `docs/milestones/` matching the issue.
+- Read the assigned GitHub issue, its release milestone, and any linked ADR or
+  research document.
 
 ### Step 2: Formulate Plan
 
-- Create or update the `implementation_plan.md` artifact in the brain folder.
+- Present the implementation plan in the working session and keep durable task
+  status in the GitHub issue.
 - Be explicit about what files will change and what dependencies will be used.
 - Compare any architectural ideas against [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md). If they introduce complexity, abstractions, or features not in [SPEC.md](../../SPEC.md), reject them.
 

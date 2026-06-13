@@ -7,7 +7,8 @@ This document defines strict boundaries for the **Stardew i18n Translator** proj
 1. **Source of Truth:** [SPEC.md](SPEC.md) is the absolute authority for features and requirements.
 2. **Code Freeze:** No application code is allowed to be written or scaffolded before [ADR 0001: Tech Stack Decision](docs/adr/0001-tech-stack-decision.md) is accepted and approved.
 3. **Strict Validation:** If a feature or requirement is not explicitly defined in [SPEC.md](SPEC.md), **do not implement it**.
-4. **Ambiguity Resolution:** If a feature is ambiguous or unclear, move it to the deferred features milestone (`v1.1` or `v2`) or open an issue/discussion. Do not guess.
+4. **Ambiguity Resolution:** If a feature is ambiguous or unclear, open or update
+   a GitHub issue and assign the appropriate release milestone. Do not guess.
 
 ## Core v1 Technical Guardrails
 
@@ -23,8 +24,9 @@ This document defines strict boundaries for the **Stardew i18n Translator** proj
 
 ## Scope Deflection Process
 
-When an agent or developer suggests a new feature, improvement, or refactoring that lies outside the current milestone's scope:
+When an agent or developer suggests a new feature, improvement, or refactoring that lies outside the assigned issue's scope:
 
 1. Stop implementation of that specific change.
-2. Create a new issue labeled `type:deferred` and tag it with `milestone:v1.1` or `milestone:v2`.
+2. Create a separate GitHub issue and assign an appropriate release milestone
+   or leave it in the unmilestoned backlog when no release is approved.
 3. Proceed only with the minimal work required to satisfy the active issue's acceptance criteria.
