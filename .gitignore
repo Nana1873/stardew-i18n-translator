@@ -1,5 +1,5 @@
 # === OS Junk ===
-[Dd]esktoptop.ini
+[Dd]esktop.ini
 $RECYCLE.BIN/
 .DS_Store
 Thumbs.db
@@ -61,6 +61,7 @@ __pycache__/
 /tests/fixtures/*/Mods/
 /app_data/
 /user_data/
+/Data/
 /glossary_cache/
 *.json.bak
 *.db
