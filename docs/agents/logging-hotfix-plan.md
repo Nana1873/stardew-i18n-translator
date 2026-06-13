@@ -1,5 +1,15 @@
 # Diagnostic Logging — v1.1.1 Hotfix Plan
 
+> **Status: Shipped in v1.1.1.** Implemented via `tauri-plugin-log` writing a
+> rotating file to `Data/logs/`, a `log_frontend_error` bridge command, global
+> `window` error/rejection handlers, error logging at the heavy command paths,
+> and a **Settings → About → Open logs folder** button.
+>
+> **Deviation from the plan:** the opt-out _toggle_ was deferred. Logging is
+> always on but fully local and bounded (`RotationStrategy::KeepSome(5)`,
+> ~2 MB/file), so the privacy/footprint risk a toggle would mitigate is already
+> covered. A disable toggle can still be added later if requested.
+
 ## Motivation
 
 The app currently has **no log file**. The only diagnostics are scattered

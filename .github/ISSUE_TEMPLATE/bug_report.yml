@@ -10,9 +10,12 @@ body:
         a maintainer **or an AI coding agent** can reproduce and fix the issue
         without a back-and-forth. Please fill them in as precisely as you can.
 
-        ⚠️ Do **not** paste API keys, private file paths you care about, or any
-        personal data into this report. The app stores no logs, so there is no
-        log file to attach — the exact on-screen error message is what helps.
+        💡 The app writes a local log file. Open **Settings → About → Open logs
+        folder**, grab the newest `stardew-i18n-translator*.log`, and attach it
+        below — it is the single most useful thing for diagnosing a bug.
+
+        ⚠️ Do **not** paste API keys or any personal data. The log may contain
+        local folder paths; remove anything private before attaching it.
 
   - type: checkboxes
     id: preflight
@@ -93,9 +96,17 @@ body:
     attributes:
       label: Exact error message shown in the app
       description: >
-        Copy the full text of any error/warning the app displayed. The app keeps
-        no log file, so this is the most important diagnostic. Leave blank if no
-        message appeared.
+        Copy the full text of any error/warning the app displayed. Leave blank
+        if no message appeared.
+      render: text
+
+  - type: textarea
+    id: log
+    attributes:
+      label: Log file or excerpt
+      description: >
+        Attach (drag the file into this box) or paste the newest log from
+        **Settings → About → Open logs folder**. Remove anything private first.
       render: text
 
   - type: input

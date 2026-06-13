@@ -10,6 +10,21 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 _Nothing yet._
 
+## [1.1.1] - 2026-06-13
+
+### Added
+
+- Local diagnostic logging: a rotating, size-capped log file under `Data/logs/`
+  captures backend and frontend errors so they can be attached to a bug report.
+- **Settings → About → Open logs folder** button.
+
+### Notes
+
+- Logging is fully local — no network sink, no telemetry. The log may contain
+  local folder paths; remove anything private before sharing.
+
+See [docs/release/v1.1.1.md](docs/release/v1.1.1.md) for the full notes.
+
 ## [1.1.0] - 2026-06-13
 
 Faster editing, safer exports, and verified multilingual workflows, while
@@ -46,7 +61,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Nana1873/stardew-i18n-translator/releases/tag/v1.0.0

@@ -20,13 +20,14 @@ SLA — but well-described reports get looked at.
 
 ## What to include
 
-The app keeps **no log files**, so the details you provide are the only
-diagnostic available. Please always include:
-
 - App version (**Settings → About**).
 - Your Windows version.
 - The exact error message shown in the app, if any.
 - Step-by-step reproduction.
+- **A log file.** The app writes a local log next to the executable. Open
+  **Settings → About → Open logs folder**, take the newest
+  `stardew-i18n-translator*.log`, remove anything private, and attach it. Logs
+  stay on your computer and are never sent anywhere automatically.
 
 The bug report form asks for all of this.
 

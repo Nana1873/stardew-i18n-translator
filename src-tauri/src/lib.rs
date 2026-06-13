@@ -23,6 +23,7 @@ use std::{fs::OpenOptions, io::Write};
 
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
 
 use detection::DetectedInstall;
@@ -66,11 +67,19 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 #[tauri::command]
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
     let config = config_dir(&app)?;
-    Ok(scanner::scan_mods(
-        Path::new(&mods_path),
-        &target_lang,
-        &config,
-    ))
+    let result = scanner::scan_mods(Path::new(&mods_path), &target_lang, &config);
+    if !result.warnings.is_empty() {
+        log::warn!(
+            "scan_mods({mods_path}): {} warning(s)",
+            result.warnings.len()
+        );
+    }
+    log::info!(
+        "scan_mods({target_lang}): {} mods, {} i18n files",
+        result.mod_count,
+        result.file_count
+    );
+    Ok(result)
 }
 
 #[tauri::command]
@@ -158,6 +167,7 @@ fn export_mod(
     files: Vec<export::ExportFileInput>,
 ) -> Result<export::ExportResult, String> {
     export::export_mod(&translation_config_dir(&app)?, &mod_unique_id, &files)
+        .inspect_err(|error| log::error!("export_mod({mod_unique_id}) failed: {error}"))
 }
 
 /// Outcome of an external LLM batch export (M4): where the file landed and what
@@ -243,7 +253,9 @@ fn import_llm_batch(
     let source = picked
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
-    import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).map(Some)
+    import_llm_batch_from_path(&app, &mod_unique_id, &files, &source)
+        .inspect_err(|error| log::error!("import_llm_batch({mod_unique_id}) failed: {error}"))
+        .map(Some)
 }
 
 fn import_llm_batch_from_path(
@@ -290,6 +302,7 @@ fn import_llm_batch_path(
     path: String,
 ) -> Result<batch::ImportSummary, String> {
     import_llm_batch_from_path(&app, &mod_unique_id, &files, Path::new(&path))
+        .inspect_err(|error| log::error!("import_llm_batch_path({mod_unique_id}) failed: {error}"))
 }
 
 #[tauri::command]
@@ -299,7 +312,8 @@ fn build_glossary(
     target_lang: String,
 ) -> Result<glossary::GlossaryInfo, String> {
     let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
-    let built = glossary::build(&unpacked, &target_lang)?;
+    let built = glossary::build(&unpacked, &target_lang)
+        .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
     glossary::save(&config_dir(&app)?, &built)?;
     Ok(glossary::GlossaryInfo {
         target_lang: built.target_lang,
@@ -334,7 +348,9 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
     if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
         return Err("Base URL must start with http:// or https://.".to_string());
     }
-    llm::list_models(&base_url).await
+    llm::list_models(&base_url)
+        .await
+        .inspect_err(|error| log::error!("llm_models({base_url}) failed: {error}"))
 }
 
 /// Translate one source string via the configured local LLM (M6, Issue 16).
@@ -367,6 +383,7 @@ async fn translate_string(
         temperature,
     )
     .await
+    .inspect_err(|error| log::error!("translate_string failed: {error}"))
 }
 
 /// Open an external http(s) URL in the user's default browser (Nexus links).
@@ -380,6 +397,31 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
     app.opener()
         .open_url(&url, None::<String>)
         .map_err(|error| format!("Could not open URL: {error}"))
+}
+
+/// Append a frontend-side error to the same diagnostic log file as the backend
+/// (v1.1.1). The webview cannot write the portable log itself, so this command
+/// is the bridge: a caught UI error still lands in `Data/logs/` for bug reports.
+/// Fire-and-forget — logging must never itself surface an error to the user.
+#[tauri::command]
+fn log_frontend_error(context: String, message: String) {
+    log::error!("[frontend] {context}: {message}");
+}
+
+/// Open the portable `Data/logs/` folder in the OS file manager (v1.1.1) so a
+/// user can attach the current log file to a GitHub bug report.
+#[tauri::command]
+fn open_logs_dir(app: AppHandle) -> Result<(), String> {
+    let dir = portable_logs_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|error| {
+        format!(
+            "Could not create the logs folder {}: {error}",
+            dir.display()
+        )
+    })?;
+    app.opener()
+        .open_path(dir.display().to_string(), None::<String>)
+        .map_err(|error| format!("Could not open the logs folder: {error}"))
 }
 
 #[tauri::command]
@@ -409,6 +451,16 @@ fn portable_data_dir() -> Result<PathBuf, String> {
     let executable = std::env::current_exe()
         .map_err(|error| format!("Could not resolve the application executable: {error}"))?;
     portable_data_dir_for(&executable)
+}
+
+fn portable_logs_dir_for(executable: &Path) -> Result<PathBuf, String> {
+    portable_data_dir_for(executable).map(|dir| dir.join("logs"))
+}
+
+fn portable_logs_dir() -> Result<PathBuf, String> {
+    let executable = std::env::current_exe()
+        .map_err(|error| format!("Could not resolve the application executable: {error}"))?;
+    portable_logs_dir_for(&executable)
 }
 
 fn ensure_portable_data_dir() -> Result<PathBuf, String> {
@@ -453,11 +505,44 @@ fn translation_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     translations::language_root(&config, &target_lang)
 }
 
+/// Build the diagnostic-logging plugin (v1.1.1). Writes a rotating log file to
+/// the portable `Data/logs/` folder so it travels with the app and can be
+/// attached to a bug report — never to the OS log dir. Local only: there is no
+/// network target, consistent with the no-telemetry guarantee. Best-effort: if
+/// the portable path can't be resolved we log to stderr only, and the writable
+/// folder check in `.setup()` still surfaces real problems to the user.
+fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
+    let mut targets = vec![Target::new(TargetKind::Stderr)];
+    if let Ok(dir) = portable_logs_dir() {
+        let _ = std::fs::create_dir_all(&dir);
+        targets.push(Target::new(TargetKind::Folder {
+            path: dir,
+            file_name: Some("stardew-i18n-translator".to_string()),
+        }));
+    }
+    tauri_plugin_log::Builder::new()
+        .targets(targets)
+        .level(log::LevelFilter::Info)
+        // Keep the footprint small inside the portable folder: a few recent
+        // files, each capped at ~2 MB.
+        .max_file_size(2_000_000)
+        .rotation_strategy(RotationStrategy::KeepSome(5))
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .setup(|_| {
-            ensure_portable_data_dir().map_err(std::io::Error::other)?;
+        .plugin(log_plugin())
+        .setup(|app| {
+            ensure_portable_data_dir().map_err(|error| {
+                log::error!("Portable data folder unusable: {error}");
+                std::io::Error::other(error)
+            })?;
+            log::info!(
+                "Stardew i18n Translator {} started",
+                app.package_info().version
+            );
             Ok(())
         })
         .plugin(tauri_plugin_dialog::init())
@@ -481,6 +566,8 @@ pub fn run() {
             llm_models,
             translate_string,
             open_url,
+            log_frontend_error,
+            open_logs_dir,
             load_settings,
             save_settings
         ])
@@ -525,5 +612,19 @@ mod portable_tests {
     #[test]
     fn relative_executable_without_parent_is_rejected() {
         assert!(portable_data_dir_for(Path::new("translator.exe")).is_err());
+    }
+
+    #[test]
+    fn logs_live_under_the_portable_data_folder() {
+        let executable = Path::new(r"E:\Tools\Stardew Translator\stardew-i18n-translator.exe");
+        assert_eq!(
+            portable_logs_dir_for(executable).unwrap(),
+            PathBuf::from(r"E:\Tools\Stardew Translator\Data\logs")
+        );
+    }
+
+    #[test]
+    fn logs_dir_rejects_an_executable_without_parent() {
+        assert!(portable_logs_dir_for(Path::new("translator.exe")).is_err());
     }
 }
