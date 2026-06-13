@@ -408,6 +408,11 @@ export function openLogsDir(): Promise<void> {
   return invoke<void>("open_logs_dir");
 }
 
+/** Open a mod's folder in the OS file manager. */
+export function openModFolder(path: string): Promise<void> {
+  return invoke<void>("open_mod_folder", { path });
+}
+
 export function loadSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("load_settings");
 }

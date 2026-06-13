@@ -434,6 +434,19 @@ fn open_logs_dir(app: AppHandle) -> Result<(), String> {
         .map_err(|error| format!("Could not open the logs folder: {error}"))
 }
 
+/// Open a mod's folder in the OS file manager. The path comes from a scan
+/// result so it is trusted, but it is validated as an existing directory before
+/// being handed to the opener (ShellExecute — never a shell).
+#[tauri::command]
+fn open_mod_folder(app: AppHandle, path: String) -> Result<(), String> {
+    if !Path::new(&path).is_dir() {
+        return Err(format!("Mod folder not found: {path}"));
+    }
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|error| format!("Could not open the mod folder: {error}"))
+}
+
 #[tauri::command]
 fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
     Ok(settings::load(&config_dir(&app)?))
@@ -589,6 +602,7 @@ pub fn run() {
             open_url,
             log_frontend_error,
             open_logs_dir,
+            open_mod_folder,
             load_settings,
             save_settings
         ])

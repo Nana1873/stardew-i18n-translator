@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { invoke } from "@tauri-apps/api/core";
 import { vi } from "vitest";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
@@ -158,5 +159,30 @@ describe("ModList", () => {
     );
     expect(screen.queryByText("├─")).toBeNull();
     expect(screen.queryByText("└─")).toBeNull();
+  });
+
+  it("opens the selected mod folder from the context menu", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "solo",
+            name: "Solo Mod",
+            packageId: "Solo",
+            folderPath: "C:\\Games\\Stardew Valley\\Mods\\Solo",
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText("Solo Mod"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open Mods Folder" }));
+
+    expect(invoke).toHaveBeenCalledWith("open_mod_folder", {
+      path: "C:\\Games\\Stardew Valley\\Mods\\Solo",
+    });
+    expect(screen.queryByRole("menu")).toBeNull();
   });
 });

@@ -7,8 +7,15 @@
  * children are the components. Status/Fortschritt are placeholders until string
  * parsing (Issue 5) lands.
  */
-import { useState } from "react";
-import { type ModStatus, type ScannedMod, openUrl } from "../tauri/commands";
+import { type MouseEvent as ReactMouseEvent, useState } from "react";
+import {
+  type ModStatus,
+  type ScannedMod,
+  openModFolder,
+  openUrl,
+} from "../tauri/commands";
+
+type ContextMenuHandler = (mod: ScannedMod, event: ReactMouseEvent) => void;
 
 interface PackageGroup {
   packageId: string;
@@ -110,6 +117,11 @@ export function ModList({
   query = "",
 }: ModListProps) {
   const groups = groupByPackage(mods);
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    mod: ScannedMod;
+  } | null>(null);
   const q = query.trim().toLowerCase();
   const visible = q
     ? groups.filter(
@@ -119,38 +131,77 @@ export function ModList({
       )
     : groups;
 
+  function openContextMenu(mod: ScannedMod, event: ReactMouseEvent) {
+    event.preventDefault();
+    setMenu({ x: event.clientX, y: event.clientY, mod });
+  }
+
   return (
-    <div className="modlist" role="tree" aria-label="Mods">
-      <div className="modrow modrow--head">
-        <span>Mod</span>
-        <span>Ver</span>
-        <span>Nexus</span>
-        <span>Files</span>
-        <span>Progress</span>
+    <>
+      <div className="modlist" role="tree" aria-label="Mods">
+        <div className="modrow modrow--head">
+          <span>Mod</span>
+          <span>Ver</span>
+          <span>Nexus</span>
+          <span>Files</span>
+          <span>Progress</span>
+        </div>
+        {visible.length === 0 ? (
+          <div className="panel__empty">No mods match “{query}”.</div>
+        ) : (
+          visible.map((group) =>
+            group.mods.length === 1 ? (
+              <ModRow
+                key={group.mods[0].uniqueId}
+                mod={group.mods[0]}
+                depth={0}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onContextMenu={openContextMenu}
+              />
+            ) : (
+              <PackageNode
+                key={group.packageId}
+                group={group}
+                selectedId={selectedId}
+                onSelect={onSelect}
+                onContextMenu={openContextMenu}
+              />
+            ),
+          )
+        )}
       </div>
-      {visible.length === 0 ? (
-        <div className="panel__empty">No mods match “{query}”.</div>
-      ) : (
-        visible.map((group) =>
-          group.mods.length === 1 ? (
-            <ModRow
-              key={group.mods[0].uniqueId}
-              mod={group.mods[0]}
-              depth={0}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
-          ) : (
-            <PackageNode
-              key={group.packageId}
-              group={group}
-              selectedId={selectedId}
-              onSelect={onSelect}
-            />
-          ),
-        )
+      {menu && (
+        <>
+          <div
+            className="ctxmenu__scrim"
+            onMouseDown={() => setMenu(null)}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              setMenu(null);
+            }}
+          />
+          <ul
+            className="ctxmenu"
+            style={{ left: menu.x, top: menu.y }}
+            role="menu"
+          >
+            <li>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  void openModFolder(menu.mod.folderPath);
+                  setMenu(null);
+                }}
+              >
+                Open Mods Folder
+              </button>
+            </li>
+          </ul>
+        </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -158,10 +209,12 @@ function PackageNode({
   group,
   selectedId,
   onSelect,
+  onContextMenu,
 }: {
   group: PackageGroup;
   selectedId: string | null;
   onSelect: (uniqueId: string) => void;
+  onContextMenu: ContextMenuHandler;
 }) {
   const [open, setOpen] = useState(true);
   return (
@@ -197,6 +250,7 @@ function PackageNode({
             lastChild={index === group.mods.length - 1}
             selectedId={selectedId}
             onSelect={onSelect}
+            onContextMenu={onContextMenu}
           />
         ))}
     </>
@@ -210,6 +264,7 @@ function ModRow({
   lastChild = false,
   selectedId,
   onSelect,
+  onContextMenu,
 }: {
   mod: ScannedMod;
   depth: number;
@@ -217,6 +272,7 @@ function ModRow({
   lastChild?: boolean;
   selectedId: string | null;
   onSelect: (uniqueId: string) => void;
+  onContextMenu: ContextMenuHandler;
 }) {
   const selected = mod.uniqueId === selectedId;
   const className = [
@@ -233,6 +289,7 @@ function ModRow({
       role="treeitem"
       aria-selected={selected}
       onClick={() => onSelect(mod.uniqueId)}
+      onContextMenu={(event) => onContextMenu(mod, event)}
     >
       <span
         className="modrow__name"
