@@ -60,7 +60,7 @@ The first distributable version is `1.0.0`.
 6. Verify first launch, persistence, and copying the complete folder.
 7. Confirm CI is green for the current `main` commit.
 8. Create and push the matching version tag on that exact commit, for example
-   `v1.0.0`.
+   `v1.1.0`.
 9. Review the draft GitHub release and its ZIP before publishing it.
 
 ## Draft Release Automation
@@ -78,8 +78,8 @@ the complete format, Clippy, and test coverage but disables dependency
 optimization and debug symbols to reduce compile time. Local development and
 release profiles are unchanged.
 
-Do not create `v1.0.0` until the real Mods-folder and extracted-ZIP smoke tests
-have passed.
+Do not create a release tag until the real Mods-folder and extracted-ZIP smoke
+tests have passed.
 
 ## Code Signing
 
