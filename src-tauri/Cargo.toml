@@ -1,6 +1,6 @@
 [package]
 name = "stardew-i18n-translator"
-version = "1.1.1"
+version = "1.2.0"
 description = "Local desktop tool for Stardew Valley / SMAPI mod i18n translations."
 authors = ["Nana"]
 license = "GPL-3.0-or-later"
@@ -27,7 +27,7 @@ tauri-plugin-opener = "2"
 # Local-LLM client (M6): OpenAI-compatible HTTP only. rustls avoids an OpenSSL
 # build dependency on Windows.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
-# Diagnostic logging (v1.1.1): rotating local log file in the portable Data/logs
+# Diagnostic logging: rotating local log file in the portable Data/logs
 # folder so users can attach a log to a GitHub bug report. Local only — no
 # network sink, consistent with the no-telemetry guarantee.
 tauri-plugin-log = "2"

@@ -30,6 +30,10 @@ pub struct AppSettings {
     /// User overrides for the frontend shortcut catalog (v1.1).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
+    /// Local diagnostic log files are enabled by default. This never controls
+    /// telemetry or network reporting; those do not exist.
+    #[serde(default = "default_diagnostic_logging")]
+    pub diagnostic_logging: bool,
 }
 
 /// Local-LLM connection settings (M6, Issue 15). OpenAI-compatible endpoint only.
@@ -56,6 +60,10 @@ fn default_source_lang() -> String {
     "default".to_string()
 }
 
+fn default_diagnostic_logging() -> bool {
+    true
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -65,6 +73,7 @@ impl Default for AppSettings {
             target_lang: None,
             llm: None,
             shortcuts: BTreeMap::new(),
+            diagnostic_logging: true,
         }
     }
 }
@@ -118,6 +127,7 @@ mod tests {
             target_lang: Some("de".to_string()),
             llm: None,
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
+            diagnostic_logging: false,
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
@@ -169,6 +179,7 @@ mod tests {
         .unwrap();
         assert_eq!(load(&dir).llm, None);
         assert!(load(&dir).shortcuts.is_empty());
+        assert!(load(&dir).diagnostic_logging);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -182,6 +193,7 @@ mod tests {
         )
         .unwrap();
         assert!(load(&dir).shortcuts.is_empty());
+        assert!(load(&dir).diagnostic_logging);
         std::fs::remove_dir_all(&dir).ok();
     }
 

@@ -2306,6 +2306,19 @@ kbd,
   line-height: 1.5;
 }
 
+.settings__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings__check input {
+  accent-color: var(--gold);
+}
+
 .settings__about-version {
   margin: 2px 0 16px;
   color: var(--gold-hi);

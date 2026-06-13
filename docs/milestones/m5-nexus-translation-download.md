@@ -1,8 +1,7 @@
-# Milestone M5: Nexus Translation Discovery & Download (DEFERRED)
+# Milestone M5: Nexus Translation Discovery & Download (v1.3)
 
-> **Status:** Deferred / planned. Not part of v1. Captured here so the intended
-> workflow is not lost. Pulls forward the staged v1.1→v3 Nexus work from
-> [SPEC.md §12](../../SPEC.md) into one user-facing feature.
+> **Status:** Planned for v1.3. Not part of v1.2. Pulls the staged Nexus work
+> from [SPEC.md §12](../../SPEC.md) into one user-facing feature.
 > **Decision (2026-06-09):** postponed by the product owner after finishing the
 > v1 core loop. Owner has **Nexus Premium** (direct API download is available).
 

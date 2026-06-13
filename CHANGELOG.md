@@ -10,6 +10,26 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 _Nothing yet._
 
+## [1.2.0] - 2026-06-13
+
+### Added
+
+- Scan diagnostics for keys that exist only in an old target-language file.
+  These stale keys are listed with their mod, file, and key name without
+  blocking editing or export.
+- A **Settings → About** switch for enabling or disabling rotating local
+  diagnostic logs.
+
+### Changed
+
+- Diagnostic logging remains enabled by default for existing and new portable
+  installations, but the preference is now stored locally in
+  `Data/settings.json`.
+- Nexus translation discovery and download are assigned to the separate v1.3
+  milestone.
+
+See [docs/release/v1.2.0.md](docs/release/v1.2.0.md) for the full notes.
+
 ## [1.1.1] - 2026-06-13
 
 ### Added
@@ -61,7 +81,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.1...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.0...v1.0.1

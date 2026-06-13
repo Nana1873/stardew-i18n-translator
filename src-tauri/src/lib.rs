@@ -431,7 +431,17 @@ fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
-    settings::save(&config_dir(&app)?, &settings)
+    settings::save(&config_dir(&app)?, &settings)?;
+    apply_diagnostic_logging(settings.diagnostic_logging);
+    Ok(())
+}
+
+fn apply_diagnostic_logging(enabled: bool) {
+    log::set_max_level(if enabled {
+        log::LevelFilter::Info
+    } else {
+        log::LevelFilter::Off
+    });
 }
 
 fn portable_data_dir_for(executable: &Path) -> Result<PathBuf, String> {
@@ -535,10 +545,11 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(log_plugin())
         .setup(|app| {
-            ensure_portable_data_dir().map_err(|error| {
+            let data_dir = ensure_portable_data_dir().map_err(|error| {
                 log::error!("Portable data folder unusable: {error}");
                 std::io::Error::other(error)
             })?;
+            apply_diagnostic_logging(settings::load(&data_dir).diagnostic_logging);
             log::info!(
                 "Stardew i18n Translator {} started",
                 app.package_info().version

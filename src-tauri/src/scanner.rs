@@ -65,8 +65,18 @@ pub struct ScannedMod {
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
     pub warnings: Vec<String>,
+    pub extra_keys: Vec<ExtraKeyDiagnostic>,
     pub mod_count: usize,
     pub file_count: usize,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExtraKeyDiagnostic {
+    pub mod_name: String,
+    pub relative_dir: String,
+    pub target_path: String,
+    pub key: String,
 }
 
 /// Make the lenient transformations real SMAPI mods require (Newtonsoft.Json)
@@ -262,6 +272,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // a scan warning (counts degrade to the imported values); it is NOT
     // silently treated as empty, and saves elsewhere refuse to overwrite it.
     let mut state_cache: HashMap<String, ModState> = HashMap::new();
+    let mut extra_keys = Vec::new();
     for i18n_dir in &i18n_dirs {
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             continue;
@@ -284,6 +295,12 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                 }
             };
             if let Some(file) = build_i18n_file(&owner, i18n_dir, target_lang, state) {
+                extra_keys.extend(extra_target_keys(
+                    &scanned.name,
+                    &file.relative_dir,
+                    Path::new(&file.default_path),
+                    Path::new(&file.target_path),
+                ));
                 scanned.i18n_files.push(file);
             }
         }
@@ -312,7 +329,33 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         file_count,
         mods: result_mods,
         warnings,
+        extra_keys,
     }
+}
+
+fn extra_target_keys(
+    mod_name: &str,
+    relative_dir: &str,
+    default_path: &Path,
+    target_path: &Path,
+) -> Vec<ExtraKeyDiagnostic> {
+    let Some(target) = read_target_object(target_path) else {
+        return Vec::new();
+    };
+    let source = read_object(default_path).unwrap_or_default();
+    let source_folded: HashSet<String> = source.keys().map(|key| folded_key(key)).collect();
+
+    target
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .filter(|key| !source_folded.contains(&folded_key(key)))
+        .map(|key| ExtraKeyDiagnostic {
+            mod_name: mod_name.to_string(),
+            relative_dir: relative_dir.to_string(),
+            target_path: target_path.display().to_string(),
+            key: key.clone(),
+        })
+        .collect()
 }
 
 fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<ScannedMod, String> {
@@ -1092,6 +1135,39 @@ mod tests {
         let file = &result.mods[0].i18n_files[0];
         assert!(file.target_exists);
         assert!(file.target_path.ends_with("de.json"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn reports_extra_target_keys_without_counting_them() {
+        let root = crate::test_support::temp_dir("scan-extra-keys");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Example Mod\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"current\": \"Current\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("de.json"),
+            "{ \"current\": \"Aktuell\", \"removed\": \"Alt\", \"$schema\": \"ignored\" }",
+        );
+
+        let result = scan_mods(&root, "de", &root);
+        assert_eq!(result.mods[0].total_keys, 1);
+        assert_eq!(result.mods[0].translated_keys, 1);
+        assert_eq!(
+            result.extra_keys,
+            vec![ExtraKeyDiagnostic {
+                mod_name: "Example Mod".to_string(),
+                relative_dir: "i18n".to_string(),
+                target_path: mod_dir.join("i18n").join("de.json").display().to_string(),
+                key: "removed".to_string(),
+            }]
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }

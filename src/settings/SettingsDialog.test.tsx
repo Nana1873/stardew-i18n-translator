@@ -15,6 +15,7 @@ const baseSettings: AppSettings = {
   sourceLang: "default",
   targetLang: "de",
   llm: null,
+  diagnosticLogging: true,
 };
 
 beforeEach(() => {
@@ -219,7 +220,7 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Stardew i18n Translator" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Version 1.1.1")).toBeInTheDocument();
+    expect(screen.getByText("Version 1.2.0")).toBeInTheDocument();
     expect(screen.getByText("GPL-3.0-or-later")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Shortcuts" })).toBeInTheDocument();
 
@@ -227,6 +228,47 @@ describe("SettingsDialog", () => {
     // user can attach a log file to a bug report.
     fireEvent.click(screen.getByRole("button", { name: /Open logs folder/ }));
     expect(invokeMock).toHaveBeenCalledWith("open_logs_dir", undefined);
+  });
+
+  it("saves the local diagnostic logging preference", () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    const logging = screen.getByRole("checkbox", {
+      name: "Enable local diagnostic logging",
+    });
+    expect(logging).toBeChecked();
+    fireEvent.click(logging);
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ diagnosticLogging: false }),
+    );
+  });
+
+  it("defaults missing diagnostic settings to enabled", () => {
+    render(
+      <SettingsDialog
+        settings={{ ...baseSettings, diagnosticLogging: undefined }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    expect(
+      screen.getByRole("checkbox", {
+        name: "Enable local diagnostic logging",
+      }),
+    ).toBeChecked();
   });
 
   it("captures, validates, resets, and saves shortcut overrides", () => {

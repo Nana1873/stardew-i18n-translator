@@ -81,10 +81,33 @@ export function ScanDialog({
                     ))}
                   </ul>
                 </div>
-              ) : (
+              ) : (result.extraKeys?.length ?? 0) === 0 ? (
                 <p className="scandlg__muted">
                   No problems — every mod parsed cleanly.
                 </p>
+              ) : null}
+              {(result.extraKeys?.length ?? 0) > 0 && (
+                <div className="scandlg__warnings">
+                  <span className="scandlg__muted">
+                    {result.extraKeys!.length} extra{" "}
+                    {result.extraKeys!.length === 1 ? "key" : "keys"} in
+                    existing translation files:
+                  </span>
+                  <ul>
+                    {result.extraKeys!.map((diagnostic, i) => (
+                      <li
+                        key={`${diagnostic.targetPath}:${diagnostic.key}:${i}`}
+                      >
+                        <strong>{diagnostic.modName}</strong> ·{" "}
+                        <code>{diagnostic.targetPath}</code> ·{" "}
+                        <code>{diagnostic.key}</code>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="scandlg__muted">
+                    These stale keys are ignored and do not block export.
+                  </p>
+                </div>
               )}
             </>
           ) : null}

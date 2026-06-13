@@ -31,6 +31,8 @@ export interface AppSettings {
   llm?: LlmSettings | null;
   /** User overrides for the v1.1 keyboard shortcut catalog. */
   shortcuts?: ShortcutSettings;
+  /** Whether rotating local diagnostic logs are written. Defaults to true. */
+  diagnosticLogging?: boolean;
 }
 
 export function detectStardew(): Promise<DetectedInstall | null> {
@@ -86,8 +88,16 @@ export interface ScannedMod {
 export interface ScanResult {
   mods: ScannedMod[];
   warnings: string[];
+  extraKeys?: ExtraKeyDiagnostic[];
   modCount: number;
   fileCount: number;
+}
+
+export interface ExtraKeyDiagnostic {
+  modName: string;
+  relativeDir: string;
+  targetPath: string;
+  key: string;
 }
 
 export function scanMods(

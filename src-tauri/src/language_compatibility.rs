@@ -140,6 +140,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             mods_path: Some(mods.display().to_string()),
             source_lang: "default".to_string(),
             target_lang: Some(language.code.to_string()),
+            diagnostic_logging: true,
             llm: None,
             shortcuts: BTreeMap::new(),
         };
