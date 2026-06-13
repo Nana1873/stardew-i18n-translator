@@ -14,11 +14,8 @@ support branch.
 
 **Please do not open a public GitHub issue for security problems.**
 
-Report privately through one of these channels:
-
-1. **GitHub Security Advisories** (preferred): open a private report via the
-   repository's **Security → Report a vulnerability** tab.
-2. **Email:** `[removed]` with `[SECURITY]` in the subject.
+Report privately through **GitHub Security Advisories** by opening a private
+report via the repository's **Security → Report a vulnerability** tab.
 
 Please include:
 
