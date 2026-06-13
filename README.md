@@ -95,11 +95,16 @@ API key.
 - A local diagnostic log is written to `Data/logs/` (rotating, size-capped) to
   help with bug reports. It never leaves your computer — open it from
   **Settings > About > Open logs folder** to attach it to an issue yourself.
+  Logging can be disabled from the same page.
 - Local AI requests go only to the endpoint configured in Settings.
 - External LLM batches leave the computer only when you manually upload them
   to a service of your choice. Review that provider's privacy policy first.
 - Stardew Valley files, mods, generated glossaries, and user data are not
   committed to this repository or bundled with releases.
+
+During a scan, the app also reports stale keys that still exist in a target
+translation but were removed from `default.json`. They are informational,
+ignored during editing, and never block export.
 
 ## AI-Assisted Development
 

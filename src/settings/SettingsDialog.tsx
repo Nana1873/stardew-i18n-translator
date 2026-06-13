@@ -68,6 +68,9 @@ export function SettingsDialog({
   const [shortcuts, setShortcuts] = useState<ResolvedShortcuts>(() =>
     resolveShortcuts(settings.shortcuts),
   );
+  const [diagnosticLogging, setDiagnosticLogging] = useState(
+    settings.diagnosticLogging !== false,
+  );
 
   const [glossary, setGlossary] = useState<GlossaryStatus | null>(null);
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
@@ -164,6 +167,7 @@ export function SettingsDialog({
           (command) => shortcuts[command.id] !== DEFAULT_SHORTCUTS[command.id],
         ).map((command) => [command.id, shortcuts[command.id]]),
       ),
+      diagnosticLogging,
       // Persist the AI connection only once a model is chosen; otherwise null.
       llm:
         url && llmModel
@@ -523,10 +527,20 @@ export function SettingsDialog({
                 <div className="settings__group">
                   <h4>Diagnostics</h4>
                   <p className="settings__hint">
-                    The app writes a local log file next to the executable. If
-                    you report a bug, open this folder and attach the newest
-                    log. Logs stay on your computer and are never sent anywhere.
+                    Optional rotating logs stay next to the executable and are
+                    never sent anywhere. Disabling them reduces the information
+                    available when diagnosing a bug.
                   </p>
+                  <label className="settings__check">
+                    <input
+                      type="checkbox"
+                      checked={diagnosticLogging}
+                      onChange={(event) =>
+                        setDiagnosticLogging(event.target.checked)
+                      }
+                    />
+                    Enable local diagnostic logging
+                  </label>
                   <div className="wizard__row">
                     <button type="button" onClick={() => void openLogsDir()}>
                       Open logs folder ↗

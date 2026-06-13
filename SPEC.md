@@ -87,7 +87,7 @@ Steam path is read from the Windows registry (`HKCU\Software\Valve\Steam\SteamPa
 
 | Item                | Reason                                                                                                       |
 | ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. No API calls needed. Deferred to v1.1+.                |
+| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. API integration is planned for v1.3.                   |
 | AI provider API key | In-app cloud AI translation is not in v1. The external LLM batch (Milestone 4) needs no API key in the tool. |
 
 ---
@@ -734,20 +734,17 @@ Stardew Valley mod translations **do exist on Nexus Mods** as separate mod pages
 
 v1 does **not** store or validate a Nexus API key. No Nexus API calls are made.
 
-### v1.1 — API Key + Mod Enrichment
+### v1.3 — Nexus Integration
 
 - Nexus API key storage and validation in settings.
 - Mod info enrichment (name, endorsement count from API). Cached.
-
-### v2 — Assisted Translation Discovery
-
-Semi-automatic discovery using Nexus search heuristics and user confirmation:
+- Semi-automatic discovery using Nexus search heuristics and user confirmation:
 
 1. **Candidate search:** Tool queries the Nexus API showing candidate translation mods found via title/description heuristics (language names, "translation", "Übersetzung", etc.) and category filtering.
 2. **User confirmation:** User selects the correct translation mod. Tool stores the confirmed mapping (original Nexus ID → translation Nexus ID).
 3. **File listing + import:** Tool lists files via API, user picks a file, tool downloads and imports with status `imported`.
 
-### v3 — Streamlined Download & Import
+### Future — Streamlined Updates
 
 Once a confirmed original→translation mapping exists:
 
@@ -910,14 +907,13 @@ First AI step — requires core workflow to be complete:
 
 ### Roadmap After v1.1.1
 
-| Feature                                     | Target             |
-| ------------------------------------------- | ------------------ |
-| `extra-key` import/scan reporting           | v1.2               |
-| Local diagnostic logging enable/disable     | v1.2               |
-| Optional cloud-AI credentials               | Unscheduled        |
-| Nexus integration                           | Separate milestone |
-| Finalize-and-propagate identical strings    | v2                 |
-| Assisted Nexus translation discovery/import | v2                 |
+| Feature                                  | Target      |
+| ---------------------------------------- | ----------- |
+| `extra-key` import/scan reporting        | v1.2        |
+| Local diagnostic logging enable/disable  | v1.2        |
+| Optional cloud-AI credentials            | Unscheduled |
+| Nexus integration                        | v1.3        |
+| Finalize-and-propagate identical strings | v2          |
 
 ---
 
@@ -929,7 +925,7 @@ The following are **explicitly excluded** from v1:
 | ---------------------------------------------- | ---------------------------------------------------------------------- |
 | In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only |
 | Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                  |
-| Automatic Nexus translation discovery/download | Deferred to v2 (see §12)                                               |
+| Automatic Nexus translation discovery/download | Deferred to v1.3 (see §12)                                             |
 | Git integration                                | Adds complexity without core workflow value                            |
 | Full mod manager                               | Out of scope — tool manages translations only                          |
 | Vortex/MO2 profile detection                   | User can point to any folder manually                                  |
@@ -1331,5 +1327,6 @@ The private legacy Stardew Translator project provided the following lessons:
 | **v1 (M4)**    | External LLM Batch Export/Import                                                                                                       |
 | **v1.1**       | Configurable shortcuts, language compatibility verification, safer token validation, inline editing, drag-and-drop, diagnostic logging |
 | **v1.2**       | `extra-key` diagnostics and local logging control                                                                                      |
-| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate               |
-| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                            |
+| **v1.3**       | Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                                               |
+| **v2**         | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                                     |
+| **v3**         | Data file translation and an in-app XNB reader                                                                                         |

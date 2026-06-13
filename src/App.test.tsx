@@ -49,6 +49,7 @@ const CONFIGURED = {
   modsPath: "E:/SDV/Mods",
   sourceLang: "default",
   targetLang: "de",
+  diagnosticLogging: true,
 };
 
 beforeEach(() => {
@@ -60,6 +61,7 @@ beforeEach(() => {
 const EMPTY_SCAN = {
   mods: [],
   warnings: [],
+  extraKeys: [],
   modCount: 0,
   fileCount: 0,
 };
@@ -117,6 +119,7 @@ function exportScan(targetExists: boolean) {
       },
     ],
     warnings: [],
+    extraKeys: [],
     modCount: 1,
     fileCount: 1,
   };
@@ -586,6 +589,25 @@ describe("App shell", () => {
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),
     ).toHaveTextContent("Skipped broken manifest");
+  });
+
+  it("opens the scan dialog when an automatic scan finds extra target keys", async () => {
+    mockConfigured({
+      ...EMPTY_SCAN,
+      extraKeys: [
+        {
+          modName: "Example Mod",
+          relativeDir: "i18n",
+          targetPath: "E:/Mods/Example/i18n/de.json",
+          key: "removed-key",
+        },
+      ],
+    });
+    render(<App />);
+
+    expect(
+      await screen.findByRole("dialog", { name: "Scan" }),
+    ).toHaveTextContent("removed-key");
   });
 
   it("opens the scan dialog when an automatic scan fails", async () => {

@@ -19,9 +19,9 @@ previously lived in the public README.
 
 ## Release State
 
-- Application version: 1.1.1.
+- Application version: 1.2.0.
 - v1 milestones M1-M4 and M6 are complete.
-- M5 Nexus translation discovery remains deferred.
+- M5 Nexus translation discovery is planned for v1.3.
 - The active next-version plan is in
   [`docs/roadmap/v1.2-plan.md`](../roadmap/v1.2-plan.md).
 - Build and publication instructions are in

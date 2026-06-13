@@ -60,7 +60,7 @@ The first distributable version is `1.0.0`.
 6. Verify first launch, persistence, and copying the complete folder.
 7. Confirm CI is green for the current `main` commit.
 8. Create and push the matching version tag on that exact commit, for example
-   `v1.1.1`.
+   `v1.2.0`.
 9. Review the draft GitHub release and its ZIP before publishing it.
 
 ## Draft Release Automation
