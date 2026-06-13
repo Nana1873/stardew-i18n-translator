@@ -21,6 +21,10 @@ _Nothing yet._
   silently merging their saved translation progress into one state file. SMAPI
   itself will not load duplicate UniqueIDs, so the warning surfaces a broken or
   duplicated install.
+- **Pre-existing translations can now go outdated.** A community `<lang>.json`
+  you never edited in the app gains a source-text baseline the first time you
+  open the mod, so it is flagged **outdated** when the mod's English source later
+  changes. Previously such imported strings stayed "translated" indefinitely.
 
 See [docs/release/v1.2.1.md](docs/release/v1.2.1.md) for the full notes.
 

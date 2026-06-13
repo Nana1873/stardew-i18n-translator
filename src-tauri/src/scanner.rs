@@ -489,6 +489,37 @@ pub fn load_strings(
         .collect()
 }
 
+/// Baseline state entries for imported translations not yet tracked in `state`.
+///
+/// A pre-existing `<lang>.json` value the user never saved (a community
+/// translation discovered on disk) carries no stored source hash, so it can
+/// never be detected as `outdated` when the mod's English source later changes.
+/// Adopting it the first time the mod is opened — recording it as `translated`
+/// with a hash of the *current* source — gives it that baseline. Returns the
+/// `(entry_key, entry)` pairs to persist; empty when there is nothing new to
+/// adopt, so the caller can skip the write entirely.
+pub fn imported_baselines(
+    rows: &[StringRow],
+    state: &ModState,
+    relative_dir: &str,
+) -> Vec<(String, translations::StoredString)> {
+    rows.iter()
+        // Only imported translations: a non-empty target with no saved state.
+        .filter(|row| !row.target.trim().is_empty())
+        .filter(|row| !state.contains_key(&translations::entry_key(relative_dir, &row.key)))
+        .map(|row| {
+            (
+                translations::entry_key(relative_dir, &row.key),
+                translations::StoredString {
+                    target: row.target.clone(),
+                    status: "translated".to_string(),
+                    source_hash: translations::source_hash(&row.source),
+                },
+            )
+        })
+        .collect()
+}
+
 /// Section titles from standalone `//` comment lines in `default.json` (v1.5,
 /// SPEC §7.4): a comment line on its own starts a section, and every key after
 /// it (until the next standalone comment) belongs to that section. Returns
@@ -1452,6 +1483,86 @@ mod tests {
             sections.get(&folded_key("second")).map(String::as_str),
             Some("Later")
         );
+    }
+
+    #[test]
+    fn imported_baselines_snapshots_only_untracked_translations() {
+        let root = crate::test_support::temp_dir("imported-baselines");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{ \"kept\": \"Hello\", \"empty\": \"Bye\", \"tracked\": \"Hi\" }",
+        );
+        // `kept` is imported, `empty` has no target, `tracked` is already saved.
+        write(
+            &i18n.join("de.json"),
+            "{ \"kept\": \"Hallo\", \"tracked\": \"Servus\" }",
+        );
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "tracked"),
+            translations::StoredString {
+                target: "Servus".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hi"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id").unwrap();
+
+        let rows = load_strings(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &state,
+            "i18n",
+        );
+        let baselines = imported_baselines(&rows, &state, "i18n");
+
+        // Only the imported `kept` string is adopted — not the empty one, not
+        // the already-tracked one.
+        assert_eq!(baselines.len(), 1);
+        let (key, entry) = &baselines[0];
+        assert_eq!(key, &translations::entry_key("i18n", "kept"));
+        assert_eq!(entry.target, "Hallo");
+        assert_eq!(entry.status, "translated");
+        assert_eq!(entry.source_hash, translations::source_hash("Hello"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn adopted_import_goes_outdated_when_source_changes() {
+        // The end-to-end point of imported_baselines: an imported translation
+        // gains a baseline on first open, then becomes `outdated` once the
+        // mod's source text changes.
+        let root = crate::test_support::temp_dir("imported-outdated");
+        let i18n = root.join("i18n");
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        write(&default_path, "{ \"k\": \"Hello\" }");
+        write(&target_path, "{ \"k\": \"Hallo\" }");
+
+        // First open: no state yet, so the import resolves as plain translated.
+        let state = ModState::new();
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "translated");
+
+        // Adopt the baseline (what the load_strings command persists).
+        let baselines = imported_baselines(&rows, &state, "i18n");
+        translations::save_many(&root, "mod.id", baselines).unwrap();
+
+        // Source unchanged -> still translated.
+        let state = translations::load(&root, "mod.id").unwrap();
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "translated");
+
+        // Source changes after the translation was adopted -> outdated.
+        write(&default_path, "{ \"k\": \"Hello there\" }");
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "outdated");
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
