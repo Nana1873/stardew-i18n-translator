@@ -836,12 +836,12 @@ AppState
 
 ### Persistence
 
-| Data              | Storage                         | Format                           |
-| ----------------- | ------------------------------- | -------------------------------- |
-| Settings          | Portable `Data/` beside the EXE | `settings.json`                  |
-| Glossary cache    | Portable `Data/` beside the EXE | `glossary.json` (nullable)       |
-| Translation state | Portable `Data/translations/`   | JSON per mod (keyed by UniqueID) |
-| Export output     | Mod's `i18n/` folder            | Standard `<lang>.json`           |
+| Data              | Storage                                             | Format                           |
+| ----------------- | --------------------------------------------------- | -------------------------------- |
+| Settings          | Portable `Data/` beside the EXE                     | `settings.json`                  |
+| Glossary cache    | Portable `Data/` beside the EXE                     | `glossary.json` (nullable)       |
+| Translation state | Portable `Data/language-state/<lang>/translations/` | JSON per mod and target language |
+| Export output     | Mod's `i18n/` folder                                | Standard `<lang>.json`           |
 
 The v1 Windows distribution is a portable folder packaged as ZIP. The
 application validates that its adjacent `Data/` folder is writable on startup.
@@ -914,7 +914,7 @@ First AI step — requires core workflow to be complete:
 | `identical-to-source` validation         | v1.1   |
 | `escape-suspicious` validation           | v1.1   |
 | `extra-key` validation                   | v1.1   |
-| Supported-language compatibility matrix  | v1.1   |
+| Supported-language manual smoke matrix   | v1.1   |
 | Optional cloud-AI credentials            | v1.1+  |
 | Finalize-and-propagate identical strings | v2     |
 | Assisted Nexus translation discovery     | v2     |

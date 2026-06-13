@@ -75,7 +75,9 @@ and `token-added` are errors via **multiset** comparison; plus
 
 ### Issue 10: Status model and persistence ✅
 
-The 4 v1 statuses and their transitions, with `sourceHash` tracking for `outdated` detection. Translation state persisted per mod (keyed by UniqueID) separately from the mod's files.
+The 4 v1 statuses and their transitions, with `sourceHash` tracking for
+`outdated` detection. Translation state is persisted per target language and
+mod (keyed by language code + UniqueID) separately from the mod's files.
 
 ### Issue 10b: Search / filter / sort ✅
 

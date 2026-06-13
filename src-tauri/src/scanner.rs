@@ -225,6 +225,13 @@ pub fn extract_nexus_id(update_keys: &[String]) -> Option<u64> {
 /// translation state from `config_dir` is merged into progress counts.
 pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> ScanResult {
     let mut warnings = Vec::new();
+    let language_root = match translations::language_root(config_dir, target_lang) {
+        Ok(root) => Some(root),
+        Err(error) => {
+            warnings.push(error);
+            None
+        }
+    };
     let mut manifest_files = Vec::new();
     let mut i18n_dirs = Vec::new();
     collect(mods_path, &mut manifest_files, &mut i18n_dirs);
@@ -264,11 +271,15 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             let state = match state_cache.entry(unique_id.clone()) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(slot) => {
-                    let loaded =
-                        translations::load(config_dir, &unique_id).unwrap_or_else(|error| {
+                    let loaded = language_root
+                        .as_deref()
+                        .map(|root| translations::load(root, &unique_id))
+                        .transpose()
+                        .unwrap_or_else(|error| {
                             warnings.push(error);
-                            ModState::new()
-                        });
+                            Some(ModState::new())
+                        })
+                        .unwrap_or_default();
                     slot.insert(loaded)
                 }
             };
@@ -390,7 +401,7 @@ pub fn load_strings(
         return Vec::new();
     };
     let sections = extract_sections(&body);
-    let target_map = read_object(target_path).unwrap_or_default();
+    let target_map = read_target_object(target_path).unwrap_or_default();
     let target = TargetLookup::new(&target_map);
     source
         .iter()
@@ -611,6 +622,30 @@ pub(crate) fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>>
     parse_json_lenient(&body).ok()?.as_object().cloned()
 }
 
+/// Read the canonical target file, with SMAPI's Portuguese filename as an
+/// import-only fallback. The scanned path remains `pt.json`, so exports always
+/// use the app's canonical filename and never overwrite `pt-BR.json`.
+pub(crate) fn read_target_object(target_path: &Path) -> Option<serde_json::Map<String, Value>> {
+    read_object(&target_read_path(target_path))
+}
+
+fn target_read_path(target_path: &Path) -> PathBuf {
+    if target_path.is_file() {
+        return target_path.to_path_buf();
+    }
+    let is_portuguese = target_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"));
+    if is_portuguese {
+        let fallback = target_path.with_file_name("pt-BR.json");
+        if fallback.is_file() {
+            return fallback;
+        }
+    }
+    target_path.to_path_buf()
+}
+
 /// (total source keys, source keys with a non-empty **working** target — saved
 /// state takes precedence over the imported `<lang>.json` value — and source
 /// keys whose stored status is an unreviewed AI suggestion). The review count
@@ -624,7 +659,7 @@ fn count_keys(
     let Some(source) = read_object(default_path) else {
         return (0, 0, 0);
     };
-    let target_map = read_object(target_path).unwrap_or_default();
+    let target_map = read_target_object(target_path).unwrap_or_default();
     let target = TargetLookup::new(&target_map);
     let total = source
         .keys()
