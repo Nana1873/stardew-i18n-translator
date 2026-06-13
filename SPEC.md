@@ -3,7 +3,7 @@
 > **Version:** 1.0 — 2026-06-07
 > **Status:** Implemented v1 baseline — v1.1 planning
 > **Workflow Reference:** [SSE Auto Translator](https://github.com/Cutleast/SSE-Auto-Translator)
-> **Old Project Reference:** `E:\DevProjects\Stardew Translator` (lessons learned only)
+> **Old Project Reference:** a private legacy checkout (lessons learned only)
 
 ---
 
@@ -1300,7 +1300,7 @@ The following are **explicitly excluded** from v1:
 
 ## Appendix C — Lessons Learned from Old Project
 
-The old Stardew Translator project (`E:\DevProjects\Stardew Translator`) provided the following lessons:
+The private legacy Stardew Translator project provided the following lessons:
 
 1. **Scope creep was the #1 problem.** Features accumulated faster than they were implemented. The roadmap grew to 6 phases with 6+ milestones before a working product existed.
 
@@ -1316,7 +1316,8 @@ The old Stardew Translator project (`E:\DevProjects\Stardew Translator`) provide
 
 7. **The old project's architecture was over-abstracted for the actual feature set.** v1 should be simpler: no plugin system, no provider abstraction, no complex storage engine.
 
-8. **Test fixtures from the old project can be reused.** Located at `E:\DevProjects\Stardew Translator\tests\fixtures\parser\`.
+8. **Selected test-fixture ideas from the legacy project can be reused.** Only
+   sanitized, in-scope fixtures belong in this repository.
 
 9. **Key order matters for export.** Exported JSON should match `default.json` key order for readability and diff-friendliness.
 

@@ -1,6 +1,7 @@
 # Reusable Assets from the Old Project
 
-> **Old project:** `E:\DevProjects\Stardew Translator` (Tauri + TypeScript/Vite). Reference only.
+> **Old project:** private legacy Tauri + TypeScript/Vite checkout. Reference
+> only; no local path or legacy repository is required to build this project.
 > **Rule:** Reuse the _logic, fixtures, and research_ — **not** the architecture/design. The old project was over-abstracted (plugin/provider layers, broad multi-format parser). See [SPEC.md Appendix C](../../SPEC.md). Port narrowly to v1 scope; do not import its abstractions.
 
 > **Stack chosen:** [ADR 0001](../adr/0001-tech-stack-decision.md) = **Tauri (Rust + TypeScript)**. This is the broadest-reuse option: the old project was _also_ Tauri 2, so both its **Rust** data layer and its **TypeScript** UI logic and its **fixtures** are reusable. Put the hot path (scan/parse/validate) in Rust; reuse TS for UI-side logic.

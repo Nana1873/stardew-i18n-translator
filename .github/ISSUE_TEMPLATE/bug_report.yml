@@ -32,7 +32,7 @@ body:
     attributes:
       label: App version
       description: See **Settings → About**.
-      placeholder: "1.1.0"
+      placeholder: "1.1.1"
     validations:
       required: true
 
