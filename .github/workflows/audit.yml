@@ -40,7 +40,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: rustsec/audit-check@v2
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: src-tauri
+          tool: cargo-audit
+      # Plain `cargo audit` fails the build on actual vulnerabilities only.
+      # The "unmaintained"/"unsound" informational advisories it also reports
+      # all come from Tauri's transitive Linux GTK/glib stack (and a few build
+      # macros), which this Windows-only app never ships and we cannot upgrade
+      # independently — so they are surfaced but do not gate CI. Pinning an
+      # ignore-list here would just rot as new RUSTSEC IDs appear on the same
+      # crates.
+      - run: cargo audit
+        working-directory: src-tauri
