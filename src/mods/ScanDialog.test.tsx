@@ -70,13 +70,15 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/1 extra key/)).toBeInTheDocument();
+    expect(screen.getByText("Optional cleanup")).toBeInTheDocument();
+    expect(screen.getByText(/1 unused translation key/)).toBeInTheDocument();
     expect(screen.getByText("Example Mod")).toBeInTheDocument();
     expect(
       screen.getByText("E:/Mods/Example/i18n/de.json"),
     ).toBeInTheDocument();
     expect(screen.getByText("removed-key")).toBeInTheDocument();
-    expect(screen.getByText(/do not block export/)).toBeInTheDocument();
+    expect(screen.getByText(/SMAPI ignores them/)).toBeInTheDocument();
+    expect(screen.getByText(/do not affect progress/)).toBeInTheDocument();
   });
 
   it("calls onClose when Close is clicked", () => {
