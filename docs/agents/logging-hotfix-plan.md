@@ -86,8 +86,8 @@ string-table values.
 
 Add a button in **Settings → About** that opens `Data/logs/` via the existing
 `opener` plugin (a folder open, not a URL). This lets a reporter grab the log
-file to attach to the bug-report form. Document it in
-[SUPPORT.md](../../SUPPORT.md) and the bug-report template once shipped.
+file to attach to the bug-report form. Document it in the README and bug-report
+template once shipped.
 
 ## Acceptance criteria
 
@@ -116,5 +116,5 @@ file to attach to the bug-report form. Document it in
 - `src-tauri/src/detection.rs`, `scanner.rs` — `eprintln!` → `log::*`.
 - `src/tauri/commands.ts` + `src/App.tsx` + dialogs — forward caught errors.
 - `src/settings/SettingsDialog.tsx` — "Open logs folder" + logging toggle.
-- `SUPPORT.md`, `README.md`, `.github/ISSUE_TEMPLATE/bug_report.yml`,
-  `CHANGELOG.md` — document and add the optional log field.
+- `README.md`, `.github/ISSUE_TEMPLATE/bug_report.yml`, `CHANGELOG.md` —
+  document and add the optional log field.

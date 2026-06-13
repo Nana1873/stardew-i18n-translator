@@ -6,127 +6,29 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for filing a bug. The fields below are deliberately structured so
-        a maintainer **or an AI coding agent** can reproduce and fix the issue
-        without a back-and-forth. Please fill them in as precisely as you can.
+        Tell us what went wrong. A short report is fine.
 
-        💡 The app writes a local log file. Open **Settings → About → Open logs
-        folder**, grab the newest `stardew-i18n-translator*.log`, and attach it
-        below — it is the single most useful thing for diagnosing a bug.
-
-        ⚠️ Do **not** paste API keys or any personal data. The log may contain
-        local folder paths; remove anything private before attaching it.
-
-  - type: checkboxes
-    id: preflight
-    attributes:
-      label: Before you start
-      options:
-        - label: I searched existing issues and this is not a duplicate.
-          required: true
-        - label: I am on the latest release.
-          required: true
-
-  - type: input
-    id: version
-    attributes:
-      label: App version
-      description: See **Settings → About**.
-      placeholder: "1.1.1"
-    validations:
-      required: true
-
-  - type: input
-    id: os
-    attributes:
-      label: Windows version
-      placeholder: "Windows 11 Pro 23H2"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: area
-    attributes:
-      label: Affected area
-      description: Which part of the app misbehaves? Pick the closest match.
-      options:
-        - Setup / first-run wizard
-        - Mod scanning
-        - String table / editor
-        - Token or quality validation
-        - Export (writing i18n files / backups)
-        - Local AI (Ollama / LM Studio / OpenAI-compatible)
-        - External LLM batch (export / import / drag-and-drop)
-        - Glossary build
-        - Settings / keyboard shortcuts
-        - Dashboard
-        - Other / not sure
-    validations:
-      required: true
+        Logs and screenshots are optional. Logs may contain local folder paths,
+        so remove anything private before attaching them.
 
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
-      description: A clear, specific description of the problem.
+      description: Describe the problem in your own words.
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: Steps to reproduce
-      description: Numbered steps, starting from a fresh launch where possible.
-      value: |
-        1.
-        2.
-        3.
-    validations:
-      required: true
+      label: How can it be reproduced? (optional)
+      description: A few steps are enough if you know them.
 
   - type: textarea
-    id: expected
+    id: details
     attributes:
-      label: Expected behavior
-    validations:
-      required: true
-
-  - type: textarea
-    id: error-message
-    attributes:
-      label: Exact error message shown in the app
+      label: Additional details (optional)
       description: >
-        Copy the full text of any error/warning the app displayed. Leave blank
-        if no message appeared.
-      render: text
-
-  - type: textarea
-    id: log
-    attributes:
-      label: Log file or excerpt
-      description: >
-        Attach (drag the file into this box) or paste the newest log from
-        **Settings → About → Open logs folder**. Remove anything private first.
-      render: text
-
-  - type: input
-    id: affected-mod
-    attributes:
-      label: Affected mod (if specific to one mod)
-      description: Mod name and, if public, a Nexus/GitHub link. Optional.
-
-  - type: textarea
-    id: sample
-    attributes:
-      label: Minimal sample input (optional)
-      description: >
-        If the bug is triggered by a specific `i18n` JSON or an LLM-batch result
-        file, paste the smallest snippet that reproduces it. Remove anything
-        private first.
-      render: json
-
-  - type: textarea
-    id: notes
-    attributes:
-      label: Anything else?
-      description: Screenshots, frequency (always / sometimes), recent changes, etc.
+        App version, Windows version, affected mod, error message, screenshots,
+        or a log from Settings > About > Open logs folder.

@@ -113,14 +113,12 @@ Rust, lint, and format checks). The agent rules and workflow live in
 Mentioning this for transparency — it does not change the license, the privacy
 guarantees, or the fact that the maintainer is responsible for what ships.
 
-## Contributing And Support
+## Issues
 
-- **Need help or hit a problem?** See [SUPPORT.md](SUPPORT.md).
-- **Found a bug?** Open a
+- **Found a bug?** Open a short
   [bug report](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=bug_report.yml).
-- **Want to contribute?** Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
-  [Code of Conduct](CODE_OF_CONDUCT.md).
-- **Security issue?** Please report it privately — see [SECURITY.md](SECURITY.md).
+- **Have an idea?** Open a
+  [feature request](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=feature_request.yml).
 - **What changed between versions?** See [CHANGELOG.md](CHANGELOG.md).
 
 ## Development

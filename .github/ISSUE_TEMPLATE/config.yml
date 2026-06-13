@@ -1,8 +1,1 @@
-blank_issues_enabled: false
-contact_links:
-  - name: Question or help
-    url: https://github.com/Nana1873/stardew-i18n-translator/blob/main/SUPPORT.md
-    about: How to get help, ask questions, and what to include.
-  - name: Report a security vulnerability
-    url: https://github.com/Nana1873/stardew-i18n-translator/security/advisories/new
-    about: Please report security issues privately, not as a public issue.
+blank_issues_enabled: true
