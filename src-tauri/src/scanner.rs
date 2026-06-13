@@ -323,6 +323,30 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
     }
 
+    // SMAPI requires globally-unique UniqueIDs and refuses to load duplicates;
+    // our translation state is also keyed by UniqueID (translations.rs), so two
+    // scanned mods sharing one would silently collide on a single state file and
+    // overwrite each other's progress. Warn loudly instead of merging quietly.
+    let mut folders_by_id: std::collections::BTreeMap<&str, Vec<&str>> =
+        std::collections::BTreeMap::new();
+    for scanned in &result_mods {
+        folders_by_id
+            .entry(scanned.unique_id.as_str())
+            .or_default()
+            .push(scanned.folder_path.as_str());
+    }
+    for (id, folders) in &folders_by_id {
+        if folders.len() > 1 {
+            warnings.push(format!(
+                "Duplicate mod UniqueID \"{id}\" found in {} folders ({}). Their saved \
+                 translation progress shares one state file and may overwrite each other; \
+                 SMAPI will not load duplicate UniqueIDs either — remove or fix the extra copy.",
+                folders.len(),
+                folders.join(", ")
+            ));
+        }
+    }
+
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
         mod_count: result_mods.len(),
@@ -1069,6 +1093,36 @@ mod tests {
     fn write(path: &Path, body: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn warns_on_duplicate_unique_id_across_mods() {
+        // Two separate packages declaring the same UniqueID is a broken/duplicated
+        // install: their state would collide on one file. The scan must warn.
+        let root = crate::test_support::temp_dir("scan-dup-id");
+        for pkg in ["CopyA", "CopyB"] {
+            write(
+                &root.join(pkg).join("manifest.json"),
+                "{ \"Name\": \"Dup\", \"UniqueID\": \"same.id\" }",
+            );
+            write(
+                &root.join(pkg).join("i18n").join("default.json"),
+                "{ \"k\": \"v\" }",
+            );
+        }
+
+        let result = scan_mods(&root, "de", &root);
+        assert_eq!(result.mod_count, 2);
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("Duplicate") && w.contains("same.id")),
+            "expected a duplicate-UniqueID warning, got: {:?}",
+            result.warnings
+        );
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]

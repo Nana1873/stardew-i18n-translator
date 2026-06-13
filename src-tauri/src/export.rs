@@ -48,6 +48,9 @@ pub struct ExportFileResult {
     pub target_path: String,
     /// The target file was (re)written.
     pub written: bool,
+    /// Every translation was cleared, so the now-stale target file was removed
+    /// (after a backup) — SMAPI falls back to `default.json`.
+    pub removed: bool,
     /// An existing target file was backed up to `<file>.bak`.
     pub backed_up: bool,
     pub written_keys: usize,
@@ -70,6 +73,8 @@ pub struct ExportResult {
     pub files: Vec<ExportFileResult>,
     pub skipped: Vec<SkippedKey>,
     pub files_written: usize,
+    /// Target files removed because every translation was cleared.
+    pub files_removed: usize,
     pub total_written_keys: usize,
     pub total_untranslated: usize,
     pub total_outdated: usize,
@@ -163,6 +168,13 @@ pub fn export_mod(
             file_result.backed_up = write_target(target_path, &out)?;
             file_result.written = true;
             result.files_written += 1;
+        } else if target_path.is_file() {
+            // Every translation was cleared. Leaving the old <lang>.json on disk
+            // keeps those stale strings live in SMAPI, so remove it (after a
+            // backup) — the mod then cleanly falls back to default.json.
+            file_result.backed_up = remove_target(target_path)?;
+            file_result.removed = true;
+            result.files_removed += 1;
         }
 
         result.total_written_keys += file_result.written_keys;
@@ -226,6 +238,19 @@ fn write_target(target_path: &Path, map: &Map<String, Value>) -> Result<bool, St
     Ok(backed_up)
 }
 
+/// Remove a target file whose translations were all cleared, backing it up to
+/// `<file>.bak` first so the old content is recoverable. SMAPI then falls back
+/// to `default.json`. Returns whether a backup was created (always true — the
+/// caller only invokes this for an existing file).
+fn remove_target(target_path: &Path) -> Result<bool, String> {
+    let backup = sibling(target_path, ".bak");
+    std::fs::copy(target_path, &backup)
+        .map_err(|error| format!("Could not back up {}: {error}", target_path.display()))?;
+    std::fs::remove_file(target_path)
+        .map_err(|error| format!("Could not remove {}: {error}", target_path.display()))?;
+    Ok(true)
+}
+
 /// A sibling path with `suffix` appended to the full file name, so
 /// `i18n/de.json` + `.bak` -> `i18n/de.json.bak` (not `i18n/de.bak`).
 fn sibling(path: &Path, suffix: &str) -> PathBuf {
@@ -244,6 +269,75 @@ mod tests {
     fn write(path: &Path, body: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn removes_target_file_when_every_translation_is_cleared() {
+        // An existing <lang>.json whose only key has been cleared must be
+        // removed (after a backup), not left on disk with stale content —
+        // otherwise SMAPI keeps loading the old translation.
+        let root = crate::test_support::temp_dir("export-clear-all");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
+        write(&i18n.join("de.json"), "{ \"k\": \"Hallo\" }");
+
+        crate::translations::save_one(
+            &root,
+            "mod.id",
+            crate::translations::entry_key("i18n", "k"),
+            crate::translations::StoredString {
+                target: String::new(),
+                status: "untranslated".into(),
+                source_hash: crate::translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("de.json").display().to_string(),
+        }];
+        let result = export_mod(&root, "mod.id", &files).unwrap();
+
+        assert!(
+            !i18n.join("de.json").is_file(),
+            "the cleared target file must be removed"
+        );
+        assert!(
+            i18n.join("de.json.bak").is_file(),
+            "removal keeps the old content in a .bak"
+        );
+        assert_eq!(result.files_removed, 1);
+        assert_eq!(result.files_written, 0);
+        assert!(result.files[0].removed);
+        assert!(!result.files[0].written);
+        assert!(result.files[0].backed_up);
+        assert_eq!(result.files[0].written_keys, 0);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn empty_export_with_no_existing_target_removes_nothing() {
+        // No translations and no existing file: nothing to write or remove.
+        let root = crate::test_support::temp_dir("export-empty-noop");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
+
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("de.json").display().to_string(),
+        }];
+        let result = export_mod(&root, "mod.id", &files).unwrap();
+
+        assert_eq!(result.files_removed, 0);
+        assert_eq!(result.files_written, 0);
+        assert!(!result.files[0].removed);
+        assert!(!i18n.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     fn read(path: &Path) -> String {

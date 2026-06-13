@@ -545,6 +545,7 @@ export function App() {
         files: [],
         skipped: [],
         filesWritten: 0,
+        filesRemoved: 0,
         totalWrittenKeys: 0,
         totalUntranslated: 0,
         totalOutdated: 0,
@@ -568,6 +569,7 @@ export function App() {
           })),
         );
         merged.filesWritten += result.filesWritten;
+        merged.filesRemoved += result.filesRemoved;
         merged.totalWrittenKeys += result.totalWrittenKeys;
         merged.totalUntranslated += result.totalUntranslated;
         merged.totalOutdated += result.totalOutdated;
