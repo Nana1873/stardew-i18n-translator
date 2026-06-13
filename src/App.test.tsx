@@ -159,6 +159,7 @@ describe("App shell", () => {
     // Landing screen is the dashboard (SPEC §7.0 rollout ④), not the panels.
     expect(screen.getByRole("main", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Mod list" })).toBeNull();
+    expect(screen.queryByRole("searchbox")).toBeNull();
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
@@ -520,6 +521,14 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: /Browse all mods/ }));
     expect(await screen.findByText("Test Mod")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "7286" })).toBeInTheDocument();
+    expect(
+      screen.queryByRole("searchbox", { name: "Search strings" }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByText("Test Mod"));
+    expect(
+      await screen.findByRole("searchbox", { name: "Search strings" }),
+    ).toBeInTheDocument();
   });
 
   it("the dashboard review queue jumps into the mod filtered to review-needed", async () => {

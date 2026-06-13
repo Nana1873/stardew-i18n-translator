@@ -931,15 +931,16 @@ function Toolbar({
             <span aria-hidden>⚑</span> {reviewTotal} to review
           </button>
         )}
-        <input
-          className="toolbar__search"
-          type="search"
-          placeholder="Search…"
-          aria-label="Search strings"
-          value={search}
-          onChange={(event) => onSearch(event.target.value)}
-          disabled={!searchEnabled}
-        />
+        {searchEnabled && (
+          <input
+            className="toolbar__search"
+            type="search"
+            placeholder="Search strings…"
+            aria-label="Search strings"
+            value={search}
+            onChange={(event) => onSearch(event.target.value)}
+          />
+        )}
       </div>
     </header>
   );
