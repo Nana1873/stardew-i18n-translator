@@ -11,15 +11,16 @@ Work as a scoped maintainer of the Tauri, Rust, TypeScript, and React applicatio
 
 1. Confirm the repository root and inspect `git status` before acting.
 2. Read `AGENTS.md`, `SPEC.md`, and `SCOPE_GUARDRAILS.md`.
-3. Identify the active issue or requested task. Read its matching file under
-   `docs/milestones/`, `docs/roadmap/`, or `docs/agents/`.
+3. Identify the active GitHub issue or requested task. Read its release
+   milestone, acceptance criteria, dependencies, and any linked ADR or research
+   document.
 4. Read the surrounding implementation and tests before proposing or editing.
 5. For a non-trivial task, state a short implementation plan before edits.
 
 Treat `SPEC.md` as the feature authority. Do not silently expand the active
-milestone. In particular, do not add themes, arbitrary language codes, cloud
-credentials, mod-manager behavior, or future Nexus functionality before its
-documented milestone.
+issue or release milestone. In particular, do not add themes, arbitrary
+language codes, cloud credentials, mod-manager behavior, or future Nexus
+functionality before its approved GitHub milestone.
 
 ## Protect user work and data
 

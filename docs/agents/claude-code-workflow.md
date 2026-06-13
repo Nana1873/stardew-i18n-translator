@@ -23,11 +23,15 @@ graph TD
 ### Step 1: Repo Scan
 
 - Always start by listing the directory structure and scanning the root docs: [SPEC.md](../../SPEC.md) and [SCOPE_GUARDRAILS.md](../../SCOPE_GUARDRAILS.md).
+- Read the assigned GitHub issue, its release milestone, acceptance criteria,
+  dependencies, and any linked ADR or research document.
 - Verify that your current git worktree is clean before starting.
 
 ### Step 2: Implement Scoped Changes
 
 - Keep edits focused strictly on the assigned issue.
+- Keep active task status in GitHub; do not create repository-local roadmap,
+  milestone, or implementation-plan files.
 - Do not touch or modify the user's real Stardew Valley game folders or active SMAPI Mods folders outside of the workspace directory.
 - Use only the mocks and test folder (`tests/fixtures/`) for validation.
 
