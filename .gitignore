@@ -79,6 +79,9 @@ manifest.json.user
 # === Tauri generated ===
 /src-tauri/gen/
 
-# === Local agent / preview tooling (not part of the project) ===
-/.claude/
+# === Local agent / preview tooling ===
+/.claude/*
+!/.claude/skills/
+!/.claude/skills/stardew-i18n-translator/
+!/.claude/skills/stardew-i18n-translator/SKILL.md
 /.preview/
