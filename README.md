@@ -121,6 +121,9 @@ guarantees, or the fact that the maintainer is responsible for what ships.
 
 ## Issues
 
+- **What is planned?** See the
+  [open milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones)
+  and [issue tracker](https://github.com/Nana1873/stardew-i18n-translator/issues).
 - **Found a bug?** Open a short
   [bug report](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=bug_report.yml).
 - **Have an idea?** Open a

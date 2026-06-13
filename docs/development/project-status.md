@@ -1,7 +1,11 @@
 # Project Status
 
-This document preserves the implementation-oriented status information that
-previously lived in the public README.
+This document summarizes the shipped product. Active work is tracked in
+[GitHub Issues](https://github.com/Nana1873/stardew-i18n-translator/issues),
+grouped by
+[GitHub Milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones).
+Those GitHub views are the source of truth for current status and priorities.
+See [Planning and Status](planning.md) for the maintenance convention.
 
 ## Implemented
 
@@ -19,11 +23,11 @@ previously lived in the public README.
 
 ## Release State
 
-- Application version: 1.2.0.
-- v1 milestones M1-M4 and M6 are complete.
-- M5 Nexus translation discovery is planned for v1.3.
-- The active next-version plan is in
-  [`docs/roadmap/v1.2-plan.md`](../roadmap/v1.2-plan.md).
+- Latest release: 1.2.1.
+- Maintenance work is grouped under the
+  [v1.2.2 milestone](https://github.com/Nana1873/stardew-i18n-translator/milestone/1).
+- Nexus discovery work is grouped under the
+  [v1.3 milestone](https://github.com/Nana1873/stardew-i18n-translator/milestone/2).
 - Build and publication instructions are in
   [`docs/release/release-process.md`](../release/release-process.md).
 
@@ -32,5 +36,6 @@ previously lived in the public README.
 - [`SPEC.md`](../../SPEC.md)
 - [`SCOPE_GUARDRAILS.md`](../../SCOPE_GUARDRAILS.md)
 - [`docs/adr/0001-tech-stack-decision.md`](../adr/0001-tech-stack-decision.md)
-- [`docs/milestones/`](../milestones/)
 - [`docs/agents/`](../agents/)
+- [`docs/research/`](../research/)
+- [`docs/development/planning.md`](planning.md)

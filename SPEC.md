@@ -1135,7 +1135,7 @@ The following are **explicitly excluded** from v1:
 
 **Goal:** User can translate strings in-app, fully offline, against a locally running model server.
 
-**Prerequisite:** Milestones 1–3 complete (a working glossary makes local-AI pre-translation worthwhile). Reprioritized ahead of M4/M5 at the user's request. See [docs/milestones/m6-local-llm-translation.md](docs/milestones/m6-local-llm-translation.md) for the full breakdown.
+**Prerequisite:** Milestones 1–3 complete (a working glossary makes local-AI pre-translation worthwhile). Reprioritized ahead of M4/M5 at the user's request. The implementation is complete; active follow-up work is tracked in GitHub Issues.
 
 **Scope:**
 
@@ -1318,6 +1318,10 @@ The private legacy Stardew Translator project provided the following lessons:
 ---
 
 ## Appendix D — Version Roadmap Summary
+
+Active scope and status are tracked in
+[GitHub Milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones).
+This table records the durable product direction rather than task completion.
 
 | Version        | Scope                                                                                                                  |
 | -------------- | ---------------------------------------------------------------------------------------------------------------------- |

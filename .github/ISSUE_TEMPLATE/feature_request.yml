@@ -9,8 +9,9 @@ body:
         Thanks for the idea! Please note this project has **deliberately strict
         scope** — see [SCOPE_GUARDRAILS.md](../blob/main/SCOPE_GUARDRAILS.md).
         It is a local, offline translation editor; it is **not** a mod manager,
-        a cloud-AI client, or a Nexus download tool. Requests outside that scope
-        may be closed or deferred to a future milestone.
+        a cloud-AI client or a general mod manager. Nexus work is limited to the
+        explicitly approved scope in SPEC.md. Requests outside the product scope
+        may be closed or moved to a future release milestone.
 
   - type: checkboxes
     id: preflight

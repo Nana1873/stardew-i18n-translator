@@ -1,4 +1,4 @@
-# V1.1 Supported-Language Compatibility Gate
+# Supported-Language Compatibility
 
 ## Goal
 
