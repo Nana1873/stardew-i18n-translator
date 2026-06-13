@@ -15,6 +15,9 @@ mod settings;
 mod tokens;
 mod translations;
 
+#[cfg(test)]
+mod language_compatibility;
+
 use std::path::{Path, PathBuf};
 use std::{fs::OpenOptions, io::Write};
 
@@ -80,7 +83,7 @@ fn load_strings(
 ) -> Result<Vec<scanner::StringRow>, String> {
     // A corrupted state file is surfaced to the user (instead of silently
     // showing everything untranslated and inviting an overwrite).
-    let state = translations::load(&config_dir(&app)?, &mod_unique_id)?;
+    let state = translations::load(&translation_config_dir(&app)?, &mod_unique_id)?;
     Ok(scanner::load_strings(
         Path::new(&default_path),
         Path::new(&target_path),
@@ -105,7 +108,7 @@ fn save_string(
         source_hash: translations::source_hash(&source),
     };
     translations::save_one(
-        &config_dir(&app)?,
+        &translation_config_dir(&app)?,
         &mod_unique_id,
         translations::entry_key(&relative_dir, &key),
         entry,
@@ -145,7 +148,7 @@ fn save_strings(
             )
         })
         .collect();
-    translations::save_many(&config_dir(&app)?, &mod_unique_id, entries)
+    translations::save_many(&translation_config_dir(&app)?, &mod_unique_id, entries)
 }
 
 #[tauri::command]
@@ -154,7 +157,7 @@ fn export_mod(
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<export::ExportResult, String> {
-    export::export_mod(&config_dir(&app)?, &mod_unique_id, &files)
+    export::export_mod(&translation_config_dir(&app)?, &mod_unique_id, &files)
 }
 
 /// Outcome of an external LLM batch export (M4): where the file landed and what
@@ -255,7 +258,7 @@ fn import_llm_batch_from_path(
     let parsed = scanner::parse_json_lenient(&body)
         .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
 
-    let config = config_dir(app)?;
+    let config = translation_config_dir(app)?;
     let state = translations::load(&config, mod_unique_id)?;
     let mut rows_by_dir = std::collections::HashMap::new();
     for file in files {
@@ -440,6 +443,14 @@ fn ensure_portable_data_dir() -> Result<PathBuf, String> {
 
 fn config_dir(_app: &AppHandle) -> Result<PathBuf, String> {
     portable_data_dir()
+}
+
+fn translation_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let config = config_dir(app)?;
+    let target_lang = settings::load(&config)
+        .target_lang
+        .ok_or("Choose a target language before editing translations.")?;
+    translations::language_root(&config, &target_lang)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

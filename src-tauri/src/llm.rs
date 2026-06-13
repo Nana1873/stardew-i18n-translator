@@ -94,9 +94,9 @@ pub struct TranslationResult {
 }
 
 #[derive(Serialize)]
-struct ChatMessage {
-    role: &'static str,
-    content: String,
+pub(crate) struct ChatMessage {
+    pub(crate) role: &'static str,
+    pub(crate) content: String,
 }
 
 #[derive(Serialize)]
@@ -208,7 +208,7 @@ struct ChatChoiceMessage {
 /// Build the chat messages for one translation. Pure (no I/O) so it is unit-
 /// tested. `glossary_pairs` are injected as exact-term guidance; `retry_missing`,
 /// when present, adds a stricter reminder listing tokens a prior attempt dropped.
-fn build_messages(
+pub(crate) fn build_messages(
     source: &str,
     target_language: &str,
     section: Option<&str>,

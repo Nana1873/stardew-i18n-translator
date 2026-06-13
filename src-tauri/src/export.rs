@@ -180,7 +180,7 @@ pub fn export_mod(
 /// (matched with SMAPI key semantics: case-insensitive, trimmed). These get
 /// dropped by the rewrite, so the summary must surface them.
 fn orphan_keys(default_path: &Path, target_path: &Path) -> Vec<String> {
-    let Some(target) = scanner::read_object(target_path) else {
+    let Some(target) = scanner::read_target_object(target_path) else {
         return Vec::new();
     };
     let source = scanner::read_object(default_path).unwrap_or_default();
