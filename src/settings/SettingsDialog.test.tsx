@@ -219,7 +219,7 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Stardew i18n Translator" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Version 1.0.1")).toBeInTheDocument();
+    expect(screen.getByText("Version 1.1.0")).toBeInTheDocument();
     expect(screen.getByText("GPL-3.0-or-later")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Shortcuts" })).toBeInTheDocument();
   });

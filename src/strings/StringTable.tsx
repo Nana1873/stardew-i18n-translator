@@ -481,9 +481,8 @@ export function StringTable({
     if (items.length > 0) setBatch(items);
   }
 
-  /** Persist one batch result as an unreviewed AI suggestion. Functional row
-   * update — the batch loop runs across many renders, so a captured `data`
-   * snapshot would clobber earlier results. */
+  /** Persist one batch result as an unreviewed AI suggestion. Keep rowsRef in
+   * sync immediately so closing the dialog cannot report stale counts. */
   async function applyBatchResult(item: BatchItem, text: string) {
     await saveString(
       mod.uniqueId,
@@ -493,20 +492,21 @@ export function StringTable({
       "review-needed",
       item.source,
     );
-    setRows((current) =>
-      current
-        ? current.map((row, i) =>
-            i === item.index
-              ? {
-                  ...row,
-                  target: text,
-                  status: "review-needed" as StringStatus,
-                  targetPresent: true,
-                }
-              : row,
-          )
-        : current,
+    const current = rowsRef.current;
+    if (!current) return;
+
+    const next = current.map((row, i) =>
+      i === item.index
+        ? {
+            ...row,
+            target: text,
+            status: "review-needed" as StringStatus,
+            targetPresent: true,
+          }
+        : row,
     );
+    rowsRef.current = next;
+    setRows(next);
   }
 
   function closeBatch() {

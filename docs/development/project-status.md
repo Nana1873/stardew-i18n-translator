@@ -19,7 +19,7 @@ previously lived in the public README.
 
 ## Release State
 
-- Application version: 1.0.1.
+- Application version: 1.1.0.
 - v1 milestones M1-M4 and M6 are complete.
 - M5 Nexus translation discovery remains deferred.
 - The active next-version plan is in
