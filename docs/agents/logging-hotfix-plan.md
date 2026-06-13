@@ -8,7 +8,7 @@
 > **Deviation from the plan:** the opt-out _toggle_ was deferred. Logging is
 > always on but fully local and bounded (`RotationStrategy::KeepSome(5)`,
 > ~2 MB/file), so the privacy/footprint risk a toggle would mitigate is already
-> covered. A disable toggle can still be added later if requested.
+> covered. A local disable toggle is planned for v1.2.
 
 ## Motivation
 

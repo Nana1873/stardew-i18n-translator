@@ -23,7 +23,7 @@ previously lived in the public README.
 - v1 milestones M1-M4 and M6 are complete.
 - M5 Nexus translation discovery remains deferred.
 - The active next-version plan is in
-  [`docs/roadmap/v1.1-candidates.md`](../roadmap/v1.1-candidates.md).
+  [`docs/roadmap/v1.2-plan.md`](../roadmap/v1.2-plan.md).
 - Build and publication instructions are in
   [`docs/release/release-process.md`](../release/release-process.md).
 

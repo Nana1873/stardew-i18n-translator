@@ -565,17 +565,21 @@ v1 validation focuses on **preventing broken mods** — not on translation quali
 | `identical-to-source` | Warning  | The non-empty target is exactly identical to the source, including after **Keep original**. This remains visible so accidental Keep original actions are easy to find.                                                                                                                                                                                                                                                                                                                   |
 | `escape-suspicious`   | Warning  | Literal JSON-style escape sequences such as `\n` or `\"` differ between source and target. This is review guidance and never blocks export.                                                                                                                                                                                                                                                                                                                                              |
 
-**5 rules total for v1.** Quality and style checks are deferred to v1.1+.
+The validation model stays deliberately focused on structural safety and useful
+review guidance. It does not attempt to judge translation style or grammar.
 
 > **Scope note (2026-06-10):** v1 originally treated `\n` as a protected token inside `token-missing` — which made the first real batch import flag a perfectly valid German translation as an **error** (and export would have skipped it) just because it rewrapped 4 English lines into 3 German ones. That contradicted this section's own philosophy (errors = "will break the mod") and the original plan (`newline-mismatch` was always specced as a warning). Fixed by exempting `\n` from the token error rules and pulling the `newline-mismatch` **warning** forward from v1.1.
 
-### Deferred Validation Rules (v1.1+)
+### Deferred Validation
 
-| Rule ID                 | Severity | Target Version |
-| ----------------------- | -------- | -------------- |
-| `token-case-changed`    | Warning  | v1.1           |
-| `bracket-token-missing` | Warning  | v1.1           |
-| `extra-key`             | Info     | v1.1           |
+| Rule ID     | Severity | Target Version |
+| ----------- | -------- | -------------- |
+| `extra-key` | Info     | v1.2           |
+
+`token-case-changed` and `bracket-token-missing` are not separate rules.
+Protected tokens are compared exactly as a multiset, so case changes and
+missing bracketed tokens are already covered by `token-missing` /
+`token-added`.
 
 ### Severity Levels and Export Behavior
 
@@ -904,22 +908,17 @@ First AI step — requires core workflow to be complete:
 - [x] Imported results get status `review-needed`
 - [x] Post-import validation runs
 
-### Deferred to v1.1+
+### Roadmap After v1.1.1
 
-| Feature                                  | Target |
-| ---------------------------------------- | ------ |
-| Nexus API key storage and validation     | v1.1   |
-| Nexus mod info enrichment                | v1.1   |
-| `token-case-changed` validation          | v1.1   |
-| `identical-to-source` validation         | v1.1   |
-| `escape-suspicious` validation           | v1.1   |
-| `extra-key` validation                   | v1.1   |
-| Supported-language manual smoke matrix   | v1.1   |
-| Optional cloud-AI credentials            | v1.1+  |
-| Finalize-and-propagate identical strings | v2     |
-| Assisted Nexus translation discovery     | v2     |
-| Nexus translation download + import      | v2     |
-| Dark mode / light mode toggle            | v1.1   |
+| Feature                                     | Target             |
+| ------------------------------------------- | ------------------ |
+| Custom SMAPI target-language codes          | v1.2               |
+| `extra-key` import/scan reporting           | v1.2               |
+| Local diagnostic logging enable/disable     | v1.2               |
+| Optional cloud-AI credentials               | Unscheduled        |
+| Nexus integration                           | Separate milestone |
+| Finalize-and-propagate identical strings    | v2                 |
+| Assisted Nexus translation discovery/import | v2                 |
 
 ---
 
@@ -927,33 +926,34 @@ First AI step — requires core workflow to be complete:
 
 The following are **explicitly excluded** from v1:
 
-| Feature                                        | Reason                                                                   |
-| ---------------------------------------------- | ------------------------------------------------------------------------ |
-| In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only   |
-| Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                    |
-| Automatic Nexus translation discovery/download | Deferred to v2 (see §12)                                                 |
-| Git integration                                | Adds complexity without core workflow value                              |
-| Full mod manager                               | Out of scope — tool manages translations only                            |
-| Vortex/MO2 profile detection                   | User can point to any folder manually                                    |
-| Publishing/uploading translations              | Out of scope                                                             |
-| Complex glossary editor                        | v1 auto-generates glossary; no manual editing UI                         |
-| Cloud sync                                     | Local-first tool                                                         |
-| Translation memory (cross-mod)                 | v2+                                                                      |
-| Multiple simultaneous target languages         | v1 works with one target language at a time                              |
-| Additional studio/analytics workspaces         | Dashboard + two-panel work view are the intentional UI ceiling           |
-| Card-based mod manager                         | SSE-AT style tables only                                                 |
-| Kanban board                                   | Not a project management tool                                            |
-| Analytics screen                               | Progress bar is sufficient                                               |
-| Plugin/provider abstraction                    | v1 hardcodes; abstract later                                             |
-| Complex navigation system                      | Two-panel layout + dialogs only                                          |
-| `content.json` parsing                         | i18n files only in v1                                                    |
-| `Data/*.json` mod file translation             | i18n files only in v1                                                    |
-| In-app XNB decoder                             | Deferred to future version                                               |
-| Separate settings windows                      | One left-navigation settings dialog is sufficient                        |
-| Configurable keyboard shortcuts                | Deferred to v1.1; v1 uses the fixed shortcuts documented in §7.5         |
-| More than 4 status values                      | Intentionally capped (v1)                                                |
-| Project save/load system                       | State persisted automatically, no project files                          |
-| Quality/style validation rules                 | v1 validates only safety (tokens, JSON). Quality rules deferred to v1.1. |
+| Feature                                        | Reason                                                                 |
+| ---------------------------------------------- | ---------------------------------------------------------------------- |
+| In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only |
+| Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                  |
+| Automatic Nexus translation discovery/download | Deferred to v2 (see §12)                                               |
+| Git integration                                | Adds complexity without core workflow value                            |
+| Full mod manager                               | Out of scope — tool manages translations only                          |
+| Vortex/MO2 profile detection                   | User can point to any folder manually                                  |
+| Publishing/uploading translations              | Out of scope                                                           |
+| Complex glossary editor                        | v1 auto-generates glossary; no manual editing UI                       |
+| Cloud sync                                     | Local-first tool                                                       |
+| Translation memory (cross-mod)                 | v2+                                                                    |
+| Multiple simultaneous target languages         | v1 works with one target language at a time                            |
+| Additional studio/analytics workspaces         | Dashboard + two-panel work view are the intentional UI ceiling         |
+| Card-based mod manager                         | SSE-AT style tables only                                               |
+| Kanban board                                   | Not a project management tool                                          |
+| Analytics screen                               | Progress bar is sufficient                                             |
+| Theme switching / multiple themes              | The warm dark theme is the fixed product design                        |
+| Plugin/provider abstraction                    | v1 hardcodes; abstract later                                           |
+| Complex navigation system                      | Two-panel layout + dialogs only                                        |
+| `content.json` parsing                         | i18n files only in v1                                                  |
+| `Data/*.json` mod file translation             | i18n files only in v1                                                  |
+| In-app XNB decoder                             | Deferred to future version                                             |
+| Separate settings windows                      | One left-navigation settings dialog is sufficient                      |
+| Configurable keyboard shortcuts                | Shipped in v1.1                                                        |
+| More than 4 status values                      | Intentionally capped (v1)                                              |
+| Project save/load system                       | State persisted automatically, no project files                        |
+| Automated translation-style or grammar scoring | Too subjective and language-dependent for reliable validation          |
 
 ---
 
@@ -1327,10 +1327,11 @@ The private legacy Stardew Translator project provided the following lessons:
 
 ## Appendix D — Version Roadmap Summary
 
-| Version        | Scope                                                                                                                                                                          |
-| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                                                                  |
-| **v1 (M4)**    | External LLM Batch Export/Import                                                                                                                                               |
-| **v1.1**       | Configurable shortcuts, supported-language compatibility verification, optional Nexus enrichment, focused quality validation, inline editing, drag-and-drop, optional cloud AI |
-| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate                                                       |
-| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                                                                    |
+| Version        | Scope                                                                                                                                  |
+| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                          |
+| **v1 (M4)**    | External LLM Batch Export/Import                                                                                                       |
+| **v1.1**       | Configurable shortcuts, language compatibility verification, safer token validation, inline editing, drag-and-drop, diagnostic logging |
+| **v1.2**       | Custom target-language codes, `extra-key` diagnostics, local logging control                                                           |
+| **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate               |
+| **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                            |
