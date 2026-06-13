@@ -1,0 +1,52 @@
+# Changelog
+
+All notable changes to this project are documented here. The format is based on
+[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project
+follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Per-release notes also live under [`docs/release/`](docs/release/).
+
+## [Unreleased]
+
+_Nothing yet._
+
+## [1.1.0] - 2026-06-13
+
+Faster editing, safer exports, and verified multilingual workflows, while
+keeping the app fully portable.
+
+### Added
+
+- Inline editing for short, single-line translations directly in the table.
+- Configurable keyboard shortcuts with conflict detection and reset to defaults.
+- Drag-and-drop import for external LLM batch-result JSON files.
+- An About page (version, license, author, repository, technology).
+- GPL-3.0-or-later licensing metadata.
+
+### Changed
+
+- Saved working translations are isolated by target language under
+  `Data/language-state/<code>/translations/`, with a one-time migration of
+  existing `Data/translations/` state into the upgrade language.
+- A complete mod export is now blocked before any file or backup is written when
+  protected-token counts differ.
+- Verified scan/edit/batch/export across all 11 advertised target languages,
+  including Portuguese `pt-BR.json` import with canonical `pt.json` export.
+- Updated README and screenshots; improved CI and release build times.
+
+See [docs/release/v1.1.0.md](docs/release/v1.1.0.md) for the full notes.
+
+## [1.0.1] - 2026
+
+Maintenance fixes following the initial release.
+
+## [1.0.0] - 2026
+
+Initial portable Windows release: mod scanning, the string table/editor with
+validation, protected-token handling, local-AI translation, external LLM batch
+export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
+
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.1...v1.1.0
+[1.0.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/Nana1873/stardew-i18n-translator/releases/tag/v1.0.0

@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest an improvement or new capability.
+title: "[Feature]: "
+labels: ["type:enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea! Please note this project has **deliberately strict
+        scope** — see [SCOPE_GUARDRAILS.md](../blob/main/SCOPE_GUARDRAILS.md).
+        It is a local, offline translation editor; it is **not** a mod manager,
+        a cloud-AI client, or a Nexus download tool. Requests outside that scope
+        may be closed or deferred to a future milestone.
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you start
+      options:
+        - label: I searched existing issues and discussions for this idea.
+          required: true
+        - label: I read SCOPE_GUARDRAILS.md and believe this fits the project's scope.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the workflow pain or limitation, not just the solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Existing workarounds, or other approaches you rejected.
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Anything else?
