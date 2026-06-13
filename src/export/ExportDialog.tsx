@@ -79,7 +79,10 @@ function ExportSummary({
   modsWritten: number | null;
   onInspectSkip?: (skip: SkippedKey) => void;
 }) {
-  const nothing = result.filesWritten === 0 && result.skipped.length === 0;
+  const nothing =
+    result.filesWritten === 0 &&
+    result.filesRemoved === 0 &&
+    result.skipped.length === 0;
   return (
     <div className="exportdlg__body">
       {result.blocked ? (
@@ -95,18 +98,29 @@ function ExportSummary({
         </p>
       ) : (
         <p>
-          Wrote <strong>{result.totalWrittenKeys}</strong>{" "}
-          {result.totalWrittenKeys === 1 ? "string" : "strings"} across{" "}
-          <strong>{result.filesWritten}</strong>{" "}
-          {result.filesWritten === 1 ? "file" : "files"}
-          {modsWritten !== null && (
+          {result.filesWritten > 0 && (
             <>
-              {" "}
-              in <strong>{modsWritten}</strong>{" "}
-              {modsWritten === 1 ? "mod" : "mods"}
+              Wrote <strong>{result.totalWrittenKeys}</strong>{" "}
+              {result.totalWrittenKeys === 1 ? "string" : "strings"} across{" "}
+              <strong>{result.filesWritten}</strong>{" "}
+              {result.filesWritten === 1 ? "file" : "files"}
+              {modsWritten !== null && (
+                <>
+                  {" "}
+                  in <strong>{modsWritten}</strong>{" "}
+                  {modsWritten === 1 ? "mod" : "mods"}
+                </>
+              )}
+              .
             </>
           )}
-          .
+          {result.filesRemoved > 0 && (
+            <>
+              {result.filesWritten > 0 ? " " : ""}
+              Removed <strong>{result.filesRemoved}</strong> cleared{" "}
+              {result.filesRemoved === 1 ? "file" : "files"} (backed up).
+            </>
+          )}
         </p>
       )}
 
@@ -115,6 +129,12 @@ function ExportSummary({
           <span className="exportdlg__dot exportdlg__dot--ok" /> Written:{" "}
           {result.totalWrittenKeys}
         </li>
+        {result.filesRemoved > 0 && (
+          <li>
+            <span className="exportdlg__dot exportdlg__dot--muted" /> Removed
+            (every translation cleared — backed up): {result.filesRemoved}
+          </li>
+        )}
         {result.totalUntranslated > 0 && (
           <li>
             <span className="exportdlg__dot exportdlg__dot--muted" />{" "}

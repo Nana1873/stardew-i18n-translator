@@ -10,6 +10,24 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 _Nothing yet._
 
+## [1.2.1] - 2026-06-13
+
+### Fixed
+
+- Exporting a mod whose translations were **all cleared** now removes the stale
+  `i18n/<lang>.json` (after a `.bak` backup) instead of leaving the old
+  translation on disk, so SMAPI cleanly falls back to English.
+- Scanning now **warns when two mods share the same UniqueID** instead of
+  silently merging their saved translation progress into one state file. SMAPI
+  itself will not load duplicate UniqueIDs, so the warning surfaces a broken or
+  duplicated install.
+- **Pre-existing translations can now go outdated.** A community `<lang>.json`
+  you never edited in the app gains a source-text baseline the first time you
+  open the mod, so it is flagged **outdated** when the mod's English source later
+  changes. Previously such imported strings stayed "translated" indefinitely.
+
+See [docs/release/v1.2.1.md](docs/release/v1.2.1.md) for the full notes.
+
 ## [1.2.0] - 2026-06-13
 
 ### Added
@@ -81,7 +99,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.1...HEAD
+[1.2.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.0.1...v1.1.0

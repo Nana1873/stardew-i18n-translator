@@ -201,6 +201,8 @@ export interface ExportFileResult {
   relativeDir: string;
   targetPath: string;
   written: boolean;
+  /** Every translation was cleared, so the stale target file was removed (after a backup). */
+  removed: boolean;
   backedUp: boolean;
   writtenKeys: number;
   untranslated: number;
@@ -215,6 +217,8 @@ export interface ExportResult {
   files: ExportFileResult[];
   skipped: SkippedKey[];
   filesWritten: number;
+  /** Target files removed because every translation was cleared. */
+  filesRemoved: number;
   totalWrittenKeys: number;
   totalUntranslated: number;
   totalOutdated: number;

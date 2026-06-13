@@ -90,15 +90,25 @@ fn load_strings(
     default_path: String,
     target_path: String,
 ) -> Result<Vec<scanner::StringRow>, String> {
+    let config = translation_config_dir(&app)?;
     // A corrupted state file is surfaced to the user (instead of silently
     // showing everything untranslated and inviting an overwrite).
-    let state = translations::load(&translation_config_dir(&app)?, &mod_unique_id)?;
-    Ok(scanner::load_strings(
+    let state = translations::load(&config, &mod_unique_id)?;
+    let rows = scanner::load_strings(
         Path::new(&default_path),
         Path::new(&target_path),
         &state,
         &relative_dir,
-    ))
+    );
+    // Adopt pre-existing <lang>.json translations the user never saved so they
+    // gain a source-hash baseline — without one they could never be flagged
+    // `outdated` when the mod's English source later changes. Idempotent: once
+    // adopted, the keys are in `state` and subsequent opens persist nothing.
+    let baselines = scanner::imported_baselines(&rows, &state, &relative_dir);
+    if !baselines.is_empty() {
+        translations::save_many(&config, &mod_unique_id, baselines)?;
+    }
+    Ok(rows)
 }
 
 #[tauri::command]
