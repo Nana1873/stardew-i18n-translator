@@ -912,7 +912,6 @@ First AI step — requires core workflow to be complete:
 
 | Feature                                     | Target             |
 | ------------------------------------------- | ------------------ |
-| Custom SMAPI target-language codes          | v1.2               |
 | `extra-key` import/scan reporting           | v1.2               |
 | Local diagnostic logging enable/disable     | v1.2               |
 | Optional cloud-AI credentials               | Unscheduled        |
@@ -1256,7 +1255,6 @@ The following are **explicitly excluded** from v1:
 | **Are there mods using language-subfolder mode (`i18n/de/dialogue.json`) instead of flat `i18n/de.json`?** | Affects scanner scope.                                | Survey mods during Milestone 1. If very rare, defer support.                                 |
 | **What is the exact format of unpacked `Data/Objects.json` in Stardew 1.6?**                               | Affects glossary extraction parsing.                  | Read actual file from test installation during Milestone 1.                                  |
 | **Does the Nexus v2 GraphQL API expose translation metadata?**                                             | Affects long-term Nexus strategy.                     | Monitor. Not blocking for v1.                                                                |
-| **How does `Data/AdditionalLanguages` work for custom game languages?**                                    | May need to support non-standard language codes.      | Out of scope for v1. Standard 12 languages only.                                             |
 
 ---
 
@@ -1332,6 +1330,6 @@ The private legacy Stardew Translator project provided the following lessons:
 | **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                          |
 | **v1 (M4)**    | External LLM Batch Export/Import                                                                                                       |
 | **v1.1**       | Configurable shortcuts, language compatibility verification, safer token validation, inline editing, drag-and-drop, diagnostic logging |
-| **v1.2**       | Custom target-language codes, `extra-key` diagnostics, local logging control                                                           |
+| **v1.2**       | `extra-key` diagnostics and local logging control                                                                                      |
 | **v2**         | Assisted Nexus translation discovery, Content Patcher `content.json` support, translation memory, finalize-and-propagate               |
 | **v3**         | Streamlined Nexus download/import, data file translation, in-app XNB reader                                                            |
