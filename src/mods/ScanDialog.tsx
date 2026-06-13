@@ -88,11 +88,12 @@ export function ScanDialog({
               ) : null}
               {(result.extraKeys?.length ?? 0) > 0 && (
                 <div className="scandlg__warnings">
-                  <span className="scandlg__muted">
-                    {result.extraKeys!.length} extra{" "}
-                    {result.extraKeys!.length === 1 ? "key" : "keys"} in
-                    existing translation files:
-                  </span>
+                  <strong>Optional cleanup</strong>
+                  <p className="scandlg__muted">
+                    {result.extraKeys!.length} unused translation{" "}
+                    {result.extraKeys!.length === 1 ? "key was" : "keys were"}{" "}
+                    found:
+                  </p>
                   <ul>
                     {result.extraKeys!.map((diagnostic, i) => (
                       <li
@@ -105,7 +106,9 @@ export function ScanDialog({
                     ))}
                   </ul>
                   <p className="scandlg__muted">
-                    These stale keys are ignored and do not block export.
+                    These keys are no longer present in the source file. SMAPI
+                    ignores them, so they are safe to keep or remove. They do
+                    not affect progress or block export.
                   </p>
                 </div>
               )}

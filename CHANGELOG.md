@@ -14,9 +14,9 @@ _Nothing yet._
 
 ### Added
 
-- Scan diagnostics for keys that exist only in an old target-language file.
-  These stale keys are listed with their mod, file, and key name without
-  blocking editing or export.
+- An **Optional cleanup** section for unused keys that exist only in an old
+  target-language file. It explains that SMAPI ignores them and lists the mod,
+  file, and key without affecting progress or blocking export.
 - A **Settings → About** switch for enabling or disabling rotating local
   diagnostic logs.
 

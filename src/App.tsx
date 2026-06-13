@@ -210,7 +210,7 @@ export function App() {
       if (!isActive()) return;
       setScan(result);
       // A clean scan auto-closes; keep the dialog open for actionable scan
-      // diagnostics, including stale keys in existing target files.
+      // diagnostics, including unused keys in existing target files.
       setScanDialogOpen(
         result.warnings.length > 0 || (result.extraKeys?.length ?? 0) > 0,
       );
@@ -645,29 +645,20 @@ export function App() {
           >
             <div className="panel__header">
               <span>Mods{scan ? ` · ${scan.modCount}` : ""}</span>
-              {scan &&
-                (inProgressMods > 0 ||
-                  scan.warnings.length > 0 ||
-                  (scan.extraKeys?.length ?? 0) > 0) && (
-                  <span className="panel__header-meta">
-                    {inProgressMods > 0 && (
-                      <span className="panel__header-tail">
-                        {inProgressMods} in progress
-                      </span>
-                    )}
-                    {scan.warnings.length > 0 && (
-                      <span className="panel__warn">
-                        {scan.warnings.length} skipped
-                      </span>
-                    )}
-                    {(scan.extraKeys?.length ?? 0) > 0 && (
-                      <span className="panel__warn">
-                        {scan.extraKeys!.length} extra{" "}
-                        {scan.extraKeys!.length === 1 ? "key" : "keys"}
-                      </span>
-                    )}
-                  </span>
-                )}
+              {scan && (inProgressMods > 0 || scan.warnings.length > 0) && (
+                <span className="panel__header-meta">
+                  {inProgressMods > 0 && (
+                    <span className="panel__header-tail">
+                      {inProgressMods} in progress
+                    </span>
+                  )}
+                  {scan.warnings.length > 0 && (
+                    <span className="panel__warn">
+                      {scan.warnings.length} skipped
+                    </span>
+                  )}
+                </span>
+              )}
             </div>
             {scan && (
               <input

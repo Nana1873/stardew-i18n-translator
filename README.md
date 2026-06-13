@@ -102,9 +102,10 @@ API key.
 - Stardew Valley files, mods, generated glossaries, and user data are not
   committed to this repository or bundled with releases.
 
-During a scan, the app also reports stale keys that still exist in a target
-translation but were removed from `default.json`. They are informational,
-ignored during editing, and never block export.
+During a scan, **Optional cleanup** lists unused translation keys that still
+exist in a target translation but were removed from `default.json`. SMAPI
+ignores them, so they are safe to keep or remove and never affect progress or
+block export.
 
 ## AI-Assisted Development
 
