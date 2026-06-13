@@ -168,13 +168,19 @@ pub fn export_mod(
             file_result.backed_up = write_target(target_path, &out)?;
             file_result.written = true;
             result.files_written += 1;
-        } else if target_path.is_file() {
-            // Every translation was cleared. Leaving the old <lang>.json on disk
-            // keeps those stale strings live in SMAPI, so remove it (after a
-            // backup) — the mod then cleanly falls back to default.json.
-            file_result.backed_up = remove_target(target_path)?;
-            file_result.removed = true;
-            result.files_removed += 1;
+        } else {
+            let existing_target = scanner::target_read_path(target_path);
+            if existing_target.is_file() {
+                // Every translation was cleared. Leaving the old <lang>.json on disk
+                // keeps those stale strings live in SMAPI, so remove it (after a
+                // backup) — the mod then cleanly falls back to default.json.
+                // Portuguese may have been imported from pt-BR.json while the
+                // canonical export path is pt.json, so remove the file that was
+                // actually read rather than checking only the canonical path.
+                file_result.backed_up = remove_target(&existing_target)?;
+                file_result.removed = true;
+                result.files_removed += 1;
+            }
         }
 
         result.total_written_keys += file_result.written_keys;
@@ -336,6 +342,41 @@ mod tests {
         assert_eq!(result.files_written, 0);
         assert!(!result.files[0].removed);
         assert!(!i18n.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn clearing_portuguese_import_removes_pt_br_fallback() {
+        let root = crate::test_support::temp_dir("export-clear-portuguese");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");
+        write(&i18n.join("pt-BR.json"), "{ \"k\": \"Olá\" }");
+
+        crate::translations::save_one(
+            &root,
+            "mod.id",
+            crate::translations::entry_key("i18n", "k"),
+            crate::translations::StoredString {
+                target: String::new(),
+                status: "untranslated".into(),
+                source_hash: crate::translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("pt.json").display().to_string(),
+        }];
+        let result = export_mod(&root, "mod.id", &files).unwrap();
+
+        assert!(!i18n.join("pt-BR.json").is_file());
+        assert!(i18n.join("pt-BR.json.bak").is_file());
+        assert!(!i18n.join("pt.json").exists());
+        assert_eq!(result.files_removed, 1);
+        assert!(result.files[0].removed);
 
         std::fs::remove_dir_all(&root).ok();
     }

@@ -727,7 +727,7 @@ pub(crate) fn read_target_object(target_path: &Path) -> Option<serde_json::Map<S
     read_object(&target_read_path(target_path))
 }
 
-fn target_read_path(target_path: &Path) -> PathBuf {
+pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
     if target_path.is_file() {
         return target_path.to_path_buf();
     }
