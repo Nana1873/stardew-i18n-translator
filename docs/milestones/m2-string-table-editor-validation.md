@@ -40,11 +40,6 @@ protected-token validation, the persisted status model, and search/filter/sort.
 
 **Also shipped (post-audit, 2026-06-09):** toolbar text **search** across key/original/target, **status filter** dropdown, **Ctrl+A** select-all-visible, **column sorting**, and **editor glossary hints** (matched official terms, click to insert). Filtering/sorting operate on a visible view while selection/editor navigation keep stable data indices.
 
-**Also shipped (v1.1):** short, single-line translations can be edited directly
-in the translation cell. Enter or focus loss saves through the existing
-persistence path, Escape cancels, and live validation remains visible. Long or
-multiline strings continue to use the full editor.
-
 **Still open for v1:** none — M2 is functionally complete.
 
 **Moved out of M2:** the **"Search Translation on Nexus"** action is deferred and
@@ -82,13 +77,6 @@ mod (keyed by language code + UniqueID) separately from the mod's files.
 ### Issue 10b: Search / filter / sort ✅
 
 Text search (key/original/target), status filter, and column sorting (asc → desc → off) for the string table — shipped post-audit; filtering/sorting operate on a visible view while selection/editor navigation keep stable data indices.
-
-### V1.1 follow-up: Inline table editing ✅
-
-Short, single-line targets use a compact one-at-a-time inline input. It reuses
-the same save command and status transitions as the full editor, preserves
-virtualized row identity, and falls back to the dialog for long or multiline
-content.
 
 ## Agent Handoff Notes
 
