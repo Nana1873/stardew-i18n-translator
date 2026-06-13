@@ -13,7 +13,7 @@ jobs:
     name: Windows portable ZIP
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -35,7 +35,7 @@ jobs:
             throw "Tag ${{ github.ref_name }} does not match application version v$version."
           }
 
-      - uses: pnpm/action-setup@v5
+      - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
           node-version: 22
