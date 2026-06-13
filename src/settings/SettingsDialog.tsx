@@ -19,6 +19,7 @@ import {
   buildGlossary,
   glossaryStatus,
   llmModels,
+  openLogsDir,
   openUrl,
 } from "../tauri/commands";
 import { SOURCE_LANGUAGE_LABEL, TARGET_LANGUAGES } from "../languages";
@@ -517,6 +518,20 @@ export function SettingsDialog({
                   >
                     View license ↗
                   </button>
+                </div>
+
+                <div className="settings__group">
+                  <h4>Diagnostics</h4>
+                  <p className="settings__hint">
+                    The app writes a local log file next to the executable. If
+                    you report a bug, open this folder and attach the newest
+                    log. Logs stay on your computer and are never sent anywhere.
+                  </p>
+                  <div className="wizard__row">
+                    <button type="button" onClick={() => void openLogsDir()}>
+                      Open logs folder ↗
+                    </button>
+                  </div>
                 </div>
 
                 <p className="settings__hint">

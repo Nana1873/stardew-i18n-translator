@@ -219,9 +219,14 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Stardew i18n Translator" }),
     ).toBeInTheDocument();
-    expect(screen.getByText("Version 1.1.0")).toBeInTheDocument();
+    expect(screen.getByText("Version 1.1.1")).toBeInTheDocument();
     expect(screen.getByText("GPL-3.0-or-later")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Shortcuts" })).toBeInTheDocument();
+
+    // Diagnostics: the logs-folder button bridges to the backend command so a
+    // user can attach a log file to a bug report.
+    fireEvent.click(screen.getByRole("button", { name: /Open logs folder/ }));
+    expect(invokeMock).toHaveBeenCalledWith("open_logs_dir", undefined);
   });
 
   it("captures, validates, resets, and saves shortcut overrides", () => {

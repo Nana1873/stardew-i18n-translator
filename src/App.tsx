@@ -28,6 +28,7 @@ import {
   importLlmBatchPath,
   loadGlossary,
   loadSettings,
+  logFrontendError,
   saveSettings,
   scanMods,
   translateString,
@@ -116,7 +117,10 @@ export function App() {
   function refreshGlossary() {
     loadGlossary()
       .then((g) => setGlossaryTerms(g && g.termCount > 0 ? g.terms : null))
-      .catch(() => setGlossaryTerms(null));
+      .catch((error) => {
+        logFrontendError("loadGlossary", String(error));
+        setGlossaryTerms(null);
+      });
   }
 
   function startResize(event: ReactMouseEvent) {
@@ -145,7 +149,8 @@ export function App() {
         setWizardOpen(!complete);
         if (complete) void runScan(loadedSettings, false, () => active);
       })
-      .catch(() => {
+      .catch((error) => {
+        logFrontendError("loadSettings", String(error));
         if (active) setWizardOpen(true);
       })
       .finally(() => {
@@ -179,8 +184,9 @@ export function App() {
   async function persist(next: AppSettings) {
     try {
       await saveSettings(next);
-    } catch {
-      /* keep in-memory settings even if persistence fails */
+    } catch (error) {
+      // Keep in-memory settings even if persistence fails, but record why.
+      logFrontendError("saveSettings", String(error));
     }
     setSettings(next);
   }
@@ -205,6 +211,7 @@ export function App() {
       // A clean scan auto-closes; keep the dialog open only to review warnings.
       setScanDialogOpen(result.warnings.length > 0);
     } catch (error) {
+      logFrontendError("scanMods", String(error));
       if (!isActive()) return;
       setScanError(String(error));
       setScanDialogOpen(true);
@@ -292,6 +299,7 @@ export function App() {
       setImportOpen(true);
       setReloadToken((token) => token + 1);
     } catch (error) {
+      logFrontendError("importLlmBatchPath", String(error));
       setImportError(String(error));
       setImportOpen(true);
     }
@@ -403,6 +411,7 @@ export function App() {
       // State on disk changed behind the table's back — force a reload.
       setReloadToken((token) => token + 1);
     } catch (error) {
+      logFrontendError("importLlmBatch", String(error));
       setImportError(String(error));
       setImportOpen(true);
     }
@@ -517,6 +526,7 @@ export function App() {
       markExportedTargets(selectedMod.uniqueId, result);
       setExportResult(withExportContext(result, selectedMod));
     } catch (error) {
+      logFrontendError("exportMod", String(error));
       setExportError(String(error));
     } finally {
       setExporting(false);
@@ -565,6 +575,7 @@ export function App() {
       setExportResult(merged);
       setExportModsWritten(modsWritten);
     } catch (error) {
+      logFrontendError("exportAll", String(error));
       setExportError(String(error));
     } finally {
       setExporting(false);
