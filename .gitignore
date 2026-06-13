@@ -77,3 +77,7 @@ manifest.json.user
 
 # === Tauri generated ===
 /src-tauri/gen/
+
+# === Local agent / preview tooling (not part of the project) ===
+/.claude/
+/.preview/

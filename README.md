@@ -98,6 +98,28 @@ API key.
 - Stardew Valley files, mods, generated glossaries, and user data are not
   committed to this repository or bundled with releases.
 
+## AI-Assisted Development
+
+This project was developed largely with the help of AI coding agents, working
+from the human-authored specification in [SPEC.md](SPEC.md) under the strict
+boundaries in [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md). All code is reviewed
+before release, covered by an automated test suite, and gated by CI (TypeScript,
+Rust, lint, and format checks). The agent rules and workflow live in
+[AGENTS.md](AGENTS.md) and [docs/agents/](docs/agents/).
+
+Mentioning this for transparency — it does not change the license, the privacy
+guarantees, or the fact that the maintainer is responsible for what ships.
+
+## Contributing And Support
+
+- **Need help or hit a problem?** See [SUPPORT.md](SUPPORT.md).
+- **Found a bug?** Open a
+  [bug report](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=bug_report.yml).
+- **Want to contribute?** Read [CONTRIBUTING.md](CONTRIBUTING.md) and the
+  [Code of Conduct](CODE_OF_CONDUCT.md).
+- **Security issue?** Please report it privately — see [SECURITY.md](SECURITY.md).
+- **What changed between versions?** See [CHANGELOG.md](CHANGELOG.md).
+
 ## Development
 
 The project uses Tauri 2, Rust, React, TypeScript, Vite, and pnpm.
