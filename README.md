@@ -92,6 +92,9 @@ API key.
 - Core scanning, editing, validation, glossary generation, and export are
   completely local.
 - The app contains no analytics, telemetry, accounts, or cloud API keys.
+- A local diagnostic log is written to `Data/logs/` (rotating, size-capped) to
+  help with bug reports. It never leaves your computer — open it from
+  **Settings > About > Open logs folder** to attach it to an issue yourself.
 - Local AI requests go only to the endpoint configured in Settings.
 - External LLM batches leave the computer only when you manually upload them
   to a service of your choice. Review that provider's privacy policy first.

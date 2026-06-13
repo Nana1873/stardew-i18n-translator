@@ -374,6 +374,26 @@ export function openUrl(url: string): Promise<void> {
   return invoke<void>("open_url", { url });
 }
 
+/**
+ * Forward a caught frontend error into the backend diagnostic log file
+ * (`Data/logs`, v1.1.1). Fire-and-forget: it never throws, so logging can't
+ * mask the original error or break in a browser preview / test where the Tauri
+ * bridge is absent.
+ */
+export function logFrontendError(context: string, message: string): void {
+  void invoke("log_frontend_error", { context, message }).catch(() => {
+    /* no Tauri bridge (browser preview / tests) — nothing to log to */
+  });
+}
+
+/**
+ * Open the portable `Data/logs/` folder in the OS file manager (v1.1.1) so the
+ * user can attach the current log file to a GitHub bug report.
+ */
+export function openLogsDir(): Promise<void> {
+  return invoke<void>("open_logs_dir");
+}
+
 export function loadSettings(): Promise<AppSettings> {
   return invoke<AppSettings>("load_settings");
 }
