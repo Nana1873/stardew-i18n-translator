@@ -98,7 +98,11 @@ So **one** mod ≈ 17.5k strings — ~3.5× the SPEC's "5000+" planning figure. 
 ### Why Tauri
 
 1. **Best on the deciding axis.** Rust does the scan/parse/validate/filter; only rendered rows cross into WebView2. This gives the lowest resident memory and fastest cold scan for 17.5k-string mods and 100k+-string sessions — the user's explicit priority.
-2. **Broadest reuse.** The old project (`E:\DevProjects\Stardew Translator`, Tauri 2) already ships **Rust** `src-tauri/src/parser.rs`, `validator.rs`, `models.rs`, `perf.rs` _and_ the TypeScript domain/validator/exporter _and_ the parser fixtures. Tauri reuses **both sides**; Electron reuses only the TS; PySide6 reuses none. (Keep the _logic_, not the old over-abstracted "studio" design.)
+2. **Broadest reuse.** The private legacy Tauri 2 project already had Rust
+   parsing/validation logic, TypeScript domain/export logic, and parser
+   fixtures. Tauri allowed reuse on both sides; Electron would reuse only the
+   TypeScript, and PySide6 none. (Keep the logic, not the old over-abstracted
+   "studio" design.)
 3. **Smallest portable build.** Tauri produces a small Windows binary with no Chromium bundle and no PyInstaller AV-false-positive risk — best on "portable Windows build."
 4. **Already validated here.** The Rust/Node toolchain is installed and the old Tauri 2 project builds on this machine, removing environment risk.
 5. **Relaxed-JSON handled natively.** Real mods use comments/trailing commas (confirmed in Ridgeside Village); Rust (`jsonc`/comment-stripping + `serde_json`) parses these fast on the worker side.

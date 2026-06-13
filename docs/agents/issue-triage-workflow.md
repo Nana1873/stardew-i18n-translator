@@ -10,9 +10,10 @@ so every issue should already contain: app version, Windows version, affected
 area, what happened, reproduction steps, expected behavior, the exact on-screen
 error message, and optionally a minimal sample input.
 
-> **The app keeps no log files.** Do not ask for or expect logs. Your diagnostic
-> inputs are the on-screen error text, the reproduction steps, and any sample
-> `i18n` / LLM-batch JSON the reporter attached.
+> **Use the local diagnostic log when available.** Ask the reporter to open
+> **Settings -> About -> Open logs folder**, sanitize the newest log, and attach
+> it with the on-screen error text, reproduction steps, and any minimal sample
+> `i18n` / LLM-batch JSON.
 
 ## 1. Understand and confirm scope
 
