@@ -342,7 +342,7 @@ Shown in the right panel when a mod (or specific file within a mod) is selected.
 | **Status**      | 16px glyph chip + short label (○ ✓ ⚑ ↻), plus 3px left row edge |
 | **Key**         | i18n string key (monospace font)                                |
 | **Original**    | Source text from `default.json`                                 |
-| **Target Text** | Translated text (editable cell or via dialog)                   |
+| **Target Text** | Translated text (edited via the String Editor dialog)           |
 | **Validation**  | Validation status icon(s). Hover for details.                   |
 
 Features:
@@ -367,10 +367,8 @@ Features:
 - Text search across key, original, and target.
 - Multi-select with **Ctrl+Click** (toggle) and **Shift+Click** (range).
 - **Ctrl+A** to select all visible.
-- _(v1.1, delivered)_ Double-clicking the translation cell edits short,
-  single-line strings inline. **Enter** and focus loss save, **Escape** cancels,
-  and validation updates while typing. Long or multiline strings, plus
-  double-clicks elsewhere in the row, open the full String Editor (§7.5).
+- Double-clicking a string row, including its translation cell, opens the full
+  String Editor (§7.5).
 - Right-click opens Context Menu (§7.6).
 
 ### 7.5 String Edit Dialog
@@ -1321,12 +1319,12 @@ The private legacy Stardew Translator project provided the following lessons:
 
 ## Appendix D — Version Roadmap Summary
 
-| Version        | Scope                                                                                                                                  |
-| -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                          |
-| **v1 (M4)**    | External LLM Batch Export/Import                                                                                                       |
-| **v1.1**       | Configurable shortcuts, language compatibility verification, safer token validation, inline editing, drag-and-drop, diagnostic logging |
-| **v1.2**       | `extra-key` diagnostics and local logging control                                                                                      |
-| **v1.3**       | Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                                               |
-| **v2**         | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                                     |
-| **v3**         | Data file translation and an in-app XNB reader                                                                                         |
+| Version        | Scope                                                                                                                  |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                          |
+| **v1 (M4)**    | External LLM Batch Export/Import                                                                                       |
+| **v1.1**       | Configurable shortcuts, language compatibility verification, safer token validation, drag-and-drop, diagnostic logging |
+| **v1.2**       | `extra-key` diagnostics and local logging control                                                                      |
+| **v1.3**       | Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                               |
+| **v2**         | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                     |
+| **v3**         | Data file translation and an in-app XNB reader                                                                         |

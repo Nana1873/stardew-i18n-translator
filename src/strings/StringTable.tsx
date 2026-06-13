@@ -126,12 +126,6 @@ export function StringTable({
   } | null>(null);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [inlineEdit, setInlineEdit] = useState<{
-    index: number;
-    value: string;
-    saving: boolean;
-    error: string | null;
-  } | null>(null);
   const [sort, setSort] = useState<{
     col: SortCol;
     dir: "asc" | "desc";
@@ -158,7 +152,6 @@ export function StringTable({
     setSelection(new Set());
     setMenu(null);
     setEditorSession(null);
-    setInlineEdit(null);
     (async () => {
       const all: Row[] = [];
       for (const file of mod.i18nFiles) {
@@ -235,7 +228,6 @@ export function StringTable({
   useEffect(() => {
     setSelection(new Set());
     setMenu(null);
-    setInlineEdit(null);
     anchor.current = null;
   }, [search, statusFilter]);
 
@@ -336,45 +328,6 @@ export function StringTable({
     );
     setRows(next);
     onCountsChange?.(countTranslated(next), countByStatus(next));
-  }
-
-  function startInlineEdit(index: number) {
-    const row = data[index];
-    if (!row || !isInlineEditable(row)) {
-      openEditor(index);
-      return;
-    }
-    setSelection(new Set([index]));
-    setMenu(null);
-    setInlineEdit({
-      index,
-      value: row.target,
-      saving: false,
-      error: null,
-    });
-  }
-
-  async function commitInlineEdit(index: number, value: string) {
-    if (inlineEdit?.index !== index || inlineEdit.saving) return;
-    setInlineEdit((current) =>
-      current?.index === index
-        ? { ...current, saving: true, error: null }
-        : current,
-    );
-    try {
-      await saveRow(
-        index,
-        value,
-        value.trim() === "" ? "untranslated" : "translated",
-      );
-      setInlineEdit((current) => (current?.index === index ? null : current));
-    } catch (cause) {
-      setInlineEdit((current) =>
-        current?.index === index
-          ? { ...current, saving: false, error: String(cause) }
-          : current,
-      );
-    }
   }
 
   // `dataIndex` is the row's index into `data`; `pos` is its position in the
@@ -662,21 +615,6 @@ export function StringTable({
                     openMenu(dataIndex, entry.pos, event)
                   }
                   onOpen={() => openEditor(dataIndex)}
-                  onInlineEdit={() => startInlineEdit(dataIndex)}
-                  inlineEdit={
-                    inlineEdit?.index === dataIndex ? inlineEdit : null
-                  }
-                  onInlineChange={(value) =>
-                    setInlineEdit((current) =>
-                      current?.index === dataIndex
-                        ? { ...current, value, error: null }
-                        : current,
-                    )
-                  }
-                  onInlineSave={(value) =>
-                    void commitInlineEdit(dataIndex, value)
-                  }
-                  onInlineCancel={() => setInlineEdit(null)}
                 />
               );
             })}
@@ -938,15 +876,6 @@ interface RowViewProps {
   onSelect: (event: ReactMouseEvent) => void;
   onContextMenu: (event: ReactMouseEvent) => void;
   onOpen: () => void;
-  onInlineEdit: () => void;
-  inlineEdit: {
-    value: string;
-    saving: boolean;
-    error: string | null;
-  } | null;
-  onInlineChange: (value: string) => void;
-  onInlineSave: (value: string) => void;
-  onInlineCancel: () => void;
 }
 
 function RowView({
@@ -958,18 +887,8 @@ function RowView({
   onSelect,
   onContextMenu,
   onOpen,
-  onInlineEdit,
-  inlineEdit,
-  onInlineChange,
-  onInlineSave,
-  onInlineCancel,
 }: RowViewProps) {
-  const shownTarget = inlineEdit?.value ?? row.target;
-  const issues = validate(
-    row.source,
-    shownTarget,
-    inlineEdit ? true : row.targetPresent,
-  );
+  const issues = validate(row.source, row.target, row.targetPresent);
   const severity = worstSeverity(issues);
   const status = STATUS_META[row.status];
   // Status = 3px left edge + glyph chip; selection adds a gold inset ring.
@@ -1019,32 +938,12 @@ function RowView({
       <span className="stringrow__src" title={row.source}>
         {row.source}
       </span>
-      {inlineEdit ? (
-        <InlineTranslationInput
-          rowKey={row.key}
-          value={inlineEdit.value}
-          saving={inlineEdit.saving}
-          error={inlineEdit.error}
-          onChange={onInlineChange}
-          onSave={onInlineSave}
-          onCancel={onInlineCancel}
-        />
-      ) : (
-        <span
-          className={`stringrow__tgt${row.target ? "" : " stringrow__tgt--empty"}`}
-          title={
-            isInlineEditable(row)
-              ? `${row.target || "Untranslated"} — double-click to edit inline`
-              : row.target
-          }
-          onDoubleClick={(event) => {
-            event.stopPropagation();
-            onInlineEdit();
-          }}
-        >
-          {row.target || "—"}
-        </span>
-      )}
+      <span
+        className={`stringrow__tgt${row.target ? "" : " stringrow__tgt--empty"}`}
+        title={row.target}
+      >
+        {row.target || "—"}
+      </span>
       <span className="stringrow__val">
         {severity && (
           <span
@@ -1056,86 +955,6 @@ function RowView({
         )}
       </span>
     </div>
-  );
-}
-
-const INLINE_EDIT_LIMIT = 160;
-
-function isInlineEditable(row: Row): boolean {
-  return (
-    row.source.length <= INLINE_EDIT_LIMIT &&
-    row.target.length <= INLINE_EDIT_LIMIT &&
-    !/[\r\n]/.test(row.source) &&
-    !/[\r\n]/.test(row.target)
-  );
-}
-
-function InlineTranslationInput({
-  rowKey,
-  value,
-  saving,
-  error,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  rowKey: string;
-  value: string;
-  saving: boolean;
-  error: string | null;
-  onChange: (value: string) => void;
-  onSave: (value: string) => void;
-  onCancel: () => void;
-}) {
-  const inputRef = useRef<HTMLInputElement>(null);
-  const cancelledRef = useRef(false);
-  const committedRef = useRef(false);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, []);
-
-  useEffect(() => {
-    if (error) committedRef.current = false;
-  }, [error]);
-
-  return (
-    <span
-      className="stringrow__inline-wrap"
-      title={error ?? "Enter saves · Escape cancels · Tab saves"}
-      onClick={(event) => event.stopPropagation()}
-      onDoubleClick={(event) => event.stopPropagation()}
-    >
-      <input
-        ref={inputRef}
-        className={`stringrow__inline${error ? " stringrow__inline--error" : ""}`}
-        aria-label={`Inline translation for ${rowKey}`}
-        value={value}
-        disabled={saving}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={() => {
-          if (!cancelledRef.current && !committedRef.current && !saving) {
-            committedRef.current = true;
-            onSave(value);
-          }
-        }}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            if (!committedRef.current && !saving) {
-              committedRef.current = true;
-              onSave(value);
-            }
-          } else if (event.key === "Escape") {
-            event.preventDefault();
-            cancelledRef.current = true;
-            onCancel();
-          }
-        }}
-      />
-      {saving && <span className="stringrow__inline-saving">Saving…</span>}
-    </span>
   );
 }
 
