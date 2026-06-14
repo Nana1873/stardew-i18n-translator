@@ -71,14 +71,16 @@ try {
         }
     }
 
-    $existingRelease = gh release list `
+    $releaseJson = gh release list `
         --repo Nana1873/stardew-i18n-translator `
         --limit 100 `
-        --json tagName `
-        --jq ".[] | select(.tagName == `"$tag`") | .tagName"
+        --json tagName
     if ($LASTEXITCODE -ne 0) {
         throw "Could not check for an existing GitHub release."
     }
+    $existingRelease = $releaseJson |
+        ConvertFrom-Json |
+        Where-Object { $_.tagName -eq $tag }
     if ($existingRelease) {
         throw "A GitHub release already exists for $tag."
     }
