@@ -87,7 +87,7 @@ Steam path is read from the Windows registry (`HKCU\Software\Valve\Steam\SteamPa
 
 | Item                | Reason                                                                                                       |
 | ------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. API integration is planned for v1.3.                   |
+| Nexus API key       | v1 uses only Nexus ID detection from `manifest.json`. API integration is deferred indefinitely.              |
 | AI provider API key | In-app cloud AI translation is not in v1. The external LLM batch (Milestone 4) needs no API key in the tool. |
 
 ---
@@ -434,15 +434,14 @@ Available on one or multiple selected strings in the String Table.
 
 **v1 context menu:**
 
-| Action                          | Description                                                                                  |
-| ------------------------------- | -------------------------------------------------------------------------------------------- |
-| **Edit String**                 | Open in String Editor (single selection only)                                                |
-| **Copy Original**               | Copy source text to clipboard                                                                |
-| **Copy Translation**            | Copy target text to clipboard                                                                |
-| **Mark as Translated**          | Set status to `translated` for all selected                                                  |
-| **Keep Original Text**          | Copy the source as the translation for all selected (`translated`, see §9 v1.5)              |
-| **Clear Translation**           | Clear target text and set status to `untranslated` (explicitly destructive)                  |
-| **Search Translation on Nexus** | Opens browser to Nexus search for this mod + target language _(mod-level context menu only)_ |
+| Action                 | Description                                                                     |
+| ---------------------- | ------------------------------------------------------------------------------- |
+| **Edit String**        | Open in String Editor (single selection only)                                   |
+| **Copy Original**      | Copy source text to clipboard                                                   |
+| **Copy Translation**   | Copy target text to clipboard                                                   |
+| **Mark as Translated** | Set status to `translated` for all selected                                     |
+| **Keep Original Text** | Copy the source as the translation for all selected (`translated`, see §9 v1.5) |
+| **Clear Translation**  | Clear target text and set status to `untranslated` (explicitly destructive)     |
 
 **Added in Milestone 4 (Claude-Code):**
 
@@ -724,15 +723,17 @@ Stardew Valley mod translations **do exist on Nexus Mods** as separate mod pages
 
 ### v1 Scope — No API Calls
 
-| Feature                                  | Detail                                                                                                                                                                                      |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Nexus ID detection**                   | Extract from `manifest.json` → `UpdateKeys` matching `Nexus:<id>`.                                                                                                                          |
-| **Nexus ID display**                     | Show in mod list as clickable link: `https://www.nexusmods.com/stardewvalley/mods/<id>`                                                                                                     |
-| **"Search Translation on Nexus" action** | Right-click a mod → opens the user's browser to `nexusmods.com/stardewvalley/mods/?search=<modname>+<target_language>`. No in-app results, no scraping — just a convenient browser handoff. |
+| Feature                | Detail                                                                                  |
+| ---------------------- | --------------------------------------------------------------------------------------- |
+| **Nexus ID detection** | Extract from `manifest.json` → `UpdateKeys` matching `Nexus:<id>`.                      |
+| **Nexus ID display**   | Show in mod list as clickable link: `https://www.nexusmods.com/stardewvalley/mods/<id>` |
 
 v1 does **not** store or validate a Nexus API key. No Nexus API calls are made.
 
-### v1.3 — Nexus Integration
+### Possible Future Nexus Integration (Unscheduled)
+
+This work is deferred indefinitely and has no target release. The related
+GitHub issues remain in the unmilestoned backlog for possible reconsideration.
 
 - Nexus API key storage and validation in settings.
 - Mod info enrichment (name, endorsement count from API). Cached.
@@ -892,7 +893,8 @@ Core workflow — no Nexus API:
 - [x] Progress bar per mod
 
 The earlier standalone "Search Translation on Nexus" browser action was
-explicitly folded into deferred M5 rather than shipped as a v1 stopgap.
+removed rather than shipped as an unreliable stopgap. Broader Nexus work is
+deferred indefinitely.
 
 ### v1 Milestone 4 (External LLM Batch)
 
@@ -910,7 +912,7 @@ First AI step — requires core workflow to be complete:
 | `extra-key` import/scan reporting        | v1.2        |
 | Local diagnostic logging enable/disable  | v1.2        |
 | Optional cloud-AI credentials            | Unscheduled |
-| Nexus integration                        | v1.3        |
+| Nexus integration                        | Unscheduled |
 | Finalize-and-propagate identical strings | v2          |
 
 ---
@@ -923,7 +925,7 @@ The following are **explicitly excluded** from v1:
 | ---------------------------------------------- | ---------------------------------------------------------------------- |
 | In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only |
 | Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                  |
-| Automatic Nexus translation discovery/download | Deferred to v1.3 (see §12)                                             |
+| Automatic Nexus translation discovery/download | Deferred indefinitely (see §12)                                        |
 | Git integration                                | Adds complexity without core workflow value                            |
 | Full mod manager                               | Out of scope — tool manages translations only                          |
 | Vortex/MO2 profile detection                   | User can point to any folder manually                                  |
@@ -1046,7 +1048,6 @@ The following are **explicitly excluded** from v1:
 - Right-click context menu (v1 actions from §7.6)
 - Search bar and status filter
 - Sorting by column
-- "Search Translation on Nexus" browser action (context menu)
 
 **Acceptance Criteria:**
 
@@ -1323,12 +1324,12 @@ Active scope and status are tracked in
 [GitHub Milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones).
 This table records the durable product direction rather than task completion.
 
-| Version        | Scope                                                                                                                  |
-| -------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **v1 (M1–M3)** | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                          |
-| **v1 (M4)**    | External LLM Batch Export/Import                                                                                       |
-| **v1.1**       | Configurable shortcuts, language compatibility verification, safer token validation, drag-and-drop, diagnostic logging |
-| **v1.2**       | `extra-key` diagnostics and local logging control                                                                      |
-| **v1.3**       | Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                               |
-| **v2**         | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                     |
-| **v3**         | Data file translation and an in-app XNB reader                                                                         |
+| Version                  | Scope                                                                                                                  |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| **v1 (M1–M3)**           | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                          |
+| **v1 (M4)**              | External LLM Batch Export/Import                                                                                       |
+| **v1.1**                 | Configurable shortcuts, language compatibility verification, safer token validation, drag-and-drop, diagnostic logging |
+| **v1.2**                 | `extra-key` diagnostics and local logging control                                                                      |
+| **Future (unscheduled)** | Possible Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                      |
+| **v2**                   | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                     |
+| **v3**                   | Data file translation and an in-app XNB reader                                                                         |

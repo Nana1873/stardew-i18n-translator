@@ -13,8 +13,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - Removed inline table editing so all translation edits use the validated
   String Editor dialog.
 - Added an **Open Mods Folder** action to the mod-list context menu.
-- Removed the unreliable Nexus browser-search stopgap; assisted Nexus
-  discovery remains planned for v1.3.
+- Removed the unreliable Nexus browser-search stopgap; broader Nexus
+  integration is deferred indefinitely with no target release.
 - The toolbar string search is now shown only while a mod is open.
 - Active planning and release scope are now tracked through GitHub Issues and
   Milestones instead of duplicated repository task-plan documents.
