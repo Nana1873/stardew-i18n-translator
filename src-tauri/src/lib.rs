@@ -449,7 +449,9 @@ fn open_mod_folder(app: AppHandle, path: String) -> Result<(), String> {
 
 #[tauri::command]
 fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
-    Ok(settings::load(&config_dir(&app)?))
+    // Use the checked load so a corrupted settings file surfaces as a visible
+    // error instead of silently resetting the user's configuration to defaults.
+    settings::load_checked(&config_dir(&app)?)
 }
 
 #[tauri::command]
