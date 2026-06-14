@@ -47,6 +47,8 @@ When you export, untranslated entries are left out so SMAPI can fall back to
 the original English text. Token mismatches are caught before anything is
 written.
 
+![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
+
 ## Optional Glossary
 
 The glossary can show official Stardew Valley terms while you translate. To
