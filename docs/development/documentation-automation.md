@@ -1,7 +1,8 @@
 # Documentation and Release Automation
 
-Mechanical documentation maintenance is enforced by CI. Product decisions and
-release highlights still require human review.
+Mechanical documentation maintenance is checked locally and by CI on the exact
+`main` commit. Product decisions and release highlights still require human
+review.
 
 ## Local Checks
 
@@ -43,16 +44,29 @@ PRs labeled `documentation`, `type:enhancement`, `type:release`, or
 when the PR explains why no documentation change is useful. Dependency PRs are
 automatically labeled `changelog:skip` and `docs:not-required`.
 
+## CI Cost Model
+
+GitHub Actions minutes are limited. Agents and maintainers run the relevant
+checks locally before pushing. The complete remote CI suite runs once after a
+commit reaches `main`, which also covers direct pushes. Pull requests retain
+the lightweight label/documentation policy check without repeating the full
+frontend and Windows Rust suites.
+
+Dependency audits run weekly or on explicit manual dispatch. Concurrency groups
+cancel obsolete CI, audit, and pull-request policy runs.
+
 ## Generated Release Notes
 
 GitHub uses `.github/release.yml` to group merged pull requests by their
-changelog label. When a matching `v*` tag is pushed, the release workflow:
+changelog label. After the complete local release checklist passes,
+`scripts/create-draft-release.ps1`:
 
-1. verifies the tag, synchronized versions, Markdown links, and formatting;
-2. builds and packages the portable application;
+1. verifies clean `HEAD` equals current `origin/main`;
+2. verifies synchronized versions, Markdown links, formatting, and ZIP layout;
 3. asks GitHub to generate categorized notes from merged pull requests;
 4. prepends `docs/release/v<version>.md` when a curated highlights file exists;
-5. creates a draft release for final human review.
+5. pushes the matching tag and uploads the already verified local ZIP to a
+   draft release for final human review.
 
 `CHANGELOG.md` remains the concise, curated permanent history. Generated notes
 provide the complete PR-level record without requiring it to be written by

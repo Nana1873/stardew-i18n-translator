@@ -42,13 +42,13 @@ Keep these versions synchronized:
 The first distributable version is `1.0.0`.
 
 Use `corepack pnpm version:set <version>` to update all synchronized references,
-then run `corepack pnpm check:docs`. CI verifies all four application sources,
-the project-status release number, the `CHANGELOG.md` Unreleased comparison
-link, local Markdown links, and formatting.
+then run `corepack pnpm check:docs`. The local check and CI on `main` verify all
+four application sources, the project-status release number, the `CHANGELOG.md`
+Unreleased comparison link, local Markdown links, and formatting.
 
 ## Pre-Release Checklist
 
-1. Confirm the working tree is clean and CI on `main` is green.
+1. Confirm the working tree is clean and `HEAD` equals current `origin/main`.
 2. Run a real Mods-folder smoke test from the unpacked portable folder:
    - launch without a `Data/` folder, confirm it is created, and complete setup;
    - close and reopen the app, then verify settings and the automatic scan;
@@ -63,27 +63,37 @@ link, local Markdown links, and formatting.
 4. Run `powershell -File scripts/package-portable.ps1`.
 5. Extract the generated ZIP to a different writable folder.
 6. Verify first launch, persistence, and copying the complete folder.
-7. Confirm CI is green for the current `main` commit.
+7. Confirm the complete local frontend, Rust, and documentation checks passed
+   on the current `main` commit. CI on that exact `main` commit is an additional
+   safety net when Actions minutes are available.
 8. Confirm merged pull requests have the correct `changelog:*` labels.
-9. Create and push the matching version tag on that exact commit, for example
-   `v1.2.0`.
-10. Review the generated draft notes and ZIP before publishing the release.
+9. Create the tag and draft release from the already verified ZIP:
 
-## Draft Release Automation
+   ```powershell
+   powershell -File scripts/create-draft-release.ps1 `
+     -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip
+   ```
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`. The workflow accepts
-only a tag that points to the current `origin/main` commit, whose regular CI
-checks must already be green. It verifies all documentation checks, performs
-the production Tauri build once, runs the same portable packaging script used
-locally, uploads the ZIP, and creates a draft GitHub release. GitHub generates
-categorized notes from merged PR labels using `.github/release.yml`. When
-`docs/release/v<version>.md` exists, those curated highlights are prepended.
-The release must still be reviewed and published manually.
+10. Verify the reported SHA-256 against the uploaded asset, then review the
+    generated draft notes and ZIP before publishing the release.
 
-The regular PR and `main` Rust checks use Cargo's custom `ci` profile. It keeps
-the complete format, Clippy, and test coverage but disables dependency
-optimization and debug symbols to reduce compile time. Local development and
-release profiles are unchanged.
+## Local Draft Release Automation
+
+The release script refuses dirty or stale commits, verifies documentation and
+version checks, validates the exact two-file ZIP structure, creates or verifies
+the matching version tag, generates categorized notes, and creates a draft
+GitHub release. When `docs/release/v<version>.md` exists, those curated
+highlights are prepended.
+
+The script does not rebuild the application. This is intentional: the locally
+smoke-tested production ZIP is the exact artifact uploaded to GitHub, avoiding
+another paid Windows Actions build. The draft must still be reviewed and
+published manually.
+
+The `main` Rust checks use Cargo's custom `ci` profile. It keeps complete
+format, Clippy, and test coverage but disables dependency optimization and
+debug symbols to reduce compile time. Local development and release profiles
+are unchanged.
 
 Do not create a release tag until the real Mods-folder and extracted-ZIP smoke
 tests have passed.

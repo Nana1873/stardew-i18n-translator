@@ -1,13 +1,16 @@
-# CI — runs the same checks AGENTS.md expects from every contribution:
-# frontend (typecheck + vitest + prettier) and the Rust backend test suite.
-# The real-Mods-folder smoke test is opt-in via SIT_REAL_MODS_SCAN and is
-# skipped automatically here.
+# CI runs once on the exact main commit. Contributors verify locally before
+# pushing; avoiding a duplicate pull-request run preserves the limited Actions
+# allowance while direct pushes still receive the complete remote safety net.
 name: CI
 
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   frontend:

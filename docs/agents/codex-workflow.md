@@ -36,7 +36,10 @@ graph LR
 ### Step 4: Write Tests
 
 - Every code file added or modified must have corresponding unit tests.
-- Ensure tests run successfully.
+- Ensure tests run successfully locally before pushing.
+- GitHub Actions minutes are limited. Do not rely on PR runs or repeated pushes
+  for feedback that local type, test, lint, Rust, documentation, build, or
+  packaging commands can provide.
 
 ### Step 5: Handoff
 
