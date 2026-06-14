@@ -4,6 +4,7 @@ import {
   type ScannedMod,
   type StringRow,
 } from "../tauri/commands";
+import { STATUS_META, statusTint } from "./status";
 
 interface GlobalStringRow extends StringRow {
   modUniqueId: string;
@@ -103,28 +104,57 @@ export function GlobalStringSearch({
           ? ` · showing first ${RESULT_LIMIT}`
           : ""}
       </div>
+      <div className="stringrow stringrow--head global-search__row">
+        <span>Status</span>
+        <span>Mod · File</span>
+        <span>Key</span>
+        <span>Original</span>
+        <span>Translation</span>
+      </div>
       <div className="global-search__results">
-        {visible.map((row) => (
-          <button
-            type="button"
-            className="global-search__result"
-            key={`${row.modUniqueId}\n${row.file}\n${row.key}`}
-            onClick={() => onOpenMod(row.modUniqueId)}
-          >
-            <span className="global-search__context">
-              <strong>{row.modName}</strong>
-              <span>{row.file}</span>
-            </span>
-            <code>{row.key}</code>
-            <span title={row.source}>{row.source}</span>
-            <span
-              className={row.target ? "" : "global-search__empty"}
-              title={row.target}
+        {visible.map((row) => {
+          const status = STATUS_META[row.status];
+          return (
+            <button
+              type="button"
+              className="stringrow global-search__row"
+              key={`${row.modUniqueId}\n${row.file}\n${row.key}`}
+              title={`${row.modName} · ${row.file}`}
+              onClick={() => onOpenMod(row.modUniqueId)}
             >
-              {row.target || "—"}
-            </span>
-          </button>
-        ))}
+              <span className="stringrow__status">
+                <span
+                  className="stringrow__glyph"
+                  aria-hidden
+                  style={{
+                    color: status.color,
+                    borderColor: statusTint(status.color, 0.45),
+                    backgroundColor: statusTint(status.color, 0.16),
+                  }}
+                >
+                  {status.glyph}
+                </span>
+                <span className="stringrow__chip">{status.label}</span>
+              </span>
+              <span className="global-search__context">
+                <strong className="global-search__mod">{row.modName}</strong>
+                <span className="global-search__file">{row.file}</span>
+              </span>
+              <span className="stringrow__key" title={row.key}>
+                {row.key}
+              </span>
+              <span className="stringrow__src" title={row.source}>
+                {row.source}
+              </span>
+              <span
+                className={`stringrow__tgt${row.target ? "" : " stringrow__tgt--empty"}`}
+                title={row.target}
+              >
+                {row.target || "—"}
+              </span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
