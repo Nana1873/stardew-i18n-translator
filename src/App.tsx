@@ -40,6 +40,7 @@ import { Dashboard } from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
+import { GlobalStringSearch } from "./strings/GlobalStringSearch";
 import { STATUS_META, statusTint } from "./strings/status";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { ExportDialog } from "./export/ExportDialog";
@@ -322,6 +323,11 @@ export function App() {
       }
       return next;
     });
+  }
+
+  /** Drop the current mod selection to return to the cross-mod global search. */
+  function clearModSelection() {
+    setSelectedModId(null);
   }
 
   /** Jump from the dashboard queue straight into a mod's review backlog. */
@@ -624,7 +630,7 @@ export function App() {
         onReview={() => setView("home")}
         search={search}
         onSearch={setSearch}
-        searchEnabled={Boolean(selectedMod) && view === "work"}
+        searchEnabled={Boolean(scan?.mods.length) && view === "work"}
       />
       {view === "home" ? (
         <Dashboard
@@ -694,6 +700,7 @@ export function App() {
           />
           <StringTablePanel
             mod={selectedMod}
+            mods={scan?.mods ?? []}
             search={search}
             statusFilter={statusFilter}
             onStatusFilter={setStatusFilter}
@@ -703,6 +710,8 @@ export function App() {
             onCountsChange={handleCountsChange}
             onShowReview={() => setStatusFilter("review-needed")}
             onOpenReviewQueue={() => setView("home")}
+            onOpenMod={openMod}
+            onClearSelection={clearModSelection}
             onClearFilters={() => {
               setSearch("");
               setStatusFilter("all");
@@ -1015,6 +1024,7 @@ function FilterChips({
 
 function StringTablePanel({
   mod,
+  mods,
   search,
   statusFilter,
   onStatusFilter,
@@ -1024,11 +1034,14 @@ function StringTablePanel({
   onCountsChange,
   onShowReview,
   onOpenReviewQueue,
+  onOpenMod,
+  onClearSelection,
   onClearFilters,
   reloadToken,
   shortcuts,
 }: {
   mod: ScannedMod | null;
+  mods: ScannedMod[];
   search: string;
   statusFilter: StringStatus | "all";
   onStatusFilter: (value: StringStatus | "all") => void;
@@ -1050,6 +1063,10 @@ function StringTablePanel({
   onShowReview?: () => void;
   /** Return to the dashboard's cross-mod review queue. */
   onOpenReviewQueue?: () => void;
+  /** Open a mod selected from global string-search results. */
+  onOpenMod: (uniqueId: string) => void;
+  /** Drop the mod selection to return to cross-mod global search. */
+  onClearSelection: () => void;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
   reloadToken?: number;
@@ -1058,12 +1075,24 @@ function StringTablePanel({
   return (
     <section className="panel panel--strings" aria-label="String table">
       <div className="panel__header">
-        Strings
+        <span className="panel__header-title">
+          Strings
+          {mod && (
+            <>
+              {" "}
+              · <StringTableHeader mod={mod} onShowReview={onShowReview} />
+            </>
+          )}
+        </span>
         {mod && (
-          <>
-            {" "}
-            · <StringTableHeader mod={mod} onShowReview={onShowReview} />
-          </>
+          <button
+            type="button"
+            className="panel__back"
+            title="Clear the selected mod and search across all scanned mods"
+            onClick={onClearSelection}
+          >
+            <span aria-hidden>←</span> Search all mods
+          </button>
         )}
       </div>
       {mod && (
@@ -1094,6 +1123,8 @@ function StringTablePanel({
             onCountsChange?.(mod.uniqueId, translatedKeys, statusCounts)
           }
         />
+      ) : search.trim() ? (
+        <GlobalStringSearch mods={mods} query={search} onOpenMod={onOpenMod} />
       ) : (
         <div className="workspace-empty">
           <span className="workspace-empty__icon" aria-hidden>

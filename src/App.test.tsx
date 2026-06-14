@@ -522,13 +522,153 @@ describe("App shell", () => {
     expect(await screen.findByText("Test Mod")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "7286" })).toBeInTheDocument();
     expect(
-      screen.queryByRole("searchbox", { name: "Search strings" }),
-    ).toBeNull();
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByText("Test Mod"));
     expect(
       await screen.findByRole("searchbox", { name: "Search strings" }),
     ).toBeInTheDocument();
+  });
+
+  it("searches strings across mods before one is selected", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+      i18nFiles: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "y/i18n/default.json",
+          targetPath: "y/i18n/de.json",
+          targetExists: true,
+          totalKeys: 1,
+          translatedKeys: 1,
+          reviewNeeded: 0,
+        },
+      ],
+    });
+    scan.modCount = 2;
+    scan.fileCount = 2;
+
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") {
+        const modUniqueId = (args as { modUniqueId: string }).modUniqueId;
+        return Promise.resolve(
+          modUniqueId === "second.mod"
+            ? [
+                {
+                  key: "festival.answer",
+                  source: "The dance starts at noon",
+                  target: "Der Tanz beginnt mittags",
+                  targetPresent: true,
+                  status: "translated",
+                },
+              ]
+            : [],
+        );
+      }
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "mittags" } },
+    );
+
+    expect(await screen.findByText("festival.answer")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Second Mod/ }));
+    expect(
+      await screen.findByRole("region", { name: "String table" }),
+    ).toHaveTextContent("festival.answer");
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("mittags");
+  });
+
+  it("returns to global search from the strings panel header", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+      i18nFiles: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "y/i18n/default.json",
+          targetPath: "y/i18n/de.json",
+          targetExists: true,
+          totalKeys: 1,
+          translatedKeys: 1,
+          reviewNeeded: 0,
+        },
+      ],
+    });
+    scan.modCount = 2;
+    scan.fileCount = 2;
+
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") {
+        const modUniqueId = (args as { modUniqueId: string }).modUniqueId;
+        return Promise.resolve(
+          modUniqueId === "second.mod"
+            ? [
+                {
+                  key: "festival.answer",
+                  source: "The dance starts at noon",
+                  target: "Der Tanz beginnt mittags",
+                  targetPresent: true,
+                  status: "translated",
+                },
+              ]
+            : [],
+        );
+      }
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "mittags" } },
+    );
+
+    // No escape hatch until a mod is selected — global search is the default.
+    expect(
+      screen.queryByRole("button", { name: /Search all mods/ }),
+    ).toBeNull();
+
+    // Open a result, then bounce back out to the cross-mod search.
+    fireEvent.click(await screen.findByRole("button", { name: /Second Mod/ }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Search all mods/ }),
+    );
+
+    // The global result is reachable again with the query intact.
+    expect(
+      await screen.findByRole("button", { name: /Second Mod/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("mittags");
   });
 
   it("the dashboard review queue jumps into the mod filtered to review-needed", async () => {
