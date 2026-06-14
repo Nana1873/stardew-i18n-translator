@@ -25,6 +25,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   instead of silently resetting.
 - Bulk **Mark as translated** no longer gives empty rows a translated status,
   keeping row status, progress counts, rescans, and export behavior consistent.
+- Restored global string search across all scanned mods, including mod/file
+  context and a direct return path from per-mod results.
 
 See [docs/release/v1.2.3.md](docs/release/v1.2.3.md) for the full notes.
 
