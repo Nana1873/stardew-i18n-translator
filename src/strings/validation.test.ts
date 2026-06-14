@@ -79,17 +79,45 @@ describe("validate", () => {
     ]);
   });
 
-  it("protects quote delimiters, standalone #, and repeated ^ markers", () => {
+  it("protects standalone # and repeated ^ markers (quotes are soft)", () => {
     const issues = validate(
       "'Hello' # first^^second",
       "„Hallo“ first^second",
       false,
     );
-    expect(issues.map((issue) => issue.message).sort()).toEqual([
+    // `#` and `^` are runtime syntax -> blocking errors. The `'` -> „" change
+    // is punctuation -> a soft quote-mismatch warning, never token-missing.
+    const errors = issues
+      .filter((issue) => issue.severity === "error")
+      .map((issue) => issue.message)
+      .sort();
+    expect(errors).toEqual([
       "Token count mismatch for # (dialogue/mail separator) (expected 1, found 0)",
-      "Token count mismatch for ' (quote delimiter) (expected 2, found 0)",
       "Token count mismatch for ^ (line break) (expected 2, found 1)",
     ]);
+    expect(issues.map((issue) => issue.ruleId)).toContain("quote-mismatch");
+    expect(
+      issues.some(
+        (issue) =>
+          issue.ruleId === "token-missing" &&
+          issue.message.includes("quote delimiter"),
+      ),
+    ).toBe(false);
+  });
+
+  it("a different quote-delimiter count is a warning, never a blocking error", () => {
+    // Source uses backticks (no `'`); the translation adds a paired `'…'`.
+    const added = validate(
+      "Use `Default` to modify the settings.",
+      "'Standard' verwenden, um die Einstellungen anzupassen.",
+      false,
+    );
+    expect(added.map((i) => i.ruleId)).toEqual(["quote-mismatch"]);
+    expect(worstSeverity(added)).toBe("warning");
+    expect(added[0].message).toContain("Quote delimiters differ");
+    // A dropped quote pair is the same soft warning (not token-missing).
+    const dropped = validate("'test'", "test", false);
+    expect(dropped.map((i) => i.ruleId)).toEqual(["quote-mismatch"]);
   });
 
   it("does not treat apostrophes inside words as protected tokens", () => {
