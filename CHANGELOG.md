@@ -8,6 +8,26 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-06-14
+
+### Changed
+
+- Quote-delimiter differences now produce a review warning instead of blocking
+  export or triggering a local-AI retry.
+- GitHub Actions now runs the complete frontend and Windows Rust suite once on
+  the exact `main` commit. Release drafts upload the locally verified portable
+  ZIP instead of rebuilding it on a paid Windows runner.
+
+### Fixed
+
+- Settings writes are now atomic and keep the last valid configuration as
+  `Data/settings.json.bak`; a corrupt main file recovers from that backup
+  instead of silently resetting.
+- Bulk **Mark as translated** no longer gives empty rows a translated status,
+  keeping row status, progress counts, rescans, and export behavior consistent.
+
+See [docs/release/v1.2.3.md](docs/release/v1.2.3.md) for the full notes.
+
 ## [1.2.2] - 2026-06-14
 
 ### Added
@@ -118,7 +138,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.2...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.3...HEAD
+[1.2.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.1...v1.2.0
