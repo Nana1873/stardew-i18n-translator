@@ -797,6 +797,37 @@ kbd,
   background: rgba(236, 139, 63, 0.24);
 }
 
+/* Truncate the strings-panel title so the "search all mods" action stays put. */
+.panel__header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "← Search all mods" — drop the mod selection to return to global search. */
+.panel__back {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--gold-tint);
+  color: var(--gold-hi);
+  border: 1px solid rgba(227, 169, 78, 0.35);
+  border-radius: 20px;
+  padding: 1px 10px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: normal;
+  cursor: pointer;
+}
+
+.panel__back:hover {
+  background: rgba(227, 169, 78, 0.24);
+}
+
 /* --- Selected-mod summary (placeholder until M2 string table) --- */
 .panel__selected {
   padding: 14px 16px;

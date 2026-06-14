@@ -325,6 +325,11 @@ export function App() {
     });
   }
 
+  /** Drop the current mod selection to return to the cross-mod global search. */
+  function clearModSelection() {
+    setSelectedModId(null);
+  }
+
   /** Jump from the dashboard queue straight into a mod's review backlog. */
   function openReview(uniqueId: string) {
     setStatusFilter("review-needed");
@@ -706,6 +711,7 @@ export function App() {
             onShowReview={() => setStatusFilter("review-needed")}
             onOpenReviewQueue={() => setView("home")}
             onOpenMod={openMod}
+            onClearSelection={clearModSelection}
             onClearFilters={() => {
               setSearch("");
               setStatusFilter("all");
@@ -1029,6 +1035,7 @@ function StringTablePanel({
   onShowReview,
   onOpenReviewQueue,
   onOpenMod,
+  onClearSelection,
   onClearFilters,
   reloadToken,
   shortcuts,
@@ -1058,6 +1065,8 @@ function StringTablePanel({
   onOpenReviewQueue?: () => void;
   /** Open a mod selected from global string-search results. */
   onOpenMod: (uniqueId: string) => void;
+  /** Drop the mod selection to return to cross-mod global search. */
+  onClearSelection: () => void;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
   reloadToken?: number;
@@ -1066,12 +1075,24 @@ function StringTablePanel({
   return (
     <section className="panel panel--strings" aria-label="String table">
       <div className="panel__header">
-        Strings
+        <span className="panel__header-title">
+          Strings
+          {mod && (
+            <>
+              {" "}
+              · <StringTableHeader mod={mod} onShowReview={onShowReview} />
+            </>
+          )}
+        </span>
         {mod && (
-          <>
-            {" "}
-            · <StringTableHeader mod={mod} onShowReview={onShowReview} />
-          </>
+          <button
+            type="button"
+            className="panel__back"
+            title="Clear the selected mod and search across all scanned mods"
+            onClick={onClearSelection}
+          >
+            <span aria-hidden>←</span> Search all mods
+          </button>
         )}
       </div>
       {mod && (
