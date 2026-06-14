@@ -52,7 +52,7 @@ Choose checks based on the changed surface, then broaden for shared behavior:
 ```powershell
 corepack pnpm exec tsc --noEmit
 corepack pnpm test
-corepack pnpm format:check
+corepack pnpm check:docs
 Push-Location src-tauri
 cargo fmt --check
 cargo clippy --locked --all-targets --profile ci -- -D warnings
@@ -68,8 +68,14 @@ workflow visually. For packaging or release work, read
 
 - Review diffs, CI, dependencies, and unresolved comments before merging.
 - Keep commits and pull requests small and issue-focused.
+- Give every pull request exactly one `changelog:*` label. Add
+  `docs:not-required` only when the PR explains why durable docs are unchanged.
 - Build releases only from the clean, current `main` commit.
+- Use `corepack pnpm version:set <version>` instead of editing version sources
+  separately.
 - Ensure all version sources and release notes agree before tagging.
+- Let GitHub generate categorized PR notes; keep `CHANGELOG.md` concise and
+  curated.
 - Verify the portable ZIP structure and absence of user data.
 - Create a draft release through the documented workflow. Do not publish it
   without explicit human approval.

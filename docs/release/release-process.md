@@ -41,6 +41,11 @@ Keep these versions synchronized:
 
 The first distributable version is `1.0.0`.
 
+Use `corepack pnpm version:set <version>` to update all synchronized references,
+then run `corepack pnpm check:docs`. CI verifies all four application sources,
+the project-status release number, the `CHANGELOG.md` Unreleased comparison
+link, local Markdown links, and formatting.
+
 ## Pre-Release Checklist
 
 1. Confirm the working tree is clean and CI on `main` is green.
@@ -59,19 +64,21 @@ The first distributable version is `1.0.0`.
 5. Extract the generated ZIP to a different writable folder.
 6. Verify first launch, persistence, and copying the complete folder.
 7. Confirm CI is green for the current `main` commit.
-8. Create and push the matching version tag on that exact commit, for example
+8. Confirm merged pull requests have the correct `changelog:*` labels.
+9. Create and push the matching version tag on that exact commit, for example
    `v1.2.0`.
-9. Review the draft GitHub release and its ZIP before publishing it.
+10. Review the generated draft notes and ZIP before publishing the release.
 
 ## Draft Release Automation
 
 Pushing a `v*` tag runs `.github/workflows/release.yml`. The workflow accepts
 only a tag that points to the current `origin/main` commit, whose regular CI
-checks must already be green. It then performs the production Tauri build once,
-runs the same portable packaging script used locally, uploads the ZIP, and
-creates a draft GitHub release. It fails before building when the tag does not
-exactly match `v<application version>` or does not point to current `main`. The
-release must be reviewed and published manually.
+checks must already be green. It verifies all documentation checks, performs
+the production Tauri build once, runs the same portable packaging script used
+locally, uploads the ZIP, and creates a draft GitHub release. GitHub generates
+categorized notes from merged PR labels using `.github/release.yml`. When
+`docs/release/v<version>.md` exists, those curated highlights are prepended.
+The release must still be reviewed and published manually.
 
 The regular PR and `main` Rust checks use Cargo's custom `ci` profile. It keeps
 the complete format, Clippy, and test coverage but disables dependency

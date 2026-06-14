@@ -1,0 +1,20 @@
+changelog:
+  exclude:
+    labels:
+      - changelog:skip
+  categories:
+    - title: Added
+      labels:
+        - changelog:added
+    - title: Changed
+      labels:
+        - changelog:changed
+    - title: Fixed
+      labels:
+        - changelog:fixed
+    - title: Security
+      labels:
+        - changelog:security
+    - title: Other Changes
+      labels:
+        - "*"

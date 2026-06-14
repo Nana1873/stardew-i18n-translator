@@ -46,6 +46,7 @@ jobs:
           workspaces: src-tauri
 
       - run: pnpm install --frozen-lockfile
+      - run: pnpm check:docs
 
       - name: Build portable executable
         run: pnpm tauri build --no-bundle
@@ -57,19 +58,35 @@ jobs:
           $zip = & ./scripts/package-portable.ps1
           "zip=$zip" >> $env:GITHUB_OUTPUT
 
-      - name: Create draft release
+      - name: Generate release notes
+        id: notes
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $version = (Get-Content package.json | ConvertFrom-Json).version
-          $releaseNotes = "docs/release/v$version.md"
-          if (-not (Test-Path -LiteralPath $releaseNotes -PathType Leaf)) {
-            throw "Release notes not found: $releaseNotes"
+          $generated = gh api `
+            --method POST `
+            "repos/${{ github.repository }}/releases/generate-notes" `
+            -f tag_name="${{ github.ref_name }}" `
+            -f target_commitish="${{ github.sha }}" `
+            --jq .body
+          $curatedNotes = "docs/release/v$version.md"
+          $output = Join-Path $env:RUNNER_TEMP "release-notes.md"
+          if (Test-Path -LiteralPath $curatedNotes -PathType Leaf) {
+            Get-Content -Raw $curatedNotes | Set-Content -Encoding utf8 $output
+            "`n---`n`n## Merged pull requests`n" | Add-Content -Encoding utf8 $output
           }
+          $generated | Add-Content -Encoding utf8 $output
+          "path=$output" >> $env:GITHUB_OUTPUT
 
+      - name: Create draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           gh release create "${{ github.ref_name }}" `
             "${{ steps.package.outputs.zip }}" `
             --draft `
             --title "Stardew i18n Translator ${{ github.ref_name }}" `
-            --notes-file $releaseNotes
+            --notes-file "${{ steps.notes.outputs.path }}"

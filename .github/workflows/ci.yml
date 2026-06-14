@@ -23,7 +23,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec tsc --noEmit
       - run: pnpm test
-      - run: pnpm format:check
+      - run: pnpm check:docs
 
   rust:
     name: Rust backend (fmt, clippy, test)

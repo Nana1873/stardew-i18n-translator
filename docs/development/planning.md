@@ -18,6 +18,9 @@ Repository documentation has a different purpose:
 - `docs/release/` and `CHANGELOG.md` preserve release history.
 - `docs/agents/` contains reusable workflows, not task status.
 
+Mechanical documentation and release checks are described in
+[`documentation-automation.md`](documentation-automation.md).
+
 Do not create repository-local milestone, roadmap, checklist, or implementation
 plan files to mirror GitHub issue status. A substantial design decision may
 still require an ADR or research note, linked from the owning issue.
