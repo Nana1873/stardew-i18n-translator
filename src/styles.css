@@ -830,6 +830,72 @@ kbd,
   color: #5ec488;
 }
 
+/* --- Global string search (work view, before a mod is selected) --- */
+.global-search {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+
+.global-search__summary {
+  padding: 8px 14px;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  font-size: 11.5px;
+}
+
+.global-search__results {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.global-search__result {
+  display: grid;
+  width: 100%;
+  grid-template-columns: minmax(150px, 22%) minmax(120px, 20%) 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 14px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.035);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.global-search__result:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.global-search__result > * {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.global-search__context {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.global-search__context span,
+.global-search__empty {
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+
+.global-search__result code {
+  color: var(--key);
+}
+
 /* --- Status filter chips (v1.5; replaces the toolbar dropdown) --- */
 .filterchips {
   display: flex;

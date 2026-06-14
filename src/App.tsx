@@ -40,6 +40,7 @@ import { Dashboard } from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import { StringTable, StringTableHeader } from "./strings/StringTable";
+import { GlobalStringSearch } from "./strings/GlobalStringSearch";
 import { STATUS_META, statusTint } from "./strings/status";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { ExportDialog } from "./export/ExportDialog";
@@ -624,7 +625,7 @@ export function App() {
         onReview={() => setView("home")}
         search={search}
         onSearch={setSearch}
-        searchEnabled={Boolean(selectedMod) && view === "work"}
+        searchEnabled={Boolean(scan?.mods.length) && view === "work"}
       />
       {view === "home" ? (
         <Dashboard
@@ -694,6 +695,7 @@ export function App() {
           />
           <StringTablePanel
             mod={selectedMod}
+            mods={scan?.mods ?? []}
             search={search}
             statusFilter={statusFilter}
             onStatusFilter={setStatusFilter}
@@ -703,6 +705,7 @@ export function App() {
             onCountsChange={handleCountsChange}
             onShowReview={() => setStatusFilter("review-needed")}
             onOpenReviewQueue={() => setView("home")}
+            onOpenMod={openMod}
             onClearFilters={() => {
               setSearch("");
               setStatusFilter("all");
@@ -1015,6 +1018,7 @@ function FilterChips({
 
 function StringTablePanel({
   mod,
+  mods,
   search,
   statusFilter,
   onStatusFilter,
@@ -1024,11 +1028,13 @@ function StringTablePanel({
   onCountsChange,
   onShowReview,
   onOpenReviewQueue,
+  onOpenMod,
   onClearFilters,
   reloadToken,
   shortcuts,
 }: {
   mod: ScannedMod | null;
+  mods: ScannedMod[];
   search: string;
   statusFilter: StringStatus | "all";
   onStatusFilter: (value: StringStatus | "all") => void;
@@ -1050,6 +1056,8 @@ function StringTablePanel({
   onShowReview?: () => void;
   /** Return to the dashboard's cross-mod review queue. */
   onOpenReviewQueue?: () => void;
+  /** Open a mod selected from global string-search results. */
+  onOpenMod: (uniqueId: string) => void;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
   reloadToken?: number;
@@ -1094,6 +1102,8 @@ function StringTablePanel({
             onCountsChange?.(mod.uniqueId, translatedKeys, statusCounts)
           }
         />
+      ) : search.trim() ? (
+        <GlobalStringSearch mods={mods} query={search} onOpenMod={onOpenMod} />
       ) : (
         <div className="workspace-empty">
           <span className="workspace-empty__icon" aria-hidden>
