@@ -8,11 +8,16 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.2.2] - 2026-06-14
+
+### Added
+
+- Added an **Open Mods Folder** action to the mod-list context menu.
+
 ### Changed
 
 - Removed inline table editing so all translation edits use the validated
   String Editor dialog.
-- Added an **Open Mods Folder** action to the mod-list context menu.
 - Removed the unreliable Nexus browser-search stopgap; broader Nexus
   integration is deferred indefinitely with no target release.
 - The toolbar string search is now shown only while a mod is open.
@@ -21,6 +26,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - CI now verifies synchronized version references and repository-local
   Markdown links, while PR labels drive documentation policy and generated
   release notes.
+
+See [docs/release/v1.2.2.md](docs/release/v1.2.2.md) for the full notes.
 
 ## [1.2.1] - 2026-06-13
 
@@ -111,7 +118,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.1...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.2...HEAD
+[1.2.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.1.0...v1.1.1
