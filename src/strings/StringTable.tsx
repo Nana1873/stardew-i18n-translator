@@ -374,24 +374,33 @@ export function StringTable({
   ) {
     const text = (r: Row) =>
       write === "clear" ? "" : write === "source" ? r.source : r.target;
+    // An empty target can never be "translated": marking an empty row as
+    // translated would show a green status with no text and skew the counts
+    // (the coverage count and a rescan both treat empty as untranslated).
+    // Mirror the editor — empty value follows the field to untranslated.
+    const statusFor = (value: string): StringStatus =>
+      status === "translated" && value.trim() === "" ? "untranslated" : status;
     const indices = [...selection];
     const entries: SaveStringEntry[] = [];
     for (const i of indices) {
       const r = data[i];
       if (!r) continue;
+      const value = text(r);
       entries.push({
         relativeDir: r.file,
         key: r.key,
-        target: text(r),
-        status,
+        target: value,
+        status: statusFor(value),
         source: r.source,
       });
     }
     await saveStrings(mod.uniqueId, entries);
     const touched = new Set(indices);
-    const next = data.map((r, i) =>
-      touched.has(i) ? { ...r, status, target: text(r) } : r,
-    );
+    const next = data.map((r, i) => {
+      if (!touched.has(i)) return r;
+      const value = text(r);
+      return { ...r, status: statusFor(value), target: value };
+    });
     setRows(next);
     onCountsChange?.(countTranslated(next), countByStatus(next));
     setMenu(null);

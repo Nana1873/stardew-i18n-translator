@@ -424,6 +424,33 @@ describe("StringTable", () => {
     );
   });
 
+  it("right-click → Mark as translated keeps an empty row untranslated", async () => {
+    // "bye" has an empty target. Marking it translated would show a green
+    // status with no text and skew the counts, so it must stay untranslated.
+    render(<StringTable mod={MOD} />);
+    fireEvent.contextMenu(await screen.findByText("bye"));
+
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: "Mark as translated" }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_strings",
+        expect.objectContaining({
+          modUniqueId: "a.b",
+          entries: [
+            expect.objectContaining({
+              key: "bye",
+              target: "",
+              status: "untranslated",
+            }),
+          ],
+        }),
+      ),
+    );
+  });
+
   it("reports fresh translated counts after an edit and after a bulk action", async () => {
     const onCountsChange = vi.fn();
     render(<StringTable mod={MOD} onCountsChange={onCountsChange} />);
