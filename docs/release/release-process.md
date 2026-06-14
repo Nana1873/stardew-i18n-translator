@@ -11,11 +11,11 @@ Its structure is:
 ```text
 Stardew i18n Translator/
 |-- stardew-i18n-translator.exe
-`-- Data/
-    `-- README.txt
+`-- README.txt
 ```
 
-The application stores `settings.json`, `glossary.json`, and the
+On first launch, the application creates its adjacent `Data/` folder. It stores
+`settings.json`, `glossary.json`, and the
 `language-state/<lang>/translations/` working-state folders inside `Data/`.
 Copying the complete application folder therefore moves the application and
 its language-specific local work together. Saved Stardew Valley and Mods paths
@@ -50,7 +50,7 @@ link, local Markdown links, and formatting.
 
 1. Confirm the working tree is clean and CI on `main` is green.
 2. Run a real Mods-folder smoke test from the unpacked portable folder:
-   - launch with an empty `Data/` folder and complete setup;
+   - launch without a `Data/` folder, confirm it is created, and complete setup;
    - close and reopen the app, then verify settings and the automatic scan;
    - open a large mod and edit/save one string;
    - confirm the saved state appears under

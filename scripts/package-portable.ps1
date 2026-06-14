@@ -31,9 +31,9 @@ if (Test-Path -LiteralPath $zipPath) {
     Remove-Item -LiteralPath $zipPath -Force
 }
 
-New-Item -ItemType Directory -Path (Join-Path $stagingDir "Data") -Force | Out-Null
+New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 Copy-Item -LiteralPath $executable -Destination (Join-Path $stagingDir "stardew-i18n-translator.exe")
-Copy-Item -LiteralPath (Join-Path $repoRoot "distribution\Data\README.txt") -Destination (Join-Path $stagingDir "Data\README.txt")
+Copy-Item -LiteralPath (Join-Path $repoRoot "distribution\README.txt") -Destination (Join-Path $stagingDir "README.txt")
 
 Compress-Archive -LiteralPath $stagingDir -DestinationPath $zipPath -CompressionLevel Optimal
 
