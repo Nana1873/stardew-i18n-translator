@@ -23,6 +23,15 @@ To ensure consistency, code quality, and strict scope control, you MUST follow t
 ## 2. Commit and Code Hygiene
 
 - **Small, Scoped Commits:** Prefer small, logical commits (e.g., one commit per subtask/issue). Do not lump multiple issues or refactors into a single massive commit.
+- **Temporary Worktrees Only:** Use the primary checkout for normal work. Create
+  a Git worktree only when isolated or parallel work is genuinely necessary,
+  and place it under
+  `E:\DevProjects\.worktrees\stardew-translator\<issue-or-task>`. Never create
+  sibling project copies such as `Stardew Translator V2-<task>` directly under
+  `E:\DevProjects`. Before creating one, inspect `git worktree list`. Remove
+  the worktree and prune its metadata immediately after the task is merged,
+  abandoned, or handed back to the primary checkout. Preserve uncommitted work
+  before removal and do not leave build or release worktrees behind.
 - **Test-Driven / Test-Verified:** Every implementation task must include unit/integration tests or a clear, documented explanation of why automated testing is impossible for that component.
 - **Local-First Verification:** Run the relevant formatting, type, frontend,
   Rust, documentation, build, and smoke checks locally before pushing. GitHub

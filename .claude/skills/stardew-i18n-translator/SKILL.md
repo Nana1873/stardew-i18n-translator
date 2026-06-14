@@ -26,7 +26,11 @@ functionality before its approved GitHub milestone.
 
 - Never discard, overwrite, stage, or include unrelated working-tree changes.
 - If local experiments overlap the requested branch, use a clean Git worktree
-  from the intended base commit.
+  from the intended base commit. Worktrees are temporary and must live under
+  `E:\DevProjects\.worktrees\stardew-translator\<issue-or-task>`, never as
+  sibling copies beside the primary checkout. Inspect `git worktree list`
+  before creating one, then remove it and prune its metadata as soon as the
+  isolated task is merged, abandoned, or returned to the primary checkout.
 - Locally installed third-party mods may be inspected as read-only test inputs
   for development, debugging, performance testing, and visual verification.
   Perform all write, edit, import, and export tests on temporary copies. Never
