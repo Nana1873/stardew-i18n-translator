@@ -42,8 +42,11 @@ graph TD
 
 ### Step 4: Local Verification
 
-- Run code formatting, lints, and test suites locally.
+- Run code formatting, lints, and test suites locally before pushing.
 - Keep compiler warnings to zero.
+- Treat GitHub Actions as a limited final safety net for the exact `main`
+  commit, not as an interactive test runner. Do not push repeated trial fixes
+  merely to obtain remote feedback when the checks can run locally.
 
 ### Step 5: Clean Handoff
 

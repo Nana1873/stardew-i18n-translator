@@ -24,6 +24,10 @@ To ensure consistency, code quality, and strict scope control, you MUST follow t
 
 - **Small, Scoped Commits:** Prefer small, logical commits (e.g., one commit per subtask/issue). Do not lump multiple issues or refactors into a single massive commit.
 - **Test-Driven / Test-Verified:** Every implementation task must include unit/integration tests or a clear, documented explanation of why automated testing is impossible for that component.
+- **Local-First Verification:** Run the relevant formatting, type, frontend,
+  Rust, documentation, build, and smoke checks locally before pushing. GitHub
+  Actions minutes are limited and must not be used as a substitute for local
+  verification or by repeatedly pushing speculative fixes.
 - **Document Changes:** Update corresponding markdown files, ADRs, or README files when your implementation changes documented behavior.
 - **Classify Pull Requests:** Every pull request must have exactly one
   `changelog:*` label. Use `docs:not-required` only with a clear explanation

@@ -60,6 +60,10 @@ cargo test --locked --profile ci
 Pop-Location
 ```
 
+Run these checks locally before pushing. GitHub Actions minutes are limited:
+remote workflows are a final safety net for the exact `main` commit, not a
+substitute for local verification or an interactive debugging loop.
+
 For frontend behavior, run the relevant preview or app and verify the changed
 workflow visually. For packaging or release work, read
 `docs/release/release-process.md` and follow it exactly.
@@ -70,15 +74,15 @@ workflow visually. For packaging or release work, read
 - Keep commits and pull requests small and issue-focused.
 - Give every pull request exactly one `changelog:*` label. Add
   `docs:not-required` only when the PR explains why durable docs are unchanged.
-- Build releases only from the clean, current `main` commit.
+- Build releases locally only from the clean, current `main` commit.
 - Use `corepack pnpm version:set <version>` instead of editing version sources
   separately.
 - Ensure all version sources and release notes agree before tagging.
 - Let GitHub generate categorized PR notes; keep `CHANGELOG.md` concise and
   curated.
 - Verify the portable ZIP structure and absence of user data.
-- Create a draft release through the documented workflow. Do not publish it
-  without explicit human approval.
+- Upload the locally verified portable ZIP with the documented release script.
+  Do not publish the resulting draft without explicit human approval.
 
 ## Finish
 
