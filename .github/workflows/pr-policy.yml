@@ -17,7 +17,7 @@ jobs:
     name: Changelog and documentation policy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         with:
           script: |
             const pr = context.payload.pull_request;
