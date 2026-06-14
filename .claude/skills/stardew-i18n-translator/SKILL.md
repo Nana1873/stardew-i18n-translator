@@ -27,9 +27,17 @@ functionality before its approved GitHub milestone.
 - Never discard, overwrite, stage, or include unrelated working-tree changes.
 - If local experiments overlap the requested branch, use a clean Git worktree
   from the intended base commit.
-- Never inspect, modify, package, or commit real game files, Mods folders,
-  archives, application data, credentials, personal email addresses, or local
-  absolute paths.
+- Locally installed third-party mods may be inspected as read-only test inputs
+  for development, debugging, performance testing, and visual verification.
+  Perform all write, edit, import, and export tests on temporary copies. Never
+  commit, upload, redistribute, or expose real mod content, generated
+  translations, personal paths, or local user data in logs, screenshots,
+  issues, pull requests, or handoffs.
+- Access real game files only when the assigned task explicitly covers
+  game-path detection or glossary extraction. Never modify, package, commit,
+  upload, or redistribute game assets.
+- Never inspect or expose unrelated application data, credentials, personal
+  email addresses, or local absolute paths.
 - Use only sanitized fixtures under `tests/fixtures/`.
 - Keep the app portable: application state belongs beside the executable in
   `Data/`, and release archives must contain no user data.
