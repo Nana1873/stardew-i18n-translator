@@ -23,7 +23,7 @@ See [Planning and Status](planning.md) for the maintenance convention.
 
 ## Release State
 
-- Latest release: 1.2.1.
+- Latest release: 1.2.2.
 - Maintenance work is grouped under the
   [v1.2.2 milestone](https://github.com/Nana1873/stardew-i18n-translator/milestone/1).
 - Nexus discovery is deferred indefinitely. The related issues remain in the
