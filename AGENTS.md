@@ -43,6 +43,24 @@ To prevent leaks and copyright issues, **do not check in or commit** the followi
 - Third-party mod archives (.zip, etc.) or unpacked mod directories (except minimal test fixtures under `tests/fixtures/`).
 - Generated glossary JSON/CSV databases or local user application data folders.
 
+### Local Mod Files for Verification
+
+AI agents may inspect and process locally installed third-party mods for
+development, debugging, performance testing, and visual verification.
+
+Real mod files are local test inputs only. Agents must:
+
+- Treat the original Mods directory as read-only.
+- Perform write, edit, import, and export tests only on temporary copies.
+- Never commit, upload, redistribute, or add real mod content to fixtures.
+- Avoid including mod text, personal paths, or generated translations in logs,
+  screenshots, issues, pull requests, or handoff summaries.
+- Remove temporary copies after verification when practical.
+
+Agents may access local game files only when the assigned task explicitly
+requires testing game-path detection or glossary extraction. Game assets must
+never be committed, uploaded, or redistributed.
+
 ## 4. Handoff Procedure
 
 At the end of every completed task or session, you **MUST** write a brief handoff summary at the bottom of your final response, using the format in [handoff-template.md](docs/agents/handoff-template.md):

@@ -22,6 +22,24 @@ This document defines strict boundaries for the **Stardew i18n Translator** proj
 - **Glossary is Optional:** Building the official Stardew game glossary from game content is optional during setup. The app must run perfectly if the user skips this step or if glossary extraction fails (graceful degradation, features relying on the glossary must simply disable themselves or show placeholder tooltips).
 - **No Plugin/Provider Abstractions:** Avoid building complex provider structures, dependency injection systems, or plugin frameworks. Keep the architecture straightforward and monolithic for v1.
 
+## Local Data for Development and Verification
+
+Locally installed third-party mods may be used as read-only test inputs for
+development, debugging, performance testing, and visual verification. This
+permission does not allow redistribution or inclusion of real mod content in
+the repository.
+
+- Treat the user's original Mods directory as read-only.
+- Run any write, edit, import, or export verification against a temporary copy.
+- Do not commit, upload, redistribute, or convert real mod content into test
+  fixtures.
+- Do not expose mod text, generated translations, personal paths, or local user
+  data in logs, screenshots, issues, pull requests, or handoff summaries.
+- Remove temporary working copies after verification when practical.
+- Access local Stardew Valley game files only when the assigned task explicitly
+  covers game-path detection or glossary extraction. Never commit, upload, or
+  redistribute game assets.
+
 ## Scope Deflection Process
 
 When an agent or developer suggests a new feature, improvement, or refactoring that lies outside the assigned issue's scope:
