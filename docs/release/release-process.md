@@ -71,6 +71,10 @@ Unreleased comparison link, local Markdown links, and formatting.
 
    ```powershell
    powershell -File scripts/create-draft-release.ps1 `
+     -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip `
+     -Preflight
+
+   powershell -File scripts/create-draft-release.ps1 `
      -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip
    ```
 
@@ -80,10 +84,23 @@ Unreleased comparison link, local Markdown links, and formatting.
 ## Local Draft Release Automation
 
 The release script refuses dirty or stale commits, verifies documentation and
-version checks, validates the exact two-file ZIP structure, creates or verifies
-the matching version tag, generates categorized notes, and creates a draft
-GitHub release. When `docs/release/v<version>.md` exists, those curated
-highlights are prepended.
+version checks, validates the exact two-file ZIP structure, checks local and
+remote tag state, generates categorized notes, and creates a draft GitHub
+release. When `docs/release/v<version>.md` exists, those curated highlights are
+prepended.
+
+Run it with `-Preflight` first. Preflight performs every read-only validation
+and note-generation step without creating or pushing a tag and without creating
+a release. The normal run delays tag creation until all read-only checks pass.
+If draft creation then fails, it removes only the local or remote tags created
+by that same run. Pre-existing tags are never removed automatically.
+
+The transaction behavior can be verified without GitHub writes or Actions
+minutes:
+
+```powershell
+powershell -File scripts/test-create-draft-release.ps1
+```
 
 The script does not rebuild the application. This is intentional: the locally
 smoke-tested production ZIP is the exact artifact uploaded to GitHub, avoiding
