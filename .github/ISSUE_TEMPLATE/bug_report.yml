@@ -1,34 +1,31 @@
 name: Bug report
-description: Report something that does not work correctly in the app.
+description: Report something that does not work correctly.
 title: "[Bug]: "
 labels: ["type:bug", "needs-triage"]
 body:
   - type: markdown
     attributes:
-      value: |
-        Tell us what went wrong. A short report is fine.
-
-        Logs and screenshots are optional. Logs may contain local folder paths,
-        so remove anything private before attaching them.
+      value: Tell us what went wrong. A short report is completely fine.
 
   - type: textarea
     id: what-happened
     attributes:
       label: What happened?
-      description: Describe the problem in your own words.
+      description: What did you expect, and what happened instead?
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: How can it be reproduced? (optional)
-      description: A few steps are enough if you know them.
+      label: How can we reproduce it?
+      description: A few steps are enough. Leave this blank if you are not sure.
 
   - type: textarea
     id: details
     attributes:
-      label: Additional details (optional)
+      label: Anything else?
       description: >
         App version, Windows version, affected mod, error message, screenshots,
-        or a log from Settings > About > Open logs folder.
+        or a log can help. Logs may contain local paths, so remove anything
+        private before attaching them.

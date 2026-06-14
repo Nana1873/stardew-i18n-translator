@@ -1,138 +1,85 @@
 # Stardew i18n Translator
 
-A portable Windows desktop app for translating Stardew Valley and SMAPI mod
-`i18n` files. Scan your Mods folder, review thousands of strings in a compact
-editor, preserve Stardew-specific tokens, and export clean translation files.
+A portable Windows app for translating Stardew Valley mod `i18n` files without
+digging through thousands of JSON lines.
+
+Point it at your Mods folder, choose a language, and start translating. The app
+imports existing work, tracks progress, checks Stardew-specific tokens, and
+exports clean translation files with backups.
 
 ![Stardew i18n Translator dashboard](docs/assets/screenshots/dashboard.png)
 
-## Highlights
+## What It Does
 
-- Scans SMAPI mods recursively and groups multi-component mod packages.
-- Imports `i18n/default.json` and existing target-language translations.
-- Provides a fast table/editor workflow with search, status filters, bulk
-  actions, review queues, section context, and automatic outdated detection.
-- Protects Content Patcher, dialogue, mail, placeholder, quote, and separator
-  tokens using exact occurrence counts.
-- Exports clean UTF-8 JSON in source-key order with backups and atomic writes.
-- Supports optional local AI through Ollama, LM Studio, or another
-  OpenAI-compatible localhost endpoint.
-- Supports file-based translation batches for ChatGPT, Claude, Gemini, and
-  other file-capable LLMs.
-- Keeps settings, glossary data, and translation work locally in the portable
-  app folder.
+- Scans SMAPI mods and collects their `i18n` files.
+- Groups multi-part mods and imports existing translations.
+- Provides search, filters, progress tracking, bulk actions, and review queues.
+- Warns about broken Content Patcher, dialogue, mail, and placeholder tokens.
+- Supports manual translation, optional local AI, and external LLM batches.
+- Keeps settings and translation work locally in the portable app folder.
 
 ![Translation workspace](docs/assets/screenshots/workspace.png)
 
-## Download And Setup
+## Getting Started
 
-1. Download the portable Windows ZIP from
+1. Download the latest portable ZIP from
    [GitHub Releases](https://github.com/Nana1873/stardew-i18n-translator/releases).
-2. Extract the complete ZIP to a writable folder.
+2. Extract it to a writable folder.
 3. Run `stardew-i18n-translator.exe`.
 4. Select your Stardew Valley folder, Mods folder, and target language.
 
-The app creates a `Data/` folder beside the executable. Move or back up the
-complete application folder to keep settings and translation work together.
-Saved game and Mods paths are absolute and may need to be selected again on a
-different computer.
+The app creates a `Data/` folder beside the executable. Keep that folder when
+updating or moving the app so your settings and translation progress come with
+you.
 
-The executable is currently unsigned, so Windows SmartScreen may show an
-unknown-publisher warning.
+Windows may show a SmartScreen warning because the executable is not signed.
 
-## Translation Workflow
+## Translating
 
-1. Scan the configured Mods folder.
-2. Select a mod and filter or search its strings.
-3. Edit manually, use optional local AI, or export an external LLM batch.
-4. Review token and quality warnings.
-5. Export the selected mod or all mods.
+Open a mod, search or filter its strings, and edit them in the string editor.
+You can translate manually, connect to a local model through Ollama or LM
+Studio, or export a batch for a file-capable LLM.
 
-Any protected-token count mismatch blocks that mod's export before files or
-backups are written. Untranslated entries remain valid and are omitted so SMAPI
-can fall back to `default.json`.
+AI suggestions always go into the review queue first. They are never treated as
+finished translations automatically.
 
-## Glossary How-To
+When you export, untranslated entries are left out so SMAPI can fall back to
+the original English text. Token mismatches are caught before anything is
+written.
 
-The optional glossary provides official Stardew Valley term suggestions in the
-editor and AI prompts. It does not enforce literal word-for-word translations.
+## Optional Glossary
 
-1. Download
-   [StardewXnbHack](https://github.com/Pathoschild/StardewXnbHack).
-2. Use it to unpack your own Stardew Valley `Content` folder.
-3. Confirm that `Content (unpacked)/` exists inside the selected game folder.
-4. Open **Settings > Glossary**.
-5. Choose **Build glossary**.
+The glossary can show official Stardew Valley terms while you translate. To
+build one, unpack your own game content with
+[StardewXnbHack](https://github.com/Pathoschild/StardewXnbHack), then choose
+**Settings > Glossary > Build glossary**.
 
-The generated glossary is stored locally as `Data/glossary.json`. No game
-content or generated glossary database is included in releases.
-
-## Local AI
-
-Local AI is optional. Start Ollama, LM Studio, or another OpenAI-compatible
-server on your machine, then open **Settings > Local AI**, choose the endpoint,
-test the connection, and select a model. AI results always enter the review
-queue and are never treated as finished translations automatically.
-
-## External LLM Batch
-
-1. Select the missing strings for a mod.
-2. Choose **Export LLM batch** from the context menu.
-3. Upload the generated `*.llm-batch.json` to a file-capable LLM.
-4. Ask it to follow the embedded `instructions` and return the result as a
-   file.
-5. Drop the returned JSON onto the app, or choose **Import batch...**, then
-   review the imported suggestions.
-
-The app supports this workflow without connecting to a cloud API or storing an
-API key.
+The glossary is optional and stays in `Data/glossary.json`.
 
 ## Privacy
 
-- Core scanning, editing, validation, glossary generation, and export are
-  completely local.
-- The app contains no analytics, telemetry, accounts, or cloud API keys.
-- A local diagnostic log is written to `Data/logs/` (rotating, size-capped) to
-  help with bug reports. It never leaves your computer — open it from
-  **Settings > About > Open logs folder** to attach it to an issue yourself.
-  Logging can be disabled from the same page.
-- Local AI requests go only to the endpoint configured in Settings.
-- External LLM batches leave the computer only when you manually upload them
-  to a service of your choice. Review that provider's privacy policy first.
-- Stardew Valley files, mods, generated glossaries, and user data are not
-  committed to this repository or bundled with releases.
+The app has no accounts, analytics, telemetry, cloud API keys, or Nexus API
+access. Scanning, editing, validation, glossary generation, and export all
+happen locally.
 
-During a scan, **Optional cleanup** lists unused translation keys that still
-exist in a target translation but were removed from `default.json`. SMAPI
-ignores them, so they are safe to keep or remove and never affect progress or
-block export.
+Local AI requests go only to the endpoint you configure. External LLM batches
+leave your computer only when you upload them yourself. Diagnostic logs stay in
+`Data/logs/` and can be disabled in **Settings > About**.
 
-## AI-Assisted Development
+## Issues And Ideas
 
-This project was developed largely with the help of AI coding agents, working
-from the human-authored specification in [SPEC.md](SPEC.md) under the strict
-boundaries in [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md). All code is reviewed
-before release, covered by an automated test suite, and gated by CI (TypeScript,
-Rust, lint, and format checks). The agent rules and workflow live in
-[AGENTS.md](AGENTS.md) and [docs/agents/](docs/agents/).
+Found a problem? Open a
+[bug report](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=bug_report.yml).
+Have an idea? Send a
+[feature request](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=feature_request.yml).
 
-Mentioning this for transparency — it does not change the license, the privacy
-guarantees, or the fact that the maintainer is responsible for what ships.
-
-## Issues
-
-- **What is planned?** See the
-  [open milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones)
-  and [issue tracker](https://github.com/Nana1873/stardew-i18n-translator/issues).
-- **Found a bug?** Open a short
-  [bug report](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=bug_report.yml).
-- **Have an idea?** Open a
-  [feature request](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=feature_request.yml).
-- **What changed between versions?** See [CHANGELOG.md](CHANGELOG.md).
+Planned work lives in the
+[issue tracker](https://github.com/Nana1873/stardew-i18n-translator/issues).
+Release history is in the [changelog](CHANGELOG.md).
 
 ## Development
 
-The project uses Tauri 2, Rust, React, TypeScript, Vite, and pnpm.
+The app is built with Tauri 2, Rust, React, TypeScript, and Vite.
 
 ```powershell
 corepack pnpm install
@@ -140,15 +87,17 @@ corepack pnpm test
 corepack pnpm tauri dev
 ```
 
-See the [project status](docs/development/project-status.md), [product
-specification](SPEC.md), and [scope guardrails](SCOPE_GUARDRAILS.md) for
-implementation details.
+The detailed product specification and project boundaries live in
+[SPEC.md](SPEC.md) and [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md).
+
+This project was developed with help from AI coding agents. The maintainer
+reviews the code and is responsible for what ships.
 
 ## License
 
 Copyright (C) 2026 Nana.
 
-This project is licensed under the
+Source code is available here and licensed under the
 [GNU General Public License v3.0 or later](LICENSE).
 
 Stardew Valley is a trademark of ConcernedApe. This community project is not
