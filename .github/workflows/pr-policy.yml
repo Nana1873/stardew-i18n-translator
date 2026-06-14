@@ -1,0 +1,68 @@
+name: Pull request policy
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  labels-and-docs:
+    name: Changelog and documentation policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v8
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const labels = new Set(pr.labels.map(({ name }) => name));
+            const changelogLabels = [
+              "changelog:added",
+              "changelog:changed",
+              "changelog:fixed",
+              "changelog:security",
+              "changelog:skip",
+            ].filter((label) => labels.has(label));
+
+            if (changelogLabels.length !== 1) {
+              core.setFailed(
+                `Expected exactly one changelog label, found ${changelogLabels.length}: ` +
+                (changelogLabels.join(", ") || "none"),
+              );
+            }
+
+            const files = await github.paginate(
+              github.rest.pulls.listFiles,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number,
+                per_page: 100,
+              },
+            );
+            const documentationChanged = files.some(({ filename }) =>
+              filename === "README.md" ||
+              filename === "SPEC.md" ||
+              filename === "SCOPE_GUARDRAILS.md" ||
+              filename === "CHANGELOG.md" ||
+              filename === "AGENTS.md" ||
+              filename.startsWith("docs/") ||
+              filename.startsWith(".claude/skills/"),
+            );
+            const requiresDocumentation =
+              labels.has("docs:required") ||
+              labels.has("documentation") ||
+              labels.has("type:release") ||
+              labels.has("type:enhancement");
+            const exempt =
+              labels.has("docs:not-required") ||
+              labels.has("dependencies");
+
+            if (requiresDocumentation && !exempt && !documentationChanged) {
+              core.setFailed(
+                "This PR requires a durable documentation change. " +
+                "Update the relevant docs or add docs:not-required with a clear PR explanation.",
+              );
+            }

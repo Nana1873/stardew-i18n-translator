@@ -5,6 +5,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - changelog:skip
+      - docs:not-required
     open-pull-requests-limit: 5
     groups:
       npm-dev:
@@ -16,6 +20,10 @@ updates:
     directory: "/src-tauri"
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - changelog:skip
+      - docs:not-required
     open-pull-requests-limit: 5
     groups:
       cargo:
@@ -30,6 +38,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    labels:
+      - dependencies
+      - changelog:skip
+      - docs:not-required
     open-pull-requests-limit: 5
     groups:
       actions:

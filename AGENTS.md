@@ -25,6 +25,9 @@ To ensure consistency, code quality, and strict scope control, you MUST follow t
 - **Small, Scoped Commits:** Prefer small, logical commits (e.g., one commit per subtask/issue). Do not lump multiple issues or refactors into a single massive commit.
 - **Test-Driven / Test-Verified:** Every implementation task must include unit/integration tests or a clear, documented explanation of why automated testing is impossible for that component.
 - **Document Changes:** Update corresponding markdown files, ADRs, or README files when your implementation changes documented behavior.
+- **Classify Pull Requests:** Every pull request must have exactly one
+  `changelog:*` label. Use `docs:not-required` only with a clear explanation
+  when a durable documentation update is unnecessary.
 - **Scope Changes Require Approval:** If you believe an issue or GitHub milestone is blocking progress or has technical flaws, do not change it on your own. Present the issue to the user and request updated parameters.
 
 ## 3. Data and Security Guardrails

@@ -18,6 +18,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - The toolbar string search is now shown only while a mod is open.
 - Active planning and release scope are now tracked through GitHub Issues and
   Milestones instead of duplicated repository task-plan documents.
+- CI now verifies synchronized version references and repository-local
+  Markdown links, while PR labels drive documentation policy and generated
+  release notes.
 
 ## [1.2.1] - 2026-06-13
 

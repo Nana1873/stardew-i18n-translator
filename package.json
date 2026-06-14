@@ -18,6 +18,10 @@
     "test:watch": "vitest",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "version:set": "node scripts/set-version.mjs",
+    "check:versions": "node scripts/check-version-sync.mjs",
+    "check:links": "node scripts/check-markdown-links.mjs",
+    "check:docs": "node scripts/check-version-sync.mjs && node scripts/check-markdown-links.mjs && prettier --check .",
     "tauri": "tauri"
   },
   "dependencies": {
