@@ -41,20 +41,24 @@ pub fn extract(value: &str) -> Vec<String> {
     tokens
 }
 
-/// Newlines are **layout, not syntax**: a translation often legitimately needs
-/// a different number of line breaks (German runs ~25% longer than English),
-/// and a changed `\n` count never breaks the mod at runtime. They are still
-/// *extracted* (the editor shows them as chips and the frontend raises the
-/// `newline-mismatch` **warning**), but they are excluded from the
-/// missing-token **error** — which would skip the string on export and make
-/// the AI retry pointlessly (SPEC §10).
-fn is_layout_token(token: &str) -> bool {
-    token == "\n"
+/// Tokens that are still *extracted* (the editor shows them as chips) but are
+/// **exempt from the blocking token error**: a count difference surfaces as a
+/// frontend **warning**, never skips the string on export or triggers a
+/// pointless AI retry (SPEC §10).
+///  - `\n` is **layout, not syntax**: a translation often needs a different
+///    number of line breaks (German runs ~25% longer than English), and a
+///    changed `\n` count never breaks the mod at runtime.
+///  - `'` paired quote delimiters are **punctuation, not runtime syntax** in
+///    SMAPI i18n (unlike `{{...}}`, `$b`, `#`, `^`, `@`): adding, removing, or
+///    restyling quotes never breaks a mod, so a quote-only difference must not
+///    block export.
+fn is_soft_token(token: &str) -> bool {
+    token == "\n" || token == "'"
 }
 
 /// True if `target` is missing (or under-represents) any protected token that
-/// appears in `source`. Layout tokens (newlines) are exempt; they surface as a
-/// warning, never an error.
+/// appears in `source`. Soft tokens (newlines, quote delimiters) are exempt;
+/// they surface as a warning, never an error.
 pub fn missing_tokens(source: &str, target: &str) -> bool {
     token_differences(source, target)
         .iter()
@@ -69,14 +73,14 @@ pub struct TokenDifference {
 }
 
 /// Every protected-token count that differs between source and target.
-/// Newlines remain layout-only and are deliberately excluded.
+/// Soft tokens (newlines, quote delimiters) are deliberately excluded.
 pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     let source_counts = counts(source);
     let target_counts = counts(target);
     let mut tokens: Vec<String> = source_counts
         .keys()
         .chain(target_counts.keys())
-        .filter(|token| !is_layout_token(token))
+        .filter(|token| !is_soft_token(token))
         .cloned()
         .collect();
     tokens.sort();
@@ -98,13 +102,13 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
 /// The protected tokens that `target` is missing (or under-represents) relative
 /// to `source`, each listed once. Empty when nothing is missing. Used by the
 /// local-LLM translator (M6) to flag/retry a result that dropped a token.
-/// Layout tokens (newlines) are exempt, like in [`missing_tokens`].
+/// Soft tokens (newlines, quote delimiters) are exempt, like in [`missing_tokens`].
 pub fn missing_token_list(source: &str, target: &str) -> Vec<String> {
     let source_counts = counts(source);
     let target_counts = counts(target);
     let mut missing: Vec<String> = source_counts
         .iter()
-        .filter(|(token, _)| !is_layout_token(token))
+        .filter(|(token, _)| !is_soft_token(token))
         .filter(|(token, count)| target_counts.get(*token).copied().unwrap_or(0) < **count)
         .map(|(token, _)| token.clone())
         .collect();
@@ -355,6 +359,29 @@ mod tests {
         assert!(missing_tokens("Hi {{name}}\nmore", "Hallo"));
         assert_eq!(
             missing_token_list("Hi {{name}}\nmore", "Hallo"),
+            vec!["{{name}}"]
+        );
+    }
+
+    #[test]
+    fn quote_delimiters_are_soft_not_blocking() {
+        // The source uses backticks (no `'`); the translation introduces a
+        // paired `'…'`. That is punctuation, not runtime syntax, so it must not
+        // appear as a blocking difference or a missing token (SPEC §10).
+        let source = "Use `Default` to modify the settings.";
+        let target = "'Standard' verwenden, um die Einstellungen anzupassen.";
+        assert!(token_differences(source, target).is_empty());
+        assert!(!missing_tokens(source, target));
+        assert!(missing_token_list(source, target).is_empty());
+
+        // A dropped quote delimiter is equally non-blocking.
+        assert!(!missing_tokens("'test'", "test"));
+        assert!(missing_token_list("'test'", "test").is_empty());
+
+        // Real tokens are still enforced when a quote difference also exists.
+        assert!(missing_tokens("Hi {{name}} 'q'", "Hallo"));
+        assert_eq!(
+            missing_token_list("Hi {{name}} 'q'", "Hallo"),
             vec!["{{name}}"]
         );
     }

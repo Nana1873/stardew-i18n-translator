@@ -13,6 +13,10 @@
  *                                runs longer than English), so `\n` is exempt
  *                                from the token error rules and never blocks
  *                                export
+ *  - quote-mismatch   (warning) the paired `'` quote-delimiter count differs —
+ *                                punctuation, not runtime syntax in SMAPI i18n,
+ *                                so `'` is exempt from the token error rules and
+ *                                never blocks export (SPEC §10)
  *  - empty-target     (warning) the key is present in the target file but empty
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
@@ -28,6 +32,7 @@ export interface ValidationIssue {
     | "token-missing"
     | "token-added"
     | "newline-mismatch"
+    | "quote-mismatch"
     | "empty-target"
     | "json-invalid"
     | "identical-to-source"
@@ -36,14 +41,19 @@ export interface ValidationIssue {
   message: string;
 }
 
-/** Newlines are layout, not syntax — kept out of the token error multisets
- * and reported via the softer newline-mismatch warning instead. */
+/** Soft tokens: extracted (shown as chips) but kept out of the token error
+ * multisets. A count difference is reported via a softer warning instead, never
+ * the blocking token-missing/token-added error.
+ *  - `\n` is layout, not syntax (a translation rewraps freely).
+ *  - `'` paired quote delimiters are punctuation, not runtime syntax in SMAPI
+ *    i18n, so adding/removing/restyling quotes never breaks a mod (SPEC §10). */
 const NEWLINE = "\n";
+const QUOTE = "'";
 
 function tokenCounts(text: string): Map<string, number> {
   const counts = new Map<string, number>();
   for (const token of extractProtectedTokens(text)) {
-    if (token === NEWLINE) continue;
+    if (token === NEWLINE || token === QUOTE) continue;
     counts.set(token, (counts.get(token) ?? 0) + 1);
   }
   return counts;
@@ -52,6 +62,15 @@ function tokenCounts(text: string): Map<string, number> {
 function newlineCount(text: string): number {
   let count = 0;
   for (const char of text) if (char === NEWLINE) count += 1;
+  return count;
+}
+
+/** Count of paired `'` quote delimiters (word-internal apostrophes excluded —
+ * the extractor only emits `'` when it forms a balanced pair). */
+function quoteDelimiterCount(text: string): number {
+  let count = 0;
+  for (const token of extractProtectedTokens(text))
+    if (token === QUOTE) count += 1;
   return count;
 }
 
@@ -123,6 +142,15 @@ export function validate(
         ruleId: "newline-mismatch",
         severity: "warning",
         message: `Line breaks differ (original ${sourceNewlines}, translation ${targetNewlines}) — fine if the text rewraps`,
+      });
+    }
+    const sourceQuotes = quoteDelimiterCount(source);
+    const targetQuotes = quoteDelimiterCount(target);
+    if (sourceQuotes !== targetQuotes) {
+      issues.push({
+        ruleId: "quote-mismatch",
+        severity: "warning",
+        message: `Quote delimiters differ (original ${sourceQuotes}, translation ${targetQuotes}) — fine if the punctuation legitimately changed`,
       });
     }
     if (hasLoneSurrogate(target)) {

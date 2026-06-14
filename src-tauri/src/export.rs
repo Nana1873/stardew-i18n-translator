@@ -549,6 +549,37 @@ mod tests {
     }
 
     #[test]
+    fn quote_delimiter_difference_does_not_block_export() {
+        // The source uses backticks (no `'`); the translation adds a paired
+        // `'…'`. Quotes are punctuation, not runtime syntax, so the export must
+        // proceed instead of blocking the whole mod (SPEC §10).
+        let root = crate::test_support::temp_dir("export-quote-soft");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            "{ \"k\": \"Use `Default` here\" }",
+        );
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "'Standard' hier verwenden".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Use `Default` here"),
+            },
+        )
+        .unwrap();
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert!(!result.blocked, "a quote-only difference must not block");
+        assert_eq!(result.total_written_keys, 1);
+        assert!(read(&i18n.join("de.json")).contains("'Standard'"));
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn untranslated_strings_do_not_block_export() {
         let root = crate::test_support::temp_dir("export-untranslated-token");
         let i18n = root.join("i18n");
