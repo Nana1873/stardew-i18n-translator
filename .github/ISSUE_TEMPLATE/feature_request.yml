@@ -6,45 +6,19 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for the idea! Please note this project has **deliberately strict
-        scope** — see [SCOPE_GUARDRAILS.md](../blob/main/SCOPE_GUARDRAILS.md).
-        It is a local, offline translation editor; it is **not** a mod manager,
-        a cloud-AI client or a general mod manager. Nexus work is limited to the
-        explicitly approved scope in SPEC.md. Requests outside the product scope
-        may be closed or moved to a future release milestone.
-
-  - type: checkboxes
-    id: preflight
-    attributes:
-      label: Before you start
-      options:
-        - label: I searched existing issues and discussions for this idea.
-          required: true
-        - label: I read SCOPE_GUARDRAILS.md and believe this fits the project's scope.
-          required: true
+        Thanks for the idea. It does not need to be a complete design; just tell
+        us what would make the translation workflow better for you.
 
   - type: textarea
-    id: problem
+    id: idea
     attributes:
-      label: What problem does this solve?
-      description: Describe the workflow pain or limitation, not just the solution.
+      label: What would you like to see?
+      description: Describe the idea in your own words.
     validations:
       required: true
 
   - type: textarea
-    id: proposal
+    id: benefit
     attributes:
-      label: Proposed solution
-    validations:
-      required: true
-
-  - type: textarea
-    id: alternatives
-    attributes:
-      label: Alternatives considered
-      description: Existing workarounds, or other approaches you rejected.
-
-  - type: textarea
-    id: notes
-    attributes:
-      label: Anything else?
+      label: How would it help?
+      description: A quick example or current workaround is useful, but optional.
