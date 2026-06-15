@@ -36,8 +36,10 @@ Windows may show a SmartScreen warning because the executable is not signed.
 
 The app requires
 [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/).
-It is included with Windows 11 and most Windows 10 installations. If the app
-does not open, install WebView2 from Microsoft and try again.
+It is included with Windows 11 and most Windows 10 installations. If it is
+missing, the executable shows a native Windows message before the app UI starts
+and can open Microsoft's official download page. Nothing is downloaded or
+installed automatically.
 
 ## Translating
 

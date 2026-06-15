@@ -950,6 +950,15 @@ selected again on another computer. The application never reads or migrates
 state from AppData: a freshly extracted portable folder starts with empty user
 data, and only data inside its adjacent `Data/` folder belongs to that copy.
 
+The portable executable uses the shared Microsoft Edge WebView2 Evergreen
+Runtime and does not bundle or install it. Before Tauri creates the main
+webview, the Windows entry point checks for an available runtime through the
+official WebView2 loader API. WebView2 is included with Windows 11 and is
+already installed on most Windows 10 systems. If it is unavailable, the app
+shows a native Win32 message that does not depend on HTML, React, or WebView2.
+The user may open Microsoft's official WebView2 download page or close the app;
+the app never downloads or installs the runtime automatically.
+
 Translation state is stored **separately** from the mod's actual files. The export step writes the final `i18n/<lang>.json` to the mod folder. This means:
 
 - The tool never modifies `default.json`.
