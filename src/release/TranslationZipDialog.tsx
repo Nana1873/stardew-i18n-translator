@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ZipPreview, ZipProblem } from "../tauri/commands";
 
 function safeFileName(value: string): string {
@@ -13,6 +13,7 @@ export function TranslationZipDialog({
   error,
   building,
   onInspect,
+  onReleaseNotes,
   onBuild,
   onClose,
 }: {
@@ -20,13 +21,11 @@ export function TranslationZipDialog({
   error: string | null;
   building: boolean;
   onInspect: (problem: ZipProblem) => void;
-  onBuild: (fileName: string) => void;
+  onReleaseNotes: (version: string, fileName: string) => void;
+  onBuild: (version: string, fileName: string) => void;
   onClose: () => void;
 }) {
   const [version, setVersion] = useState(preview?.selectedVersion ?? "");
-  useEffect(() => {
-    if (preview) setVersion(preview.selectedVersion);
-  }, [preview]);
   const fileName = useMemo(
     () =>
       preview
@@ -153,10 +152,18 @@ export function TranslationZipDialog({
           </button>
           <button
             type="button"
+            className="exportdlg__secondary"
+            disabled={!preview || !version.trim()}
+            onClick={() => onReleaseNotes(version.trim(), fileName)}
+          >
+            Release notes
+          </button>
+          <button
+            type="button"
             disabled={
               !preview || blocked || empty || building || !version.trim()
             }
-            onClick={() => onBuild(fileName)}
+            onClick={() => onBuild(version.trim(), fileName)}
           >
             {building ? "Building..." : "Choose location..."}
           </button>

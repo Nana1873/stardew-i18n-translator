@@ -57,6 +57,12 @@ installable archive for the selected mod package. It preserves multi-component
 folder paths and includes only the generated target-language `i18n` files, not
 the original mod's manifests, assets, DLLs, or backups.
 
+**Release notes** turns the same current package data into short copy-ready
+publication text. It defaults to the translation language, can switch to
+English, and includes coverage, included components, installation guidance,
+review warnings, and careful compatibility wording. The preview stays local
+and is copied to the clipboard only when you choose.
+
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 
 ## Optional Glossary

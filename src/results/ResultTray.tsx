@@ -52,6 +52,7 @@ export function ResultTray({
   onInspect,
   onRetry,
   onOpenFolder,
+  onReleaseNotes,
 }: {
   data: ResultTrayData;
   onToggle: () => void;
@@ -59,6 +60,7 @@ export function ResultTray({
   onInspect: (problem: ResultProblem) => void;
   onRetry: () => void;
   onOpenFolder?: (path: string) => void;
+  onReleaseNotes?: () => void;
 }) {
   const unresolved = data.problems.filter((problem) => !problem.resolved);
   const failed = Boolean(data.error);
@@ -155,6 +157,15 @@ export function ResultTray({
                   onClick={() => onOpenFolder(data.outcome!.folder)}
                 >
                   Open folder
+                </button>
+              )}
+              {onReleaseNotes && (
+                <button
+                  type="button"
+                  className="resulttray__retry"
+                  onClick={onReleaseNotes}
+                >
+                  Release notes
                 </button>
               )}
             </div>

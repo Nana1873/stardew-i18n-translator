@@ -17,8 +17,10 @@ const PREVIEW: ZipPreview = {
   entries: [
     {
       modName: "[CP] Sample",
+      modVersion: "2.0",
       archivePath: "Sample Pack/[CP] Sample/i18n/de.json",
       strings: 42,
+      totalSourceStrings: 50,
       outdated: 1,
       reviewNeeded: 2,
     },
@@ -27,6 +29,7 @@ const PREVIEW: ZipPreview = {
   warnings: ["[CP] Sample contains 1 outdated translation."],
   problems: [],
   totalStrings: 42,
+  totalSourceStrings: 50,
 };
 
 describe("TranslationZipDialog", () => {
@@ -37,6 +40,7 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={vi.fn()}
+        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -56,6 +60,7 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={vi.fn()}
+        onReleaseNotes={vi.fn()}
         onBuild={build}
         onClose={vi.fn()}
       />,
@@ -68,6 +73,7 @@ describe("TranslationZipDialog", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Choose location..." }));
     expect(build).toHaveBeenCalledWith(
+      "2.1/beta",
       "Sample Pack - 2.1_beta - German (de).zip",
     );
   });
@@ -87,6 +93,7 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={inspect}
+        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={vi.fn()}
       />,
