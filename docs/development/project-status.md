@@ -18,14 +18,16 @@ See [Planning and Status](planning.md) for the maintenance convention.
 - Local AI: optional localhost OpenAI-compatible connection, single-string and
   batch translation, glossary/context prompts, retry, and review-needed output.
 - External LLM batches: self-contained JSON export and guarded result import.
+- Translation release workflow: persistent results, installable
+  package-preserving ZIPs, and short localized translation notes.
 - Portable Windows packaging: executable and all user state in the adjacent
   `Data/` directory.
 
 ## Release State
 
-- Latest release: 1.2.3.
-- Maintenance work is grouped under the
-  [v1.2.3 milestone](https://github.com/Nana1873/stardew-i18n-translator/milestone/3).
+- Latest release: 1.3.0.
+- The completed translation release workflow is grouped under the
+  [v1.3.0 milestone](https://github.com/Nana1873/stardew-i18n-translator/milestone/4).
 - Nexus discovery is deferred indefinitely. The related issues remain in the
   unmilestoned backlog with the `status:deferred` label.
 - Build and publication instructions are in
