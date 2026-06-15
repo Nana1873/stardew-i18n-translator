@@ -32,6 +32,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # network sink, consistent with the no-telemetry guarantee.
 tauri-plugin-log = "2"
 log = "0.4"
+zip = { version = "8.6", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"

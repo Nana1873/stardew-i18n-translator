@@ -457,6 +457,196 @@ describe("App shell", () => {
     expect(dialog).toHaveTextContent("1 mod");
   });
 
+  it("previews and builds a translation-only package ZIP", async () => {
+    const preview = {
+      packageName: "Test Mod",
+      selectedVersion: "1.0",
+      versionSource: "Test Mod",
+      versionConflicts: [],
+      defaultFileName: "Test Mod - 1.0 - German (de).zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [
+        {
+          modName: "Test Mod",
+          archivePath: "Test Mod/i18n/de.json",
+          strings: 1,
+          outdated: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      omittedComponents: [],
+      warnings: [],
+      problems: [],
+      totalStrings: 1,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_translation_zip") return Promise.resolve(preview);
+      if (cmd === "pick_translation_zip_destination")
+        return Promise.resolve("C:/release/Test Mod.zip");
+      if (cmd === "build_translation_zip")
+        return Promise.resolve({
+          path: "C:/release/Test Mod.zip",
+          folder: "C:/release",
+          fileName: "Test Mod.zip",
+          entries: 1,
+          strings: 1,
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+
+    expect(
+      await screen.findByRole("dialog", { name: "Build translation ZIP" }),
+    ).toHaveTextContent("Test Mod/i18n/de.json");
+    const chooseLocation = screen.getByRole("button", {
+      name: "Choose location...",
+    });
+    await waitFor(() => expect(chooseLocation).toBeEnabled());
+    fireEvent.click(chooseLocation);
+    expect(
+      await screen.findByRole("complementary", { name: "Operation result" }),
+    ).toHaveTextContent("Translation ZIP created");
+    expect(invokeMock).toHaveBeenCalledWith(
+      "build_translation_zip",
+      expect.objectContaining({
+        request: expect.objectContaining({
+          packageName: "Test Mod",
+          targetLang: "de",
+          destination: "C:/release/Test Mod.zip",
+          overwrite: false,
+        }),
+      }),
+    );
+  });
+
+  it("closes the ZIP preview when opening a blocking problem", async () => {
+    const preview = {
+      packageName: "Test Mod",
+      selectedVersion: "1.0",
+      versionSource: "Test Mod",
+      versionConflicts: [],
+      defaultFileName: "Test Mod - 1.0 - German (de).zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [],
+      omittedComponents: [],
+      warnings: [],
+      problems: [
+        {
+          modUniqueId: "a.b",
+          modName: "Test Mod",
+          relativeDir: "i18n",
+          key: "broken.key",
+          reason: "token count mismatch",
+        },
+      ],
+      totalStrings: 0,
+    };
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "load_settings") return Promise.resolve(CONFIGURED);
+      if (command === "load_glossary") return Promise.resolve(null);
+      if (command === "scan_mods") return Promise.resolve(exportScan(true));
+      if (command === "load_strings") return Promise.resolve([]);
+      if (command === "preview_translation_zip")
+        return Promise.resolve(preview);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    fireEvent.click(await screen.findByRole("button", { name: /broken\.key/ }));
+    expect(
+      screen.queryByRole("dialog", { name: "Build translation ZIP" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("broken.key");
+  });
+
+  it("asks before replacing an existing translation ZIP", async () => {
+    const preview = {
+      packageName: "Test Mod",
+      selectedVersion: "1.0",
+      versionSource: "Test Mod",
+      versionConflicts: [],
+      defaultFileName: "Test Mod.zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [
+        {
+          modName: "Test Mod",
+          archivePath: "Test Mod/i18n/de.json",
+          strings: 1,
+          outdated: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      omittedComponents: [],
+      warnings: [],
+      problems: [],
+      totalStrings: 1,
+    };
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_translation_zip") return Promise.resolve(preview);
+      if (cmd === "pick_translation_zip_destination")
+        return Promise.resolve("C:/release/Test Mod.zip");
+      if (
+        cmd === "build_translation_zip" &&
+        !(args as { request?: { overwrite?: boolean } })?.request?.overwrite
+      )
+        return Promise.reject("OVERWRITE_REQUIRED");
+      if (cmd === "build_translation_zip")
+        return Promise.resolve({
+          path: "C:/release/Test Mod.zip",
+          folder: "C:/release",
+          fileName: "Test Mod.zip",
+          entries: 1,
+          strings: 1,
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    const chooseLocation = await screen.findByRole("button", {
+      name: "Choose location...",
+    });
+    await waitFor(() => expect(chooseLocation).toBeEnabled());
+    fireEvent.click(chooseLocation);
+    expect(
+      await screen.findByRole("dialog", { name: "Confirm ZIP overwrite" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Replace ZIP" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "build_translation_zip",
+        expect.objectContaining({
+          request: expect.objectContaining({ overwrite: true }),
+        }),
+      ),
+    );
+  });
+
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings")

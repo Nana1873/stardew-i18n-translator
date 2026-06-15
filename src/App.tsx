@@ -21,6 +21,10 @@ import {
   type ScannedMod,
   type StringStatus,
   type TranslationResult,
+  type ZipBuildOutcome,
+  type ZipComponentInput,
+  type ZipPreview,
+  buildTranslationZip,
   exportLlmBatch,
   exportMod,
   importLlmBatch,
@@ -28,6 +32,9 @@ import {
   loadGlossary,
   loadSettings,
   logFrontendError,
+  openFolder,
+  pickTranslationZipDestination,
+  previewTranslationZip,
   saveSettings,
   scanMods,
   translateString,
@@ -47,6 +54,10 @@ import { GlobalStringSearch } from "./strings/GlobalStringSearch";
 import { STATUS_META, statusTint } from "./strings/status";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
+import {
+  TranslationZipDialog,
+  ZipOverwriteDialog,
+} from "./release/TranslationZipDialog";
 import {
   type ResultProblem,
   type ResultTrayData,
@@ -94,6 +105,16 @@ export function App() {
 
   const [exporting, setExporting] = useState(false);
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
+  const [zipPreview, setZipPreview] = useState<ZipPreview | null>(null);
+  const [zipError, setZipError] = useState<string | null>(null);
+  const [zipBuilding, setZipBuilding] = useState(false);
+  const [zipContext, setZipContext] = useState<{
+    packageName: string;
+    components: ZipComponentInput[];
+  } | null>(null);
+  const [zipOverwrite, setZipOverwrite] = useState<{
+    destination: string;
+  } | null>(null);
   const [exportConfirm, setExportConfirm] = useState<{
     kind: "selected" | "all";
     title: string;
@@ -435,6 +456,99 @@ export function App() {
     }));
   }
 
+  function zipComponents(packageName: string): ZipComponentInput[] {
+    return (scan?.mods ?? [])
+      .filter((mod) => mod.packageId === packageName)
+      .map((mod) => ({
+        uniqueId: mod.uniqueId,
+        name: mod.name,
+        version: mod.version,
+        folderPath: mod.folderPath,
+        files: filesOf(mod),
+      }));
+  }
+
+  async function requestTranslationZip() {
+    if (!selectedMod || !settings?.modsPath || !settings.targetLang) return;
+    const packageName = selectedMod.packageId;
+    const components = zipComponents(packageName);
+    setZipContext({ packageName, components });
+    setZipPreview(null);
+    setZipError(null);
+    try {
+      setZipPreview(
+        await previewTranslationZip(
+          settings.modsPath,
+          packageName,
+          settings.targetLang,
+          languageLabel,
+          components,
+        ),
+      );
+    } catch (error) {
+      logFrontendError("previewTranslationZip", String(error));
+      setZipError(String(error));
+    }
+  }
+
+  function inspectZipProblem(problem: { modUniqueId: string; key: string }) {
+    setZipPreview(null);
+    setZipError(null);
+    setZipContext(null);
+    openMod(problem.modUniqueId);
+    setStatusFilter("all");
+    setSearch(problem.key);
+  }
+
+  function showZipOutcome(outcome: ZipBuildOutcome) {
+    setZipPreview(null);
+    setZipContext(null);
+    setZipOverwrite(null);
+    setResultTray({
+      kind: "zip",
+      title: outcome.fileName,
+      collapsed: false,
+      pending: false,
+      error: null,
+      outcome,
+      problems: [],
+    });
+  }
+
+  async function buildZipAt(destination: string, overwrite: boolean) {
+    if (!zipContext || !settings?.modsPath || !settings.targetLang) {
+      return;
+    }
+    setZipBuilding(true);
+    setZipError(null);
+    try {
+      const outcome = await buildTranslationZip(
+        settings.modsPath,
+        zipContext.packageName,
+        settings.targetLang,
+        languageLabel,
+        zipContext.components,
+        destination,
+        overwrite,
+      );
+      showZipOutcome(outcome);
+    } catch (error) {
+      if (String(error).includes("OVERWRITE_REQUIRED")) {
+        setZipOverwrite({ destination });
+      } else {
+        logFrontendError("buildTranslationZip", String(error));
+        setZipError(String(error));
+      }
+    } finally {
+      setZipBuilding(false);
+    }
+  }
+
+  async function chooseZipDestination(fileName: string) {
+    const destination = await pickTranslationZipDestination(fileName);
+    if (destination) await buildZipAt(destination, false);
+  }
+
   function problemId(
     modUniqueId: string,
     relativeDir: string,
@@ -754,6 +868,8 @@ export function App() {
         onExportAll={requestExportAll}
         exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
+        onBuildZip={() => void requestTranslationZip()}
+        buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
         onImportBatch={() => void handleImportBatch()}
         importBatchEnabled={Boolean(selectedMod)}
         onOpenSettings={() =>
@@ -898,6 +1014,7 @@ export function App() {
           onClose={() => setResultTray(null)}
           onInspect={inspectResultProblem}
           onRetry={retryResultExport}
+          onOpenFolder={(path) => void openFolder(path)}
         />
       )}
       {exportConfirm && (
@@ -911,6 +1028,34 @@ export function App() {
             setExportConfirm(null);
             if (kind === "selected") void handleExport();
             else void handleExportAll();
+          }}
+        />
+      )}
+      {(zipPreview || zipError || zipContext) && (
+        <TranslationZipDialog
+          preview={zipPreview}
+          error={zipError}
+          building={zipBuilding}
+          onInspect={inspectZipProblem}
+          onBuild={(fileName) => void chooseZipDestination(fileName)}
+          onClose={() => {
+            setZipPreview(null);
+            setZipError(null);
+            setZipContext(null);
+          }}
+        />
+      )}
+      {zipOverwrite && (
+        <ZipOverwriteDialog
+          fileName={
+            zipOverwrite.destination.split(/[\\/]/).pop() ??
+            zipOverwrite.destination
+          }
+          onCancel={() => setZipOverwrite(null)}
+          onConfirm={() => {
+            const destination = zipOverwrite.destination;
+            setZipOverwrite(null);
+            void buildZipAt(destination, true);
           }}
         />
       )}
@@ -976,6 +1121,8 @@ function Toolbar({
   onExportAll,
   exportAllEnabled,
   exporting,
+  onBuildZip,
+  buildZipEnabled,
   onImportBatch,
   importBatchEnabled,
   onOpenSettings,
@@ -996,6 +1143,8 @@ function Toolbar({
   onExportAll: () => void;
   exportAllEnabled: boolean;
   exporting: boolean;
+  onBuildZip: () => void;
+  buildZipEnabled: boolean;
   onImportBatch: () => void;
   importBatchEnabled: boolean;
   onOpenSettings: () => void;
@@ -1047,6 +1196,14 @@ function Toolbar({
           title="Export every scanned mod's translations"
         >
           Export All
+        </button>
+        <button
+          type="button"
+          onClick={onBuildZip}
+          disabled={!buildZipEnabled}
+          title="Build an installable translation-only ZIP for this package"
+        >
+          Build ZIP
         </button>
         <button
           type="button"

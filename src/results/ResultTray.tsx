@@ -1,4 +1,8 @@
-import type { ExportResult, LlmImportSummary } from "../tauri/commands";
+import type {
+  ExportResult,
+  LlmImportSummary,
+  ZipBuildOutcome,
+} from "../tauri/commands";
 
 export interface ResultProblem {
   id: string;
@@ -30,6 +34,15 @@ export type ResultTrayData =
       error: string | null;
       summary: LlmImportSummary | null;
       problems: ResultProblem[];
+    }
+  | {
+      kind: "zip";
+      title: string;
+      collapsed: boolean;
+      pending: false;
+      error: string | null;
+      outcome: ZipBuildOutcome | null;
+      problems: ResultProblem[];
     };
 
 export function ResultTray({
@@ -38,12 +51,14 @@ export function ResultTray({
   onClose,
   onInspect,
   onRetry,
+  onOpenFolder,
 }: {
   data: ResultTrayData;
   onToggle: () => void;
   onClose: () => void;
   onInspect: (problem: ResultProblem) => void;
   onRetry: () => void;
+  onOpenFolder?: (path: string) => void;
 }) {
   const unresolved = data.problems.filter((problem) => !problem.resolved);
   const failed = Boolean(data.error);
@@ -60,14 +75,18 @@ export function ResultTray({
     : failed
       ? data.kind === "export"
         ? "Export failed"
-        : "Import failed"
+        : data.kind === "import"
+          ? "Import failed"
+          : "ZIP build failed"
       : blocked
         ? "Export blocked"
         : readyToRetry
           ? "Ready to export again"
           : data.kind === "export"
             ? "Export complete"
-            : "Batch imported";
+            : data.kind === "import"
+              ? "Batch imported"
+              : "Translation ZIP created";
 
   return (
     <aside
@@ -121,6 +140,24 @@ export function ResultTray({
             />
           ) : data.kind === "import" && data.summary ? (
             <ImportSnapshot summary={data.summary} />
+          ) : data.kind === "zip" && data.outcome ? (
+            <div className="resulttray__snapshot">
+              <span className="resulttray__eyebrow">Release archive</span>
+              <p>
+                Wrote <strong>{data.outcome.strings}</strong> strings in{" "}
+                <strong>{data.outcome.entries}</strong> files.
+              </p>
+              <code>{data.outcome.path}</code>
+              {onOpenFolder && (
+                <button
+                  type="button"
+                  className="resulttray__retry"
+                  onClick={() => onOpenFolder(data.outcome!.folder)}
+                >
+                  Open folder
+                </button>
+              )}
+            </div>
           ) : (
             <p className="resulttray__muted">Working...</p>
           )}

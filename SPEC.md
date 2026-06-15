@@ -759,6 +759,39 @@ Stardew Valley mod translations **do exist on Nexus Mods** as separate mod pages
 
 v1 does **not** store or validate a Nexus API key. No Nexus API calls are made.
 
+### Translation Package ZIP (v1.3)
+
+The app can build one installable translation overlay ZIP for the complete
+package containing the selected component. This is a local release-artifact
+workflow, not Nexus integration.
+
+- The archive contains one shared top-level package/download folder and only
+  freshly generated `*/i18n/<target-lang>.json` files beneath it.
+- Component and nested i18n paths are preserved relative to the scanned package
+  root. Archive paths always use `/`, are relative, and reject absolute paths,
+  empty segments, `.` and `..`.
+- Source files, manifests, assets, DLLs, backups, existing target files, and
+  application `Data/` are never copied into the archive.
+- The builder uses the same in-memory serialization and blocking protected-token
+  validation as normal export. It does not write to or overwrite the installed
+  mod.
+- A preview lists the language, selected package version, included paths,
+  omitted components, warnings, and blocking string problems before a save
+  location is chosen.
+- Package version selection is deterministic: prefer a component whose manifest
+  folder is the package root; otherwise use the lexicographically first
+  component path (then UniqueID as a stable tie-breaker). If component versions
+  differ, show every conflict and allow the selected version to be edited.
+- The default filename is
+  `<Package name> - <Package version> - <Language name> (<SMAPI code>).zip`.
+  Windows-invalid filename characters and trailing spaces/dots are replaced or
+  removed. The save dialog allows final editing.
+- Existing destinations require an explicit in-app overwrite confirmation.
+  ZIP creation uses a sibling temporary file and leaves no partial destination
+  after cancellation or a failed build.
+- A successful build appears in the persistent result tray with the archive
+  path and an **Open folder** action.
+
 ### Possible Future Nexus Integration (Unscheduled)
 
 This work is deferred indefinitely and has no target release. The related
