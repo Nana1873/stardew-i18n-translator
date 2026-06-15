@@ -281,6 +281,12 @@ export interface LlmImportSummary {
   tokenIssues: number;
   /** The keys behind tokenIssues — searchable in the table. */
   tokenIssueKeys: string[];
+  /** Structured problem details used for exact result-tray navigation. */
+  tokenIssueEntries?: Array<{
+    relativeDir: string;
+    key: string;
+    reason: string;
+  }>;
   /** Imported, but identical to the English source. */
   identicalToSource: number;
   totalInFile: number;

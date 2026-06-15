@@ -17,7 +17,6 @@ import {
   type LlmExportOutcome,
   type LlmImportSummary,
   type ExportResult,
-  type SkippedKey,
   type ScanResult,
   type ScannedMod,
   type StringStatus,
@@ -39,12 +38,20 @@ import { SettingsDialog } from "./settings/SettingsDialog";
 import { Dashboard } from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
-import { StringTable, StringTableHeader } from "./strings/StringTable";
+import {
+  type SavedStringSnapshot,
+  StringTable,
+  StringTableHeader,
+} from "./strings/StringTable";
 import { GlobalStringSearch } from "./strings/GlobalStringSearch";
 import { STATUS_META, statusTint } from "./strings/status";
+import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
-import { ExportDialog } from "./export/ExportDialog";
-import { LlmImportDialog } from "./llm-batch/LlmBatchDialog";
+import {
+  type ResultProblem,
+  type ResultTrayData,
+  ResultTray,
+} from "./results/ResultTray";
 import {
   type FileDragDropEvent,
   listenForFileDrops,
@@ -86,13 +93,7 @@ export function App() {
   });
 
   const [exporting, setExporting] = useState(false);
-  const [exportResult, setExportResult] = useState<ExportResult | null>(null);
-  const [exportError, setExportError] = useState<string | null>(null);
-  const [exportOpen, setExportOpen] = useState(false);
-  const [exportTitle, setExportTitle] = useState("");
-  const [exportModsWritten, setExportModsWritten] = useState<number | null>(
-    null,
-  );
+  const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
   const [exportConfirm, setExportConfirm] = useState<{
     kind: "selected" | "all";
     title: string;
@@ -106,12 +107,7 @@ export function App() {
     null,
   );
 
-  // External LLM batch import (M4): summary dialog + table reload trigger.
-  const [importSummary, setImportSummary] = useState<LlmImportSummary | null>(
-    null,
-  );
-  const [importError, setImportError] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
+  // External LLM batch import (M4): persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
   const [dropPaths, setDropPaths] = useState<string[] | null>(null);
 
@@ -276,22 +272,32 @@ export function App() {
 
   async function handleDroppedBatch(paths: string[]) {
     const mod = selectedModRef.current;
-    setImportSummary(null);
-    setImportError(null);
     if (!mod) {
-      setImportError("Select a mod before dropping an LLM batch result.");
-      setImportOpen(true);
+      showImportResult(
+        null,
+        "Select a mod before dropping an LLM batch result.",
+        "LLM batch",
+        null,
+      );
       return;
     }
     if (paths.length !== 1) {
-      setImportError("Drop exactly one LLM batch/result JSON file.");
-      setImportOpen(true);
+      showImportResult(
+        null,
+        "Drop exactly one LLM batch/result JSON file.",
+        mod.name,
+        mod,
+      );
       return;
     }
     const path = paths[0];
     if (!path.toLowerCase().endsWith(".json")) {
-      setImportError("Only JSON batch/result files can be imported.");
-      setImportOpen(true);
+      showImportResult(
+        null,
+        "Only JSON batch/result files can be imported.",
+        mod.name,
+        mod,
+      );
       return;
     }
     try {
@@ -300,13 +306,11 @@ export function App() {
         filesOf(mod),
         path,
       );
-      setImportSummary(summary);
-      setImportOpen(true);
+      showImportResult(summary, null, mod.name, mod);
       setReloadToken((token) => token + 1);
     } catch (error) {
       logFrontendError("importLlmBatchPath", String(error));
-      setImportError(String(error));
-      setImportOpen(true);
+      showImportResult(null, String(error), mod.name, mod);
     }
   }
 
@@ -408,22 +412,18 @@ export function App() {
   /** Import a translated external LLM batch for the selected mod (M4). */
   async function handleImportBatch() {
     if (!selectedMod) return;
-    setImportSummary(null);
-    setImportError(null);
     try {
       const summary = await importLlmBatch(
         selectedMod.uniqueId,
         filesOf(selectedMod),
       );
       if (!summary) return; // picker cancelled
-      setImportSummary(summary);
-      setImportOpen(true);
+      showImportResult(summary, null, selectedMod.name, selectedMod);
       // State on disk changed behind the table's back — force a reload.
       setReloadToken((token) => token + 1);
     } catch (error) {
       logFrontendError("importLlmBatch", String(error));
-      setImportError(String(error));
-      setImportOpen(true);
+      showImportResult(null, String(error), selectedMod.name, selectedMod);
     }
   }
 
@@ -435,13 +435,82 @@ export function App() {
     }));
   }
 
-  function beginExport(title: string) {
+  function problemId(
+    modUniqueId: string,
+    relativeDir: string,
+    key: string,
+  ): string {
+    return `${modUniqueId}\u0000${relativeDir}\u0000${key}`;
+  }
+
+  function exportProblems(result: ExportResult): ResultProblem[] {
+    return result.skipped.map((skip) => ({
+      id: problemId(skip.modUniqueId ?? "", skip.relativeDir, skip.key),
+      modUniqueId: skip.modUniqueId ?? "",
+      modName: skip.modName ?? "",
+      relativeDir: skip.relativeDir,
+      key: skip.key,
+      reason: skip.reason,
+      resolved: false,
+    }));
+  }
+
+  function importProblems(
+    summary: LlmImportSummary,
+    mod: ScannedMod | null,
+  ): ResultProblem[] {
+    if (!mod) return [];
+    const entries =
+      summary.tokenIssueEntries ??
+      summary.tokenIssueKeys.map((key) => ({
+        relativeDir: mod.i18nFiles[0]?.relativeDir ?? "i18n",
+        key,
+        reason: "Missing protected tokens",
+      }));
+    return entries.map((problem) => ({
+      id: problemId(mod.uniqueId, problem.relativeDir, problem.key),
+      modUniqueId: mod.uniqueId,
+      modName: mod.name,
+      relativeDir: problem.relativeDir,
+      key: problem.key,
+      reason: problem.reason,
+      resolved: false,
+    }));
+  }
+
+  function showImportResult(
+    summary: LlmImportSummary | null,
+    error: string | null,
+    title: string,
+    mod: ScannedMod | null,
+  ) {
+    setResultTray({
+      kind: "import",
+      title,
+      collapsed: false,
+      pending: false,
+      error,
+      summary,
+      problems: summary ? importProblems(summary, mod) : [],
+    });
+  }
+
+  function beginExport(
+    title: string,
+    retry: { kind: "selected"; modUniqueId: string } | { kind: "all" },
+  ) {
     setExporting(true);
-    setExportResult(null);
-    setExportError(null);
-    setExportModsWritten(null);
-    setExportTitle(title);
-    setExportOpen(true);
+    setResultTray({
+      kind: "export",
+      title,
+      collapsed: false,
+      pending: true,
+      error: null,
+      result: null,
+      modsWritten: null,
+      problems: [],
+      retry,
+    });
   }
 
   function withExportContext(
@@ -525,19 +594,30 @@ export function App() {
     );
   }
 
-  async function handleExport() {
-    if (!selectedMod) return;
-    beginExport(selectedMod.name);
+  async function handleExport(mod = selectedMod) {
+    if (!mod) return;
+    beginExport(mod.name, { kind: "selected", modUniqueId: mod.uniqueId });
     try {
-      const result = await exportMod(
-        selectedMod.uniqueId,
-        filesOf(selectedMod),
+      const result = await exportMod(mod.uniqueId, filesOf(mod));
+      markExportedTargets(mod.uniqueId, result);
+      const contextual = withExportContext(result, mod);
+      setResultTray((current) =>
+        current?.kind === "export"
+          ? {
+              ...current,
+              pending: false,
+              result: contextual,
+              problems: exportProblems(contextual),
+            }
+          : current,
       );
-      markExportedTargets(selectedMod.uniqueId, result);
-      setExportResult(withExportContext(result, selectedMod));
     } catch (error) {
       logFrontendError("exportMod", String(error));
-      setExportError(String(error));
+      setResultTray((current) =>
+        current?.kind === "export"
+          ? { ...current, pending: false, error: String(error) }
+          : current,
+      );
     } finally {
       setExporting(false);
     }
@@ -545,7 +625,7 @@ export function App() {
 
   async function handleExportAll() {
     if (!scan) return;
-    beginExport("All mods");
+    beginExport("All mods", { kind: "all" });
     try {
       const merged: ExportResult = {
         files: [],
@@ -569,7 +649,6 @@ export function App() {
         merged.skipped.push(
           ...result.skipped.map((skip) => ({
             ...skip,
-            relativeDir: `${mod.name} · ${skip.relativeDir}`,
             modUniqueId: mod.uniqueId,
             modName: mod.name,
           })),
@@ -584,22 +663,77 @@ export function App() {
         merged.blocked ||= result.blocked;
         if (result.filesWritten > 0) modsWritten += 1;
       }
-      setExportResult(merged);
-      setExportModsWritten(modsWritten);
+      setResultTray((current) =>
+        current?.kind === "export"
+          ? {
+              ...current,
+              pending: false,
+              result: merged,
+              modsWritten,
+              problems: exportProblems(merged),
+            }
+          : current,
+      );
     } catch (error) {
       logFrontendError("exportAll", String(error));
-      setExportError(String(error));
+      setResultTray((current) =>
+        current?.kind === "export"
+          ? { ...current, pending: false, error: String(error) }
+          : current,
+      );
     } finally {
       setExporting(false);
     }
   }
 
-  function inspectSkippedKey(skip: SkippedKey) {
-    if (skip.modUniqueId) openMod(skip.modUniqueId);
+  function inspectResultProblem(problem: ResultProblem) {
+    if (problem.modUniqueId) openMod(problem.modUniqueId);
     else setView("work");
     setStatusFilter("all");
-    setSearch(skip.key);
-    setExportOpen(false);
+    setSearch(problem.key);
+  }
+
+  function handleStringSaved(snapshot: SavedStringSnapshot) {
+    const id = problemId(
+      snapshot.modUniqueId,
+      snapshot.relativeDir,
+      snapshot.key,
+    );
+    setResultTray((current) => {
+      if (!current || !current.problems.some((problem) => problem.id === id)) {
+        return current;
+      }
+      const errors = validate(
+        snapshot.source,
+        snapshot.target,
+        snapshot.targetPresent,
+      ).filter((issue) => issue.severity === "error");
+      return {
+        ...current,
+        problems: current.problems.map((problem) =>
+          problem.id === id
+            ? {
+                ...problem,
+                resolved: errors.length === 0,
+                reason: errors.map((issue) => issue.message).join(" "),
+              }
+            : problem,
+        ),
+      };
+    });
+  }
+
+  function retryResultExport() {
+    if (resultTray?.kind !== "export") return;
+    const retry = resultTray.retry;
+    if (retry.kind === "all") {
+      void handleExportAll();
+      return;
+    }
+    const mod = scan?.mods.find(
+      (candidate) => candidate.uniqueId === retry.modUniqueId,
+    );
+    if (mod) void handleExport(mod);
   }
 
   // "German (de-DE)" subtitle fragment for the dashboard.
@@ -716,6 +850,12 @@ export function App() {
               setSearch("");
               setStatusFilter("all");
             }}
+            onStringSaved={handleStringSaved}
+            onEditorOpen={() =>
+              setResultTray((current) =>
+                current ? { ...current, collapsed: true } : current,
+              )
+            }
             reloadToken={reloadToken}
             shortcuts={shortcuts}
           />
@@ -747,14 +887,17 @@ export function App() {
           onClose={() => setScanDialogOpen(false)}
         />
       )}
-      {exportOpen && (
-        <ExportDialog
-          modName={exportTitle}
-          modsWritten={exportModsWritten}
-          result={exporting ? null : exportResult}
-          error={exportError}
-          onInspectSkip={inspectSkippedKey}
-          onClose={() => setExportOpen(false)}
+      {resultTray && (
+        <ResultTray
+          data={resultTray}
+          onToggle={() =>
+            setResultTray((current) =>
+              current ? { ...current, collapsed: !current.collapsed } : current,
+            )
+          }
+          onClose={() => setResultTray(null)}
+          onInspect={inspectResultProblem}
+          onRetry={retryResultExport}
         />
       )}
       {exportConfirm && (
@@ -769,14 +912,6 @@ export function App() {
             if (kind === "selected") void handleExport();
             else void handleExportAll();
           }}
-        />
-      )}
-      {importOpen && (
-        <LlmImportDialog
-          summary={importSummary}
-          error={importError}
-          modName={selectedMod?.name ?? ""}
-          onClose={() => setImportOpen(false)}
         />
       )}
       {dropPaths && (
@@ -1037,6 +1172,8 @@ function StringTablePanel({
   onOpenMod,
   onClearSelection,
   onClearFilters,
+  onStringSaved,
+  onEditorOpen,
   reloadToken,
   shortcuts,
 }: {
@@ -1069,6 +1206,8 @@ function StringTablePanel({
   onClearSelection: () => void;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
+  onStringSaved?: (snapshot: SavedStringSnapshot) => void;
+  onEditorOpen?: () => void;
   reloadToken?: number;
   shortcuts: ResolvedShortcuts;
 }) {
@@ -1117,6 +1256,8 @@ function StringTablePanel({
               : undefined
           }
           onClearFilters={onClearFilters}
+          onStringSaved={onStringSaved}
+          onEditorOpen={onEditorOpen}
           reloadToken={reloadToken}
           shortcuts={shortcuts}
           onCountsChange={(translatedKeys, statusCounts) =>

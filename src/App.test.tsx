@@ -1,5 +1,11 @@
 import { StrictMode } from "react";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -305,7 +311,7 @@ describe("App shell", () => {
       }),
     );
     expect(
-      await screen.findByRole("dialog", { name: "Export summary" }),
+      await screen.findByRole("complementary", { name: "Operation result" }),
     ).toHaveTextContent("Export complete");
   });
 
@@ -320,17 +326,118 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
 
     expect(
-      await screen.findByRole("dialog", { name: "Export summary" }),
+      await screen.findByRole("complementary", { name: "Operation result" }),
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
     ).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     expect(
       screen.getByRole("dialog", { name: "Confirm export overwrite" }),
     ).toBeInTheDocument();
+  });
+
+  it("keeps export problems available while navigating and refreshes one saved string", async () => {
+    const blocked = {
+      ...EXPORT_RESULT,
+      files: [],
+      skipped: [
+        {
+          relativeDir: "i18n",
+          key: "greeting",
+          reason: "Missing protected token: {{name}}",
+        },
+      ],
+      filesWritten: 0,
+      totalWrittenKeys: 0,
+      blocked: true,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      if (cmd === "export_mod") return Promise.resolve(blocked);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+
+    const tray = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(tray).toHaveTextContent("1 open, 0 resolved");
+    fireEvent.click(screen.getByRole("button", { name: /i18n \/ greeting/ }));
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("greeting");
+    expect(tray).toBeInTheDocument();
+
+    fireEvent.doubleClick(await screen.findByText("greeting"));
+    expect(
+      screen.getByRole("button", { name: "Expand result" }),
+    ).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Translation"), {
+      target: { value: "Hallo {{name}}" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Expand result" }));
+
+    expect(await screen.findByText("0 open, 1 resolved")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Export again" }),
+    ).toBeInTheDocument();
+  });
+
+  it("replaces an older result and supports explicit dismissal", async () => {
+    mockExportConfigured(false);
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/one.json", "C:/two.json"],
+      });
+    });
+    expect(
+      await screen.findByText("Drop exactly one LLM batch/result JSON file."),
+    ).toBeInTheDocument();
+
+    act(() => {
+      fileDropHandler?.({ type: "drop", paths: ["C:/result.txt"] });
+    });
+    expect(
+      await screen.findByText("Only JSON batch/result files can be imported."),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText("Drop exactly one LLM batch/result JSON file."),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
+    expect(
+      screen.queryByRole("complementary", { name: "Operation result" }),
+    ).toBeNull();
   });
 
   it("summarizes affected files and mods before Export All", async () => {
@@ -420,7 +527,7 @@ describe("App shell", () => {
       }),
     );
     expect(
-      await screen.findByRole("dialog", { name: "LLM batch import" }),
+      await screen.findByRole("complementary", { name: "Operation result" }),
     ).toHaveTextContent("Imported 1 of 1 string");
   });
 
@@ -440,7 +547,7 @@ describe("App shell", () => {
     });
 
     expect(
-      await screen.findByRole("dialog", { name: "LLM batch import" }),
+      await screen.findByRole("complementary", { name: "Operation result" }),
     ).toHaveTextContent("Select a mod before dropping");
     expect(invokeMock).not.toHaveBeenCalledWith(
       "import_llm_batch_path",
@@ -462,13 +569,13 @@ describe("App shell", () => {
       paths: ["C:/one.json", "C:/two.json"],
     });
     expect(
-      await screen.findByRole("dialog", { name: "LLM batch import" }),
+      await screen.findByRole("complementary", { name: "Operation result" }),
     ).toHaveTextContent("Drop exactly one");
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
 
     fileDropHandler?.({ type: "drop", paths: ["C:/result.txt"] });
     expect(
-      await screen.findByRole("dialog", { name: "LLM batch import" }),
+      await screen.findByRole("complementary", { name: "Operation result" }),
     ).toHaveTextContent("Only JSON");
     expect(invokeMock).not.toHaveBeenCalledWith(
       "import_llm_batch_path",
