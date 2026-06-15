@@ -3,8 +3,10 @@ Stardew i18n Translator portable installation
 Keep this README beside stardew-i18n-translator.exe.
 
 The application requires Microsoft Edge WebView2 Runtime. It is included with
-Windows 11 and most Windows 10 installations. If the application does not open,
-install WebView2 from Microsoft and try again:
+Windows 11 and most Windows 10 installations. If it is missing, the executable
+shows a native Windows message before the application UI starts. Choose Yes to
+open Microsoft's official download page, or No to close the application.
+Nothing is downloaded or installed automatically.
 
 https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 
