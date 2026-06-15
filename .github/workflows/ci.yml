@@ -1,9 +1,10 @@
-# CI runs once on the exact main commit. Contributors verify locally before
-# pushing; avoiding a duplicate pull-request run preserves the limited Actions
-# allowance while direct pushes still receive the complete remote safety net.
+# CI runs on pull requests and on the exact main commit after merge. Contributors
+# still verify locally before pushing; the remote checks are the protected-branch
+# safety net.
 name: CI
 
 on:
+  pull_request:
   push:
     branches: [main]
   workflow_dispatch:
