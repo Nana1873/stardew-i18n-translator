@@ -135,6 +135,18 @@ describe("ResultTray", () => {
 
     expect(screen.getByText("Batch exported")).toBeInTheDocument();
     expect(screen.getByText("C:/out/test.llm-batch.json")).toBeInTheDocument();
+    expect(
+      screen.getByText("Continue in any LLM with file upload"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Open ChatGPT, Claude, Gemini, or another LLM."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Import... → Import LLM batch translation", {
+        exact: false,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Needs review")).toBeInTheDocument();
     expect(screen.getByText(LLM_BATCH_HANDOFF_PROMPT)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));

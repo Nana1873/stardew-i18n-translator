@@ -664,7 +664,9 @@ The tool exports a structured batch file that the user processes with any extern
    - Glossary excerpt (only official terms that occur in the exported strings, capped; empty when no glossary is built).
    - Optional section context in `sections`, mirroring `files` by i18n directory and key. This metadata guides purpose/tone and must not be translated.
    - Source strings, **grouped by i18n directory** (`files`) — multi-component mods can have several `i18n/` folders, so a flat key map is ambiguous.
-3. The persistent result tray documents the handoff without blocking editing:
+3. The expanded persistent result tray shows the complete numbered handoff
+   without blocking editing; the exact prompt remains visually separated with
+   a direct copy action:
    1. Open ChatGPT, Claude, Gemini, or another LLM with file upload.
    2. Attach the batch file and copy this exact prompt from the tray:
       `Follow the "instructions" in the attached batch JSON and return the completed result as a downloadable JSON file.`
