@@ -253,8 +253,10 @@ export interface ZipProblem {
 
 export interface ZipEntryPreview {
   modName: string;
+  modVersion: string;
   archivePath: string;
   strings: number;
+  totalSourceStrings: number;
   outdated: number;
   reviewNeeded: number;
 }
@@ -272,6 +274,7 @@ export interface ZipPreview {
   warnings: string[];
   problems: ZipProblem[];
   totalStrings: number;
+  totalSourceStrings: number;
 }
 
 export interface ZipBuildOutcome {

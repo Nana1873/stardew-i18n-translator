@@ -58,6 +58,7 @@ import {
   TranslationZipDialog,
   ZipOverwriteDialog,
 } from "./release/TranslationZipDialog";
+import { ReleaseNotesDialog } from "./release/ReleaseNotesDialog";
 import {
   type ResultProblem,
   type ResultTrayData,
@@ -114,6 +115,18 @@ export function App() {
   } | null>(null);
   const [zipOverwrite, setZipOverwrite] = useState<{
     destination: string;
+    version: string;
+  } | null>(null);
+  const [lastZipRelease, setLastZipRelease] = useState<{
+    preview: ZipPreview;
+    initialVersion: string;
+    archiveFileName: string;
+  } | null>(null);
+  const [releaseNotes, setReleaseNotes] = useState<{
+    preview: ZipPreview | null;
+    error: string | null;
+    initialVersion: string;
+    archiveFileName: string | null;
   } | null>(null);
   const [exportConfirm, setExportConfirm] = useState<{
     kind: "selected" | "all";
@@ -472,6 +485,7 @@ export function App() {
     if (!selectedMod || !settings?.modsPath || !settings.targetLang) return;
     const packageName = selectedMod.packageId;
     const components = zipComponents(packageName);
+    setLastZipRelease(null);
     setZipContext({ packageName, components });
     setZipPreview(null);
     setZipError(null);
@@ -491,7 +505,53 @@ export function App() {
     }
   }
 
+  async function requestReleaseNotes() {
+    if (!selectedMod || !settings?.modsPath || !settings.targetLang) return;
+    const packageName = selectedMod.packageId;
+    const components = zipComponents(packageName);
+    setReleaseNotes({
+      preview: null,
+      error: null,
+      initialVersion: "",
+      archiveFileName: null,
+    });
+    try {
+      const preview = await previewTranslationZip(
+        settings.modsPath,
+        packageName,
+        settings.targetLang,
+        languageLabel,
+        components,
+      );
+      setReleaseNotes({
+        preview,
+        error: null,
+        initialVersion: preview.selectedVersion,
+        archiveFileName: null,
+      });
+    } catch (error) {
+      logFrontendError("previewReleaseNotes", String(error));
+      setReleaseNotes({
+        preview: null,
+        error: String(error),
+        initialVersion: "",
+        archiveFileName: null,
+      });
+    }
+  }
+
+  function openReleaseNotesFromZip(version: string, archiveFileName: string) {
+    if (!zipPreview) return;
+    setReleaseNotes({
+      preview: zipPreview,
+      error: null,
+      initialVersion: version,
+      archiveFileName,
+    });
+  }
+
   function inspectZipProblem(problem: { modUniqueId: string; key: string }) {
+    setReleaseNotes(null);
     setZipPreview(null);
     setZipError(null);
     setZipContext(null);
@@ -500,7 +560,14 @@ export function App() {
     setSearch(problem.key);
   }
 
-  function showZipOutcome(outcome: ZipBuildOutcome) {
+  function showZipOutcome(outcome: ZipBuildOutcome, version: string) {
+    if (zipPreview) {
+      setLastZipRelease({
+        preview: zipPreview,
+        initialVersion: version,
+        archiveFileName: outcome.fileName,
+      });
+    }
     setZipPreview(null);
     setZipContext(null);
     setZipOverwrite(null);
@@ -515,7 +582,11 @@ export function App() {
     });
   }
 
-  async function buildZipAt(destination: string, overwrite: boolean) {
+  async function buildZipAt(
+    destination: string,
+    overwrite: boolean,
+    version: string,
+  ) {
     if (!zipContext || !settings?.modsPath || !settings.targetLang) {
       return;
     }
@@ -531,10 +602,10 @@ export function App() {
         destination,
         overwrite,
       );
-      showZipOutcome(outcome);
+      showZipOutcome(outcome, version);
     } catch (error) {
       if (String(error).includes("OVERWRITE_REQUIRED")) {
-        setZipOverwrite({ destination });
+        setZipOverwrite({ destination, version });
       } else {
         logFrontendError("buildTranslationZip", String(error));
         setZipError(String(error));
@@ -544,9 +615,9 @@ export function App() {
     }
   }
 
-  async function chooseZipDestination(fileName: string) {
+  async function chooseZipDestination(version: string, fileName: string) {
     const destination = await pickTranslationZipDestination(fileName);
-    if (destination) await buildZipAt(destination, false);
+    if (destination) await buildZipAt(destination, false, version);
   }
 
   function problemId(
@@ -870,6 +941,8 @@ export function App() {
         exporting={exporting}
         onBuildZip={() => void requestTranslationZip()}
         buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
+        onReleaseNotes={() => void requestReleaseNotes()}
+        releaseNotesEnabled={Boolean(selectedMod)}
         onImportBatch={() => void handleImportBatch()}
         importBatchEnabled={Boolean(selectedMod)}
         onOpenSettings={() =>
@@ -1015,6 +1088,17 @@ export function App() {
           onInspect={inspectResultProblem}
           onRetry={retryResultExport}
           onOpenFolder={(path) => void openFolder(path)}
+          onReleaseNotes={
+            resultTray.kind === "zip" && lastZipRelease
+              ? () =>
+                  setReleaseNotes({
+                    preview: lastZipRelease.preview,
+                    error: null,
+                    initialVersion: lastZipRelease.initialVersion,
+                    archiveFileName: lastZipRelease.archiveFileName,
+                  })
+              : undefined
+          }
         />
       )}
       {exportConfirm && (
@@ -1031,18 +1115,33 @@ export function App() {
           }}
         />
       )}
-      {(zipPreview || zipError || zipContext) && (
+      {(zipPreview || zipError || zipContext) && !releaseNotes && (
         <TranslationZipDialog
+          key={zipPreview?.defaultFileName ?? "loading"}
           preview={zipPreview}
           error={zipError}
           building={zipBuilding}
           onInspect={inspectZipProblem}
-          onBuild={(fileName) => void chooseZipDestination(fileName)}
+          onReleaseNotes={openReleaseNotesFromZip}
+          onBuild={(version, fileName) =>
+            void chooseZipDestination(version, fileName)
+          }
           onClose={() => {
             setZipPreview(null);
             setZipError(null);
             setZipContext(null);
           }}
+        />
+      )}
+      {releaseNotes && (
+        <ReleaseNotesDialog
+          key={`${releaseNotes.preview?.defaultFileName ?? "loading"}:${releaseNotes.initialVersion}:${releaseNotes.archiveFileName ?? ""}`}
+          preview={releaseNotes.preview}
+          error={releaseNotes.error}
+          initialVersion={releaseNotes.initialVersion}
+          archiveFileName={releaseNotes.archiveFileName}
+          onInspect={inspectZipProblem}
+          onClose={() => setReleaseNotes(null)}
         />
       )}
       {zipOverwrite && (
@@ -1054,8 +1153,9 @@ export function App() {
           onCancel={() => setZipOverwrite(null)}
           onConfirm={() => {
             const destination = zipOverwrite.destination;
+            const version = zipOverwrite.version;
             setZipOverwrite(null);
-            void buildZipAt(destination, true);
+            void buildZipAt(destination, true, version);
           }}
         />
       )}
@@ -1123,6 +1223,8 @@ function Toolbar({
   exporting,
   onBuildZip,
   buildZipEnabled,
+  onReleaseNotes,
+  releaseNotesEnabled,
   onImportBatch,
   importBatchEnabled,
   onOpenSettings,
@@ -1145,6 +1247,8 @@ function Toolbar({
   exporting: boolean;
   onBuildZip: () => void;
   buildZipEnabled: boolean;
+  onReleaseNotes: () => void;
+  releaseNotesEnabled: boolean;
   onImportBatch: () => void;
   importBatchEnabled: boolean;
   onOpenSettings: () => void;
@@ -1204,6 +1308,14 @@ function Toolbar({
           title="Build an installable translation-only ZIP for this package"
         >
           Build ZIP
+        </button>
+        <button
+          type="button"
+          onClick={onReleaseNotes}
+          disabled={!releaseNotesEnabled}
+          title="Generate copy-ready release text for this package"
+        >
+          Release notes
         </button>
         <button
           type="button"

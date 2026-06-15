@@ -33,8 +33,10 @@ pub struct ZipProblem {
 #[serde(rename_all = "camelCase")]
 pub struct ZipEntryPreview {
     pub mod_name: String,
+    pub mod_version: String,
     pub archive_path: String,
     pub strings: usize,
+    pub total_source_strings: usize,
     pub outdated: usize,
     pub review_needed: usize,
 }
@@ -61,6 +63,7 @@ pub struct ZipPreview {
     pub warnings: Vec<String>,
     pub problems: Vec<ZipProblem>,
     pub total_strings: usize,
+    pub total_source_strings: usize,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -220,6 +223,7 @@ fn prepare(
     let mut warnings = Vec::new();
     let mut problems = Vec::new();
     let mut total_strings = 0;
+    let mut total_source_strings = 0;
 
     for component in components {
         let component_root = Path::new(&component.folder_path);
@@ -241,6 +245,8 @@ fn prepare(
                 &state,
                 &file.relative_dir,
             );
+            let source_strings = rows.len();
+            total_source_strings += source_strings;
             let mut output = Map::new();
             let mut outdated = 0;
             let mut review_needed = 0;
@@ -288,8 +294,10 @@ fn prepare(
             component_entries += 1;
             let entry_preview = ZipEntryPreview {
                 mod_name: component.name.clone(),
+                mod_version: component.version.clone(),
                 archive_path,
                 strings,
+                total_source_strings: source_strings,
                 outdated,
                 review_needed,
             };
@@ -335,6 +343,7 @@ fn prepare(
         warnings,
         problems,
         total_strings,
+        total_source_strings,
     };
     Ok(PreparedPackage { preview, entries })
 }
@@ -593,7 +602,13 @@ mod tests {
         let destination = root.join("translation.zip");
         let outcome = build(
             &config,
-            &request(&mods, "Sample Pack", components, &destination, false),
+            &request(
+                &mods,
+                "Sample Pack",
+                components.clone(),
+                &destination,
+                false,
+            ),
         )
         .unwrap();
         assert_eq!(outcome.entries, 2);
@@ -621,6 +636,10 @@ mod tests {
         assert!(!names.iter().any(|name| name.contains("manifest")));
         assert!(!names.iter().any(|name| name.contains("assets")));
         assert!(!package.join("[CP] Sample/i18n/de.json").exists());
+        let preview = preview(&config, &mods, "Sample Pack", "de", "German", &components).unwrap();
+        assert_eq!(preview.total_strings, 2);
+        assert_eq!(preview.total_source_strings, 2);
+        assert_eq!(preview.entries[0].mod_version, "2.0");
         std::fs::remove_dir_all(root).ok();
     }
 

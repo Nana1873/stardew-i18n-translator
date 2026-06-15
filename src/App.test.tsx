@@ -5,6 +5,7 @@ import {
   screen,
   fireEvent,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { vi } from "vitest";
 
@@ -469,8 +470,10 @@ describe("App shell", () => {
       entries: [
         {
           modName: "Test Mod",
+          modVersion: "1.0",
           archivePath: "Test Mod/i18n/de.json",
           strings: 1,
+          totalSourceStrings: 1,
           outdated: 0,
           reviewNeeded: 0,
         },
@@ -479,6 +482,7 @@ describe("App shell", () => {
       warnings: [],
       problems: [],
       totalStrings: 1,
+      totalSourceStrings: 1,
     };
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
@@ -505,17 +509,19 @@ describe("App shell", () => {
     fireEvent.click(await screen.findByText("Test Mod"));
     fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
 
+    await screen.findByText("Test Mod/i18n/de.json");
     expect(
-      await screen.findByRole("dialog", { name: "Build translation ZIP" }),
+      screen.getByRole("dialog", { name: "Build translation ZIP" }),
     ).toHaveTextContent("Test Mod/i18n/de.json");
     const chooseLocation = screen.getByRole("button", {
       name: "Choose location...",
     });
     await waitFor(() => expect(chooseLocation).toBeEnabled());
     fireEvent.click(chooseLocation);
-    expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("Translation ZIP created");
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("Translation ZIP created");
     expect(invokeMock).toHaveBeenCalledWith(
       "build_translation_zip",
       expect.objectContaining({
@@ -527,6 +533,132 @@ describe("App shell", () => {
         }),
       }),
     );
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Release notes" }),
+    );
+    await screen.findByLabelText("Generated release notes");
+    expect(
+      (screen.getByLabelText("Generated release notes") as HTMLTextAreaElement)
+        .value,
+    ).toContain("Archiv: Test Mod.zip");
+  });
+
+  it("generates release notes independently for the selected package", async () => {
+    const preview = {
+      packageName: "Test Mod",
+      selectedVersion: "1.0",
+      versionSource: "Test Mod",
+      versionConflicts: [],
+      defaultFileName: "Test Mod - 1.0 - German (de).zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [
+        {
+          modName: "Test Mod",
+          modVersion: "1.0",
+          archivePath: "Test Mod/i18n/de.json",
+          strings: 1,
+          totalSourceStrings: 1,
+          outdated: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      omittedComponents: [],
+      warnings: [],
+      problems: [],
+      totalStrings: 1,
+      totalSourceStrings: 1,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_translation_zip") return Promise.resolve(preview);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Release notes" }));
+    await screen.findByLabelText("Generated release notes");
+    const dialog = screen.getByRole("dialog", {
+      name: "Translation release notes",
+    });
+    expect(
+      within(dialog).getByLabelText("Generated release notes"),
+    ).toHaveAttribute("readonly");
+    expect(
+      (
+        within(dialog).getByLabelText(
+          "Generated release notes",
+        ) as HTMLTextAreaElement
+      ).value,
+    ).toContain("Deutsche Übersetzung für Test Mod 1.0");
+  });
+
+  it("reuses the edited ZIP version and archive name in release notes", async () => {
+    const preview = {
+      packageName: "Test Mod",
+      selectedVersion: "1.0",
+      versionSource: "Test Mod",
+      versionConflicts: [],
+      defaultFileName: "Test Mod - 1.0 - German (de).zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [
+        {
+          modName: "Test Mod",
+          modVersion: "1.0",
+          archivePath: "Test Mod/i18n/de.json",
+          strings: 1,
+          totalSourceStrings: 1,
+          outdated: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      omittedComponents: [],
+      warnings: [],
+      problems: [],
+      totalStrings: 1,
+      totalSourceStrings: 1,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_translation_zip") return Promise.resolve(preview);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    await screen.findByLabelText("Package version");
+    const zipDialog = screen.getByRole("dialog", {
+      name: "Build translation ZIP",
+    });
+    fireEvent.change(within(zipDialog).getByLabelText("Package version"), {
+      target: { value: "1.1/beta" },
+    });
+    fireEvent.click(
+      within(zipDialog).getByRole("button", { name: "Release notes" }),
+    );
+    const releaseDialog = await screen.findByRole("dialog", {
+      name: "Translation release notes",
+    });
+    const text = (
+      within(releaseDialog).getByLabelText(
+        "Generated release notes",
+      ) as HTMLTextAreaElement
+    ).value;
+    expect(text).toContain("Test Mod 1.1/beta");
+    expect(text).toContain("Test Mod - 1.1_beta - German (de).zip");
   });
 
   it("closes the ZIP preview when opening a blocking problem", async () => {
@@ -551,6 +683,7 @@ describe("App shell", () => {
         },
       ],
       totalStrings: 0,
+      totalSourceStrings: 1,
     };
     invokeMock.mockImplementation((command: string) => {
       if (command === "load_settings") return Promise.resolve(CONFIGURED);
@@ -588,8 +721,10 @@ describe("App shell", () => {
       entries: [
         {
           modName: "Test Mod",
+          modVersion: "1.0",
           archivePath: "Test Mod/i18n/de.json",
           strings: 1,
+          totalSourceStrings: 1,
           outdated: 0,
           reviewNeeded: 0,
         },
@@ -598,6 +733,7 @@ describe("App shell", () => {
       warnings: [],
       problems: [],
       totalStrings: 1,
+      totalSourceStrings: 1,
     };
     invokeMock.mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
@@ -628,6 +764,7 @@ describe("App shell", () => {
     );
     fireEvent.click(await screen.findByText("Test Mod"));
     fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    await screen.findByLabelText("Package version");
     const chooseLocation = await screen.findByRole("button", {
       name: "Choose location...",
     });

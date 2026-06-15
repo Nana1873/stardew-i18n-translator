@@ -792,6 +792,43 @@ workflow, not Nexus integration.
 - A successful build appears in the persistent result tray with the archive
   path and an **Open folder** action.
 
+### Translation Release Notes (v1.3)
+
+The app can generate concise, copy-ready release text for the selected package
+without publishing it or sending data to an AI service.
+
+- The generator uses the same current package preview as the ZIP builder:
+  advertised package version, target language, included component paths and
+  versions, translated and total string counts, outdated/review-needed counts,
+  warnings, and blocking protected-token problems.
+- The draft defaults to the active target language. The user may switch only
+  between that maintained localized template and English; this does not change
+  the translation files or archive metadata.
+- Maintained deterministic templates exist for every supported target language.
+  If a template is unexpectedly unavailable, the complete draft falls back to
+  English and the UI states that fallback visibly. Identifiers, component names,
+  versions, SMAPI codes, archive filenames, paths, and validation tokens are
+  never translated.
+- Dates and numbers use the selected output language's locale. The generated
+  text includes release readiness, coverage, included components, review state,
+  installation instructions for Vortex or a manual `Mods`-folder overlay, and
+  compatibility wording tied to the advertised source package version.
+- Compatibility wording explains that newly added untranslated keys fall back
+  to `default.json`, so an original-mod update does not always require a new
+  translation release. It does not promise future compatibility: changed
+  existing strings, protected tokens, component paths, or i18n file structure
+  may still require an update.
+- The generator reports current state only. It never infers or invents
+  historical additions, changes, removals, or a changelog.
+- Component-version conflicts remain visible and require an explicit advertised
+  version. Blocking validation problems mark the text as not release-ready and
+  link back to the affected strings.
+- The preview is read-only and offers one **Copy to clipboard** action. No
+  custom prose, author identity, publishing metadata, credentials, or templates
+  are persisted.
+- When opened from the ZIP builder, the generator reuses the exact edited
+  package version and archive filename currently shown there.
+
 ### Possible Future Nexus Integration (Unscheduled)
 
 This work is deferred indefinitely and has no target release. The related
