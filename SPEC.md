@@ -326,7 +326,10 @@ See §7.4.
 - Brand button toggles dashboard ⇄ work view (§7.8); highlighted while the
   dashboard is shown
 - Scan / Re-scan (gold-tinted primary)
-- Export (selected mod / all), Import batch…
+- **Export...** menu: export the selected mod to its mod folder, export every
+  scanned mod to its mod folder, or build the selected package's release ZIP
+- Release Notes remains a direct action
+- **Import...** menu: import an external LLM batch translation
 - Settings
 - Global "⚑ N to review" pill (hidden at 0) — opens the dashboard review queue
 - Search bar (right-aligned; active in the work view)
@@ -662,16 +665,18 @@ The tool exports a structured batch file that the user processes with any extern
    - Source strings, **grouped by i18n directory** (`files`) — multi-component mods can have several `i18n/` folders, so a flat key map is ambiguous.
 3. The persistent result tray documents the handoff without blocking editing:
    1. Open ChatGPT, Claude, Gemini, or another LLM with file upload.
-   2. Attach the batch file and ask it to follow the embedded `"instructions"` and return the completed result as a downloadable JSON file.
-   3. Download the result and click **"Import batch…"**.
+   2. Attach the batch file and copy this exact prompt from the tray:
+      `Follow the "instructions" in the attached batch JSON and return the completed result as a downloadable JSON file.`
+   3. Download the result and choose **Import... → Import LLM batch
+      translation**.
    4. Review all imported strings in the **Needs review** queue.
 
 ### Import
 
 1. User imports the external LLM result by dropping one JSON file onto the app
-   while its target mod is selected, or via the toolbar button **"Import
-   batch…"**. Both paths use the same lenient JSON parser, which tolerates LLM
-   artifacts like trailing commas.
+   while its target mod is selected, or via **Import... → Import LLM batch
+   translation** in the toolbar. Both paths use the same lenient JSON parser,
+   which tolerates LLM artifacts like trailing commas.
 2. Tool matches keys per i18n directory against the current `default.json`.
 3. Every accepted value is staged as **`review-needed`** in one atomic state write; the table reloads.
 4. Strings that are now `translated` locally (including kept-originals) are **never overwritten** (stale-batch protection) — they are skipped and counted.

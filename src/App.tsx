@@ -1311,6 +1311,37 @@ function Toolbar({
   onSearch: (value: string) => void;
   searchEnabled: boolean;
 }) {
+  const [openMenu, setOpenMenu] = useState<"export" | "import" | null>(null);
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const exportMenuEnabled =
+    exportEnabled || exportAllEnabled || buildZipEnabled || exporting;
+
+  useEffect(() => {
+    if (!openMenu) return;
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !actionsRef.current?.contains(event.target)
+      ) {
+        setOpenMenu(null);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpenMenu(null);
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [openMenu]);
+
+  function selectMenuAction(action: () => void) {
+    setOpenMenu(null);
+    action();
+  }
+
   return (
     <header className="toolbar" role="banner">
       {/* Toggles dashboard ⇄ work view, labelled with the destination so the
@@ -1327,7 +1358,7 @@ function Toolbar({
         <span aria-hidden>{homeActive ? "▤" : "⌂"}</span>{" "}
         {homeActive ? "Mod list" : "Dashboard"}
       </button>
-      <div className="toolbar__actions">
+      <div className="toolbar__actions" ref={actionsRef}>
         <button
           type="button"
           className="toolbar__primary"
@@ -1336,30 +1367,51 @@ function Toolbar({
         >
           {scanning ? "Scanning…" : "Scan"}
         </button>
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={!exportEnabled}
-          title="Export the selected mod's translations to i18n/<lang>.json"
-        >
-          {exporting ? "Exporting…" : "Export"}
-        </button>
-        <button
-          type="button"
-          onClick={onExportAll}
-          disabled={!exportAllEnabled}
-          title="Export every scanned mod's translations"
-        >
-          Export All
-        </button>
-        <button
-          type="button"
-          onClick={onBuildZip}
-          disabled={!buildZipEnabled}
-          title="Build an installable translation-only ZIP for this package"
-        >
-          Build ZIP
-        </button>
+        <div className="toolbar__menu">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={openMenu === "export"}
+            onClick={() =>
+              setOpenMenu((current) => (current === "export" ? null : "export"))
+            }
+            disabled={!exportMenuEnabled}
+          >
+            {exporting ? "Exporting..." : "Export..."}
+          </button>
+          {openMenu === "export" && (
+            <div
+              className="toolbar__menu-popover"
+              role="menu"
+              aria-label="Export"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => selectMenuAction(onExport)}
+                disabled={!exportEnabled}
+              >
+                Export to mod folder
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => selectMenuAction(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                Export all mods to mod folders
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => selectMenuAction(onBuildZip)}
+                disabled={!buildZipEnabled}
+              >
+                Build release ZIP
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={onReleaseNotes}
@@ -1368,14 +1420,34 @@ function Toolbar({
         >
           Release notes
         </button>
-        <button
-          type="button"
-          onClick={onImportBatch}
-          disabled={!importBatchEnabled}
-          title="Import a translated LLM batch result for the selected mod"
-        >
-          Import batch…
-        </button>
+        <div className="toolbar__menu">
+          <button
+            type="button"
+            aria-haspopup="menu"
+            aria-expanded={openMenu === "import"}
+            onClick={() =>
+              setOpenMenu((current) => (current === "import" ? null : "import"))
+            }
+            disabled={!importBatchEnabled}
+          >
+            Import...
+          </button>
+          {openMenu === "import" && (
+            <div
+              className="toolbar__menu-popover"
+              role="menu"
+              aria-label="Import"
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => selectMenuAction(onImportBatch)}
+              >
+                Import LLM batch translation
+              </button>
+            </div>
+          )}
+        </div>
         <button
           type="button"
           onClick={onOpenSettings}

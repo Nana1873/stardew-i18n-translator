@@ -154,6 +154,14 @@ function mockConfigured(scanResult: unknown = EMPTY_SCAN) {
   });
 }
 
+function chooseToolbarAction(
+  menuName: "Export..." | "Import...",
+  actionName: string,
+) {
+  fireEvent.click(screen.getByRole("button", { name: menuName }));
+  fireEvent.click(screen.getByRole("menuitem", { name: actionName }));
+}
+
 describe("App shell", () => {
   it("renders the toolbar and the dashboard landing", async () => {
     mockConfigured();
@@ -273,7 +281,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    chooseToolbarAction("Export...", "Export to mod folder");
 
     expect(
       screen.getByRole("dialog", { name: "Confirm export overwrite" }),
@@ -296,7 +304,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    chooseToolbarAction("Export...", "Export to mod folder");
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
 
     await waitFor(() =>
@@ -324,7 +332,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    chooseToolbarAction("Export...", "Export to mod folder");
 
     expect(
       await screen.findByRole("complementary", { name: "Operation result" }),
@@ -334,7 +342,7 @@ describe("App shell", () => {
     ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    chooseToolbarAction("Export...", "Export to mod folder");
     expect(
       screen.getByRole("dialog", { name: "Confirm export overwrite" }),
     ).toBeInTheDocument();
@@ -378,7 +386,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    chooseToolbarAction("Export...", "Export to mod folder");
 
     const tray = await screen.findByRole("complementary", {
       name: "Operation result",
@@ -447,9 +455,9 @@ describe("App shell", () => {
 
     await screen.findByText(/1 mods scanned/);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Export All" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Export..." })).toBeEnabled(),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Export All" }));
+    chooseToolbarAction("Export...", "Export all mods to mod folders");
 
     const dialog = await screen.findByRole("dialog", {
       name: "Confirm export overwrite",
@@ -507,7 +515,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    chooseToolbarAction("Export...", "Build release ZIP");
 
     await screen.findByText("Test Mod/i18n/de.json");
     expect(
@@ -683,7 +691,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    chooseToolbarAction("Export...", "Build release ZIP");
     await screen.findByLabelText("Package version");
     const zipDialog = screen.getByRole("dialog", {
       name: "Build translation ZIP",
@@ -744,7 +752,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    chooseToolbarAction("Export...", "Build release ZIP");
     fireEvent.click(await screen.findByRole("button", { name: /broken\.key/ }));
     expect(
       screen.queryByRole("dialog", { name: "Build translation ZIP" }),
@@ -808,7 +816,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Build ZIP" }));
+    chooseToolbarAction("Export...", "Build release ZIP");
     await screen.findByLabelText("Package version");
     const chooseLocation = await screen.findByRole("button", {
       name: "Choose location...",
@@ -827,6 +835,44 @@ describe("App shell", () => {
         }),
       ),
     );
+  });
+
+  it("groups export and import actions into keyboard-accessible menus", async () => {
+    mockExportConfigured(false);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+
+    expect(
+      screen.getByRole("button", { name: "Release notes" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Export..." }));
+    expect(
+      screen.getByRole("menuitem", { name: "Export to mod folder" }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("menuitem", {
+        name: "Export all mods to mod folders",
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.getByRole("menuitem", { name: "Build release ZIP" }),
+    ).toBeEnabled();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu", { name: "Export" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Import..." }));
+    expect(
+      screen.getByRole("menuitem", {
+        name: "Import LLM batch translation",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menu", { name: "Import" })).toBeNull();
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
