@@ -350,8 +350,19 @@ function componentLines(preview: ZipPreview): string[] {
   }
   return [...components.entries()].map(([key, component]) => {
     const name = key.split("\u0000", 1)[0];
-    return `- ${name} ${component.version}: ${component.paths.join(", ")}`;
+    return `- ${name} ${component.version} (${component.paths.join(", ")})`;
   });
+}
+
+function conciseCompatibility(text: string): string {
+  const terminator = text.includes("。") ? "。" : ".";
+  const withoutFinalTerminator = text.endsWith(terminator)
+    ? text.slice(0, -terminator.length)
+    : text;
+  const finalSentenceStart = withoutFinalTerminator.lastIndexOf(terminator);
+  return finalSentenceStart === -1
+    ? text
+    : withoutFinalTerminator.slice(0, finalSentenceStart + terminator.length);
 }
 
 export function generateReleaseNotes(
@@ -384,35 +395,33 @@ export function generateReleaseNotes(
   const problemCount = preview.problems.length;
   const language =
     outputLanguage === "en" ? preview.targetLanguage : template.languageName;
+  const status =
+    problemCount === 0
+      ? template.ready
+      : template.notReady(number.format(problemCount));
   const lines = [
     template.title(language, preview.packageName, advertisedVersion),
     "",
-    `${template.labels.status}: ${
-      problemCount === 0
-        ? template.ready
-        : template.notReady(number.format(problemCount))
-    }`,
-    `${template.labels.language}: ${language} (${preview.targetLang})`,
+    `${template.labels.status}: ${status}`,
+    `${template.labels.language}: ${language} (${preview.targetLang}) · ${template.labels.coverage}: ${number.format(translated)} / ${number.format(total)} (${percentageText}%)`,
     `${template.labels.generated}: ${date}`,
   ];
   if (archiveFileName) {
     lines.push(`${template.labels.archive}: ${archiveFileName}`);
   }
+  lines.push("", `${template.labels.components}:`, ...componentLines(preview));
+  if (outdated > 0 || reviewNeeded > 0) {
+    lines.push(
+      `${template.labels.review}: ${template.labels.outdated} ${number.format(outdated)} · ${template.labels.needsReview} ${number.format(reviewNeeded)}`,
+    );
+  }
   lines.push(
-    `${template.labels.coverage}: ${number.format(translated)} / ${number.format(total)} (${percentageText}%)`,
     "",
-    `${template.labels.components}:`,
-    ...componentLines(preview),
+    `${template.labels.installation}: ${template.installation}`,
     "",
-    `${template.labels.review}:`,
-    `- ${template.labels.outdated}: ${number.format(outdated)}`,
-    `- ${template.labels.needsReview}: ${number.format(reviewNeeded)}`,
-    "",
-    `${template.labels.installation}:`,
-    template.installation,
-    "",
-    `${template.labels.compatibility}:`,
-    template.compatibility(preview.packageName, advertisedVersion),
+    `${template.labels.compatibility}: ${conciseCompatibility(
+      template.compatibility(preview.packageName, advertisedVersion),
+    )}`,
   );
   return {
     text: lines.join("\n"),

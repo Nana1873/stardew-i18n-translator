@@ -1,5 +1,6 @@
 import type {
   ExportResult,
+  LlmExportOutcome,
   LlmImportSummary,
   ZipBuildOutcome,
 } from "../tauri/commands";
@@ -33,6 +34,15 @@ export type ResultTrayData =
       pending: boolean;
       error: string | null;
       summary: LlmImportSummary | null;
+      problems: ResultProblem[];
+    }
+  | {
+      kind: "batch-export";
+      title: string;
+      collapsed: boolean;
+      pending: false;
+      error: string | null;
+      outcome: LlmExportOutcome | null;
       problems: ResultProblem[];
     }
   | {
@@ -79,7 +89,9 @@ export function ResultTray({
         ? "Export failed"
         : data.kind === "import"
           ? "Import failed"
-          : "ZIP build failed"
+          : data.kind === "batch-export"
+            ? "Batch export failed"
+            : "ZIP build failed"
       : blocked
         ? "Export blocked"
         : readyToRetry
@@ -88,7 +100,9 @@ export function ResultTray({
             ? "Export complete"
             : data.kind === "import"
               ? "Batch imported"
-              : "Translation ZIP created";
+              : data.kind === "batch-export"
+                ? "Batch exported"
+                : "Translation ZIP created";
 
   return (
     <aside
@@ -142,6 +156,8 @@ export function ResultTray({
             />
           ) : data.kind === "import" && data.summary ? (
             <ImportSnapshot summary={data.summary} />
+          ) : data.kind === "batch-export" && data.outcome ? (
+            <BatchExportSnapshot outcome={data.outcome} />
           ) : data.kind === "zip" && data.outcome ? (
             <div className="resulttray__snapshot">
               <span className="resulttray__eyebrow">Release archive</span>
@@ -151,22 +167,24 @@ export function ResultTray({
               </p>
               <code>{data.outcome.path}</code>
               {onOpenFolder && (
-                <button
-                  type="button"
-                  className="resulttray__retry"
-                  onClick={() => onOpenFolder(data.outcome!.folder)}
-                >
-                  Open folder
-                </button>
-              )}
-              {onReleaseNotes && (
-                <button
-                  type="button"
-                  className="resulttray__retry"
-                  onClick={onReleaseNotes}
-                >
-                  Release notes
-                </button>
+                <div className="resulttray__actions">
+                  <button
+                    type="button"
+                    className="resulttray__action"
+                    onClick={() => onOpenFolder(data.outcome!.folder)}
+                  >
+                    Open folder
+                  </button>
+                  {onReleaseNotes && (
+                    <button
+                      type="button"
+                      className="resulttray__action"
+                      onClick={onReleaseNotes}
+                    >
+                      Release notes
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ) : (
@@ -222,6 +240,28 @@ export function ResultTray({
         </div>
       )}
     </aside>
+  );
+}
+
+function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
+  return (
+    <div className="resulttray__snapshot">
+      <span className="resulttray__eyebrow">External LLM batch</span>
+      <p>
+        Wrote <strong>{outcome.stringCount}</strong>{" "}
+        {outcome.stringCount === 1 ? "string" : "strings"}
+        {outcome.glossaryTerms > 0
+          ? ` with ${outcome.glossaryTerms} glossary terms`
+          : ""}
+        .
+      </p>
+      <code>{outcome.path}</code>
+      <ol className="resulttray__steps">
+        <li>Attach the JSON file to your preferred LLM.</li>
+        <li>Ask it to follow the embedded instructions and return JSON.</li>
+        <li>Drop the result here or choose Import batch.</li>
+      </ol>
+    </div>
   );
 }
 

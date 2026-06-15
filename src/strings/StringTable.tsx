@@ -29,7 +29,6 @@ import {
 } from "../tauri/commands";
 import { StringEditor } from "./StringEditor";
 import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
-import { LlmExportDialog } from "../llm-batch/LlmBatchDialog";
 import { validate, worstSeverity } from "./validation";
 import { STATUS_META, statusTint } from "./status";
 import {
@@ -99,6 +98,7 @@ export function StringTable({
   onClearFilters,
   onStringSaved,
   onEditorOpen,
+  bottomClearance = 0,
   reloadToken = 0,
   shortcuts = DEFAULT_SHORTCUTS,
 }: {
@@ -128,6 +128,8 @@ export function StringTable({
   onStringSaved?: (snapshot: SavedStringSnapshot) => void;
   /** Lets the shell collapse overlays before the editor opens. */
   onEditorOpen?: () => void;
+  /** Extra scroll room so a floating result tray cannot hide the last row. */
+  bottomClearance?: number;
   /** Bump to force a reload from disk (e.g. after a batch import). */
   reloadToken?: number;
   shortcuts?: ResolvedShortcuts;
@@ -147,11 +149,6 @@ export function StringTable({
   } | null>(null);
   /** Items of a running batch AI translation (M6 Issue 17); null = no batch. */
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
-  /** Outcome (or failure) of an external LLM batch export (M4); null = closed. */
-  const [llmBatchExport, setLlmBatchExport] = useState<{
-    outcome: LlmExportOutcome | null;
-    error: string | null;
-  } | null>(null);
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
   // Current rows, readable from async batch callbacks without stale closures.
@@ -539,11 +536,9 @@ export function StringTable({
     setMenu(null);
     if (!onLlmBatchExport || items.length === 0) return;
     try {
-      const outcome = await onLlmBatchExport(items);
-      // null = the user cancelled the save dialog — nothing to report.
-      if (outcome) setLlmBatchExport({ outcome, error: null });
-    } catch (cause) {
-      setLlmBatchExport({ outcome: null, error: String(cause) });
+      await onLlmBatchExport(items);
+    } catch {
+      // The app shell owns persistent operation reporting.
     }
   }
 
@@ -631,7 +626,11 @@ export function StringTable({
           </div>
         ) : (
           <div
-            style={{ height: virtualizer.getTotalSize(), position: "relative" }}
+            data-testid="stringtable-scroll-content"
+            style={{
+              height: virtualizer.getTotalSize() + bottomClearance,
+              position: "relative",
+            }}
           >
             {virtualizer.getVirtualItems().map((item) => {
               const entry = display[item.index];
@@ -825,14 +824,6 @@ export function StringTable({
             </li>
           </ul>
         </>
-      )}
-      {llmBatchExport && (
-        <LlmExportDialog
-          outcome={llmBatchExport.outcome}
-          error={llmBatchExport.error}
-          modName={mod.name}
-          onClose={() => setLlmBatchExport(null)}
-        />
       )}
       {batch && onTranslate && (
         <BatchTranslateDialog

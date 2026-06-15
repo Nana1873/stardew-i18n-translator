@@ -436,11 +436,44 @@ export function App() {
   // metadata/instructions; absent → the menu item explains why it's disabled.
   const targetLang = settings?.targetLang;
   const llmBatchExport = targetLang
-    ? (
+    ? async (
         mod: ScannedMod,
         items: LlmBatchItem[],
-      ): Promise<LlmExportOutcome | null> =>
-        exportLlmBatch(mod.uniqueId, mod.name, targetLang, languageLabel, items)
+      ): Promise<LlmExportOutcome | null> => {
+        try {
+          const outcome = await exportLlmBatch(
+            mod.uniqueId,
+            mod.name,
+            targetLang,
+            languageLabel,
+            items,
+          );
+          if (outcome) {
+            setResultTray({
+              kind: "batch-export",
+              title: mod.name,
+              collapsed: false,
+              pending: false,
+              error: null,
+              outcome,
+              problems: [],
+            });
+          }
+          return outcome;
+        } catch (error) {
+          logFrontendError("exportLlmBatch", String(error));
+          setResultTray({
+            kind: "batch-export",
+            title: mod.name,
+            collapsed: false,
+            pending: false,
+            error: String(error),
+            outcome: null,
+            problems: [],
+          });
+          throw error;
+        }
+      }
     : undefined;
 
   /** Import a translated external LLM batch for the selected mod (M4). */
@@ -925,6 +958,19 @@ export function App() {
   const languageLine = settings?.targetLang
     ? `${languageLabel} (${settings.targetLang})`
     : "No target language yet";
+  const focusedDialogOpen = Boolean(
+    wizardOpen ||
+    settingsOpen ||
+    scanDialogOpen ||
+    exportConfirm ||
+    zipPreview ||
+    zipError ||
+    zipContext ||
+    releaseNotes ||
+    zipOverwrite,
+  );
+  const trayCollapsed = Boolean(resultTray?.collapsed || focusedDialogOpen);
+  const trayScrollClearance = resultTray ? (trayCollapsed ? 58 : 260) : 0;
 
   return (
     <div className="app">
@@ -1045,6 +1091,7 @@ export function App() {
                 current ? { ...current, collapsed: true } : current,
               )
             }
+            bottomClearance={trayScrollClearance}
             reloadToken={reloadToken}
             shortcuts={shortcuts}
           />
@@ -1078,7 +1125,11 @@ export function App() {
       )}
       {resultTray && (
         <ResultTray
-          data={resultTray}
+          data={
+            trayCollapsed && !resultTray.collapsed
+              ? { ...resultTray, collapsed: true }
+              : resultTray
+          }
           onToggle={() =>
             setResultTray((current) =>
               current ? { ...current, collapsed: !current.collapsed } : current,
@@ -1443,6 +1494,7 @@ function StringTablePanel({
   onClearFilters,
   onStringSaved,
   onEditorOpen,
+  bottomClearance,
   reloadToken,
   shortcuts,
 }: {
@@ -1477,6 +1529,7 @@ function StringTablePanel({
   onClearFilters?: () => void;
   onStringSaved?: (snapshot: SavedStringSnapshot) => void;
   onEditorOpen?: () => void;
+  bottomClearance: number;
   reloadToken?: number;
   shortcuts: ResolvedShortcuts;
 }) {
@@ -1527,6 +1580,7 @@ function StringTablePanel({
           onClearFilters={onClearFilters}
           onStringSaved={onStringSaved}
           onEditorOpen={onEditorOpen}
+          bottomClearance={bottomClearance}
           reloadToken={reloadToken}
           shortcuts={shortcuts}
           onCountsChange={(translatedKeys, statusCounts) =>

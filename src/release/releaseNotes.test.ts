@@ -41,10 +41,12 @@ describe("generateReleaseNotes", () => {
     expect(result.text).toContain("Deutsche Übersetzung für Sample Pack 2.1");
     expect(result.text).toContain("Abdeckung: 75 / 100 (75");
     expect(result.text).toContain(
-      "[CP] Sample 2.0: Sample Pack/[CP] Sample/i18n/de.json",
+      "[CP] Sample 2.0 (Sample Pack/[CP] Sample/i18n/de.json)",
     );
     expect(result.text).toContain("Sample Pack release.zip");
     expect(result.text).toContain("default.json");
+    expect(result.text.split("\n").length).toBeLessThanOrEqual(14);
+    expect(result.text).not.toContain("Aktualisiere die Original-Mod separat");
     expect(result.text).not.toMatch(/added|changed|removed/i);
   });
 

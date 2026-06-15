@@ -430,15 +430,19 @@ under the cursor, whatever the next string contains.
 
 ### 7.5.1 Persistent Result Tray (v1.3)
 
-Selected-mod export, Export All, and external LLM import results appear in one
-compact tray over the bottom-right of the workspace instead of a modal result
-dialog. The tray is not a third workspace panel and does not block navigation.
+Selected-mod export, Export All, external LLM batch export/import, and
+translation ZIP results appear in one compact tray over the bottom-right of the
+workspace instead of a modal result dialog. The tray is not a third workspace
+panel and does not block navigation.
 
 - The latest result replaces the previous one and remains available until the
   user closes it.
-- The tray can be collapsed to a summary row. Opening the String Editor
-  collapses it automatically.
+- The tray can be collapsed to a summary row. Opening the String Editor or
+  another focused modal collapses it automatically; modal backdrops and content
+  always render above the tray.
 - Expanded content has a bounded height and its own scroll area.
+- The string-table scroller reserves enough trailing space to move the final
+  rows above either the expanded or collapsed tray.
 - The operation summary is an immutable snapshot of the completed operation.
 - Every reported string-level problem is listed with mod/component, i18n
   directory, key, and reason where applicable.
@@ -656,7 +660,7 @@ The tool exports a structured batch file that the user processes with any extern
    - Glossary excerpt (only official terms that occur in the exported strings, capped; empty when no glossary is built).
    - Optional section context in `sections`, mirroring `files` by i18n directory and key. This metadata guides purpose/tone and must not be translated.
    - Source strings, **grouped by i18n directory** (`files`) — multi-component mods can have several `i18n/` folders, so a flat key map is ambiguous.
-3. The export result dialog documents the handoff:
+3. The persistent result tray documents the handoff without blocking editing:
    1. Open ChatGPT, Claude, Gemini, or another LLM with file upload.
    2. Attach the batch file and ask it to follow the embedded `"instructions"` and return the completed result as a downloadable JSON file.
    3. Download the result and click **"Import batch…"**.
@@ -810,9 +814,10 @@ without publishing it or sending data to an AI service.
   versions, SMAPI codes, archive filenames, paths, and validation tokens are
   never translated.
 - Dates and numbers use the selected output language's locale. The generated
-  text includes release readiness, coverage, included components, review state,
-  installation instructions for Vortex or a manual `Mods`-folder overlay, and
-  compatibility wording tied to the advertised source package version.
+  text is deliberately short: a title, compact readiness/language/coverage
+  metadata, included components, review counts only when non-zero, one
+  installation paragraph, and one compatibility paragraph tied to the
+  advertised source package version.
 - Compatibility wording explains that newly added untranslated keys fall back
   to `default.json`, so an original-mod update does not always require a new
   translation release. It does not promise future compatibility: changed
