@@ -8,6 +8,28 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-06-15
+
+### Added
+
+- Persistent result tray for export, external-LLM batch, import, and release ZIP
+  outcomes without blocking the translation workspace.
+- Installable translation ZIP creation that preserves the selected mod
+  package's folder structure.
+- Short localized **Translation Notes** generated from verified package,
+  language, coverage, and installation details.
+- Native startup guidance with the official Microsoft download link when the
+  WebView2 Runtime is unavailable.
+
+### Changed
+
+- Related export and import actions are grouped into compact toolbar menus,
+  while **Translation Notes** and **Settings** remain clearly separated.
+- External-LLM batch exports show the complete four-step handoff and an exact
+  copyable prompt in the result tray.
+
+See [docs/release/v1.3.0.md](docs/release/v1.3.0.md) for the full notes.
+
 ## [1.2.3] - 2026-06-14
 
 ### Changed
@@ -140,7 +162,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.3...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.1...v1.2.2
 [1.2.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.0...v1.2.1
