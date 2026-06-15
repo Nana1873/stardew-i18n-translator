@@ -428,6 +428,30 @@ under the cursor, whatever the next string contains.
 | `F4`         | Reset target                                         |
 | `Ctrl+F5`    | Translate with the local AI (M6)                     |
 
+### 7.5.1 Persistent Result Tray (v1.3)
+
+Selected-mod export, Export All, and external LLM import results appear in one
+compact tray over the bottom-right of the workspace instead of a modal result
+dialog. The tray is not a third workspace panel and does not block navigation.
+
+- The latest result replaces the previous one and remains available until the
+  user closes it.
+- The tray can be collapsed to a summary row. Opening the String Editor
+  collapses it automatically.
+- Expanded content has a bounded height and its own scroll area.
+- The operation summary is an immutable snapshot of the completed operation.
+- Every reported string-level problem is listed with mod/component, i18n
+  directory, key, and reason where applicable.
+- Activating a problem opens the correct mod, clears conflicting filters, and
+  searches for the key without dismissing the tray.
+- After a listed string is saved, only that entry is revalidated with the
+  existing validation rules. Resolved entries remain visibly marked so the
+  original result and current state are distinguishable.
+- Once every blocking export problem is resolved, the tray offers an explicit
+  **Export again** action. It never exports automatically.
+- The tray is keyboard accessible. Scan, settings, AI connection, and other
+  notifications remain outside this result UI.
+
 ### 7.6 Context Menu (Right-Click)
 
 Available on one or multiple selected strings in the String Table.

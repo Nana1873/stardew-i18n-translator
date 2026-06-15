@@ -44,6 +44,15 @@ interface Row extends StringRow {
   file: string;
 }
 
+export interface SavedStringSnapshot {
+  modUniqueId: string;
+  relativeDir: string;
+  key: string;
+  source: string;
+  target: string;
+  targetPresent: boolean;
+}
+
 type SortCol = "status" | "file" | "key" | "source" | "target";
 
 /** One virtualized table line: a string row, or a section divider above a run
@@ -88,6 +97,8 @@ export function StringTable({
   onLlmBatchExport,
   onCountsChange,
   onClearFilters,
+  onStringSaved,
+  onEditorOpen,
   reloadToken = 0,
   shortcuts = DEFAULT_SHORTCUTS,
 }: {
@@ -113,6 +124,10 @@ export function StringTable({
     translatedKeys: number,
     byStatus: Record<StringStatus, number>,
   ) => void;
+  /** Reports one persisted row so an active result tray can refresh it. */
+  onStringSaved?: (snapshot: SavedStringSnapshot) => void;
+  /** Lets the shell collapse overlays before the editor opens. */
+  onEditorOpen?: () => void;
   /** Bump to force a reload from disk (e.g. after a batch import). */
   reloadToken?: number;
   shortcuts?: ResolvedShortcuts;
@@ -305,6 +320,7 @@ export function StringTable({
     const indices = visible.map((entry) => entry.index);
     const position = indices.indexOf(dataIndex);
     if (position === -1) return;
+    onEditorOpen?.();
     setEditorSession({
       indices,
       position,
@@ -328,6 +344,14 @@ export function StringTable({
     );
     setRows(next);
     onCountsChange?.(countTranslated(next), countByStatus(next));
+    onStringSaved?.({
+      modUniqueId: mod.uniqueId,
+      relativeDir: row.file,
+      key: row.key,
+      source: row.source,
+      target,
+      targetPresent: true,
+    });
   }
 
   // `dataIndex` is the row's index into `data`; `pos` is its position in the
@@ -403,6 +427,18 @@ export function StringTable({
     });
     setRows(next);
     onCountsChange?.(countTranslated(next), countByStatus(next));
+    for (const index of indices) {
+      const row = next[index];
+      if (!row) continue;
+      onStringSaved?.({
+        modUniqueId: mod.uniqueId,
+        relativeDir: row.file,
+        key: row.key,
+        source: row.source,
+        target: row.target,
+        targetPresent: true,
+      });
+    }
     setMenu(null);
   }
 
@@ -469,6 +505,17 @@ export function StringTable({
     );
     rowsRef.current = next;
     setRows(next);
+    const saved = next[item.index];
+    if (saved) {
+      onStringSaved?.({
+        modUniqueId: mod.uniqueId,
+        relativeDir: saved.file,
+        key: saved.key,
+        source: saved.source,
+        target: saved.target,
+        targetPresent: true,
+      });
+    }
   }
 
   function closeBatch() {

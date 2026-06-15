@@ -180,6 +180,14 @@ fn now_iso8601() -> String {
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct ImportProblem {
+    pub relative_dir: String,
+    pub key: String,
+    pub reason: String,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct ImportSummary {
     /// Values staged as `review-needed`.
     pub imported: usize,
@@ -195,6 +203,8 @@ pub struct ImportSummary {
     /// The keys behind `token_issues`, so the user can search/jump to them
     /// (prefixed with the i18n directory when the mod has more than one).
     pub token_issue_keys: Vec<String>,
+    /// Structured problem details used by the persistent result tray.
+    pub token_issue_entries: Vec<ImportProblem>,
     /// Imported, but byte-identical to the English source (probably
     /// untranslated; sometimes legitimate, e.g. "OK").
     pub identical_to_source: usize,
@@ -272,6 +282,11 @@ pub fn apply_batch(
                     format!("{dir} · {key}")
                 } else {
                     key.clone()
+                });
+                summary.token_issue_entries.push(ImportProblem {
+                    relative_dir: dir.clone(),
+                    key: key.clone(),
+                    reason: "Missing protected tokens".to_string(),
                 });
             }
             if text.trim() == row.source.trim() {
@@ -486,6 +501,14 @@ mod tests {
         assert_eq!(prepared.summary.token_issues, 1);
         // The affected key is named, so the user can search/jump to it.
         assert_eq!(prepared.summary.token_issue_keys, vec!["tok".to_string()]);
+        assert_eq!(
+            prepared.summary.token_issue_entries,
+            vec![ImportProblem {
+                relative_dir: "i18n".to_string(),
+                key: "tok".to_string(),
+                reason: "Missing protected tokens".to_string(),
+            }]
+        );
         assert_eq!(prepared.summary.identical_to_source, 1);
     }
 

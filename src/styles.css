@@ -476,6 +476,233 @@ kbd,
   min-height: 0;
 }
 
+/* Latest export/import result, persistent without becoming a third panel. */
+.resulttray {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  width: min(460px, calc(100vw - 36px));
+  max-height: min(560px, calc(100vh - 92px));
+  overflow: hidden;
+  background: #262119;
+  border: 1px solid var(--border-strong);
+  border-radius: 11px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
+}
+
+.resulttray__head {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  border-bottom: 1px solid var(--border);
+}
+
+.resulttray--collapsed .resulttray__head {
+  border-bottom: 0;
+}
+
+.resulttray__toggle {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  align-self: stretch;
+  padding: 0 10px 0 13px;
+  color: var(--text);
+  background: transparent;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resulttray__status {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--green);
+}
+
+.resulttray__status--error {
+  background: var(--error);
+}
+
+.resulttray__title {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resulttray__count {
+  flex: none;
+  padding: 2px 7px;
+  color: #f0c2c2;
+  background: rgba(224, 108, 108, 0.14);
+  border-radius: 20px;
+  font-size: 11px;
+}
+
+.resulttray__icon {
+  width: 38px;
+  align-self: stretch;
+  color: var(--text-muted);
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--border);
+  font: 16px/1 monospace;
+  cursor: pointer;
+}
+
+.resulttray__toggle:hover,
+.resulttray__icon:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.resulttray__body {
+  min-height: 0;
+  padding: 13px;
+  overflow-y: auto;
+}
+
+.resulttray__error,
+.resulttray__snapshot p {
+  margin: 0 0 10px;
+}
+
+.resulttray__error {
+  color: var(--error);
+  white-space: pre-wrap;
+}
+
+.resulttray__eyebrow {
+  display: block;
+  margin-bottom: 5px;
+  color: var(--text-dim);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.resulttray__snapshot ul {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 5px 12px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  list-style: none;
+}
+
+.resulttray__problems {
+  margin-top: 13px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.resulttray__section-title {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 7px;
+  font-size: 12px;
+}
+
+.resulttray__section-title span {
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.resulttray__problems ul {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resulttray__problems button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 9px;
+  color: var(--text);
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.resulttray__problems button:hover,
+.resulttray__problems button:focus-visible {
+  border-color: var(--gold);
+}
+
+.resulttray__problems button span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.resulttray__problems code {
+  overflow: hidden;
+  color: var(--key);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resulttray__problems small {
+  max-width: 45%;
+  color: var(--error);
+  text-align: right;
+}
+
+.resulttray__problem--resolved {
+  opacity: 0.58;
+}
+
+.resulttray__problem--resolved button {
+  border-color: rgba(94, 196, 136, 0.35);
+}
+
+.resulttray__problem--resolved small {
+  color: var(--green);
+}
+
+.resulttray__retry {
+  margin-top: 12px;
+  padding: 7px 12px;
+  color: var(--on-gold);
+  background: var(--gold);
+  border: 0;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.resulttray__muted {
+  margin: 0;
+  color: var(--text-muted);
+}
+
 .panel {
   display: flex;
   flex-direction: column;
