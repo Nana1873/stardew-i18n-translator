@@ -1,9 +1,13 @@
+import { useState } from "react";
 import type {
   ExportResult,
   LlmExportOutcome,
   LlmImportSummary,
   ZipBuildOutcome,
 } from "../tauri/commands";
+
+export const LLM_BATCH_HANDOFF_PROMPT =
+  'Follow the "instructions" in the attached batch JSON and return the completed result as a downloadable JSON file.';
 
 export interface ResultProblem {
   id: string;
@@ -244,6 +248,22 @@ export function ResultTray({
 }
 
 function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle",
+  );
+
+  async function copyPrompt() {
+    try {
+      if (!navigator.clipboard?.writeText) {
+        throw new Error("Clipboard access is unavailable.");
+      }
+      await navigator.clipboard.writeText(LLM_BATCH_HANDOFF_PROMPT);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  }
+
   return (
     <div className="resulttray__snapshot">
       <span className="resulttray__eyebrow">External LLM batch</span>
@@ -256,11 +276,25 @@ function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
         .
       </p>
       <code>{outcome.path}</code>
-      <ol className="resulttray__steps">
-        <li>Attach the JSON file to your preferred LLM.</li>
-        <li>Ask it to follow the embedded instructions and return JSON.</li>
-        <li>Drop the result here or choose Import batch.</li>
-      </ol>
+      <div className="resulttray__prompt">
+        <code>{LLM_BATCH_HANDOFF_PROMPT}</code>
+        <button
+          type="button"
+          className="resulttray__action"
+          onClick={() => void copyPrompt()}
+        >
+          {copyState === "copied" ? "Copied" : "Copy prompt"}
+        </button>
+      </div>
+      {copyState === "error" && (
+        <p className="resulttray__error" role="alert">
+          Could not access the clipboard.
+        </p>
+      )}
+      <p className="resulttray__muted">
+        Attach the batch JSON, send the prompt, then drop the returned JSON here
+        or choose Import...
+      </p>
     </div>
   );
 }

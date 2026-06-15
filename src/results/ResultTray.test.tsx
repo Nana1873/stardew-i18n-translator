@@ -1,6 +1,21 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { vi } from "vitest";
-import { ResultTray, type ResultTrayData } from "./ResultTray";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, vi } from "vitest";
+import {
+  LLM_BATCH_HANDOFF_PROMPT,
+  ResultTray,
+  type ResultTrayData,
+} from "./ResultTray";
+
+const writeText = vi.fn();
+
+beforeEach(() => {
+  writeText.mockReset();
+  writeText.mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+});
 
 const exportData: ResultTrayData = {
   kind: "export",
@@ -95,7 +110,7 @@ describe("ResultTray", () => {
     expect(screen.getByText("0 open, 1 resolved")).toBeInTheDocument();
   });
 
-  it("shows a compact external batch handoff in the tray", () => {
+  it("shows and copies the exact external batch handoff prompt", async () => {
     render(
       <ResultTray
         data={{
@@ -120,9 +135,13 @@ describe("ResultTray", () => {
 
     expect(screen.getByText("Batch exported")).toBeInTheDocument();
     expect(screen.getByText("C:/out/test.llm-batch.json")).toBeInTheDocument();
-    expect(
-      screen.getByText("Attach the JSON file to your preferred LLM."),
-    ).toBeInTheDocument();
+    expect(screen.getByText(LLM_BATCH_HANDOFF_PROMPT)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(LLM_BATCH_HANDOFF_PROMPT),
+    );
+    expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
   });
 
   it("uses compact action styling for ZIP follow-up actions", () => {

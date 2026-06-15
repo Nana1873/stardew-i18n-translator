@@ -123,6 +123,39 @@ kbd,
   gap: 6px;
 }
 
+.toolbar__menu {
+  position: relative;
+}
+
+.toolbar__menu-popover {
+  position: absolute;
+  top: calc(100% + 5px);
+  left: 0;
+  z-index: 75;
+  display: flex;
+  min-width: 230px;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: #262119;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
+
+.toolbar .toolbar__menu-popover button {
+  width: 100%;
+  padding: 6px 9px;
+  background: transparent;
+  border-color: transparent;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.toolbar .toolbar__menu-popover button:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .toolbar button {
   background: rgba(255, 255, 255, 0.05);
   color: #ddd5c5;
@@ -631,10 +664,31 @@ kbd,
   cursor: pointer;
 }
 
-.resulttray__steps {
-  margin: 10px 0 0;
-  padding-left: 20px;
-  color: var(--text-muted);
+.resulttray__prompt {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px;
+  background: var(--surface-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.resulttray__prompt code {
+  flex: 1;
+  color: #e6cf8f;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: normal;
+}
+
+.resulttray__prompt .resulttray__action {
+  flex: none;
+}
+
+.resulttray__prompt + .resulttray__muted {
+  margin-top: 8px;
   font-size: 11.5px;
   line-height: 1.45;
 }
