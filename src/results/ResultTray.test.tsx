@@ -94,4 +94,69 @@ describe("ResultTray", () => {
     expect(retry).toHaveBeenCalledOnce();
     expect(screen.getByText("0 open, 1 resolved")).toBeInTheDocument();
   });
+
+  it("shows a compact external batch handoff in the tray", () => {
+    render(
+      <ResultTray
+        data={{
+          kind: "batch-export",
+          title: "Test Mod",
+          collapsed: false,
+          pending: false,
+          error: null,
+          outcome: {
+            path: "C:/out/test.llm-batch.json",
+            stringCount: 3,
+            glossaryTerms: 2,
+          },
+          problems: [],
+        }}
+        onToggle={vi.fn()}
+        onClose={vi.fn()}
+        onInspect={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Batch exported")).toBeInTheDocument();
+    expect(screen.getByText("C:/out/test.llm-batch.json")).toBeInTheDocument();
+    expect(
+      screen.getByText("Attach the JSON file to your preferred LLM."),
+    ).toBeInTheDocument();
+  });
+
+  it("uses compact action styling for ZIP follow-up actions", () => {
+    render(
+      <ResultTray
+        data={{
+          kind: "zip",
+          title: "Test.zip",
+          collapsed: false,
+          pending: false,
+          error: null,
+          outcome: {
+            path: "C:/release/Test.zip",
+            folder: "C:/release",
+            fileName: "Test.zip",
+            entries: 1,
+            strings: 2,
+          },
+          problems: [],
+        }}
+        onToggle={vi.fn()}
+        onClose={vi.fn()}
+        onInspect={vi.fn()}
+        onRetry={vi.fn()}
+        onOpenFolder={vi.fn()}
+        onReleaseNotes={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Open folder" })).toHaveClass(
+      "resulttray__action",
+    );
+    expect(screen.getByRole("button", { name: "Release notes" })).toHaveClass(
+      "resulttray__action",
+    );
+  });
 });

@@ -538,7 +538,7 @@ describe("StringTable", () => {
     ).toBeDisabled();
   });
 
-  it("exports only eligible rows as an LLM batch and shows the outcome", async () => {
+  it("exports only eligible rows and leaves persistent reporting to the shell", async () => {
     mockStrings([
       { key: "greeting", source: "Hello", target: "Hallo" },
       { key: "bye", source: "Bye", target: "", section: "NPC dialogue" },
@@ -556,7 +556,7 @@ describe("StringTable", () => {
     fireEvent.contextMenu(screen.getByText("bye"));
     fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
 
-    await screen.findByText("Batch exported");
+    await waitFor(() => expect(onLlmBatchExport).toHaveBeenCalled());
     expect(onLlmBatchExport).toHaveBeenCalledWith([
       {
         relativeDir: "i18n",
@@ -565,7 +565,9 @@ describe("StringTable", () => {
         section: "NPC dialogue",
       },
     ]);
-    expect(screen.getByText("C:/out/a.b.llm-batch.json")).toBeInTheDocument();
+    expect(
+      screen.queryByRole("dialog", { name: "LLM batch export" }),
+    ).not.toBeInTheDocument();
   });
 
   it("a cancelled LLM batch export (null outcome) shows no dialog", async () => {
@@ -578,6 +580,22 @@ describe("StringTable", () => {
 
     await waitFor(() => expect(onLlmBatchExport).toHaveBeenCalled());
     expect(screen.queryByText("Batch exported")).not.toBeInTheDocument();
+  });
+
+  it("adds bottom scroll clearance for a visible result tray", async () => {
+    const { rerender } = render(
+      <StringTable mod={MOD} bottomClearance={260} />,
+    );
+
+    await screen.findByText("bye");
+    expect(screen.getByTestId("stringtable-scroll-content")).toHaveStyle({
+      height: "320px",
+    });
+
+    rerender(<StringTable mod={MOD} bottomClearance={58} />);
+    expect(screen.getByTestId("stringtable-scroll-content")).toHaveStyle({
+      height: "118px",
+    });
   });
 
   it("the LLM batch export menu item is disabled without a target language", async () => {

@@ -538,9 +538,54 @@ describe("App shell", () => {
     );
     await screen.findByLabelText("Generated release notes");
     expect(
+      screen.getByRole("button", { name: "Expand result" }),
+    ).toBeInTheDocument();
+    expect(
       (screen.getByLabelText("Generated release notes") as HTMLTextAreaElement)
         .value,
     ).toContain("Archiv: Test Mod.zip");
+  });
+
+  it("reports external LLM batch export in the persistent tray", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "export_llm_batch")
+        return Promise.resolve({
+          path: "C:/out/test.llm-batch.json",
+          stringCount: 1,
+          glossaryTerms: 0,
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    fireEvent.click(await screen.findByText("greeting"));
+    fireEvent.contextMenu(screen.getByText("greeting"));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
+
+    const tray = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(tray).toHaveTextContent("Batch exported");
+    expect(tray).toHaveTextContent("C:/out/test.llm-batch.json");
+    expect(
+      screen.queryByRole("dialog", { name: "LLM batch export" }),
+    ).not.toBeInTheDocument();
   });
 
   it("generates release notes independently for the selected package", async () => {
