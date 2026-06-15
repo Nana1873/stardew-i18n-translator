@@ -8,9 +8,9 @@ imports existing work, tracks progress, checks Stardew-specific tokens, and
 exports clean translation files with backups.
 
 > [!IMPORTANT]
-> This project was developed with substantial help from AI coding agents. The
-> maintainer reviews the code, tests the releases, and is responsible for what
-> ships.
+> This project was developed with substantial help from AI coding agents.
+> The maintainer guides the project direction, tests the app before release,
+> and is responsible for the final published builds.
 
 ![Stardew i18n Translator dashboard](docs/assets/screenshots/dashboard.png)
 
