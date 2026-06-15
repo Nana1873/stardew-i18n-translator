@@ -7,6 +7,11 @@ Point it at your Mods folder, choose a language, and start translating. The app
 imports existing work, tracks progress, checks Stardew-specific tokens, and
 exports clean translation files with backups.
 
+> [!IMPORTANT]
+> This project was developed with substantial help from AI coding agents. The
+> maintainer reviews the code, tests the releases, and is responsible for what
+> ships.
+
 ![Stardew i18n Translator dashboard](docs/assets/screenshots/dashboard.png)
 
 ## What It Does
@@ -16,6 +21,8 @@ exports clean translation files with backups.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about broken Content Patcher, dialogue, mail, and placeholder tokens.
 - Supports manual translation, optional local AI, and external LLM batches.
+- Keeps export, import, and release results available in a compact result tray.
+- Builds installable translation ZIPs and short localized publication notes.
 - Keeps settings and translation work locally in the portable app folder.
 
 ![Translation workspace](docs/assets/screenshots/workspace.png)
@@ -54,16 +61,19 @@ When you export, untranslated entries are left out so SMAPI can fall back to
 the original English text. Token mismatches are caught before anything is
 written.
 
-For sharing a translation, **Build translation ZIP** creates a clean,
+For sharing a translation, **Export... > Build Release ZIP** creates a clean,
 installable archive for the selected mod package. It preserves multi-component
 folder paths and includes only the generated target-language `i18n` files, not
 the original mod's manifests, assets, DLLs, or backups.
 
-**Release notes** turns the same current package data into short copy-ready
+**Translation Notes** turns the same current package data into short copy-ready
 publication text. It defaults to the translation language, can switch to
 English, and includes coverage, included components, installation guidance,
 review warnings, and careful compatibility wording. The preview stays local
 and is copied to the clipboard only when you choose.
+
+Completed exports, imports, LLM batches, and release ZIPs stay available in the
+result tray without blocking the translation workspace.
 
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 
@@ -109,9 +119,6 @@ corepack pnpm tauri dev
 
 The detailed product specification and project boundaries live in
 [SPEC.md](SPEC.md) and [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md).
-
-This project was developed with help from AI coding agents. The maintainer
-reviews the code and is responsible for what ships.
 
 ## License
 
