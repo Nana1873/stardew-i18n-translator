@@ -276,25 +276,39 @@ function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
         .
       </p>
       <code>{outcome.path}</code>
-      <div className="resulttray__prompt">
-        <code>{LLM_BATCH_HANDOFF_PROMPT}</code>
-        <button
-          type="button"
-          className="resulttray__action"
-          onClick={() => void copyPrompt()}
-        >
-          {copyState === "copied" ? "Copied" : "Copy prompt"}
-        </button>
-      </div>
+      <strong className="resulttray__workflow-title">
+        Continue in any LLM with file upload
+      </strong>
+      <ol className="resulttray__workflow">
+        <li>Open ChatGPT, Claude, Gemini, or another LLM.</li>
+        <li>
+          Attach the exported <code>*.llm-batch.json</code> file and send this
+          prompt:
+          <div className="resulttray__prompt">
+            <code>{LLM_BATCH_HANDOFF_PROMPT}</code>
+            <button
+              type="button"
+              className="resulttray__action"
+              onClick={() => void copyPrompt()}
+            >
+              {copyState === "copied" ? "Copied" : "Copy prompt"}
+            </button>
+          </div>
+        </li>
+        <li>
+          Download the returned JSON file, then drop it onto the app or choose{" "}
+          <strong>Import... → Import LLM batch translation</strong>.
+        </li>
+        <li>
+          Review the imported strings in the <strong>Needs review</strong>{" "}
+          queue.
+        </li>
+      </ol>
       {copyState === "error" && (
         <p className="resulttray__error" role="alert">
           Could not access the clipboard.
         </p>
       )}
-      <p className="resulttray__muted">
-        Attach the batch JSON, send the prompt, then drop the returned JSON here
-        or choose Import...
-      </p>
     </div>
   );
 }
