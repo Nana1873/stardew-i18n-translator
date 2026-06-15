@@ -982,8 +982,6 @@ export function App() {
         scanning={scanning}
         onExport={requestExport}
         exportEnabled={Boolean(selectedMod) && !exporting}
-        onExportAll={requestExportAll}
-        exportAllEnabled={Boolean(scan && scan.mods.length > 0) && !exporting}
         exporting={exporting}
         onBuildZip={() => void requestTranslationZip()}
         buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
@@ -1269,8 +1267,6 @@ function Toolbar({
   scanning,
   onExport,
   exportEnabled,
-  onExportAll,
-  exportAllEnabled,
   exporting,
   onBuildZip,
   buildZipEnabled,
@@ -1293,8 +1289,6 @@ function Toolbar({
   scanning: boolean;
   onExport: () => void;
   exportEnabled: boolean;
-  onExportAll: () => void;
-  exportAllEnabled: boolean;
   exporting: boolean;
   onBuildZip: () => void;
   buildZipEnabled: boolean;
@@ -1313,8 +1307,7 @@ function Toolbar({
 }) {
   const [openMenu, setOpenMenu] = useState<"export" | "import" | null>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
-  const exportMenuEnabled =
-    exportEnabled || exportAllEnabled || buildZipEnabled || exporting;
+  const exportMenuEnabled = exportEnabled || buildZipEnabled || exporting;
 
   useEffect(() => {
     if (!openMenu) return;
@@ -1344,21 +1337,26 @@ function Toolbar({
 
   return (
     <header className="toolbar" role="banner">
-      {/* Toggles dashboard ⇄ work view, labelled with the destination so the
-          navigation explains itself (the app name lives in the OS title bar).
-          The toolbar is the only navigation chrome (SPEC §7.8). */}
-      <button
-        type="button"
-        className="toolbar__title"
-        onClick={onHome}
-        title={
-          homeActive ? "Switch to the mod list" : "Switch to the dashboard"
-        }
+      <div
+        className="toolbar__workflow"
+        role="group"
+        aria-label="Translation workflow"
+        ref={actionsRef}
       >
-        <span aria-hidden>{homeActive ? "▤" : "⌂"}</span>{" "}
-        {homeActive ? "Mod list" : "Dashboard"}
-      </button>
-      <div className="toolbar__actions" ref={actionsRef}>
+        {/* Toggles dashboard ⇄ work view, labelled with the destination so the
+            navigation explains itself (the app name lives in the OS title bar).
+            The toolbar is the only navigation chrome (SPEC §7.8). */}
+        <button
+          type="button"
+          className="toolbar__title"
+          onClick={onHome}
+          title={
+            homeActive ? "Switch to the mod list" : "Switch to the dashboard"
+          }
+        >
+          <span aria-hidden>{homeActive ? "▤" : "⌂"}</span>{" "}
+          {homeActive ? "Mod list" : "Dashboard"}
+        </button>
         <button
           type="button"
           className="toolbar__primary"
@@ -1396,14 +1394,6 @@ function Toolbar({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => selectMenuAction(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                Export all mods to mod folders
-              </button>
-              <button
-                type="button"
-                role="menuitem"
                 onClick={() => selectMenuAction(onBuildZip)}
                 disabled={!buildZipEnabled}
               >
@@ -1412,14 +1402,6 @@ function Toolbar({
             </div>
           )}
         </div>
-        <button
-          type="button"
-          onClick={onReleaseNotes}
-          disabled={!releaseNotesEnabled}
-          title="Generate copy-ready release text for this package"
-        >
-          Release notes
-        </button>
         <div className="toolbar__menu">
           <button
             type="button"
@@ -1448,6 +1430,42 @@ function Toolbar({
             </div>
           )}
         </div>
+      </div>
+      <div
+        className="toolbar__utility"
+        role="group"
+        aria-label="Translation tools"
+      >
+        <div className="toolbar__filters">
+          {reviewTotal > 0 && (
+            <button
+              type="button"
+              className="panel__review"
+              title="Open the review queue on the dashboard"
+              onClick={onReview}
+            >
+              <span aria-hidden>⚑</span> {reviewTotal} to review
+            </button>
+          )}
+          {searchEnabled && (
+            <input
+              className="toolbar__search"
+              type="search"
+              placeholder="Search strings…"
+              aria-label="Search strings"
+              value={search}
+              onChange={(event) => onSearch(event.target.value)}
+            />
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={onReleaseNotes}
+          disabled={!releaseNotesEnabled}
+          title="Generate copy-ready release text for this translation package"
+        >
+          Translation Notes
+        </button>
         <button
           type="button"
           onClick={onOpenSettings}
@@ -1455,28 +1473,6 @@ function Toolbar({
         >
           Settings
         </button>
-      </div>
-      <div className="toolbar__filters">
-        {reviewTotal > 0 && (
-          <button
-            type="button"
-            className="panel__review"
-            title="Open the review queue on the dashboard"
-            onClick={onReview}
-          >
-            <span aria-hidden>⚑</span> {reviewTotal} to review
-          </button>
-        )}
-        {searchEnabled && (
-          <input
-            className="toolbar__search"
-            type="search"
-            placeholder="Search strings…"
-            aria-label="Search strings"
-            value={search}
-            onChange={(event) => onSearch(event.target.value)}
-          />
-        )}
       </div>
     </header>
   );

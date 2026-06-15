@@ -156,7 +156,7 @@ export function TranslationZipDialog({
             disabled={!preview || !version.trim()}
             onClick={() => onReleaseNotes(version.trim(), fileName)}
           >
-            Release notes
+            Translation Notes
           </button>
           <button
             type="button"

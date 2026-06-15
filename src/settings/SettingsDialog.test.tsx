@@ -211,7 +211,7 @@ describe("SettingsDialog", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Folders & language" }),
+      screen.getByRole("heading", { name: "Folders & Language" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
     expect(

@@ -326,11 +326,12 @@ See §7.4.
 - Brand button toggles dashboard ⇄ work view (§7.8); highlighted while the
   dashboard is shown
 - Scan / Re-scan (gold-tinted primary)
-- **Export...** menu: export the selected mod to its mod folder, export every
-  scanned mod to its mod folder, or build the selected package's release ZIP
-- Release Notes remains a direct action
+- **Export...** menu: export the selected mod to its mod folder or build the
+  selected package's release ZIP. The bulk Export All command remains
+  available internally but is not exposed in the toolbar.
 - **Import...** menu: import an external LLM batch translation
-- Settings
+- Right-aligned utilities: global review/search controls when available,
+  **Translation Notes**, and **Settings**
 - Global "⚑ N to review" pill (hidden at 0) — opens the dashboard review queue
 - Search bar (right-aligned; active in the work view)
 - _(v1.5)_ The status filter moved out of the toolbar into the string panel's
@@ -495,7 +496,7 @@ the step-by-step Setup Wizard:
   translation-first and AI is opt-in. The Test-connection result is an explicit
   state: green confirmed line on success, red diagnostic + Retry on failure.
 - _(v1.5, delivered)_ The flat list is a left-nav settings window
-  (Folders & language · Local AI · Glossary) per `docs/design/`; content and
+  (Folders & Language · Local AI · Glossary) per `docs/design/`; content and
   semantics stay as above.
 - _(v1.1, delivered)_ Settings includes a **Shortcuts** page for every
   user-facing table/editor keyboard command. It captures replacement
