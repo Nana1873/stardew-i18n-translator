@@ -174,8 +174,8 @@ describe("ResultTray", () => {
     expect(screen.getByRole("button", { name: "Open folder" })).toHaveClass(
       "resulttray__action",
     );
-    expect(screen.getByRole("button", { name: "Release notes" })).toHaveClass(
-      "resulttray__action",
-    );
+    expect(
+      screen.getByRole("button", { name: "Translation Notes" }),
+    ).toHaveClass("resulttray__action");
   });
 });

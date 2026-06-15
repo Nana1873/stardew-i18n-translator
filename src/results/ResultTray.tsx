@@ -185,7 +185,7 @@ export function ResultTray({
                       className="resulttray__action"
                       onClick={onReleaseNotes}
                     >
-                      Release notes
+                      Translation Notes
                     </button>
                   )}
                 </div>

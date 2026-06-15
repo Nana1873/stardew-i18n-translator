@@ -328,6 +328,13 @@ describe("App shell", () => {
     mockExportConfigured(false);
     render(<App />);
 
+    expect(
+      within(
+        await screen.findByRole("group", {
+          name: "Translation workflow",
+        }),
+      ).getByRole("button", { name: "Mod list" }),
+    ).toBeInTheDocument();
     fireEvent.click(
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
@@ -449,23 +456,6 @@ describe("App shell", () => {
     ).toBeNull();
   });
 
-  it("summarizes affected files and mods before Export All", async () => {
-    mockExportConfigured(true);
-    render(<App />);
-
-    await screen.findByText(/1 mods scanned/);
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Export..." })).toBeEnabled(),
-    );
-    chooseToolbarAction("Export...", "Export all mods to mod folders");
-
-    const dialog = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
-    });
-    expect(dialog).toHaveTextContent("1 existing translation file");
-    expect(dialog).toHaveTextContent("1 mod");
-  });
-
   it("previews and builds a translation-only package ZIP", async () => {
     const preview = {
       packageName: "Test Mod",
@@ -542,7 +532,7 @@ describe("App shell", () => {
       }),
     );
     fireEvent.click(
-      within(result).getByRole("button", { name: "Release notes" }),
+      within(result).getByRole("button", { name: "Translation Notes" }),
     );
     await screen.findByLabelText("Generated release notes");
     expect(
@@ -635,7 +625,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Browse all mods/ }),
     );
     fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Release notes" }));
+    fireEvent.click(screen.getByRole("button", { name: "Translation Notes" }));
     await screen.findByLabelText("Generated release notes");
     const dialog = screen.getByRole("dialog", {
       name: "Translation release notes",
@@ -700,7 +690,7 @@ describe("App shell", () => {
       target: { value: "1.1/beta" },
     });
     fireEvent.click(
-      within(zipDialog).getByRole("button", { name: "Release notes" }),
+      within(zipDialog).getByRole("button", { name: "Translation Notes" }),
     );
     const releaseDialog = await screen.findByRole("dialog", {
       name: "Translation release notes",
@@ -846,18 +836,37 @@ describe("App shell", () => {
     );
     fireEvent.click(await screen.findByText("Test Mod"));
 
+    const workflow = screen.getByRole("group", {
+      name: "Translation workflow",
+    });
+    const tools = screen.getByRole("group", { name: "Translation tools" });
     expect(
-      screen.getByRole("button", { name: "Release notes" }),
+      within(workflow).getByRole("button", { name: "Dashboard" }),
+    ).toBeInTheDocument();
+    expect(
+      within(workflow).getByRole("button", { name: "Scan" }),
+    ).toBeInTheDocument();
+    expect(
+      within(workflow).getByRole("button", { name: "Export..." }),
+    ).toBeInTheDocument();
+    expect(
+      within(workflow).getByRole("button", { name: "Import..." }),
+    ).toBeInTheDocument();
+    expect(
+      within(tools).getByRole("button", { name: "Translation Notes" }),
+    ).toBeInTheDocument();
+    expect(
+      within(tools).getByRole("button", { name: "Settings" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Export..." }));
     expect(
       screen.getByRole("menuitem", { name: "Export to mod folder" }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("menuitem", {
+      screen.queryByRole("menuitem", {
         name: "Export all mods to mod folders",
       }),
-    ).toBeEnabled();
+    ).toBeNull();
     expect(
       screen.getByRole("menuitem", { name: "Build release ZIP" }),
     ).toBeEnabled();

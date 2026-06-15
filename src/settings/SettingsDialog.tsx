@@ -202,7 +202,7 @@ export function SettingsDialog({
           >
             {(
               [
-                ["folders", "Folders & language"],
+                ["folders", "Folders & Language"],
                 ["ai", "Local AI"],
                 ["glossary", "Glossary"],
                 ["shortcuts", "Shortcuts"],
@@ -229,9 +229,9 @@ export function SettingsDialog({
               <section
                 id="settings-panel-folders"
                 role="tabpanel"
-                aria-label="Folders & language"
+                aria-label="Folders & Language"
               >
-                <h3 className="settings__title">Folders & language</h3>
+                <h3 className="settings__title">Folders & Language</h3>
                 <p className="settings__intro">
                   Review the active Stardew installation and translation
                   language.
