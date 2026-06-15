@@ -10,6 +10,7 @@ mod detection;
 mod export;
 mod glossary;
 mod llm;
+mod release_zip;
 mod scanner;
 mod settings;
 mod tokens;
@@ -178,6 +179,54 @@ fn export_mod(
 ) -> Result<export::ExportResult, String> {
     export::export_mod(&translation_config_dir(&app)?, &mod_unique_id, &files)
         .inspect_err(|error| log::error!("export_mod({mod_unique_id}) failed: {error}"))
+}
+
+#[tauri::command]
+fn preview_translation_zip(
+    app: AppHandle,
+    mods_path: String,
+    package_name: String,
+    target_lang: String,
+    target_language: String,
+    components: Vec<release_zip::ZipComponentInput>,
+) -> Result<release_zip::ZipPreview, String> {
+    release_zip::preview(
+        &translation_config_dir(&app)?,
+        Path::new(&mods_path),
+        &package_name,
+        &target_lang,
+        &target_language,
+        &components,
+    )
+}
+
+#[tauri::command]
+fn pick_translation_zip_destination(
+    app: AppHandle,
+    default_file_name: String,
+) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Save translation ZIP")
+        .set_file_name(release_zip::sanitize_file_name(&default_file_name))
+        .add_filter("ZIP archive", &["zip"])
+        .blocking_save_file();
+    match picked {
+        Some(file) => file
+            .into_path()
+            .map(|path| Some(path.display().to_string()))
+            .map_err(|error| format!("Could not read the selected path: {error}")),
+        None => Ok(None),
+    }
+}
+
+#[tauri::command]
+fn build_translation_zip(
+    app: AppHandle,
+    request: release_zip::ZipBuildRequest,
+) -> Result<release_zip::ZipBuildOutcome, String> {
+    release_zip::build(&translation_config_dir(&app)?, &request)
 }
 
 /// Outcome of an external LLM batch export (M4): where the file landed and what
@@ -448,6 +497,16 @@ fn open_mod_folder(app: AppHandle, path: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_folder(app: AppHandle, path: String) -> Result<(), String> {
+    if !Path::new(&path).is_dir() {
+        return Err(format!("Folder not found: {path}"));
+    }
+    app.opener()
+        .open_path(path, None::<String>)
+        .map_err(|error| format!("Could not open the folder: {error}"))
+}
+
+#[tauri::command]
 fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
     // Use the checked load so a corrupted settings file surfaces as a visible
     // error instead of silently resetting the user's configuration to defaults.
@@ -593,6 +652,9 @@ pub fn run() {
             save_string,
             save_strings,
             export_mod,
+            preview_translation_zip,
+            pick_translation_zip_destination,
+            build_translation_zip,
             export_llm_batch,
             import_llm_batch,
             import_llm_batch_path,
@@ -605,6 +667,7 @@ pub fn run() {
             log_frontend_error,
             open_logs_dir,
             open_mod_folder,
+            open_folder,
             load_settings,
             save_settings
         ])

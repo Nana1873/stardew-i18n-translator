@@ -235,6 +235,99 @@ export function exportMod(
   return invoke<ExportResult>("export_mod", { modUniqueId, files });
 }
 
+export interface ZipComponentInput {
+  uniqueId: string;
+  name: string;
+  version: string;
+  folderPath: string;
+  files: ExportFileInput[];
+}
+
+export interface ZipProblem {
+  modUniqueId: string;
+  modName: string;
+  relativeDir: string;
+  key: string;
+  reason: string;
+}
+
+export interface ZipEntryPreview {
+  modName: string;
+  archivePath: string;
+  strings: number;
+  outdated: number;
+  reviewNeeded: number;
+}
+
+export interface ZipPreview {
+  packageName: string;
+  selectedVersion: string;
+  versionSource: string;
+  versionConflicts: Array<{ modName: string; version: string }>;
+  defaultFileName: string;
+  targetLang: string;
+  targetLanguage: string;
+  entries: ZipEntryPreview[];
+  omittedComponents: string[];
+  warnings: string[];
+  problems: ZipProblem[];
+  totalStrings: number;
+}
+
+export interface ZipBuildOutcome {
+  path: string;
+  folder: string;
+  fileName: string;
+  entries: number;
+  strings: number;
+}
+
+export function previewTranslationZip(
+  modsPath: string,
+  packageName: string,
+  targetLang: string,
+  targetLanguage: string,
+  components: ZipComponentInput[],
+): Promise<ZipPreview> {
+  return invoke<ZipPreview>("preview_translation_zip", {
+    modsPath,
+    packageName,
+    targetLang,
+    targetLanguage,
+    components,
+  });
+}
+
+export function pickTranslationZipDestination(
+  defaultFileName: string,
+): Promise<string | null> {
+  return invoke<string | null>("pick_translation_zip_destination", {
+    defaultFileName,
+  });
+}
+
+export function buildTranslationZip(
+  modsPath: string,
+  packageName: string,
+  targetLang: string,
+  targetLanguage: string,
+  components: ZipComponentInput[],
+  destination: string,
+  overwrite: boolean,
+): Promise<ZipBuildOutcome> {
+  return invoke<ZipBuildOutcome>("build_translation_zip", {
+    request: {
+      modsPath,
+      packageName,
+      targetLang,
+      targetLanguage,
+      components,
+      destination,
+      overwrite,
+    },
+  });
+}
+
 /** One string of an external LLM batch export (M4). */
 export interface LlmBatchItem {
   relativeDir: string;
@@ -417,6 +510,10 @@ export function openLogsDir(): Promise<void> {
 /** Open a mod's folder in the OS file manager. */
 export function openModFolder(path: string): Promise<void> {
   return invoke<void>("open_mod_folder", { path });
+}
+
+export function openFolder(path: string): Promise<void> {
+  return invoke<void>("open_folder", { path });
 }
 
 export function loadSettings(): Promise<AppSettings> {

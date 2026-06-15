@@ -52,6 +52,11 @@ When you export, untranslated entries are left out so SMAPI can fall back to
 the original English text. Token mismatches are caught before anything is
 written.
 
+For sharing a translation, **Build translation ZIP** creates a clean,
+installable archive for the selected mod package. It preserves multi-component
+folder paths and includes only the generated target-language `i18n` files, not
+the original mod's manifests, assets, DLLs, or backups.
+
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 
 ## Optional Glossary
