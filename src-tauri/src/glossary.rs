@@ -39,11 +39,17 @@ pub struct Glossary {
 }
 
 /// Official glossary terms (english -> target) that occur as whole words in
-/// `source`. A faithful port of the editor's `matchGlossary` (TS): case-
-/// insensitive, terms shorter than 3 chars skipped, word boundaries required,
+/// `source`. A faithful port of the editor's `matchGlossary` (TS): **case-
+/// sensitive**, terms shorter than 3 chars skipped, word boundaries required,
 /// capped at 15. Used to inject term guidance into the local-LLM prompt (M6).
+///
+/// Matching is case-sensitive on purpose: named entities are capitalized
+/// (`Parsnip`, `Abigail`), so a capitalized UI term like `Play` (-> `Spielen`)
+/// must not fire on the common lowercase verb in prose ("my best play ever").
+/// The glossary is a soft hint, so a missed lowercase mention is cheap while a
+/// wrong hint poisons the prompt — precision is worth more than recall here.
 pub fn match_terms(source: &str, glossary: &Glossary) -> Vec<(String, String)> {
-    let lower: Vec<char> = source.to_lowercase().chars().collect();
+    let haystack: Vec<char> = source.chars().collect();
     let is_word = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric());
     let mut out: Vec<(String, String)> = Vec::new();
 
@@ -51,10 +57,14 @@ pub fn match_terms(source: &str, glossary: &Glossary) -> Vec<(String, String)> {
         if term.chars().count() < 3 {
             continue;
         }
-        let needle: Vec<char> = term.to_lowercase().chars().collect();
-        if let Some(idx) = window_position(&lower, &needle) {
-            let before = if idx == 0 { None } else { lower.get(idx - 1) };
-            let after = lower.get(idx + needle.len());
+        let needle: Vec<char> = term.chars().collect();
+        if let Some(idx) = window_position(&haystack, &needle) {
+            let before = if idx == 0 {
+                None
+            } else {
+                haystack.get(idx - 1)
+            };
+            let after = haystack.get(idx + needle.len());
             if is_word(before) || is_word(after) {
                 continue;
             }
@@ -165,8 +175,31 @@ fn glossary_term(english: &str, target: &str) -> Option<(String, String)> {
     if en.is_empty() || tgt.is_empty() || en.eq_ignore_ascii_case(tgt) {
         return None;
     }
+    // The glossary is strictly named entities and identifiers (SPEC §5), not
+    // dialogue or UI vocabulary. Two cheap signals keep generic words out:
+    //  - a named entity is capitalized (`Parsnip`, `Abigail`, `Pelican Town`),
+    //    so a lowercase value ("and", "with", "good", "the farm") is prose and
+    //    must never become a forced "official term".
+    //  - common UI/menu commands ("Play", "Quit", "Yes", "Back") are capitalized
+    //    and slip past the case test, so a small stoplist drops them. Forcing
+    //    these rigidifies ordinary translation (e.g. "Right" -> "Rechts" when it
+    //    means "correct").
+    if !en.chars().next().is_some_and(char::is_uppercase) {
+        return None;
+    }
+    if is_common_ui_word(en) {
+        return None;
+    }
     if en.chars().count() > 30 || en.split_whitespace().count() > 4 {
         return None; // exclude descriptions / dialogue prose
+    }
+    // A clean term maps roughly 1:1; German compounds rather than expands, so a
+    // target with several more words than the source is a mis-paired dialogue
+    // fragment (e.g. "head" -> "meinen schmerzenden Kopf", "back" -> "meinen
+    // wunden Rücken"), not a named entity. Allow a single extra word for the
+    // occasional legitimate expansion.
+    if tgt.split_whitespace().count() > en.split_whitespace().count() + 1 {
+        return None;
     }
     // Exclude tokens, multi-line, and sentence-like values.
     if en.contains(['{', '}', '[', ']', '\n', '\r'])
@@ -176,6 +209,21 @@ fn glossary_term(english: &str, target: &str) -> Option<(String, String)> {
         return None;
     }
     Some((en.to_string(), tgt.to_string()))
+}
+
+/// Common UI / menu / command words that leak in from the game's UI string
+/// assets but are not game-content terms. Compared case-insensitively, so both
+/// `Play` and a stray `play` are excluded. Kept deliberately small and stable
+/// (these menu words do not proliferate); item/NPC/location names never collide
+/// with it.
+fn is_common_ui_word(term: &str) -> bool {
+    const STOPWORDS: &[&str] = &[
+        "yes", "no", "ok", "okay", "cancel", "back", "next", "previous", "play", "pause", "quit",
+        "exit", "menu", "options", "settings", "save", "load", "continue", "help", "done", "close",
+        "open", "skip", "start", "stop", "new", "delete", "remove", "add", "edit", "on", "off",
+        "book", "right", "left", "up", "down", "and", "or", "with", "good", "bad", "ran", "run",
+    ];
+    STOPWORDS.iter().any(|word| term.eq_ignore_ascii_case(word))
 }
 
 fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
@@ -233,14 +281,79 @@ mod tests {
             ..Default::default()
         };
 
-        // "Parsnip" matches (case-insensitive, whole word); "Pufferfish" absent.
-        let hits = match_terms("I planted a parsnip today.", &glossary);
+        // "Parsnip" matches (case-sensitive, whole word); "Pufferfish" absent.
+        let hits = match_terms("I planted a Parsnip today.", &glossary);
         assert_eq!(hits, vec![("Parsnip".to_string(), "Pastinake".to_string())]);
 
         // Substring inside another word must not match.
-        assert!(match_terms("parsnips everywhere", &glossary).is_empty());
+        assert!(match_terms("Parsnips everywhere", &glossary).is_empty());
         // Too-short term is never matched even as a whole word.
         assert!(match_terms("an ox cart", &glossary).is_empty());
+    }
+
+    #[test]
+    fn match_terms_is_case_sensitive_to_avoid_ui_false_friends() {
+        // A capitalized UI button term (`Play` -> `Spielen`) must not fire on
+        // the common lowercase verb in dialogue prose ("my best play ever").
+        let mut terms = HashMap::new();
+        terms.insert("Play".to_string(), "Spielen".to_string());
+        let glossary = Glossary {
+            terms,
+            ..Default::default()
+        };
+        assert!(match_terms("Marrying you was my best play ever.", &glossary).is_empty());
+        // The genuine UI element (capitalized) still matches.
+        assert_eq!(
+            match_terms("Press Play to start.", &glossary),
+            vec![("Play".to_string(), "Spielen".to_string())]
+        );
+    }
+
+    #[test]
+    fn glossary_build_rejects_non_named_entities() {
+        // Lowercase function words / common verbs leaking from UI string assets
+        // are prose, not named entities — rejected by the capitalization rule.
+        assert_eq!(glossary_term("and", "und"), None);
+        assert_eq!(glossary_term("with", "mit"), None);
+        assert_eq!(glossary_term("good", "gut"), None);
+        assert_eq!(glossary_term("the farm", "der Hof"), None);
+        assert_eq!(glossary_term("away from", "weg von"), None);
+        // Capitalized UI/menu commands slip past the case test -> stoplist drops.
+        assert_eq!(glossary_term("Play", "Spielen"), None);
+        assert_eq!(glossary_term("Quit", "Verlassen"), None);
+        assert_eq!(glossary_term("Yes", "Ja"), None);
+        assert_eq!(glossary_term("Right", "Rechts"), None);
+        // Genuine named entities are kept.
+        assert_eq!(
+            glossary_term("Parsnip", "Pastinake"),
+            Some(("Parsnip".to_string(), "Pastinake".to_string()))
+        );
+        assert_eq!(
+            glossary_term("Pelican Town", "Pelikanstadt"),
+            Some(("Pelican Town".to_string(), "Pelikanstadt".to_string()))
+        );
+        assert_eq!(
+            glossary_term("Spring", "Frühling"),
+            Some(("Spring".to_string(), "Frühling".to_string()))
+        );
+    }
+
+    #[test]
+    fn glossary_build_rejects_mispaired_dialogue_fragments() {
+        // A one-word (capitalized) value paired with a longer localized dialogue
+        // fragment is a mis-pairing, not a named entity — caught by the word-ratio
+        // rule (the capitalized source clears the named-entity check first).
+        assert_eq!(glossary_term("Head", "mein ganzer schmerzender Kopf"), None);
+        assert_eq!(glossary_term("Garden", "mein schöner kleiner Garten"), None);
+        // A clean term (1:1) and a modest expansion (+1 word) are still kept.
+        assert_eq!(
+            glossary_term("Parsnip", "Pastinake"),
+            Some(("Parsnip".to_string(), "Pastinake".to_string()))
+        );
+        assert_eq!(
+            glossary_term("Mayor", "Der Bürgermeister"),
+            Some(("Mayor".to_string(), "Der Bürgermeister".to_string()))
+        );
     }
 
     #[test]

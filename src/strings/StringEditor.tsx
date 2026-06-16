@@ -61,21 +61,23 @@ interface StringEditorProps {
   shortcuts?: ResolvedShortcuts;
 }
 
-/** Official glossary terms that occur as whole words in the source text. */
+/** Official glossary terms that occur as whole words in the source text.
+ * Case-sensitive (kept in sync with the Rust `match_terms`): named entities are
+ * capitalized, so a capitalized UI term like `Play` must not match the common
+ * lowercase verb in prose. A soft hint — precision beats recall here. */
 function matchGlossary(
   source: string,
   glossary: Record<string, string> | null | undefined,
 ): Array<{ term: string; translation: string }> {
   if (!glossary) return [];
-  const lower = source.toLowerCase();
   const out: Array<{ term: string; translation: string }> = [];
   const isWord = (c: string | undefined) =>
     c !== undefined && /[\p{L}\p{N}]/u.test(c);
   for (const [term, translation] of Object.entries(glossary)) {
     if (term.length < 3) continue;
-    const idx = lower.indexOf(term.toLowerCase());
+    const idx = source.indexOf(term);
     if (idx === -1) continue;
-    if (isWord(lower[idx - 1]) || isWord(lower[idx + term.length])) continue;
+    if (isWord(source[idx - 1]) || isWord(source[idx + term.length])) continue;
     out.push({ term, translation });
     if (out.length >= 15) break;
   }
