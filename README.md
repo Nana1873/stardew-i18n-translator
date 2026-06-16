@@ -129,4 +129,3 @@ Copyright (C) 2026 Nana.
 
 Source code is available here and licensed under the
 [GNU General Public License v3.0 or later](LICENSE).
-affiliated with or endorsed by ConcernedApe.
