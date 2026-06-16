@@ -409,7 +409,7 @@ mod tests {
             terms,
             ..Default::default()
         };
-        let items = vec![item("i18n", "k", "A fresh parsnip.")];
+        let items = vec![item("i18n", "k", "A fresh Parsnip.")];
         let batch = build_batch("M", "m", "de", "German", &items, Some(&glossary));
 
         assert_eq!(batch["glossary"]["Parsnip"], "Pastinake");
