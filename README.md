@@ -1,15 +1,19 @@
 # Stardew i18n Translator
 
-A portable Windows app for translating Stardew Valley mod `i18n` files without
+A portable Windows app for translating Stardew Valley mod i18n files without
 digging through thousands of JSON lines.
+
+I mainly made this because translating directly in text editors gets annoying fast,
+and it is way too easy to accidentally break placeholders, tokens, JSON formatting,
+or some random mod-specific thing.
 
 Point it at your Mods folder, choose a language, and start translating. The app
 imports existing work, tracks progress, checks Stardew-specific tokens, and
 exports clean translation files with backups.
 
 > [!IMPORTANT]
-> This project was developed with substantial help from AI coding agents.
-> The maintainer guides the project direction and tests releases before publishing.
+> This project was built with a lot of help from AI coding agents.
+> I guide the project direction, check the results, test releases, and decide what ships.
 
 ![Stardew i18n Translator dashboard](docs/assets/screenshots/dashboard.png)
 
@@ -125,6 +129,4 @@ Copyright (C) 2026 Nana.
 
 Source code is available here and licensed under the
 [GNU General Public License v3.0 or later](LICENSE).
-
-Stardew Valley is a trademark of ConcernedApe. This community project is not
 affiliated with or endorsed by ConcernedApe.
