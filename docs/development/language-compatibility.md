@@ -9,23 +9,24 @@ quality or native-speaker accuracy.
 
 ## Supported Matrix
 
-| Code | Language   | Primary compatibility concern                 |
-| ---- | ---------- | --------------------------------------------- |
-| `de` | German     | Existing language-specific LLM instructions   |
-| `es` | Spanish    | Accented Latin characters                     |
-| `fr` | French     | Accents, apostrophes, and spacing             |
-| `hu` | Hungarian  | Double-accent characters such as `ő` and `ű`  |
-| `it` | Italian    | Apostrophes and accented Latin characters     |
-| `ja` | Japanese   | Non-Latin text without whitespace assumptions |
-| `ko` | Korean     | Hangul UTF-8 round trips                      |
-| `pt` | Portuguese | `pt.json` and SMAPI `pt-BR.json` fallback     |
-| `ru` | Russian    | Cyrillic UTF-8 round trips                    |
-| `tr` | Turkish    | Dotted and dotless `i` characters             |
-| `zh` | Chinese    | Han text without whitespace assumptions       |
+| Code | Language   | Primary compatibility concern                    |
+| ---- | ---------- | ------------------------------------------------ |
+| `de` | German     | Existing language-specific LLM instructions      |
+| `es` | Spanish    | Accented Latin characters                        |
+| `fr` | French     | Accents, apostrophes, and spacing                |
+| `hu` | Hungarian  | Double-accent characters such as `ő` and `ű`     |
+| `it` | Italian    | Apostrophes and accented Latin characters        |
+| `ja` | Japanese   | Non-Latin text without whitespace assumptions    |
+| `ko` | Korean     | Hangul UTF-8 round trips                         |
+| `pt` | Portuguese | `pt.json` and SMAPI `pt-BR.json` fallback        |
+| `ru` | Russian    | Cyrillic UTF-8 round trips                       |
+| `tr` | Turkish    | Dotted and dotless `i` characters                |
+| `zh` | Chinese    | Han text without whitespace assumptions          |
+| `th` | Thai       | Custom-language-mod target; no official glossary |
 
 ## Automated Verification
 
-Use parameterized tests over all 11 target codes to verify:
+Use parameterized tests over all 12 target codes to verify:
 
 1. The language can be selected and persisted in settings.
 2. Scanning recognizes the expected target file for the selected language.
@@ -63,6 +64,17 @@ Saved working state is isolated under `Data/language-state/<code>/`, so
 switching target languages in one portable folder cannot leak edits or review
 statuses between languages. Existing `Data/translations/` state is migrated
 once into the language active during the upgrade.
+
+### Automated Result (2026-06-17)
+
+Thai (`th`) added as a custom-language-mod target (SV 1.6
+`Data/AdditionalLanguages`). Stardew ships no Thai content, so it has no official
+glossary and the glossary build is disabled for it in the UI. Thai passes the same
+parameterized technical matrix — settings persistence, scan/import, exact Unicode
+round trips, saved edits, canonical export filename `th.json` and key order,
+protected tokens, external LLM batch, and local-AI prompt construction. Release
+notes have no Thai template and use the deterministic English fallback while
+naming the language as Thai.
 
 ## Manual Smoke Test
 
@@ -113,10 +125,11 @@ portable Windows workflow across the main compatibility classes.
 | `ru` | Pass      | Not required |        |            | Covered by complete automated matrix.      |
 | `tr` | Pass      | Not required |        |            | Covered by complete automated matrix.      |
 | `zh` | Pass      | Not required |        |            | Covered by complete automated matrix.      |
+| `th` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
 
 ## Acceptance Criteria
 
-- All 11 target codes pass the automated matrix.
+- All 12 target codes pass the automated matrix.
 - The representative `de`, `ja`, and `pt` set passes the packaged portable
   Windows smoke workflow.
 - No test loses, normalizes, or corrupts Unicode text.

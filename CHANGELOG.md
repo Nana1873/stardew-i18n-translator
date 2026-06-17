@@ -8,6 +8,16 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Added
+
+- Thai (`th`) as a selectable target language. Stardew has no native Thai
+  content, so it targets a custom-language mod (SV 1.6 `Data/AdditionalLanguages`)
+  and has no official glossary; translation, export (`th.json`), batch, and
+  local-AI all work, and the glossary build is disabled for it with an
+  explanatory note. Languages the game does not ship are now distinguished by a
+  data-driven `gameLocale` property, so future custom-language targets are a
+  single list entry.
+
 ## [1.3.0] - 2026-06-15
 
 ### Added

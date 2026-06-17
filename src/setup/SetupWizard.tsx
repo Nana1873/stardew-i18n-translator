@@ -18,7 +18,11 @@ import {
   pickFolder,
   validateStardewPath,
 } from "../tauri/commands";
-import { SOURCE_LANGUAGE_LABEL, TARGET_LANGUAGES } from "../languages";
+import {
+  SOURCE_LANGUAGE_LABEL,
+  TARGET_LANGUAGES,
+  gameSupportsLanguage,
+} from "../languages";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -350,7 +354,16 @@ export function SetupWizard({
                   </p>
                 </div>
 
-                {glossary === null ? (
+                {targetLang && !gameSupportsLanguage(targetLang) ? (
+                  <StatusCard
+                    tone="neutral"
+                    title="No glossary for this language"
+                  >
+                    Stardew Valley doesn’t include this language, so no official
+                    glossary is available. You can still translate and export
+                    fully.
+                  </StatusCard>
+                ) : glossary === null ? (
                   <StatusCard tone="neutral" title="Checking game content...">
                     Looking for the files needed to build your glossary.
                   </StatusCard>

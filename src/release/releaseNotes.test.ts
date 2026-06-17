@@ -92,6 +92,20 @@ describe("generateReleaseNotes", () => {
     expect(result.text).not.toContain("Enthaltene Komponenten");
   });
 
+  it("names the real target language when falling back (e.g. Thai)", () => {
+    const result = generateReleaseNotes(
+      { ...PREVIEW, targetLang: "th", targetLanguage: "Thai" },
+      "2.0",
+      null,
+      "th",
+    );
+    expect(result.fellBackToEnglish).toBe(true);
+    // English template, but the draft must name Thai — not "English".
+    expect(result.text).toContain("Thai translation for Sample Pack 2.0");
+    expect(result.text).toContain("Thai (th)");
+    expect(result.text).not.toContain("English translation for");
+  });
+
   it("maintains a template for every supported target language", () => {
     for (const language of [
       "de",

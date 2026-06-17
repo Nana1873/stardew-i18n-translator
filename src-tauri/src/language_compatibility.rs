@@ -89,6 +89,14 @@ const LANGUAGES: &[LanguageCase] = &[
         imported: "你好，{{PlayerName}}。今天真好。",
         edited: "欢迎你，{{PlayerName}}。",
     },
+    // Thai: not natively supported by Stardew (custom-language-mod target, no
+    // glossary). Exercises the same workflow as every other code via th.json.
+    LanguageCase {
+        code: "th",
+        label: "Thai",
+        imported: "สวัสดี {{PlayerName}} วันนี้อากาศดี",
+        edited: "ยินดีต้อนรับ {{PlayerName}}",
+    },
 ];
 
 fn write(path: &Path, body: &str) {

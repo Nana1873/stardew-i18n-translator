@@ -22,7 +22,11 @@ import {
   openLogsDir,
   openUrl,
 } from "../tauri/commands";
-import { SOURCE_LANGUAGE_LABEL, TARGET_LANGUAGES } from "../languages";
+import {
+  SOURCE_LANGUAGE_LABEL,
+  TARGET_LANGUAGES,
+  gameSupportsLanguage,
+} from "../languages";
 import {
   DEFAULT_SHORTCUTS,
   SHORTCUT_COMMANDS,
@@ -292,7 +296,13 @@ export function SettingsDialog({
                   Build optional official-term hints from your locally unpacked
                   Stardew Valley content.
                 </p>
-                {glossary === null ? (
+                {targetLang && !gameSupportsLanguage(targetLang) ? (
+                  <p className="wizard__muted">
+                    Stardew Valley doesn’t include this language, so no official
+                    glossary is available. Translation and export still work
+                    fully.
+                  </p>
+                ) : glossary === null ? (
                   <p className="wizard__muted">
                     Checking for unpacked game content…
                   </p>
