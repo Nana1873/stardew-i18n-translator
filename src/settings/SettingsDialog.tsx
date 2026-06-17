@@ -95,11 +95,13 @@ export function SettingsDialog({
     settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
   );
 
-  // Check for StardewXnbHack-unpacked content (drives the glossary section).
+  // Check unpacked content + the per-language cache (drives the glossary
+  // section). Re-runs when the target language changes so the panel reflects the
+  // selected language's own `glossary-<lang>.json`.
   useEffect(() => {
     if (!settings.stardewPath) return;
     let active = true;
-    glossaryStatus(settings.stardewPath)
+    glossaryStatus(settings.stardewPath, targetLang)
       .then((status) => active && setGlossary(status))
       .catch(
         () =>
@@ -113,7 +115,7 @@ export function SettingsDialog({
     return () => {
       active = false;
     };
-  }, [settings.stardewPath]);
+  }, [settings.stardewPath, targetLang]);
 
   async function handleBuildGlossary() {
     if (!settings.stardewPath) return;

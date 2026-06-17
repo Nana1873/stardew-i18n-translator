@@ -144,8 +144,14 @@ export function App() {
   const [reloadToken, setReloadToken] = useState(0);
   const [dropPaths, setDropPaths] = useState<string[] | null>(null);
 
-  function refreshGlossary() {
-    loadGlossary()
+  function refreshGlossary(lang: string | null | undefined) {
+    // The glossary is cached per target language; with none selected, or for a
+    // game-unsupported language (no cache file), there are simply no hints.
+    if (!lang) {
+      setGlossaryTerms(null);
+      return;
+    }
+    loadGlossary(lang)
       .then((g) =>
         setGlossaryTerms(g && g.entries.length > 0 ? g.entries : null),
       )
@@ -179,6 +185,7 @@ export function App() {
         setSettings(loadedSettings);
         const complete = setupComplete(loadedSettings);
         setWizardOpen(!complete);
+        refreshGlossary(loadedSettings.targetLang); // load the active language's cache
         if (complete) void runScan(loadedSettings, false, () => active);
       })
       .catch((error) => {
@@ -188,7 +195,6 @@ export function App() {
       .finally(() => {
         if (active) setLoaded(true);
       });
-    refreshGlossary();
     return () => {
       active = false;
     };
@@ -205,13 +211,16 @@ export function App() {
     };
     await persist(merged);
     setWizardOpen(false);
-    refreshGlossary(); // the wizard may have just built the glossary
+    // The wizard may have built a glossary, or the target language changed —
+    // reload the cache for the now-active language.
+    refreshGlossary(merged.targetLang);
   }
 
   async function handleSaveSettings(next: AppSettings) {
     await persist(next);
     setSettingsOpen(false);
-    refreshGlossary(); // settings may have just built the glossary
+    // Settings may have built a glossary or switched language — reload per-language.
+    refreshGlossary(next.targetLang);
   }
 
   async function persist(next: AppSettings) {
@@ -427,6 +436,7 @@ export function App() {
           llm!.baseUrl,
           llm!.model,
           source,
+          settings?.targetLang ?? "",
           languageLabel,
           section,
           llm!.temperature,

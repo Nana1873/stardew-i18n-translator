@@ -156,15 +156,21 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 ### Storage
 
-- Cached as `Data/glossary.json` beside the portable executable.
+- Cached **per language** as `Data/glossary-<lang>.json` beside the portable
+  executable (e.g. `glossary-de.json`). The cache is keyed by language, so a
+  game-unsupported target (e.g. Thai `th`) never produces a file and therefore
+  never receives official-term hints — the editor, local-AI prompt, and batch
+  export all see no glossary for it, and a build for one language can never leak
+  into another.
 - Structure (v1.4.0, `format: 2`): `{ format, sourceLang, targetLang, termCount,
 entries }`, where each entry is a typed term
   `{ source, target, kind, asset, key }` (`kind` ∈ item · bigCraftable · weapon ·
   tool · clothing · npc · location · season). Caches written by earlier versions
   (the untyped `{ terms: { … } }` map) are ignored on load and the UI recommends a
-  rebuild.
-- Rebuildable on demand (e.g., after game update).
-- v1 stores only the active `default → <target>` language pair.
+  rebuild. A pre-v1.4.0 single `glossary.json` is auto-migrated to its
+  per-language name on first load.
+- Rebuildable on demand (e.g., after game update). Each built language keeps its
+  own cache, so switching back to a previously built language needs no rebuild.
 
 ### Glossary Scope
 

@@ -68,7 +68,7 @@ export function SetupWizard({
     if (step !== 4 || !stardewPath) return;
     let active = true;
     setGlossary(null);
-    glossaryStatus(stardewPath)
+    glossaryStatus(stardewPath, targetLang)
       .then((status) => {
         if (active) setGlossary(status);
       })
@@ -83,7 +83,7 @@ export function SetupWizard({
     return () => {
       active = false;
     };
-  }, [step, stardewPath]);
+  }, [step, stardewPath, targetLang]);
 
   async function handleBuildGlossary() {
     setGlossaryBuilding(true);

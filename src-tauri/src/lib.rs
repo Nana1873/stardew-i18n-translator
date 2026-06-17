@@ -265,7 +265,9 @@ fn export_llm_batch(
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
 
-    let glossary = glossary::load(&config_dir(&app)?);
+    // Per-language glossary: unsupported languages have no cache, so their batch
+    // glossary excerpt is empty rather than carrying another language's terms.
+    let glossary = glossary::load(&config_dir(&app)?, &target_lang);
     let batch_json = batch::build_batch(
         &mod_name,
         &mod_unique_id,
@@ -381,24 +383,30 @@ fn build_glossary(
 }
 
 #[tauri::command]
-fn load_glossary(app: AppHandle) -> Result<Option<glossary::Glossary>, String> {
-    Ok(glossary::load(&config_dir(&app)?))
+fn load_glossary(
+    app: AppHandle,
+    target_lang: String,
+) -> Result<Option<glossary::Glossary>, String> {
+    let config = config_dir(&app)?;
+    glossary::migrate_legacy_cache(&config);
+    Ok(glossary::load(&config, &target_lang))
 }
 
 #[tauri::command]
 fn glossary_status(
     app: AppHandle,
     stardew_path: String,
+    target_lang: String,
 ) -> Result<glossary::GlossaryStatus, String> {
     let config = config_dir(&app)?;
-    let loaded = glossary::load(&config);
-    // A glossary.json that exists but failed to load is an old/invalid cache
-    // (untyped v1) — the UI surfaces a "rebuild recommended" note.
-    let outdated_cache = loaded.is_none() && glossary::cache_present(&config);
-    let cached = loaded.map(|g| glossary::GlossaryInfo {
+    glossary::migrate_legacy_cache(&config);
+    let cached = glossary::load(&config, &target_lang).map(|g| glossary::GlossaryInfo {
         target_lang: g.target_lang,
         term_count: g.term_count,
     });
+    // A legacy single `glossary.json` still present after migration is an
+    // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
+    let outdated_cache = glossary::legacy_cache_present(&config);
     Ok(glossary::GlossaryStatus {
         unpacked_present: glossary::unpacked_present(Path::new(&stardew_path)),
         cached,
@@ -422,12 +430,16 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
 /// Injects matching official-glossary terms into the prompt and validates the
 /// result's protected tokens (with one stricter retry). `temperature` is the
 /// optional user setting (None = low default).
+// Tauri delivers each field as a named argument from the JS bridge, so the flat
+// parameter list mirrors the `translateString` call rather than a wrapper struct.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 async fn translate_string(
     app: AppHandle,
     base_url: String,
     model: String,
     source: String,
+    target_lang: String,
     target_language: String,
     section: Option<String>,
     temperature: Option<f32>,
@@ -435,7 +447,9 @@ async fn translate_string(
     if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
         return Err("Base URL must start with http:// or https://.".to_string());
     }
-    let glossary_pairs = glossary::load(&config_dir(&app)?)
+    // Load the glossary for the active language only: an unsupported language has
+    // no cache file, so no official terms are ever injected into its prompt.
+    let glossary_pairs = glossary::load(&config_dir(&app)?, &target_lang)
         .map(|g| glossary::match_terms(&source, &g))
         .unwrap_or_default();
     llm::translate(
