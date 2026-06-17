@@ -393,8 +393,13 @@ export function generateReleaseNotes(
     0,
   );
   const problemCount = preview.problems.length;
+  // Use the real target language name when emitting English — either an
+  // explicit English draft, or a fallback for a language with no template (e.g.
+  // Thai). Otherwise the localized template names itself.
   const language =
-    outputLanguage === "en" ? preview.targetLanguage : template.languageName;
+    outputLanguage === "en" || fellBackToEnglish
+      ? preview.targetLanguage
+      : template.languageName;
   const status =
     problemCount === 0
       ? template.ready
