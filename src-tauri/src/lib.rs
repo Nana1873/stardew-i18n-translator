@@ -480,14 +480,14 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
 
 /// Append a frontend-side error to the same diagnostic log file as the backend
 /// (v1.1.1). The webview cannot write the portable log itself, so this command
-/// is the bridge: a caught UI error still lands in `Data/logs/` for bug reports.
+/// is the bridge: a caught UI error still lands in `data/logs/` for bug reports.
 /// Fire-and-forget — logging must never itself surface an error to the user.
 #[tauri::command]
 fn log_frontend_error(context: String, message: String) {
     log::error!("[frontend] {context}: {message}");
 }
 
-/// Open the portable `Data/logs/` folder in the OS file manager (v1.1.1) so a
+/// Open the portable `data/logs/` folder in the OS file manager (v1.1.1) so a
 /// user can attach the current log file to a GitHub bug report.
 #[tauri::command]
 fn open_logs_dir(app: AppHandle) -> Result<(), String> {
@@ -552,7 +552,7 @@ fn portable_data_dir_for(executable: &Path) -> Result<PathBuf, String> {
     executable
         .parent()
         .filter(|directory| !directory.as_os_str().is_empty())
-        .map(|directory| directory.join("Data"))
+        .map(|directory| directory.join("data"))
         .ok_or_else(|| {
             format!(
                 "Could not resolve the folder containing {}.",
@@ -620,7 +620,7 @@ fn translation_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 /// Build the diagnostic-logging plugin (v1.1.1). Writes a rotating log file to
-/// the portable `Data/logs/` folder so it travels with the app and can be
+/// the portable `data/logs/` folder so it travels with the app and can be
 /// attached to a bug report — never to the OS log dir. Local only: there is no
 /// network target, consistent with the no-telemetry guarantee. Best-effort: if
 /// the portable path can't be resolved we log to stderr only, and the writable
@@ -725,7 +725,7 @@ mod portable_tests {
         let executable = Path::new(r"E:\Tools\Stardew Translator\stardew-i18n-translator.exe");
         assert_eq!(
             portable_data_dir_for(executable).unwrap(),
-            PathBuf::from(r"E:\Tools\Stardew Translator\Data")
+            PathBuf::from(r"E:\Tools\Stardew Translator\data")
         );
     }
 
@@ -739,7 +739,7 @@ mod portable_tests {
         let executable = Path::new(r"E:\Tools\Stardew Translator\stardew-i18n-translator.exe");
         assert_eq!(
             portable_logs_dir_for(executable).unwrap(),
-            PathBuf::from(r"E:\Tools\Stardew Translator\Data\logs")
+            PathBuf::from(r"E:\Tools\Stardew Translator\data\logs")
         );
     }
 

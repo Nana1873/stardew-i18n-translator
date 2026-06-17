@@ -123,7 +123,7 @@ fn target_body(text: &str) -> String {
 fn every_advertised_language_passes_the_complete_technical_workflow() {
     for language in LANGUAGES {
         let root = crate::test_support::temp_dir(&format!("language-{}", language.code));
-        let config = root.join("Data");
+        let config = root.join("data");
         let mods = root.join("Mods");
         let mod_dir = mods.join("Synthetic Mod");
         let i18n = mod_dir.join("i18n");
@@ -362,7 +362,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
 #[test]
 fn switching_languages_in_one_portable_data_folder_never_leaks_saved_work() {
     let root = crate::test_support::temp_dir("language-switch");
-    let config = root.join("Data");
+    let config = root.join("data");
     let mods = root.join("Mods");
     let mod_dir = mods.join("Synthetic Mod");
     let i18n = mod_dir.join("i18n");

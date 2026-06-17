@@ -44,7 +44,7 @@ functionality before its approved GitHub milestone.
   email addresses, or local absolute paths.
 - Use only sanitized fixtures under `tests/fixtures/`.
 - Keep the app portable: application state belongs beside the executable in
-  `Data/`, and release archives must contain no user data.
+  `data/`, and release archives must contain no user data.
 
 ## Implement conservatively
 

@@ -433,11 +433,16 @@ fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
     Some(map)
 }
 
-/// Per-language cache file path: `glossary-<lang>.json`. The language code is
-/// sanitized to ASCII alphanumerics + `-` before it touches the filename (mirrors
-/// the `language-state/<lang>/` rule in `translations.rs`) — defense-in-depth
-/// against path traversal from custom codes (#156 framework). Returns `None` for
-/// an empty/all-stripped code.
+/// The folder holding the per-language cache files (`<config>/glossary/`).
+fn glossary_dir(config_dir: &Path) -> PathBuf {
+    config_dir.join("glossary")
+}
+
+/// Per-language cache file path: `glossary/glossary-<lang>.json`. The language
+/// code is sanitized to ASCII alphanumerics + `-` before it touches the filename
+/// (mirrors the `language-state/<lang>/` rule in `translations.rs`) —
+/// defense-in-depth against path traversal from custom codes (#156 framework).
+/// Returns `None` for an empty/all-stripped code.
 fn glossary_path(config_dir: &Path, lang: &str) -> Option<PathBuf> {
     let safe: String = lang
         .trim()
@@ -447,11 +452,12 @@ fn glossary_path(config_dir: &Path, lang: &str) -> Option<PathBuf> {
     if safe.is_empty() {
         return None;
     }
-    Some(config_dir.join(format!("glossary-{safe}.json")))
+    Some(glossary_dir(config_dir).join(format!("glossary-{safe}.json")))
 }
 
-/// The pre-v1.4.0 single-file cache path (one shared `glossary.json`). Retained
-/// only for one-time migration into the per-language layout.
+/// The pre-v1.4.0 single-file cache path (one shared `glossary.json` directly in
+/// the config dir). Retained only for one-time migration into the per-language
+/// `glossary/` subfolder.
 fn legacy_glossary_path(config_dir: &Path) -> PathBuf {
     config_dir.join("glossary.json")
 }
@@ -467,7 +473,8 @@ pub fn legacy_cache_present(config_dir: &Path) -> bool {
 pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
     let path = glossary_path(config_dir, &glossary.target_lang)
         .ok_or_else(|| format!("Invalid target language: {}", glossary.target_lang))?;
-    std::fs::create_dir_all(config_dir).map_err(|e| format!("Could not create config dir: {e}"))?;
+    std::fs::create_dir_all(glossary_dir(config_dir))
+        .map_err(|e| format!("Could not create glossary dir: {e}"))?;
     let body = serde_json::to_string(glossary).map_err(|e| format!("serialize glossary: {e}"))?;
     std::fs::write(path, body).map_err(|e| format!("write glossary: {e}"))
 }
@@ -485,13 +492,19 @@ pub fn load(config_dir: &Path, lang: &str) -> Option<Glossary> {
     Some(glossary)
 }
 
-/// One-time migration of the pre-v1.4.0 single `glossary.json` into the
-/// per-language layout: a valid format-2 file is renamed to
-/// `glossary-<its target_lang>.json` (unless that already exists) and the legacy
-/// file removed. An unparseable/old-format legacy file is left in place so
-/// `legacy_cache_present` can still flag it for rebuild. Idempotent and best-effort
-/// — failures are swallowed so a migration hiccup never blocks the app.
+/// One-time migration of older cache layouts into the current
+/// `glossary/glossary-<lang>.json` one. Idempotent and best-effort — failures are
+/// swallowed so a migration hiccup never blocks the app.
+///
+/// 1. Flat per-language files from the first v1.4.0 layout
+///    (`<config>/glossary-<lang>.json`) are moved into the `glossary/` subfolder.
+/// 2. A pre-v1.4.0 single `glossary.json` is moved to
+///    `glossary/glossary-<its target_lang>.json` (unless that already exists).
+///    An unparseable/old-format single file is left in place so
+///    `legacy_cache_present` can still flag it for rebuild.
 pub fn migrate_legacy_cache(config_dir: &Path) {
+    relocate_flat_per_language_files(config_dir);
+
     let legacy = legacy_glossary_path(config_dir);
     let Ok(body) = std::fs::read_to_string(&legacy) else {
         return;
@@ -509,9 +522,41 @@ pub fn migrate_legacy_cache(config_dir: &Path) {
         // A per-language file already exists; just drop the stale legacy copy.
         let _ = std::fs::remove_file(&legacy);
     } else {
+        let _ = std::fs::create_dir_all(glossary_dir(config_dir));
         // Rename into the per-language name; if the move fails, the legacy file
         // simply stays put and the next run retries.
         let _ = std::fs::rename(&legacy, &target);
+    }
+}
+
+/// Move any flat `<config>/glossary-<lang>.json` files (the first v1.4.0 layout,
+/// before the `glossary/` subfolder) into the subfolder. Skips a destination that
+/// already exists.
+fn relocate_flat_per_language_files(config_dir: &Path) {
+    let Ok(entries) = std::fs::read_dir(config_dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        // `glossary-<lang>.json` at the top level (the single `glossary.json` has
+        // no `-` after `glossary`, so it is not matched here).
+        let Some(lang) = name
+            .strip_prefix("glossary-")
+            .and_then(|rest| rest.strip_suffix(".json"))
+        else {
+            continue;
+        };
+        let Some(dest) = glossary_path(config_dir, lang) else {
+            continue;
+        };
+        if entry.path() == dest || dest.exists() {
+            continue;
+        }
+        let _ = std::fs::create_dir_all(glossary_dir(config_dir));
+        let _ = std::fs::rename(entry.path(), &dest);
     }
 }
 
@@ -775,7 +820,8 @@ mod tests {
         let loaded = load(&dir, "de").unwrap();
         assert_eq!(loaded, glossary);
         assert_eq!(loaded.format, 2);
-        assert!(dir.join("glossary-de.json").is_file());
+        // Stored in the per-language subfolder.
+        assert!(dir.join("glossary").join("glossary-de.json").is_file());
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -794,7 +840,7 @@ mod tests {
         assert!(load(&dir, "de").is_some());
         assert_eq!(load(&dir, "fr"), None);
         assert_eq!(load(&dir, "th"), None);
-        assert!(!dir.join("glossary-th.json").exists());
+        assert!(!dir.join("glossary").join("glossary-th.json").exists());
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -804,18 +850,18 @@ mod tests {
         let dir = crate::test_support::temp_dir("glossary-old-cache");
         // A typed cache stamped with a different format is ignored.
         write(
-            &dir.join("glossary-de.json"),
+            &dir.join("glossary").join("glossary-de.json"),
             r#"{ "format": 1, "sourceLang": "default", "targetLang": "de", "termCount": 0, "entries": [] }"#,
         );
         assert_eq!(load(&dir, "de"), None);
-        assert!(dir.join("glossary-de.json").is_file());
+        assert!(dir.join("glossary").join("glossary-de.json").is_file());
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn migrates_legacy_single_file_into_per_language_layout() {
+    fn migrates_legacy_single_file_into_per_language_subfolder() {
         let dir = crate::test_support::temp_dir("glossary-migrate");
-        // A pre-v1.4.0 valid format-2 single cache.
+        // A pre-v1.4.0 valid format-2 single cache, directly in the config dir.
         let legacy = glossary_for("de", vec![entry("Spring", "Frühling", TermKind::Season)]);
         write(
             &dir.join("glossary.json"),
@@ -824,11 +870,30 @@ mod tests {
 
         migrate_legacy_cache(&dir);
 
-        // Renamed to the per-language file; the legacy file is gone; load works.
-        assert!(dir.join("glossary-de.json").is_file());
+        // Moved into the subfolder; the legacy file is gone; load works.
+        assert!(dir.join("glossary").join("glossary-de.json").is_file());
         assert!(!dir.join("glossary.json").is_file());
         assert!(!legacy_cache_present(&dir));
         assert_eq!(load(&dir, "de"), Some(legacy));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migrates_flat_per_language_files_into_subfolder() {
+        let dir = crate::test_support::temp_dir("glossary-migrate-flat");
+        // The first v1.4.0 layout: per-language files flat in the config dir.
+        let de = glossary_for("de", vec![entry("Parsnip", "Pastinake", TermKind::Item)]);
+        write(
+            &dir.join("glossary-de.json"),
+            &serde_json::to_string(&de).unwrap(),
+        );
+
+        migrate_legacy_cache(&dir);
+
+        assert!(dir.join("glossary").join("glossary-de.json").is_file());
+        assert!(!dir.join("glossary-de.json").is_file());
+        assert_eq!(load(&dir, "de"), Some(de));
 
         std::fs::remove_dir_all(&dir).ok();
     }

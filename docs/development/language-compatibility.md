@@ -60,9 +60,9 @@ Portuguese compatibility is implemented as an import-only fallback:
 `pt-BR.json` is read when `pt.json` is absent, while export always writes the
 canonical `pt.json`. Scanning never renames or modifies either file.
 
-Saved working state is isolated under `Data/language-state/<code>/`, so
+Saved working state is isolated under `data/language-state/<code>/`, so
 switching target languages in one portable folder cannot leak edits or review
-statuses between languages. Existing `Data/translations/` state is migrated
+statuses between languages. Existing `data/translations/` state is migrated
 once into the language active during the upgrade.
 
 ### Automated Result (2026-06-17)

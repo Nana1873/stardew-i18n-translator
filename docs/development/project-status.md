@@ -21,7 +21,7 @@ See [Planning and Status](planning.md) for the maintenance convention.
 - Translation release workflow: persistent results, installable
   package-preserving ZIPs, and short localized translation notes.
 - Portable Windows packaging: executable and all user state in the adjacent
-  `Data/` directory.
+  `data/` directory.
 
 ## Release State
 

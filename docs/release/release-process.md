@@ -14,21 +14,21 @@ Stardew i18n Translator/
 `-- README.txt
 ```
 
-On first launch, the application creates its adjacent `Data/` folder. It stores
-`settings.json`, `glossary.json`, and the
-`language-state/<lang>/translations/` working-state folders inside `Data/`.
+On first launch, the application creates its adjacent `data/` folder. It stores
+`settings.json`, the `glossary/glossary-<lang>.json` per-language caches, and the
+`language-state/<lang>/translations/` working-state folders inside `data/`.
 Copying the complete application folder therefore moves the application and
 its language-specific local work together. Saved Stardew Valley and Mods paths
 are absolute and may need to be selected again on another computer.
 
 The application must be extracted to a writable folder. It refuses to start
-when its adjacent `Data/` folder cannot be created or written. No installer,
+when its adjacent `data/` folder cannot be created or written. No installer,
 registry entry, Start Menu shortcut, or uninstaller is provided.
 
-The application does not read or migrate state from AppData. A freshly
-extracted portable folder starts without user settings, glossary data, or
-translation state. To move an existing workspace, copy the complete application
-folder including its `Data/` directory.
+All state lives in the adjacent `data/` folder. A freshly extracted portable
+folder starts without user settings, glossary data, or translation state. To
+move an existing workspace, copy the complete application folder including its
+`data/` directory.
 
 ## Version Source
 
@@ -50,12 +50,12 @@ Unreleased comparison link, local Markdown links, and formatting.
 
 1. Confirm the working tree is clean and `HEAD` equals current `origin/main`.
 2. Run a real Mods-folder smoke test from the unpacked portable folder:
-   - launch without a `Data/` folder, confirm it is created, and complete setup;
+   - launch without a `data/` folder, confirm it is created, and complete setup;
    - close and reopen the app, then verify settings and the automatic scan;
    - open a large mod and edit/save one string;
    - confirm the saved state appears under
-     `Data/language-state/<lang>/translations/`;
-   - build or load a glossary and confirm `Data/glossary.json`;
+     `data/language-state/<lang>/translations/`;
+   - build or load a glossary and confirm `data/glossary/glossary-<lang>.json`;
    - export one mod and confirm its backup/output;
    - export and re-import a small external LLM batch;
    - verify local-AI connection behavior if an endpoint is available.

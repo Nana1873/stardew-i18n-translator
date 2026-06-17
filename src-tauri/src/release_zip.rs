@@ -586,7 +586,7 @@ mod tests {
         let root = crate::test_support::temp_dir("release-zip-multi");
         let mods = root.join("Mods");
         let package = mods.join("Sample Pack");
-        let config = root.join("Data");
+        let config = root.join("data");
         let components = vec![
             component(&package, "[CP] Sample", "sample.cp", "2.0"),
             component(&package, "[JA] Sample", "sample.ja", "1.5"),
@@ -648,7 +648,7 @@ mod tests {
         let root = crate::test_support::temp_dir("release-zip-blocked");
         let mods = root.join("Mods");
         let package = mods.join("Pack");
-        let config = root.join("Data");
+        let config = root.join("data");
         let components = vec![component(&package, "", "sample.root", "1.0")];
         save_translation(&config, "sample.root", "Hallo");
         let destination = root.join("blocked.zip");
@@ -672,7 +672,7 @@ mod tests {
         let root = crate::test_support::temp_dir("release-zip-version");
         let mods = root.join("Mods");
         let package = mods.join("Pack");
-        let config = root.join("Data");
+        let config = root.join("data");
         let components = vec![
             component(&package, "Z Child", "z.child", "9.0"),
             component(&package, "A Child", "a.child", "2.0"),
@@ -691,7 +691,7 @@ mod tests {
         let root = crate::test_support::temp_dir("release-zip-overwrite");
         let mods = root.join("Mods");
         let package = mods.join("Pack");
-        let config = root.join("Data");
+        let config = root.join("data");
         let components = vec![component(&package, "", "sample.root", "1.0")];
         save_translation(&config, "sample.root", "Hallo {{name}}");
         let destination = root.join("translation.zip");

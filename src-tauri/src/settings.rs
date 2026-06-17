@@ -1,6 +1,6 @@
 //! Persisted application settings (SPEC §14).
 //!
-//! Stored as `Data/settings.json` beside the portable executable. This file
+//! Stored as `data/settings.json` beside the portable executable. This file
 //! holds the user's whole configuration (folders, target language, the local-AI
 //! connection), so writes follow the same crash-safe rules as the translation
 //! state (translations.rs / export.rs):
