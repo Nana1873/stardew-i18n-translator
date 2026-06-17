@@ -24,7 +24,11 @@ beforeEach(() => {
   invokeMock.mockImplementation((cmd: string) => {
     switch (cmd) {
       case "glossary_status":
-        return Promise.resolve({ unpackedPresent: false, cached: null });
+        return Promise.resolve({
+          unpackedPresent: false,
+          cached: null,
+          outdatedCache: false,
+        });
       case "llm_models":
         return Promise.resolve(["llama3.1:8b", "qwen2.5"]);
       default:
@@ -358,10 +362,38 @@ describe("SettingsDialog", () => {
     });
   });
 
+  it("recommends a rebuild when an old/invalid glossary cache is present", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          unpackedPresent: true,
+          cached: null,
+          outdatedCache: true,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    expect(await screen.findByText(/rebuild recommended/i)).toBeInTheDocument();
+  });
+
   it("shows a retryable diagnostic when the AI connection fails", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
-        return Promise.resolve({ unpackedPresent: false, cached: null });
+        return Promise.resolve({
+          unpackedPresent: false,
+          cached: null,
+          outdatedCache: false,
+        });
       if (cmd === "llm_models")
         return Promise.reject("Connection refused (ECONNREFUSED)");
       return Promise.resolve(null);
@@ -387,7 +419,11 @@ describe("SettingsDialog", () => {
   it("distinguishes a reachable server with no loaded models", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
-        return Promise.resolve({ unpackedPresent: false, cached: null });
+        return Promise.resolve({
+          unpackedPresent: false,
+          cached: null,
+          outdatedCache: false,
+        });
       if (cmd === "llm_models") return Promise.resolve([]);
       return Promise.resolve(null);
     });

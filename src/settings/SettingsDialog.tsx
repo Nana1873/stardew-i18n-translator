@@ -102,7 +102,13 @@ export function SettingsDialog({
     glossaryStatus(settings.stardewPath)
       .then((status) => active && setGlossary(status))
       .catch(
-        () => active && setGlossary({ unpackedPresent: false, cached: null }),
+        () =>
+          active &&
+          setGlossary({
+            unpackedPresent: false,
+            cached: null,
+            outdatedCache: false,
+          }),
       );
     return () => {
       active = false;
@@ -115,7 +121,12 @@ export function SettingsDialog({
     setGlossaryError(null);
     try {
       const info = await buildGlossary(settings.stardewPath, targetLang);
-      setGlossary({ unpackedPresent: true, cached: info });
+      // A successful rebuild replaces any old cache, clearing the warning.
+      setGlossary({
+        unpackedPresent: true,
+        cached: info,
+        outdatedCache: false,
+      });
     } catch (cause) {
       setGlossaryError(String(cause));
     } finally {
@@ -321,6 +332,12 @@ export function SettingsDialog({
                       <p className="wizard__ok">
                         ✓ Cached: {glossary.cached.termCount} terms (
                         {glossary.cached.targetLang}).
+                      </p>
+                    )}
+                    {glossary.outdatedCache && (
+                      <p className="wizard__error">
+                        An older glossary from a previous version was found —
+                        rebuild recommended.
                       </p>
                     )}
                   </>

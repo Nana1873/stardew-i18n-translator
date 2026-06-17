@@ -1795,6 +1795,20 @@ kbd,
   background: rgba(217, 195, 137, 0.28);
 }
 
+/* Category chip inside a glossary hint — names the term's kind (Item, NPC,
+   Place…) so the suggestion is trustworthy at a glance. */
+.editor__gloss-kind {
+  margin-right: 6px;
+  padding: 0 5px;
+  border-radius: 3px;
+  background: rgba(217, 195, 137, 0.22);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: middle;
+}
+
 .editor__panes {
   display: grid;
   grid-template-columns: 1fr 1fr;

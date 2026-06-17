@@ -8,6 +8,18 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Changed
+
+- The glossary is now a typed, high-confidence set of official game terms
+  (items, craftables, weapons, tools, clothing, NPCs, locations, seasons) rather
+  than an untyped name→name map. Each term is extracted only from the matching
+  content `Strings/*` asset and key, screened by a strict quality gate that
+  excludes prose, descriptions, UI commands, and format strings, so editor hints
+  and local-AI prompts no longer pick up borderline non-terms. Editor hints now
+  show each term's category, and the longest matching term wins on overlap
+  (`Iridium Ore` over `Ore`). Glossary caches from earlier versions are ignored
+  and the UI recommends a one-click rebuild.
+
 ### Added
 
 - Thai (`th`) as a selectable target language. Stardew has no native Thai

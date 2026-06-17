@@ -390,13 +390,19 @@ fn glossary_status(
     app: AppHandle,
     stardew_path: String,
 ) -> Result<glossary::GlossaryStatus, String> {
-    let cached = glossary::load(&config_dir(&app)?).map(|g| glossary::GlossaryInfo {
+    let config = config_dir(&app)?;
+    let loaded = glossary::load(&config);
+    // A glossary.json that exists but failed to load is an old/invalid cache
+    // (untyped v1) — the UI surfaces a "rebuild recommended" note.
+    let outdated_cache = loaded.is_none() && glossary::cache_present(&config);
+    let cached = loaded.map(|g| glossary::GlossaryInfo {
         target_lang: g.target_lang,
         term_count: g.term_count,
     });
     Ok(glossary::GlossaryStatus {
         unpacked_present: glossary::unpacked_present(Path::new(&stardew_path)),
         cached,
+        outdated_cache,
     })
 }
 

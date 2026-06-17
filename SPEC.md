@@ -157,7 +157,12 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 ### Storage
 
 - Cached as `Data/glossary.json` beside the portable executable.
-- Structure: `{ "en_term": "target_term", ... }` with metadata.
+- Structure (v1.4.0, `format: 2`): `{ format, sourceLang, targetLang, termCount,
+entries }`, where each entry is a typed term
+  `{ source, target, kind, asset, key }` (`kind` ∈ item · bigCraftable · weapon ·
+  tool · clothing · npc · location · season). Caches written by earlier versions
+  (the untyped `{ terms: { … } }` map) are ignored on load and the UI recommends a
+  rebuild.
 - Rebuildable on demand (e.g., after game update).
 - v1 stores only the active `default → <target>` language pair.
 

@@ -18,7 +18,12 @@ import {
   useRef,
   useState,
 } from "react";
-import type { StringStatus, TranslationResult } from "../tauri/commands";
+import type {
+  GlossaryEntry,
+  StringStatus,
+  TermKind,
+  TranslationResult,
+} from "../tauri/commands";
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
 import { STATUS_META, statusTint } from "./status";
@@ -47,8 +52,8 @@ interface StringEditorProps {
   total: number;
   modName: string;
   reviewProgress?: { current: number; total: number };
-  /** Official game glossary (english -> target), if built. */
-  glossary?: Record<string, string> | null;
+  /** Official game glossary (typed entries), if built. */
+  glossary?: GlossaryEntry[] | null;
   /** Translate the source via the local AI (M6); absent when no AI is configured. */
   onTranslate?: (
     source: string,
@@ -61,24 +66,49 @@ interface StringEditorProps {
   shortcuts?: ResolvedShortcuts;
 }
 
-/** Official glossary terms that occur as whole words in the source text.
- * Case-sensitive (kept in sync with the Rust `match_terms`): named entities are
+/** Short label for a glossary term's category chip. */
+const KIND_LABEL: Record<TermKind, string> = {
+  item: "Item",
+  bigCraftable: "Craftable",
+  weapon: "Weapon",
+  tool: "Tool",
+  clothing: "Clothing",
+  npc: "NPC",
+  location: "Place",
+  season: "Season",
+};
+
+/** Official glossary entries that occur as whole words in the source text.
+ * Mirrors the Rust `match_entries`: case-sensitive (named entities are
  * capitalized, so a capitalized UI term like `Play` must not match the common
- * lowercase verb in prose. A soft hint — precision beats recall here. */
+ * lowercase verb in prose), longest/most-specific terms claim their span first
+ * (so `Iridium Ore` beats a bare `Ore`), capped at 15. A soft hint — precision
+ * beats recall here. */
 function matchGlossary(
   source: string,
-  glossary: Record<string, string> | null | undefined,
-): Array<{ term: string; translation: string }> {
+  glossary: GlossaryEntry[] | null | undefined,
+): GlossaryEntry[] {
   if (!glossary) return [];
-  const out: Array<{ term: string; translation: string }> = [];
   const isWord = (c: string | undefined) =>
     c !== undefined && /[\p{L}\p{N}]/u.test(c);
-  for (const [term, translation] of Object.entries(glossary)) {
+  // Longest source first; tie-break on source so output is deterministic.
+  const sorted = [...glossary].sort(
+    (a, b) =>
+      b.source.length - a.source.length || a.source.localeCompare(b.source),
+  );
+  const occupied: Array<[number, number]> = [];
+  const out: GlossaryEntry[] = [];
+  for (const entry of sorted) {
+    const term = entry.source;
     if (term.length < 3) continue;
     const idx = source.indexOf(term);
     if (idx === -1) continue;
-    if (isWord(source[idx - 1]) || isWord(source[idx + term.length])) continue;
-    out.push({ term, translation });
+    const end = idx + term.length;
+    if (isWord(source[idx - 1]) || isWord(source[end])) continue;
+    // Skip a term overlapping a span already claimed by a longer one.
+    if (occupied.some(([s, e]) => idx < e && s < end)) continue;
+    occupied.push([idx, end]);
+    out.push(entry);
     if (out.length >= 15) break;
   }
   return out;
@@ -383,10 +413,13 @@ export function StringEditor({
                   key={i}
                   type="button"
                   className="editor__gloss"
-                  title={`Insert “${match.translation}” at the cursor`}
-                  onClick={() => insertToken(match.translation)}
+                  title={`${KIND_LABEL[match.kind]} · insert “${match.target}” at the cursor`}
+                  onClick={() => insertToken(match.target)}
                 >
-                  {match.term} → {match.translation}
+                  <span className="editor__gloss-kind" aria-hidden>
+                    {KIND_LABEL[match.kind]}
+                  </span>
+                  {match.source} → {match.target}
                 </button>
               ))
             ) : (

@@ -423,6 +423,8 @@ export interface GlossaryInfo {
 export interface GlossaryStatus {
   unpackedPresent: boolean;
   cached: GlossaryInfo | null;
+  /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */
+  outdatedCache: boolean;
 }
 
 export function buildGlossary(
@@ -436,12 +438,36 @@ export function glossaryStatus(stardewPath: string): Promise<GlossaryStatus> {
   return invoke<GlossaryStatus>("glossary_status", { stardewPath });
 }
 
+/** Category of an official glossary term (mirrors Rust `TermKind`). */
+export type TermKind =
+  | "item"
+  | "bigCraftable"
+  | "weapon"
+  | "tool"
+  | "clothing"
+  | "npc"
+  | "location"
+  | "season";
+
+/** One typed official term (mirrors Rust `GlossaryEntry`). */
+export interface GlossaryEntry {
+  source: string;
+  target: string;
+  kind: TermKind;
+  /** Source `Strings/*` asset (provenance). */
+  asset: string;
+  /** Source key within the asset (provenance). */
+  key: string;
+}
+
 export interface Glossary {
+  /** Cache schema version (2 = typed entries). */
+  format: number;
   sourceLang: string;
   targetLang: string;
   termCount: number;
-  /** english term -> target term. */
-  terms: Record<string, string>;
+  /** Typed official terms. */
+  entries: GlossaryEntry[];
 }
 
 export function loadGlossary(): Promise<Glossary | null> {

@@ -402,11 +402,15 @@ mod tests {
 
     #[test]
     fn glossary_excerpt_contains_only_matching_terms() {
-        let mut terms = std::collections::HashMap::new();
-        terms.insert("Parsnip".to_string(), "Pastinake".to_string());
-        terms.insert("Junimo".to_string(), "Junimo-X".to_string());
+        let entry = |source: &str, target: &str| glossary::GlossaryEntry {
+            source: source.to_string(),
+            target: target.to_string(),
+            kind: glossary::TermKind::Item,
+            asset: "Objects".to_string(),
+            key: source.to_string(),
+        };
         let glossary = Glossary {
-            terms,
+            entries: vec![entry("Parsnip", "Pastinake"), entry("Junimo", "Junimo-X")],
             ..Default::default()
         };
         let items = vec![item("i18n", "k", "A fresh Parsnip.")];
