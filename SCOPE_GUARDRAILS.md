@@ -42,7 +42,7 @@ Additional v1.4.0 requirements:
 
 - Custom language codes are offered through the curated list (not arbitrary
   free-text), validated/sanitized before use in filenames or
-  `Data/language-state/`, and reserved/unsafe identifiers (`default`, empty,
+  `data/language-state/`, and reserved/unsafe identifiers (`default`, empty,
   path separators, traversal) are rejected.
 - The UI clearly marks a language as custom/unsupported by Stardew itself.
 - When the game has no official locale data for the target language, no official

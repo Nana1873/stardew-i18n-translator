@@ -156,8 +156,9 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 ### Storage
 
-- Cached **per language** as `Data/glossary-<lang>.json` beside the portable
-  executable (e.g. `glossary-de.json`). The cache is keyed by language, so a
+- Cached **per language** as `data/glossary/glossary-<lang>.json` beside the
+  portable executable (e.g. `data/glossary/glossary-de.json`). The cache is keyed
+  by language, so a
   game-unsupported target (e.g. Thai `th`) never produces a file and therefore
   never receives official-term hints — the editor, local-AI prompt, and batch
   export all see no glossary for it, and a build for one language can never leak
@@ -167,8 +168,9 @@ entries }`, where each entry is a typed term
   `{ source, target, kind, asset, key }` (`kind` ∈ item · bigCraftable · weapon ·
   tool · clothing · npc · location · season). Caches written by earlier versions
   (the untyped `{ terms: { … } }` map) are ignored on load and the UI recommends a
-  rebuild. A pre-v1.4.0 single `glossary.json` is auto-migrated to its
-  per-language name on first load.
+  rebuild. Older cache layouts (a pre-v1.4.0 single `data/glossary.json`, or the
+  first per-language files written directly in `data/`) are auto-migrated into
+  `data/glossary/` on first load.
 - Rebuildable on demand (e.g., after game update). Each built language keeps its
   own cache, so switching back to a previously built language needs no rebuild.
 
@@ -531,7 +533,7 @@ the step-by-step Setup Wizard:
   user-facing table/editor keyboard command. It captures replacement
   combinations, rejects duplicate, reserved, and unsupported assignments, and
   offers per-command plus global **Reset to defaults** actions. Overrides are
-  stored in the portable `Data/settings.json`; absent values use the documented
+  stored in the portable `data/settings.json`; absent values use the documented
   defaults.
 
 ### 7.8 Dashboard Home (v1.5)
@@ -812,7 +814,7 @@ workflow, not Nexus integration.
   root. Archive paths always use `/`, are relative, and reject absolute paths,
   empty segments, `.` and `..`.
 - Source files, manifests, assets, DLLs, backups, existing target files, and
-  application `Data/` are never copied into the archive.
+  application `data/` are never copied into the archive.
 - The builder uses the same in-memory serialization and blocking protected-token
   validation as normal export. It does not write to or overwrite the installed
   mod.
@@ -977,20 +979,20 @@ AppState
 
 ### Persistence
 
-| Data              | Storage                                             | Format                           |
-| ----------------- | --------------------------------------------------- | -------------------------------- |
-| Settings          | Portable `Data/` beside the EXE                     | `settings.json`                  |
-| Glossary cache    | Portable `Data/` beside the EXE                     | `glossary.json` (nullable)       |
-| Translation state | Portable `Data/language-state/<lang>/translations/` | JSON per mod and target language |
-| Export output     | Mod's `i18n/` folder                                | Standard `<lang>.json`           |
+| Data              | Storage                                             | Format                            |
+| ----------------- | --------------------------------------------------- | --------------------------------- |
+| Settings          | Portable `data/` beside the EXE                     | `settings.json`                   |
+| Glossary cache    | Portable `data/glossary/` beside the EXE            | `glossary-<lang>.json` (per lang) |
+| Translation state | Portable `data/language-state/<lang>/translations/` | JSON per mod and target language  |
+| Export output     | Mod's `i18n/` folder                                | Standard `<lang>.json`            |
 
 The v1 Windows distribution is a portable folder packaged as ZIP. The
-application validates that its adjacent `Data/` folder is writable on startup.
+application validates that its adjacent `data/` folder is writable on startup.
 Moving the complete folder preserves settings, glossary data, and saved
 translation work. Saved game and Mods paths remain absolute and may need to be
-selected again on another computer. The application never reads or migrates
-state from AppData: a freshly extracted portable folder starts with empty user
-data, and only data inside its adjacent `Data/` folder belongs to that copy.
+selected again on another computer. All state lives in the adjacent `data/`
+folder: a freshly extracted portable folder starts with empty user data, and
+only data inside its `data/` folder belongs to that copy.
 
 The portable executable uses the shared Microsoft Edge WebView2 Evergreen
 Runtime and does not bundle or install it. Before Tauri creates the main
@@ -1084,7 +1086,7 @@ not a mod manager.
 - Built-in language behavior is unchanged.
 - Custom languages are offered through the app's curated list, not free-text
   entry, so language codes stay controlled. Any code used in a filename or under
-  `Data/language-state/` is validated/sanitized and rejects reserved or unsafe
+  `data/language-state/` is validated/sanitized and rejects reserved or unsafe
   identifiers (`default`, empty, path separators, traversal).
 - Export/import use the chosen target filename (`i18n/<code>.json`)
   consistently, and the UI clearly marks a language as custom/unsupported.
@@ -1094,7 +1096,7 @@ not a mod manager.
 **Typed glossary**
 
 - The glossary becomes a typed, high-confidence official-term set (see §5),
-  never normal prose. Old `Data/glossary.json` caches are tolerated read-only or
+  never normal prose. Old `data/glossary.json` caches are tolerated read-only or
   prompt a rebuild rather than crashing.
 - For custom/unsupported languages with no official locale data, the glossary is
   unavailable and the app says so plainly — it never fabricates official target

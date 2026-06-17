@@ -2,7 +2,7 @@
 //!
 //! Work-in-progress translations are stored **separately** from the mod's own
 //! files: one JSON per mod (keyed by UniqueID) and target language in the
-//! portable `Data/` folder. The mod's `default.json` is never touched; export
+//! portable `data/` folder. The mod's `default.json` is never touched; export
 //! (M3) writes the final `i18n/<lang>.json`. Each entry records the target text,
 //! its status, and a hash of the source text at save time (for `outdated`
 //! detection on re-scan).
@@ -48,7 +48,7 @@ pub fn entry_key(relative_dir: &str, key: &str) -> String {
 }
 
 /// Return the isolated state root for one target language. A pre-v1.1
-/// `Data/translations/` folder is moved once into the first active language,
+/// `data/translations/` folder is moved once into the first active language,
 /// which is the language stored in settings when upgrading.
 pub fn language_root(config_dir: &Path, target_lang: &str) -> Result<PathBuf, String> {
     let safe_lang: String = target_lang
