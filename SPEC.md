@@ -173,6 +173,24 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 Dialogue and narrative prose would pollute matching. The glossary is strictly **named entities and identifiers**.
 
+**Purpose (one sentence):** the glossary protects official Stardew terms; it does
+not translate normal prose.
+
+**v1.4.0 refinement (typed glossary):** entries become typed, high-confidence
+official terms (e.g. items, big craftables, weapons, tools, boots, hats,
+furniture, NPC display names, locations, seasons/days, skills/professions). UI
+and menu terms are treated conservatively, and generic button/common words
+(`Play`, `Back`, `Right`, `Good`, …), sentences, dialogue fragments,
+descriptions, and quest/mail text are excluded from extraction. A wrong match is
+worse than no match, because it poisons editor hints and local-AI prompts.
+
+**Unsupported-language fallback:** when the base game ships no official locale
+data for the selected target language (a custom/unsupported language such as
+Thai), the app must **not** present fake or empty "official" target-language
+terms. It surfaces no official glossary for that language and clearly says so;
+local-AI and batch export receive no official glossary pairs. See §15 (v1.4.0)
+and the dedicated glossary-availability work tracked in the v1.4.0 milestone.
+
 ---
 
 ## 6. Mod Scan Concept
@@ -1028,13 +1046,48 @@ First AI step — requires core workflow to be complete:
 
 ### Roadmap After v1.1.1
 
-| Feature                                  | Target      |
-| ---------------------------------------- | ----------- |
-| `extra-key` import/scan reporting        | v1.2        |
-| Local diagnostic logging enable/disable  | v1.2        |
-| Optional cloud-AI credentials            | Unscheduled |
-| Nexus integration                        | Unscheduled |
-| Finalize-and-propagate identical strings | v2          |
+| Feature                                                   | Target      |
+| --------------------------------------------------------- | ----------- |
+| `extra-key` import/scan reporting                         | v1.2        |
+| Local diagnostic logging enable/disable                   | v1.2        |
+| Optional cloud-AI credentials                             | Unscheduled |
+| Nexus integration                                         | Unscheduled |
+| Flexible target languages (custom/unsupported, e.g. Thai) | v1.4.0      |
+| Typed high-confidence glossary                            | v1.4.0      |
+| Finalize-and-propagate identical strings                  | v2          |
+
+### v1.4.0 — Language Framework + Typed Glossary
+
+v1.4.0 expands the target-language workflow and tightens glossary behavior. It
+does **not** relax any other v1 boundary: the app still reads and writes only
+SMAPI i18n files (`i18n/default.json` + `i18n/<lang>.json`), stays fully
+local/offline, makes no Nexus API calls, performs no automatic downloads, and is
+not a mod manager.
+
+**Language framework**
+
+- The target-language model distinguishes **built-in Stardew/SMAPI languages**
+  (`de`, `es`, `fr`, `hu`, `it`, `ja`, `ko`, `pt`, `ru`, `tr`, `zh`) from
+  **custom/unsupported** target languages (e.g. Thai `th`), which Stardew plays
+  only via a custom-language mod (SV 1.6 `Data/AdditionalLanguages`).
+- Built-in language behavior is unchanged.
+- Custom languages are offered through the app's curated list, not free-text
+  entry, so language codes stay controlled. Any code used in a filename or under
+  `Data/language-state/` is validated/sanitized and rejects reserved or unsafe
+  identifiers (`default`, empty, path separators, traversal).
+- Export/import use the chosen target filename (`i18n/<code>.json`)
+  consistently, and the UI clearly marks a language as custom/unsupported.
+- Release-note generation has a deterministic fallback (the English template,
+  naming the real target language) when no localized template exists.
+
+**Typed glossary**
+
+- The glossary becomes a typed, high-confidence official-term set (see §5),
+  never normal prose. Old `Data/glossary.json` caches are tolerated read-only or
+  prompt a rebuild rather than crashing.
+- For custom/unsupported languages with no official locale data, the glossary is
+  unavailable and the app says so plainly — it never fabricates official target
+  terms (see §5 fallback).
 
 ---
 
@@ -1445,12 +1498,13 @@ Active scope and status are tracked in
 [GitHub Milestones](https://github.com/Nana1873/stardew-i18n-translator/milestones).
 This table records the durable product direction rather than task completion.
 
-| Version                  | Scope                                                                                                                  |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| **v1 (M1–M3)**           | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                          |
-| **v1 (M4)**              | External LLM Batch Export/Import                                                                                       |
-| **v1.1**                 | Configurable shortcuts, language compatibility verification, safer token validation, drag-and-drop, diagnostic logging |
-| **v1.2**                 | `extra-key` diagnostics and local logging control                                                                      |
-| **Future (unscheduled)** | Possible Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                      |
-| **v2**                   | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                     |
-| **v3**                   | Data file translation and an in-app XNB reader                                                                         |
+| Version                  | Scope                                                                                                                                                                                                          |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v1 (M1–M3)**           | Setup, Mod Scan, i18n Import, String Table, String Editor, Basic Validation (4 rules), Export                                                                                                                  |
+| **v1 (M4)**              | External LLM Batch Export/Import                                                                                                                                                                               |
+| **v1.1**                 | Configurable shortcuts, language compatibility verification, safer token validation, drag-and-drop, diagnostic logging                                                                                         |
+| **v1.2**                 | `extra-key` diagnostics and local logging control                                                                                                                                                              |
+| **v1.4.0**               | Language Framework + Typed Glossary: custom/unsupported target languages (e.g. Thai) and a typed high-confidence official-term glossary, with safe glossary behavior when the game has no official locale data |
+| **Future (unscheduled)** | Possible Nexus API setup, assisted translation discovery, confirmed mappings, and download/import                                                                                                              |
+| **v2**                   | Content Patcher `content.json` support, translation memory, finalize-and-propagate                                                                                                                             |
+| **v3**                   | Data file translation and an in-app XNB reader                                                                                                                                                                 |
