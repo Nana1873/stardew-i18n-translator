@@ -23,7 +23,11 @@ beforeEach(() => {
       case "validate_stardew_path":
         return Promise.resolve(true);
       case "glossary_status":
-        return Promise.resolve({ unpackedPresent: false, cached: null });
+        return Promise.resolve({
+          unpackedPresent: false,
+          cached: null,
+          outdatedCache: false,
+        });
       case "build_glossary":
         return Promise.resolve({ targetLang: "de", termCount: 42 });
       default:
@@ -147,7 +151,11 @@ describe("SetupWizard", () => {
         case "validate_stardew_path":
           return Promise.resolve(true);
         case "glossary_status":
-          return Promise.resolve({ unpackedPresent: true, cached: null });
+          return Promise.resolve({
+            unpackedPresent: true,
+            cached: null,
+            outdatedCache: false,
+          });
         case "build_glossary":
           return Promise.resolve({ targetLang: "de", termCount: 42 });
         default:

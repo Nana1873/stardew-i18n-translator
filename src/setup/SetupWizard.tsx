@@ -73,7 +73,12 @@ export function SetupWizard({
         if (active) setGlossary(status);
       })
       .catch(() => {
-        if (active) setGlossary({ unpackedPresent: false, cached: null });
+        if (active)
+          setGlossary({
+            unpackedPresent: false,
+            cached: null,
+            outdatedCache: false,
+          });
       });
     return () => {
       active = false;
@@ -389,9 +394,11 @@ export function SetupWizard({
                       </button>
                     }
                   >
-                    {glossary.cached
-                      ? `A cached glossary with ${glossary.cached.termCount} terms already exists. Rebuild it to refresh the data.`
-                      : "Unpacked game content was found. Building usually takes only a moment."}
+                    {glossary.outdatedCache
+                      ? "An older glossary from a previous version was found — rebuild recommended."
+                      : glossary.cached
+                        ? `A cached glossary with ${glossary.cached.termCount} terms already exists. Rebuild it to refresh the data.`
+                        : "Unpacked game content was found. Building usually takes only a moment."}
                   </StatusCard>
                 ) : (
                   <StatusCard

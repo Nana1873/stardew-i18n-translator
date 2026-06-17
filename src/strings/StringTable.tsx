@@ -16,6 +16,7 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  type GlossaryEntry,
   type LlmBatchItem,
   type LlmExportOutcome,
   type SaveStringEntry,
@@ -105,7 +106,7 @@ export function StringTable({
   mod: ScannedMod;
   search?: string;
   statusFilter?: StringStatus | "all";
-  glossary?: Record<string, string> | null;
+  glossary?: GlossaryEntry[] | null;
   /** Reset search + status filter (the no-results escape hatch). */
   onClearFilters?: () => void;
   onTranslate?: (

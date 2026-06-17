@@ -6,7 +6,7 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { StringEditor, type EditorRow } from "./StringEditor";
-import type { TranslationResult } from "../tauri/commands";
+import type { GlossaryEntry, TranslationResult } from "../tauri/commands";
 import { resolveShortcuts } from "../shortcuts";
 
 function row(overrides: Partial<EditorRow> = {}): EditorRow {
@@ -29,6 +29,7 @@ function renderEditor(
   ) => Promise<TranslationResult>,
   position: { index: number; total: number } = { index: 0, total: 2 },
   reviewProgress?: { current: number; total: number },
+  glossary?: GlossaryEntry[] | null,
 ) {
   const onSave = vi.fn();
   const onClose = vi.fn();
@@ -40,6 +41,7 @@ function renderEditor(
       total={position.total}
       modName="Test Mod"
       reviewProgress={reviewProgress}
+      glossary={glossary}
       onTranslate={onTranslate}
       onSave={onSave}
       onClose={onClose}
@@ -47,6 +49,14 @@ function renderEditor(
     />,
   );
   return { onSave, onClose, onNavigate };
+}
+
+function entry(
+  source: string,
+  target: string,
+  kind: GlossaryEntry["kind"],
+): GlossaryEntry {
+  return { source, target, kind, asset: "test", key: source };
 }
 
 describe("StringEditor", () => {
@@ -199,6 +209,49 @@ describe("StringEditor", () => {
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("shows typed glossary hints with a category chip and inserts the term on click", () => {
+    renderEditor(
+      { source: "Visit Pelican Town in Spring", target: "" },
+      undefined,
+      { index: 0, total: 2 },
+      undefined,
+      [
+        entry("Pelican Town", "Pelikanstadt", "location"),
+        entry("Spring", "Frühling", "season"),
+        entry("Parsnip", "Pastinake", "item"), // not in the source → no hint
+      ],
+    );
+
+    // Category chips render beside each matched hint.
+    expect(screen.getByText("Place")).toBeInTheDocument();
+    expect(screen.getByText("Season")).toBeInTheDocument();
+    // Unmatched terms produce no hint.
+    expect(screen.queryByText("Item")).not.toBeInTheDocument();
+
+    // Clicking a hint inserts its target translation.
+    const textarea = screen.getByLabelText(
+      "Translation",
+    ) as HTMLTextAreaElement;
+    fireEvent.click(screen.getByRole("button", { name: /Pelican Town/ }));
+    expect(textarea.value).toBe("Pelikanstadt");
+  });
+
+  it("prefers the longer glossary term over an overlapping shorter one", () => {
+    renderEditor(
+      { source: "Refined some Iridium Ore today", target: "" },
+      undefined,
+      { index: 0, total: 2 },
+      undefined,
+      [entry("Ore", "Erz", "item"), entry("Iridium Ore", "Iridiumerz", "item")],
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Iridium Ore/ }),
+    ).toBeInTheDocument();
+    // The bare "Ore" must not also appear — the longer term claimed the span.
+    expect(screen.queryByRole("button", { name: /^Ore →/ })).toBeNull();
   });
 
   it("shows the current review-session position and progress", () => {

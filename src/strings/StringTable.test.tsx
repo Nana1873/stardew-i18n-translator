@@ -152,7 +152,20 @@ describe("StringTable", () => {
   });
 
   it("shows glossary hints in the editor and inserts the term on click", async () => {
-    render(<StringTable mod={MOD} glossary={{ Bye: "Tschüss" }} />);
+    render(
+      <StringTable
+        mod={MOD}
+        glossary={[
+          {
+            source: "Bye",
+            target: "Tschüss",
+            kind: "item",
+            asset: "Objects",
+            key: "Bye",
+          },
+        ]}
+      />,
+    );
     fireEvent.doubleClick(await screen.findByText("bye"));
 
     const textarea = screen.getByLabelText(

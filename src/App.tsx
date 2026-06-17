@@ -13,6 +13,7 @@ import {
 } from "react";
 import {
   type AppSettings,
+  type GlossaryEntry,
   type LlmBatchItem,
   type LlmExportOutcome,
   type LlmImportSummary,
@@ -137,9 +138,7 @@ export function App() {
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
-  const [glossary, setGlossaryTerms] = useState<Record<string, string> | null>(
-    null,
-  );
+  const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
 
   // External LLM batch import (M4): persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
@@ -147,7 +146,9 @@ export function App() {
 
   function refreshGlossary() {
     loadGlossary()
-      .then((g) => setGlossaryTerms(g && g.termCount > 0 ? g.terms : null))
+      .then((g) =>
+        setGlossaryTerms(g && g.entries.length > 0 ? g.entries : null),
+      )
       .catch((error) => {
         logFrontendError("loadGlossary", String(error));
         setGlossaryTerms(null);
@@ -1571,7 +1572,7 @@ function StringTablePanel({
   search: string;
   statusFilter: StringStatus | "all";
   onStatusFilter: (value: StringStatus | "all") => void;
-  glossary: Record<string, string> | null;
+  glossary: GlossaryEntry[] | null;
   onTranslate?: (
     source: string,
     section?: string | null,
