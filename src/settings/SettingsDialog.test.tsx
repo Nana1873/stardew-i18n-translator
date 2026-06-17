@@ -386,6 +386,49 @@ describe("SettingsDialog", () => {
     expect(await screen.findByText(/rebuild recommended/i)).toBeInTheDocument();
   });
 
+  it("offers Build for a game-supported language with unpacked content", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          unpackedPresent: true,
+          cached: null,
+          outdatedCache: false,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings} // targetLang "de" — natively supported
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    expect(
+      await screen.findByRole("button", { name: "Build glossary" }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows no glossary and no Build button for an unsupported language (Thai)", async () => {
+    render(
+      <SettingsDialog
+        settings={{ ...baseSettings, targetLang: "th" }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    expect(
+      await screen.findByText(/Stardew Valley doesn’t include this language/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
+  });
+
   it("shows a retryable diagnostic when the AI connection fails", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")

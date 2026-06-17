@@ -434,8 +434,11 @@ export function buildGlossary(
   return invoke<GlossaryInfo>("build_glossary", { stardewPath, targetLang });
 }
 
-export function glossaryStatus(stardewPath: string): Promise<GlossaryStatus> {
-  return invoke<GlossaryStatus>("glossary_status", { stardewPath });
+export function glossaryStatus(
+  stardewPath: string,
+  targetLang: string,
+): Promise<GlossaryStatus> {
+  return invoke<GlossaryStatus>("glossary_status", { stardewPath, targetLang });
 }
 
 /** Category of an official glossary term (mirrors Rust `TermKind`). */
@@ -470,8 +473,8 @@ export interface Glossary {
   entries: GlossaryEntry[];
 }
 
-export function loadGlossary(): Promise<Glossary | null> {
-  return invoke<Glossary | null>("load_glossary");
+export function loadGlossary(targetLang: string): Promise<Glossary | null> {
+  return invoke<Glossary | null>("load_glossary", { targetLang });
 }
 
 /**
@@ -498,6 +501,7 @@ export function translateString(
   baseUrl: string,
   model: string,
   source: string,
+  targetLang: string,
   targetLanguage: string,
   section?: string | null,
   temperature?: number | null,
@@ -506,6 +510,7 @@ export function translateString(
     baseUrl,
     model,
     source,
+    targetLang,
     targetLanguage,
     section: section ?? null,
     temperature: temperature ?? null,

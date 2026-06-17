@@ -433,30 +433,86 @@ fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
     Some(map)
 }
 
-fn glossary_path(config_dir: &Path) -> PathBuf {
+/// Per-language cache file path: `glossary-<lang>.json`. The language code is
+/// sanitized to ASCII alphanumerics + `-` before it touches the filename (mirrors
+/// the `language-state/<lang>/` rule in `translations.rs`) — defense-in-depth
+/// against path traversal from custom codes (#156 framework). Returns `None` for
+/// an empty/all-stripped code.
+fn glossary_path(config_dir: &Path, lang: &str) -> Option<PathBuf> {
+    let safe: String = lang
+        .trim()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
+        .collect();
+    if safe.is_empty() {
+        return None;
+    }
+    Some(config_dir.join(format!("glossary-{safe}.json")))
+}
+
+/// The pre-v1.4.0 single-file cache path (one shared `glossary.json`). Retained
+/// only for one-time migration into the per-language layout.
+fn legacy_glossary_path(config_dir: &Path) -> PathBuf {
     config_dir.join("glossary.json")
 }
 
-/// Whether a `glossary.json` file exists on disk (regardless of validity).
-pub fn cache_present(config_dir: &Path) -> bool {
-    glossary_path(config_dir).is_file()
+/// Whether a legacy single-file `glossary.json` still exists. After
+/// [`migrate_legacy_cache`] runs, this is true only for an unmigratable
+/// (unparseable / wrong-format) leftover — which drives the "rebuild recommended"
+/// status.
+pub fn legacy_cache_present(config_dir: &Path) -> bool {
+    legacy_glossary_path(config_dir).is_file()
 }
 
 pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
+    let path = glossary_path(config_dir, &glossary.target_lang)
+        .ok_or_else(|| format!("Invalid target language: {}", glossary.target_lang))?;
     std::fs::create_dir_all(config_dir).map_err(|e| format!("Could not create config dir: {e}"))?;
     let body = serde_json::to_string(glossary).map_err(|e| format!("serialize glossary: {e}"))?;
-    std::fs::write(glossary_path(config_dir), body).map_err(|e| format!("write glossary: {e}"))
+    std::fs::write(path, body).map_err(|e| format!("write glossary: {e}"))
 }
 
-/// Load the cached glossary, or `None` when the file is missing, unparseable, or
-/// an old/incompatible format (untyped v1 cache). Never crashes.
-pub fn load(config_dir: &Path) -> Option<Glossary> {
-    let body = std::fs::read_to_string(glossary_path(config_dir)).ok()?;
+/// Load the cached glossary for `lang`, or `None` when its file is missing,
+/// unparseable, or an old/incompatible format. Because the cache is keyed by
+/// language, an unsupported language (which never builds a file) always loads
+/// `None`, and a stale build for another language can never leak in. Never panics.
+pub fn load(config_dir: &Path, lang: &str) -> Option<Glossary> {
+    let body = std::fs::read_to_string(glossary_path(config_dir, lang)?).ok()?;
     let glossary: Glossary = serde_json::from_str(&body).ok()?;
     if glossary.format != GLOSSARY_FORMAT {
         return None;
     }
     Some(glossary)
+}
+
+/// One-time migration of the pre-v1.4.0 single `glossary.json` into the
+/// per-language layout: a valid format-2 file is renamed to
+/// `glossary-<its target_lang>.json` (unless that already exists) and the legacy
+/// file removed. An unparseable/old-format legacy file is left in place so
+/// `legacy_cache_present` can still flag it for rebuild. Idempotent and best-effort
+/// — failures are swallowed so a migration hiccup never blocks the app.
+pub fn migrate_legacy_cache(config_dir: &Path) {
+    let legacy = legacy_glossary_path(config_dir);
+    let Ok(body) = std::fs::read_to_string(&legacy) else {
+        return;
+    };
+    let Ok(glossary) = serde_json::from_str::<Glossary>(&body) else {
+        return; // unparseable → leave it for the outdated-cache flag
+    };
+    if glossary.format != GLOSSARY_FORMAT {
+        return; // old format → leave it for the outdated-cache flag
+    }
+    let Some(target) = glossary_path(config_dir, &glossary.target_lang) else {
+        return;
+    };
+    if target.exists() {
+        // A per-language file already exists; just drop the stale legacy copy.
+        let _ = std::fs::remove_file(&legacy);
+    } else {
+        // Rename into the per-language name; if the move fails, the legacy file
+        // simply stays put and the next run retries.
+        let _ = std::fs::rename(&legacy, &target);
+    }
 }
 
 #[cfg(test)]
@@ -699,35 +755,98 @@ mod tests {
         assert!(err.contains("StardewXnbHack"));
     }
 
+    /// A cacheable glossary tagged with a target language.
+    fn glossary_for(lang: &str, entries: Vec<GlossaryEntry>) -> Glossary {
+        Glossary {
+            format: GLOSSARY_FORMAT,
+            target_lang: lang.to_string(),
+            term_count: entries.len(),
+            entries,
+            ..Default::default()
+        }
+    }
+
     #[test]
-    fn save_then_load_roundtrips_at_format_2() {
+    fn save_then_load_roundtrips_per_language_at_format_2() {
         let dir = crate::test_support::temp_dir("glossary-cache");
-        let glossary = glossary_of(vec![entry("Spring", "Frühling", TermKind::Season)]);
+        let glossary = glossary_for("de", vec![entry("Spring", "Frühling", TermKind::Season)]);
         save(&dir, &glossary).unwrap();
-        let loaded = load(&dir).unwrap();
+
+        let loaded = load(&dir, "de").unwrap();
         assert_eq!(loaded, glossary);
         assert_eq!(loaded.format, 2);
+        assert!(dir.join("glossary-de.json").is_file());
+
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn load_ignores_old_untyped_and_versioned_caches() {
-        let dir = crate::test_support::temp_dir("glossary-old-cache");
-        // An untyped v1 cache (`{ terms: {…} }`, no `entries`/`format`) is ignored.
-        write(
-            &glossary_path(&dir),
-            r#"{ "sourceLang": "default", "targetLang": "de", "termCount": 1, "terms": { "Spring": "Frühling" } }"#,
-        );
-        assert_eq!(load(&dir), None);
-        assert!(cache_present(&dir));
+    fn caches_are_isolated_by_language() {
+        // Building one language must never leak into another (the core #158 fix):
+        // a different supported language and an unsupported one both load `None`.
+        let dir = crate::test_support::temp_dir("glossary-isolation");
+        save(
+            &dir,
+            &glossary_for("de", vec![entry("Parsnip", "Pastinake", TermKind::Item)]),
+        )
+        .unwrap();
 
-        // A typed cache stamped with a different format is also ignored.
+        assert!(load(&dir, "de").is_some());
+        assert_eq!(load(&dir, "fr"), None);
+        assert_eq!(load(&dir, "th"), None);
+        assert!(!dir.join("glossary-th.json").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_ignores_old_versioned_per_language_cache() {
+        let dir = crate::test_support::temp_dir("glossary-old-cache");
+        // A typed cache stamped with a different format is ignored.
         write(
-            &glossary_path(&dir),
+            &dir.join("glossary-de.json"),
             r#"{ "format": 1, "sourceLang": "default", "targetLang": "de", "termCount": 0, "entries": [] }"#,
         );
-        assert_eq!(load(&dir), None);
-        assert!(cache_present(&dir));
+        assert_eq!(load(&dir, "de"), None);
+        assert!(dir.join("glossary-de.json").is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migrates_legacy_single_file_into_per_language_layout() {
+        let dir = crate::test_support::temp_dir("glossary-migrate");
+        // A pre-v1.4.0 valid format-2 single cache.
+        let legacy = glossary_for("de", vec![entry("Spring", "Frühling", TermKind::Season)]);
+        write(
+            &dir.join("glossary.json"),
+            &serde_json::to_string(&legacy).unwrap(),
+        );
+
+        migrate_legacy_cache(&dir);
+
+        // Renamed to the per-language file; the legacy file is gone; load works.
+        assert!(dir.join("glossary-de.json").is_file());
+        assert!(!dir.join("glossary.json").is_file());
+        assert!(!legacy_cache_present(&dir));
+        assert_eq!(load(&dir, "de"), Some(legacy));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn migration_leaves_unparseable_legacy_cache_for_rebuild_flag() {
+        let dir = crate::test_support::temp_dir("glossary-migrate-old");
+        // An untyped v1 cache (`{ terms: {…} }`) can't migrate — left in place so
+        // the UI can recommend a rebuild.
+        write(
+            &dir.join("glossary.json"),
+            r#"{ "sourceLang": "default", "targetLang": "de", "termCount": 1, "terms": { "Spring": "Frühling" } }"#,
+        );
+
+        migrate_legacy_cache(&dir);
+
+        assert!(legacy_cache_present(&dir));
+        assert_eq!(load(&dir, "de"), None);
 
         std::fs::remove_dir_all(&dir).ok();
     }

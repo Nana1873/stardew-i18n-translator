@@ -36,7 +36,7 @@ beforeEach(() => {
   });
 });
 
-async function gotoGlossaryStep() {
+async function gotoGlossaryStep(lang = "de") {
   fireEvent.click(screen.getByRole("button", { name: "Auto-detect" }));
   await waitFor(() =>
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
@@ -47,7 +47,7 @@ async function gotoGlossaryStep() {
   );
   fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 3
   fireEvent.change(screen.getByLabelText("Target language"), {
-    target: { value: "de" },
+    target: { value: lang },
   });
   fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 4
 }
@@ -135,6 +135,16 @@ describe("SetupWizard", () => {
       screen.getByRole("region", { name: "How the glossary works" }),
     ).toHaveTextContent("Unpack once");
     expect(screen.getByText(/never changed or uploaded/)).toBeInTheDocument();
+  });
+
+  it("offers no glossary for a game-unsupported language (Thai)", async () => {
+    render(<SetupWizard initial={null} onComplete={() => {}} />);
+    await gotoGlossaryStep("th");
+
+    expect(
+      await screen.findByText(/Stardew Valley doesn’t include this language/i),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
   });
 
   it("builds the glossary when unpacked content is present", async () => {

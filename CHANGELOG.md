@@ -19,6 +19,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   show each term's category, and the longest matching term wins on overlap
   (`Iridium Ore` over `Ore`). Glossary caches from earlier versions are ignored
   and the UI recommends a one-click rebuild.
+- The glossary is now cached per language (`Data/glossary-<lang>.json`). Switching
+  the target language loads that language's own glossary, so hints, the local-AI
+  prompt, and batch exports never carry another language's official terms — and a
+  game-unsupported language (e.g. Thai) simply gets none. A previously built
+  language keeps its cache, so switching back needs no rebuild; an existing
+  single-file cache is migrated automatically.
 
 ### Added
 
