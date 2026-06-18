@@ -8,6 +8,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-18
+
 ### Changed
 
 - The glossary is now a typed, high-confidence set of official game terms
@@ -50,6 +52,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   provenance pack name is shown. Read-only, local, and never redistributed. With
   no pack, the language still gets no glossary. The same mechanism works for any
   future unsupported language with no extra code.
+
+See [docs/release/v1.4.0.md](docs/release/v1.4.0.md) for the full notes.
 
 ## [1.3.0] - 2026-06-15
 
@@ -205,7 +209,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.0...HEAD
+[1.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.2...v1.2.3
 [1.2.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.1...v1.2.2
