@@ -9,6 +9,7 @@ mod batch;
 mod detection;
 mod export;
 mod glossary;
+mod lang_pack;
 mod llm;
 mod release_zip;
 mod scanner;
@@ -265,9 +266,9 @@ fn export_llm_batch(
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
 
-    // Per-language glossary: unsupported languages have no cache, so their batch
-    // glossary excerpt is empty rather than carrying another language's terms.
-    let glossary = glossary::load(&config_dir(&app)?, &target_lang);
+    // Per-language glossary: unsupported languages use a community-pack cache
+    // only while the source pack is still installed.
+    let glossary = load_active_glossary(&config_dir(&app)?, &target_lang);
     let batch_json = batch::build_batch(
         &mod_name,
         &mod_unique_id,
@@ -366,20 +367,62 @@ fn import_llm_batch_path(
         .inspect_err(|error| log::error!("import_llm_batch_path({mod_unique_id}) failed: {error}"))
 }
 
+/// The Mods folder to scan for community language packs: the user's configured
+/// `mods_path` when set, else the default `<Stardew>/Mods`.
+fn mods_dir(config: &Path, stardew_path: &str) -> PathBuf {
+    settings::load(config)
+        .mods_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| detection::mods_path_for(Path::new(stardew_path)))
+}
+
+/// Load the glossary that is safe to use for runtime hints/prompts. Official
+/// language caches are self-contained; community-pack caches are used only while
+/// the matching pack is still installed, so removing a pack returns the app to
+/// the no-glossary fallback promised for unsupported languages.
+fn load_active_glossary(config: &Path, target_lang: &str) -> Option<glossary::Glossary> {
+    let cached = glossary::load(config, target_lang)?;
+    if glossary::game_locale_suffix(target_lang).is_some() {
+        return Some(cached);
+    }
+    if cached.source != glossary::GlossarySource::CommunityPack {
+        return None;
+    }
+    let settings = settings::load(config);
+    let stardew_path = settings.stardew_path.as_deref()?;
+    let pack = lang_pack::detect_language_pack(&mods_dir(config, stardew_path), target_lang).pack?;
+    match cached.pack_name.as_deref() {
+        Some(name) if name == pack.name => Some(cached),
+        _ => None,
+    }
+}
+
 #[tauri::command]
 fn build_glossary(
     app: AppHandle,
     stardew_path: String,
     target_lang: String,
 ) -> Result<glossary::GlossaryInfo, String> {
+    let config = config_dir(&app)?;
     let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
-    let built = glossary::build(&unpacked, &target_lang)
-        .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
-    glossary::save(&config_dir(&app)?, &built)?;
-    Ok(glossary::GlossaryInfo {
-        target_lang: built.target_lang,
-        term_count: built.term_count,
-    })
+    // A game-supported language builds from official content; a game-unsupported
+    // one (e.g. Thai) builds from an installed community language pack (#163).
+    let built = if glossary::game_locale_suffix(&target_lang).is_some() {
+        glossary::build(&unpacked, &target_lang)
+    } else {
+        let mods = mods_dir(&config, &stardew_path);
+        match lang_pack::detect_language_pack(&mods, &target_lang).pack {
+            Some(pack) => {
+                glossary::build_from_pack(&unpacked, &pack.strings_dir, &target_lang, &pack.name)
+            }
+            None => Err(format!(
+                "No community language pack for \"{target_lang}\" was found in your Mods folder."
+            )),
+        }
+    }
+    .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
+    glossary::save(&config, &built)?;
+    Ok(glossary::GlossaryInfo::of(&built))
 }
 
 #[tauri::command]
@@ -389,7 +432,7 @@ fn load_glossary(
 ) -> Result<Option<glossary::Glossary>, String> {
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
-    Ok(glossary::load(&config, &target_lang))
+    Ok(load_active_glossary(&config, &target_lang))
 }
 
 #[tauri::command]
@@ -400,17 +443,26 @@ fn glossary_status(
 ) -> Result<glossary::GlossaryStatus, String> {
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
-    let cached = glossary::load(&config, &target_lang).map(|g| glossary::GlossaryInfo {
-        target_lang: g.target_lang,
-        term_count: g.term_count,
-    });
+    let cached =
+        load_active_glossary(&config, &target_lang).map(|g| glossary::GlossaryInfo::of(&g));
     // A legacy single `glossary.json` still present after migration is an
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
     let outdated_cache = glossary::legacy_cache_present(&config);
+    // For a game-unsupported language, see whether an installed community pack
+    // could supply a glossary (#163). Skipped for supported languages (they build
+    // from official content) — so the Mods folder is only scanned when relevant.
+    let detected =
+        if !target_lang.is_empty() && glossary::game_locale_suffix(&target_lang).is_none() {
+            lang_pack::detect_language_pack(&mods_dir(&config, &stardew_path), &target_lang).pack
+        } else {
+            None
+        };
     Ok(glossary::GlossaryStatus {
         unpacked_present: glossary::unpacked_present(Path::new(&stardew_path)),
         cached,
         outdated_cache,
+        pack_available: detected.is_some(),
+        pack_name: detected.map(|pack| pack.name),
     })
 }
 
@@ -447,9 +499,10 @@ async fn translate_string(
     if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
         return Err("Base URL must start with http:// or https://.".to_string());
     }
-    // Load the glossary for the active language only: an unsupported language has
-    // no cache file, so no official terms are ever injected into its prompt.
-    let glossary_pairs = glossary::load(&config_dir(&app)?, &target_lang)
+    // Load only the glossary currently valid for the active language. For
+    // unsupported languages, a community-pack cache is ignored after the pack is
+    // removed so stale official-term hints never reach the prompt.
+    let glossary_pairs = load_active_glossary(&config_dir(&app)?, &target_lang)
         .map(|g| glossary::match_terms(&source, &g))
         .unwrap_or_default();
     llm::translate(
@@ -713,6 +766,100 @@ pub(crate) mod test_support {
         let mut dir = std::env::temp_dir();
         dir.push(format!("sit-test-{tag}-{nanos}-{seq}"));
         dir
+    }
+}
+
+#[cfg(test)]
+mod glossary_runtime_tests {
+    use super::*;
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    fn community_glossary(pack_name: &str) -> glossary::Glossary {
+        glossary::Glossary {
+            format: glossary::GLOSSARY_FORMAT,
+            source_lang: "default".to_string(),
+            target_lang: "th".to_string(),
+            term_count: 1,
+            source: glossary::GlossarySource::CommunityPack,
+            pack_name: Some(pack_name.to_string()),
+            entries: vec![glossary::GlossaryEntry {
+                source: "Parsnip".to_string(),
+                target: "Pastinake".to_string(),
+                kind: glossary::TermKind::Item,
+                asset: "Objects".to_string(),
+                key: "24".to_string(),
+            }],
+        }
+    }
+
+    fn install_pack(mods: &Path, name: &str) {
+        let pack = mods.join(name);
+        write(
+            &pack.join("manifest.json"),
+            &format!(
+                r#"{{ "Name": "{name}", "UniqueID": "test.th.{name}",
+                     "ContentPackFor": {{ "UniqueID": "Pathoschild.ContentPatcher" }} }}"#
+            ),
+        );
+        write(
+            &pack.join("content.json"),
+            r#"{
+              "Changes": [
+                {
+                  "Action": "EditData",
+                  "Target": "Data/AdditionalLanguages",
+                  "Entries": { "{{ModId}}": { "LanguageCode": "th" } }
+                },
+                {
+                  "Action": "Load",
+                  "Target": "Strings/Objects",
+                  "FromFile": "assets/Content/{{Target}}.json",
+                  "When": { "Language": "th" }
+                }
+              ]
+            }"#,
+        );
+        write(
+            &pack
+                .join("assets")
+                .join("Content")
+                .join("Strings")
+                .join("Objects.json"),
+            r#"{ "24": "Pastinake" }"#,
+        );
+    }
+
+    #[test]
+    fn community_pack_cache_is_used_only_while_matching_pack_is_installed() {
+        let config = test_support::temp_dir("active-glossary");
+        let stardew = config.join("Game");
+        let mods = stardew.join("Mods");
+        settings::save(
+            &config,
+            &settings::AppSettings {
+                stardew_path: Some(stardew.to_string_lossy().to_string()),
+                mods_path: Some(mods.to_string_lossy().to_string()),
+                target_lang: Some("th".to_string()),
+                ..settings::AppSettings::default()
+            },
+        )
+        .unwrap();
+        glossary::save(&config, &community_glossary("Thai Pack")).unwrap();
+
+        assert!(load_active_glossary(&config, "th").is_none());
+
+        install_pack(&mods, "Other Pack");
+        assert!(load_active_glossary(&config, "th").is_none());
+
+        std::fs::remove_dir_all(mods.join("Other Pack")).unwrap();
+        install_pack(&mods, "Thai Pack");
+        assert!(load_active_glossary(&config, "th").is_some());
+
+        std::fs::remove_dir_all(&config).ok();
     }
 }
 

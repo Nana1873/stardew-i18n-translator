@@ -415,9 +415,16 @@ export function importLlmBatchPath(
   });
 }
 
+/** Where a glossary's terms came from (mirrors Rust `GlossarySource`). */
+export type GlossarySource = "official" | "communityPack";
+
 export interface GlossaryInfo {
   targetLang: string;
   termCount: number;
+  /** Provenance of the glossary; absent on caches written before #163. */
+  source?: GlossarySource;
+  /** The community pack's display name, when `source` is `communityPack`. */
+  packName?: string;
 }
 
 export interface GlossaryStatus {
@@ -425,6 +432,14 @@ export interface GlossaryStatus {
   cached: GlossaryInfo | null;
   /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */
   outdatedCache: boolean;
+  /**
+   * For a game-unsupported language, whether an installed community language pack
+   * was detected that can supply a glossary (#163). Always false for supported
+   * languages (they build from official content).
+   */
+  packAvailable: boolean;
+  /** The detected community pack's display name, when `packAvailable`. */
+  packName?: string;
 }
 
 export function buildGlossary(

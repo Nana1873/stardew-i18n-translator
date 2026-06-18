@@ -884,6 +884,60 @@ describe("App shell", () => {
     expect(screen.queryByRole("menu", { name: "Import" })).toBeNull();
   });
 
+  it("rescans after a settings language change without opening extra-key cleanup", async () => {
+    const extraKeyScan = {
+      ...EMPTY_SCAN,
+      extraKeys: [
+        {
+          modName: "Example Mod",
+          relativeDir: "i18n",
+          targetPath: "E:/Mods/Example/i18n/fr.json",
+          key: "removed-after-switch",
+        },
+      ],
+    };
+    let scans = 0;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          unpackedPresent: false,
+          cached: null,
+          outdatedCache: false,
+          packAvailable: false,
+        });
+      if (cmd === "save_settings") return Promise.resolve(null);
+      if (cmd === "scan_mods") {
+        scans += 1;
+        return Promise.resolve(scans === 1 ? EMPTY_SCAN : extraKeyScan);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "fr",
+      }),
+    );
+    expect(screen.queryByText("removed-after-switch")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings")

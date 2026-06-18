@@ -147,6 +147,43 @@ describe("SetupWizard", () => {
     expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
   });
 
+  it("offers Build from community pack for an unsupported language with a detected pack", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      switch (cmd) {
+        case "detect_stardew":
+          return Promise.resolve({
+            stardewPath: "E:/SDV",
+            modsPath: "E:/SDV/Mods",
+            source: "steam",
+          });
+        case "default_mods_path":
+          return Promise.resolve("E:/SDV/Mods");
+        case "validate_stardew_path":
+          return Promise.resolve(true);
+        case "glossary_status":
+          return Promise.resolve({
+            unpackedPresent: true,
+            cached: null,
+            outdatedCache: false,
+            packAvailable: true,
+            packName: "Stardew Valley - THAI",
+          });
+        default:
+          return Promise.resolve(null);
+      }
+    });
+
+    render(<SetupWizard initial={null} onComplete={() => {}} />);
+    await gotoGlossaryStep("th");
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Build from community pack",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
+  });
+
   it("builds the glossary when unpacked content is present", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       switch (cmd) {

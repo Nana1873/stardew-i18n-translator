@@ -66,12 +66,12 @@ The setup wizard runs on first launch and can be re-triggered from settings.
 
 ### Steps
 
-| Step | Required | Description                     | Details                                                                                                                                                                                                                                                                                                                                                                   |
-| ---- | -------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | ✅       | **Stardew Valley folder**       | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder.                                                                                                                                                                           |
-| 2    | ✅       | **Mods folder**                 | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied.                                                                               |
-| 3    | ✅       | **Source & target language**    | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh), plus Thai (`th`) for players running a custom-language mod (SV 1.6 `Data/AdditionalLanguages`). Game-unsupported targets like Thai have no official glossary; the glossary build is disabled for them with an explanatory note. |
-| 4    | ❌       | **Build glossary** _(optional)_ | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary.                                                                                                                                                                                                      |
+| Step | Required | Description                     | Details                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---- | -------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | ✅       | **Stardew Valley folder**       | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder.                                                                                                                                                                                                                                                             |
+| 2    | ✅       | **Mods folder**                 | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied.                                                                                                                                                                 |
+| 3    | ✅       | **Source & target language**    | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh), plus Thai (`th`) for players running a custom-language mod (SV 1.6 `Data/AdditionalLanguages`). Game-unsupported targets like Thai have no built-in official glossary, but may build one from an installed community language pack when available; otherwise the UI explains that glossary hints are unavailable. |
+| 4    | ❌       | **Build glossary** _(optional)_ | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary.                                                                                                                                                                                                                                                                                        |
 
 ### Auto-detection Paths (Windows)
 
@@ -151,20 +151,24 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 1. **Primary:** Read from `Content (unpacked)/` if present (SMAPI creates this on first run).
 2. **Fallback:** If unpacked content is not available, show guidance asking the user to run the game with SMAPI once, or provide a path to unpacked content.
-3. **Skip:** User can skip glossary entirely. Tool continues without hints.
-4. **Future:** In-app XNB reader for fully automatic extraction without SMAPI dependency.
+3. **Community language pack (game-unsupported languages, #163):** For a target language Stardew has no official locale for (e.g. Thai `th`), if an installed community Content Patcher language pack registers that language (`Data/AdditionalLanguages` → `LanguageCode`), build the glossary by pairing the English base from `Content (unpacked)/Strings` with the pack's bundled `assets/Content/Strings/<asset>.json` (English-identical keys). Read-only, per `SCOPE_GUARDRAILS.md`. Untranslated (English-identical) values are dropped by the term-quality gate. When no such pack is present, the language simply gets no glossary.
+4. **Skip:** User can skip glossary entirely. Tool continues without hints.
+5. **Future:** In-app XNB reader for fully automatic extraction without SMAPI dependency.
 
 ### Storage
 
 - Cached **per language** as `data/glossary/glossary-<lang>.json` beside the
   portable executable (e.g. `data/glossary/glossary-de.json`). The cache is keyed
-  by language, so a
-  game-unsupported target (e.g. Thai `th`) never produces a file and therefore
-  never receives official-term hints — the editor, local-AI prompt, and batch
-  export all see no glossary for it, and a build for one language can never leak
-  into another.
+  by language, so a build for one language can never leak into another. A
+  game-unsupported target (e.g. Thai `th`) produces a file **only** when built from
+  a community language pack (#163); with no pack it never produces or uses a file,
+  and a previously built community-pack cache is ignored once that pack is no
+  longer installed. The editor, local-AI prompt, and batch export all see no
+  glossary for it in that fallback state.
 - Structure (v1.4.0, `format: 2`): `{ format, sourceLang, targetLang, termCount,
-entries }`, where each entry is a typed term
+source, packName?, entries }`, where `source` is `official` or `communityPack`
+  (a pack build also records the `packName` provenance), and each entry is a typed
+  term
   `{ source, target, kind, asset, key }` (`kind` ∈ item · bigCraftable · weapon ·
   tool · clothing · npc · location · season). Caches written by earlier versions
   (the untyped `{ terms: { … } }` map) are ignored on load and the UI recommends a

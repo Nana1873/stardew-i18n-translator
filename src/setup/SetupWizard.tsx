@@ -78,6 +78,7 @@ export function SetupWizard({
             unpackedPresent: false,
             cached: null,
             outdatedCache: false,
+            packAvailable: false,
           });
       });
     return () => {
@@ -359,24 +360,77 @@ export function SetupWizard({
                   </p>
                 </div>
 
-                {targetLang && !gameSupportsLanguage(targetLang) ? (
-                  <StatusCard
-                    tone="neutral"
-                    title="No glossary for this language"
-                  >
-                    Stardew Valley doesn’t include this language, so no official
-                    glossary is available. You can still translate and export
-                    fully.
-                  </StatusCard>
-                ) : glossary === null ? (
+                {glossary === null ? (
                   <StatusCard tone="neutral" title="Checking game content...">
                     Looking for the files needed to build your glossary.
                   </StatusCard>
                 ) : glossaryBuilt ? (
                   <StatusCard tone="success" title="Glossary ready">
                     Built {glossaryBuilt.termCount} official terms for{" "}
-                    {glossaryBuilt.targetLang}.
+                    {glossaryBuilt.targetLang}
+                    {glossaryBuilt.source === "communityPack" &&
+                    glossaryBuilt.packName
+                      ? ` from ${glossaryBuilt.packName}`
+                      : ""}
+                    .
                   </StatusCard>
+                ) : targetLang && !gameSupportsLanguage(targetLang) ? (
+                  glossary.packAvailable && glossary.unpackedPresent ? (
+                    <StatusCard
+                      tone="ready"
+                      title="Community language pack found"
+                      action={
+                        <button
+                          type="button"
+                          className="wizard__primary"
+                          onClick={handleBuildGlossary}
+                          disabled={glossaryBuilding || !targetLang}
+                        >
+                          {glossaryBuilding
+                            ? "Building glossary..."
+                            : "Build from community pack"}
+                        </button>
+                      }
+                    >
+                      Stardew Valley doesn’t include this language, but a
+                      community language pack
+                      {glossary.packName ? ` (${glossary.packName})` : ""} was
+                      detected. Build official-term hints from it — the rest of
+                      the app works the same.
+                    </StatusCard>
+                  ) : glossary.packAvailable ? (
+                    <StatusCard
+                      tone="warning"
+                      title="One preparation step is needed"
+                      action={
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void openUrl(
+                              "https://github.com/Pathoschild/StardewXnbHack",
+                            )
+                          }
+                        >
+                          Open StardewXnbHack
+                        </button>
+                      }
+                    >
+                      A community language pack
+                      {glossary.packName ? ` (${glossary.packName})` : ""} was
+                      detected, but building its glossary also needs your
+                      unpacked game content (the English base). Run
+                      StardewXnbHack once, then re-open Setup.
+                    </StatusCard>
+                  ) : (
+                    <StatusCard
+                      tone="neutral"
+                      title="No glossary for this language"
+                    >
+                      Stardew Valley doesn’t include this language, so no
+                      official glossary is available. You can still translate
+                      and export fully.
+                    </StatusCard>
+                  )
                 ) : glossary.unpackedPresent ? (
                   <StatusCard
                     tone="ready"

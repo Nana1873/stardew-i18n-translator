@@ -45,6 +45,19 @@ pub enum TermKind {
     Season,
 }
 
+/// Where a glossary's term pairs came from. `Official` is the StardewXnbHack
+/// English↔locale pairing for a game-supported language; `CommunityPack` is the
+/// #163 source for a game-unsupported language (English base + an installed
+/// community language pack's bundled `Strings/*`). Defaults to `Official` so
+/// caches written before this field round-trip unchanged.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum GlossarySource {
+    #[default]
+    Official,
+    CommunityPack,
+}
+
 /// One official term: `source` (English) → `target`, tagged with its category
 /// and the `asset`/`key` it was extracted from (provenance for debugging/#158).
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -65,6 +78,13 @@ pub struct Glossary {
     pub source_lang: String,
     pub target_lang: String,
     pub term_count: usize,
+    /// How the terms were sourced (official game content vs. a community pack).
+    #[serde(default)]
+    pub source: GlossarySource,
+    /// For a `CommunityPack` build, the pack's display name (provenance shown in
+    /// the UI). Never an on-disk path — see `SCOPE_GUARDRAILS.md`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack_name: Option<String>,
     /// Typed official terms.
     pub entries: Vec<GlossaryEntry>,
 }
@@ -227,6 +247,24 @@ fn window_position(haystack: &[char], needle: &[char]) -> Option<usize> {
 pub struct GlossaryInfo {
     pub target_lang: String,
     pub term_count: usize,
+    /// Provenance of the cached glossary (official content vs. a community pack).
+    #[serde(default)]
+    pub source: GlossarySource,
+    /// The community pack's display name, when `source` is `CommunityPack`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pack_name: Option<String>,
+}
+
+impl GlossaryInfo {
+    /// Summarize a built/loaded glossary for the UI, carrying its provenance.
+    pub fn of(glossary: &Glossary) -> Self {
+        Self {
+            target_lang: glossary.target_lang.clone(),
+            term_count: glossary.term_count,
+            source: glossary.source,
+            pack_name: glossary.pack_name.clone(),
+        }
+    }
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -239,6 +277,13 @@ pub struct GlossaryStatus {
     /// A `glossary.json` exists but is old/invalid (untyped v1 or unparseable),
     /// so the UI should recommend a rebuild.
     pub outdated_cache: bool,
+    /// For a game-unsupported language, whether an installed community language
+    /// pack was detected that could supply a glossary (#163). Always false for
+    /// game-supported languages (they build from official content).
+    pub pack_available: bool,
+    /// The detected community pack's display name, when `pack_available`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pack_name: Option<String>,
 }
 
 /// Map a SMAPI i18n code to the game's content locale suffix (SPEC §5).
@@ -269,23 +314,29 @@ pub fn unpacked_present(stardew_path: &Path) -> bool {
     default_unpacked_path(stardew_path).join("Strings").is_dir()
 }
 
-/// Build the glossary for `target_lang` from the unpacked content folder.
-pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, String> {
-    let suffix = game_locale_suffix(target_lang)
-        .ok_or_else(|| format!("Unsupported target language: {target_lang}"))?;
-    let strings_dir = unpacked_content.join("Strings");
-    if !strings_dir.is_dir() {
-        return Err(format!(
-            "No unpacked Strings folder at {}. Run StardewXnbHack first.",
-            unpacked_content.display()
-        ));
-    }
+/// The content `Strings/*` asset base-names the typed glossary extracts from
+/// (e.g. `Objects`, `NPCNames`). Lets the language-pack detector score how much
+/// of a pack is usable without duplicating the asset list.
+pub fn typed_asset_names() -> Vec<&'static str> {
+    TYPED_ASSETS.iter().map(|spec| spec.asset).collect()
+}
 
+/// Extract typed entries by pairing an English `Strings/` dir with a target
+/// `Strings/` dir. `target_file` names the target file for an asset, which is the
+/// only thing that differs between the two sources: official content stores the
+/// locale inline (`Objects.de-DE.json`), while a community pack uses plain,
+/// English-identical filenames (`Objects.json`). Both English bases are
+/// `<asset>.json`. The first typed asset to define a name wins (priority order).
+fn build_entries(
+    english_dir: &Path,
+    target_dir: &Path,
+    target_file: &dyn Fn(&str) -> String,
+) -> Vec<GlossaryEntry> {
     let mut entries: Vec<GlossaryEntry> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
     for spec in TYPED_ASSETS {
-        let base = read_string_map(&strings_dir.join(format!("{}.json", spec.asset)));
-        let localized = read_string_map(&strings_dir.join(format!("{}.{suffix}.json", spec.asset)));
+        let base = read_string_map(&english_dir.join(format!("{}.json", spec.asset)));
+        let localized = read_string_map(&target_dir.join(target_file(spec.asset)));
         let (Some(base), Some(localized)) = (base, localized) else {
             continue;
         };
@@ -325,12 +376,73 @@ pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, Str
             });
         }
     }
+    entries
+}
 
+/// Build the official glossary for a game-supported `target_lang` from the
+/// unpacked content folder (English base + the inline `.<locale>.json` variant).
+pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, String> {
+    let suffix = game_locale_suffix(target_lang)
+        .ok_or_else(|| format!("Unsupported target language: {target_lang}"))?;
+    let strings_dir = unpacked_content.join("Strings");
+    if !strings_dir.is_dir() {
+        return Err(format!(
+            "No unpacked Strings folder at {}. Run StardewXnbHack first.",
+            unpacked_content.display()
+        ));
+    }
+
+    let entries = build_entries(&strings_dir, &strings_dir, &|asset| {
+        format!("{asset}.{suffix}.json")
+    });
     Ok(Glossary {
         format: GLOSSARY_FORMAT,
         source_lang: "default".to_string(),
         target_lang: target_lang.to_string(),
         term_count: entries.len(),
+        source: GlossarySource::Official,
+        pack_name: None,
+        entries,
+    })
+}
+
+/// Build a glossary for a game-unsupported `target_lang` from an installed
+/// community language pack (#163). The English base comes from the unpacked
+/// content `Strings/`; the target side from the pack's `Strings/` folder, whose
+/// files share the English keys. Untranslated (English-identical) values are
+/// dropped by the term-quality gate, so only genuine translations remain.
+pub fn build_from_pack(
+    unpacked_content: &Path,
+    pack_strings_dir: &Path,
+    target_lang: &str,
+    pack_name: &str,
+) -> Result<Glossary, String> {
+    let strings_dir = unpacked_content.join("Strings");
+    if !strings_dir.is_dir() {
+        return Err(format!(
+            "No unpacked Strings folder at {}. Run StardewXnbHack first.",
+            unpacked_content.display()
+        ));
+    }
+    if !pack_strings_dir.is_dir() {
+        return Err("The language pack has no readable Strings folder.".to_string());
+    }
+
+    let entries = build_entries(&strings_dir, pack_strings_dir, &|asset| {
+        format!("{asset}.json")
+    });
+    if entries.is_empty() {
+        return Err(format!(
+            "No official terms could be extracted from the language pack \"{pack_name}\"."
+        ));
+    }
+    Ok(Glossary {
+        format: GLOSSARY_FORMAT,
+        source_lang: "default".to_string(),
+        target_lang: target_lang.to_string(),
+        term_count: entries.len(),
+        source: GlossarySource::CommunityPack,
+        pack_name: Some(pack_name.to_string()),
         entries,
     })
 }
@@ -798,6 +910,60 @@ mod tests {
         let root = crate::test_support::temp_dir("glossary-missing");
         let err = build(&root.join("Content (unpacked)"), "de").unwrap_err();
         assert!(err.contains("StardewXnbHack"));
+    }
+
+    #[test]
+    fn builds_from_pack_pairing_english_base_with_pack_strings() {
+        // #163: a game-unsupported language (Thai) builds from an installed pack
+        // whose Strings keys are English-identical. English values come from the
+        // unpacked base; the pack supplies the target side.
+        let root = crate::test_support::temp_dir("glossary-pack");
+        let english = root.join("Content (unpacked)").join("Strings");
+        let pack = root.join("pack").join("Strings");
+        write(
+            &english.join("Objects.json"),
+            r#"{ "24": "Parsnip", "78": "Cave Carrot" }"#,
+        );
+        write(
+            &english.join("NPCNames.json"),
+            r#"{ "Abigail": "Abigail" }"#,
+        );
+        // Pack: same keys, Thai values — `Cave Carrot` left untranslated.
+        write(
+            &pack.join("Objects.json"),
+            r#"{ "24": "พาร์สนิป", "78": "Cave Carrot" }"#,
+        );
+        write(&pack.join("NPCNames.json"), r#"{ "Abigail": "อบิเกล" }"#);
+
+        let glossary =
+            build_from_pack(&root.join("Content (unpacked)"), &pack, "th", "THAI Pack").unwrap();
+
+        assert_eq!(glossary.target_lang, "th");
+        assert_eq!(glossary.source, GlossarySource::CommunityPack);
+        assert_eq!(glossary.pack_name.as_deref(), Some("THAI Pack"));
+        let find = |source: &str| glossary.entries.iter().find(|e| e.source == source);
+        assert_eq!(find("Parsnip").map(|e| e.kind), Some(TermKind::Item));
+        assert_eq!(find("Abigail").map(|e| e.kind), Some(TermKind::Npc));
+        // The untranslated (English-identical) value is dropped by the gate.
+        assert!(find("Cave Carrot").is_none());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn build_from_pack_without_any_translation_errors() {
+        let root = crate::test_support::temp_dir("glossary-pack-empty");
+        let english = root.join("Content (unpacked)").join("Strings");
+        let pack = root.join("pack").join("Strings");
+        write(&english.join("Objects.json"), r#"{ "24": "Parsnip" }"#);
+        // Pack value identical to English → nothing extractable.
+        write(&pack.join("Objects.json"), r#"{ "24": "Parsnip" }"#);
+
+        let err = build_from_pack(&root.join("Content (unpacked)"), &pack, "th", "Empty Pack")
+            .unwrap_err();
+        assert!(err.contains("Empty Pack"));
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     /// A cacheable glossary tagged with a target language.

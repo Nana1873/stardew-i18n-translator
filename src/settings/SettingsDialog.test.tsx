@@ -429,6 +429,41 @@ describe("SettingsDialog", () => {
     expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
   });
 
+  it("offers Build from community pack for an unsupported language when a pack is detected", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          unpackedPresent: true,
+          cached: null,
+          outdatedCache: false,
+          packAvailable: true,
+          packName: "Stardew Valley - THAI",
+        });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={{ ...baseSettings, targetLang: "th" }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    expect(
+      await screen.findByRole("button", {
+        name: "Build from community pack",
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
+    // The dead-end "no glossary" message must NOT be shown when a pack exists.
+    expect(
+      screen.queryByText(/so no official glossary is available/i),
+    ).toBeNull();
+  });
+
   it("shows a retryable diagnostic when the AI connection fails", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")

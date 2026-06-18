@@ -68,8 +68,10 @@ once into the language active during the upgrade.
 ### Automated Result (2026-06-17)
 
 Thai (`th`) added as a custom-language-mod target (SV 1.6
-`Data/AdditionalLanguages`). Stardew ships no Thai content, so it has no official
-glossary and the glossary build is disabled for it in the UI. Thai passes the same
+`Data/AdditionalLanguages`). Stardew ships no official Thai content, so no
+_official_ glossary is built; the glossary build is offered only when an installed
+community language pack supplies the terms (#163), and is otherwise unavailable
+with an explanatory note. Thai passes the same
 parameterized technical matrix — settings persistence, scan/import, exact Unicode
 round trips, saved edits, canonical export filename `th.json` and key order,
 protected tokens, external LLM batch, and local-AI prompt construction. Release
