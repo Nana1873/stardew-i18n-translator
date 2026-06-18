@@ -29,6 +29,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   named `data/` (previously `Data/`). On Windows this is the same folder, so
   existing installs keep working; settings, glossary, and translation state are
   unaffected.
+- Installed community language packs are excluded from the scanned mod list (with
+  a scan note) instead of appearing as bogus translation targets — a language pack
+  is a translation, not something to translate.
 
 ### Added
 
@@ -39,6 +42,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   explanatory note. Languages the game does not ship are now distinguished by a
   data-driven `gameLocale` property, so future custom-language targets are a
   single list entry.
+- Glossary building for a game-unsupported language from an installed community
+  Content Patcher language pack. When a pack registers the target language
+  (`Data/AdditionalLanguages`), the app pairs its bundled `Strings/*` with the
+  English base to build a typed glossary cached as
+  `data/glossary/glossary-<lang>.json`; untranslated terms are dropped and the
+  provenance pack name is shown. Read-only, local, and never redistributed. With
+  no pack, the language still gets no glossary. The same mechanism works for any
+  future unsupported language with no extra code.
 
 ## [1.3.0] - 2026-06-15
 

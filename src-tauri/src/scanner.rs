@@ -17,6 +17,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::lang_pack;
 use crate::translations::{self, ModState};
 
 const MAX_DEPTH: usize = 12;
@@ -322,6 +323,23 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         scanned.progress = progress_of(scanned.total_keys, scanned.translated_keys);
         scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
     }
+
+    // Exclude community language packs (#163): such a pack ships its own `i18n/`
+    // (its config-menu strings, already in the pack's language), so it would
+    // otherwise appear here as a bogus translation target. A pack is detected by
+    // the same signal the glossary source uses — it registers an in-game language
+    // via `Data/AdditionalLanguages`. The content.json parse runs only for the
+    // already-filtered mods that have i18n, so the cost stays bounded.
+    result_mods.retain(|scanned| {
+        if lang_pack::registered_language_codes(Path::new(&scanned.folder_path)).is_empty() {
+            return true;
+        }
+        warnings.push(format!(
+            "Skipped \"{}\": detected as a community language pack, not a translation target.",
+            scanned.name
+        ));
+        false
+    });
 
     // SMAPI requires globally-unique UniqueIDs and refuses to load duplicates;
     // our translation state is also keyed by UniqueID (translations.rs), so two
@@ -860,7 +878,8 @@ fn build_i18n_file(
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
 /// `default.json`. Bounded by depth and a visited-canonical-path set (cycles).
-fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut Vec<PathBuf>) {
+/// `pub(crate)` so `lang_pack` can reuse the same bounded walk for pack discovery.
+pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut Vec<PathBuf>) {
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
     let mut dirs_seen = 0usize;
@@ -1150,6 +1169,52 @@ mod tests {
                 .iter()
                 .any(|w| w.contains("Duplicate") && w.contains("same.id")),
             "expected a duplicate-UniqueID warning, got: {:?}",
+            result.warnings
+        );
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn excludes_community_language_packs_from_scan() {
+        // A community language pack ships its own i18n (config strings in its
+        // language). It must be excluded from the translatable list (#163) and
+        // surfaced as a warning, while ordinary mods still list normally.
+        let root = crate::test_support::temp_dir("scan-langpack");
+        let normal = root.join("Normal");
+        write(
+            &normal.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Normal\" }",
+        );
+        write(
+            &normal.join("i18n").join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
+        let pack = root.join("Stardew Valley - THAI");
+        write(
+            &pack.join("manifest.json"),
+            "{ \"Name\": \"Stardew Valley - THAI\", \"UniqueID\": \"ell.thai\", \
+             \"ContentPackFor\": { \"UniqueID\": \"Pathoschild.ContentPatcher\" } }",
+        );
+        write(
+            &pack.join("content.json"),
+            "{ \"Changes\": [ { \"Action\": \"EditData\", \"Target\": \"Data/AdditionalLanguages\", \
+             \"Entries\": { \"id\": { \"LanguageCode\": \"th\" } } } ] }",
+        );
+        write(
+            &pack.join("i18n").join("default.json"),
+            "{ \"config.x\": \"value\" }",
+        );
+
+        let result = scan_mods(&root, "th", &root);
+        let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        assert_eq!(names, vec!["Normal"], "only the ordinary mod is listed");
+        assert!(
+            result
+                .warnings
+                .iter()
+                .any(|w| w.contains("language pack") && w.contains("Stardew Valley - THAI")),
+            "expected a language-pack exclusion warning, got: {:?}",
             result.warnings
         );
 

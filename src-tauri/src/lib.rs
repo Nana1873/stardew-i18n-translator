@@ -9,6 +9,7 @@ mod batch;
 mod detection;
 mod export;
 mod glossary;
+mod lang_pack;
 mod llm;
 mod release_zip;
 mod scanner;
@@ -366,20 +367,41 @@ fn import_llm_batch_path(
         .inspect_err(|error| log::error!("import_llm_batch_path({mod_unique_id}) failed: {error}"))
 }
 
+/// The Mods folder to scan for community language packs: the user's configured
+/// `mods_path` when set, else the default `<Stardew>/Mods`.
+fn mods_dir(config: &Path, stardew_path: &str) -> PathBuf {
+    settings::load(config)
+        .mods_path
+        .map(PathBuf::from)
+        .unwrap_or_else(|| detection::mods_path_for(Path::new(stardew_path)))
+}
+
 #[tauri::command]
 fn build_glossary(
     app: AppHandle,
     stardew_path: String,
     target_lang: String,
 ) -> Result<glossary::GlossaryInfo, String> {
+    let config = config_dir(&app)?;
     let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
-    let built = glossary::build(&unpacked, &target_lang)
-        .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
-    glossary::save(&config_dir(&app)?, &built)?;
-    Ok(glossary::GlossaryInfo {
-        target_lang: built.target_lang,
-        term_count: built.term_count,
-    })
+    // A game-supported language builds from official content; a game-unsupported
+    // one (e.g. Thai) builds from an installed community language pack (#163).
+    let built = if glossary::game_locale_suffix(&target_lang).is_some() {
+        glossary::build(&unpacked, &target_lang)
+    } else {
+        let mods = mods_dir(&config, &stardew_path);
+        match lang_pack::detect_language_pack(&mods, &target_lang).pack {
+            Some(pack) => {
+                glossary::build_from_pack(&unpacked, &pack.strings_dir, &target_lang, &pack.name)
+            }
+            None => Err(format!(
+                "No community language pack for \"{target_lang}\" was found in your Mods folder."
+            )),
+        }
+    }
+    .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
+    glossary::save(&config, &built)?;
+    Ok(glossary::GlossaryInfo::of(&built))
 }
 
 #[tauri::command]
@@ -400,17 +422,25 @@ fn glossary_status(
 ) -> Result<glossary::GlossaryStatus, String> {
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
-    let cached = glossary::load(&config, &target_lang).map(|g| glossary::GlossaryInfo {
-        target_lang: g.target_lang,
-        term_count: g.term_count,
-    });
+    let cached = glossary::load(&config, &target_lang).map(|g| glossary::GlossaryInfo::of(&g));
     // A legacy single `glossary.json` still present after migration is an
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
     let outdated_cache = glossary::legacy_cache_present(&config);
+    // For a game-unsupported language, see whether an installed community pack
+    // could supply a glossary (#163). Skipped for supported languages (they build
+    // from official content) — so the Mods folder is only scanned when relevant.
+    let detected =
+        if !target_lang.is_empty() && glossary::game_locale_suffix(&target_lang).is_none() {
+            lang_pack::detect_language_pack(&mods_dir(&config, &stardew_path), &target_lang).pack
+        } else {
+            None
+        };
     Ok(glossary::GlossaryStatus {
         unpacked_present: glossary::unpacked_present(Path::new(&stardew_path)),
         cached,
         outdated_cache,
+        pack_available: detected.is_some(),
+        pack_name: detected.map(|pack| pack.name),
     })
 }
 

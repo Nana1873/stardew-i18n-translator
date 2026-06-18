@@ -110,6 +110,7 @@ export function SettingsDialog({
             unpackedPresent: false,
             cached: null,
             outdatedCache: false,
+            packAvailable: false,
           }),
       );
     return () => {
@@ -123,12 +124,15 @@ export function SettingsDialog({
     setGlossaryError(null);
     try {
       const info = await buildGlossary(settings.stardewPath, targetLang);
-      // A successful rebuild replaces any old cache, clearing the warning.
-      setGlossary({
+      // A successful rebuild replaces any old cache, clearing the warning. Keep
+      // the detected-pack flags so the community-pack panel stays consistent.
+      setGlossary((previous) => ({
         unpackedPresent: true,
         cached: info,
         outdatedCache: false,
-      });
+        packAvailable: previous?.packAvailable ?? false,
+        packName: previous?.packName,
+      }));
     } catch (cause) {
       setGlossaryError(String(cause));
     } finally {
@@ -309,16 +313,70 @@ export function SettingsDialog({
                   Build optional official-term hints from your locally unpacked
                   Stardew Valley content.
                 </p>
-                {targetLang && !gameSupportsLanguage(targetLang) ? (
-                  <p className="wizard__muted">
-                    Stardew Valley doesn’t include this language, so no official
-                    glossary is available. Translation and export still work
-                    fully.
-                  </p>
-                ) : glossary === null ? (
+                {glossary === null ? (
                   <p className="wizard__muted">
                     Checking for unpacked game content…
                   </p>
+                ) : targetLang && !gameSupportsLanguage(targetLang) ? (
+                  glossary.packAvailable && glossary.unpackedPresent ? (
+                    <>
+                      <p className="wizard__muted">
+                        Stardew Valley doesn’t include this language, but a
+                        community language pack was detected
+                        {glossary.packName ? ` (${glossary.packName})` : ""}.
+                        You can build official-term hints from it.
+                      </p>
+                      <div className="wizard__row">
+                        <button
+                          type="button"
+                          onClick={handleBuildGlossary}
+                          disabled={glossaryBuilding || !targetLang}
+                        >
+                          {glossaryBuilding
+                            ? "Building…"
+                            : "Build from community pack"}
+                        </button>
+                      </div>
+                      {glossary.cached && (
+                        <p className="wizard__ok">
+                          ✓ Cached: {glossary.cached.termCount} terms (
+                          {glossary.cached.targetLang})
+                          {glossary.cached.source === "communityPack" &&
+                          glossary.cached.packName
+                            ? ` from ${glossary.cached.packName}`
+                            : ""}
+                          .
+                        </p>
+                      )}
+                    </>
+                  ) : glossary.packAvailable ? (
+                    <>
+                      <p className="wizard__muted">
+                        A community language pack was detected
+                        {glossary.packName ? ` (${glossary.packName})` : ""},
+                        but building its glossary also needs your unpacked game
+                        content (the English base).
+                      </p>
+                      <div className="wizard__row">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            void openUrl(
+                              "https://github.com/Pathoschild/StardewXnbHack",
+                            )
+                          }
+                        >
+                          Get StardewXnbHack ↗
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="wizard__muted">
+                      Stardew Valley doesn’t include this language, so no
+                      official glossary is available. Translation and export
+                      still work fully.
+                    </p>
+                  )
                 ) : glossary.unpackedPresent ? (
                   <>
                     <div className="wizard__row">

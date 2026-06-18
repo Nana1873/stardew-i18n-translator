@@ -12,7 +12,7 @@ This document defines strict boundaries for the **Stardew i18n Translator** proj
 
 ## Core v1 Technical Guardrails
 
-- **File Format Limit:** The app ONLY supports standard SMAPI localization files: `i18n/default.json` and target language files like `i18n/<lang>.json` (where `<lang>` is a code like `es`, `zh`, `de`, etc.). Do NOT support general mod JSON configurations or `content.json` parsing. From v1.4.0, `<lang>` may also be a **custom/unsupported** code such as `th` (a language Stardew plays only via a custom-language mod), through the approved language framework — still only as SMAPI i18n `<lang>.json` files, never `content.json` or `Data/*.json`. See the v1.4.0 section below.
+- **File Format Limit:** The app ONLY supports standard SMAPI localization files: `i18n/default.json` and target language files like `i18n/<lang>.json` (where `<lang>` is a code like `es`, `zh`, `de`, etc.). Do NOT support general mod JSON configurations or `content.json` parsing. From v1.4.0, `<lang>` may also be a **custom/unsupported** code such as `th` (a language Stardew plays only via a custom-language mod), through the approved language framework — translation/export still only touch SMAPI i18n `<lang>.json` files, never `content.json` or `Data/*.json`. The single, narrow exception is the read-only **community language-pack glossary source** (#163) defined in the v1.4.0 section below; it never reads the game's own `Data/*` and never writes pack content. See the v1.4.0 section below.
 - **No Cloud AI / No API Keys:** No cloud AI APIs and no API keys of any kind inside the desktop application in v1 — the tool must work fully offline. Allowed AI workflows are exactly two: the M4 external LLM batch export/import (the app only writes and reads files; the user handles any external LLM separately), and the M6 **local-LLM** translation against an OpenAI-compatible `localhost` endpoint (Ollama / LM Studio / compatible; no key, no external network, output always lands as `review-needed`). No provider plugin system — presets + a custom URL only (SPEC §19 #6/#7).
 - **No Nexus API Operations:** v1 does not validate Nexus keys or make active API requests to Nexus Mods. It only parses Nexus IDs from manifest `UpdateKeys` and shows external clickable links.
 - **No Automatic Downloads:** No automatic or background translation discovery/downloading.
@@ -32,8 +32,9 @@ are **allowed** and must not be treated as scope creep.
 This expansion does **not** relax any other limit. All of the following remain in
 force exactly as above:
 
-- SMAPI i18n files only (`i18n/default.json` + `i18n/<lang>.json`); no
-  `content.json`, no `Data/*.json`, no XNB.
+- SMAPI i18n files only (`i18n/default.json` + `i18n/<lang>.json`) for
+  translation and export; no `content.json`, no `Data/*.json`, no XNB — except
+  the read-only community language-pack glossary source below.
 - Fully local/offline; no cloud AI, no API keys.
 - No Nexus API calls and no automatic downloads.
 - No git integration and no mod-manager behavior.
@@ -47,7 +48,32 @@ Additional v1.4.0 requirements:
 - The UI clearly marks a language as custom/unsupported by Stardew itself.
 - When the game has no official locale data for the target language, no official
   glossary is built or implied, and local-AI/batch export receive no official
-  glossary pairs.
+  glossary pairs — unless a community language pack supplies them (next item).
+
+### Community language-pack glossary source (#163, approved)
+
+For a game-unsupported target language (e.g. Thai `th`), the app MAY build a
+typed glossary from an **installed community Content Patcher language pack** when
+one is present. This is the only place the app reads beyond SMAPI i18n files, and
+it is strictly bounded:
+
+- **Read-only, glossary-building only.** The app reads, for an installed pack: its
+  `manifest.json` and `content.json` (to detect that the pack registers the target
+  language via `Data/AdditionalLanguages` → `LanguageCode`), and the pack's bundled
+  `assets/**/Strings/*.json` (the target-language term values). Nothing is written,
+  modified, packaged, redistributed, or uploaded.
+- **Never the game's own data.** The game's `Data/*`, any XNB, and unpacked game
+  content are read only where already permitted (English base from
+  `Content (unpacked)/` for glossary extraction). The pack exception does not relax
+  that.
+- **No general content.json interpretation.** Parsing is limited to detecting the
+  language registration and locating the pack's `Strings/` folder. The app does not
+  implement Content Patcher, evaluate its full condition grammar, or honor pack
+  configs.
+- **Detected packs are excluded** from the translatable mod list (a language pack
+  is a translation, not a translation target).
+- Results are cached locally in the same per-language `data/glossary/glossary-<lang>.json`
+  and never leave the machine.
 
 ## Local Data for Development and Verification
 
