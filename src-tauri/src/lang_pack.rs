@@ -191,7 +191,10 @@ fn resolve_strings_dir(mod_dir: &Path, content: &Value, target: &str) -> Option<
             if resolved.contains("{{") {
                 continue; // other unresolved Content Patcher tokens — give up here
             }
-            let file = mod_dir.join(resolved.replace('\\', "/"));
+            let file = match resolved_pack_file(mod_dir, &resolved) {
+                Some(file) => file,
+                None => continue,
+            };
             if file.is_file() {
                 if let Some(parent) = file.parent() {
                     return Some(parent.to_path_buf());
@@ -200,6 +203,21 @@ fn resolve_strings_dir(mod_dir: &Path, content: &Value, target: &str) -> Option<
         }
     }
     probe_strings_dir(mod_dir)
+}
+
+/// Resolve a pack-local `FromFile` path and reject absolute/path-traversal
+/// targets. The pack source is intentionally limited to bundled assets.
+fn resolved_pack_file(mod_dir: &Path, relative: &str) -> Option<PathBuf> {
+    let file = mod_dir.join(relative.replace('\\', "/"));
+    if !file.is_file() {
+        return None;
+    }
+    let root = std::fs::canonicalize(mod_dir).ok()?;
+    let canonical_file = std::fs::canonicalize(&file).ok()?;
+    if !canonical_file.starts_with(root) {
+        return None;
+    }
+    Some(file)
 }
 
 /// Whether a change's `When` selects `target`. Tolerant of the two common shapes
@@ -482,6 +500,40 @@ mod tests {
         let root = crate::test_support::temp_dir("lp-xnb");
         let pack = root.join("XNB Pack");
         write_pack(&pack, "XNB Pack", "th", &[]);
+        assert!(detect_language_pack(&root, "th").pack.is_none());
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn from_file_must_stay_inside_pack_folder() {
+        let root = crate::test_support::temp_dir("lp-traversal");
+        let pack = root.join("Pack");
+        let outside = root.join("outside").join("Content").join("Strings");
+        write(
+            &pack.join("manifest.json"),
+            r#"{ "Name": "Pack", "UniqueID": "test.pack",
+                 "ContentPackFor": { "UniqueID": "Pathoschild.ContentPatcher" } }"#,
+        );
+        write(
+            &pack.join("content.json"),
+            r#"{
+              "Changes": [
+                {
+                  "Action": "EditData",
+                  "Target": "Data/AdditionalLanguages",
+                  "Entries": { "{{ModId}}": { "LanguageCode": "th" } }
+                },
+                {
+                  "Action": "Load",
+                  "Target": "Strings/Objects",
+                  "FromFile": "../outside/Content/{{Target}}.json",
+                  "When": { "Language": "th" }
+                }
+              ]
+            }"#,
+        );
+        write(&outside.join("Objects.json"), r#"{ "24": "Ruby" }"#);
+
         assert!(detect_language_pack(&root, "th").pack.is_none());
         std::fs::remove_dir_all(&root).ok();
     }

@@ -217,10 +217,21 @@ export function App() {
   }
 
   async function handleSaveSettings(next: AppSettings) {
+    const languageChanged = settings?.targetLang !== next.targetLang;
     await persist(next);
     setSettingsOpen(false);
     // Settings may have built a glossary or switched language — reload per-language.
     refreshGlossary(next.targetLang);
+    if (languageChanged && setupComplete(next)) {
+      // A language switch changes target files and saved state roots, so refresh
+      // the workspace immediately. Keep optional extra-key cleanup quiet here:
+      // those hints are useful on manual scans, but noisy during a deliberate
+      // language switch.
+      await runScan(next, false, () => true, {
+        clearExisting: true,
+        showExtraKeyDialog: false,
+      });
+    }
   }
 
   async function persist(next: AppSettings) {
@@ -237,11 +248,16 @@ export function App() {
     scanSettings: AppSettings,
     showProgress: boolean,
     isActive: () => boolean = () => true,
+    options: {
+      clearExisting?: boolean;
+      showExtraKeyDialog?: boolean;
+    } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
     setScanning(true);
     setScanError(null);
     setSelectedModId(null);
+    if (options.clearExisting) setScan(null);
     setScanDialogOpen(showProgress);
     try {
       const result = await scanMods(
@@ -253,7 +269,9 @@ export function App() {
       // A clean scan auto-closes; keep the dialog open for actionable scan
       // diagnostics, including unused keys in existing target files.
       setScanDialogOpen(
-        result.warnings.length > 0 || (result.extraKeys?.length ?? 0) > 0,
+        result.warnings.length > 0 ||
+          (options.showExtraKeyDialog !== false &&
+            (result.extraKeys?.length ?? 0) > 0),
       );
     } catch (error) {
       logFrontendError("scanMods", String(error));
