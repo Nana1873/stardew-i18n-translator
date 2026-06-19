@@ -8,6 +8,34 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-06-19
+
+### Added
+
+- Vietnamese (`vi`), Indonesian (`id`), Ukrainian (`uk`), Polish (`pl`),
+  Finnish (`fi`), Dutch (`nl`), and Czech (`cs`) are now selectable curated
+  custom-language targets. They use the same SMAPI `i18n/<code>.json` workflow
+  as the existing languages, including scan/import, saved edits, export,
+  external LLM batches, and local-AI prompts.
+- Glossary building now reads Stardew `Content/Strings/*.xnb` dictionaries
+  directly for built-in game languages, with the previous
+  `Content (unpacked)/Strings/*.json` layout retained as a compatibility
+  fallback. Glossary setup remains optional and non-blocking.
+- Installed community language packs can now supply glossary terms from either
+  JSON `Strings/*.json` files or direct `Strings/*_<lang>.xnb` dictionaries.
+  JSON remains preferred when both are present.
+- GitHub release publication now includes a Nexus Mods upload workflow that uses
+  the already attached portable ZIP after a normal GitHub release is published.
+
+### Changed
+
+- Setup can automatically build a glossary when a readable local game or
+  community-pack source is available, while Settings keeps the manual rebuild
+  action for game or pack updates.
+- Nexus upload release text is shorter and focused on the portable package.
+
+See [docs/release/v1.4.1.md](docs/release/v1.4.1.md) for the full notes.
+
 ## [1.4.0] - 2026-06-18
 
 ### Changed
@@ -209,7 +237,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.3...v1.3.0
 [1.2.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.2...v1.2.3
