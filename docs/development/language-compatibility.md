@@ -22,11 +22,18 @@ quality or native-speaker accuracy.
 | `ru` | Russian    | Cyrillic UTF-8 round trips                       |
 | `tr` | Turkish    | Dotted and dotless `i` characters                |
 | `zh` | Chinese    | Han text without whitespace assumptions          |
+| `vi` | Vietnamese | Custom-language-mod target; Latin tone marks     |
+| `id` | Indonesian | Custom-language-mod target                       |
+| `uk` | Ukrainian  | Custom-language-mod target; Cyrillic UTF-8       |
+| `pl` | Polish     | Custom-language-mod target; accented Latin       |
+| `fi` | Finnish    | Custom-language-mod target; accented Latin       |
+| `nl` | Dutch      | Custom-language-mod target                       |
+| `cs` | Czech      | Custom-language-mod target; accented Latin       |
 | `th` | Thai       | Custom-language-mod target; no official glossary |
 
 ## Automated Verification
 
-Use parameterized tests over all 12 target codes to verify:
+Use parameterized tests over all 19 target codes to verify:
 
 1. The language can be selected and persisted in settings.
 2. Scanning recognizes the expected target file for the selected language.
@@ -49,7 +56,7 @@ contain Stardew Valley game assets or third-party mod data.
 
 ### Automated Result (2026-06-12)
 
-The parameterized backend compatibility test passes for all 11 target codes. It
+The parameterized backend compatibility test passes for all 11 built-in target codes. It
 covers settings persistence, scan/import, exact Unicode round trips, saved
 edits, rescan/reload, canonical export filenames and key order, protected
 tokens, external LLM batch export/import, section context, and local-AI prompt
@@ -77,6 +84,19 @@ round trips, saved edits, canonical export filename `th.json` and key order,
 protected tokens, external LLM batch, and local-AI prompt construction. Release
 notes have no Thai template and use the deterministic English fallback while
 naming the language as Thai.
+
+### Automated Result (2026-06-19)
+
+The curated custom-language target list now also includes Vietnamese (`vi`),
+Indonesian (`id`), Ukrainian (`uk`), Polish (`pl`), Finnish (`fi`), Dutch
+(`nl`), and Czech (`cs`). These targets are technically verified through the
+same parameterized matrix as Thai: settings persistence, scan/import, exact
+Unicode round trips, saved edits, canonical export filenames such as `vi.json`,
+protected-token handling, external LLM batch export/import, and local-AI prompt
+construction. They are custom/unsupported by Stardew itself, so no official
+glossary is built unless an installed community language pack supplies a
+compatible glossary source. The source may be JSON `Strings/*.json` or direct
+`Strings/*_<lang>.xnb` dictionaries; JSON is preferred when both exist.
 
 ## Manual Smoke Test
 
@@ -127,11 +147,18 @@ portable Windows workflow across the main compatibility classes.
 | `ru` | Pass      | Not required |        |            | Covered by complete automated matrix.      |
 | `tr` | Pass      | Not required |        |            | Covered by complete automated matrix.      |
 | `zh` | Pass      | Not required |        |            | Covered by complete automated matrix.      |
+| `vi` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
+| `id` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
+| `uk` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
+| `pl` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
+| `fi` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
+| `nl` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
+| `cs` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
 | `th` | Pass      | Not required |        |            | Custom-language-mod target; no glossary.   |
 
 ## Acceptance Criteria
 
-- All 12 target codes pass the automated matrix.
+- All 19 target codes pass the automated matrix.
 - The representative `de`, `ja`, and `pt` set passes the packaged portable
   Windows smoke workflow.
 - No test loses, normalizes, or corrupts Unicode text.

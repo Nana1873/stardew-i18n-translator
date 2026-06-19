@@ -5,7 +5,7 @@
  * The Mods-folder step is a generic folder override only, not mod-manager
  * integration.
  */
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   type AppSettings,
   type GlossaryInfo,
@@ -63,11 +63,13 @@ export function SetupWizard({
   const [glossary, setGlossary] = useState<GlossaryStatus | null>(null);
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
   const [glossaryBuilt, setGlossaryBuilt] = useState<GlossaryInfo | null>(null);
+  const autoBuildKey = useRef<string | null>(null);
 
   useEffect(() => {
     if (step !== 4 || !stardewPath) return;
     let active = true;
     setGlossary(null);
+    setGlossaryBuilt(null);
     glossaryStatus(stardewPath, targetLang)
       .then((status) => {
         if (active) setGlossary(status);
@@ -75,16 +77,38 @@ export function SetupWizard({
       .catch(() => {
         if (active)
           setGlossary({
+            gameXnbPresent: false,
             unpackedPresent: false,
+            sourceAvailable: false,
             cached: null,
             outdatedCache: false,
             packAvailable: false,
+            packXnbAvailable: false,
           });
       });
     return () => {
       active = false;
     };
   }, [step, stardewPath, targetLang]);
+
+  useEffect(() => {
+    if (
+      step !== 4 ||
+      !stardewPath ||
+      !targetLang ||
+      !glossary ||
+      glossary.cached ||
+      glossaryBuilding ||
+      !glossary.sourceAvailable
+    ) {
+      return;
+    }
+    if (!gameSupportsLanguage(targetLang) && !glossary.packAvailable) return;
+    const key = `${stardewPath}|${targetLang}`;
+    if (autoBuildKey.current === key) return;
+    autoBuildKey.current = key;
+    void handleBuildGlossary();
+  }, [step, stardewPath, targetLang, glossary, glossaryBuilding]);
 
   async function handleBuildGlossary() {
     setGlossaryBuilding(true);
@@ -340,9 +364,9 @@ export function SetupWizard({
                   <h4>How it works</h4>
                   <ol>
                     <li>
-                      <strong>Unpack once.</strong> StardewXnbHack creates a{" "}
-                      <code>Content (unpacked)/</code> folder from your
-                      installed game.
+                      <strong>Read locally.</strong> The app reads glossary
+                      terms from your installed game or an installed community
+                      language pack.
                     </li>
                     <li>
                       <strong>Build locally.</strong> The app matches official
@@ -375,7 +399,7 @@ export function SetupWizard({
                     .
                   </StatusCard>
                 ) : targetLang && !gameSupportsLanguage(targetLang) ? (
-                  glossary.packAvailable && glossary.unpackedPresent ? (
+                  glossary.packAvailable && glossary.sourceAvailable ? (
                     <StatusCard
                       tone="ready"
                       title="Community language pack found"
@@ -388,7 +412,9 @@ export function SetupWizard({
                         >
                           {glossaryBuilding
                             ? "Building glossary..."
-                            : "Build from community pack"}
+                            : glossary.cached
+                              ? "Rebuild from community pack"
+                              : "Build from community pack"}
                         </button>
                       }
                     >
@@ -400,8 +426,8 @@ export function SetupWizard({
                     </StatusCard>
                   ) : glossary.packAvailable ? (
                     <StatusCard
-                      tone="warning"
-                      title="One preparation step is needed"
+                      tone="neutral"
+                      title="No usable glossary source"
                       action={
                         <button
                           type="button"
@@ -417,9 +443,9 @@ export function SetupWizard({
                     >
                       A community language pack
                       {glossary.packName ? ` (${glossary.packName})` : ""} was
-                      detected, but building its glossary also needs your
-                      unpacked game content (the English base). Run
-                      StardewXnbHack once, then re-open Setup.
+                      detected, but the app could not read a local English
+                      Strings source. StardewXnbHack is only needed as a
+                      fallback if the direct game files are unavailable.
                     </StatusCard>
                   ) : (
                     <StatusCard
@@ -431,7 +457,7 @@ export function SetupWizard({
                       and export fully.
                     </StatusCard>
                   )
-                ) : glossary.unpackedPresent ? (
+                ) : glossary.sourceAvailable ? (
                   <StatusCard
                     tone="ready"
                     title="Everything is ready"
@@ -444,7 +470,9 @@ export function SetupWizard({
                       >
                         {glossaryBuilding
                           ? "Building glossary..."
-                          : "Build glossary"}
+                          : glossary.cached
+                            ? "Rebuild glossary"
+                            : "Build glossary"}
                       </button>
                     }
                   >
@@ -452,7 +480,9 @@ export function SetupWizard({
                       ? "An older glossary from a previous version was found — rebuild recommended."
                       : glossary.cached
                         ? `A cached glossary with ${glossary.cached.termCount} terms already exists. Rebuild it to refresh the data.`
-                        : "Unpacked game content was found. Building usually takes only a moment."}
+                        : glossary.gameXnbPresent
+                          ? "Game Strings were found. Building usually takes only a moment."
+                          : "Unpacked game content was found as a fallback source. Building usually takes only a moment."}
                   </StatusCard>
                 ) : (
                   <StatusCard
@@ -471,9 +501,9 @@ export function SetupWizard({
                       </button>
                     }
                   >
-                    Download StardewXnbHack, place it in your Stardew Valley
-                    folder, and run it once. Then re-open Setup and build the
-                    glossary here.
+                    The app could not read glossary-ready game Strings. If the
+                    direct game files are unavailable, run StardewXnbHack once
+                    and re-open Setup.
                   </StatusCard>
                 )}
               </section>

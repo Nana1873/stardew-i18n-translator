@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 
 use serde_json::Value;
 
+use crate::glossary::StringAssetFormat;
 use crate::scanner;
 
 const CONTENT_PATCHER_ID: &str = "Pathoschild.ContentPatcher";
@@ -28,8 +29,10 @@ const CONTENT_PATCHER_ID: &str = "Pathoschild.ContentPatcher";
 pub struct LanguagePack {
     /// Display name (manifest `Name`, falling back to the folder name).
     pub name: String,
-    /// The pack's `Strings/` folder holding `<asset>.json` files.
+    /// The pack's `Strings/` folder holding glossary-relevant string assets.
     pub strings_dir: PathBuf,
+    /// The preferred readable format in `strings_dir` (JSON wins over XNB).
+    pub format: StringAssetFormat,
 }
 
 /// Result of scanning the Mods folder for a language pack: the best candidate (if
@@ -58,7 +61,7 @@ pub fn registered_language_codes(mod_dir: &Path) -> Vec<String> {
 /// scanning `mods_dir`. When several packs register the language the choice is
 /// deterministic — most resolvable typed-asset files wins, ties broken by name
 /// then path — and a warning records which was used. Returns no pack (and no
-/// warning) when none match or the only matches are unreadable (XNB-only).
+/// warning) when none match or no readable typed assets are present.
 pub fn detect_language_pack(mods_dir: &Path, target_lang: &str) -> Detection {
     let target = target_lang.trim();
     if target.is_empty() || !mods_dir.is_dir() {
@@ -94,14 +97,14 @@ pub fn detect_language_pack(mods_dir: &Path, target_lang: &str) -> Detection {
         if !seen_dirs.insert(strings_dir.clone()) {
             continue;
         }
-        let score = typed_asset_score(&strings_dir);
-        if score == 0 {
-            continue; // nothing extractable (e.g. XNB-only Strings)
-        }
+        let Some((format, score)) = typed_asset_score(&strings_dir, target) else {
+            continue;
+        };
         candidates.push((
             LanguagePack {
                 name: pack_name(mod_dir),
                 strings_dir,
+                format,
             },
             score,
         ));
@@ -202,7 +205,7 @@ fn resolve_strings_dir(mod_dir: &Path, content: &Value, target: &str) -> Option<
             }
         }
     }
-    probe_strings_dir(mod_dir)
+    probe_strings_dir(mod_dir, target)
 }
 
 /// Resolve a pack-local `FromFile` path and reject absolute/path-traversal
@@ -260,7 +263,7 @@ fn token_is_strings_asset(token: &str) -> bool {
 
 /// Bounded fallback: the conventional pack layouts first, then a depth-limited
 /// search for a `Strings/` folder holding at least one typed asset.
-fn probe_strings_dir(mod_dir: &Path) -> Option<PathBuf> {
+fn probe_strings_dir(mod_dir: &Path, target: &str) -> Option<PathBuf> {
     for relative in [
         "assets/Content/Strings",
         "assets/Strings",
@@ -268,15 +271,15 @@ fn probe_strings_dir(mod_dir: &Path) -> Option<PathBuf> {
         "Strings",
     ] {
         let dir = mod_dir.join(relative);
-        if typed_asset_score(&dir) > 0 {
+        if typed_asset_score(&dir, target).is_some() {
             return Some(dir);
         }
     }
-    find_strings_dir(mod_dir, 0)
+    find_strings_dir(mod_dir, target, 0)
 }
 
 /// Depth-limited search for a directory named `Strings` containing a typed asset.
-fn find_strings_dir(dir: &Path, depth: usize) -> Option<PathBuf> {
+fn find_strings_dir(dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {
     if depth > 6 {
         return None;
     }
@@ -290,13 +293,13 @@ fn find_strings_dir(dir: &Path, depth: usize) -> Option<PathBuf> {
             .file_name()
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.eq_ignore_ascii_case("Strings"));
-        if is_strings && typed_asset_score(&path) > 0 {
+        if is_strings && typed_asset_score(&path, target).is_some() {
             return Some(path);
         }
         subdirs.push(path);
     }
     for sub in subdirs {
-        if let Some(found) = find_strings_dir(&sub, depth + 1) {
+        if let Some(found) = find_strings_dir(&sub, target, depth + 1) {
             return Some(found);
         }
     }
@@ -305,14 +308,23 @@ fn find_strings_dir(dir: &Path, depth: usize) -> Option<PathBuf> {
 
 /// How many typed-glossary assets (`Objects.json`, `NPCNames.json`, …) the folder
 /// holds. The detector's selection score; 0 means nothing extractable.
-fn typed_asset_score(strings_dir: &Path) -> usize {
+fn typed_asset_score(strings_dir: &Path, target: &str) -> Option<(StringAssetFormat, usize)> {
     if !strings_dir.is_dir() {
-        return 0;
+        return None;
     }
-    crate::glossary::typed_asset_names()
+    let assets = crate::glossary::typed_asset_names();
+    let json_count = assets
         .iter()
         .filter(|asset| strings_dir.join(format!("{asset}.json")).is_file())
-        .count()
+        .count();
+    if json_count > 0 {
+        return Some((StringAssetFormat::Json, json_count));
+    }
+    let xnb_count = assets
+        .iter()
+        .filter(|asset| strings_dir.join(format!("{asset}_{target}.xnb")).is_file())
+        .count();
+    (xnb_count > 0).then_some((StringAssetFormat::Xnb, xnb_count))
 }
 
 /// The pack's display name (manifest `Name`, falling back to the folder name).
@@ -485,6 +497,7 @@ mod tests {
             found.strings_dir,
             pack.join("assets").join("Content").join("Strings")
         );
+        assert_eq!(found.format, StringAssetFormat::Json);
         assert!(detection.warnings.is_empty());
 
         // A different language and a missing language both find nothing.
@@ -495,12 +508,22 @@ mod tests {
     }
 
     #[test]
-    fn xnb_only_pack_yields_no_glossary_source() {
-        // Registers the language but ships no readable Strings/*.json (XNB-only).
+    fn xnb_only_pack_yields_xnb_glossary_source() {
+        // Registers the language and ships direct Strings/*_<lang>.xnb files.
         let root = crate::test_support::temp_dir("lp-xnb");
         let pack = root.join("XNB Pack");
         write_pack(&pack, "XNB Pack", "th", &[]);
-        assert!(detect_language_pack(&root, "th").pack.is_none());
+        write(
+            &pack
+                .join("assets")
+                .join("Content")
+                .join("Strings")
+                .join("Objects_th.xnb"),
+            "placeholder",
+        );
+        let found = detect_language_pack(&root, "th").pack.unwrap();
+        assert_eq!(found.name, "XNB Pack");
+        assert_eq!(found.format, StringAssetFormat::Xnb);
         std::fs::remove_dir_all(&root).ok();
     }
 
@@ -610,12 +633,20 @@ mod tests {
         eprintln!(
             "lang_pack: detected \"{}\", {} typed asset(s), {} warning(s)",
             pack.name,
-            typed_asset_score(&pack.strings_dir),
+            typed_asset_score(&pack.strings_dir, &lang)
+                .map(|(_, score)| score)
+                .unwrap_or(0),
             detection.warnings.len()
         );
 
         let unpacked = crate::glossary::default_unpacked_path(stardew);
-        match crate::glossary::build_from_pack(&unpacked, &pack.strings_dir, &lang, &pack.name) {
+        match crate::glossary::build_from_pack(
+            &unpacked,
+            &pack.strings_dir,
+            pack.format,
+            &lang,
+            &pack.name,
+        ) {
             Ok(glossary) => {
                 eprintln!(
                     "lang_pack: built {} terms from \"{}\"",

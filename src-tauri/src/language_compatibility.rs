@@ -89,8 +89,50 @@ const LANGUAGES: &[LanguageCase] = &[
         imported: "你好，{{PlayerName}}。今天真好。",
         edited: "欢迎你，{{PlayerName}}。",
     },
-    // Thai: not natively supported by Stardew (custom-language-mod target, no
-    // glossary). Exercises the same workflow as every other code via th.json.
+    // Custom-language-mod targets: not natively supported by Stardew, so no
+    // official glossary. They exercise the same workflow via <code>.json.
+    LanguageCase {
+        code: "vi",
+        label: "Vietnamese",
+        imported: "Xin chào {{PlayerName}}! Hôm nay trời đẹp.",
+        edited: "Chào mừng, {{PlayerName}}!",
+    },
+    LanguageCase {
+        code: "id",
+        label: "Indonesian",
+        imported: "Halo {{PlayerName}}, hari ini cerah.",
+        edited: "Selamat datang, {{PlayerName}}!",
+    },
+    LanguageCase {
+        code: "uk",
+        label: "Ukrainian",
+        imported: "Привіт, {{PlayerName}}. Гарного дня!",
+        edited: "Ласкаво просимо, {{PlayerName}}.",
+    },
+    LanguageCase {
+        code: "pl",
+        label: "Polish",
+        imported: "Cześć, {{PlayerName}}! Miłego dnia.",
+        edited: "Witaj, {{PlayerName}}.",
+    },
+    LanguageCase {
+        code: "fi",
+        label: "Finnish",
+        imported: "Hei {{PlayerName}}, hyvää päivää!",
+        edited: "Tervetuloa, {{PlayerName}}!",
+    },
+    LanguageCase {
+        code: "nl",
+        label: "Dutch",
+        imported: "Hallo {{PlayerName}}, fijne dag!",
+        edited: "Welkom, {{PlayerName}}!",
+    },
+    LanguageCase {
+        code: "cs",
+        label: "Czech",
+        imported: "Ahoj {{PlayerName}}, krásný den!",
+        edited: "Vítej, {{PlayerName}}!",
+    },
     LanguageCase {
         code: "th",
         label: "Thai",

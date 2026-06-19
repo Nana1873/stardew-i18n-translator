@@ -1,6 +1,5 @@
 /**
- * SMAPI i18n target languages (SPEC Appendix A). Source is always English
- * (`default`) in v1.
+ * SMAPI i18n target languages. Source is always English (`default`) in v1.
  */
 export interface Language {
   /** SMAPI i18n code, used for the `<lang>.json` filename. */
@@ -9,9 +8,9 @@ export interface Language {
   /**
    * The game's content locale suffix (e.g. `de-DE`), mirroring the backend's
    * `glossary::game_locale_suffix`. Its **presence means Stardew natively ships
-   * this language**, so an official glossary can be built. Languages the game
-   * does not support (playable only via a custom-language mod, e.g. Thai) omit
-   * it — that single omission marks them as glossary-less.
+   * this language**, so an official glossary can be built. Curated custom
+   * languages the game does not support omit it — that single omission marks
+   * them as glossary-less unless a community language pack supplies terms.
    */
   gameLocale?: string;
 }
@@ -30,16 +29,24 @@ export const TARGET_LANGUAGES: Language[] = [
   { code: "ru", label: "Russian (Русский)", gameLocale: "ru-RU" },
   { code: "tr", label: "Turkish (Türkçe)", gameLocale: "tr-TR" },
   { code: "zh", label: "Chinese (中文)", gameLocale: "zh-CN" },
-  // Stardew has no native Thai content; playable only via a custom-language mod
-  // (SV 1.6 `Data/AdditionalLanguages`, code `th`). No `gameLocale` → no glossary.
+  // Curated community-language-pack targets (SV 1.6 `Data/AdditionalLanguages`).
+  // Stardew ships no native content for these, so no `gameLocale` → no official
+  // glossary unless a compatible installed language pack supplies terms.
+  { code: "vi", label: "Vietnamese (Tiếng Việt)" },
+  { code: "id", label: "Indonesian (Bahasa Indonesia)" },
+  { code: "uk", label: "Ukrainian (Українська)" },
+  { code: "pl", label: "Polish (Polski)" },
+  { code: "fi", label: "Finnish (Suomi)" },
+  { code: "nl", label: "Dutch (Nederlands)" },
+  { code: "cs", label: "Czech (Čeština)" },
   { code: "th", label: "Thai (ไทย)" },
 ];
 
 /**
  * Whether Stardew natively ships this language. Only natively supported
  * languages have official content, so only they can build an official glossary.
- * Languages the game does not support still translate and export fully; they
- * simply have no glossary hints.
+ * Custom languages still translate and export fully; they simply have no
+ * official glossary hints unless a community language pack source is detected.
  */
 export function gameSupportsLanguage(code: string): boolean {
   return TARGET_LANGUAGES.some(

@@ -82,12 +82,12 @@ result tray without blocking the translation workspace.
 
 ## Optional Glossary
 
-The glossary can show official Stardew Valley terms while you translate. To
-build one, unpack your own game content with
-[StardewXnbHack](https://github.com/Pathoschild/StardewXnbHack), then choose
-**Settings > Glossary > Build glossary**.
+The glossary can show official Stardew Valley terms while you translate. The app
+reads the needed `Content/Strings` dictionaries from your local Stardew Valley
+install and can fall back to a StardewXnbHack-style `Content (unpacked)` folder
+when needed. Choose **Settings > Glossary > Build glossary** to refresh it.
 
-The glossary is optional and stays in `Data/glossary.json`.
+The glossary is optional and stays in `Data/glossary/`.
 
 ## Privacy
 

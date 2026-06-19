@@ -53,6 +53,13 @@ $translations = [ordered]@{
     "ru.json" = "0J/RgNC40LLQtdGCLCB7e1BsYXllck5hbWV9fS4g0KXQvtGA0L7RiNC10LPQviDQtNC90Y8h"
     "tr.json" = "TWVyaGFiYSwge3tQbGF5ZXJOYW1lfX0uIElsxLFrIMSxxZ/EsWsgZ8O8emVsLg=="
     "zh.json" = "5L2g5aW977yMe3tQbGF5ZXJOYW1lfX3jgILku4rlpKnnnJ/lpb3jgII="
+    "vi.json" = "WGluIGNow6BvIHt7UGxheWVyTmFtZX19ISBIw7RtIG5heSB0cuG7nWkgxJHhurlwLg=="
+    "id.json" = "SGFsbyB7e1BsYXllck5hbWV9fSwgaGFyaSBpbmkgY2VyYWgu"
+    "uk.json" = "0J/RgNC40LLRltGCLCB7e1BsYXllck5hbWV9fS4g0JPQsNGA0L3QvtCz0L4g0LTQvdGPIQ=="
+    "pl.json" = "Q3plxZvEhywge3tQbGF5ZXJOYW1lfX0hIE1pxYJlZ28gZG5pYS4="
+    "fi.json" = "SGVpIHt7UGxheWVyTmFtZX19LCBoeXbDpMOkIHDDpGl2w6TDpCE="
+    "nl.json" = "SGFsbG8ge3tQbGF5ZXJOYW1lfX0sIGZpam5lIGRhZyE="
+    "cs.json" = "QWhvaiB7e1BsYXllck5hbWV9fSwga3LDoXNuw70gZGVuIQ=="
 }
 
 foreach ($entry in $translations.GetEnumerator()) {

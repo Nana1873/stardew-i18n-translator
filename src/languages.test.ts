@@ -16,19 +16,27 @@ describe("supported target languages", () => {
       { code: "ru", label: "Russian (Русский)", gameLocale: "ru-RU" },
       { code: "tr", label: "Turkish (Türkçe)", gameLocale: "tr-TR" },
       { code: "zh", label: "Chinese (中文)", gameLocale: "zh-CN" },
+      { code: "vi", label: "Vietnamese (Tiếng Việt)" },
+      { code: "id", label: "Indonesian (Bahasa Indonesia)" },
+      { code: "uk", label: "Ukrainian (Українська)" },
+      { code: "pl", label: "Polish (Polski)" },
+      { code: "fi", label: "Finnish (Suomi)" },
+      { code: "nl", label: "Dutch (Nederlands)" },
+      { code: "cs", label: "Czech (Čeština)" },
       { code: "th", label: "Thai (ไทย)" },
     ]);
-    expect(new Set(TARGET_LANGUAGES.map(({ code }) => code)).size).toBe(12);
+    expect(new Set(TARGET_LANGUAGES.map(({ code }) => code)).size).toBe(19);
   });
 
-  it("treats game-shipped languages as glossary-capable and Thai as not", () => {
+  it("treats game-shipped languages as glossary-capable and custom languages as not", () => {
     expect(gameSupportsLanguage("de")).toBe(true);
     expect(gameSupportsLanguage("zh")).toBe(true);
-    // Thai is playable only via a custom-language mod, so it has no glossary.
-    expect(gameSupportsLanguage("th")).toBe(false);
-    expect(TARGET_LANGUAGES.find((l) => l.code === "th")?.gameLocale).toBe(
-      undefined,
-    );
+    for (const code of ["vi", "id", "uk", "pl", "fi", "nl", "cs", "th"]) {
+      expect(gameSupportsLanguage(code)).toBe(false);
+      expect(TARGET_LANGUAGES.find((l) => l.code === code)?.gameLocale).toBe(
+        undefined,
+      );
+    }
     expect(gameSupportsLanguage("xx")).toBe(false);
   });
 });
