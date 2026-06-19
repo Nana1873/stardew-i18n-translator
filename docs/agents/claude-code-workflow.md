@@ -13,7 +13,7 @@ graph TD
     A[Scan Workspace] --> B[Verify Worktree is Clean]
     B --> C[Analyze SPEC & Issue]
     C --> D[Make Multi-File Edits]
-    D --> E[Verify locally & Lint]
+    D --> E[Focused local verification]
     E --> F[Commit Scoped Changes]
     F --> G[Write Handoff Summary]
 ```
@@ -40,13 +40,19 @@ graph TD
 - Do not run destructive terminal commands (e.g. force-deleting directories outside the workspace, editing system files).
 - Do not use or commit real Nexus API keys or real game assets in test configurations.
 
-### Step 4: Local Verification
+### Step 4: Verification
 
-- Run code formatting, lints, and test suites locally before pushing.
+- Run focused local formatting, lint, and test checks that match the changed
+  surface before pushing. Docs-only changes usually need only
+  `corepack pnpm check:docs`; code changes need the relevant frontend and/or
+  Rust checks.
 - Keep compiler warnings to zero.
-- Treat GitHub Actions as a limited final safety net for the exact `main`
-  commit, not as an interactive test runner. Do not push repeated trial fixes
-  merely to obtain remote feedback when the checks can run locally.
+- Treat GitHub Actions on the public repository as the complete PR merge gate.
+  Do not push repeated trial fixes merely to obtain remote feedback when a local
+  check can answer the question faster.
+- For release work, still run the local build, portable ZIP packaging,
+  extracted-ZIP smoke test, and release-script preflight because the release
+  uploads the locally verified artifact.
 
 ### Step 5: Clean Handoff
 

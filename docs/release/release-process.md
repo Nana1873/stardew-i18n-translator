@@ -63,9 +63,9 @@ Unreleased comparison link, local Markdown links, and formatting.
 4. Run `powershell -File scripts/package-portable.ps1`.
 5. Extract the generated ZIP to a different writable folder.
 6. Verify first launch, persistence, and copying the complete folder.
-7. Confirm the complete local frontend, Rust, and documentation checks passed
-   on the current `main` commit. CI on that exact `main` commit is an additional
-   safety net when Actions minutes are available.
+7. Confirm the relevant local frontend, Rust, and documentation checks passed
+   for the release changes, and confirm CI passed on the exact protected `main`
+   commit being released.
 8. Confirm merged pull requests have the correct `changelog:*` labels.
 9. Create the tag and draft release from the already verified ZIP:
 
