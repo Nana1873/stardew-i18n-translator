@@ -24,6 +24,10 @@ exports clean translation files with backups.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about broken Content Patcher, dialogue, mail, and placeholder tokens.
 - Supports manual translation, optional local AI, and external LLM batches.
+- Supports Stardew's built-in languages plus curated custom-language targets such
+  as Vietnamese, Indonesian, Ukrainian, Polish, Finnish, Dutch, Czech, and Thai.
+- Builds optional glossary hints from local Stardew strings and installed
+  community language packs when a custom-language pack provides usable terms.
 - Keeps export, import, and release results available in a compact result tray.
 - Builds installable translation ZIPs and short localized publication notes.
 - Keeps settings and translation work locally in the portable app folder.
@@ -37,6 +41,8 @@ exports clean translation files with backups.
 2. Extract it to a writable folder.
 3. Run `stardew-i18n-translator.exe`.
 4. Select your Stardew Valley folder, Mods folder, and target language.
+   Custom-language targets are available for translation/export, but Stardew can
+   only use them in-game when a matching custom-language mod is installed.
 
 The app creates a `Data/` folder beside the executable. Keep that folder when
 updating or moving the app so your settings and translation progress come with
@@ -83,9 +89,16 @@ result tray without blocking the translation workspace.
 ## Optional Glossary
 
 The glossary can show official Stardew Valley terms while you translate. The app
-reads the needed `Content/Strings` dictionaries from your local Stardew Valley
-install and can fall back to a StardewXnbHack-style `Content (unpacked)` folder
-when needed. Choose **Settings > Glossary > Build glossary** to refresh it.
+reads the needed `Content/Strings/*.xnb` dictionaries directly from your local
+Stardew Valley install. It can still fall back to a compatible
+`Content (unpacked)/Strings/*.json` folder when needed.
+
+For custom-language targets, the app can build glossary hints only when an
+installed community language pack registers that language and provides usable
+`Strings` JSON or XNB dictionaries. If no glossary source is available, the rest
+of the translation workflow still works normally.
+
+Choose **Settings > Glossary > Build glossary** to refresh it.
 
 The glossary is optional and stays in `Data/glossary/`.
 
