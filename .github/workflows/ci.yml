@@ -1,6 +1,6 @@
 # CI runs on pull requests and on the exact main commit after merge. Contributors
-# still verify locally before pushing; the remote checks are the protected-branch
-# safety net.
+# run focused local checks before pushing; these remote checks are the complete
+# protected-branch merge gate.
 #
 # The workflow always triggers so required status checks are always posted.
 # For docs-only PRs the heavy jobs are skipped; GitHub treats skipped required

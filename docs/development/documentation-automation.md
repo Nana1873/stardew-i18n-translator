@@ -44,13 +44,16 @@ PRs labeled `documentation`, `type:enhancement`, `type:release`, or
 when the PR explains why no documentation change is useful. Dependency PRs are
 automatically labeled `changelog:skip` and `docs:not-required`.
 
-## CI Cost Model
+## CI Verification Model
 
-GitHub Actions minutes are limited. Agents and maintainers run the relevant
-checks locally before pushing. The complete remote CI suite runs once after a
-commit reaches `main`, which also covers direct pushes. Pull requests retain
-the lightweight label/documentation policy check without repeating the full
-frontend and Windows Rust suites.
+The repository is public, so GitHub Actions is the complete protected-branch
+merge gate for pull requests and the exact `main` commit after merge. Agents and
+maintainers still run focused local checks before pushing so obvious issues are
+caught quickly: docs-only changes usually need `corepack pnpm check:docs`, while
+code changes need the relevant frontend and/or Rust checks.
+
+Docs-only pull requests skip the heavy frontend and Windows Rust jobs. Code
+pull requests run the full required CI suite before merge.
 
 Dependency audits run weekly or on explicit manual dispatch. Concurrency groups
 cancel obsolete CI, audit, and pull-request policy runs.

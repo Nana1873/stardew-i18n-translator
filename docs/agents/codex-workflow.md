@@ -36,10 +36,15 @@ graph LR
 ### Step 4: Write Tests
 
 - Every code file added or modified must have corresponding unit tests.
-- Ensure tests run successfully locally before pushing.
-- GitHub Actions minutes are limited. Do not rely on PR runs or repeated pushes
-  for feedback that local type, test, lint, Rust, documentation, build, or
-  packaging commands can provide.
+- Run focused local checks that match the changed surface before pushing.
+  Docs-only changes usually need `corepack pnpm check:docs`; code changes need
+  the relevant frontend and/or Rust checks.
+- Treat GitHub Actions on the public repository as the complete PR merge gate.
+  Do not use repeated speculative pushes as an interactive debugger when a local
+  check can answer the question faster.
+- For release work, still run the local build, portable ZIP packaging,
+  extracted-ZIP smoke test, and release-script preflight because the release
+  uploads the locally verified artifact.
 
 ### Step 5: Handoff
 

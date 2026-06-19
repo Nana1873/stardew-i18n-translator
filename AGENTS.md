@@ -33,10 +33,14 @@ To ensure consistency, code quality, and strict scope control, you MUST follow t
   abandoned, or handed back to the primary checkout. Preserve uncommitted work
   before removal and do not leave build or release worktrees behind.
 - **Test-Driven / Test-Verified:** Every implementation task must include unit/integration tests or a clear, documented explanation of why automated testing is impossible for that component.
-- **Local-First Verification:** Run the relevant formatting, type, frontend,
-  Rust, documentation, build, and smoke checks locally before pushing. GitHub
-  Actions minutes are limited and must not be used as a substitute for local
-  verification or by repeatedly pushing speculative fixes.
+- **Verification:** Choose local checks based on the changed surface before
+  pushing, then treat GitHub Actions on the public repository as the complete
+  merge gate. Docs-only changes usually need only `corepack pnpm check:docs`
+  locally; code changes need the focused frontend/Rust checks that match the
+  risk. Do not use repeated speculative pushes as an interactive debugger. For
+  release work, local build, portable ZIP, extracted-ZIP smoke, and release
+  preflight verification remain mandatory because the GitHub release uploads the
+  locally verified artifact.
 - **Document Changes:** Update corresponding markdown files, ADRs, or README files when your implementation changes documented behavior.
 - **Classify Pull Requests:** Every pull request must have exactly one
   `changelog:*` label. Use `docs:not-required` only with a clear explanation
