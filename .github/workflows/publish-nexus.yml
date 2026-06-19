@@ -67,5 +67,8 @@ jobs:
           filename: ${{ steps.release.outputs.asset_path }}
           version: ${{ steps.release.outputs.version }}
           display_name: Stardew i18n Translator ${{ steps.release.outputs.version }}
-          description: Published GitHub release ${{ github.event.release.html_url }}
+          description: |
+            Stardew i18n Translator ${{ steps.release.outputs.version }}
+
+            Full Changelog: ${{ github.event.release.html_url }}
           category: main
