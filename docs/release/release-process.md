@@ -89,6 +89,11 @@ remote tag state, generates categorized notes, and creates a draft GitHub
 release. When `docs/release/v<version>.md` exists, those curated highlights are
 prepended.
 
+Keep curated release highlights focused on user-facing changes. Do not include
+internal verification notes or repeat stable privacy/scope boilerplate such as
+local-first, no-telemetry, no-cloud, or no-download statements unless that
+behavior changed in the release.
+
 Run it with `-Preflight` first. Preflight performs every read-only validation
 and note-generation step without creating or pushing a tag and without creating
 a release. The normal run delays tag creation until all read-only checks pass.
@@ -114,6 +119,8 @@ which uploads the already attached portable ZIP to Nexus Mods. Draft releases do
 not upload, and prereleases are explicitly skipped. The workflow does not check
 out the repository or rebuild the app; it downloads the exact GitHub release
 asset named `Stardew-i18n-Translator_<version>_windows-x64-portable.zip`.
+If a publish-triggered upload fails after the GitHub release is already live,
+rerun the workflow manually with the release tag through `workflow_dispatch`.
 
 Required GitHub configuration:
 
