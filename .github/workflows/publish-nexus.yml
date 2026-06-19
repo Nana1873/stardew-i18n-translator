@@ -3,26 +3,38 @@ name: Publish release to Nexus Mods
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: GitHub release tag to upload, e.g. v1.4.1.
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: nexus-release-${{ github.event.release.tag_name }}
+  group: nexus-release-${{ github.event.release.tag_name || inputs.tag_name }}
   cancel-in-progress: false
 
 jobs:
   upload:
     name: Upload release asset
-    if: ${{ github.event.release.draft == false && github.event.release.prerelease == false }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.release.draft == false && github.event.release.prerelease == false) }}
     runs-on: ubuntu-latest
     environment: nexusmods
     steps:
       - name: Validate Nexus configuration
         env:
+          NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
           NEXUSMODS_FILE_GROUP_ID: ${{ vars.NEXUSMODS_FILE_GROUP_ID }}
         run: |
           set -euo pipefail
+
+          if [[ -z "$NEXUSMODS_API_KEY" ]]; then
+            echo "::error::Missing required GitHub secret NEXUSMODS_API_KEY."
+            exit 1
+          fi
 
           if [[ -z "$NEXUSMODS_FILE_GROUP_ID" ]]; then
             echo "::error::Missing required GitHub variable NEXUSMODS_FILE_GROUP_ID."
@@ -33,15 +45,25 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.release.tag_name }}
+          TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
         run: |
           set -euo pipefail
 
+          is_draft="$(gh release view "$TAG_NAME" --json isDraft --jq '.isDraft')"
+          is_prerelease="$(gh release view "$TAG_NAME" --json isPrerelease --jq '.isPrerelease')"
+          if [[ "$is_draft" == "true" || "$is_prerelease" == "true" ]]; then
+            echo "::error::Nexus upload only supports published, non-prerelease GitHub releases."
+            exit 1
+          fi
+
           version="${TAG_NAME#v}"
           asset_name="Stardew-i18n-Translator_${version}_windows-x64-portable.zip"
-          asset_count="$(gh release view "$TAG_NAME" \
-            --json assets \
-            --jq --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length')"
+          asset_count="$(
+            gh release view "$TAG_NAME" --json assets --jq '.assets[].name' \
+              | { grep -Fx -- "$asset_name" || true; } \
+              | wc -l \
+              | tr -d ' '
+          )"
 
           if [[ "$asset_count" != "1" ]]; then
             echo "::error::Expected one release asset named $asset_name."
