@@ -902,10 +902,13 @@ describe("App shell", () => {
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "glossary_status")
         return Promise.resolve({
+          gameXnbPresent: false,
           unpackedPresent: false,
+          sourceAvailable: false,
           cached: null,
           outdatedCache: false,
           packAvailable: false,
+          packXnbAvailable: false,
         });
       if (cmd === "save_settings") return Promise.resolve(null);
       if (cmd === "scan_mods") {

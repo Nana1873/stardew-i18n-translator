@@ -107,10 +107,13 @@ export function SettingsDialog({
         () =>
           active &&
           setGlossary({
+            gameXnbPresent: false,
             unpackedPresent: false,
+            sourceAvailable: false,
             cached: null,
             outdatedCache: false,
             packAvailable: false,
+            packXnbAvailable: false,
           }),
       );
     return () => {
@@ -127,10 +130,13 @@ export function SettingsDialog({
       // A successful rebuild replaces any old cache, clearing the warning. Keep
       // the detected-pack flags so the community-pack panel stays consistent.
       setGlossary((previous) => ({
-        unpackedPresent: true,
+        gameXnbPresent: previous?.gameXnbPresent ?? false,
+        unpackedPresent: previous?.unpackedPresent ?? false,
+        sourceAvailable: previous?.sourceAvailable ?? true,
         cached: info,
         outdatedCache: false,
         packAvailable: previous?.packAvailable ?? false,
+        packXnbAvailable: previous?.packXnbAvailable ?? false,
         packName: previous?.packName,
       }));
     } catch (cause) {
@@ -310,15 +316,15 @@ export function SettingsDialog({
               >
                 <h3 className="settings__title">Glossary</h3>
                 <p className="settings__intro">
-                  Build optional official-term hints from your locally unpacked
-                  Stardew Valley content.
+                  Build optional official-term hints from your local Stardew
+                  Valley content or an installed community language pack.
                 </p>
                 {glossary === null ? (
                   <p className="wizard__muted">
-                    Checking for unpacked game content…
+                    Checking for local glossary sources…
                   </p>
                 ) : targetLang && !gameSupportsLanguage(targetLang) ? (
-                  glossary.packAvailable && glossary.unpackedPresent ? (
+                  glossary.packAvailable && glossary.sourceAvailable ? (
                     <>
                       <p className="wizard__muted">
                         Stardew Valley doesn’t include this language, but a
@@ -334,7 +340,9 @@ export function SettingsDialog({
                         >
                           {glossaryBuilding
                             ? "Building…"
-                            : "Build from community pack"}
+                            : glossary.cached
+                              ? "Rebuild from community pack"
+                              : "Build from community pack"}
                         </button>
                       </div>
                       {glossary.cached && (
@@ -354,8 +362,8 @@ export function SettingsDialog({
                       <p className="wizard__muted">
                         A community language pack was detected
                         {glossary.packName ? ` (${glossary.packName})` : ""},
-                        but building its glossary also needs your unpacked game
-                        content (the English base).
+                        but the app could not read a local English Strings
+                        source.
                       </p>
                       <div className="wizard__row">
                         <button
@@ -377,7 +385,7 @@ export function SettingsDialog({
                       still work fully.
                     </p>
                   )
-                ) : glossary.unpackedPresent ? (
+                ) : glossary.sourceAvailable ? (
                   <>
                     <div className="wizard__row">
                       <button
@@ -404,9 +412,9 @@ export function SettingsDialog({
                 ) : (
                   <>
                     <p className="wizard__muted">
-                      No unpacked game content found. The glossary is built from
-                      a <code>Content (unpacked)/</code> folder created by
-                      StardewXnbHack.
+                      No glossary-ready game Strings were found. Direct game XNB
+                      files are used first; StardewXnbHack is only a fallback
+                      when those are unavailable.
                     </p>
                     <div className="wizard__row">
                       <button

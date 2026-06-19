@@ -25,9 +25,13 @@ beforeEach(() => {
     switch (cmd) {
       case "glossary_status":
         return Promise.resolve({
+          gameXnbPresent: false,
           unpackedPresent: false,
+          sourceAvailable: false,
           cached: null,
           outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
         });
       case "llm_models":
         return Promise.resolve(["llama3.1:8b", "qwen2.5"]);
@@ -366,9 +370,13 @@ describe("SettingsDialog", () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
+          gameXnbPresent: true,
           unpackedPresent: true,
+          sourceAvailable: true,
           cached: null,
           outdatedCache: true,
+          packAvailable: false,
+          packXnbAvailable: false,
         });
       return Promise.resolve(null);
     });
@@ -390,9 +398,13 @@ describe("SettingsDialog", () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
+          gameXnbPresent: true,
           unpackedPresent: true,
+          sourceAvailable: true,
           cached: null,
           outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
         });
       return Promise.resolve(null);
     });
@@ -433,10 +445,13 @@ describe("SettingsDialog", () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
+          gameXnbPresent: true,
           unpackedPresent: true,
+          sourceAvailable: true,
           cached: null,
           outdatedCache: false,
           packAvailable: true,
+          packXnbAvailable: false,
           packName: "Stardew Valley - THAI",
         });
       return Promise.resolve(null);
@@ -468,9 +483,13 @@ describe("SettingsDialog", () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
+          gameXnbPresent: false,
           unpackedPresent: false,
+          sourceAvailable: false,
           cached: null,
           outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
         });
       if (cmd === "llm_models")
         return Promise.reject("Connection refused (ECONNREFUSED)");
@@ -498,9 +517,13 @@ describe("SettingsDialog", () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
+          gameXnbPresent: false,
           unpackedPresent: false,
+          sourceAvailable: false,
           cached: null,
           outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
         });
       if (cmd === "llm_models") return Promise.resolve([]);
       return Promise.resolve(null);

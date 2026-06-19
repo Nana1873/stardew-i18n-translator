@@ -24,9 +24,13 @@ beforeEach(() => {
         return Promise.resolve(true);
       case "glossary_status":
         return Promise.resolve({
+          gameXnbPresent: false,
           unpackedPresent: false,
+          sourceAvailable: false,
           cached: null,
           outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
         });
       case "build_glossary":
         return Promise.resolve({ targetLang: "de", termCount: 42 });
@@ -133,7 +137,7 @@ describe("SetupWizard", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("region", { name: "How the glossary works" }),
-    ).toHaveTextContent("Unpack once");
+    ).toHaveTextContent("Read locally");
     expect(screen.getByText(/never changed or uploaded/)).toBeInTheDocument();
   });
 
@@ -147,7 +151,7 @@ describe("SetupWizard", () => {
     expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
   });
 
-  it("offers Build from community pack for an unsupported language with a detected pack", async () => {
+  it("auto-builds from community pack for an unsupported language with a detected pack", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       switch (cmd) {
         case "detect_stardew":
@@ -162,10 +166,20 @@ describe("SetupWizard", () => {
           return Promise.resolve(true);
         case "glossary_status":
           return Promise.resolve({
+            gameXnbPresent: true,
             unpackedPresent: true,
+            sourceAvailable: true,
             cached: null,
             outdatedCache: false,
             packAvailable: true,
+            packXnbAvailable: false,
+            packName: "Stardew Valley - THAI",
+          });
+        case "build_glossary":
+          return Promise.resolve({
+            targetLang: "th",
+            termCount: 7,
+            source: "communityPack",
             packName: "Stardew Valley - THAI",
           });
         default:
@@ -176,15 +190,11 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep("th");
 
-    expect(
-      await screen.findByRole("button", {
-        name: "Build from community pack",
-      }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/7 official terms/)).toBeInTheDocument();
     expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
   });
 
-  it("builds the glossary when unpacked content is present", async () => {
+  it("auto-builds the glossary when a game string source is present", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       switch (cmd) {
         case "detect_stardew":
@@ -199,9 +209,13 @@ describe("SetupWizard", () => {
           return Promise.resolve(true);
         case "glossary_status":
           return Promise.resolve({
+            gameXnbPresent: true,
             unpackedPresent: true,
+            sourceAvailable: true,
             cached: null,
             outdatedCache: false,
+            packAvailable: false,
+            packXnbAvailable: false,
           });
         case "build_glossary":
           return Promise.resolve({ targetLang: "de", termCount: 42 });
@@ -212,9 +226,6 @@ describe("SetupWizard", () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Build glossary" }),
-    );
     expect(await screen.findByText(/42 official terms/)).toBeInTheDocument();
   });
 

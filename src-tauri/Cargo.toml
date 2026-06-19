@@ -33,6 +33,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 tauri-plugin-log = "2"
 log = "0.4"
 zip = { version = "8.6", default-features = false, features = ["deflate"] }
+# Direct glossary extraction from Stardew `Strings/*.xnb` dictionaries. We only
+# use LZX decompression; XNB parsing stays local and limited to string maps.
+lzxd = "0.2.6"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"

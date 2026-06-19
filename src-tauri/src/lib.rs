@@ -16,6 +16,7 @@ mod scanner;
 mod settings;
 mod tokens;
 mod translations;
+mod xnb;
 
 #[cfg(test)]
 mod language_compatibility;
@@ -408,13 +409,17 @@ fn build_glossary(
     // A game-supported language builds from official content; a game-unsupported
     // one (e.g. Thai) builds from an installed community language pack (#163).
     let built = if glossary::game_locale_suffix(&target_lang).is_some() {
-        glossary::build(&unpacked, &target_lang)
+        glossary::build_from_game(Path::new(&stardew_path), &target_lang)
     } else {
         let mods = mods_dir(&config, &stardew_path);
         match lang_pack::detect_language_pack(&mods, &target_lang).pack {
-            Some(pack) => {
-                glossary::build_from_pack(&unpacked, &pack.strings_dir, &target_lang, &pack.name)
-            }
+            Some(pack) => glossary::build_from_pack(
+                &unpacked,
+                &pack.strings_dir,
+                pack.format,
+                &target_lang,
+                &pack.name,
+            ),
             None => Err(format!(
                 "No community language pack for \"{target_lang}\" was found in your Mods folder."
             )),
@@ -451,17 +456,26 @@ fn glossary_status(
     // For a game-unsupported language, see whether an installed community pack
     // could supply a glossary (#163). Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
+    let stardew = Path::new(&stardew_path);
+    let game_xnb_present = glossary::game_xnb_present(stardew);
+    let unpacked_present = glossary::unpacked_present(stardew);
     let detected =
         if !target_lang.is_empty() && glossary::game_locale_suffix(&target_lang).is_none() {
             lang_pack::detect_language_pack(&mods_dir(&config, &stardew_path), &target_lang).pack
         } else {
             None
         };
+    let pack_xnb_available = detected
+        .as_ref()
+        .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
     Ok(glossary::GlossaryStatus {
-        unpacked_present: glossary::unpacked_present(Path::new(&stardew_path)),
+        game_xnb_present,
+        unpacked_present,
+        source_available: glossary::source_available(stardew),
         cached,
         outdated_cache,
         pack_available: detected.is_some(),
+        pack_xnb_available,
         pack_name: detected.map(|pack| pack.name),
     })
 }

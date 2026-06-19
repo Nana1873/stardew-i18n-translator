@@ -66,12 +66,12 @@ The setup wizard runs on first launch and can be re-triggered from settings.
 
 ### Steps
 
-| Step | Required | Description                     | Details                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| ---- | -------- | ------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1    | ✅       | **Stardew Valley folder**       | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder.                                                                                                                                                                                                                                                             |
-| 2    | ✅       | **Mods folder**                 | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied.                                                                                                                                                                 |
-| 3    | ✅       | **Source & target language**    | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh), plus Thai (`th`) for players running a custom-language mod (SV 1.6 `Data/AdditionalLanguages`). Game-unsupported targets like Thai have no built-in official glossary, but may build one from an installed community language pack when available; otherwise the UI explains that glossary hints are unavailable. |
-| 4    | ❌       | **Build glossary** _(optional)_ | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary.                                                                                                                                                                                                                                                                                        |
+| Step | Required | Description                     | Details                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| ---- | -------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1    | ✅       | **Stardew Valley folder**       | Auto-detect via Steam library folders (`libraryfolders.vdf`), GOG registry keys, or common paths. User can browse manually. Validate by checking for `Stardew Valley.dll` or `Content/` folder.                                                                                                                                                                                                                                                                                                                                                                            |
+| 2    | ✅       | **Mods folder**                 | Default: `<Stardew Valley>/Mods`. A **generic** manual folder override is offered only if the default is wrong (any folder containing mod subfolders with `manifest.json`). This is a plain folder picker — **not** Vortex/MO2 support, and no mod-manager workflow is detected or implied.                                                                                                                                                                                                                                                                                |
+| 3    | ✅       | **Source & target language**    | Source: `default` (English) — fixed for v1. Target: dropdown of Stardew-supported languages (de, es, fr, hu, it, ja, ko, pt, ru, tr, zh), plus curated custom-language-mod targets (SV 1.6 `Data/AdditionalLanguages`) such as Vietnamese (`vi`), Indonesian (`id`), Ukrainian (`uk`), Polish (`pl`), Finnish (`fi`), Dutch (`nl`), Czech (`cs`), and Thai (`th`). Game-unsupported targets have no built-in official glossary, but may build one from an installed community language pack when available; otherwise the UI explains that glossary hints are unavailable. |
+| 4    | ❌       | **Build glossary** _(optional)_ | Extract official game term pairs from the Stardew `Content` folder (see §5). Show progress. Cache result. **Skippable** — tool must function fully without glossary.                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ### Auto-detection Paths (Windows)
 
@@ -149,11 +149,10 @@ The glossary is extracted **locally** from the user's own Stardew Valley install
 
 ### Extraction Strategy (v1)
 
-1. **Primary:** Read from `Content (unpacked)/` if present (SMAPI creates this on first run).
-2. **Fallback:** If unpacked content is not available, show guidance asking the user to run the game with SMAPI once, or provide a path to unpacked content.
-3. **Community language pack (game-unsupported languages, #163):** For a target language Stardew has no official locale for (e.g. Thai `th`), if an installed community Content Patcher language pack registers that language (`Data/AdditionalLanguages` → `LanguageCode`), build the glossary by pairing the English base from `Content (unpacked)/Strings` with the pack's bundled `assets/Content/Strings/<asset>.json` (English-identical keys). Read-only, per `SCOPE_GUARDRAILS.md`. Untranslated (English-identical) values are dropped by the term-quality gate. When no such pack is present, the language simply gets no glossary.
+1. **Primary:** Read glossary-relevant `Content/Strings/*.xnb` dictionaries directly from the installed game. The reader is intentionally narrow: `Dictionary<string,string>` only, `Strings` assets only, read-only, no XNB browser/editor, and no repacking.
+2. **Fallback:** If direct game XNB reading is unavailable, read the compatible `Content (unpacked)/Strings/*.json` layout when present and otherwise show optional StardewXnbHack guidance.
+3. **Community language pack (game-unsupported languages, #163):** For a target language Stardew has no official locale for (e.g. Thai `th`), if an installed community Content Patcher language pack registers that language (`Data/AdditionalLanguages` -> `LanguageCode`), build the glossary by pairing the English base from direct game `Content/Strings/*.xnb` (or unpacked JSON fallback) with the pack's bundled `assets/**/Strings/<asset>.json` or `assets/**/Strings/<asset>_<lang>.xnb` files (English-identical keys). Read-only, per `SCOPE_GUARDRAILS.md`. Untranslated (English-identical) values are dropped by the term-quality gate. When no such pack is present, the language simply gets no glossary.
 4. **Skip:** User can skip glossary entirely. Tool continues without hints.
-5. **Future:** In-app XNB reader for fully automatic extraction without SMAPI dependency.
 
 ### Storage
 
@@ -1085,8 +1084,10 @@ not a mod manager.
 
 - The target-language model distinguishes **built-in Stardew/SMAPI languages**
   (`de`, `es`, `fr`, `hu`, `it`, `ja`, `ko`, `pt`, `ru`, `tr`, `zh`) from
-  **custom/unsupported** target languages (e.g. Thai `th`), which Stardew plays
-  only via a custom-language mod (SV 1.6 `Data/AdditionalLanguages`).
+  **custom/unsupported** target languages (e.g. Vietnamese `vi`, Indonesian
+  `id`, Ukrainian `uk`, Polish `pl`, Finnish `fi`, Dutch `nl`, Czech `cs`, and
+  Thai `th`), which Stardew plays only via a custom-language mod (SV 1.6
+  `Data/AdditionalLanguages`).
 - Built-in language behavior is unchanged.
 - Custom languages are offered through the app's curated list, not free-text
   entry, so language codes stay controlled. Any code used in a filename or under
@@ -1108,38 +1109,41 @@ not a mod manager.
 
 ---
 
+Installed community language packs with usable JSON or XNB `Strings` assets are
+the only supported glossary source exception for custom/unsupported languages.
+
 ## 16. Non-Goals for v1
 
 The following are **explicitly excluded** from v1:
 
-| Feature                                        | Reason                                                                 |
-| ---------------------------------------------- | ---------------------------------------------------------------------- |
-| In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only |
-| Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                  |
-| Automatic Nexus translation discovery/download | Deferred indefinitely (see §12)                                        |
-| Git integration                                | Adds complexity without core workflow value                            |
-| Full mod manager                               | Out of scope — tool manages translations only                          |
-| Vortex/MO2 profile detection                   | User can point to any folder manually                                  |
-| Publishing/uploading translations              | Out of scope                                                           |
-| Complex glossary editor                        | v1 auto-generates glossary; no manual editing UI                       |
-| Cloud sync                                     | Local-first tool                                                       |
-| Translation memory (cross-mod)                 | v2+                                                                    |
-| Multiple simultaneous target languages         | v1 works with one target language at a time                            |
-| Additional studio/analytics workspaces         | Dashboard + two-panel work view are the intentional UI ceiling         |
-| Card-based mod manager                         | SSE-AT style tables only                                               |
-| Kanban board                                   | Not a project management tool                                          |
-| Analytics screen                               | Progress bar is sufficient                                             |
-| Theme switching / multiple themes              | The warm dark theme is the fixed product design                        |
-| Plugin/provider abstraction                    | v1 hardcodes; abstract later                                           |
-| Complex navigation system                      | Two-panel layout + dialogs only                                        |
-| `content.json` parsing                         | i18n files only in v1                                                  |
-| `Data/*.json` mod file translation             | i18n files only in v1                                                  |
-| In-app XNB decoder                             | Deferred to future version                                             |
-| Separate settings windows                      | One left-navigation settings dialog is sufficient                      |
-| Configurable keyboard shortcuts                | Shipped in v1.1                                                        |
-| More than 4 status values                      | Intentionally capped (v1)                                              |
-| Project save/load system                       | State persisted automatically, no project files                        |
-| Automated translation-style or grammar scoring | Too subjective and language-dependent for reliable validation          |
+| Feature                                        | Reason                                                                                           |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| In-app cloud AI translation (API calls)        | Deferred to v1.1+ — v1 supports external batches and localhost AI only                           |
+| Nexus API key / API calls                      | v1 uses only Nexus ID from manifest + clickable links                                            |
+| Automatic Nexus translation discovery/download | Deferred indefinitely (see §12)                                                                  |
+| Git integration                                | Adds complexity without core workflow value                                                      |
+| Full mod manager                               | Out of scope — tool manages translations only                                                    |
+| Vortex/MO2 profile detection                   | User can point to any folder manually                                                            |
+| Publishing/uploading translations              | Out of scope                                                                                     |
+| Complex glossary editor                        | v1 auto-generates glossary; no manual editing UI                                                 |
+| Cloud sync                                     | Local-first tool                                                                                 |
+| Translation memory (cross-mod)                 | v2+                                                                                              |
+| Multiple simultaneous target languages         | v1 works with one target language at a time                                                      |
+| Additional studio/analytics workspaces         | Dashboard + two-panel work view are the intentional UI ceiling                                   |
+| Card-based mod manager                         | SSE-AT style tables only                                                                         |
+| Kanban board                                   | Not a project management tool                                                                    |
+| Analytics screen                               | Progress bar is sufficient                                                                       |
+| Theme switching / multiple themes              | The warm dark theme is the fixed product design                                                  |
+| Plugin/provider abstraction                    | v1 hardcodes; abstract later                                                                     |
+| Complex navigation system                      | Two-panel layout + dialogs only                                                                  |
+| `content.json` parsing                         | i18n files only in v1                                                                            |
+| `Data/*.json` mod file translation             | i18n files only in v1                                                                            |
+| General XNB browser/editor/repacker            | Out of scope; v1 only has a narrow read-only `Strings` dictionary reader for glossary extraction |
+| Separate settings windows                      | One left-navigation settings dialog is sufficient                                                |
+| Configurable keyboard shortcuts                | Shipped in v1.1                                                                                  |
+| More than 4 status values                      | Intentionally capped (v1)                                                                        |
+| Project save/load system                       | State persisted automatically, no project files                                                  |
+| Automated translation-style or grammar scoring | Too subjective and language-dependent for reliable validation                                    |
 
 ---
 

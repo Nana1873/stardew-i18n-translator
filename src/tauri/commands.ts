@@ -428,7 +428,12 @@ export interface GlossaryInfo {
 }
 
 export interface GlossaryStatus {
+  /** Direct game Content/Strings/*.xnb assets are available. */
+  gameXnbPresent: boolean;
+  /** StardewXnbHack-compatible Content (unpacked)/Strings JSON is available. */
   unpackedPresent: boolean;
+  /** Any local game string source is available for glossary extraction. */
+  sourceAvailable: boolean;
   cached: GlossaryInfo | null;
   /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */
   outdatedCache: boolean;
@@ -438,6 +443,8 @@ export interface GlossaryStatus {
    * languages (they build from official content).
    */
   packAvailable: boolean;
+  /** The detected community pack supplies direct Strings/*_<lang>.xnb assets. */
+  packXnbAvailable: boolean;
   /** The detected community pack's display name, when `packAvailable`. */
   packName?: string;
 }
