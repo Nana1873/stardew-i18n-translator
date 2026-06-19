@@ -47,6 +47,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
+          RELEASE_HTML_URL: ${{ github.event.release.html_url }}
         run: |
           set -euo pipefail
 
@@ -76,8 +77,13 @@ jobs:
           mkdir -p nexus-upload
           gh release download "$TAG_NAME" --pattern "$asset_name" --dir nexus-upload
 
+          # github.event.release.html_url is only populated for release events;
+          # fall back to a constructed tag URL for workflow_dispatch runs.
+          changelog_url="${RELEASE_HTML_URL:-$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases/tag/$TAG_NAME}"
+
           echo "asset_path=nexus-upload/$asset_name" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "changelog_url=$changelog_url" >> "$GITHUB_OUTPUT"
 
       - name: Upload to Nexus Mods
         id: nexus
@@ -93,5 +99,5 @@ jobs:
           description: |
             Stardew i18n Translator ${{ steps.release.outputs.version }}
 
-            Full Changelog: ${{ github.event.release.html_url }}
+            Full Changelog: ${{ steps.release.outputs.changelog_url }}
           category: main
