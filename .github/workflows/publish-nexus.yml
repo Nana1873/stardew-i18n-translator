@@ -1,0 +1,71 @@
+name: Publish release to Nexus Mods
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-release-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: Upload release asset
+    if: ${{ github.event.release.draft == false && github.event.release.prerelease == false }}
+    runs-on: ubuntu-latest
+    environment: nexusmods
+    steps:
+      - name: Validate Nexus configuration
+        env:
+          NEXUSMODS_FILE_GROUP_ID: ${{ vars.NEXUSMODS_FILE_GROUP_ID }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$NEXUSMODS_FILE_GROUP_ID" ]]; then
+            echo "::error::Missing required GitHub variable NEXUSMODS_FILE_GROUP_ID."
+            exit 1
+          fi
+
+      - name: Download published release asset
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+
+          version="${TAG_NAME#v}"
+          asset_name="Stardew-i18n-Translator_${version}_windows-x64-portable.zip"
+          asset_count="$(gh release view "$TAG_NAME" \
+            --json assets \
+            --jq --arg name "$asset_name" '[.assets[] | select(.name == $name)] | length')"
+
+          if [[ "$asset_count" != "1" ]]; then
+            echo "::error::Expected one release asset named $asset_name."
+            echo "Available assets:"
+            gh release view "$TAG_NAME" --json assets --jq '.assets[].name'
+            exit 1
+          fi
+
+          mkdir -p nexus-upload
+          gh release download "$TAG_NAME" --pattern "$asset_name" --dir nexus-upload
+
+          echo "asset_path=nexus-upload/$asset_name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Upload to Nexus Mods
+        id: nexus
+        uses: Nexus-Mods/upload-action@v1.0.0-beta.8
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          # Nexus labels this value as "Group ID"; the pinned action currently
+          # exposes it as file_id.
+          file_id: ${{ vars.NEXUSMODS_FILE_GROUP_ID }}
+          filename: ${{ steps.release.outputs.asset_path }}
+          version: ${{ steps.release.outputs.version }}
+          display_name: Stardew i18n Translator ${{ steps.release.outputs.version }}
+          description: Published GitHub release ${{ github.event.release.html_url }}
+          category: main

@@ -107,6 +107,25 @@ smoke-tested production ZIP is the exact artifact uploaded to GitHub, avoiding
 another paid Windows Actions build. The draft must still be reviewed and
 published manually.
 
+## Nexus Mods Upload
+
+Publishing a normal GitHub release starts `.github/workflows/publish-nexus.yml`,
+which uploads the already attached portable ZIP to Nexus Mods. Draft releases do
+not upload, and prereleases are explicitly skipped. The workflow does not check
+out the repository or rebuild the app; it downloads the exact GitHub release
+asset named `Stardew-i18n-Translator_<version>_windows-x64-portable.zip`.
+
+Required GitHub configuration:
+
+- Secret: `NEXUSMODS_API_KEY`
+- Variable: `NEXUSMODS_FILE_GROUP_ID`
+
+The Nexus value is shown as "Group ID" in the Nexus Mods API Info dialog. Keep
+the secret in GitHub only; do not add it to repository files, release notes, or
+local test logs. For an extra approval gate, configure the GitHub Environment
+named `nexusmods` with required reviewers and store the API key as an
+environment secret there.
+
 The `main` Rust checks use Cargo's custom `ci` profile. It keeps complete
 format, Clippy, and test coverage but disables dependency optimization and
 debug symbols to reduce compile time. Local development and release profiles
