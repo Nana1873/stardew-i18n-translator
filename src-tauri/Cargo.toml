@@ -39,8 +39,8 @@ lzxd = "0.2.6"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56"
-webview2-com-sys = "0.38"
-windows-core = "0.61"
+webview2-com-sys = "0.39"
+windows-core = "0.62"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_Com",
