@@ -25,10 +25,10 @@
     "tauri": "tauri"
   },
   "dependencies": {
-    "@tanstack/react-virtual": "^3.14.5",
+    "@tanstack/react-virtual": "^3.14.8",
     "@tauri-apps/api": "^2.11.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",
