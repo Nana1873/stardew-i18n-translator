@@ -1,31 +1,39 @@
 name: Bug report
 description: Report something that does not work correctly.
-title: "[Bug]: "
-labels: ["type:bug", "needs-triage"]
+title: "[Bug] "
+labels:
+  - type:bug
 body:
   - type: markdown
     attributes:
-      value: Tell us what went wrong. A short report is completely fine.
+      value: |
+        Tell us what went wrong. A short report is enough, and every field except the problem description is optional.
 
   - type: textarea
     id: what-happened
     attributes:
-      label: What happened?
+      label: What went wrong?
       description: What did you expect, and what happened instead?
     validations:
       required: true
 
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Shown in Settings > About or in the downloaded release filename.
+      placeholder: e.g. 1.4.1
+
   - type: textarea
     id: steps
     attributes:
-      label: How can we reproduce it?
+      label: Steps to reproduce
       description: A few steps are enough. Leave this blank if you are not sure.
 
   - type: textarea
     id: details
     attributes:
-      label: Anything else?
-      description: >
-        App version, Windows version, affected mod, error message, screenshots,
-        or a log can help. Logs may contain local paths, so remove anything
-        private before attaching them.
+      label: Logs, screenshots, or sample files
+      description: |
+        Optional: add the affected mod, Windows version, exact error message, a screenshot, or a small sample file.
+        Logs can be opened from Settings > About. They may contain local paths, so remove private information before attaching them.

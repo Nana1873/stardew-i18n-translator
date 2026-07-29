@@ -17,6 +17,7 @@ $tag = "v$version"
 $expectedName = "Stardew-i18n-Translator_${version}_windows-x64-portable.zip"
 $resolvedZip = (Resolve-Path -LiteralPath $ZipPath).Path
 $notesPath = $null
+$notesSource = $null
 $releaseKind = if ($Draft) { "draft" } else { "published" }
 
 if ([System.IO.Path]::GetFileName($resolvedZip) -ne $expectedName) {
@@ -135,30 +136,34 @@ try {
         throw "A GitHub release already exists for $tag."
     }
 
-    $generatedNotes = gh api `
-        --method POST `
-        "repos/$repository/releases/generate-notes" `
-        -f tag_name=$tag `
-        -f target_commitish=$headCommit `
-        --jq .body
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to generate GitHub release notes."
-    }
-
     $notesPath = Join-Path ([System.IO.Path]::GetTempPath()) "stardew-release-$version-$PID-notes.md"
     $curatedNotes = Join-Path $repoRoot "docs\release\v$version.md"
     if (Test-Path -LiteralPath $curatedNotes -PathType Leaf) {
-        Get-Content -Raw $curatedNotes | Set-Content -Encoding utf8 $notesPath
-        "`n---`n`n## Merged pull requests`n" | Add-Content -Encoding utf8 $notesPath
+        $curatedText = (Get-Content -Raw -LiteralPath $curatedNotes).Trim()
+        if ([string]::IsNullOrWhiteSpace($curatedText)) {
+            throw "Curated release notes are empty: $curatedNotes"
+        }
+        Set-Content -LiteralPath $notesPath -Encoding utf8 -Value $curatedText
+        $notesSource = "docs/release/v$version.md"
     }
     else {
-        Set-Content -Encoding utf8 $notesPath -Value ""
+        $generatedNotes = gh api `
+            --method POST `
+            "repos/$repository/releases/generate-notes" `
+            -f tag_name=$tag `
+            -f target_commitish=$headCommit `
+            --jq .body
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to generate GitHub release notes."
+        }
+        Set-Content -LiteralPath $notesPath -Encoding utf8 -Value $generatedNotes
+        $notesSource = "GitHub-generated notes"
     }
-    $generatedNotes | Add-Content -Encoding utf8 $notesPath
 
     $hash = (Get-FileHash -LiteralPath $resolvedZip -Algorithm SHA256).Hash
     if ($Preflight) {
         Write-Output "Preflight passed for the $releaseKind release $tag at commit $headCommit. No tag or release was created."
+        Write-Output "Release notes: $notesSource"
         Write-Output "Portable ZIP SHA-256: $hash"
         return
     }
@@ -227,6 +232,7 @@ try {
     }
 
     Write-Output "$($releaseKind.Substring(0, 1).ToUpper())$($releaseKind.Substring(1)) release created for $tag from commit $headCommit."
+    Write-Output "Release notes: $notesSource"
     Write-Output "Portable ZIP SHA-256: $hash"
 }
 finally {
