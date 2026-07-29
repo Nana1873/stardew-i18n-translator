@@ -54,6 +54,11 @@ try {
         throw "Documentation and version checks failed."
     }
 
+    cargo audit --file (Join-Path $repoRoot "src-tauri\Cargo.lock")
+    if ($LASTEXITCODE -ne 0) {
+        throw "Rust dependency audit failed."
+    }
+
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedZip)
     try {

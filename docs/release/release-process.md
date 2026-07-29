@@ -56,6 +56,7 @@ falls back to GitHub-generated notes. It never combines both.
    cargo fmt --check
    cargo clippy --locked --all-targets --profile ci -- -D warnings
    cargo test --locked --profile ci
+   cargo audit
    Pop-Location
    ```
 
@@ -99,6 +100,7 @@ powershell -File scripts/create-release.ps1 `
 
 - requires a clean checkout whose `HEAD` matches current `origin/main`;
 - runs the documentation and synchronized-version checks;
+- rejects Rust dependencies with known security vulnerabilities;
 - verifies the ZIP name and exact two-file layout;
 - refuses conflicting local or remote tags and existing releases;
 - uses concise curated notes when present, otherwise GitHub-generated notes;
