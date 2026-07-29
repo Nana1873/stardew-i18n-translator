@@ -100,8 +100,8 @@ The desktop app has no accounts, analytics, telemetry, cloud API keys, or Nexus
 API access. Scanning, editing, validation, glossary generation, and export happen
 locally.
 
-Local AI requests go only to the endpoint you configure. External LLM batches
-leave your computer only when you upload them yourself.
+Local AI requests go only to the local endpoint you configure. External LLM
+batches leave your computer only when you upload them yourself.
 
 Portable data is stored under:
 
@@ -121,8 +121,8 @@ or a
 A rough report is fine.
 
 For bugs, the app version, the affected mod, the on-screen error, and a few
-reproduction steps are usually enough. Logs can be opened from **Settings >
-About**. They may contain local paths, so remove private information before
+reproduction steps are usually enough. Logs can be opened from the About page in
+Settings. They may contain local paths, so remove private information before
 attaching them.
 
 Release history is in the [changelog](CHANGELOG.md).
