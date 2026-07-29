@@ -8,6 +8,42 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-07-29
+
+### Changed
+
+- External LLM exports now use the compact batch format 2. One source snapshot
+  binds the selected mod, target language, file/key set, and current English
+  text without adding hashes to individual translation values. Format 1 is no
+  longer accepted.
+- Translation sources and targets are parsed completely before export. Invalid
+  components are isolated during scans, while direct exports and release ZIPs
+  stop before changing files.
+- Portuguese imports prefer `pt-BR.json`, while successful export remains
+  canonical `pt.json` and safely backs up/removes the fallback file.
+
+### Fixed
+
+- Hardened language, local-AI URL/response, JSON, state-file, and XNB input
+  boundaries so unsafe or oversized input fails without partial writes or large
+  allocations.
+- Preserved existing local translations during LLM import, prevented stale AI
+  and model responses from replacing newer UI state, and delayed navigation
+  until settings/editor persistence succeeds.
+- Prevented ambiguous translation-state filename collisions and kept outdated
+  AI text out of the review-needed count.
+- Kept successful Export All results visible when a later mod fails, including
+  the failed mod and the not-yet-started remainder.
+- Completed keyboard navigation for Settings, mod rows, and virtualized string
+  rows, and replaced undefined CSS color variables with checked semantic tokens.
+
+### Security
+
+- Updated vulnerable Rust dependencies, pinned the Nexus upload action to an
+  immutable commit, and added recurring/manual Rust advisory checks.
+
+See [docs/release/v1.4.2.md](docs/release/v1.4.2.md) for the full notes.
+
 ## [1.4.1] - 2026-06-19
 
 ### Added
@@ -237,7 +273,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.2...HEAD
+[1.4.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.2.3...v1.3.0
