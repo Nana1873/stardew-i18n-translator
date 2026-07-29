@@ -17,19 +17,35 @@ Stardew i18n Translator/
 User settings and translation work are created later in the adjacent `data/`
 folder and are never included in the release archive.
 
+## Release Text
+
+`CHANGELOG.md` is the permanent history. The GitHub release body should be a
+short summary, not a second changelog.
+
+A curated file at `docs/release/v<version>.md` is preferred. Keep it to:
+
+- one opening sentence;
+- roughly three to six user-facing bullets;
+- an **Upgrade** section only when the user must do something.
+
+Do not repeat unchanged installation steps, privacy/local-first statements,
+verification boilerplate, internal CI work, or a list of merged pull requests.
+
+When a curated file exists, the release script uses only that file. Otherwise it
+falls back to GitHub-generated notes. It never combines both.
+
 ## Prepare a Release
 
-1. Update the version and release text:
+1. Update the version:
 
    ```powershell
    corepack pnpm version:set <version>
    ```
 
-   Review `CHANGELOG.md`. A concise curated file at
-   `docs/release/v<version>.md` is optional.
+   Update `CHANGELOG.md` and, when useful, add the concise curated release file
+   described above.
 
-2. Run the checks appropriate for the changes. For a normal release, run the
-   complete frontend and Rust suites:
+2. Run the complete frontend, documentation, and Rust checks:
 
    ```powershell
    corepack pnpm exec tsc --noEmit
@@ -68,8 +84,8 @@ folder and are never included in the release archive.
      -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip
    ```
 
-The normal command publishes the GitHub release immediately. Pass `-Draft` only
-when a draft is intentionally useful:
+The normal command publishes immediately. Pass `-Draft` only when a draft is
+intentionally useful:
 
 ```powershell
 powershell -File scripts/create-release.ps1 `
@@ -85,7 +101,7 @@ powershell -File scripts/create-release.ps1 `
 - runs the documentation and synchronized-version checks;
 - verifies the ZIP name and exact two-file layout;
 - refuses conflicting local or remote tags and existing releases;
-- combines optional curated notes with GitHub-generated pull-request notes;
+- uses concise curated notes when present, otherwise GitHub-generated notes;
 - prints the portable ZIP SHA-256;
 - creates and pushes the version tag only after read-only checks pass;
 - removes tags created by the current run if release creation fails.
@@ -104,8 +120,7 @@ Required GitHub configuration:
 - variable: `NEXUSMODS_FILE_GROUP_ID`
 
 If the Nexus upload fails after the GitHub release is live, rerun the workflow
-manually with the release tag. Drafts and prereleases are intentionally not
-uploaded.
+manually with the release tag. Drafts and prereleases are not uploaded.
 
 ## Code Signing
 
