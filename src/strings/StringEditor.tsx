@@ -60,7 +60,7 @@ interface StringEditorProps {
     section?: string | null,
   ) => Promise<TranslationResult>;
   /** Persist the edited target + status for this row. */
-  onSave: (value: string, status: StringStatus) => void;
+  onSave: (value: string, status: StringStatus) => Promise<void> | void;
   onClose: () => void;
   onNavigate: (delta: number) => void;
   shortcuts?: ResolvedShortcuts;
@@ -155,17 +155,36 @@ export function StringEditor({
   // auto-saves on dirty.
   const [dirty, setDirty] = useState(false);
   const [translating, setTranslating] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const aiRequest = useRef(0);
+  const rowIdentity = `${row.file}\0${row.key}\0${row.source}`;
+  const rowIdentityRef = useRef(rowIdentity);
+  rowIdentityRef.current = rowIdentity;
 
   // Reset the field whenever the row changes (including via prev/next).
   useEffect(() => {
+    aiRequest.current += 1;
+    setTranslating(false);
     setValue(row.target);
     setReviewNeeded(row.status === "review-needed");
     setDirty(false);
     setTranslateMsg(null);
     textareaRef.current?.focus();
   }, [row.key, row.file, row.target, row.status]);
+
+  useEffect(
+    () => () => {
+      aiRequest.current += 1;
+    },
+    [],
+  );
+
+  useEffect(() => {
+    aiRequest.current += 1;
+    setTranslating(false);
+  }, [onTranslate]);
 
   // The status to persist on auto-save (navigation): an unreviewed AI
   // suggestion stays review-needed; otherwise it follows the field
@@ -182,22 +201,44 @@ export function StringEditor({
   }
 
   /** Explicit Save (Ctrl+Enter): the user has reviewed it → confirm to translated. */
-  function save() {
-    onSave(value, confirmedStatus());
-    onClose();
+  async function save() {
+    if (saving) return;
+    setSaving(true);
+    setTranslateMsg(null);
+    try {
+      await onSave(value, confirmedStatus());
+      onClose();
+    } catch (cause) {
+      setTranslateMsg(String(cause));
+      textareaRef.current?.focus();
+    } finally {
+      setSaving(false);
+    }
   }
 
   /** Save & next (Ctrl+Shift+Enter): confirm like Save, then jump to the next
    * string instead of closing — the fast path for working through a long
    * review-needed backlog. Closes on the last string. */
-  function saveAndNext() {
-    onSave(value, confirmedStatus());
-    if (index < total - 1) onNavigate(1);
-    else onClose();
+  async function saveAndNext() {
+    if (saving) return;
+    setSaving(true);
+    setTranslateMsg(null);
+    try {
+      await onSave(value, confirmedStatus());
+      if (index < total - 1) onNavigate(1);
+      else onClose();
+    } catch (cause) {
+      setTranslateMsg(String(cause));
+      textareaRef.current?.focus();
+    } finally {
+      setSaving(false);
+    }
   }
 
   /** Edit the target by hand: it is now the user's own text, no longer a pending AI suggestion. */
   function editValue(next: string) {
+    aiRequest.current += 1;
+    setTranslating(false);
     setValue(next);
     setReviewNeeded(false);
     setDirty(true);
@@ -208,10 +249,14 @@ export function StringEditor({
       setTranslateMsg("Configure a local AI in Settings to use translation.");
       return;
     }
+    const request = ++aiRequest.current;
+    const identity = rowIdentity;
     setTranslating(true);
     setTranslateMsg(null);
     try {
       const result = await onTranslate(row.source, row.section);
+      if (request !== aiRequest.current || identity !== rowIdentityRef.current)
+        return;
       setValue(result.text);
       setReviewNeeded(true); // an AI suggestion awaiting review
       setDirty(true);
@@ -230,15 +275,31 @@ export function StringEditor({
       setTranslateMsg(notes.length > 0 ? notes.join(" ") : null);
       textareaRef.current?.focus();
     } catch (cause) {
+      if (request !== aiRequest.current) return;
       setTranslateMsg(String(cause));
     } finally {
-      setTranslating(false);
+      if (request === aiRequest.current) setTranslating(false);
     }
   }
 
-  function navigate(delta: number) {
-    if (dirty || value !== row.target) onSave(value, effectiveStatus());
-    onNavigate(delta);
+  async function navigate(delta: number) {
+    if (saving) return;
+    if (!(dirty || value !== row.target)) {
+      aiRequest.current += 1;
+      onNavigate(delta);
+      return;
+    }
+    setSaving(true);
+    try {
+      await onSave(value, effectiveStatus());
+      aiRequest.current += 1;
+      onNavigate(delta);
+    } catch (cause) {
+      setTranslateMsg(String(cause));
+      textareaRef.current?.focus();
+    } finally {
+      setSaving(false);
+    }
   }
 
   /** Keep original (F2/F3): copy the source into the field — kept English is
@@ -272,16 +333,16 @@ export function StringEditor({
   function onKeyDown(event: KeyboardEvent | ReactKeyboardEvent) {
     if (matchesShortcut(event, shortcuts["editor.saveNext"])) {
       event.preventDefault();
-      saveAndNext();
+      void saveAndNext();
     } else if (matchesShortcut(event, shortcuts["editor.save"])) {
       event.preventDefault();
-      save();
+      void save();
     } else if (matchesShortcut(event, shortcuts["editor.previous"])) {
       event.preventDefault();
-      navigate(-1);
+      void navigate(-1);
     } else if (matchesShortcut(event, shortcuts["editor.next"])) {
       event.preventDefault();
-      navigate(1);
+      void navigate(1);
     } else if (matchesShortcut(event, shortcuts["editor.keepOriginal"])) {
       event.preventDefault();
       keepOriginal();
@@ -293,7 +354,7 @@ export function StringEditor({
       void handleTranslate();
     } else if (matchesShortcut(event, shortcuts["editor.close"])) {
       event.preventDefault();
-      onClose();
+      if (!saving) onClose();
     }
   }
 
@@ -440,6 +501,7 @@ export function StringEditor({
               value={value}
               onChange={(event) => editValue(event.target.value)}
               aria-label="Translation"
+              readOnly={saving}
             />
           </label>
         </div>
@@ -459,7 +521,9 @@ export function StringEditor({
             ))
           )}
           {translateMsg && (
-            <span className="editor__ai-msg">{translateMsg}</span>
+            <span className="editor__ai-msg" role="alert">
+              {translateMsg}
+            </span>
           )}
         </div>
 
@@ -468,6 +532,7 @@ export function StringEditor({
             type="button"
             className="editor__save"
             onClick={saveAndNext}
+            disabled={saving}
             title={`Confirm this string and jump to the next one (${displayShortcut(shortcuts["editor.saveNext"])})`}
           >
             Save & next{" "}
@@ -476,6 +541,7 @@ export function StringEditor({
           <button
             type="button"
             onClick={save}
+            disabled={saving}
             title={`Save and close (${displayShortcut(shortcuts["editor.save"])})`}
           >
             Save <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
@@ -484,7 +550,7 @@ export function StringEditor({
             type="button"
             className="editor__ai-btn"
             onClick={() => void handleTranslate()}
-            disabled={translating}
+            disabled={translating || saving}
             title={
               onTranslate
                 ? `Translate with the configured local LLM — result lands as “Needs review” (${displayShortcut(shortcuts["editor.translate"])})`
@@ -499,7 +565,7 @@ export function StringEditor({
             type="button"
             className="editor__iconbtn"
             onClick={() => navigate(-1)}
-            disabled={index === 0}
+            disabled={saving || index === 0}
             aria-label="Prev"
             title={`Previous string — saves changes (${displayShortcut(shortcuts["editor.previous"])})`}
           >
@@ -509,7 +575,7 @@ export function StringEditor({
             type="button"
             className="editor__iconbtn"
             onClick={() => navigate(1)}
-            disabled={index >= total - 1}
+            disabled={saving || index >= total - 1}
             aria-label="Next"
             title={`Next string — saves changes (${displayShortcut(shortcuts["editor.next"])})`}
           >
@@ -519,6 +585,7 @@ export function StringEditor({
             type="button"
             className="editor__iconbtn"
             onClick={keepOriginal}
+            disabled={saving}
             aria-label="Keep original"
             title={`Keep the original text — copies it as the translation (${displayShortcut(shortcuts["editor.keepOriginal"])})`}
           >
@@ -528,6 +595,7 @@ export function StringEditor({
             type="button"
             className="editor__iconbtn"
             onClick={reset}
+            disabled={saving}
             aria-label="Reset"
             title={`Clear the translation (${displayShortcut(shortcuts["editor.reset"])})`}
           >
@@ -537,6 +605,7 @@ export function StringEditor({
             type="button"
             className="editor__iconbtn"
             onClick={onClose}
+            disabled={saving}
             aria-label="Cancel"
             title={`Close without saving (${displayShortcut(shortcuts["editor.close"])})`}
           >

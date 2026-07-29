@@ -350,9 +350,9 @@ describe("StringTable", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
     expect(await screen.findByText("Reviewing 2 of 2")).toBeInTheDocument();
-    expect(
-      (screen.getByLabelText("Translation") as HTMLTextAreaElement).value,
-    ).toBe("Zweite KI");
+    await waitFor(() =>
+      expect(screen.getByLabelText("Translation")).toHaveValue("Zweite KI"),
+    );
   });
 
   it("flags dropped tokens returned by the AI", async () => {

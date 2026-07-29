@@ -11,6 +11,7 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
+  useRef,
   useState,
 } from "react";
 import {
@@ -47,7 +48,7 @@ const LLM_PRESETS: Record<string, string> = {
 
 interface SettingsDialogProps {
   settings: AppSettings;
-  onSave: (settings: AppSettings) => void;
+  onSave: (settings: AppSettings) => Promise<void> | void;
   onClose: () => void;
   /** Re-open the first-launch wizard to change folders (SPEC §4). */
   onReRunSetup: () => void;
@@ -90,9 +91,19 @@ export function SettingsDialog({
   const [llmModelList, setLlmModelList] = useState<string[] | null>(null);
   const [llmTesting, setLlmTesting] = useState(false);
   const [llmResult, setLlmResult] = useState<LlmConnectionResult | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const llmRequest = useRef(0);
   // Kept as the raw input string; parsed/validated on save ("" = default).
   const [llmTemperature, setLlmTemperature] = useState(
     settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
+  );
+
+  useEffect(
+    () => () => {
+      llmRequest.current += 1;
+    },
+    [],
   );
 
   // Check unpacked content + the per-language cache (drives the glossary
@@ -147,19 +158,26 @@ export function SettingsDialog({
   }
 
   function pickLlmProvider(provider: string) {
+    llmRequest.current += 1;
     setLlmProvider(provider);
     setLlmModelList(null);
     setLlmResult(null);
+    setLlmModel("");
+    setLlmTesting(false);
     if (provider !== "custom") setLlmBaseUrl(LLM_PRESETS[provider]);
   }
 
   async function testLlmConnection() {
+    const request = ++llmRequest.current;
+    const testedUrl = llmBaseUrl.trim();
     const startedAt = performance.now();
     setLlmTesting(true);
     setLlmResult(null);
     setLlmModelList(null);
     try {
-      const models = await llmModels(llmBaseUrl);
+      const models = await llmModels(testedUrl);
+      if (request !== llmRequest.current || testedUrl !== llmBaseUrl.trim())
+        return;
       const elapsedMs = Math.max(0, Math.round(performance.now() - startedAt));
       setLlmModelList(models);
       setLlmResult({
@@ -169,43 +187,54 @@ export function SettingsDialog({
       if (models.length > 0 && !models.includes(llmModel))
         setLlmModel(models[0]);
     } catch (cause) {
+      if (request !== llmRequest.current || testedUrl !== llmBaseUrl.trim())
+        return;
       setLlmResult({
         kind: "failed",
         elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
         error: String(cause),
       });
     } finally {
-      setLlmTesting(false);
+      if (request === llmRequest.current) setLlmTesting(false);
     }
   }
 
-  function save() {
+  async function save() {
     const url = llmBaseUrl.trim();
     // "" or a non-number = use the backend default (0.2).
     const parsedTemperature = Number.parseFloat(llmTemperature);
     const temperature = Number.isFinite(parsedTemperature)
       ? parsedTemperature
       : null;
-    onSave({
-      ...settings,
-      targetLang: targetLang || null,
-      shortcuts: Object.fromEntries(
-        SHORTCUT_COMMANDS.filter(
-          (command) => shortcuts[command.id] !== DEFAULT_SHORTCUTS[command.id],
-        ).map((command) => [command.id, shortcuts[command.id]]),
-      ),
-      diagnosticLogging,
-      // Persist the AI connection only once a model is chosen; otherwise null.
-      llm:
-        url && llmModel
-          ? {
-              provider: llmProvider,
-              baseUrl: url,
-              model: llmModel,
-              temperature,
-            }
-          : null,
-    });
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await onSave({
+        ...settings,
+        targetLang: targetLang || null,
+        shortcuts: Object.fromEntries(
+          SHORTCUT_COMMANDS.filter(
+            (command) =>
+              shortcuts[command.id] !== DEFAULT_SHORTCUTS[command.id],
+          ).map((command) => [command.id, shortcuts[command.id]]),
+        ),
+        diagnosticLogging,
+        // Persist the AI connection only once a model is chosen; otherwise null.
+        llm:
+          url && llmModel
+            ? {
+                provider: llmProvider,
+                baseUrl: url,
+                model: llmModel,
+                temperature,
+              }
+            : null,
+      });
+    } catch (cause) {
+      setSaveError(String(cause));
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
@@ -245,6 +274,7 @@ export function SettingsDialog({
                 tabIndex={page === id ? 0 : -1}
                 className={page === id ? "settings__nav-item--active" : ""}
                 onClick={() => setPage(id)}
+                disabled={saving}
               >
                 {label}
               </button>
@@ -467,9 +497,12 @@ export function SettingsDialog({
                     placeholder="http://localhost:1234/v1"
                     aria-label="AI base URL"
                     onChange={(event) => {
+                      llmRequest.current += 1;
                       setLlmBaseUrl(event.target.value);
                       setLlmModelList(null);
                       setLlmResult(null);
+                      setLlmModel("");
+                      setLlmTesting(false);
                     }}
                   />
                 </label>
@@ -653,12 +686,22 @@ export function SettingsDialog({
         </div>
 
         <footer className="wizard__footer">
-          <button type="button" onClick={onClose}>
+          {saveError && (
+            <p className="resulttray__error" role="alert">
+              {saveError}
+            </p>
+          )}
+          <button type="button" onClick={onClose} disabled={saving}>
             Cancel
           </button>
           <span className="wizard__spacer" />
-          <button type="button" className="wizard__finish" onClick={save}>
-            Save
+          <button
+            type="button"
+            className="wizard__finish"
+            onClick={() => void save()}
+            disabled={saving}
+          >
+            {saving ? "Saving..." : "Save"}
           </button>
         </footer>
       </div>

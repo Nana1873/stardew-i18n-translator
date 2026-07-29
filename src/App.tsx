@@ -238,8 +238,8 @@ export function App() {
     try {
       await saveSettings(next);
     } catch (error) {
-      // Keep in-memory settings even if persistence fails, but record why.
       logFrontendError("saveSettings", String(error));
+      throw error;
     }
     setSettings(next);
   }
