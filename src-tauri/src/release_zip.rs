@@ -204,7 +204,7 @@ fn prepare(
     components: &[ZipComponentInput],
 ) -> Result<PreparedPackage, String> {
     validate_segment(package_name, "package folder")?;
-    validate_segment(target_lang, "language code")?;
+    let target_lang = crate::language::normalize_target_code(target_lang)?;
     if components.is_empty() {
         return Err("The selected package has no translatable components.".to_string());
     }
@@ -287,8 +287,12 @@ fn prepare(
                 continue;
             }
             let body = serialize_json(&output)?;
-            let archive_path =
-                archive_path(package_name, relative_component, relative_i18n, target_lang)?;
+            let archive_path = archive_path(
+                package_name,
+                relative_component,
+                relative_i18n,
+                &target_lang,
+            )?;
             let strings = output.len();
             total_strings += strings;
             component_entries += 1;
@@ -328,7 +332,7 @@ fn prepare(
         package_name,
         &selected_version,
         target_language,
-        target_lang,
+        &target_lang,
     );
     let preview = ZipPreview {
         package_name: package_name.to_string(),
@@ -336,7 +340,7 @@ fn prepare(
         version_source,
         version_conflicts,
         default_file_name,
-        target_lang: target_lang.to_string(),
+        target_lang,
         target_language: target_language.to_string(),
         entries: entries.iter().map(|entry| entry.preview.clone()).collect(),
         omitted_components,
