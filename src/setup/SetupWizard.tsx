@@ -39,7 +39,7 @@ const SETUP_STEPS: Array<{
 
 interface SetupWizardProps {
   initial: AppSettings | null;
-  onComplete: (settings: AppSettings) => void;
+  onComplete: (settings: AppSettings) => Promise<void> | void;
   /** Provided only when settings already exist (wizard re-opened from Settings). */
   onCancel?: () => void;
 }
@@ -188,13 +188,21 @@ export function SetupWizard({
     setStep(2);
   }
 
-  function finish() {
-    onComplete({
-      stardewPath,
-      modsPath,
-      sourceLang: "default",
-      targetLang,
-    });
+  async function finish() {
+    setBusy(true);
+    setError(null);
+    try {
+      await onComplete({
+        stardewPath,
+        modsPath,
+        sourceLang: "default",
+        targetLang,
+      });
+    } catch (cause) {
+      setError(String(cause));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const canLeaveStep1 = stardewValid === true && stardewPath !== "";
@@ -519,13 +527,22 @@ export function SetupWizard({
 
         <footer className="wizard__footer setup__footer">
           {onCancel && (
-            <button type="button" className="wizard__cancel" onClick={onCancel}>
+            <button
+              type="button"
+              className="wizard__cancel"
+              onClick={onCancel}
+              disabled={busy}
+            >
               Cancel
             </button>
           )}
           <span className="wizard__spacer" />
           {step > 1 && (
-            <button type="button" onClick={() => setStep((step - 1) as Step)}>
+            <button
+              type="button"
+              onClick={() => setStep((step - 1) as Step)}
+              disabled={busy}
+            >
               Back
             </button>
           )}
@@ -560,8 +577,13 @@ export function SetupWizard({
             </button>
           )}
           {step === 4 && (
-            <button type="button" className="wizard__primary" onClick={finish}>
-              Finish
+            <button
+              type="button"
+              className="wizard__primary"
+              onClick={() => void finish()}
+              disabled={busy}
+            >
+              {busy ? "Saving..." : "Finish"}
             </button>
           )}
         </footer>

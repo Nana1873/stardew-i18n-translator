@@ -694,7 +694,7 @@ export function StringTable({
           }
           glossary={glossary}
           onTranslate={onTranslate}
-          onSave={(value, status) => void saveRow(editingIndex, value, status)}
+          onSave={(value, status) => saveRow(editingIndex, value, status)}
           onClose={() => setEditorSession(null)}
           onNavigate={(delta) =>
             setEditorSession((current) => {

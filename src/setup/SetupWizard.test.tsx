@@ -128,6 +128,18 @@ describe("SetupWizard", () => {
     });
   });
 
+  it("keeps setup open when saving fails", async () => {
+    const onComplete = vi.fn().mockRejectedValue(new Error("cannot save"));
+    render(<SetupWizard initial={null} onComplete={onComplete} />);
+    await gotoGlossaryStep();
+
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("cannot save");
+    expect(screen.getByRole("dialog", { name: "Setup" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
+  });
+
   it("shows StardewXnbHack guidance when no unpacked content is present", async () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();

@@ -30,8 +30,11 @@ function renderEditor(
   position: { index: number; total: number } = { index: 0, total: 2 },
   reviewProgress?: { current: number; total: number },
   glossary?: GlossaryEntry[] | null,
+  onSave: (
+    value: string,
+    status: EditorRow["status"],
+  ) => Promise<void> | void = vi.fn(),
 ) {
-  const onSave = vi.fn();
   const onClose = vi.fn();
   const onNavigate = vi.fn();
   render(
@@ -48,7 +51,17 @@ function renderEditor(
       onNavigate={onNavigate}
     />,
   );
-  return { onSave, onClose, onNavigate };
+  return { onSave: onSave as ReturnType<typeof vi.fn>, onClose, onNavigate };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 function entry(
@@ -69,14 +82,14 @@ describe("StringEditor", () => {
     expect(onNavigate).toHaveBeenCalledWith(1);
   });
 
-  it("F2 keeps the original: copies the source, saved as translated on navigation", () => {
+  it("F2 keeps the original: copies the source, saved as translated on navigation", async () => {
     const { onSave, onNavigate } = renderEditor();
 
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "F2" });
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hello", "translated");
-    expect(onNavigate).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
   });
 
   it("Esc cancels without saving", () => {
@@ -91,13 +104,13 @@ describe("StringEditor", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("Save confirms an unreviewed AI suggestion to translated and closes", () => {
+  it("Save confirms an unreviewed AI suggestion to translated and closes", async () => {
     const { onSave, onClose } = renderEditor({ status: "review-needed" });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
   it("navigating away from an untouched AI suggestion keeps it unsaved (stays review-needed)", () => {
@@ -162,7 +175,7 @@ describe("StringEditor", () => {
     expect(onSave).toHaveBeenCalledWith("", "untranslated");
   });
 
-  it("Save & next confirms the string and jumps to the next one", () => {
+  it("Save & next confirms the string and jumps to the next one", async () => {
     const { onSave, onNavigate, onClose } = renderEditor({
       status: "review-needed",
     });
@@ -170,11 +183,11 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
-    expect(onNavigate).toHaveBeenCalledWith(1);
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
     expect(onClose).not.toHaveBeenCalled();
   });
 
-  it("Save & next on the last string closes instead of navigating", () => {
+  it("Save & next on the last string closes instead of navigating", async () => {
     const { onSave, onNavigate, onClose } = renderEditor({}, undefined, {
       index: 1,
       total: 2,
@@ -184,10 +197,10 @@ describe("StringEditor", () => {
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
     expect(onNavigate).not.toHaveBeenCalled();
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
-  it("uses a configured shortcut instead of the default", () => {
+  it("uses a configured shortcut instead of the default", async () => {
     const onSave = vi.fn();
     const onClose = vi.fn();
     render(
@@ -208,7 +221,70 @@ describe("StringEditor", () => {
 
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalled());
+  });
+
+  it("waits for a delayed save before navigating", async () => {
+    const pending = deferred<void>();
+    const onSave = vi.fn(() => pending.promise);
+    const { onNavigate } = renderEditor(
+      { status: "review-needed" },
+      undefined,
+      { index: 0, total: 2 },
+      undefined,
+      undefined,
+      onSave,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /Save & next/ })).toBeDisabled();
+
+    pending.resolve();
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
+  });
+
+  it("keeps the current text and focus when saving fails", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("disk full"));
+    const { onNavigate, onClose } = renderEditor(
+      { status: "review-needed" },
+      undefined,
+      { index: 0, total: 2 },
+      undefined,
+      undefined,
+      onSave,
+    );
+    const field = screen.getByLabelText("Translation");
+    field.focus();
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(field).toHaveValue("Hallo");
+    expect(field).toHaveFocus();
+  });
+
+  it("ignores an AI response after manual input", async () => {
+    const pending = deferred<TranslationResult>();
+    renderEditor(
+      { target: "", status: "untranslated" },
+      vi.fn(() => pending.promise),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /AI Translate/ }));
+    const field = screen.getByLabelText("Translation");
+    fireEvent.change(field, { target: { value: "Mein Text" } });
+    pending.resolve({
+      text: "Verspaetete KI-Antwort",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
+
+    await waitFor(() => expect(field).toHaveValue("Mein Text"));
   });
 
   it("shows typed glossary hints with a category chip and inserts the term on click", () => {

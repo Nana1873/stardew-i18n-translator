@@ -985,6 +985,43 @@ describe("App shell", () => {
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 
+  it("does not apply or rescan a language when settings persistence fails", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(EMPTY_SCAN);
+      if (cmd === "save_settings")
+        return Promise.reject(new Error("settings file is locked"));
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "settings file is locked",
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", {
+      modsPath: "E:/SDV/Mods",
+      targetLang: "fr",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByLabelText("Target language")).toHaveValue("de");
+  });
+
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings")

@@ -19,6 +19,14 @@ const baseSettings: AppSettings = {
   diagnosticLogging: true,
 };
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 beforeEach(() => {
   invokeMock.mockReset();
   invokeMock.mockImplementation((cmd: string) => {
@@ -103,7 +111,7 @@ describe("SettingsDialog", () => {
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ llm: null }));
   });
 
-  it("allows every advertised target language to be selected and saved", () => {
+  it("allows every advertised target language to be selected and saved", async () => {
     const onSave = vi.fn();
     render(
       <SettingsDialog
@@ -131,9 +139,12 @@ describe("SettingsDialog", () => {
     ]) {
       fireEvent.change(select, { target: { value: code } });
       fireEvent.click(save);
-      expect(onSave).toHaveBeenLastCalledWith(
-        expect.objectContaining({ targetLang: code }),
+      await waitFor(() =>
+        expect(onSave).toHaveBeenLastCalledWith(
+          expect.objectContaining({ targetLang: code }),
+        ),
       );
+      await waitFor(() => expect(save).toBeEnabled());
     }
   });
 
@@ -164,6 +175,9 @@ describe("SettingsDialog", () => {
           temperature: null,
         },
       }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
     );
   });
 
@@ -197,6 +211,9 @@ describe("SettingsDialog", () => {
         llm: expect.objectContaining({ temperature: 0.7 }),
       }),
     );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
 
     // Clearing the field falls back to the default (persisted as null).
     fireEvent.change(field, { target: { value: "" } });
@@ -206,6 +223,61 @@ describe("SettingsDialog", () => {
         llm: expect.objectContaining({ temperature: null }),
       }),
     );
+  });
+
+  it("keeps settings open when persistence fails", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("settings locked"));
+    const onClose = vi.fn();
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={onClose}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "settings locked",
+    );
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeVisible();
+    expect(screen.getByLabelText("Target language")).toHaveValue("fr");
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("ignores a connection result after the URL changes", async () => {
+    const pending = deferred<string[]>();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "llm_models") return pending.promise;
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    fireEvent.change(screen.getByLabelText("AI base URL"), {
+      target: { value: "http://localhost:9999/v1" },
+    });
+    pending.resolve(["stale-model"]);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("llm_models", expect.anything()),
+    );
+    expect(screen.queryByText(/Connected/)).toBeNull();
+    expect(screen.queryByText("stale-model")).toBeNull();
   });
 
   it("switches between the settings pages", () => {
