@@ -336,14 +336,11 @@ export interface LlmBatchItem {
   relativeDir: string;
   key: string;
   source: string;
-  /** Nearest standalone `//` heading in default.json, used as AI context. */
-  section?: string | null;
 }
 
 export interface LlmExportOutcome {
   path: string;
   stringCount: number;
-  glossaryTerms: number;
 }
 
 /**
@@ -352,16 +349,10 @@ export interface LlmExportOutcome {
  */
 export function exportLlmBatch(
   modUniqueId: string,
-  modName: string,
-  targetLang: string,
-  targetLanguage: string,
   items: LlmBatchItem[],
 ): Promise<LlmExportOutcome | null> {
   return invoke<LlmExportOutcome | null>("export_llm_batch", {
     modUniqueId,
-    modName,
-    targetLang,
-    targetLanguage,
     items,
   });
 }

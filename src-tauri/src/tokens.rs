@@ -6,10 +6,10 @@
 //! brackets, positional `{0}`, dialogue commands `$b`, structural `#` / paired
 //! `'` quote delimiters, and single-char `@`/`^`).
 //!
-//! The exporter uses [`missing_tokens`] to skip strings that dropped a required
-//! source token (the `token-missing` error rule). Tokens are compared as
-//! multisets, so a dropped *second* `$b` is caught too. Keeping this in sync
-//! with the TS reader is covered by shared-case tests in both languages.
+//! Export and batch import use [`token_differences`] for their blocking
+//! `token-missing` rule. Tokens are compared as multisets, so a dropped second
+//! `$b` is caught too. Keeping this in sync with the TS reader is covered by
+//! shared-case tests in both languages.
 
 use std::collections::HashMap;
 
@@ -59,6 +59,7 @@ fn is_soft_token(token: &str) -> bool {
 /// True if `target` is missing (or under-represents) any protected token that
 /// appears in `source`. Soft tokens (newlines, quote delimiters) are exempt;
 /// they surface as a warning, never an error.
+#[cfg(test)]
 pub fn missing_tokens(source: &str, target: &str) -> bool {
     token_differences(source, target)
         .iter()

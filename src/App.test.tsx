@@ -607,7 +607,6 @@ describe("App shell", () => {
         return Promise.resolve({
           path: "C:/out/test.llm-batch.json",
           stringCount: 1,
-          glossaryTerms: 0,
         });
       return Promise.resolve(null);
     });
@@ -625,6 +624,16 @@ describe("App shell", () => {
     });
     expect(tray).toHaveTextContent("Batch exported");
     expect(tray).toHaveTextContent("C:/out/test.llm-batch.json");
+    expect(invokeMock).toHaveBeenCalledWith("export_llm_batch", {
+      modUniqueId: "a.b",
+      items: [
+        {
+          relativeDir: "i18n",
+          key: "greeting",
+          source: "Hello",
+        },
+      ],
+    });
     expect(
       screen.queryByRole("dialog", { name: "LLM batch export" }),
     ).not.toBeInTheDocument();

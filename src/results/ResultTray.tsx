@@ -7,7 +7,7 @@ import type {
 } from "../tauri/commands";
 
 export const LLM_BATCH_HANDOFF_PROMPT =
-  'Follow the "instructions" in the attached batch JSON and return the completed result as a downloadable JSON file.';
+  'Translate only the string values inside "files" in the attached JSON. Preserve every file path, key, placeholder, token, and the complete metadata object exactly. Return the completed JSON as a downloadable file without adding or removing anything.';
 
 export interface ResultProblem {
   id: string;
@@ -288,11 +288,7 @@ function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
       <span className="resulttray__eyebrow">External LLM batch</span>
       <p>
         Wrote <strong>{outcome.stringCount}</strong>{" "}
-        {outcome.stringCount === 1 ? "string" : "strings"}
-        {outcome.glossaryTerms > 0
-          ? ` with ${outcome.glossaryTerms} glossary terms`
-          : ""}
-        .
+        {outcome.stringCount === 1 ? "string" : "strings"}.
       </p>
       <code>{outcome.path}</code>
       <strong className="resulttray__workflow-title">

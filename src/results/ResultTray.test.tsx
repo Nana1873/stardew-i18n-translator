@@ -122,7 +122,6 @@ describe("ResultTray", () => {
           outcome: {
             path: "C:/out/test.llm-batch.json",
             stringCount: 3,
-            glossaryTerms: 2,
           },
           problems: [],
         }}

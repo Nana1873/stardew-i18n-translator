@@ -71,7 +71,9 @@ You can translate in three ways:
 - **Local AI:** connect to a local OpenAI-compatible endpoint such as Ollama or
   LM Studio.
 - **External LLM batch:** export a self-contained JSON batch, translate it with a
-  file-capable LLM, and import the result.
+  file-capable LLM, and import the result. Format 2 uses one compact source
+  snapshot to ensure the result still belongs to the selected mod, language,
+  files, keys, and current English text before anything is saved.
 
 AI suggestions always enter the review queue. They are never treated as finished
 translations automatically.

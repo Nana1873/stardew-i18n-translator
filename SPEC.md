@@ -161,6 +161,14 @@ The desktop app does not contact that service. The user transfers the file
 manually. Imported values enter `review-needed`, validation runs immediately,
 and already accepted local translations are not silently overwritten.
 
+Batch format 2 contains only `format`, `version`, `metadata`, and `files`.
+Metadata binds the selected mod ID and target language to one SHA-256 snapshot
+over the sorted `[relative file path, key, English source]` list. It does not
+carry per-string hashes. Import requires the same mod, language, file/key set,
+and current English source snapshot, validates all protected tokens before the
+first state write, skips empty values, and preserves every non-empty local
+translation. Format 1 and unknown versions are rejected without changes.
+
 ## 12. Nexus and Translation Packages
 
 The desktop app does not call the Nexus Mods API, store a Nexus API key, search

@@ -559,7 +559,6 @@ describe("StringTable", () => {
     const onLlmBatchExport = vi.fn().mockResolvedValue({
       path: "C:/out/a.b.llm-batch.json",
       stringCount: 1,
-      glossaryTerms: 2,
     });
     render(<StringTable mod={MOD} onLlmBatchExport={onLlmBatchExport} />);
 
@@ -575,7 +574,6 @@ describe("StringTable", () => {
         relativeDir: "i18n",
         key: "bye",
         source: "Bye",
-        section: "NPC dialogue",
       },
     ]);
     expect(
