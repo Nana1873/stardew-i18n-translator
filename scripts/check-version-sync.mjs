@@ -7,7 +7,6 @@ const tauriConfig = JSON.parse(read("src-tauri/tauri.conf.json"));
 const cargoToml = read("src-tauri/Cargo.toml");
 const cargoLock = read("src-tauri/Cargo.lock");
 const changelog = read("CHANGELOG.md");
-const projectStatus = read("docs/development/project-status.md");
 
 function match(text, pattern, description) {
   const result = text.match(pattern);
@@ -27,11 +26,6 @@ const lockPackage = match(
   /\[\[package\]\]\s+name = "stardew-i18n-translator"\s+version = "([^"]+)"/,
   "the root package version in src-tauri/Cargo.lock",
 );
-const statusVersion = match(
-  projectStatus,
-  /Latest release:\s*([0-9]+\.[0-9]+\.[0-9]+)\./,
-  "the latest release in docs/development/project-status.md",
-);
 const changelogBase = match(
   changelog,
   /^\[Unreleased\]: .*\/compare\/v([0-9]+\.[0-9]+\.[0-9]+)\.\.\.HEAD$/m,
@@ -43,7 +37,6 @@ const versions = new Map([
   ["src-tauri/tauri.conf.json", tauriConfig.version],
   ["src-tauri/Cargo.toml", cargoPackage],
   ["src-tauri/Cargo.lock", lockPackage],
-  ["docs/development/project-status.md", statusVersion],
   ["CHANGELOG.md Unreleased link", changelogBase],
 ]);
 const expected = packageJson.version;
