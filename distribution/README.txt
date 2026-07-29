@@ -10,15 +10,15 @@ Nothing is downloaded or installed automatically.
 
 https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 
-The application creates a Data folder beside the executable on first launch.
+The application creates a data folder beside the executable on first launch.
 It stores local data there:
 
-- settings.json: selected game/mod folders, language, and local-AI settings
-- glossary.json: optional locally generated Stardew glossary
-- language-state/: saved translation work and automatic state backups
+- settings.json: selected folders, language, shortcuts, and local-AI settings
+- glossary/glossary-<lang>.json: optional per-language glossary caches
+- language-state/<lang>/: saved translation work and automatic state backups
 - logs/: optional rotating diagnostic logs
 
-Copy the complete application folder, including Data, to move your work to
+Copy the complete application folder, including data, to move your work to
 another computer.
 
 The saved Stardew Valley and Mods paths are absolute and may need to be selected
