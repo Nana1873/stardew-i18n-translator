@@ -1,16 +1,18 @@
 name: Feature request
 description: Suggest an improvement or new capability.
-title: "[Feature]: "
-labels: ["type:enhancement", "needs-triage"]
+title: "[Feature] "
+labels:
+  - type:enhancement
 body:
   - type: markdown
     attributes:
-      value: Have an idea? Tell us about it. A rough suggestion is completely fine.
+      value: |
+        Rough ideas are welcome; no technical design is needed. The app is intentionally focused on translating SMAPI i18n files rather than managing or updating mods.
 
   - type: textarea
     id: idea
     attributes:
-      label: Your idea
-      description: What would you like to see, and how would it help?
+      label: What would improve the app?
+      description: Describe the workflow or problem and the change you have in mind.
     validations:
       required: true
