@@ -40,7 +40,7 @@ jobs:
           fi
           non_doc_files=$(gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
             --paginate --jq '.[].filename' \
-            | grep -vE '(\.md$|^docs/)' || true)
+            | grep -vE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/)' || true)
           [[ -n "$non_doc_files" ]] && echo "code=true" >> "$GITHUB_OUTPUT" || echo "code=false" >> "$GITHUB_OUTPUT"
 
   frontend:
