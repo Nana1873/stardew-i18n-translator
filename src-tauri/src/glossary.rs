@@ -661,20 +661,10 @@ fn glossary_dir(config_dir: &Path) -> PathBuf {
     config_dir.join("glossary")
 }
 
-/// Per-language cache file path: `glossary/glossary-<lang>.json`. The language
-/// code is sanitized to ASCII alphanumerics + `-` before it touches the filename
-/// (mirrors the `language-state/<lang>/` rule in `translations.rs`) —
-/// defense-in-depth against path traversal from custom codes (#156 framework).
-/// Returns `None` for an empty/all-stripped code.
+/// Per-language cache file path: `glossary/glossary-<lang>.json`. Only a
+/// canonical supported target code may reach the filename.
 fn glossary_path(config_dir: &Path, lang: &str) -> Option<PathBuf> {
-    let safe: String = lang
-        .trim()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .collect();
-    if safe.is_empty() {
-        return None;
-    }
+    let safe = crate::language::normalize_target_code(lang).ok()?;
     Some(glossary_dir(config_dir).join(format!("glossary-{safe}.json")))
 }
 

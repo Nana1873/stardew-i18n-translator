@@ -6,13 +6,92 @@
 //! #6): just a base URL + a `GET /v1/models` reachability probe. The actual
 //! translation call (`POST /v1/chat/completions`) lands in Issue 16.
 //!
-//! Everything is localhost/LAN HTTP — no API key, no external network (SPEC §19 #7).
+//! Requests are loopback-only: no API key, proxy, redirect, or external network.
 
+use std::net::IpAddr;
 use std::time::Duration;
 
+use futures_util::TryStreamExt;
 use serde::{Deserialize, Serialize};
 
 use crate::tokens;
+
+const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
+
+pub fn validate_base_url(base_url: &str) -> Result<reqwest::Url, String> {
+    let url = reqwest::Url::parse(base_url.trim())
+        .map_err(|error| format!("Invalid local-AI base URL: {error}"))?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Local-AI base URL must use http:// or https://.".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Local-AI base URL must not contain user information.".to_string());
+    }
+    if url.query().is_some() || url.fragment().is_some() {
+        return Err("Local-AI base URL must not contain a query or fragment.".to_string());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "Local-AI base URL must contain a host.".to_string())?;
+    let ip_host = host.trim_start_matches('[').trim_end_matches(']');
+    let is_loopback = host.eq_ignore_ascii_case("localhost")
+        || ip_host
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback());
+    if !is_loopback {
+        return Err("Local-AI base URL must use localhost or a loopback IP address.".to_string());
+    }
+    Ok(url)
+}
+
+fn endpoint_url(base_url: &str, segments: &[&str]) -> Result<reqwest::Url, String> {
+    let mut url = validate_base_url(base_url)?;
+    {
+        let mut path = url
+            .path_segments_mut()
+            .map_err(|_| "Local-AI base URL cannot be used as an API base.".to_string())?;
+        path.pop_if_empty();
+        for segment in segments {
+            path.push(segment);
+        }
+    }
+    Ok(url)
+}
+
+fn http_client(timeout: Duration) -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .timeout(timeout)
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| format!("Could not create HTTP client: {error}"))
+}
+
+async fn read_limited_body(response: reqwest::Response) -> Result<Vec<u8>, String> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_RESPONSE_BYTES as u64)
+    {
+        return Err("The server response is too large.".to_string());
+    }
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream
+        .try_next()
+        .await
+        .map_err(|error| format!("Could not read the server response: {error}"))?
+    {
+        let new_len = body
+            .len()
+            .checked_add(chunk.len())
+            .ok_or_else(|| "The server response is too large.".to_string())?;
+        if new_len > MAX_RESPONSE_BYTES {
+            return Err("The server response is too large.".to_string());
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
 
 /// OpenAI-compatible `GET /v1/models` response: `{ "data": [ { "id": "…" }, … ] }`.
 #[derive(Deserialize)]
@@ -44,19 +123,15 @@ pub fn parse_model_ids(body: &str) -> Vec<String> {
 }
 
 /// Build the `/models` URL from a base URL, tolerating a trailing slash.
-pub fn models_url(base_url: &str) -> String {
-    let trimmed = base_url.trim().trim_end_matches('/');
-    format!("{trimmed}/models")
+pub fn models_url(base_url: &str) -> Result<String, String> {
+    endpoint_url(base_url, &["models"]).map(Into::into)
 }
 
 /// List available models from an OpenAI-compatible server. A successful response
 /// is the "connection OK" signal; the returned ids populate the model dropdown.
 pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
-    let url = models_url(base_url);
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|error| format!("Could not create HTTP client: {error}"))?;
+    let url = models_url(base_url)?;
+    let client = http_client(Duration::from_secs(10))?;
 
     let response = client
         .get(&url)
@@ -68,12 +143,11 @@ pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
         return Err(format!("Server returned {} for {url}.", response.status()));
     }
 
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("Could not read the server response: {error}"))?;
+    let body = read_limited_body(response).await?;
+    let body = std::str::from_utf8(&body)
+        .map_err(|error| format!("The server response is not valid UTF-8: {error}"))?;
 
-    Ok(parse_model_ids(&body))
+    Ok(parse_model_ids(body))
 }
 
 // ---------------------------------------------------------------------------
@@ -197,12 +271,46 @@ struct ChatResponse {
 #[derive(Deserialize)]
 struct ChatChoice {
     message: ChatChoiceMessage,
+    #[serde(default)]
+    finish_reason: Option<String>,
 }
 
 #[derive(Deserialize)]
 struct ChatChoiceMessage {
     #[serde(default)]
     content: String,
+    #[serde(default)]
+    tool_calls: Vec<serde_json::Value>,
+}
+
+fn parse_chat_response(body: &[u8]) -> Result<String, String> {
+    let parsed: ChatResponse = serde_json::from_slice(body)
+        .map_err(|error| format!("Could not parse the model response: {error}"))?;
+    let choice = parsed
+        .choices
+        .into_iter()
+        .next()
+        .ok_or_else(|| "The model returned no response choice.".to_string())?;
+    if !choice.message.tool_calls.is_empty() {
+        return Err(
+            "The model returned a tool call instead of a complete translation.".to_string(),
+        );
+    }
+    if choice
+        .finish_reason
+        .as_deref()
+        .is_some_and(|reason| reason != "stop")
+    {
+        return Err(format!(
+            "The model response is incomplete (finish reason: {}).",
+            choice.finish_reason.as_deref().unwrap_or_default()
+        ));
+    }
+    let text = choice.message.content.trim().to_string();
+    if text.is_empty() {
+        return Err("The model returned an empty response.".to_string());
+    }
+    Ok(text)
 }
 
 /// Build the chat messages for one translation. Pure (no I/O) so it is unit-
@@ -281,17 +389,11 @@ async fn chat(
     max_tokens: u32,
     stop: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let url = {
-        let trimmed = base_url.trim().trim_end_matches('/');
-        format!("{trimmed}/chat/completions")
-    };
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|error| format!("Could not create HTTP client: {error}"))?;
+    let url = endpoint_url(base_url, &["chat", "completions"])?;
+    let client = http_client(Duration::from_secs(120))?;
 
     let response = client
-        .post(&url)
+        .post(url.as_str())
         .json(&ChatRequest {
             model: model.to_string(),
             messages,
@@ -317,18 +419,8 @@ async fn chat(
         return Err(format!("Server returned {} for {url}.", response.status()));
     }
 
-    let parsed: ChatResponse = response
-        .json()
-        .await
-        .map_err(|error| format!("Could not parse the model response: {error}"))?;
-
-    parsed
-        .choices
-        .into_iter()
-        .next()
-        .map(|choice| choice.message.content.trim().to_string())
-        .filter(|text| !text.is_empty())
-        .ok_or_else(|| "The model returned an empty response.".to_string())
+    let body = read_limited_body(response).await?;
+    parse_chat_response(&body)
 }
 
 /// Translate one source string. Validates protected tokens against the source;
@@ -418,17 +510,84 @@ mod tests {
     #[test]
     fn models_url_handles_trailing_slash_and_whitespace() {
         assert_eq!(
-            models_url("http://localhost:1234/v1"),
+            models_url("http://localhost:1234/v1").unwrap(),
             "http://localhost:1234/v1/models"
         );
         assert_eq!(
-            models_url("http://localhost:1234/v1/"),
+            models_url("http://localhost:1234/v1/").unwrap(),
             "http://localhost:1234/v1/models"
         );
         assert_eq!(
-            models_url("  http://localhost:11434/v1  "),
+            models_url("  http://localhost:11434/v1  ").unwrap(),
             "http://localhost:11434/v1/models"
         );
+    }
+
+    #[test]
+    fn local_ai_url_matrix_rejects_non_loopback_and_ambiguous_urls() {
+        for valid in [
+            "http://localhost:1234/v1",
+            "https://127.0.0.1/v1",
+            "http://127.255.1.2:11434/v1",
+            "http://[::1]:1234/v1",
+        ] {
+            assert!(validate_base_url(valid).is_ok(), "rejected {valid}");
+        }
+        for invalid in [
+            "ftp://localhost/v1",
+            "http://example.com/v1",
+            "http://192.168.1.20/v1",
+            "http://localhost.example/v1",
+            "http://user@localhost/v1",
+            "http://localhost/v1?x=1",
+            "http://localhost/v1#fragment",
+        ] {
+            assert!(validate_base_url(invalid).is_err(), "accepted {invalid}");
+        }
+    }
+
+    #[test]
+    fn incomplete_or_tool_call_chat_responses_are_rejected() {
+        for body in [
+            r#"{"choices":[{"message":{"content":"Hallo"},"finish_reason":"length"}]}"#,
+            r#"{"choices":[{"message":{"content":"Hallo"},"finish_reason":"content_filter"}]}"#,
+            r#"{"choices":[{"message":{"content":"Hallo"},"finish_reason":"future_reason"}]}"#,
+            r#"{"choices":[{"message":{"content":"","tool_calls":[{}]},"finish_reason":"stop"}]}"#,
+        ] {
+            assert!(
+                parse_chat_response(body.as_bytes()).is_err(),
+                "accepted {body}"
+            );
+        }
+        assert_eq!(
+            parse_chat_response(
+                br#"{"choices":[{"message":{"content":" Hallo "},"finish_reason":"stop"}]}"#
+            )
+            .unwrap(),
+            "Hallo"
+        );
+    }
+
+    #[test]
+    fn model_probe_does_not_follow_redirects() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0u8; 1024];
+            let _ = stream.read(&mut request).unwrap();
+            stream
+                .write_all(
+                    b"HTTP/1.1 302 Found\r\nLocation: http://example.com/models\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                )
+                .unwrap();
+        });
+        let result = tauri::async_runtime::block_on(list_models(&format!("http://{address}/v1")));
+        server.join().unwrap();
+        assert!(result.unwrap_err().contains("302"));
     }
 
     #[test]

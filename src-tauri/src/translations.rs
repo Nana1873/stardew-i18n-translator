@@ -51,14 +51,7 @@ pub fn entry_key(relative_dir: &str, key: &str) -> String {
 /// `data/translations/` folder is moved once into the first active language,
 /// which is the language stored in settings when upgrading.
 pub fn language_root(config_dir: &Path, target_lang: &str) -> Result<PathBuf, String> {
-    let safe_lang: String = target_lang
-        .trim()
-        .chars()
-        .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
-        .collect();
-    if safe_lang.is_empty() {
-        return Err("A target language is required for translation state.".to_string());
-    }
+    let safe_lang = crate::language::normalize_target_code(target_lang)?;
     let root = config_dir.join("language-state").join(safe_lang);
     let legacy = config_dir.join("translations");
     let destination = root.join("translations");

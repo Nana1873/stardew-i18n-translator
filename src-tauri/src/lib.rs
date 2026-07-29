@@ -10,6 +10,7 @@ mod detection;
 mod export;
 mod glossary;
 mod lang_pack;
+mod language;
 mod llm;
 mod release_zip;
 mod scanner;
@@ -69,6 +70,7 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 
 #[tauri::command]
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
+    let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     let result = scanner::scan_mods(Path::new(&mods_path), &target_lang, &config);
     if !result.warnings.is_empty() {
@@ -192,6 +194,7 @@ fn preview_translation_zip(
     target_language: String,
     components: Vec<release_zip::ZipComponentInput>,
 ) -> Result<release_zip::ZipPreview, String> {
+    let target_lang = language::normalize_target_code(&target_lang)?;
     release_zip::preview(
         &translation_config_dir(&app)?,
         Path::new(&mods_path),
@@ -226,8 +229,9 @@ fn pick_translation_zip_destination(
 #[tauri::command]
 fn build_translation_zip(
     app: AppHandle,
-    request: release_zip::ZipBuildRequest,
+    mut request: release_zip::ZipBuildRequest,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
+    request.target_lang = language::normalize_target_code(&request.target_lang)?;
     release_zip::build(&translation_config_dir(&app)?, &request)
 }
 
@@ -253,6 +257,7 @@ fn export_llm_batch(
     target_language: String,
     items: Vec<batch::BatchExportItem>,
 ) -> Result<Option<LlmExportOutcome>, String> {
+    let target_lang = language::normalize_target_code(&target_lang)?;
     let picked = app
         .dialog()
         .file()
@@ -404,6 +409,7 @@ fn build_glossary(
     stardew_path: String,
     target_lang: String,
 ) -> Result<glossary::GlossaryInfo, String> {
+    let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
     // A game-supported language builds from official content; a game-unsupported
@@ -435,6 +441,7 @@ fn load_glossary(
     app: AppHandle,
     target_lang: String,
 ) -> Result<Option<glossary::Glossary>, String> {
+    let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
     Ok(load_active_glossary(&config, &target_lang))
@@ -446,6 +453,7 @@ fn glossary_status(
     stardew_path: String,
     target_lang: String,
 ) -> Result<glossary::GlossaryStatus, String> {
+    let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     glossary::migrate_legacy_cache(&config);
     let cached =
@@ -484,9 +492,7 @@ fn glossary_status(
 /// the "Test connection" probe: success means the server is reachable.
 #[tauri::command]
 async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
-    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
-        return Err("Base URL must start with http:// or https://.".to_string());
-    }
+    llm::validate_base_url(&base_url)?;
     llm::list_models(&base_url)
         .await
         .inspect_err(|error| log::error!("llm_models({base_url}) failed: {error}"))
@@ -510,9 +516,8 @@ async fn translate_string(
     section: Option<String>,
     temperature: Option<f32>,
 ) -> Result<llm::TranslationResult, String> {
-    if !(base_url.starts_with("http://") || base_url.starts_with("https://")) {
-        return Err("Base URL must start with http:// or https://.".to_string());
-    }
+    llm::validate_base_url(&base_url)?;
+    let target_lang = language::normalize_target_code(&target_lang)?;
     // Load only the glossary currently valid for the active language. For
     // unsupported languages, a community-pack cache is ignored after the pack is
     // removed so stale official-term hints never reach the prompt.
@@ -680,7 +685,7 @@ fn config_dir(_app: &AppHandle) -> Result<PathBuf, String> {
 
 fn translation_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let config = config_dir(app)?;
-    let target_lang = settings::load(&config)
+    let target_lang = settings::load_checked(&config)?
         .target_lang
         .ok_or("Choose a target language before editing translations.")?;
     translations::language_root(&config, &target_lang)

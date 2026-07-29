@@ -16,13 +16,26 @@ const HIDEF_MASK: u8 = 0x01;
 const XNB_HEADER_SIZE: usize = 10;
 const XNB_COMPRESSED_HEADER_SIZE: usize = 14;
 const XNB_FRAME_SIZE: usize = 0x8000;
+const MAX_XNB_SIZE: usize = 64 * 1024 * 1024;
+const MAX_TYPE_READERS: usize = 256;
+const MAX_ENTRIES: usize = 250_000;
+const MAX_STRING_SIZE: usize = 1024 * 1024;
 
 pub fn read_string_dictionary(path: &Path) -> Result<HashMap<String, String>, String> {
+    let length = std::fs::metadata(path)
+        .map_err(|error| format!("read XNB metadata: {error}"))?
+        .len();
+    if length > MAX_XNB_SIZE as u64 {
+        return Err("XNB file exceeds the 64 MiB limit.".to_string());
+    }
     let bytes = std::fs::read(path).map_err(|error| format!("read XNB: {error}"))?;
     read_string_dictionary_bytes(&bytes)
 }
 
 fn read_string_dictionary_bytes(bytes: &[u8]) -> Result<HashMap<String, String>, String> {
+    if bytes.len() > MAX_XNB_SIZE {
+        return Err("XNB file exceeds the 64 MiB limit.".to_string());
+    }
     let content = decode_content(bytes)?;
     parse_string_dictionary(&content)
 }
@@ -57,6 +70,9 @@ fn decode_content(bytes: &[u8]) -> Result<Vec<u8>, String> {
     }
     if compressed_lzx {
         let decompressed_size = reader.read_u32_le()? as usize;
+        if decompressed_size > MAX_XNB_SIZE {
+            return Err("XNB decompressed content exceeds the 64 MiB limit.".to_string());
+        }
         let compressed = bytes
             .get(XNB_COMPRESSED_HEADER_SIZE..)
             .ok_or_else(|| "Missing compressed XNB content.".to_string())?;
@@ -71,9 +87,14 @@ fn decode_content(bytes: &[u8]) -> Result<Vec<u8>, String> {
 }
 
 fn decompress_lzx(compressed: &[u8], decompressed_size: usize) -> Result<Vec<u8>, String> {
+    if decompressed_size > MAX_XNB_SIZE {
+        return Err("XNB decompressed content exceeds the 64 MiB limit.".to_string());
+    }
     let mut reader = ByteReader::new(compressed);
     let mut decoder = Lzxd::new(WindowSize::KB64);
-    let mut out = Vec::with_capacity(decompressed_size);
+    let mut out = Vec::new();
+    out.try_reserve_exact(decompressed_size)
+        .map_err(|_| "Could not allocate XNB decompression buffer.".to_string())?;
 
     while out.len() < decompressed_size && reader.remaining() > 0 {
         let flag = reader.read_u8()?;
@@ -96,6 +117,13 @@ fn decompress_lzx(compressed: &[u8], decompressed_size: usize) -> Result<Vec<u8>
         let decompressed = decoder
             .decompress_next(chunk, expected)
             .map_err(|error| format!("decompress XNB LZX: {error}"))?;
+        let new_len = out
+            .len()
+            .checked_add(decompressed.len())
+            .ok_or_else(|| "XNB decompression size overflow.".to_string())?;
+        if new_len > decompressed_size {
+            return Err("XNB decompression exceeded its declared size.".to_string());
+        }
         out.extend_from_slice(decompressed);
     }
 
@@ -111,7 +139,13 @@ fn decompress_lzx(compressed: &[u8], decompressed_size: usize) -> Result<Vec<u8>
 fn parse_string_dictionary(bytes: &[u8]) -> Result<HashMap<String, String>, String> {
     let mut reader = ByteReader::new(bytes);
     let reader_count = reader.read_7bit_usize()?;
-    let mut readers = Vec::with_capacity(reader_count);
+    if reader_count > MAX_TYPE_READERS {
+        return Err("XNB has more than 256 type readers.".to_string());
+    }
+    let mut readers = Vec::new();
+    readers
+        .try_reserve_exact(reader_count)
+        .map_err(|_| "Could not allocate XNB type-reader table.".to_string())?;
     for _ in 0..reader_count {
         let type_name = reader.read_string()?;
         let _version = reader.read_i32_le()?;
@@ -137,7 +171,15 @@ fn parse_string_dictionary(bytes: &[u8]) -> Result<HashMap<String, String>, Stri
         .ok_or_else(|| "XNB has no StringReader.".to_string())?;
 
     let count = reader.read_u32_le()? as usize;
-    let mut map = HashMap::with_capacity(count);
+    if count > MAX_ENTRIES {
+        return Err("XNB string dictionary exceeds 250000 entries.".to_string());
+    }
+    if count > reader.remaining() / 2 {
+        return Err("XNB string dictionary count exceeds the remaining data.".to_string());
+    }
+    let mut map = HashMap::new();
+    map.try_reserve(count)
+        .map_err(|_| "Could not allocate XNB string dictionary.".to_string())?;
     for _ in 0..count {
         let key = read_indexed_string(&mut reader, string_reader)?;
         let value = read_indexed_string(&mut reader, string_reader)?;
@@ -248,6 +290,9 @@ impl<'a> ByteReader<'a> {
 
     fn read_string(&mut self) -> Result<String, String> {
         let len = self.read_7bit_usize()?;
+        if len > MAX_STRING_SIZE {
+            return Err("XNB string exceeds the 1 MiB limit.".to_string());
+        }
         let bytes = self.read_slice(len)?;
         String::from_utf8(bytes.to_vec())
             .map_err(|error| format!("XNB string is not UTF-8: {error}"))
@@ -277,7 +322,19 @@ mod tests {
         out.extend_from_slice(text.as_bytes());
     }
 
-    fn test_xnb_dictionary(entries: &[(&str, &str)]) -> Vec<u8> {
+    fn wrap_uncompressed(content: &[u8]) -> Vec<u8> {
+        let mut xnb = Vec::new();
+        xnb.extend_from_slice(b"XNBw");
+        xnb.push(5);
+        xnb.push(HIDEF_MASK);
+        xnb.extend_from_slice(&0u32.to_le_bytes());
+        xnb.extend_from_slice(content);
+        let len = xnb.len() as u32;
+        xnb[6..10].copy_from_slice(&len.to_le_bytes());
+        xnb
+    }
+
+    fn dictionary_prefix(count: u32) -> Vec<u8> {
         let mut content = Vec::new();
         write_7bit(&mut content, 2);
         write_string(
@@ -287,9 +344,14 @@ mod tests {
         content.extend_from_slice(&0i32.to_le_bytes());
         write_string(&mut content, "Microsoft.Xna.Framework.Content.StringReader");
         content.extend_from_slice(&0i32.to_le_bytes());
-        write_7bit(&mut content, 0); // shared resources
-        write_7bit(&mut content, 1); // root dictionary reader
-        content.extend_from_slice(&(entries.len() as u32).to_le_bytes());
+        write_7bit(&mut content, 0);
+        write_7bit(&mut content, 1);
+        content.extend_from_slice(&count.to_le_bytes());
+        content
+    }
+
+    fn test_xnb_dictionary(entries: &[(&str, &str)]) -> Vec<u8> {
+        let mut content = dictionary_prefix(entries.len() as u32);
         for (key, value) in entries {
             write_7bit(&mut content, 2);
             write_string(&mut content, key);
@@ -297,15 +359,7 @@ mod tests {
             write_string(&mut content, value);
         }
 
-        let mut xnb = Vec::new();
-        xnb.extend_from_slice(b"XNBw");
-        xnb.push(5);
-        xnb.push(HIDEF_MASK);
-        xnb.extend_from_slice(&0u32.to_le_bytes());
-        xnb.extend_from_slice(&content);
-        let len = xnb.len() as u32;
-        xnb[6..10].copy_from_slice(&len.to_le_bytes());
-        xnb
+        wrap_uncompressed(&content)
     }
 
     #[test]
@@ -314,5 +368,60 @@ mod tests {
         let map = read_string_dictionary_bytes(&bytes).unwrap();
         assert_eq!(map.get("Spring").map(String::as_str), Some("Frühling"));
         assert_eq!(map.get("Parsnip").map(String::as_str), Some("Pastinake"));
+    }
+
+    #[test]
+    fn rejects_oversized_file_before_reading_it() {
+        let dir = crate::test_support::temp_dir("xnb-oversized-file");
+        let path = dir.join("large.xnb");
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(MAX_XNB_SIZE as u64 + 1).unwrap();
+        assert!(read_string_dictionary(&path)
+            .unwrap_err()
+            .contains("64 MiB"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn rejects_oversized_declared_decompression() {
+        let mut bytes = b"XNBw".to_vec();
+        bytes.push(5);
+        bytes.push(COMPRESSED_LZX_MASK);
+        bytes.extend_from_slice(&(XNB_COMPRESSED_HEADER_SIZE as u32).to_le_bytes());
+        bytes.extend_from_slice(&((MAX_XNB_SIZE + 1) as u32).to_le_bytes());
+        assert!(read_string_dictionary_bytes(&bytes)
+            .unwrap_err()
+            .contains("decompressed"));
+    }
+
+    #[test]
+    fn rejects_excessive_reader_entry_and_string_counts() {
+        let mut readers = Vec::new();
+        write_7bit(&mut readers, MAX_TYPE_READERS + 1);
+        assert!(read_string_dictionary_bytes(&wrap_uncompressed(&readers))
+            .unwrap_err()
+            .contains("type readers"));
+
+        let entries = wrap_uncompressed(&dictionary_prefix((MAX_ENTRIES + 1) as u32));
+        assert!(read_string_dictionary_bytes(&entries)
+            .unwrap_err()
+            .contains("250000"));
+
+        let mut string = dictionary_prefix(1);
+        write_7bit(&mut string, 2);
+        write_7bit(&mut string, MAX_STRING_SIZE + 1);
+        assert!(read_string_dictionary_bytes(&wrap_uncompressed(&string))
+            .unwrap_err()
+            .contains("1 MiB"));
+    }
+
+    #[test]
+    fn truncated_dictionary_returns_an_error() {
+        let mut bytes = test_xnb_dictionary(&[("key", "value")]);
+        bytes.pop();
+        let len = bytes.len() as u32;
+        bytes[6..10].copy_from_slice(&len.to_le_bytes());
+        assert!(read_string_dictionary_bytes(&bytes).is_err());
     }
 }

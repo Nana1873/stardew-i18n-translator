@@ -122,7 +122,7 @@ pub fn load(config_dir: &Path) -> AppSettings {
 pub fn load_checked(config_dir: &Path) -> Result<AppSettings, String> {
     let path = settings_path(config_dir);
     match std::fs::read_to_string(&path) {
-        Ok(body) => match serde_json::from_str(&body) {
+        Ok(body) => match parse_and_normalize(&body, false) {
             Ok(settings) => Ok(settings),
             // Main file is corrupt — try the backup before giving up.
             Err(parse_error) => recover_from_backup(&path, &parse_error.to_string()),
@@ -140,7 +140,7 @@ pub fn load_checked(config_dir: &Path) -> Result<AppSettings, String> {
 fn recover_from_backup(path: &Path, main_error: &str) -> Result<AppSettings, String> {
     let backup = sibling(path, ".bak");
     match std::fs::read_to_string(&backup) {
-        Ok(body) => match serde_json::from_str(&body) {
+        Ok(body) => match parse_and_normalize(&body, false) {
             Ok(settings) => {
                 log::warn!(
                     "settings.json unusable ({main_error}); recovered from {}",
@@ -168,9 +168,10 @@ fn recover_from_backup(path: &Path, main_error: &str) -> Result<AppSettings, Str
 /// new content is verified and written to a `.tmp` sibling, then renamed over
 /// the target (atomic on the same volume).
 pub fn save(config_dir: &Path, settings: &AppSettings) -> Result<(), String> {
+    let settings = normalize(settings.clone(), true)?;
     std::fs::create_dir_all(config_dir)
         .map_err(|error| format!("Could not create config directory: {error}"))?;
-    let body = serde_json::to_string_pretty(settings)
+    let body = serde_json::to_string_pretty(&settings)
         .map_err(|error| format!("Could not serialize settings: {error}"))?;
     // Defensive: re-parse what we are about to write (mirrors translations.rs).
     serde_json::from_str::<AppSettings>(&body)
@@ -195,8 +196,28 @@ pub fn save(config_dir: &Path, settings: &AppSettings) -> Result<(), String> {
 fn existing_file_is_valid(path: &Path) -> bool {
     std::fs::read_to_string(path)
         .ok()
-        .and_then(|body| serde_json::from_str::<AppSettings>(&body).ok())
+        .and_then(|body| parse_and_normalize(&body, false).ok())
         .is_some()
+}
+
+fn parse_and_normalize(body: &str, validate_llm: bool) -> Result<AppSettings, String> {
+    let settings = serde_json::from_str::<AppSettings>(body).map_err(|error| error.to_string())?;
+    normalize(settings, validate_llm)
+}
+
+fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSettings, String> {
+    if settings.source_lang != "default" {
+        return Err("The source language must be default (English).".to_string());
+    }
+    if let Some(target_lang) = settings.target_lang.as_deref() {
+        settings.target_lang = Some(crate::language::normalize_target_code(target_lang)?);
+    }
+    if validate_llm {
+        if let Some(llm) = &settings.llm {
+            crate::llm::validate_base_url(&llm.base_url)?;
+        }
+    }
+    Ok(settings)
 }
 
 #[cfg(test)]
@@ -230,6 +251,54 @@ mod tests {
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn target_language_is_normalized_before_persistence() {
+        let dir = crate::test_support::temp_dir("settings-normalize-language");
+        save(&dir, &sample(" DE ")).unwrap();
+        assert_eq!(load(&dir).target_lang.as_deref(), Some("de"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn unsafe_language_or_ai_url_creates_no_settings_files() {
+        for (name, settings) in [
+            ("language", sample("../de")),
+            (
+                "url",
+                AppSettings {
+                    llm: Some(LlmSettings {
+                        provider: "custom".to_string(),
+                        base_url: "https://example.com/v1".to_string(),
+                        model: "model".to_string(),
+                        temperature: None,
+                    }),
+                    ..AppSettings::default()
+                },
+            ),
+        ] {
+            let dir = crate::test_support::temp_dir(&format!("settings-unsafe-{name}"));
+            assert!(save(&dir, &settings).is_err());
+            assert!(
+                !dir.exists(),
+                "validation must happen before directory creation"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_external_ai_url_can_load_but_cannot_be_saved() {
+        let dir = crate::test_support::temp_dir("settings-legacy-external-url");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"sourceLang":"default","llm":{"provider":"custom","baseUrl":"https://example.com/v1","model":"old"}}"#,
+        )
+        .unwrap();
+        let loaded = load_checked(&dir).unwrap();
+        assert!(save(&dir, &loaded).is_err());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
