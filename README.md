@@ -3,17 +3,17 @@
 A portable Windows app for translating Stardew Valley mod i18n files without
 digging through thousands of JSON lines.
 
-I mainly made this because translating directly in text editors gets annoying fast,
-and it is way too easy to accidentally break placeholders, tokens, JSON formatting,
-or some random mod-specific thing.
+I mainly made this because translating directly in text editors gets annoying
+fast, and it is easy to accidentally break placeholders, tokens, JSON
+formatting, or a mod-specific control code.
 
 Point it at your Mods folder, choose a language, and start translating. The app
 imports existing work, tracks progress, checks Stardew-specific tokens, and
 exports clean translation files with backups.
 
 > [!IMPORTANT]
-> This project was built with a lot of help from AI coding agents.
-> I guide the project direction, check the results, test releases, and decide what ships.
+> This project was built with substantial help from AI coding agents. I guide
+> the project direction, review and test the results, and decide what ships.
 
 ![Stardew i18n Translator dashboard](docs/assets/screenshots/dashboard.png)
 
@@ -24,11 +24,11 @@ exports clean translation files with backups.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about broken Content Patcher, dialogue, mail, and placeholder tokens.
 - Supports manual translation, optional local AI, and external LLM batches.
-- Supports Stardew's built-in languages plus curated custom-language targets such
-  as Vietnamese, Indonesian, Ukrainian, Polish, Finnish, Dutch, Czech, and Thai.
+- Supports Stardew's built-in languages plus curated custom-language targets
+  such as Vietnamese, Indonesian, Ukrainian, Polish, Finnish, Dutch, Czech, and
+  Thai.
 - Builds optional glossary hints from local Stardew strings and installed
-  community language packs when a custom-language pack provides usable terms.
-- Keeps export, import, and release results available in a compact result tray.
+  community language packs when usable terms are available.
 - Builds installable translation ZIPs and short localized publication notes.
 - Keeps settings and translation work locally in the portable app folder.
 
@@ -41,10 +41,11 @@ exports clean translation files with backups.
 2. Extract it to a writable folder.
 3. Run `stardew-i18n-translator.exe`.
 4. Select your Stardew Valley folder, Mods folder, and target language.
-   Custom-language targets are available for translation/export, but Stardew can
-   only use them in-game when a matching custom-language mod is installed.
 
-The app creates a `Data/` folder beside the executable. Keep that folder when
+Custom-language targets are available for translation and export, but Stardew
+can only use them in-game when a matching custom-language mod is installed.
+
+The app creates a `data/` folder beside the executable. Keep that folder when
 updating or moving the app so your settings and translation progress come with
 you.
 
@@ -72,14 +73,12 @@ written.
 
 For sharing a translation, **Export... > Build Release ZIP** creates a clean,
 installable archive for the selected mod package. It preserves multi-component
-folder paths and includes only the generated target-language `i18n` files, not
-the original mod's manifests, assets, DLLs, or backups.
+folder paths and includes only generated target-language `i18n` files, not the
+original mod's manifests, assets, DLLs, or backups.
 
-**Translation Notes** turns the same current package data into short copy-ready
-publication text. It defaults to the translation language, can switch to
-English, and includes coverage, included components, installation guidance,
-review warnings, and careful compatibility wording. The preview stays local
-and is copied to the clipboard only when you choose.
+**Translation Notes** creates short copy-ready publication text from the same
+package data. It can use the translation language or English and includes
+coverage, components, installation guidance, and review warnings.
 
 Completed exports, imports, LLM batches, and release ZIPs stay available in the
 result tray without blocking the translation workspace.
@@ -88,38 +87,36 @@ result tray without blocking the translation workspace.
 
 ## Optional Glossary
 
-The glossary can show official Stardew Valley terms while you translate. The app
+The glossary shows official Stardew Valley terms while you translate. The app
 reads the needed `Content/Strings/*.xnb` dictionaries directly from your local
-Stardew Valley install. It can still fall back to a compatible
-`Content (unpacked)/Strings/*.json` folder when needed.
+Stardew Valley installation and can fall back to a compatible
+`Content (unpacked)/Strings/*.json` folder.
 
-For custom-language targets, the app can build glossary hints only when an
-installed community language pack registers that language and provides usable
-`Strings` JSON or XNB dictionaries. If no glossary source is available, the rest
-of the translation workflow still works normally.
+For custom-language targets, an installed community language pack may provide
+usable `Strings` JSON or XNB dictionaries. If no glossary source is available,
+the rest of the translation workflow still works normally.
 
-Choose **Settings > Glossary > Build glossary** to refresh it.
-
-The glossary is optional and stays in `Data/glossary/`.
+Choose **Settings > Glossary > Build glossary** to refresh it. Glossary caches
+stay in `data/glossary/`.
 
 ## Privacy
 
-The app has no accounts, analytics, telemetry, cloud API keys, or Nexus API
-access. Scanning, editing, validation, glossary generation, and export all
+The desktop app has no accounts, analytics, telemetry, cloud API keys, or Nexus
+API access. Scanning, editing, validation, glossary generation, and export all
 happen locally.
 
 Local AI requests go only to the endpoint you configure. External LLM batches
 leave your computer only when you upload them yourself. Diagnostic logs stay in
-`Data/logs/` and can be disabled in **Settings > About**.
+`data/logs/` and can be disabled in **Settings > About**.
 
-## Issues And Ideas
+## Issues and Ideas
 
 Found a problem? Open a
 [bug report](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=bug_report.yml).
 Have an idea? Send a
 [feature request](https://github.com/Nana1873/stardew-i18n-translator/issues/new?template=feature_request.yml).
 
-Planned work lives in the
+Active work lives in the
 [issue tracker](https://github.com/Nana1873/stardew-i18n-translator/issues).
 Release history is in the [changelog](CHANGELOG.md).
 
@@ -133,8 +130,9 @@ corepack pnpm test
 corepack pnpm tauri dev
 ```
 
-The detailed product specification and project boundaries live in
-[SPEC.md](SPEC.md) and [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md).
+Repository guidance is in [AGENTS.md](AGENTS.md). Current product behavior is
+summarized in [SPEC.md](SPEC.md), and release instructions are in
+[docs/release/release-process.md](docs/release/release-process.md).
 
 ## License
 
