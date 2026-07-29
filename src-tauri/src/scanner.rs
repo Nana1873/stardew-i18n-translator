@@ -268,6 +268,19 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         }
     }
 
+    let unique_ids = mods
+        .values()
+        .map(|scanned| scanned.unique_id.clone())
+        .collect::<Vec<_>>();
+    let blocked_state_ids = language_root
+        .as_deref()
+        .map(|root| {
+            let (blocked, state_warnings) = translations::prepare_state_paths(root, &unique_ids);
+            warnings.extend(state_warnings);
+            blocked
+        })
+        .unwrap_or_default();
+
     // Associate each i18n/ folder with the nearest ancestor manifest, merging
     // saved translation state (cached per mod). A corrupted state file becomes
     // a scan warning (counts degrade to the imported values); it is NOT
@@ -280,6 +293,9 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         };
         if let Some(scanned) = mods.get_mut(&owner) {
             let unique_id = scanned.unique_id.clone();
+            if blocked_state_ids.contains(&unique_id.to_lowercase()) {
+                continue;
+            }
             let state = match state_cache.entry(unique_id.clone()) {
                 std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
                 std::collections::hash_map::Entry::Vacant(slot) => {
@@ -295,14 +311,20 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            if let Some(file) = build_i18n_file(&owner, i18n_dir, target_lang, state) {
-                extra_keys.extend(extra_target_keys(
-                    &scanned.name,
-                    &file.relative_dir,
-                    Path::new(&file.default_path),
-                    Path::new(&file.target_path),
-                ));
-                scanned.i18n_files.push(file);
+            match build_i18n_file(&owner, i18n_dir, target_lang, state) {
+                Ok(file) => {
+                    extra_keys.extend(extra_target_keys(
+                        &scanned.name,
+                        &file.relative_dir,
+                        Path::new(&file.default_path),
+                        Path::new(&file.target_path),
+                    ));
+                    scanned.i18n_files.push(file);
+                }
+                Err(error) => warnings.push(format!(
+                    "Skipped i18n component {}: {error}",
+                    i18n_dir.display()
+                )),
             }
         }
     }
@@ -470,25 +492,29 @@ pub struct StringRow {
 /// Load the paired source/target strings of one i18n file, preserving the key
 /// order of `default.json` (serde_json `preserve_order`). Saved translation
 /// state overrides the imported target and supplies the per-string status.
+#[cfg(test)]
 pub fn load_strings(
     default_path: &Path,
     target_path: &Path,
     state: &ModState,
     relative_dir: &str,
 ) -> Vec<StringRow> {
-    let Some(body) = std::fs::read_to_string(default_path).ok() else {
-        return Vec::new();
-    };
-    let Some(source) = parse_json_lenient(&body)
-        .ok()
-        .and_then(|value| value.as_object().cloned())
-    else {
-        return Vec::new();
-    };
+    load_strings_checked(default_path, target_path, state, relative_dir).unwrap_or_default()
+}
+
+pub fn load_strings_checked(
+    default_path: &Path,
+    target_path: &Path,
+    state: &ModState,
+    relative_dir: &str,
+) -> Result<Vec<StringRow>, String> {
+    let body = std::fs::read_to_string(default_path)
+        .map_err(|error| format!("Could not read {}: {error}", default_path.display()))?;
+    let source = parse_flat_object(&body, default_path)?;
     let sections = extract_sections(&body);
-    let target_map = read_target_object(target_path).unwrap_or_default();
+    let target_map = read_target_object_checked(target_path)?;
     let target = TargetLookup::new(&target_map);
-    source
+    Ok(source
         .iter()
         .filter(|(key, _)| !is_ignored_i18n_key(key))
         .map(|(key, value)| {
@@ -504,7 +530,7 @@ pub fn load_strings(
                 section: sections.get(&folded_key(key)).cloned(),
             }
         })
-        .collect()
+        .collect())
 }
 
 /// Baseline state entries for imported translations not yet tracked in `state`.
@@ -734,21 +760,51 @@ impl<'a> TargetLookup<'a> {
 
 /// Parse a flat i18n JSON object (lenient), returning its string entries.
 pub(crate) fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
-    let body = std::fs::read_to_string(path).ok()?;
-    parse_json_lenient(&body).ok()?.as_object().cloned()
+    read_object_checked(path).ok()
+}
+
+pub(crate) fn read_object_checked(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
+    let body = std::fs::read_to_string(path)
+        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    parse_flat_object(&body, path)
+}
+
+fn parse_flat_object(text: &str, path: &Path) -> Result<serde_json::Map<String, Value>, String> {
+    let value = parse_json_lenient(text)
+        .map_err(|error| format!("Invalid JSON in {}: {error}", path.display()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{} must contain one flat JSON object.", path.display()))?;
+    if let Some((key, _)) = object
+        .iter()
+        .find(|(key, value)| key.as_str() != "$schema" && !value.is_string())
+    {
+        return Err(format!(
+            "{} contains a non-string value for key {key:?}; i18n files must be flat string objects.",
+            path.display()
+        ));
+    }
+    Ok(object.clone())
 }
 
 /// Read the canonical target file, with SMAPI's Portuguese filename as an
 /// import-only fallback. The scanned path remains `pt.json`, so exports always
 /// use the app's canonical filename and never overwrite `pt-BR.json`.
 pub(crate) fn read_target_object(target_path: &Path) -> Option<serde_json::Map<String, Value>> {
-    read_object(&target_read_path(target_path))
+    read_target_object_checked(target_path).ok()
+}
+
+pub(crate) fn read_target_object_checked(
+    target_path: &Path,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let read_path = target_read_path(target_path);
+    if !read_path.is_file() {
+        return Ok(serde_json::Map::new());
+    }
+    read_object_checked(&read_path)
 }
 
 pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
-    if target_path.is_file() {
-        return target_path.to_path_buf();
-    }
     let is_portuguese = target_path
         .file_name()
         .and_then(|name| name.to_str())
@@ -759,6 +815,9 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
             return fallback;
         }
     }
+    if target_path.is_file() {
+        return target_path.to_path_buf();
+    }
     target_path.to_path_buf()
 }
 
@@ -766,16 +825,24 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
 /// state takes precedence over the imported `<lang>.json` value — and source
 /// keys whose stored status is an unreviewed AI suggestion). The review count
 /// feeds the dashboard's cross-mod review queue (SPEC §7.0 rollout ④).
+#[cfg(test)]
 fn count_keys(
     default_path: &Path,
     target_path: &Path,
     state: &ModState,
     relative_dir: &str,
 ) -> (usize, usize, usize) {
-    let Some(source) = read_object(default_path) else {
-        return (0, 0, 0);
-    };
-    let target_map = read_target_object(target_path).unwrap_or_default();
+    count_keys_checked(default_path, target_path, state, relative_dir).unwrap_or((0, 0, 0))
+}
+
+fn count_keys_checked(
+    default_path: &Path,
+    target_path: &Path,
+    state: &ModState,
+    relative_dir: &str,
+) -> Result<(usize, usize, usize), String> {
+    let source = read_object_checked(default_path)?;
+    let target_map = read_target_object_checked(target_path)?;
     let target = TargetLookup::new(&target_map);
     let total = source
         .keys()
@@ -799,15 +866,20 @@ fn count_keys(
         })
         .count();
     let review_needed = source
-        .keys()
-        .filter(|key| !is_ignored_i18n_key(key))
-        .filter(|key| {
-            state
-                .get(&translations::entry_key(relative_dir, key))
-                .is_some_and(|stored| stored.status == "review-needed")
+        .iter()
+        .filter(|(key, _)| !is_ignored_i18n_key(key))
+        .filter(|(key, value)| {
+            resolve_string(
+                value.as_str().unwrap_or_default(),
+                target.get(key),
+                state,
+                relative_dir,
+                key,
+            )
+            .1 == "review-needed"
         })
         .count();
-    (total, translated, review_needed)
+    Ok((total, translated, review_needed))
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -855,17 +927,18 @@ fn build_i18n_file(
     i18n_dir: &Path,
     target_lang: &str,
     state: &ModState,
-) -> Option<ScannedI18nFile> {
+) -> Result<ScannedI18nFile, String> {
     let relative_dir = i18n_dir
         .strip_prefix(mod_dir)
-        .ok()?
-        .to_str()?
+        .map_err(|_| "i18n folder is outside its mod folder".to_string())?
+        .to_str()
+        .ok_or_else(|| "i18n path is not valid Unicode".to_string())?
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
     let (total_keys, translated_keys, review_needed) =
-        count_keys(&default_path, &target_path, state, &relative_dir);
-    Some(ScannedI18nFile {
+        count_keys_checked(&default_path, &target_path, state, &relative_dir)?;
+    Ok(ScannedI18nFile {
         target_exists: target_path.is_file(),
         default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
@@ -1162,12 +1235,15 @@ mod tests {
         }
 
         let result = scan_mods(&root, "de", &root);
-        assert_eq!(result.mod_count, 2);
+        assert_eq!(
+            result.mod_count, 0,
+            "duplicate IDs must not open writable mods"
+        );
         assert!(
             result
                 .warnings
                 .iter()
-                .any(|w| w.contains("Duplicate") && w.contains("same.id")),
+                .any(|w| w.contains("duplicate") && w.contains("same.id")),
             "expected a duplicate-UniqueID warning, got: {:?}",
             result.warnings
         );
@@ -1377,6 +1453,45 @@ mod tests {
     }
 
     #[test]
+    fn checked_loader_rejects_missing_malformed_and_non_flat_sources() {
+        let root = crate::test_support::temp_dir("scanner-checked-errors");
+        let missing = root.join("missing.json");
+        let target = root.join("de.json");
+        assert!(load_strings_checked(&missing, &target, &ModState::new(), "i18n").is_err());
+
+        let source = root.join("default.json");
+        write(&source, "{ broken");
+        assert!(load_strings_checked(&source, &target, &ModState::new(), "i18n").is_err());
+        write(&source, r#"{"k":{"nested":"value"}}"#);
+        assert!(load_strings_checked(&source, &target, &ModState::new(), "i18n").is_err());
+        write(&source, r#"{"k":"Hello"}"#);
+        write(&target, "[");
+        assert!(load_strings_checked(&source, &target, &ModState::new(), "i18n").is_err());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn scanner_skips_only_the_malformed_i18n_component() {
+        let root = crate::test_support::temp_dir("scanner-component-error");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(&mod_dir.join("assets/i18n/default.json"), "{ broken");
+
+        let result = scan_mods(&root, "de", &root);
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.file_count, 1);
+        assert!(result
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("assets")));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn imports_target_keys_case_insensitively_and_trimmed() {
         // SMAPI reads translation keys case-insensitively (and trims), so an
         // existing de.json with different casing/whitespace must still import.
@@ -1495,6 +1610,18 @@ mod tests {
             "i18n",
         );
         assert_eq!((total, translated, review), (2, 1, 1));
+
+        write(
+            &i18n.join("default.json"),
+            "{ \"a\": \"A changed\", \"b\": \"B\" }",
+        );
+        let counts = count_keys(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &state,
+            "i18n",
+        );
+        assert_eq!(counts, (2, 1, 0), "outdated AI text is not review-needed");
 
         std::fs::remove_dir_all(&root).ok();
     }

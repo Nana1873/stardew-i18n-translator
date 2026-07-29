@@ -81,6 +81,19 @@ fn write_guard() -> &'static Mutex<HashSet<PathBuf>> {
 }
 
 fn state_path(config_dir: &Path, unique_id: &str) -> PathBuf {
+    if is_safe_windows_stem(unique_id) {
+        return config_dir
+            .join("translations")
+            .join(format!("{unique_id}.json"));
+    }
+    let mut hasher = Sha256::new();
+    hasher.update(unique_id.as_bytes());
+    config_dir
+        .join("translations")
+        .join(format!("state-{:x}.json", hasher.finalize()))
+}
+
+fn legacy_state_path(config_dir: &Path, unique_id: &str) -> PathBuf {
     let safe: String = unique_id
         .chars()
         .map(|c| {
@@ -92,6 +105,121 @@ fn state_path(config_dir: &Path, unique_id: &str) -> PathBuf {
         })
         .collect();
     config_dir.join("translations").join(format!("{safe}.json"))
+}
+
+fn is_safe_windows_stem(value: &str) -> bool {
+    if value.is_empty()
+        || value.len() > 240
+        || value.ends_with([' ', '.'])
+        || !value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
+    {
+        return false;
+    }
+    let base = value
+        .split('.')
+        .next()
+        .unwrap_or(value)
+        .to_ascii_uppercase();
+    !matches!(
+        base.as_str(),
+        "CON"
+            | "PRN"
+            | "AUX"
+            | "NUL"
+            | "COM1"
+            | "COM2"
+            | "COM3"
+            | "COM4"
+            | "COM5"
+            | "COM6"
+            | "COM7"
+            | "COM8"
+            | "COM9"
+            | "LPT1"
+            | "LPT2"
+            | "LPT3"
+            | "LPT4"
+            | "LPT5"
+            | "LPT6"
+            | "LPT7"
+            | "LPT8"
+            | "LPT9"
+    )
+}
+
+pub fn prepare_state_paths(
+    config_dir: &Path,
+    unique_ids: &[String],
+) -> (HashSet<String>, Vec<String>) {
+    let mut blocked = HashSet::new();
+    let mut warnings = Vec::new();
+    let mut by_id: std::collections::BTreeMap<String, Vec<&String>> =
+        std::collections::BTreeMap::new();
+    let mut by_legacy: std::collections::BTreeMap<String, Vec<&String>> =
+        std::collections::BTreeMap::new();
+    for id in unique_ids {
+        by_id.entry(id.to_lowercase()).or_default().push(id);
+        let legacy = legacy_state_path(config_dir, id)
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        by_legacy.entry(legacy).or_default().push(id);
+    }
+    for ids in by_id.values().filter(|ids| ids.len() > 1) {
+        for id in ids {
+            blocked.insert(id.to_lowercase());
+        }
+        warnings.push(format!(
+            "Case-insensitive duplicate mod UniqueID: {}. These mods are read-only until the duplicate is removed.",
+            ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+        ));
+    }
+    for ids in by_legacy.values().filter(|ids| ids.len() > 1) {
+        if ids.iter().any(|id| !is_safe_windows_stem(id)) {
+            for id in ids {
+                blocked.insert(id.to_lowercase());
+            }
+            warnings.push(format!(
+                "Multiple mods map to the same legacy translation-state file: {}. No state was migrated or opened for writing.",
+                ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+    for id in unique_ids {
+        if blocked.contains(&id.to_lowercase()) || is_safe_windows_stem(id) {
+            continue;
+        }
+        let legacy = legacy_state_path(config_dir, id);
+        let destination = state_path(config_dir, id);
+        if !legacy.is_file() || destination.exists() {
+            continue;
+        }
+        let migration = std::fs::read_to_string(&legacy)
+            .map_err(|error| error.to_string())
+            .and_then(|body| {
+                serde_json::from_str::<ModState>(&body)
+                    .map(|_| body)
+                    .map_err(|error| error.to_string())
+            })
+            .and_then(|body| {
+                if let Some(parent) = destination.parent() {
+                    std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+                }
+                let temp = sibling(&destination, ".tmp");
+                std::fs::write(&temp, body).map_err(|error| error.to_string())?;
+                std::fs::rename(&temp, &destination).map_err(|error| error.to_string())
+            });
+        if let Err(error) = migration {
+            blocked.insert(id.to_lowercase());
+            warnings.push(format!(
+                "Could not safely migrate translation state for {id}: {error}. The legacy file was left untouched."
+            ));
+        }
+    }
+    (blocked, warnings)
 }
 
 /// A sibling path with `suffix` appended to the full file name
@@ -146,9 +274,10 @@ fn write_state(
     serde_json::from_str::<ModState>(&body)
         .map_err(|error| format!("Generated invalid translation state JSON: {error}"))?;
 
-    if path.is_file() && backed_up.insert(path.to_path_buf()) {
+    if path.is_file() && !backed_up.contains(path) {
         std::fs::copy(path, sibling(path, ".bak"))
             .map_err(|error| format!("Could not back up {}: {error}", path.display()))?;
+        backed_up.insert(path.to_path_buf());
     }
 
     let temp = sibling(path, ".tmp");
@@ -231,6 +360,58 @@ mod tests {
     fn unknown_mod_yields_empty_state() {
         let dir = crate::test_support::temp_dir("translations-empty");
         assert!(load(&dir, "Nope").unwrap().is_empty());
+    }
+
+    #[test]
+    fn unsafe_id_uses_hash_and_migrates_one_valid_legacy_file_without_deleting_it() {
+        let dir = crate::test_support::temp_dir("translations-hashed-migration");
+        let id = "Author/Unsafe";
+        let legacy = legacy_state_path(&dir, id);
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        let state = ModState::from([(entry_key("i18n", "k"), entry("Alt"))]);
+        std::fs::write(&legacy, serde_json::to_string(&state).unwrap()).unwrap();
+
+        let (blocked, warnings) = prepare_state_paths(&dir, &[id.to_string()]);
+        assert!(blocked.is_empty(), "{warnings:?}");
+        assert!(legacy.is_file(), "legacy state remains recoverable");
+        let destination = state_path(&dir, id);
+        assert!(destination
+            .file_name()
+            .unwrap()
+            .to_string_lossy()
+            .starts_with("state-"));
+        assert_eq!(load(&dir, id).unwrap(), state);
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn colliding_legacy_paths_are_blocked_without_migration() {
+        let dir = crate::test_support::temp_dir("translations-colliding-migration");
+        let ids = vec!["Author/A".to_string(), "Author?A".to_string()];
+        let legacy = legacy_state_path(&dir, &ids[0]);
+        std::fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+        std::fs::write(&legacy, "{}").unwrap();
+
+        let (blocked, warnings) = prepare_state_paths(&dir, &ids);
+        assert_eq!(blocked.len(), 2, "{warnings:?}");
+        assert!(ids.iter().all(|id| !state_path(&dir, id).exists()));
+        assert!(legacy.is_file());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn failed_backup_can_be_retried_successfully() {
+        let dir = crate::test_support::temp_dir("translations-backup-retry");
+        save_one(&dir, "Retry.Mod", entry_key("i18n", "a"), entry("A")).unwrap();
+        let path = state_path(&dir, "Retry.Mod");
+        let backup = sibling(&path, ".bak");
+        std::fs::create_dir_all(&backup).unwrap();
+        assert!(save_one(&dir, "Retry.Mod", entry_key("i18n", "b"), entry("B")).is_err());
+        std::fs::remove_dir(&backup).unwrap();
+        save_one(&dir, "Retry.Mod", entry_key("i18n", "b"), entry("B")).unwrap();
+        assert!(backup.is_file());
+        assert_eq!(load(&dir, "Retry.Mod").unwrap().len(), 2);
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
