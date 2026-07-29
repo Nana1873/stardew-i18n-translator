@@ -2,7 +2,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$ZipPath,
 
-    [switch]$Preflight
+    [switch]$Preflight,
+
+    [switch]$Draft
 )
 
 $ErrorActionPreference = "Stop"
@@ -15,6 +17,7 @@ $tag = "v$version"
 $expectedName = "Stardew-i18n-Translator_${version}_windows-x64-portable.zip"
 $resolvedZip = (Resolve-Path -LiteralPath $ZipPath).Path
 $notesPath = $null
+$releaseKind = if ($Draft) { "draft" } else { "published" }
 
 if ([System.IO.Path]::GetFileName($resolvedZip) -ne $expectedName) {
     throw "Expected release archive named $expectedName, got $resolvedZip"
@@ -23,7 +26,7 @@ if ([System.IO.Path]::GetFileName($resolvedZip) -ne $expectedName) {
 Push-Location $repoRoot
 try {
     if (git status --porcelain) {
-        throw "Release drafts must be created from a clean working tree."
+        throw "Releases must be created from a clean working tree."
     }
 
     git fetch origin main --tags
@@ -155,7 +158,7 @@ try {
 
     $hash = (Get-FileHash -LiteralPath $resolvedZip -Algorithm SHA256).Hash
     if ($Preflight) {
-        Write-Output "Preflight passed for $tag at commit $headCommit. No tag or release was created."
+        Write-Output "Preflight passed for the $releaseKind release $tag at commit $headCommit. No tag or release was created."
         Write-Output "Portable ZIP SHA-256: $hash"
         return
     }
@@ -179,13 +182,21 @@ try {
             $pushedRemoteTag = $true
         }
 
-        gh release create $tag $resolvedZip `
-            --repo $repository `
-            --draft `
-            --title "Stardew i18n Translator $tag" `
-            --notes-file $notesPath
+        if ($Draft) {
+            gh release create $tag $resolvedZip `
+                --repo $repository `
+                --draft `
+                --title "Stardew i18n Translator $tag" `
+                --notes-file $notesPath
+        }
+        else {
+            gh release create $tag $resolvedZip `
+                --repo $repository `
+                --title "Stardew i18n Translator $tag" `
+                --notes-file $notesPath
+        }
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create draft release for $tag."
+            throw "Failed to create $releaseKind release for $tag."
         }
     }
     catch {
@@ -215,7 +226,7 @@ try {
         throw "$releaseError No pre-existing tags were changed."
     }
 
-    Write-Output "Draft release created for $tag from commit $headCommit."
+    Write-Output "$($releaseKind.Substring(0, 1).ToUpper())$($releaseKind.Substring(1)) release created for $tag from commit $headCommit."
     Write-Output "Portable ZIP SHA-256: $hash"
 }
 finally {

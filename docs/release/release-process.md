@@ -1,12 +1,12 @@
 # Release Process
 
-## Supported Package
+## Package
 
-The v1 release target is a 64-bit portable Windows ZIP:
+The supported release artifact is a 64-bit portable Windows ZIP:
 
 `Stardew-i18n-Translator_<version>_windows-x64-portable.zip`
 
-Its structure is:
+It contains exactly:
 
 ```text
 Stardew i18n Translator/
@@ -14,138 +14,101 @@ Stardew i18n Translator/
 `-- README.txt
 ```
 
-On first launch, the application creates its adjacent `data/` folder. It stores
-`settings.json`, the `glossary/glossary-<lang>.json` per-language caches, and the
-`language-state/<lang>/translations/` working-state folders inside `data/`.
-Copying the complete application folder therefore moves the application and
-its language-specific local work together. Saved Stardew Valley and Mods paths
-are absolute and may need to be selected again on another computer.
+User settings and translation work are created later in the adjacent `data/`
+folder and are never included in the release archive.
 
-The application must be extracted to a writable folder. It refuses to start
-when its adjacent `data/` folder cannot be created or written. No installer,
-registry entry, Start Menu shortcut, or uninstaller is provided.
+## Prepare a Release
 
-All state lives in the adjacent `data/` folder. A freshly extracted portable
-folder starts without user settings, glossary data, or translation state. To
-move an existing workspace, copy the complete application folder including its
-`data/` directory.
-
-## Version Source
-
-Keep these versions synchronized:
-
-- `package.json`
-- `src-tauri/Cargo.toml`
-- `src-tauri/tauri.conf.json`
-- the root package entry in `src-tauri/Cargo.lock`
-
-The first distributable version is `1.0.0`.
-
-Use `corepack pnpm version:set <version>` to update all synchronized references,
-then run `corepack pnpm check:docs`. The local check and CI on `main` verify all
-four application sources, the project-status release number, the `CHANGELOG.md`
-Unreleased comparison link, local Markdown links, and formatting.
-
-## Pre-Release Checklist
-
-1. Confirm the working tree is clean and `HEAD` equals current `origin/main`.
-2. Run a real Mods-folder smoke test from the unpacked portable folder:
-   - launch without a `data/` folder, confirm it is created, and complete setup;
-   - close and reopen the app, then verify settings and the automatic scan;
-   - open a large mod and edit/save one string;
-   - confirm the saved state appears under
-     `data/language-state/<lang>/translations/`;
-   - build or load a glossary and confirm `data/glossary/glossary-<lang>.json`;
-   - export one mod and confirm its backup/output;
-   - export and re-import a small external LLM batch;
-   - verify local-AI connection behavior if an endpoint is available.
-3. Run `npm run tauri -- build --no-bundle`.
-4. Run `powershell -File scripts/package-portable.ps1`.
-5. Extract the generated ZIP to a different writable folder.
-6. Verify first launch, persistence, and copying the complete folder.
-7. Confirm the relevant local frontend, Rust, and documentation checks passed
-   for the release changes, and confirm CI passed on the exact protected `main`
-   commit being released.
-8. Confirm merged pull requests have the correct `changelog:*` labels.
-9. Create the tag and draft release from the already verified ZIP:
+1. Update the version and release text:
 
    ```powershell
-   powershell -File scripts/create-draft-release.ps1 `
+   corepack pnpm version:set <version>
+   ```
+
+   Review `CHANGELOG.md`. A concise curated file at
+   `docs/release/v<version>.md` is optional.
+
+2. Run the checks appropriate for the changes. For a normal release, run the
+   complete frontend and Rust suites:
+
+   ```powershell
+   corepack pnpm exec tsc --noEmit
+   corepack pnpm test
+   corepack pnpm check:docs
+
+   Push-Location src-tauri
+   cargo fmt --check
+   cargo clippy --locked --all-targets --profile ci -- -D warnings
+   cargo test --locked --profile ci
+   Pop-Location
+   ```
+
+3. Build and package the portable app:
+
+   ```powershell
+   corepack pnpm tauri build --no-bundle
+   powershell -File scripts/package-portable.ps1
+   ```
+
+4. Extract the ZIP and do a practical smoke test when the release changes
+   startup, persistence, scanning, editing, glossary handling, or export.
+
+5. Run the release preflight from a clean, current `main` checkout:
+
+   ```powershell
+   powershell -File scripts/create-release.ps1 `
      -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip `
      -Preflight
+   ```
 
-   powershell -File scripts/create-draft-release.ps1 `
+6. Create the release:
+
+   ```powershell
+   powershell -File scripts/create-release.ps1 `
      -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip
    ```
 
-10. Verify the reported SHA-256 against the uploaded asset, then review the
-    generated draft notes and ZIP before publishing the release.
-
-## Local Draft Release Automation
-
-The release script refuses dirty or stale commits, verifies documentation and
-version checks, validates the exact two-file ZIP structure, checks local and
-remote tag state, generates categorized notes, and creates a draft GitHub
-release. When `docs/release/v<version>.md` exists, those curated highlights are
-prepended.
-
-Keep curated release highlights focused on user-facing changes. Do not include
-internal verification notes or repeat stable privacy/scope boilerplate such as
-local-first, no-telemetry, no-cloud, or no-download statements unless that
-behavior changed in the release.
-
-Run it with `-Preflight` first. Preflight performs every read-only validation
-and note-generation step without creating or pushing a tag and without creating
-a release. The normal run delays tag creation until all read-only checks pass.
-If draft creation then fails, it removes only the local or remote tags created
-by that same run. Pre-existing tags are never removed automatically.
-
-The transaction behavior can be verified without GitHub writes or Actions
-minutes:
+The normal command publishes the GitHub release immediately. Pass `-Draft` only
+when a draft is intentionally useful:
 
 ```powershell
-powershell -File scripts/test-create-draft-release.ps1
+powershell -File scripts/create-release.ps1 `
+  -ZipPath src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip `
+  -Draft
 ```
 
-The script does not rebuild the application. This is intentional: the locally
-smoke-tested production ZIP is the exact artifact uploaded to GitHub, avoiding
-another paid Windows Actions build. The draft must still be reviewed and
-published manually.
+## What the Release Script Checks
 
-## Nexus Mods Upload
+`scripts/create-release.ps1`:
 
-Publishing a normal GitHub release starts `.github/workflows/publish-nexus.yml`,
-which uploads the already attached portable ZIP to Nexus Mods. Draft releases do
-not upload, and prereleases are explicitly skipped. The workflow does not check
-out the repository or rebuild the app; it downloads the exact GitHub release
-asset named `Stardew-i18n-Translator_<version>_windows-x64-portable.zip`.
-If a publish-triggered upload fails after the GitHub release is already live,
-rerun the workflow manually with the release tag through `workflow_dispatch`.
+- requires a clean checkout whose `HEAD` matches current `origin/main`;
+- runs the documentation and synchronized-version checks;
+- verifies the ZIP name and exact two-file layout;
+- refuses conflicting local or remote tags and existing releases;
+- combines optional curated notes with GitHub-generated pull-request notes;
+- prints the portable ZIP SHA-256;
+- creates and pushes the version tag only after read-only checks pass;
+- removes tags created by the current run if release creation fails.
+
+The script uploads the locally built ZIP; it does not rebuild the application.
+
+## Nexus Mods Publication
+
+Publishing a normal, non-prerelease GitHub release starts
+`.github/workflows/publish-nexus.yml`. That workflow uploads the existing GitHub
+release asset and does not rebuild the app.
 
 Required GitHub configuration:
 
-- Secret: `NEXUSMODS_API_KEY`
-- Variable: `NEXUSMODS_FILE_GROUP_ID`
+- secret: `NEXUSMODS_API_KEY`
+- variable: `NEXUSMODS_FILE_GROUP_ID`
 
-The Nexus value is shown as "Group ID" in the Nexus Mods API Info dialog. Keep
-the secret in GitHub only; do not add it to repository files, release notes, or
-local test logs. For an extra approval gate, configure the GitHub Environment
-named `nexusmods` with required reviewers and store the API key as an
-environment secret there.
-
-The `main` Rust checks use Cargo's custom `ci` profile. It keeps complete
-format, Clippy, and test coverage but disables dependency optimization and
-debug symbols to reduce compile time. Local development and release profiles
-are unchanged.
-
-Do not create a release tag until the real Mods-folder and extracted-ZIP smoke
-tests have passed.
+If the Nexus upload fails after the GitHub release is live, rerun the workflow
+manually with the release tag. Drafts and prereleases are intentionally not
+uploaded.
 
 ## Code Signing
 
-The portable executable is currently unsigned. Windows SmartScreen may show an
-unknown-publisher warning. Code signing requires a trusted certificate or
-signing service and is intentionally deferred until a certificate and budget
-are chosen.
-
-No signing secrets, certificates, or passwords belong in the repository.
+The portable executable is currently unsigned, so Windows SmartScreen may show
+an unknown-publisher warning. Do not commit signing certificates, passwords, or
+other signing secrets to the repository.

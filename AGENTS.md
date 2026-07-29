@@ -1,88 +1,73 @@
-# AI Agent Instruction Manual
+# Repository Guidance
 
-Welcome! You are an autonomous coding agent participating in the development of **Stardew i18n Translator**.
+Stardew i18n Translator is a small, local-first Windows desktop app. Keep changes
+proportional to that goal.
 
-To ensure consistency, code quality, and strict scope control, you MUST follow these guidelines on every invocation.
+## Working Style
 
----
+- The user's request or the current GitHub issue defines the task. An issue,
+  milestone, or formal implementation plan is optional.
+- Read the relevant code before editing. Use [README.md](README.md) for the user
+  workflow and [SPEC.md](SPEC.md) for durable product behavior.
+- Prefer a direct change over a new abstraction. Do not add provider systems,
+  plugin layers, dependency-injection frameworks, or generalized infrastructure
+  unless the current feature genuinely needs them.
+- Reuse the existing Tauri, Rust, React, and TypeScript architecture.
+- Do not create roadmap, walkthrough, handoff, or task-status files unless the
+  user specifically asks for one.
+- Pull-request labels and documentation changes are helpful when they add value,
+  but they are not mandatory ceremony.
 
-## 1. Rules of Engagement
+## Data Safety
 
-- **Read First:** Before modifying any files or proposing designs, you must read:
-  1. [SPEC.md](SPEC.md) (The feature source of truth)
-  2. [SCOPE_GUARDRAILS.md](SCOPE_GUARDRAILS.md) (Strict boundaries)
-  3. The assigned GitHub issue, including its milestone, labels, dependencies,
-     and acceptance criteria.
-- **Single-Issue Focus:** Work only on the assigned GitHub issue. Do not attempt to fix unrelated bugs, implement unrelated features, or execute general refactoring unless it is explicitly requested in the active issue.
-- **No Scope Creep:** Do not implement work assigned to a different issue or
-  future release milestone. If you find yourself building something not in
-  [SPEC.md](SPEC.md), stop immediately.
-- **Stack is Fixed:** The tech stack is decided and accepted — Tauri (Rust backend + TypeScript/React frontend), see [ADR 0001](docs/adr/0001-tech-stack-decision.md). Do not introduce other frameworks (Electron, PySide, etc.) or swap core dependencies without a new ADR.
-- **Propose Plans:** For any task that isn't trivially simple, outline the proposed changes before editing. Keep active task status in the GitHub issue rather than creating repository-local plan files.
+- Treat the user's real Stardew Valley and Mods folders as read-only.
+- Run write, import, export, and destructive tests only on synthetic fixtures or
+  temporary copies.
+- Never commit game assets, third-party mod content, generated translations,
+  local paths, user data, credentials, or API keys.
+- Keep application state beside the executable in `data/`.
+- Portable release archives contain only the executable and `README.txt`.
 
-## 2. Commit and Code Hygiene
+## Product Boundaries
 
-- **Small, Scoped Commits:** Prefer small, logical commits (e.g., one commit per subtask/issue). Do not lump multiple issues or refactors into a single massive commit.
-- **Temporary Worktrees Only:** Use the primary checkout for normal work. Create
-  a Git worktree only when isolated or parallel work is genuinely necessary,
-  and place it under
-  `E:\DevProjects\.worktrees\stardew-translator\<issue-or-task>`. Never create
-  sibling project copies such as `Stardew Translator V2-<task>` directly under
-  `E:\DevProjects`. Before creating one, inspect `git worktree list`. Remove
-  the worktree and prune its metadata immediately after the task is merged,
-  abandoned, or handed back to the primary checkout. Preserve uncommitted work
-  before removal and do not leave build or release worktrees behind.
-- **Test-Driven / Test-Verified:** Every implementation task must include unit/integration tests or a clear, documented explanation of why automated testing is impossible for that component.
-- **Verification:** Choose local checks based on the changed surface before
-  pushing, then treat GitHub Actions on the public repository as the complete
-  merge gate. Docs-only changes usually need only `corepack pnpm check:docs`
-  locally; code changes need the focused frontend/Rust checks that match the
-  risk. Do not use repeated speculative pushes as an interactive debugger. For
-  release work, local build, portable ZIP, extracted-ZIP smoke, and release
-  preflight verification remain mandatory because the GitHub release uploads the
-  locally verified artifact.
-- **Document Changes:** Update corresponding markdown files, ADRs, or README files when your implementation changes documented behavior.
-- **Classify Pull Requests:** Every pull request must have exactly one
-  `changelog:*` label. Use `docs:not-required` only with a clear explanation
-  when a durable documentation update is unnecessary.
-- **Scope Changes Require Approval:** If you believe an issue or GitHub milestone is blocking progress or has technical flaws, do not change it on your own. Present the issue to the user and request updated parameters.
+- Translation and export target standard SMAPI `i18n/default.json` and
+  `i18n/<lang>.json` files.
+- Glossary extraction may read the narrow, read-only Stardew and community-pack
+  `Strings` sources described in [SPEC.md](SPEC.md).
+- The desktop app does not contain cloud API keys, automatic downloads, Nexus
+  API operations, mod-manager features, or Git integration.
+- AI output always enters the review workflow rather than becoming final
+  automatically.
 
-## 3. Data and Security Guardrails
+## Verification
 
-To prevent leaks and copyright issues, **do not check in or commit** the following:
+Run checks that match the changed surface instead of the full suite by default.
 
-- API keys, tokens, or credentials of any kind.
-- Local Stardew Valley game files, executables, or unpacked game assets.
-- Third-party mod archives (.zip, etc.) or unpacked mod directories (except minimal test fixtures under `tests/fixtures/`).
-- Generated glossary JSON/CSV databases or local user application data folders.
+```powershell
+# Documentation-only changes
+corepack pnpm check:docs
 
-### Local Mod Files for Verification
+# Frontend or shared TypeScript changes
+corepack pnpm exec tsc --noEmit
+corepack pnpm test
 
-AI agents may inspect and process locally installed third-party mods for
-development, debugging, performance testing, and visual verification.
+# Rust changes
+Push-Location src-tauri
+cargo fmt --check
+cargo clippy --locked --all-targets --profile ci -- -D warnings
+cargo test --locked --profile ci
+Pop-Location
+```
 
-Real mod files are local test inputs only. Agents must:
+Broaden verification for shared behavior, packaging, or release changes. Report
+what was run and any remaining risk in the final response; no fixed handoff
+template is required.
 
-- Treat the original Mods directory as read-only.
-- Perform write, edit, import, and export tests only on temporary copies.
-- Never commit, upload, redistribute, or add real mod content to fixtures.
-- Avoid including mod text, personal paths, or generated translations in logs,
-  screenshots, issues, pull requests, or handoff summaries.
-- Remove temporary copies after verification when practical.
+## Releases
 
-Agents may access local game files only when the assigned task explicitly
-requires testing game-path detection or glossary extraction. Game assets must
-never be committed, uploaded, or redistributed.
-
-## 4. Handoff Procedure
-
-At the end of every completed task or session, you **MUST** write a brief handoff summary at the bottom of your final response, using the format in [handoff-template.md](docs/agents/handoff-template.md):
-
-1. **Task / Issue:** The name/number of the issue you worked on.
-2. **Summary:** Brief description of what was done.
-3. **Files Changed:** A bulleted list of file paths.
-4. **Tests Run:** How you verified the changes (commands, results).
-5. **Decisions Made:** Key design or implementation choices.
-6. **Deviations from SPEC:** Any necessary deviations or workarounds.
-7. **Blockers:** Any current blockers or open questions.
-8. **Recommended Next Step:** The logical next issue/task for the next agent.
+- Update synchronized versions with `corepack pnpm version:set <version>`.
+- Build and package the verified Windows executable locally.
+- Use `scripts/create-release.ps1`. It publishes a normal GitHub release by
+  default; pass `-Draft` only when a draft is intentionally wanted.
+- Keep `CHANGELOG.md` concise. A curated `docs/release/v<version>.md` file is
+  optional.

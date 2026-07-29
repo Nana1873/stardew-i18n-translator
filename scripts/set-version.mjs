@@ -39,12 +39,6 @@ replace(
   "the root package version",
 );
 replace(
-  "docs/development/project-status.md",
-  /(Latest release:\s*)[0-9]+\.[0-9]+\.[0-9]+(\.)/,
-  `$1${version}$2`,
-  "the latest release",
-);
-replace(
   "CHANGELOG.md",
   /^(\[Unreleased\]: .*\/compare\/v)[0-9]+\.[0-9]+\.[0-9]+(\.\.\.HEAD)$/m,
   `$1${version}$2`,
