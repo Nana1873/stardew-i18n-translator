@@ -755,6 +755,8 @@ export function App() {
       error: null,
       result: null,
       modsWritten: null,
+      failedMod: null,
+      remainingMods: [],
       problems: [],
       retry,
     });
@@ -873,22 +875,26 @@ export function App() {
   async function handleExportAll() {
     if (!scan) return;
     beginExport("All mods", { kind: "all" });
+    const merged: ExportResult = {
+      files: [],
+      skipped: [],
+      filesWritten: 0,
+      filesRemoved: 0,
+      totalWrittenKeys: 0,
+      totalUntranslated: 0,
+      totalOutdated: 0,
+      totalReviewNeeded: 0,
+      totalOrphanKeys: 0,
+      blocked: false,
+    };
+    let modsWritten = 0;
+    let failedMod: string | null = null;
+    let remainingMods: string[] = [];
     try {
-      const merged: ExportResult = {
-        files: [],
-        skipped: [],
-        filesWritten: 0,
-        filesRemoved: 0,
-        totalWrittenKeys: 0,
-        totalUntranslated: 0,
-        totalOutdated: 0,
-        totalReviewNeeded: 0,
-        totalOrphanKeys: 0,
-        blocked: false,
-      };
-      let modsWritten = 0;
-      for (const mod of scan.mods) {
+      for (const [index, mod] of scan.mods.entries()) {
         if (mod.i18nFiles.length === 0) continue;
+        failedMod = mod.name;
+        remainingMods = scan.mods.slice(index + 1).map((item) => item.name);
         const result = await exportMod(mod.uniqueId, filesOf(mod));
         markExportedTargets(mod.uniqueId, result);
         merged.files.push(...result.files);
@@ -908,7 +914,12 @@ export function App() {
         merged.totalReviewNeeded += result.totalReviewNeeded;
         merged.totalOrphanKeys += result.totalOrphanKeys;
         merged.blocked ||= result.blocked;
+        if (result.blocked) {
+          throw new Error(`Export blocked for ${mod.name}.`);
+        }
         if (result.filesWritten > 0) modsWritten += 1;
+        failedMod = null;
+        remainingMods = [];
       }
       setResultTray((current) =>
         current?.kind === "export"
@@ -925,7 +936,16 @@ export function App() {
       logFrontendError("exportAll", String(error));
       setResultTray((current) =>
         current?.kind === "export"
-          ? { ...current, pending: false, error: String(error) }
+          ? {
+              ...current,
+              pending: false,
+              error: String(error),
+              result: merged,
+              modsWritten,
+              failedMod,
+              remainingMods,
+              problems: exportProblems(merged),
+            }
           : current,
       );
     } finally {
@@ -1011,6 +1031,8 @@ export function App() {
         scanning={scanning}
         onExport={requestExport}
         exportEnabled={Boolean(selectedMod) && !exporting}
+        onExportAll={requestExportAll}
+        exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
         exporting={exporting}
         onBuildZip={() => void requestTranslationZip()}
         buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
@@ -1296,6 +1318,8 @@ function Toolbar({
   scanning,
   onExport,
   exportEnabled,
+  onExportAll,
+  exportAllEnabled,
   exporting,
   onBuildZip,
   buildZipEnabled,
@@ -1318,6 +1342,8 @@ function Toolbar({
   scanning: boolean;
   onExport: () => void;
   exportEnabled: boolean;
+  onExportAll: () => void;
+  exportAllEnabled: boolean;
   exporting: boolean;
   onBuildZip: () => void;
   buildZipEnabled: boolean;
@@ -1336,7 +1362,8 @@ function Toolbar({
 }) {
   const [openMenu, setOpenMenu] = useState<"export" | "import" | null>(null);
   const actionsRef = useRef<HTMLDivElement>(null);
-  const exportMenuEnabled = exportEnabled || buildZipEnabled || exporting;
+  const exportMenuEnabled =
+    exportEnabled || exportAllEnabled || buildZipEnabled || exporting;
 
   useEffect(() => {
     if (!openMenu) return;
@@ -1419,6 +1446,14 @@ function Toolbar({
                 disabled={!exportEnabled}
               >
                 Export to mod folder
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => selectMenuAction(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                Export all mods to mod folders
               </button>
               <button
                 type="button"

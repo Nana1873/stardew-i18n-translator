@@ -239,12 +239,12 @@ fn prepare(
         for file in &component.files {
             let relative_i18n = Path::new(&file.relative_dir);
             validate_relative_path(relative_i18n)?;
-            let rows = scanner::load_strings(
+            let rows = scanner::load_strings_checked(
                 Path::new(&file.default_path),
                 Path::new(&file.target_path),
                 &state,
                 &file.relative_dir,
-            );
+            )?;
             let source_strings = rows.len();
             total_source_strings += source_strings;
             let mut output = Map::new();

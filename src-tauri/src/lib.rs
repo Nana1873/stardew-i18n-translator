@@ -99,12 +99,12 @@ fn load_strings(
     // A corrupted state file is surfaced to the user (instead of silently
     // showing everything untranslated and inviting an overwrite).
     let state = translations::load(&config, &mod_unique_id)?;
-    let rows = scanner::load_strings(
+    let rows = scanner::load_strings_checked(
         Path::new(&default_path),
         Path::new(&target_path),
         &state,
         &relative_dir,
-    );
+    )?;
     // Adopt pre-existing <lang>.json translations the user never saved so they
     // gain a source-hash baseline — without one they could never be flagged
     // `outdated` when the mod's English source later changes. Idempotent: once
@@ -344,12 +344,12 @@ fn import_llm_batch_from_path(
     for file in files {
         rows_by_dir.insert(
             file.relative_dir.clone(),
-            scanner::load_strings(
+            scanner::load_strings_checked(
                 Path::new(&file.default_path),
                 Path::new(&file.target_path),
                 &state,
                 &file.relative_dir,
-            ),
+            )?,
         );
     }
 

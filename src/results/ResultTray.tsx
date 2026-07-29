@@ -28,6 +28,8 @@ export type ResultTrayData =
       error: string | null;
       result: ExportResult | null;
       modsWritten: number | null;
+      failedMod?: string | null;
+      remainingMods?: string[];
       problems: ResultProblem[];
       retry: { kind: "selected"; modUniqueId: string } | { kind: "all" };
     }
@@ -152,7 +154,24 @@ export function ResultTray({
       {!data.collapsed && (
         <div className="resulttray__body">
           {data.error ? (
-            <p className="resulttray__error">{data.error}</p>
+            <>
+              <p className="resulttray__error">{data.error}</p>
+              {data.kind === "export" && data.result && (
+                <ExportSnapshot
+                  result={data.result}
+                  modsWritten={data.modsWritten}
+                />
+              )}
+              {data.kind === "export" && data.failedMod && (
+                <p>
+                  Failed at <strong>{data.failedMod}</strong>. Not started:{" "}
+                  {(data.remainingMods?.length ?? 0) > 0
+                    ? data.remainingMods!.join(", ")
+                    : "none"}
+                  .
+                </p>
+              )}
+            </>
           ) : data.kind === "export" && data.result ? (
             <ExportSnapshot
               result={data.result}

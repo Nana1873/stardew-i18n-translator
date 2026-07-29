@@ -86,6 +86,13 @@ pub struct ExportResult {
     pub blocked: bool,
 }
 
+struct PreparedFile {
+    result: ExportFileResult,
+    target_path: PathBuf,
+    body: Option<String>,
+    removals: Vec<PathBuf>,
+}
+
 /// Export every i18n file of one mod. Returns a per-file + aggregate summary.
 pub fn export_mod(
     config_dir: &Path,
@@ -97,16 +104,17 @@ pub fn export_mod(
     let state = translations::load(config_dir, unique_id)?;
     let mut result = ExportResult::default();
 
+    let mut prepared_rows = Vec::new();
     // Validate the complete mod first. A token mismatch must not leave a
     // partially exported mod or create backups for files that were not replaced.
     for file in files {
-        let rows = scanner::load_strings(
+        let rows = scanner::load_strings_checked(
             Path::new(&file.default_path),
             Path::new(&file.target_path),
             &state,
             &file.relative_dir,
-        );
-        for row in rows {
+        )?;
+        for row in &rows {
             if row.target.trim().is_empty() {
                 continue;
             }
@@ -126,26 +134,28 @@ pub fn export_mod(
                 .join("; ");
             result.skipped.push(SkippedKey {
                 relative_dir: file.relative_dir.clone(),
-                key: row.key,
+                key: row.key.clone(),
                 reason: format!("token count mismatch ({detail})"),
             });
         }
+        prepared_rows.push((file, rows));
     }
     if !result.skipped.is_empty() {
         result.blocked = true;
         return Ok(result);
     }
 
-    for file in files {
+    let mut prepared = Vec::new();
+    for (file, rows) in prepared_rows {
         let default_path = Path::new(&file.default_path);
         let target_path = Path::new(&file.target_path);
-        let rows = scanner::load_strings(default_path, target_path, &state, &file.relative_dir);
+        validate_portuguese_variants(target_path)?;
 
         let mut out: Map<String, Value> = Map::new();
         let mut file_result = ExportFileResult {
             relative_dir: file.relative_dir.clone(),
             target_path: file.target_path.clone(),
-            orphan_keys: orphan_keys(default_path, target_path),
+            orphan_keys: orphan_keys_checked(default_path, target_path)?,
             ..Default::default()
         };
 
@@ -164,31 +174,58 @@ pub fn export_mod(
         }
 
         file_result.written_keys = out.len();
-        if !out.is_empty() {
-            file_result.backed_up = write_target(target_path, &out)?;
-            file_result.written = true;
+        let body = (!out.is_empty())
+            .then(|| serialize_target(&out))
+            .transpose()?;
+        let removals = target_variants(target_path)
+            .into_iter()
+            .filter(|path| path.is_file())
+            .collect();
+        prepared.push(PreparedFile {
+            result: file_result,
+            target_path: target_path.to_path_buf(),
+            body,
+            removals,
+        });
+    }
+
+    for mut file in prepared {
+        if let Some(body) = file.body.as_deref() {
+            file.result.backed_up = write_target(&file.target_path, body)
+                .map_err(|error| export_io_error(&error, &result.files, &file.target_path))?;
+            for obsolete in file
+                .removals
+                .iter()
+                .filter(|path| path.as_path() != file.target_path)
+            {
+                file.result.backed_up |= remove_target(obsolete)
+                    .map_err(|error| export_io_error(&error, &result.files, &file.target_path))?;
+            }
+            file.result.written = true;
             result.files_written += 1;
         } else {
-            let existing_target = scanner::target_read_path(target_path);
-            if existing_target.is_file() {
+            for existing in &file.removals {
+                file.result.backed_up |= remove_target(existing)
+                    .map_err(|error| export_io_error(&error, &result.files, &file.target_path))?;
+            }
+            if !file.removals.is_empty() {
                 // Every translation was cleared. Leaving the old <lang>.json on disk
                 // keeps those stale strings live in SMAPI, so remove it (after a
                 // backup) — the mod then cleanly falls back to default.json.
                 // Portuguese may have been imported from pt-BR.json while the
                 // canonical export path is pt.json, so remove the file that was
                 // actually read rather than checking only the canonical path.
-                file_result.backed_up = remove_target(&existing_target)?;
-                file_result.removed = true;
+                file.result.removed = true;
                 result.files_removed += 1;
             }
         }
 
-        result.total_written_keys += file_result.written_keys;
-        result.total_untranslated += file_result.untranslated;
-        result.total_outdated += file_result.outdated;
-        result.total_review_needed += file_result.review_needed;
-        result.total_orphan_keys += file_result.orphan_keys.len();
-        result.files.push(file_result);
+        result.total_written_keys += file.result.written_keys;
+        result.total_untranslated += file.result.untranslated;
+        result.total_outdated += file.result.outdated;
+        result.total_review_needed += file.result.review_needed;
+        result.total_orphan_keys += file.result.orphan_keys.len();
+        result.files.push(file.result);
     }
 
     Ok(result)
@@ -197,25 +234,23 @@ pub fn export_mod(
 /// Keys in the existing target file that `default.json` does not contain
 /// (matched with SMAPI key semantics: case-insensitive, trimmed). These get
 /// dropped by the rewrite, so the summary must surface them.
-fn orphan_keys(default_path: &Path, target_path: &Path) -> Vec<String> {
-    let Some(target) = scanner::read_target_object(target_path) else {
-        return Vec::new();
-    };
-    let source = scanner::read_object(default_path).unwrap_or_default();
+fn orphan_keys_checked(default_path: &Path, target_path: &Path) -> Result<Vec<String>, String> {
+    let target = scanner::read_target_object_checked(target_path)?;
+    let source = scanner::read_object_checked(default_path)?;
     let source_folded: std::collections::HashSet<String> =
         source.keys().map(|key| scanner::folded_key(key)).collect();
-    target
+    Ok(target
         .keys()
         .filter(|key| key.as_str() != "$schema")
         .filter(|key| !source_folded.contains(&scanner::folded_key(key)))
         .cloned()
-        .collect()
+        .collect())
 }
 
 /// Serialize `map` and write it to `target_path` safely: back up an existing
 /// file, write+verify a temp sibling, then rename over the target. Returns
 /// whether a backup was created.
-fn write_target(target_path: &Path, map: &Map<String, Value>) -> Result<bool, String> {
+fn serialize_target(map: &Map<String, Value>) -> Result<String, String> {
     let mut body = serde_json::to_string_pretty(map)
         .map_err(|error| format!("Could not serialize export JSON: {error}"))?;
     body.push('\n');
@@ -223,6 +258,10 @@ fn write_target(target_path: &Path, map: &Map<String, Value>) -> Result<bool, St
     serde_json::from_str::<Value>(&body)
         .map_err(|error| format!("Generated invalid JSON: {error}"))?;
 
+    Ok(body)
+}
+
+fn write_target(target_path: &Path, body: &str) -> Result<bool, String> {
     if let Some(parent) = target_path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create target dir: {error}"))?;
@@ -242,6 +281,66 @@ fn write_target(target_path: &Path, map: &Map<String, Value>) -> Result<bool, St
         .map_err(|error| format!("Could not finalize {}: {error}", target_path.display()))?;
 
     Ok(backed_up)
+}
+
+fn is_portuguese_target(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"))
+}
+
+fn target_variants(target_path: &Path) -> Vec<PathBuf> {
+    if is_portuguese_target(target_path) {
+        vec![
+            target_path.to_path_buf(),
+            target_path.with_file_name("pt-BR.json"),
+        ]
+    } else {
+        vec![target_path.to_path_buf()]
+    }
+}
+
+fn validate_portuguese_variants(target_path: &Path) -> Result<(), String> {
+    if is_portuguese_target(target_path) {
+        for path in target_variants(target_path)
+            .into_iter()
+            .filter(|path| path.is_file())
+        {
+            scanner::read_object_checked(&path)?;
+        }
+    }
+    Ok(())
+}
+
+fn export_io_error(error: &str, completed: &[ExportFileResult], current: &Path) -> String {
+    let changed = completed
+        .iter()
+        .filter(|file| file.written || file.removed)
+        .map(|file| file.target_path.clone())
+        .collect::<Vec<_>>();
+    let backups = changed
+        .iter()
+        .cloned()
+        .chain(std::iter::once(current.display().to_string()))
+        .flat_map(|path| target_variants(Path::new(&path)))
+        .map(|path| sibling(&path, ".bak"))
+        .filter(|path| path.exists())
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>();
+    format!(
+        "{error} Completed changes before the failure: {}. Failed while processing: {}. Backups present: {}.",
+        if changed.is_empty() {
+            "none".to_string()
+        } else {
+            changed.join(", ")
+        },
+        current.display(),
+        if backups.is_empty() {
+            "none".to_string()
+        } else {
+            backups.join(", ")
+        }
+    )
 }
 
 /// Remove a target file whose translations were all cleared, backing it up to
@@ -703,5 +802,61 @@ mod tests {
         assert!(!i18n.join("de.json").exists());
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn malformed_second_file_leaves_every_target_untouched() {
+        let root = crate::test_support::temp_dir("export-preflight-second-file");
+        let first = root.join("first/i18n");
+        let second = root.join("second/i18n");
+        write(&first.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&first.join("de.json"), r#"{"k":"Alt"}"#);
+        write(&second.join("default.json"), "{ broken");
+        write(&second.join("de.json"), r#"{"k":"Zuvor"}"#);
+        let files = vec![
+            ExportFileInput {
+                relative_dir: "first/i18n".into(),
+                default_path: first.join("default.json").display().to_string(),
+                target_path: first.join("de.json").display().to_string(),
+            },
+            ExportFileInput {
+                relative_dir: "second/i18n".into(),
+                default_path: second.join("default.json").display().to_string(),
+                target_path: second.join("de.json").display().to_string(),
+            },
+        ];
+        assert!(export_mod(&root, "mod.id", &files).is_err());
+        assert_eq!(read(&first.join("de.json")), r#"{"k":"Alt"}"#);
+        assert!(!first.join("de.json.bak").exists());
+        assert_eq!(read(&second.join("de.json")), r#"{"k":"Zuvor"}"#);
+
+        write(&second.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&second.join("de.json"), "[");
+        assert!(export_mod(&root, "mod.id", &files).is_err());
+        assert_eq!(read(&first.join("de.json")), r#"{"k":"Alt"}"#);
+        assert!(!first.join("de.json.bak").exists());
+        assert_eq!(read(&second.join("de.json")), "[");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn portuguese_prefers_pt_br_then_canonicalizes_and_backs_up_both_variants() {
+        let root = crate::test_support::temp_dir("export-pt-both");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("pt.json"), r#"{"k":"Canonical old"}"#);
+        write(&i18n.join("pt-BR.json"), r#"{"k":"Brazil first"}"#);
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("pt.json").display().to_string(),
+        }];
+
+        export_mod(&root, "mod.id", &files).unwrap();
+        assert!(read(&i18n.join("pt.json")).contains("Brazil first"));
+        assert!(read(&i18n.join("pt.json.bak")).contains("Canonical old"));
+        assert!(read(&i18n.join("pt-BR.json.bak")).contains("Brazil first"));
+        assert!(!i18n.join("pt-BR.json").exists());
+        std::fs::remove_dir_all(root).ok();
     }
 }

@@ -95,9 +95,10 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - uses `default.json` as the source key inventory;
 - imports the selected target-language file when present;
 - accepts the relaxed JSON commonly found in real mods;
+- requires source and existing target files to be flat string objects;
 - preserves source key order for later export;
-- records warnings instead of stopping the complete scan when one mod is
-  malformed.
+- warns and skips only a malformed i18n component instead of inventing empty
+  rows or stopping the complete scan.
 
 A positive `Nexus:<id>` update key may be shown as an external link. Sentinel
 values such as `Nexus:-1` are treated as no Nexus ID.
@@ -196,8 +197,16 @@ All application state is portable and stored beside the executable:
 Translation state is separate from installed mods. The app does not modify mod
 files until the user explicitly exports.
 
-Exports use backups and atomic replacement where applicable. Release packages
-must not contain the user's `data/` folder.
+Windows-safe mod UniqueIDs retain their readable state filename. IDs that
+cannot be represented without loss use `state-<sha256>.json`; a unique valid
+legacy file is copied forward and retained, while ambiguous legacy collisions
+and case-insensitive duplicate IDs are blocked from editing.
+
+Exports validate and serialize the complete selected mod before the first
+write, then use per-file backups and atomic replacement. Portuguese imports
+prefer `pt-BR.json`, while successful exports canonicalize to `pt.json` and
+back up/remove the fallback. Release packages must not contain the user's
+`data/` folder.
 
 ## 15. Current Capabilities
 

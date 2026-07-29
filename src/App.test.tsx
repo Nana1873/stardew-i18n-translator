@@ -355,6 +355,50 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("keeps Export All successes visible when a later mod fails", async () => {
+    const base = exportScan(false).mods[0];
+    const scan = {
+      ...exportScan(false),
+      mods: [
+        { ...base, uniqueId: "a.first", name: "First Mod" },
+        { ...base, uniqueId: "b.second", name: "Second Mod" },
+        { ...base, uniqueId: "c.third", name: "Third Mod" },
+      ],
+      modCount: 3,
+      fileCount: 3,
+    };
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "export_mod") {
+        const id = (args as { modUniqueId: string }).modUniqueId;
+        return id === "a.first"
+          ? Promise.resolve(EXPORT_RESULT)
+          : Promise.reject(new Error("disk unavailable"));
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Export..." })).toBeEnabled(),
+    );
+    chooseToolbarAction("Export...", "Export all mods to mod folders");
+
+    const tray = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    await waitFor(() => expect(tray).toHaveTextContent("Export failed"));
+    expect(tray).toHaveTextContent("Wrote 1 strings across 1 files in 1 mods");
+    expect(tray).toHaveTextContent("Failed at Second Mod");
+    expect(tray).toHaveTextContent("Not started: Third Mod");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "export_mod",
+      expect.objectContaining({ modUniqueId: "c.third" }),
+    );
+  });
+
   it("keeps export problems available while navigating and refreshes one saved string", async () => {
     const blocked = {
       ...EXPORT_RESULT,
@@ -863,10 +907,10 @@ describe("App shell", () => {
       screen.getByRole("menuitem", { name: "Export to mod folder" }),
     ).toBeEnabled();
     expect(
-      screen.queryByRole("menuitem", {
+      screen.getByRole("menuitem", {
         name: "Export all mods to mod folders",
       }),
-    ).toBeNull();
+    ).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: "Build release ZIP" }),
     ).toBeEnabled();

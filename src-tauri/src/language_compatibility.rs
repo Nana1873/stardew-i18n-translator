@@ -297,7 +297,8 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             language.code
         );
         if language.code == "pt" {
-            assert!(i18n.join("pt-BR.json").is_file());
+            assert!(!i18n.join("pt-BR.json").is_file());
+            assert!(i18n.join("pt-BR.json.bak").is_file());
             assert!(i18n.join("pt.json").is_file());
             let canonical_rows = scanner::load_strings(
                 Path::new(&scanned_file.default_path),
@@ -307,7 +308,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             );
             assert_eq!(
                 canonical_rows[0].target, language.edited,
-                "pt.json takes precedence over the pt-BR.json import fallback"
+                "the canonical pt.json remains after the import fallback is removed"
             );
         }
 
