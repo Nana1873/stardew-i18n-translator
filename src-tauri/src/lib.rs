@@ -242,22 +242,18 @@ fn build_translation_zip(
 struct LlmExportOutcome {
     path: String,
     string_count: usize,
-    glossary_terms: usize,
 }
 
 /// Write the selected strings as an external LLM translation batch
-/// (M4, SPEC §11). Opens a save dialog; embeds instructions + a glossary
-/// excerpt so the file can be handed to any LLM verbatim.
+/// (M4, SPEC §11). Opens a save dialog and writes the minimal format-2
+/// binding plus the selected source strings.
 #[tauri::command]
 fn export_llm_batch(
     app: AppHandle,
     mod_unique_id: String,
-    mod_name: String,
-    target_lang: String,
-    target_language: String,
     items: Vec<batch::BatchExportItem>,
 ) -> Result<Option<LlmExportOutcome>, String> {
-    let target_lang = language::normalize_target_code(&target_lang)?;
+    let target_lang = active_target_lang(&app)?;
     let picked = app
         .dialog()
         .file()
@@ -272,21 +268,7 @@ fn export_llm_batch(
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
 
-    // Per-language glossary: unsupported languages use a community-pack cache
-    // only while the source pack is still installed.
-    let glossary = load_active_glossary(&config_dir(&app)?, &target_lang);
-    let batch_json = batch::build_batch(
-        &mod_name,
-        &mod_unique_id,
-        &target_lang,
-        &target_language,
-        &items,
-        glossary.as_ref(),
-    );
-    let glossary_terms = batch_json["glossary"]
-        .as_object()
-        .map(|terms| terms.len())
-        .unwrap_or(0);
+    let batch_json = batch::build_batch(&mod_unique_id, &target_lang, &items);
     let mut body = serde_json::to_string_pretty(&batch_json)
         .map_err(|error| format!("Could not serialize the batch: {error}"))?;
     body.push('\n');
@@ -296,7 +278,6 @@ fn export_llm_batch(
     Ok(Some(LlmExportOutcome {
         path: dest.display().to_string(),
         string_count: items.len(),
-        glossary_terms,
     }))
 }
 
@@ -338,7 +319,8 @@ fn import_llm_batch_from_path(
     let parsed = scanner::parse_json_lenient(&body)
         .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
 
-    let config = translation_config_dir(app)?;
+    let target_lang = active_target_lang(app)?;
+    let config = translations::language_root(&config_dir(app)?, &target_lang)?;
     let state = translations::load(&config, mod_unique_id)?;
     let mut rows_by_dir = std::collections::HashMap::new();
     for file in files {
@@ -353,7 +335,7 @@ fn import_llm_batch_from_path(
         );
     }
 
-    let prepared = batch::apply_batch(&parsed, &rows_by_dir)?;
+    let prepared = batch::apply_batch(&parsed, mod_unique_id, &target_lang, &rows_by_dir)?;
     if !prepared.entries.is_empty() {
         translations::save_many(&config, mod_unique_id, prepared.entries)?;
     }
@@ -684,11 +666,15 @@ fn config_dir(_app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 fn translation_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let target_lang = active_target_lang(app)?;
+    translations::language_root(&config_dir(app)?, &target_lang)
+}
+
+fn active_target_lang(app: &AppHandle) -> Result<String, String> {
     let config = config_dir(app)?;
-    let target_lang = settings::load_checked(&config)?
+    settings::load_checked(&config)?
         .target_lang
-        .ok_or("Choose a target language before editing translations.")?;
-    translations::language_root(&config, &target_lang)
+        .ok_or_else(|| "Choose a target language before editing translations.".to_string())
 }
 
 /// Build the diagnostic-logging plugin (v1.1.1). Writes a rotating log file to

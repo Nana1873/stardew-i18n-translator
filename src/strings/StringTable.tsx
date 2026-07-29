@@ -531,7 +531,6 @@ export function StringTable({
         relativeDir: row.file,
         key: row.key,
         source: row.source,
-        ...(row.section ? { section: row.section } : {}),
       };
     });
     setMenu(null);

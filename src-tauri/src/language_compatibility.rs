@@ -313,47 +313,26 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
         }
 
         let batch_value = batch::build_batch(
-            "Synthetic Language Test",
             "test.language",
             language.code,
-            language.label,
             &[BatchExportItem {
                 relative_dir: "i18n".to_string(),
                 key: "zeta".to_string(),
-                source: "Café {{PlayerName}}".to_string(),
-                section: Some("NPC dialogue".to_string()),
+                source: "Hello {{PlayerName}}!".to_string(),
             }],
-            None,
         );
         assert_eq!(
             batch_value["metadata"]["targetLang"], language.code,
             "{} batch code",
             language.code
         );
-        assert!(
-            batch_value["instructions"]
-                .as_str()
-                .unwrap()
-                .contains(language.label),
-            "{} batch label",
-            language.code
-        );
         assert_eq!(
-            batch_value["files"]["i18n"]["zeta"], "Café {{PlayerName}}",
+            batch_value["files"]["i18n"]["zeta"], "Hello {{PlayerName}}!",
             "{} batch Unicode",
             language.code
         );
-        assert_eq!(
-            batch_value["sections"]["i18n"]["zeta"], "NPC dialogue",
-            "{} batch section",
-            language.code
-        );
-
-        let result_value = serde_json::json!({
-            "format": batch::RESULT_FORMAT,
-            "version": 1,
-            "files": { "i18n": { "zeta": language.edited } }
-        });
+        let mut result_value = batch_value;
+        result_value["files"]["i18n"]["zeta"] = Value::String(language.edited.to_string());
         let mut rows_by_dir = HashMap::new();
         rows_by_dir.insert(
             "i18n".to_string(),
@@ -366,7 +345,9 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
                 section: Some("NPC dialogue".to_string()),
             }],
         );
-        let prepared = batch::apply_batch(&result_value, &rows_by_dir).unwrap();
+        let prepared =
+            batch::apply_batch(&result_value, "test.language", language.code, &rows_by_dir)
+                .unwrap();
         assert_eq!(
             prepared.entries[0].1.target, language.edited,
             "{} batch result Unicode",

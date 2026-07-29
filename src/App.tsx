@@ -436,7 +436,7 @@ export function App() {
     });
   }
 
-  // Human-readable target language ("German"), for AI prompts + batch files.
+  // Human-readable target language ("German") for local-AI prompts.
   const languageLabel =
     TARGET_LANGUAGES.find(
       (l) => l.code === settings?.targetLang,
@@ -470,13 +470,7 @@ export function App() {
         items: LlmBatchItem[],
       ): Promise<LlmExportOutcome | null> => {
         try {
-          const outcome = await exportLlmBatch(
-            mod.uniqueId,
-            mod.name,
-            targetLang,
-            languageLabel,
-            items,
-          );
+          const outcome = await exportLlmBatch(mod.uniqueId, items);
           if (outcome) {
             setResultTray({
               kind: "batch-export",
@@ -507,7 +501,7 @@ export function App() {
 
   /** Import a translated external LLM batch for the selected mod (M4). */
   async function handleImportBatch() {
-    if (!selectedMod) return;
+    if (!selectedMod || !targetLang) return;
     try {
       const summary = await importLlmBatch(
         selectedMod.uniqueId,
