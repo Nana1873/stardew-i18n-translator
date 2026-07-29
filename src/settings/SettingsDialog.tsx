@@ -55,6 +55,13 @@ interface SettingsDialogProps {
 }
 
 type SettingsPage = "folders" | "ai" | "glossary" | "shortcuts" | "about";
+const SETTINGS_PAGES: ReadonlyArray<readonly [SettingsPage, string]> = [
+  ["folders", "Folders & Language"],
+  ["ai", "Local AI"],
+  ["glossary", "Glossary"],
+  ["shortcuts", "Shortcuts"],
+  ["about", "About"],
+];
 
 interface LlmConnectionResult {
   kind: "connected" | "empty" | "failed";
@@ -237,6 +244,29 @@ export function SettingsDialog({
     }
   }
 
+  function onTabKeyDown(
+    event: ReactKeyboardEvent<HTMLButtonElement>,
+    current: SettingsPage,
+  ) {
+    const index = SETTINGS_PAGES.findIndex(([id]) => id === current);
+    let next = index;
+    if (event.key === "ArrowDown") next = (index + 1) % SETTINGS_PAGES.length;
+    else if (event.key === "ArrowUp")
+      next = (index - 1 + SETTINGS_PAGES.length) % SETTINGS_PAGES.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = SETTINGS_PAGES.length - 1;
+    else return;
+
+    event.preventDefault();
+    const [nextPage] = SETTINGS_PAGES[next];
+    setPage(nextPage);
+    const tabs =
+      event.currentTarget.parentElement?.querySelectorAll<HTMLElement>(
+        '[role="tab"]',
+      );
+    tabs?.[next]?.focus();
+  }
+
   return (
     <div
       className="wizard__backdrop"
@@ -256,15 +286,7 @@ export function SettingsDialog({
             role="tablist"
             aria-orientation="vertical"
           >
-            {(
-              [
-                ["folders", "Folders & Language"],
-                ["ai", "Local AI"],
-                ["glossary", "Glossary"],
-                ["shortcuts", "Shortcuts"],
-                ["about", "About"],
-              ] as const
-            ).map(([id, label]) => (
+            {SETTINGS_PAGES.map(([id, label]) => (
               <button
                 key={id}
                 type="button"
@@ -274,6 +296,7 @@ export function SettingsDialog({
                 tabIndex={page === id ? 0 : -1}
                 className={page === id ? "settings__nav-item--active" : ""}
                 onClick={() => setPage(id)}
+                onKeyDown={(event) => onTabKeyDown(event, id)}
                 disabled={saving}
               >
                 {label}

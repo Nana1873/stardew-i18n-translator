@@ -7,6 +7,7 @@
  * row updates in place. A left status bar reflects each string's status.
  */
 import {
+  type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
@@ -143,6 +144,7 @@ export function StringTable({
     review: boolean;
   } | null>(null);
   const [selection, setSelection] = useState<Set<number>>(new Set());
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [sort, setSort] = useState<{
     col: SortCol;
@@ -152,6 +154,7 @@ export function StringTable({
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
+  const rowFocusActive = useRef(false);
   // Current rows, readable from async batch callbacks without stale closures.
   const rowsRef = useRef<Row[] | null>(null);
   useEffect(() => {
@@ -163,6 +166,7 @@ export function StringTable({
     setRows(null);
     setError(null);
     setSelection(new Set());
+    setActiveIndex(null);
     setMenu(null);
     setEditorSession(null);
     (async () => {
@@ -298,18 +302,67 @@ export function StringTable({
     virtualizer.measure();
   }, [display, virtualizer]);
 
-  /** Ctrl+A / Cmd+A selects every currently visible row; Enter opens the
-   * single selected row in the editor. */
+  const effectiveActiveIndex = visible.some(
+    (entry) => entry.index === activeIndex,
+  )
+    ? activeIndex
+    : (visible[0]?.index ?? null);
+
+  useEffect(() => {
+    if (activeIndex === effectiveActiveIndex) return;
+    setActiveIndex(effectiveActiveIndex);
+    if (rowFocusActive.current && effectiveActiveIndex !== null) {
+      focusRow(effectiveActiveIndex);
+    }
+  }, [activeIndex, effectiveActiveIndex]);
+
+  /** Ctrl+A / Cmd+A selects every currently visible row. */
   function onBodyKeyDown(event: ReactKeyboardEvent) {
     if (matchesShortcut(event, shortcuts["table.selectAll"])) {
       event.preventDefault();
       setSelection(new Set(visible.map((entry) => entry.index)));
-    } else if (
-      matchesShortcut(event, shortcuts["table.edit"]) &&
-      selection.size === 1
-    ) {
+    }
+  }
+
+  function focusRow(dataIndex: number) {
+    const displayIndex = display.findIndex(
+      (entry) => entry.kind === "row" && entry.index === dataIndex,
+    );
+    if (displayIndex < 0) return;
+    virtualizer.scrollToIndex(displayIndex, { align: "auto" });
+    requestAnimationFrame(() => {
+      parentRef.current
+        ?.querySelector<HTMLElement>(`[data-row-index="${dataIndex}"]`)
+        ?.focus();
+    });
+  }
+
+  function onRowKeyDown(
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    dataIndex: number,
+    pos: number,
+  ) {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      openEditor([...selection][0] ?? null);
+      const nextPos = Math.max(
+        0,
+        Math.min(
+          visible.length - 1,
+          pos + (event.key === "ArrowDown" ? 1 : -1),
+        ),
+      );
+      const next = visible[nextPos];
+      if (next) {
+        setActiveIndex(next.index);
+        focusRow(next.index);
+      }
+    } else if (matchesShortcut(event, shortcuts["table.edit"])) {
+      event.preventDefault();
+      openEditor(dataIndex);
+    } else if (event.key === " ") {
+      event.preventDefault();
+      setSelection(new Set([dataIndex]));
+      anchor.current = pos;
     }
   }
 
@@ -355,6 +408,7 @@ export function StringTable({
   // `dataIndex` is the row's index into `data`; `pos` is its position in the
   // visible list (so Shift-range follows what the user sees, not hidden rows).
   function selectRow(dataIndex: number, pos: number, event: ReactMouseEvent) {
+    setActiveIndex(dataIndex);
     if (event.shiftKey && anchor.current !== null) {
       const lo = Math.min(anchor.current, pos);
       const hi = Math.max(anchor.current, pos);
@@ -380,6 +434,7 @@ export function StringTable({
 
   function openMenu(dataIndex: number, pos: number, event: ReactMouseEvent) {
     event.preventDefault();
+    setActiveIndex(dataIndex);
     setSelection((prev) => (prev.has(dataIndex) ? prev : new Set([dataIndex])));
     if (!selection.has(dataIndex)) anchor.current = pos;
     setMenu({ x: event.clientX, y: event.clientY });
@@ -590,7 +645,6 @@ export function StringTable({
       <div
         ref={parentRef}
         className="stringtable__body"
-        tabIndex={0}
         onKeyDown={onBodyKeyDown}
       >
         {visible.length === 0 ? (
@@ -661,8 +715,10 @@ export function StringTable({
                 <RowView
                   key={`${entry.row.file} ${entry.row.key}`}
                   row={entry.row}
+                  dataIndex={dataIndex}
                   multiFile={multiFile}
                   selected={selection.has(dataIndex)}
+                  tabStop={dataIndex === effectiveActiveIndex}
                   top={item.start}
                   height={item.size}
                   onSelect={(event) => selectRow(dataIndex, entry.pos, event)}
@@ -670,6 +726,19 @@ export function StringTable({
                     openMenu(dataIndex, entry.pos, event)
                   }
                   onOpen={() => openEditor(dataIndex)}
+                  onKeyDown={(event) =>
+                    onRowKeyDown(event, dataIndex, entry.pos)
+                  }
+                  onFocus={() => {
+                    rowFocusActive.current = true;
+                    setActiveIndex(dataIndex);
+                  }}
+                  onBlur={(event) => {
+                    const next = event.relatedTarget as HTMLElement | null;
+                    if (next && !next.matches(".stringrow--data")) {
+                      rowFocusActive.current = false;
+                    }
+                  }}
                 />
               );
             })}
@@ -916,24 +985,34 @@ function SortHeader({
 
 interface RowViewProps {
   row: Row;
+  dataIndex: number;
   multiFile: boolean;
   selected: boolean;
+  tabStop: boolean;
   top: number;
   height: number;
   onSelect: (event: ReactMouseEvent) => void;
   onContextMenu: (event: ReactMouseEvent) => void;
   onOpen: () => void;
+  onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+  onFocus: () => void;
+  onBlur: (event: ReactFocusEvent<HTMLDivElement>) => void;
 }
 
 function RowView({
   row,
+  dataIndex,
   multiFile,
   selected,
+  tabStop,
   top,
   height,
   onSelect,
   onContextMenu,
   onOpen,
+  onKeyDown,
+  onFocus,
+  onBlur,
 }: RowViewProps) {
   const issues = validate(row.source, row.target, row.targetPresent);
   const severity = worstSeverity(issues);
@@ -956,9 +1035,16 @@ function RowView({
           : edge,
       }}
       title={status.label}
+      role="row"
+      aria-selected={selected}
+      tabIndex={tabStop ? 0 : -1}
+      data-row-index={dataIndex}
       onClick={onSelect}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
+      onKeyDown={onKeyDown}
+      onFocus={onFocus}
+      onBlur={onBlur}
     >
       <span className="stringrow__status">
         <span

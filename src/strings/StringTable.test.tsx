@@ -19,6 +19,7 @@ vi.mock("@tanstack/react-virtual", () => ({
         size: 30,
       })),
     measure: () => {},
+    scrollToIndex: () => {},
   }),
 }));
 
@@ -248,6 +249,49 @@ describe("StringTable", () => {
     // Only the untranslated row ("bye", empty target) remains.
     expect(await screen.findByText("bye")).toBeInTheDocument();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+  });
+
+  it("uses one roving row tab stop and supports arrows, Space, Enter, and Ctrl+A", async () => {
+    render(<StringTable mod={MOD} />);
+
+    const rows = await screen.findAllByRole("row");
+    expect(rows[0]).toHaveAttribute("tabindex", "0");
+    expect(rows[1]).toHaveAttribute("tabindex", "-1");
+
+    rows[0].focus();
+    fireEvent.keyDown(rows[0], { key: "ArrowDown" });
+    await waitFor(() => expect(rows[1]).toHaveFocus());
+    expect(rows[0]).toHaveAttribute("tabindex", "-1");
+    expect(rows[1]).toHaveAttribute("tabindex", "0");
+
+    fireEvent.keyDown(rows[1], { key: " " });
+    expect(rows[1]).toHaveAttribute("aria-selected", "true");
+
+    fireEvent.keyDown(rows[1], { key: "a", ctrlKey: true });
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("row")
+          .every((row) => row.getAttribute("aria-selected") === "true"),
+      ).toBe(true),
+    );
+
+    fireEvent.keyDown(rows[1], { key: "Enter" });
+    expect(
+      await screen.findByRole("dialog", { name: "Edit string" }),
+    ).toBeVisible();
+  });
+
+  it("moves row focus to a visible row when filtering removes the active row", async () => {
+    const { rerender } = render(<StringTable mod={MOD} search="" />);
+    const rows = await screen.findAllByRole("row");
+    rows[0].focus();
+
+    rerender(<StringTable mod={MOD} search="bye" />);
+
+    const remaining = await screen.findByRole("row");
+    await waitFor(() => expect(remaining).toHaveFocus());
+    expect(remaining).toHaveAttribute("tabindex", "0");
   });
 
   it("shows the no-results state with a Clear-filters escape hatch", async () => {

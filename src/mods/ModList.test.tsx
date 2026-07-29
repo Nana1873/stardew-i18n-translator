@@ -185,4 +185,29 @@ describe("ModList", () => {
     });
     expect(screen.queryByRole("menu")).toBeNull();
   });
+
+  it("moves through mod rows with arrows and selects with Enter or Space", () => {
+    const onSelect = vi.fn();
+    render(
+      <ModList
+        mods={[
+          mod({ uniqueId: "a", name: "Alpha", packageId: "Alpha" }),
+          mod({ uniqueId: "b", name: "Beta", packageId: "Beta" }),
+        ]}
+        selectedId={null}
+        onSelect={onSelect}
+      />,
+    );
+
+    const rows = screen.getAllByRole("treeitem");
+    expect(rows[0]).toHaveAttribute("tabindex", "0");
+    expect(rows[1]).toHaveAttribute("tabindex", "-1");
+    rows[0].focus();
+    fireEvent.keyDown(rows[0], { key: "ArrowDown" });
+    expect(rows[1]).toHaveFocus();
+    fireEvent.keyDown(rows[1], { key: "Enter" });
+    expect(onSelect).toHaveBeenLastCalledWith("b");
+    fireEvent.keyDown(rows[1], { key: " " });
+    expect(onSelect).toHaveBeenLastCalledWith("b");
+  });
 });

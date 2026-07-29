@@ -7,7 +7,11 @@
  * children are the components. Status/Fortschritt are placeholders until string
  * parsing (Issue 5) lands.
  */
-import { type MouseEvent as ReactMouseEvent, useState } from "react";
+import {
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  useState,
+} from "react";
 import {
   type ModStatus,
   type ScannedMod,
@@ -130,15 +134,55 @@ export function ModList({
           group.mods.some((mod) => mod.name.toLowerCase().includes(q)),
       )
     : groups;
+  const visibleIds = visible.flatMap((group) =>
+    group.mods.map((mod) => mod.uniqueId),
+  );
+  const selectedVisible =
+    selectedId !== null && visibleIds.includes(selectedId);
+  const firstVisibleId = visibleIds[0] ?? null;
 
   function openContextMenu(mod: ScannedMod, event: ReactMouseEvent) {
     event.preventDefault();
     setMenu({ x: event.clientX, y: event.clientY, mod });
   }
 
+  function onTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const row = (event.target as HTMLElement).closest<HTMLElement>(
+      ".modrow--mod[role='treeitem']",
+    );
+    if (!row) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      row.click();
+      return;
+    }
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+
+    event.preventDefault();
+    const rows = Array.from(
+      event.currentTarget.querySelectorAll<HTMLElement>(
+        ".modrow--mod[role='treeitem']",
+      ),
+    );
+    const index = rows.indexOf(row);
+    const next = Math.max(
+      0,
+      Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
+    );
+    rows.forEach((candidate, candidateIndex) => {
+      candidate.tabIndex = candidateIndex === next ? 0 : -1;
+    });
+    rows[next]?.focus();
+  }
+
   return (
     <>
-      <div className="modlist" role="tree" aria-label="Mods">
+      <div
+        className="modlist"
+        role="tree"
+        aria-label="Mods"
+        onKeyDown={onTreeKeyDown}
+      >
         <div className="modrow modrow--head">
           <span>Mod</span>
           <span>Ver</span>
@@ -156,6 +200,11 @@ export function ModList({
                 mod={group.mods[0]}
                 depth={0}
                 selectedId={selectedId}
+                tabStop={
+                  group.mods[0].uniqueId === selectedId ||
+                  (!selectedVisible &&
+                    group.mods[0].uniqueId === firstVisibleId)
+                }
                 onSelect={onSelect}
                 onContextMenu={openContextMenu}
               />
@@ -164,6 +213,8 @@ export function ModList({
                 key={group.packageId}
                 group={group}
                 selectedId={selectedId}
+                firstVisibleId={firstVisibleId}
+                selectedVisible={selectedVisible}
                 onSelect={onSelect}
                 onContextMenu={openContextMenu}
               />
@@ -208,11 +259,15 @@ export function ModList({
 function PackageNode({
   group,
   selectedId,
+  firstVisibleId,
+  selectedVisible,
   onSelect,
   onContextMenu,
 }: {
   group: PackageGroup;
   selectedId: string | null;
+  firstVisibleId: string | null;
+  selectedVisible: boolean;
   onSelect: (uniqueId: string) => void;
   onContextMenu: ContextMenuHandler;
 }) {
@@ -249,6 +304,10 @@ function PackageNode({
             child
             lastChild={index === group.mods.length - 1}
             selectedId={selectedId}
+            tabStop={
+              mod.uniqueId === selectedId ||
+              (!selectedVisible && mod.uniqueId === firstVisibleId)
+            }
             onSelect={onSelect}
             onContextMenu={onContextMenu}
           />
@@ -263,6 +322,7 @@ function ModRow({
   child = false,
   lastChild = false,
   selectedId,
+  tabStop,
   onSelect,
   onContextMenu,
 }: {
@@ -271,6 +331,7 @@ function ModRow({
   child?: boolean;
   lastChild?: boolean;
   selectedId: string | null;
+  tabStop: boolean;
   onSelect: (uniqueId: string) => void;
   onContextMenu: ContextMenuHandler;
 }) {
@@ -288,6 +349,7 @@ function ModRow({
       className={className}
       role="treeitem"
       aria-selected={selected}
+      tabIndex={tabStop ? 0 : -1}
       onClick={() => onSelect(mod.uniqueId)}
       onContextMenu={(event) => onContextMenu(mod, event)}
     >

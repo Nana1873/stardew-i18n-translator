@@ -313,6 +313,32 @@ describe("SettingsDialog", () => {
     expect(invokeMock).toHaveBeenCalledWith("open_logs_dir", undefined);
   });
 
+  it("moves vertical tabs with arrows, Home, and End", () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const folders = screen.getByRole("tab", { name: "Folders & Language" });
+    folders.focus();
+    fireEvent.keyDown(folders, { key: "ArrowDown" });
+    expect(screen.getByRole("tab", { name: "Local AI" })).toHaveFocus();
+    expect(
+      screen.getByRole("heading", { name: "Local AI connection" }),
+    ).toBeVisible();
+
+    fireEvent.keyDown(document.activeElement!, { key: "End" });
+    expect(screen.getByRole("tab", { name: "About" })).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Home" });
+    expect(folders).toHaveFocus();
+    fireEvent.keyDown(folders, { key: "ArrowUp" });
+    expect(screen.getByRole("tab", { name: "About" })).toHaveFocus();
+  });
+
   it("saves the local diagnostic logging preference", () => {
     const onSave = vi.fn();
     render(

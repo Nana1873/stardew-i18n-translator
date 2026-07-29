@@ -25,6 +25,7 @@
   --token: #82bbff;
 
   /* Semantic */
+  --success: #5ec488;
   --error: #e06c6c;
   --warning: #e3a94e;
   --link: #6ab0ff;
@@ -562,7 +563,7 @@ kbd,
   height: 8px;
   flex: none;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--success);
 }
 
 .resulttray__status--error {
@@ -795,7 +796,7 @@ kbd,
 }
 
 .resulttray__problem--resolved small {
-  color: var(--green);
+  color: var(--success);
 }
 
 .resulttray__retry {
@@ -992,6 +993,11 @@ kbd,
 
 .modrow--mod:hover {
   background: rgba(255, 255, 255, 0.04);
+}
+
+.modrow--mod:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
 }
 
 .modrow--selected,
@@ -1417,6 +1423,12 @@ kbd,
 
 .stringrow--data:hover {
   background: rgba(255, 255, 255, 0.04);
+}
+
+.stringrow--data:focus-visible {
+  z-index: 1;
+  outline: 2px solid var(--gold);
+  outline-offset: -2px;
 }
 
 /* Selection is the only strong row tint — gold, so it can never be confused
@@ -2878,13 +2890,13 @@ kbd,
 }
 
 .batchdrop--valid .batchdrop__card {
-  border-color: var(--green);
-  background: color-mix(in srgb, var(--green) 8%, var(--surface));
+  border-color: var(--success);
+  background: color-mix(in srgb, var(--success) 8%, var(--surface));
 }
 
 .batchdrop--invalid .batchdrop__card {
-  border-color: var(--red);
-  background: color-mix(in srgb, var(--red) 8%, var(--surface));
+  border-color: var(--error);
+  background: color-mix(in srgb, var(--error) 8%, var(--surface));
 }
 
 .batchdrop__icon {
@@ -2899,11 +2911,11 @@ kbd,
 }
 
 .batchdrop--valid .batchdrop__icon {
-  color: var(--green);
+  color: var(--success);
 }
 
 .batchdrop--invalid .batchdrop__icon {
-  color: var(--red);
+  color: var(--error);
 }
 
 .batchdrop__card strong {
