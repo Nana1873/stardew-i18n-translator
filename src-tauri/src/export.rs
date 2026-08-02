@@ -119,7 +119,7 @@ pub fn export_mod(
                 continue;
             }
             let differences = tokens::token_differences(&row.source, &row.target);
-            if differences.is_empty() {
+            if differences.is_empty() || row.token_mismatch_accepted {
                 continue;
             }
             let detail = differences
@@ -645,6 +645,42 @@ mod tests {
         assert!(!i18n.join("de.json.bak").exists());
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn exports_multiple_token_mismatches_after_each_string_is_accepted() {
+        let root = crate::test_support::temp_dir("export-accepted-tokens");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("default.json"),
+            r#"{"a":"First$8","b":"Second$9"}"#,
+        );
+        for (key, source, target) in [
+            ("a", "First$8", "Erste Zeile$7"),
+            ("b", "Second$9", "Zweite Zeile$6"),
+        ] {
+            translations::save_one(
+                &root,
+                "mod.id",
+                translations::entry_key("i18n", key),
+                translations::StoredString {
+                    target: target.into(),
+                    status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                    source_hash: translations::source_hash(source),
+                },
+            )
+            .unwrap();
+        }
+
+        let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert!(!result.blocked);
+        assert!(result.skipped.is_empty());
+        assert_eq!(result.total_written_keys, 2);
+        let body = read(&i18n.join("de.json"));
+        assert!(body.contains("Erste Zeile$7"));
+        assert!(body.contains("Zweite Zeile$6"));
+
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

@@ -8,6 +8,15 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-08-03
+
+### Changed
+
+- Translators can explicitly choose **Save anyway** for an individual string
+  with protected-token errors. Each accepted mismatch is remembered for the
+  current source revision and no longer blocks direct export or translation ZIP
+  creation; all unaccepted mismatches remain blocking.
+
 ## [1.4.2] - 2026-07-29
 
 ### Changed
@@ -273,7 +282,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.2...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.3...HEAD
+[1.4.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.3.0...v1.4.0

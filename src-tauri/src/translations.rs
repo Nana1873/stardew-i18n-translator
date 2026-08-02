@@ -32,6 +32,11 @@ pub struct StoredString {
     pub source_hash: String,
 }
 
+/// Stored status used when the translator explicitly accepts a protected-token
+/// mismatch. The scanner exposes it as the normal `translated` status while
+/// retaining the export waiver for the exact saved source text.
+pub const TOKEN_MISMATCH_ACCEPTED_STATUS: &str = "translated-token-mismatch-accepted";
+
 /// Per-mod state: entry key -> stored translation.
 pub type ModState = HashMap<String, StoredString>;
 

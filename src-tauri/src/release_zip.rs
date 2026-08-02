@@ -255,7 +255,7 @@ fn prepare(
                     continue;
                 }
                 let differences = tokens::token_differences(&row.source, &row.target);
-                if !differences.is_empty() {
+                if !differences.is_empty() && !row.token_mismatch_accepted {
                     let detail = differences
                         .iter()
                         .map(|difference| {
@@ -664,6 +664,37 @@ mod tests {
         assert!(error.contains("blocking"));
         assert!(!destination.exists());
         assert!(!sibling(&destination, ".tmp").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn accepted_token_mismatch_can_be_built_into_a_zip() {
+        let root = crate::test_support::temp_dir("release-zip-accepted-token");
+        let mods = root.join("Mods");
+        let package = mods.join("Pack");
+        let config = root.join("data");
+        let components = vec![component(&package, "", "sample.root", "1.0")];
+        translations::save_one(
+            &config,
+            "sample.root",
+            translations::entry_key("i18n", "hello"),
+            translations::StoredString {
+                target: "Hallo".into(),
+                status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello {{name}}"),
+            },
+        )
+        .unwrap();
+
+        let destination = root.join("accepted.zip");
+        let outcome = build(
+            &config,
+            &request(&mods, "Pack", components, &destination, false),
+        )
+        .unwrap();
+        assert_eq!(outcome.strings, 1);
+        assert!(destination.exists());
+
         std::fs::remove_dir_all(root).ok();
     }
 
