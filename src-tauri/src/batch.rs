@@ -285,6 +285,7 @@ mod tests {
             target: target.into(),
             target_present: !target.is_empty(),
             status: status.into(),
+            token_mismatch_accepted: false,
             section: None,
         }
     }

@@ -67,6 +67,7 @@ function mockStrings(
         rows.map((r) => ({
           targetPresent: false,
           status: r.target ? "translated" : "untranslated",
+          tokenMismatchAccepted: false,
           ...r,
         })),
       );
@@ -117,6 +118,32 @@ describe("StringTable", () => {
         status: "translated",
         source: "Hello",
       }),
+    );
+  });
+
+  it("persists an accepted token mismatch as an export waiver", async () => {
+    mockStrings([
+      {
+        key: "portrait",
+        source: "What happened?$8",
+        target: "Was ist passiert?$7",
+        targetPresent: true,
+      },
+    ]);
+    render(<StringTable mod={MOD} />);
+    fireEvent.doubleClick(await screen.findByText("portrait"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({
+          key: "portrait",
+          status: "translated-token-mismatch-accepted",
+        }),
+      ),
     );
   });
 

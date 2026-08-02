@@ -42,6 +42,8 @@ export interface EditorRow {
   file: string;
   targetPresent: boolean;
   status: StringStatus;
+  /** This exact saved source/target pair was accepted despite token errors. */
+  tokenMismatchAccepted: boolean;
   /** Nearest standalone `//` heading in default.json, if present. */
   section?: string | null;
 }
@@ -60,7 +62,11 @@ interface StringEditorProps {
     section?: string | null,
   ) => Promise<TranslationResult>;
   /** Persist the edited target + status for this row. */
-  onSave: (value: string, status: StringStatus) => Promise<void> | void;
+  onSave: (
+    value: string,
+    status: StringStatus,
+    tokenMismatchAccepted: boolean,
+  ) => Promise<void> | void;
   onClose: () => void;
   onNavigate: (delta: number) => void;
   shortcuts?: ResolvedShortcuts;
@@ -154,6 +160,10 @@ export function StringEditor({
   // True once the user changed anything (text, AI translate). Navigation
   // auto-saves on dirty.
   const [dirty, setDirty] = useState(false);
+  const [mismatchAccepted, setMismatchAccepted] = useState(
+    row.tokenMismatchAccepted,
+  );
+  const [pendingSave, setPendingSave] = useState<"close" | "next" | null>(null);
   const [translating, setTranslating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
@@ -169,6 +179,8 @@ export function StringEditor({
     setTranslating(false);
     setValue(row.target);
     setReviewNeeded(row.status === "review-needed");
+    setMismatchAccepted(row.tokenMismatchAccepted);
+    setPendingSave(null);
     setDirty(false);
     setTranslateMsg(null);
     textareaRef.current?.focus();
@@ -200,32 +212,18 @@ export function StringEditor({
     return value.trim() === "" ? "untranslated" : "translated";
   }
 
-  /** Explicit Save (Ctrl+Enter): the user has reviewed it → confirm to translated. */
-  async function save() {
+  /** Persist an explicit save after any required token-error confirmation. */
+  async function persistConfirmed(
+    destination: "close" | "next",
+    acceptTokenMismatch: boolean,
+  ) {
     if (saving) return;
     setSaving(true);
+    setPendingSave(null);
     setTranslateMsg(null);
     try {
-      await onSave(value, confirmedStatus());
-      onClose();
-    } catch (cause) {
-      setTranslateMsg(String(cause));
-      textareaRef.current?.focus();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  /** Save & next (Ctrl+Shift+Enter): confirm like Save, then jump to the next
-   * string instead of closing — the fast path for working through a long
-   * review-needed backlog. Closes on the last string. */
-  async function saveAndNext() {
-    if (saving) return;
-    setSaving(true);
-    setTranslateMsg(null);
-    try {
-      await onSave(value, confirmedStatus());
-      if (index < total - 1) onNavigate(1);
+      await onSave(value, confirmedStatus(), acceptTokenMismatch);
+      if (destination === "next" && index < total - 1) onNavigate(1);
       else onClose();
     } catch (cause) {
       setTranslateMsg(String(cause));
@@ -235,12 +233,27 @@ export function StringEditor({
     }
   }
 
+  /** Save normally, or pause for a per-string token-error waiver. */
+  function requestConfirmedSave(destination: "close" | "next") {
+    if (saving) return;
+    if (blockingTokenIssues.length > 0 && !mismatchAccepted) {
+      setPendingSave(destination);
+      return;
+    }
+    void persistConfirmed(
+      destination,
+      blockingTokenIssues.length > 0 && mismatchAccepted,
+    );
+  }
+
   /** Edit the target by hand: it is now the user's own text, no longer a pending AI suggestion. */
   function editValue(next: string) {
     aiRequest.current += 1;
     setTranslating(false);
     setValue(next);
     setReviewNeeded(false);
+    setMismatchAccepted(false);
+    setPendingSave(null);
     setDirty(true);
   }
 
@@ -259,6 +272,8 @@ export function StringEditor({
         return;
       setValue(result.text);
       setReviewNeeded(true); // an AI suggestion awaiting review
+      setMismatchAccepted(false);
+      setPendingSave(null);
       setDirty(true);
       const notes: string[] = [];
       if (result.missingTokens.length > 0) {
@@ -291,7 +306,7 @@ export function StringEditor({
     }
     setSaving(true);
     try {
-      await onSave(value, effectiveStatus());
+      await onSave(value, effectiveStatus(), false);
       aiRequest.current += 1;
       onNavigate(delta);
     } catch (cause) {
@@ -312,6 +327,8 @@ export function StringEditor({
   function reset() {
     setValue("");
     setReviewNeeded(false);
+    setMismatchAccepted(false);
+    setPendingSave(null);
     setDirty(true);
     textareaRef.current?.focus();
   }
@@ -323,6 +340,9 @@ export function StringEditor({
     const end = textarea?.selectionEnd ?? value.length;
     const next = value.slice(0, start) + raw + value.slice(end);
     setValue(next);
+    setMismatchAccepted(false);
+    setPendingSave(null);
+    setDirty(true);
     requestAnimationFrame(() => {
       const caret = start + raw.length;
       textarea?.focus();
@@ -333,10 +353,10 @@ export function StringEditor({
   function onKeyDown(event: KeyboardEvent | ReactKeyboardEvent) {
     if (matchesShortcut(event, shortcuts["editor.saveNext"])) {
       event.preventDefault();
-      void saveAndNext();
+      requestConfirmedSave("next");
     } else if (matchesShortcut(event, shortcuts["editor.save"])) {
       event.preventDefault();
-      void save();
+      requestConfirmedSave("close");
     } else if (matchesShortcut(event, shortcuts["editor.previous"])) {
       event.preventDefault();
       void navigate(-1);
@@ -374,6 +394,11 @@ export function StringEditor({
   const sourceTokenCounts = countTokens(row.source);
   const valueTokenCounts = countTokens(value);
   const issues = validate(row.source, value, row.targetPresent);
+  const blockingTokenIssues = issues.filter(
+    (issue) =>
+      issue.severity === "error" &&
+      (issue.ruleId === "token-missing" || issue.ruleId === "token-added"),
+  );
   const shownStatus = effectiveStatus();
   const glossaryMatches = matchGlossary(row.source, glossary);
 
@@ -527,11 +552,33 @@ export function StringEditor({
           )}
         </div>
 
+        {pendingSave && (
+          <div className="editor__token-confirm" role="alert">
+            <div>
+              <strong>This translation has token errors</strong>
+              <span>
+                It may display incorrectly or break dialogue in-game. Save it
+                anyway?
+              </span>
+            </div>
+            <button type="button" onClick={() => setPendingSave(null)}>
+              Go back
+            </button>
+            <button
+              type="button"
+              className="editor__save-anyway"
+              onClick={() => void persistConfirmed(pendingSave, true)}
+            >
+              Save anyway
+            </button>
+          </div>
+        )}
+
         <footer className="editor__footer">
           <button
             type="button"
             className="editor__save"
-            onClick={saveAndNext}
+            onClick={() => requestConfirmedSave("next")}
             disabled={saving}
             title={`Confirm this string and jump to the next one (${displayShortcut(shortcuts["editor.saveNext"])})`}
           >
@@ -540,7 +587,7 @@ export function StringEditor({
           </button>
           <button
             type="button"
-            onClick={save}
+            onClick={() => requestConfirmedSave("close")}
             disabled={saving}
             title={`Save and close (${displayShortcut(shortcuts["editor.save"])})`}
           >

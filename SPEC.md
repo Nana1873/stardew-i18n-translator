@@ -145,9 +145,12 @@ The app uses four string states:
 Validation protects runtime-sensitive SMAPI, Content Patcher, dialogue, mail,
 placeholder, and formatting tokens.
 
-Token errors identify missing or added protected values and block only the
-affected strings from export. Review warnings, such as punctuation or newline
-differences, do not block export.
+Token errors identify missing or added protected values and block export by
+default. When a translator explicitly chooses **Save anyway** for a string, the
+accepted mismatch no longer blocks direct export or translation-package ZIPs.
+The acceptance applies only to that saved source revision; editing the target
+or a changed English source requires confirmation again. Review warnings, such
+as punctuation or newline differences, do not block export.
 
 Untranslated strings do not block export. They are omitted so SMAPI can fall
 back to `default.json`.

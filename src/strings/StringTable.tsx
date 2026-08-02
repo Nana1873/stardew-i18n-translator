@@ -379,7 +379,12 @@ export function StringTable({
     });
   }
 
-  async function saveRow(index: number, target: string, status: StringStatus) {
+  async function saveRow(
+    index: number,
+    target: string,
+    status: StringStatus,
+    tokenMismatchAccepted: boolean,
+  ) {
     const row = data[index];
     if (!row) return;
     await saveString(
@@ -389,9 +394,18 @@ export function StringTable({
       target,
       status,
       row.source,
+      tokenMismatchAccepted,
     );
     const next = data.map((r, i) =>
-      i === index ? { ...r, target, status, targetPresent: true } : r,
+      i === index
+        ? {
+            ...r,
+            target,
+            status,
+            targetPresent: true,
+            tokenMismatchAccepted,
+          }
+        : r,
     );
     setRows(next);
     onCountsChange?.(countTranslated(next), countByStatus(next));
@@ -762,7 +776,9 @@ export function StringTable({
           }
           glossary={glossary}
           onTranslate={onTranslate}
-          onSave={(value, status) => saveRow(editingIndex, value, status)}
+          onSave={(value, status, tokenMismatchAccepted) =>
+            saveRow(editingIndex, value, status, tokenMismatchAccepted)
+          }
           onClose={() => setEditorSession(null)}
           onNavigate={(delta) =>
             setEditorSession((current) => {

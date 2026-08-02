@@ -17,6 +17,7 @@ function row(overrides: Partial<EditorRow> = {}): EditorRow {
     file: "i18n",
     targetPresent: true,
     status: "translated",
+    tokenMismatchAccepted: false,
     ...overrides,
   };
 }
@@ -33,6 +34,7 @@ function renderEditor(
   onSave: (
     value: string,
     status: EditorRow["status"],
+    tokenMismatchAccepted: boolean,
   ) => Promise<void> | void = vi.fn(),
 ) {
   const onClose = vi.fn();
@@ -88,7 +90,7 @@ describe("StringEditor", () => {
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "F2" });
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
-    expect(onSave).toHaveBeenCalledWith("Hello", "translated");
+    expect(onSave).toHaveBeenCalledWith("Hello", "translated", false);
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
   });
 
@@ -109,7 +111,7 @@ describe("StringEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
@@ -141,7 +143,7 @@ describe("StringEditor", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
-    expect(onSave).toHaveBeenCalledWith("Hallo Welt", "review-needed");
+    expect(onSave).toHaveBeenCalledWith("Hallo Welt", "review-needed", false);
   });
 
   it("passes the row section to local AI translation", async () => {
@@ -172,7 +174,7 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /Reset/ }));
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
-    expect(onSave).toHaveBeenCalledWith("", "untranslated");
+    expect(onSave).toHaveBeenCalledWith("", "untranslated", false);
   });
 
   it("Save & next confirms the string and jumps to the next one", async () => {
@@ -182,9 +184,66 @@ describe("StringEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
-    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit confirmation before accepting token errors", async () => {
+    const { onSave, onNavigate } = renderEditor({
+      source: "What happened?$8",
+      target: "Was ist passiert?$7",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(
+      screen.getByText("This translation has token errors"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/break dialogue in-game/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    expect(onSave).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      "Was ist passiert?$7",
+      "translated",
+      true,
+    );
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
+  });
+
+  it("reuses an accepted mismatch until the translation is edited", async () => {
+    const { onSave } = renderEditor({
+      source: "What happened?$8",
+      target: "Was ist passiert?$7",
+      tokenMismatchAccepted: true,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      "Was ist passiert?$7",
+      "translated",
+      true,
+    );
+    expect(
+      screen.queryByText("This translation has token errors"),
+    ).not.toBeInTheDocument();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+    );
+    const field = screen.getByLabelText("Translation");
+    fireEvent.change(field, { target: { value: "Was geschah?$7" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      screen.getByText("This translation has token errors"),
+    ).toBeInTheDocument();
   });
 
   it("Save & next on the last string closes instead of navigating", async () => {
@@ -195,7 +254,7 @@ describe("StringEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
-    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     expect(onNavigate).not.toHaveBeenCalled();
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
@@ -220,7 +279,7 @@ describe("StringEditor", () => {
     expect(onSave).not.toHaveBeenCalled();
 
     fireEvent.keyDown(window, { key: "s", ctrlKey: true });
-    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 
@@ -238,7 +297,7 @@ describe("StringEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
-    expect(onSave).toHaveBeenCalledWith("Hallo", "translated");
+    expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     expect(onNavigate).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: /Save & next/ })).toBeDisabled();
 

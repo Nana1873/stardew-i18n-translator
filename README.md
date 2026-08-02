@@ -79,7 +79,9 @@ AI suggestions always enter the review queue. They are never treated as finished
 translations automatically.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
-English source. Blocking token mismatches are caught before files are written.
+English source. Blocking token mismatches are caught before files are written;
+an intentional per-string mismatch can be explicitly accepted with **Save
+anyway** during review.
 
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 

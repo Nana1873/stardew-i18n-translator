@@ -484,6 +484,8 @@ pub struct StringRow {
     pub target_present: bool,
     /// untranslated | translated | review-needed | outdated (v1.5 model, SPEC §9)
     pub status: String,
+    /// The translator explicitly accepted the current protected-token mismatch.
+    pub token_mismatch_accepted: bool,
     /// Section this key belongs to — the nearest standalone `//` comment line
     /// above it in `default.json` (v1.5, SPEC §7.4). None = no section.
     pub section: Option<String>,
@@ -521,12 +523,19 @@ pub fn load_strings_checked(
             let source_text = value_to_text(value);
             let (effective_target, status) =
                 resolve_string(&source_text, target.get(key), state, relative_dir, key);
+            let token_mismatch_accepted = state
+                .get(&translations::entry_key(relative_dir, key))
+                .is_some_and(|stored| {
+                    stored.status == translations::TOKEN_MISMATCH_ACCEPTED_STATUS
+                        && stored.source_hash == translations::source_hash(&source_text)
+                });
             StringRow {
                 key: key.clone(),
                 source: source_text,
                 target: effective_target,
                 target_present: target.contains(key),
                 status,
+                token_mismatch_accepted,
                 section: sections.get(&folded_key(key)).cloned(),
             }
         })
@@ -1583,6 +1592,38 @@ mod tests {
         assert_eq!(rows[0].status, "outdated");
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn token_mismatch_acceptance_only_applies_to_the_saved_source_revision() {
+        let root = crate::test_support::temp_dir("accepted-token-revision");
+        let i18n = root.join("i18n");
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        write(&default_path, r#"{"k":"Hello$8"}"#);
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id").unwrap();
+
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "translated");
+        assert!(rows[0].token_mismatch_accepted);
+
+        write(&default_path, r#"{"k":"Hello again$8"}"#);
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "outdated");
+        assert!(!rows[0].token_mismatch_accepted);
+
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

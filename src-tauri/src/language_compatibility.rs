@@ -342,6 +342,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
                 target: String::new(),
                 target_present: false,
                 status: "untranslated".to_string(),
+                token_mismatch_accepted: false,
                 section: Some("NPC dialogue".to_string()),
             }],
         );

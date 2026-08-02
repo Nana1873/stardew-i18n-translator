@@ -125,6 +125,8 @@ export interface StringRow {
   /** Whether the key exists in the target file (distinguishes "" from absent). */
   targetPresent: boolean;
   status: StringStatus;
+  /** The translator explicitly accepted this exact protected-token mismatch. */
+  tokenMismatchAccepted: boolean;
   /** Section this key belongs to — the nearest standalone `//` comment line
    * above it in default.json (SPEC §7.4); null/absent = no section. */
   section?: string | null;
@@ -151,13 +153,18 @@ export function saveString(
   target: string,
   status: StringStatus,
   source: string,
+  tokenMismatchAccepted = false,
 ): Promise<void> {
+  const storedStatus =
+    tokenMismatchAccepted && status === "translated"
+      ? "translated-token-mismatch-accepted"
+      : status;
   return invoke<void>("save_string", {
     modUniqueId,
     relativeDir,
     key,
     target,
-    status,
+    status: storedStatus,
     source,
   });
 }
