@@ -54,6 +54,11 @@ try {
         throw "Documentation and version checks failed."
     }
 
+    corepack pnpm audit --prod
+    if ($LASTEXITCODE -ne 0) {
+        throw "Production JavaScript dependency audit failed."
+    }
+
     cargo audit --file (Join-Path $repoRoot "src-tauri\Cargo.lock")
     if ($LASTEXITCODE -ne 0) {
         throw "Rust dependency audit failed."

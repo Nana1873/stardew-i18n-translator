@@ -45,12 +45,13 @@ falls back to GitHub-generated notes. It never combines both.
    Update `CHANGELOG.md` and, when useful, add the concise curated release file
    described above.
 
-2. Run the complete frontend, documentation, and Rust checks:
+2. Run the complete frontend, documentation, dependency, and Rust checks:
 
    ```powershell
    corepack pnpm exec tsc --noEmit
    corepack pnpm test
    corepack pnpm check:docs
+   corepack pnpm audit --prod
 
    Push-Location src-tauri
    cargo fmt --check
@@ -100,6 +101,7 @@ powershell -File scripts/create-release.ps1 `
 
 - requires a clean checkout whose `HEAD` matches current `origin/main`;
 - runs the documentation and synchronized-version checks;
+- rejects production JavaScript dependencies with known vulnerabilities;
 - rejects Rust dependencies with known security vulnerabilities;
 - verifies the ZIP name and exact two-file layout;
 - refuses conflicting local or remote tags and existing releases;
