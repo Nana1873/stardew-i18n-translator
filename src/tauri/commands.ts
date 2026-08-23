@@ -27,10 +27,12 @@ export interface AppSettings {
   modsPath: string | null;
   sourceLang: string;
   targetLang: string | null;
-  /** Optional local-LLM connection (M6); null until AI translation is set up. */
+  /** Optional local-LLM connection; null until AI translation is set up. */
   llm?: LlmSettings | null;
-  /** User overrides for the v1.1 keyboard shortcut catalog. */
+  /** User overrides for the keyboard shortcut catalog. */
   shortcuts?: ShortcutSettings;
+  /** Dashboard resume history stored in portable settings. */
+  lastOpened?: Record<string, number>;
   /** Whether rotating local diagnostic logs are written. Defaults to true. */
   diagnosticLogging?: boolean;
 }
@@ -107,15 +109,15 @@ export function scanMods(
   return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
 }
 
-/** v1.5 status model (SPEC §9): 4 statuses. `not-translatable` was removed —
- * keeping a string in English is now an explicit identical translation
+/** Current status model (SPEC §9). Legacy `not-translatable` values migrate
+ * away because keeping a string in English is now an explicit identical translation
  * ("Keep original"), so outdated detection covers those strings too. The
  * backend migrates legacy stored values on load. */
 export type StringStatus =
   | "untranslated"
   | "translated"
   | "outdated"
-  // AI suggestion (M6 local LLM) awaiting human review; confirmed → translated.
+  // Local-AI suggestion awaiting human review; confirmed -> translated.
   | "review-needed";
 
 export interface StringRow {
@@ -128,7 +130,7 @@ export interface StringRow {
   /** The translator explicitly accepted this exact protected-token mismatch. */
   tokenMismatchAccepted: boolean;
   /** Section this key belongs to — the nearest standalone `//` comment line
-   * above it in default.json (SPEC §7.4); null/absent = no section. */
+   * above it in default.json (SPEC §7); null/absent = no section. */
   section?: string | null;
 }
 
@@ -338,7 +340,7 @@ export function buildTranslationZip(
   });
 }
 
-/** One string of an external LLM batch export (M4). */
+/** One string of an external LLM batch export. */
 export interface LlmBatchItem {
   relativeDir: string;
   key: string;
@@ -352,7 +354,7 @@ export interface LlmExportOutcome {
 
 /**
  * Write the selected strings as an external LLM translation batch
- * (M4, SPEC §11). The backend opens a save dialog; resolves null on cancel.
+ * (SPEC §11). The backend opens a save dialog; resolves null on cancel.
  */
 export function exportLlmBatch(
   modUniqueId: string,
@@ -371,23 +373,13 @@ export interface LlmImportSummary {
   skippedTranslated: number;
   /** Unknown key/directory, non-string or empty value. */
   unmatched: number;
-  /** Imported, but missing a protected token (validation flags them). */
-  tokenIssues: number;
-  /** The keys behind tokenIssues — searchable in the table. */
-  tokenIssueKeys: string[];
-  /** Structured problem details used for exact result-tray navigation. */
-  tokenIssueEntries?: Array<{
-    relativeDir: string;
-    key: string;
-    reason: string;
-  }>;
   /** Imported, but identical to the English source. */
   identicalToSource: number;
   totalInFile: number;
 }
 
 /**
- * Import a translated LLM batch/result file for one mod (M4). The
+ * Import a translated LLM batch/result file for one mod. The
  * backend opens a file picker; resolves null on cancel.
  */
 export function importLlmBatch(
@@ -419,7 +411,7 @@ export type GlossarySource = "official" | "communityPack";
 export interface GlossaryInfo {
   targetLang: string;
   termCount: number;
-  /** Provenance of the glossary; absent on caches written before #163. */
+  /** Provenance of the glossary; absent on older caches. */
   source?: GlossarySource;
   /** The community pack's display name, when `source` is `communityPack`. */
   packName?: string;
@@ -437,7 +429,7 @@ export interface GlossaryStatus {
   outdatedCache: boolean;
   /**
    * For a game-unsupported language, whether an installed community language pack
-   * was detected that can supply a glossary (#163). Always false for supported
+   * was detected that can supply a glossary. Always false for supported
    * languages (they build from official content).
    */
   packAvailable: boolean;
@@ -498,7 +490,7 @@ export function loadGlossary(targetLang: string): Promise<Glossary | null> {
 }
 
 /**
- * List models from an OpenAI-compatible local server (M6). Doubles as the
+ * List models from an OpenAI-compatible local server. Doubles as the
  * "Test connection" probe — resolving means the server is reachable.
  */
 export function llmModels(baseUrl: string): Promise<string[]> {
@@ -514,7 +506,7 @@ export interface TranslationResult {
 }
 
 /**
- * Translate one source string via the configured local LLM (M6). Injects
+ * Translate one source string via the configured local LLM. Injects
  * matching glossary terms and validates protected tokens with one retry.
  */
 export function translateString(
@@ -543,7 +535,7 @@ export function openUrl(url: string): Promise<void> {
 
 /**
  * Forward a caught frontend error into the backend diagnostic log file
- * (`Data/logs`, v1.1.1). Fire-and-forget: it never throws, so logging can't
+ * (`data/logs`). Fire-and-forget: it never throws, so logging can't
  * mask the original error or break in a browser preview / test where the Tauri
  * bridge is absent.
  */
@@ -554,7 +546,7 @@ export function logFrontendError(context: string, message: string): void {
 }
 
 /**
- * Open the portable `Data/logs/` folder in the OS file manager (v1.1.1) so the
+ * Open the portable `data/logs/` folder in the OS file manager so the
  * user can attach the current log file to a GitHub bug report.
  */
 export function openLogsDir(): Promise<void> {

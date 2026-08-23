@@ -23,7 +23,7 @@ const exportData: ResultTrayData = {
   collapsed: false,
   pending: false,
   error: null,
-  modsWritten: null,
+  modsChanged: null,
   retry: { kind: "selected", modUniqueId: "a.b" },
   result: {
     files: [],
@@ -153,6 +153,37 @@ describe("ResultTray", () => {
       expect(writeText).toHaveBeenCalledWith(LLM_BATCH_HANDOFF_PROMPT),
     );
     expect(screen.getByRole("button", { name: "Copied" })).toBeInTheDocument();
+  });
+
+  it("summarizes imported batches without unreachable token counters", () => {
+    render(
+      <ResultTray
+        data={{
+          kind: "import",
+          title: "Test Mod",
+          collapsed: false,
+          pending: false,
+          error: null,
+          summary: {
+            imported: 2,
+            skippedTranslated: 1,
+            unmatched: 3,
+            identicalToSource: 1,
+            totalInFile: 7,
+          },
+          problems: [],
+        }}
+        onToggle={vi.fn()}
+        onClose={vi.fn()}
+        onInspect={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
+
+    expect(
+      screen.getByRole("complementary", { name: "Operation result" }),
+    ).toHaveTextContent("Imported 2 of 7 strings");
+    expect(screen.queryByText(/protected-token problems/)).toBeNull();
   });
 
   it("uses compact action styling for ZIP follow-up actions", () => {

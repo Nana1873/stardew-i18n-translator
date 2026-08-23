@@ -1,11 +1,11 @@
 /**
- * Mod list tree — M1 / Issue 6 (SPEC §7.3).
+ * Mod list tree (SPEC §7).
  *
  * Mods grouped by package (top-level Mods subfolder), SSE-AT style. A package
  * with one component renders as a single flat row; a package with several
  * (e.g. Ridgeside's [CP]/[CC]/SMAPI) renders as an expandable parent whose
- * children are the components. Status/Fortschritt are placeholders until string
- * parsing (Issue 5) lands.
+ * children are the components. Status and progress come from the scanned i18n
+ * files and portable translation state.
  */
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -77,7 +77,7 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       status: deriveStatus(totalKeys, translatedKeys),
     };
   });
-  // Packages A→Z (no priority/load order — flat alphabetical, SPEC §7.3).
+  // Packages A→Z (no priority/load order — flat alphabetical, SPEC §7).
   groups.sort((a, b) => byName(groupLabel(a), groupLabel(b)));
   return groups;
 }

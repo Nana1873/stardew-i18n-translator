@@ -1,5 +1,5 @@
 /**
- * String editor dialog — M2 / Issue 8 (SPEC §7.5).
+ * String editor dialog (SPEC §§7-10).
  *
  * Opened by double-clicking a string row. Source on the left (read-only),
  * editable target on the right, with prev/next navigation, live validation, a
@@ -10,7 +10,7 @@
  * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
  * fast path) · Esc cancel · Alt+←/→ prev/next · F2/F3 keep original (copies
  * the source — an explicit identical translation, SPEC §9) · F4 reset (clears
- * the field) · Ctrl+F5 translate with the local AI (M6).
+ * the field) · Ctrl+F5 translate with the configured local AI.
  */
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -56,7 +56,7 @@ interface StringEditorProps {
   reviewProgress?: { current: number; total: number };
   /** Official game glossary (typed entries), if built. */
   glossary?: GlossaryEntry[] | null;
-  /** Translate the source via the local AI (M6); absent when no AI is configured. */
+  /** Translate the source via the local AI; absent when no AI is configured. */
   onTranslate?: (
     source: string,
     section?: string | null,
@@ -107,13 +107,24 @@ function matchGlossary(
   for (const entry of sorted) {
     const term = entry.source;
     if (term.length < 3) continue;
-    const idx = source.indexOf(term);
-    if (idx === -1) continue;
-    const end = idx + term.length;
-    if (isWord(source[idx - 1]) || isWord(source[end])) continue;
-    // Skip a term overlapping a span already claimed by a longer one.
-    if (occupied.some(([s, e]) => idx < e && s < end)) continue;
-    occupied.push([idx, end]);
+    let searchFrom = 0;
+    let match: [number, number] | null = null;
+    while (searchFrom <= source.length - term.length) {
+      const idx = source.indexOf(term, searchFrom);
+      if (idx === -1) break;
+      const end = idx + term.length;
+      const wholeWord = !isWord(source[idx - 1]) && !isWord(source[end]);
+      const overlaps = occupied.some(
+        ([start, stop]) => idx < stop && start < end,
+      );
+      if (wholeWord && !overlaps) {
+        match = [idx, end];
+        break;
+      }
+      searchFrom = idx + 1;
+    }
+    if (!match) continue;
+    occupied.push(match);
     out.push(entry);
     if (out.length >= 15) break;
   }
@@ -152,7 +163,7 @@ export function StringEditor({
   shortcuts = DEFAULT_SHORTCUTS,
 }: StringEditorProps) {
   const [value, setValue] = useState(row.target);
-  // True while the current target is an unreviewed AI suggestion (M6). Cleared
+  // True while the current target is an unreviewed AI suggestion. Cleared
   // when the user edits the field; confirmed away by Save → translated.
   const [reviewNeeded, setReviewNeeded] = useState(
     row.status === "review-needed",
@@ -456,7 +467,7 @@ export function StringEditor({
           </div>
         )}
 
-        {/* Reserved slots (SPEC §7.5): tokens + glossary rows exist on every
+        {/* Reserved slots (SPEC §§5, 7 and 10): tokens + glossary rows exist on every
             string — empty-state text when N/A — so the panes and the action
             bar never move during a Save & next run. */}
         <div className="editor__slot">

@@ -78,14 +78,6 @@ fn source_snapshot<'a>(entries: impl Iterator<Item = (&'a str, &'a str, &'a str)
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
-pub struct ImportProblem {
-    pub relative_dir: String,
-    pub key: String,
-    pub reason: String,
-}
-
-#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
 pub struct ImportSummary {
     /// Values staged as `review-needed`.
     pub imported: usize,
@@ -93,10 +85,6 @@ pub struct ImportSummary {
     pub skipped_translated: usize,
     /// Empty translation values intentionally skipped.
     pub unmatched: usize,
-    /// Always zero on success: any token problem rejects the complete import.
-    pub token_issues: usize,
-    pub token_issue_keys: Vec<String>,
-    pub token_issue_entries: Vec<ImportProblem>,
     pub identical_to_source: usize,
     pub total_in_file: usize,
 }

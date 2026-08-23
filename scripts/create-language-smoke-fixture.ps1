@@ -29,6 +29,29 @@ function Write-Utf8Json {
     [System.IO.File]::WriteAllText($Path, "$json`n", $utf8NoBom)
 }
 
+function Get-SourceSnapshot {
+    param(
+        [string]$RelativeDirectory,
+        [string]$Key,
+        [string]$Source
+    )
+
+    # Convert each scalar separately so Windows PowerShell 5.1 and PowerShell 7
+    # produce the same array-of-tuples JSON that serde_json hashes in the app.
+    $parts = @($RelativeDirectory, $Key, $Source) | ForEach-Object {
+        ConvertTo-Json -InputObject $_ -Compress
+    }
+    $canonicalJson = "[[" + ($parts -join ",") + "]]"
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($canonicalJson)
+        return -join ($sha256.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") })
+    }
+    finally {
+        $sha256.Dispose()
+    }
+}
+
 Write-Utf8Json (Join-Path $modPath "manifest.json") ([ordered]@{
     Name = "Synthetic Language Test"
     Author = "Stardew i18n Translator"
@@ -60,7 +83,11 @@ $translations = [ordered]@{
     "fi.json" = "SGVpIHt7UGxheWVyTmFtZX19LCBoeXbDpMOkIHDDpGl2w6TDpCE="
     "nl.json" = "SGFsbG8ge3tQbGF5ZXJOYW1lfX0sIGZpam5lIGRhZyE="
     "cs.json" = "QWhvaiB7e1BsYXllck5hbWV9fSwga3LDoXNuw70gZGVuIQ=="
+    "th.json" = "4Liq4Lin4Lix4Liq4LiU4Li1IHt7UGxheWVyTmFtZX19ISDguKfguLHguJnguJnguLXguYnguK3guLLguIHguLLguKjguJTguLU="
 }
+
+$sourceWeather = Decode-Utf8 "Q2Fmw6kgd2VhdGhlcg=="
+$sourceSnapshot = Get-SourceSnapshot "i18n" "weather" $sourceWeather
 
 foreach ($entry in $translations.GetEnumerator()) {
     $translation = Decode-Utf8 $entry.Value
@@ -73,8 +100,13 @@ foreach ($entry in $translations.GetEnumerator()) {
         $languageCode = "pt"
     }
     Write-Utf8Json (Join-Path $resultsPath "$languageCode-result.json") ([ordered]@{
-        format = "stardew-translator-llm-result"
-        version = 1
+        format = "stardew-translator-llm-batch"
+        version = 2
+        metadata = [ordered]@{
+            modUniqueId = "Nana1873.LanguageSmoke"
+            targetLang = $languageCode
+            sourceSnapshot = $sourceSnapshot
+        }
         files = [ordered]@{
             i18n = [ordered]@{
                 weather = Decode-Utf8 "Q2Fmw6k="

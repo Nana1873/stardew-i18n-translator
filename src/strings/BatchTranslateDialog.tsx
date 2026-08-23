@@ -1,5 +1,5 @@
 /**
- * Batch local-AI translation dialog — M6 / Issue 17 (SPEC §17 M6).
+ * Batch local-AI translation dialog (SPEC §17).
  *
  * Translates the given strings serially via the local LLM (the local GPU is
  * the bottleneck — no concurrency), saving each result immediately as

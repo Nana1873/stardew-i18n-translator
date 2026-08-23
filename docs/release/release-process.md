@@ -48,7 +48,7 @@ falls back to GitHub-generated notes. It never combines both.
 2. Run the complete frontend, documentation, dependency, and Rust checks:
 
    ```powershell
-   corepack pnpm exec tsc --noEmit
+   corepack pnpm typecheck
    corepack pnpm test
    corepack pnpm check:docs
    corepack pnpm audit --prod

@@ -68,7 +68,7 @@ describe("ModList", () => {
       screen.getByRole("button", { name: "Collapse" }),
     ).toBeInTheDocument();
     // The real Nexus id is surfaced both on the parent (rolled up) and on the
-    // [CP] child that owns it (SPEC §7.3).
+    // [CP] child that owns it (SPEC §7).
     expect(screen.getAllByRole("link", { name: "7286" })).toHaveLength(2);
   });
 

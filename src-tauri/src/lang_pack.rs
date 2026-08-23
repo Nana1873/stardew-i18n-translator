@@ -1,4 +1,4 @@
-//! Community language-pack detection — Issue #163.
+//! Community language-pack detection.
 //!
 //! A Stardew "language pack" is a Content Patcher content pack that registers an
 //! additional in-game language (`Data/AdditionalLanguages` → `LanguageCode`) and
@@ -374,7 +374,7 @@ fn targets(change: &Value, target: &str) -> bool {
 }
 
 fn read_json(path: &Path) -> Option<Value> {
-    let body = std::fs::read_to_string(path).ok()?;
+    let body = crate::input_limits::read_json_text(path).ok()?;
     scanner::parse_json_lenient(&body).ok()
 }
 

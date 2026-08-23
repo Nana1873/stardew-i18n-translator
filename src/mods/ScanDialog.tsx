@@ -1,5 +1,5 @@
 /**
- * Scan dialog — M1 (SPEC §7.2).
+ * Mod scan progress and result dialog (SPEC §6).
  *
  * Shown while a scan runs and afterwards when there is something to review.
  * During the scan it shows a spinner; on completion it summarizes the result

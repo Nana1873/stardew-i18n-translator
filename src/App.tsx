@@ -1,9 +1,9 @@
 /**
- * Application shell — Milestone 1.
+ * Application shell.
  *
- * Toolbar + two-panel layout (SPEC §7.3): left = mod list tree, right = string
- * table (still a placeholder until M2). The Setup Wizard opens on first launch
- * and via Settings. Scan runs the Rust scanner and fills the tree.
+ * Dashboard plus toolbar and two-panel workspace (SPEC §7): left = mod list,
+ * right = string table. The Setup Wizard opens on first launch and via
+ * Settings. Scans run in the Rust backend and populate the workspace.
  */
 import {
   type MouseEvent as ReactMouseEvent,
@@ -77,6 +77,43 @@ function setupComplete(settings: AppSettings): boolean {
   );
 }
 
+const LEGACY_LAST_OPENED_KEY = "sit:lastOpened";
+
+function readLegacyLastOpened(): {
+  found: boolean;
+  entries: Record<string, number>;
+} {
+  try {
+    const raw = localStorage.getItem(LEGACY_LAST_OPENED_KEY);
+    if (raw === null) return { found: false, entries: {} };
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { found: true, entries: {} };
+    }
+    const entries = Object.fromEntries(
+      Object.entries(parsed).filter(
+        ([id, timestamp]) =>
+          id.length > 0 &&
+          typeof timestamp === "number" &&
+          Number.isSafeInteger(timestamp) &&
+          timestamp >= 0,
+      ),
+    );
+    return { found: true, entries };
+  } catch {
+    return { found: true, entries: {} };
+  }
+}
+
+function clearLegacyLastOpened() {
+  try {
+    localStorage.removeItem(LEGACY_LAST_OPENED_KEY);
+  } catch {
+    // A locked-down WebView may deny legacy storage access; portable state is
+    // still authoritative and remains usable.
+  }
+}
+
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -90,20 +127,12 @@ export function App() {
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(460);
-  // Dashboard home vs. two-panel work view (SPEC §7.0 rollout ④). The brand
-  // button is the only way back home — the toolbar is the only nav chrome.
+  // Dashboard home vs. two-panel work view (SPEC §7). The toolbar button is
+  // the only navigation between both views.
   const [view, setView] = useState<"home" | "work">("home");
-  // modId → epoch ms of the last open, persisted so "continue where you left
-  // off" survives restarts. localStorage is fine — it's a convenience cache.
-  const [lastOpened, setLastOpened] = useState<Record<string, number>>(() => {
-    try {
-      return JSON.parse(
-        localStorage.getItem("sit:lastOpened") ?? "{}",
-      ) as Record<string, number>;
-    } catch {
-      return {};
-    }
-  });
+  // modId -> epoch ms of the last open. This is persisted with the portable
+  // settings so resume cards follow the executable and its data directory.
+  const [lastOpened, setLastOpened] = useState<Record<string, number>>({});
 
   const [exporting, setExporting] = useState(false);
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
@@ -140,7 +169,7 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
   const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
 
-  // External LLM batch import (M4): persistent result tray + reload trigger.
+  // External LLM batch import: persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
   const [dropPaths, setDropPaths] = useState<string[] | null>(null);
 
@@ -182,11 +211,33 @@ export function App() {
     loadSettings()
       .then((loadedSettings) => {
         if (!active) return;
-        setSettings(loadedSettings);
-        const complete = setupComplete(loadedSettings);
+        const portableLastOpened = loadedSettings.lastOpened ?? {};
+        const legacy = readLegacyLastOpened();
+        const migrateLegacy =
+          Object.keys(portableLastOpened).length === 0 &&
+          Object.keys(legacy.entries).length > 0;
+        const effectiveSettings = migrateLegacy
+          ? { ...loadedSettings, lastOpened: legacy.entries }
+          : loadedSettings;
+
+        setSettings(effectiveSettings);
+        setLastOpened(effectiveSettings.lastOpened ?? {});
+        if (legacy.found) {
+          if (migrateLegacy) {
+            saveSettings(effectiveSettings)
+              .then(clearLegacyLastOpened)
+              .catch((error) =>
+                logFrontendError("migrateLastOpened", String(error)),
+              );
+          } else {
+            clearLegacyLastOpened();
+          }
+        }
+
+        const complete = setupComplete(effectiveSettings);
         setWizardOpen(!complete);
-        refreshGlossary(loadedSettings.targetLang); // load the active language's cache
-        if (complete) void runScan(loadedSettings, false, () => active);
+        refreshGlossary(effectiveSettings.targetLang);
+        if (complete) void runScan(effectiveSettings, false, () => active);
       })
       .catch((error) => {
         logFrontendError("loadSettings", String(error));
@@ -207,6 +258,7 @@ export function App() {
       ...next,
       llm: settings?.llm ?? null,
       shortcuts: settings?.shortcuts ?? {},
+      lastOpened: settings?.lastOpened ?? {},
       diagnosticLogging: settings?.diagnosticLogging ?? true,
     };
     await persist(merged);
@@ -339,7 +391,6 @@ export function App() {
         null,
         "Select a mod before dropping an LLM batch result.",
         "LLM batch",
-        null,
       );
       return;
     }
@@ -348,7 +399,6 @@ export function App() {
         null,
         "Drop exactly one LLM batch/result JSON file.",
         mod.name,
-        mod,
       );
       return;
     }
@@ -358,7 +408,6 @@ export function App() {
         null,
         "Only JSON batch/result files can be imported.",
         mod.name,
-        mod,
       );
       return;
     }
@@ -368,11 +417,11 @@ export function App() {
         filesOf(mod),
         path,
       );
-      showImportResult(summary, null, mod.name, mod);
+      showImportResult(summary, null, mod.name);
       setReloadToken((token) => token + 1);
     } catch (error) {
       logFrontendError("importLlmBatchPath", String(error));
-      showImportResult(null, String(error), mod.name, mod);
+      showImportResult(null, String(error), mod.name);
     }
   }
 
@@ -380,15 +429,15 @@ export function App() {
   function openMod(uniqueId: string) {
     setSelectedModId(uniqueId);
     setView("work");
-    setLastOpened((prev) => {
-      const next = { ...prev, [uniqueId]: Date.now() };
-      try {
-        localStorage.setItem("sit:lastOpened", JSON.stringify(next));
-      } catch {
-        /* cache only */
-      }
-      return next;
-    });
+    const nextLastOpened = { ...lastOpened, [uniqueId]: Date.now() };
+    setLastOpened(nextLastOpened);
+    if (settings) {
+      const nextSettings = { ...settings, lastOpened: nextLastOpened };
+      setSettings(nextSettings);
+      void saveSettings(nextSettings).catch((error) =>
+        logFrontendError("saveLastOpened", String(error)),
+      );
+    }
   }
 
   /** Drop the current mod selection to return to the cross-mod global search. */
@@ -444,7 +493,7 @@ export function App() {
     settings?.targetLang ??
     "the target language";
 
-  // A local-AI translate callback, only when a model is configured (M6). Passed
+  // A local-AI translate callback, only when a model is configured. Passed
   // to the editor; absent → the editor shows a "configure AI" hint on Ctrl+F5.
   const llm = settings?.llm;
   const aiReady = Boolean(llm?.baseUrl && llm?.model);
@@ -461,7 +510,7 @@ export function App() {
         )
     : undefined;
 
-  // External LLM batch export (M4): needs a target language for the batch
+  // External LLM batch export: needs a target language for the batch
   // metadata/instructions; absent → the menu item explains why it's disabled.
   const targetLang = settings?.targetLang;
   const llmBatchExport = targetLang
@@ -499,7 +548,7 @@ export function App() {
       }
     : undefined;
 
-  /** Import a translated external LLM batch for the selected mod (M4). */
+  /** Import a translated external LLM batch for the selected mod. */
   async function handleImportBatch() {
     if (!selectedMod || !targetLang) return;
     try {
@@ -508,12 +557,12 @@ export function App() {
         filesOf(selectedMod),
       );
       if (!summary) return; // picker cancelled
-      showImportResult(summary, null, selectedMod.name, selectedMod);
+      showImportResult(summary, null, selectedMod.name);
       // State on disk changed behind the table's back — force a reload.
       setReloadToken((token) => token + 1);
     } catch (error) {
       logFrontendError("importLlmBatch", String(error));
-      showImportResult(null, String(error), selectedMod.name, selectedMod);
+      showImportResult(null, String(error), selectedMod.name);
     }
   }
 
@@ -696,34 +745,10 @@ export function App() {
     }));
   }
 
-  function importProblems(
-    summary: LlmImportSummary,
-    mod: ScannedMod | null,
-  ): ResultProblem[] {
-    if (!mod) return [];
-    const entries =
-      summary.tokenIssueEntries ??
-      summary.tokenIssueKeys.map((key) => ({
-        relativeDir: mod.i18nFiles[0]?.relativeDir ?? "i18n",
-        key,
-        reason: "Missing protected tokens",
-      }));
-    return entries.map((problem) => ({
-      id: problemId(mod.uniqueId, problem.relativeDir, problem.key),
-      modUniqueId: mod.uniqueId,
-      modName: mod.name,
-      relativeDir: problem.relativeDir,
-      key: problem.key,
-      reason: problem.reason,
-      resolved: false,
-    }));
-  }
-
   function showImportResult(
     summary: LlmImportSummary | null,
     error: string | null,
     title: string,
-    mod: ScannedMod | null,
   ) {
     setResultTray({
       kind: "import",
@@ -732,7 +757,7 @@ export function App() {
       pending: false,
       error,
       summary,
-      problems: summary ? importProblems(summary, mod) : [],
+      problems: [],
     });
   }
 
@@ -748,7 +773,7 @@ export function App() {
       pending: true,
       error: null,
       result: null,
-      modsWritten: null,
+      modsChanged: null,
       failedMod: null,
       remainingMods: [],
       problems: [],
@@ -810,12 +835,12 @@ export function App() {
   }
 
   function markExportedTargets(modId: string, result: ExportResult) {
-    const written = new Set(
+    const targetExistence = new Map(
       result.files
-        .filter((file) => file.written)
-        .map((file) => file.relativeDir),
+        .filter((file) => file.written || file.removed)
+        .map((file) => [file.relativeDir, file.written] as const),
     );
-    if (written.size === 0) return;
+    if (targetExistence.size === 0) return;
     setScan((current) =>
       current
         ? {
@@ -824,11 +849,14 @@ export function App() {
               mod.uniqueId === modId
                 ? {
                     ...mod,
-                    i18nFiles: mod.i18nFiles.map((file) =>
-                      written.has(file.relativeDir)
-                        ? { ...file, targetExists: true }
-                        : file,
-                    ),
+                    i18nFiles: mod.i18nFiles.map((file) => {
+                      const targetExists = targetExistence.get(
+                        file.relativeDir,
+                      );
+                      return targetExists === undefined
+                        ? file
+                        : { ...file, targetExists };
+                    }),
                   }
                 : mod,
             ),
@@ -881,7 +909,7 @@ export function App() {
       totalOrphanKeys: 0,
       blocked: false,
     };
-    let modsWritten = 0;
+    let modsChanged = 0;
     let failedMod: string | null = null;
     let remainingMods: string[] = [];
     try {
@@ -911,7 +939,8 @@ export function App() {
         if (result.blocked) {
           throw new Error(`Export blocked for ${mod.name}.`);
         }
-        if (result.filesWritten > 0) modsWritten += 1;
+        if (result.filesWritten > 0 || result.filesRemoved > 0)
+          modsChanged += 1;
         failedMod = null;
         remainingMods = [];
       }
@@ -921,7 +950,7 @@ export function App() {
               ...current,
               pending: false,
               result: merged,
-              modsWritten,
+              modsChanged,
               problems: exportProblems(merged),
             }
           : current,
@@ -935,7 +964,7 @@ export function App() {
               pending: false,
               error: String(error),
               result: merged,
-              modsWritten,
+              modsChanged,
               failedMod,
               remainingMods,
               problems: exportProblems(merged),
@@ -1395,7 +1424,7 @@ function Toolbar({
       >
         {/* Toggles dashboard ⇄ work view, labelled with the destination so the
             navigation explains itself (the app name lives in the OS title bar).
-            The toolbar is the only navigation chrome (SPEC §7.8). */}
+            The toolbar is the only navigation chrome (SPEC §7). */}
         <button
           type="button"
           className="toolbar__title"
@@ -1536,7 +1565,7 @@ function Toolbar({
   );
 }
 
-/** Status filter chips above the table (SPEC §7.4): one pill per status with
+/** Status filter chips above the table (SPEC §§7 and 9): one pill per status with
  * glyph + live count, plus "All". Replaces the old toolbar dropdown. */
 function FilterChips({
   value,

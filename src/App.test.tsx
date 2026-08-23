@@ -172,7 +172,7 @@ describe("App shell", () => {
     expect(
       screen.getByRole("button", { name: /Mod list/ }),
     ).toBeInTheDocument();
-    // Landing screen is the dashboard (SPEC §7.0 rollout ④), not the panels.
+    // Landing screen is the dashboard (SPEC §7), not the panels.
     expect(screen.getByRole("main", { name: "Dashboard" })).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Mod list" })).toBeNull();
     expect(screen.queryByRole("searchbox")).toBeNull();
@@ -190,6 +190,72 @@ describe("App shell", () => {
       }),
     );
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("loads dashboard resume history from portable settings", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          lastOpened: { "a.b": Date.now() - 60_000 },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+
+    expect(await screen.findByText("Resume →")).toBeInTheDocument();
+    expect(screen.queryByText(/Nothing opened yet/)).toBeNull();
+    fireEvent.click(screen.getByText("Resume →").closest("button")!);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          lastOpened: { "a.b": expect.any(Number) },
+        }),
+      }),
+    );
+  });
+
+  it("migrates legacy resume history into portable settings once", async () => {
+    localStorage.setItem("sit:lastOpened", JSON.stringify({ "a.b": 1234 }));
+    mockConfigured(exportScan(false));
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: { ...CONFIGURED, lastOpened: { "a.b": 1234 } },
+      }),
+    );
+    await waitFor(() =>
+      expect(localStorage.getItem("sit:lastOpened")).toBeNull(),
+    );
+    expect(screen.getByText("Resume →")).toBeInTheDocument();
+  });
+
+  it("discards invalid legacy resume timestamps instead of migrating them", async () => {
+    localStorage.setItem(
+      "sit:lastOpened",
+      JSON.stringify({ fractional: 1.5, unsafe: Number.MAX_SAFE_INTEGER + 1 }),
+    );
+    mockConfigured(exportScan(false));
+
+    render(<App />);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "save_settings",
+      expect.anything(),
+    );
+    expect(localStorage.getItem("sit:lastOpened")).toBeNull();
+    expect(screen.getByText(/Nothing opened yet/)).toBeInTheDocument();
   });
 
   it("starts only one automatic scan under React StrictMode", async () => {
@@ -356,6 +422,55 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not confirm again after an export removes the target file", async () => {
+    const removedResult = {
+      ...EXPORT_RESULT,
+      files: EXPORT_RESULT.files.map((file) => ({
+        ...file,
+        written: false,
+        removed: true,
+        writtenKeys: 0,
+      })),
+      filesWritten: 0,
+      filesRemoved: 1,
+      totalWrittenKeys: 0,
+    };
+    let exports = 0;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(true));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "export_mod") {
+        exports += 1;
+        return Promise.resolve(removedResult);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Browse all mods/ }),
+    );
+    fireEvent.click(await screen.findByText("Test Mod"));
+    chooseToolbarAction("Export...", "Export to mod folder");
+    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    await waitFor(() => expect(exports).toBe(1));
+    expect(
+      screen.getByRole("complementary", { name: "Operation result" }),
+    ).toHaveTextContent("Processed 1 target file. Wrote 0 strings");
+    expect(
+      screen.getByRole("complementary", { name: "Operation result" }),
+    ).toHaveTextContent("1 empty target file removed");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
+
+    chooseToolbarAction("Export...", "Export to mod folder");
+    await waitFor(() => expect(exports).toBe(2));
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toBeNull();
+  });
+
   it("keeps Export All successes visible when a later mod fails", async () => {
     const base = exportScan(false).mods[0];
     const scan = {
@@ -391,7 +506,9 @@ describe("App shell", () => {
       name: "Operation result",
     });
     await waitFor(() => expect(tray).toHaveTextContent("Export failed"));
-    expect(tray).toHaveTextContent("Wrote 1 strings across 1 files in 1 mods");
+    expect(tray).toHaveTextContent(
+      "Processed 1 target file in 1 mod. Wrote 1 strings",
+    );
     expect(tray).toHaveTextContent("Failed at Second Mod");
     expect(tray).toHaveTextContent("Not started: Third Mod");
     expect(invokeMock).not.toHaveBeenCalledWith(
@@ -1057,8 +1174,6 @@ describe("App shell", () => {
       imported: 1,
       skippedTranslated: 0,
       unmatched: 0,
-      tokenIssues: 0,
-      tokenIssueKeys: [],
       identicalToSource: 0,
       totalInFile: 1,
     };

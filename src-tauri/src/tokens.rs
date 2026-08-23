@@ -1,4 +1,4 @@
-//! Protected-token extraction — M3 (SPEC §10).
+//! Protected-token extraction (SPEC §10).
 //!
 //! A faithful Rust port of the frontend `protectedTokens.ts`. These are the
 //! tokens a translation MUST preserve or the mod breaks at runtime (Content
@@ -102,7 +102,7 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
 
 /// The protected tokens that `target` is missing (or under-represents) relative
 /// to `source`, each listed once. Empty when nothing is missing. Used by the
-/// local-LLM translator (M6) to flag/retry a result that dropped a token.
+/// local-LLM translator to flag/retry a result that dropped a token.
 /// Soft tokens (newlines, quote delimiters) are exempt, like in [`missing_tokens`].
 pub fn missing_token_list(source: &str, target: &str) -> Vec<String> {
     let source_counts = counts(source);

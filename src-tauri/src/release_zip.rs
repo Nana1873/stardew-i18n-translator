@@ -483,6 +483,7 @@ fn serialize_json(map: &Map<String, Value>) -> Result<Vec<u8>, String> {
     let mut body = serde_json::to_string_pretty(map)
         .map_err(|error| format!("Could not serialize translation JSON: {error}"))?;
     body.push('\n');
+    crate::input_limits::ensure_json_output_size(body.len() as u64, "Release ZIP entry JSON")?;
     serde_json::from_str::<Value>(&body)
         .map_err(|error| format!("Generated invalid JSON: {error}"))?;
     Ok(body.into_bytes())

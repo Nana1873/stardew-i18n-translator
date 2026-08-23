@@ -1,5 +1,5 @@
 /**
- * Setup Wizard - M1 / Issue 3 (SPEC section 4).
+ * First-run setup wizard (SPEC §4).
  *
  * Modal, 4 steps: Stardew folder, Mods folder, languages, optional glossary.
  * The Mods-folder step is a generic folder override only, not mod-manager

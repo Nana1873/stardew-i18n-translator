@@ -1,4 +1,4 @@
-/* Design system v1.5 (SPEC §7.0, docs/design/): warm dark theme, gold brand.
+/* Application design system: warm dark theme, gold brand.
    Hard rules: status = hue + glyph + 3px row edge (never a full-row tint);
    only hover/selection tint rows; gold is brand/selection only — never a
    status; no blurred shadows inside the virtualized table. */
@@ -96,7 +96,7 @@ kbd,
   border-bottom: 1px solid var(--border);
 }
 
-/* Brand = Home button — the only navigation chrome (SPEC §7.0). */
+/* Brand = Home button — the only navigation chrome (SPEC §7). */
 .toolbar__title,
 .toolbar button.toolbar__title {
   display: inline-flex;
@@ -213,7 +213,7 @@ kbd,
   min-width: 200px;
 }
 
-/* --- Dashboard home (v1.5 rollout ④, SPEC §7.0) --- */
+/* --- Dashboard home --- */
 .dash {
   flex: 1;
   min-height: 0;
@@ -1173,7 +1173,7 @@ kbd,
   background: rgba(227, 169, 78, 0.24);
 }
 
-/* --- Selected-mod summary (placeholder until M2 string table) --- */
+/* --- Selected-mod summary --- */
 .panel__selected {
   padding: 14px 16px;
   overflow: auto;
@@ -1282,7 +1282,7 @@ kbd,
   color: var(--border);
 }
 
-/* --- Status filter chips (v1.5; replaces the toolbar dropdown) --- */
+/* --- Status filter chips --- */
 .filterchips {
   display: flex;
   align-items: center;
@@ -1486,7 +1486,7 @@ kbd,
 }
 
 /* Section divider above a run of rows sharing a `// comment` section
-   (SPEC §7.4). Non-selectable — purely orientation. */
+   (SPEC §7). Non-selectable — purely orientation. */
 .sectionrow {
   display: flex;
   align-items: center;
@@ -1576,7 +1576,7 @@ kbd,
   background: rgba(255, 255, 255, 0.09);
 }
 
-/* Footer status bar: per-status counts + keyboard hints (v1.5). */
+/* Footer status bar: per-status counts + keyboard hints. */
 .stringtable__foot {
   display: flex;
   align-items: center;
@@ -1736,7 +1736,7 @@ kbd,
 }
 
 /* Reserved slot rows (tokens, glossary): always rendered, fixed min-height —
-   the editor never changes geometry between strings (SPEC §7.5). */
+   the editor never changes geometry between strings (SPEC §7). */
 .editor__slot {
   display: grid;
   grid-template-columns: 84px 1fr;
@@ -1983,7 +1983,7 @@ kbd,
   border-color: var(--gold-hi);
 }
 
-/* Local-AI translate button + status message (M6). */
+/* Local-AI translate button + status message. */
 .editor button.editor__ai-btn {
   background: rgba(94, 196, 136, 0.14);
   color: #7fd1a3;
@@ -2613,7 +2613,7 @@ kbd,
   }
 }
 
-/* Settings dialog (SPEC §7.7 / docs/design §06): one modal, left navigation. */
+/* Settings dialog (SPEC §7 / docs/design §06): one modal, left navigation. */
 .wizard.settings {
   width: 760px;
   height: min(620px, calc(100vh - 48px));
@@ -3380,7 +3380,7 @@ kbd,
   background: var(--surface);
 }
 
-/* --- Batch AI translation dialog (M6 Issue 17) --- */
+/* --- Batch AI translation dialog --- */
 .batchdlg__bar {
   height: 8px;
   margin: 8px 0 12px;

@@ -389,6 +389,21 @@ describe("StringEditor", () => {
     expect(screen.queryByRole("button", { name: /^Ore →/ })).toBeNull();
   });
 
+  it("checks later occurrences when the first glossary match is unavailable", () => {
+    renderEditor(
+      { source: "Iridium Ore and Ore from Oreville", target: "" },
+      undefined,
+      { index: 0, total: 2 },
+      undefined,
+      [entry("Ore", "Erz", "item"), entry("Iridium Ore", "Iridiumerz", "item")],
+    );
+
+    expect(
+      screen.getByRole("button", { name: /Iridium Ore/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Ore →/ })).toBeInTheDocument();
+  });
+
   it("shows the current review-session position and progress", () => {
     renderEditor(
       {},

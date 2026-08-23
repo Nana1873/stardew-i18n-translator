@@ -1,4 +1,4 @@
-//! Official game glossary — M1 / SPEC §5.
+//! Official game and community-pack glossary (SPEC §5).
 //!
 //! The glossary is a **typed, high-confidence** dictionary of official Stardew
 //! terms — item / craftable / weapon / tool / clothing / NPC / location names
@@ -13,12 +13,11 @@
 //! assets, each restricted to the keys that hold display names and screened by a
 //! strict term-like quality gate.
 //!
-//! Data source: a **StardewXnbHack-unpacked** `Content (unpacked)/` folder
-//! (<https://github.com/Pathoschild/StardewXnbHack>). That tool deserializes
-//! XNB with the game's own code (byte-perfect, all 1.6 data models), so we never
-//! decode XNB ourselves. We read the unpacked `Strings/*.json` dictionaries —
-//! both the English base and the target-locale variant — and pair short,
-//! term-like values by key.
+//! Data sources are deliberately narrow and read-only. Installed game XNB
+//! string dictionaries are decoded directly when available; a StardewXnbHack
+//! `Content (unpacked)/Strings/*.json` tree remains the compatibility fallback.
+//! Community language packs may supply the corresponding target dictionaries.
+//! English and target values are paired by key before the quality gate runs.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -47,11 +46,11 @@ pub enum TermKind {
     Season,
 }
 
-/// Where a glossary's term pairs came from. `Official` is the StardewXnbHack
-/// English↔locale pairing for a game-supported language; `CommunityPack` is the
-/// #163 source for a game-unsupported language (English base + an installed
-/// community language pack's bundled `Strings/*`). Defaults to `Official` so
-/// caches written before this field round-trip unchanged.
+/// Where a glossary's term pairs came from. `Official` uses installed game
+/// strings (direct XNB or the unpacked JSON fallback) for a game-supported
+/// language. `CommunityPack` pairs the English game base with an installed
+/// custom-language pack's `Strings/*`. Defaults to `Official` so caches written
+/// before this field round-trip unchanged.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum GlossarySource {
@@ -70,7 +69,7 @@ pub enum StringAssetFormat {
 }
 
 /// One official term: `source` (English) → `target`, tagged with its category
-/// and the `asset`/`key` it was extracted from (provenance for debugging/#158).
+/// and the `asset`/`key` it was extracted from for debugging provenance.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct GlossaryEntry {
@@ -121,8 +120,8 @@ struct AssetSpec {
 
 /// Typed content assets, in priority order — when the same English name appears
 /// in several assets, the first one wins (item names beat stray collisions).
-/// Assets absent from a given unpacked dump are simply skipped. The old generic
-/// `1_6_Strings` scan is intentionally dropped (mixed UI/content, low precision).
+/// Assets absent from the selected string source are simply skipped. The generic
+/// `1_6_Strings` asset stays excluded because it mixes UI and content terms.
 const TYPED_ASSETS: &[AssetSpec] = &[
     AssetSpec {
         asset: "Objects",
@@ -200,13 +199,9 @@ pub fn match_entries<'a>(source: &str, glossary: &'a Glossary) -> Vec<&'a Glossa
             continue;
         }
         let needle: Vec<char> = entry.source.chars().collect();
-        let Some((start, end)) = whole_word_range(&haystack, &needle) else {
+        let Some((start, end)) = whole_word_range(&haystack, &needle, &occupied) else {
             continue;
         };
-        // Skip a term that overlaps a span already claimed by a longer one.
-        if occupied.iter().any(|&(s, e)| start < e && s < end) {
-            continue;
-        }
         occupied.push((start, end));
         out.push(entry);
         if out.len() >= 15 {
@@ -230,27 +225,38 @@ pub fn match_terms(source: &str, glossary: &Glossary) -> Vec<(String, String)> {
 
 /// The `[start, end)` char span where `needle` occurs as a whole word in
 /// `haystack`, or `None` if it does not occur on a word boundary.
-fn whole_word_range(haystack: &[char], needle: &[char]) -> Option<(usize, usize)> {
-    let idx = window_position(haystack, needle)?;
-    let is_word = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric());
-    let before = if idx == 0 {
-        None
-    } else {
-        haystack.get(idx - 1)
-    };
-    let after = haystack.get(idx + needle.len());
-    if is_word(before) || is_word(after) {
-        return None;
-    }
-    Some((idx, idx + needle.len()))
-}
-
-/// First index in `haystack` where `needle` occurs as a contiguous slice.
-fn window_position(haystack: &[char], needle: &[char]) -> Option<usize> {
+fn whole_word_range(
+    haystack: &[char],
+    needle: &[char],
+    occupied: &[(usize, usize)],
+) -> Option<(usize, usize)> {
     if needle.is_empty() || needle.len() > haystack.len() {
         return None;
     }
-    (0..=haystack.len() - needle.len()).find(|&i| &haystack[i..i + needle.len()] == needle)
+    let is_word = |c: Option<&char>| c.is_some_and(|c| c.is_alphanumeric());
+    for idx in 0..=haystack.len() - needle.len() {
+        if &haystack[idx..idx + needle.len()] != needle {
+            continue;
+        }
+        let before = if idx == 0 {
+            None
+        } else {
+            haystack.get(idx - 1)
+        };
+        let end = idx + needle.len();
+        let after = haystack.get(end);
+        if is_word(before) || is_word(after) {
+            continue;
+        }
+        if occupied
+            .iter()
+            .any(|&(start, stop)| idx < stop && start < end)
+        {
+            continue;
+        }
+        return Some((idx, end));
+    }
+    None
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -294,7 +300,7 @@ pub struct GlossaryStatus {
     /// so the UI should recommend a rebuild.
     pub outdated_cache: bool,
     /// For a game-unsupported language, whether an installed community language
-    /// pack was detected that could supply a glossary (#163). Always false for
+    /// pack was detected that could supply a glossary. Always false for
     /// game-supported languages (they build from official content).
     pub pack_available: bool,
     /// Whether the detected community pack supplies direct `Strings/*_<lang>.xnb`.
@@ -490,10 +496,11 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
 }
 
 /// Build a glossary for a game-unsupported `target_lang` from an installed
-/// community language pack (#163). The English base comes from the unpacked
-/// content `Strings/`; the target side from the pack's `Strings/` folder, whose
-/// files share the English keys. Untranslated (English-identical) values are
-/// dropped by the term-quality gate, so only genuine translations remain.
+/// community language pack. The English base prefers the installed game's XNB
+/// dictionaries and falls back to unpacked `Content/Strings` JSON; the target
+/// side comes from the pack's `Strings/` folder, whose files share the English
+/// keys. Untranslated (English-identical) values are dropped by the term-quality
+/// gate, so only genuine translations remain.
 pub fn build_from_pack(
     unpacked_content: &Path,
     pack_strings_dir: &Path,
@@ -644,7 +651,7 @@ fn is_common_ui_word(term: &str) -> bool {
 }
 
 fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
-    let body = std::fs::read_to_string(path).ok()?;
+    let body = crate::input_limits::read_json_text(path).ok()?;
     let value: Value = serde_json::from_str(&body).ok()?;
     let object = value.as_object()?;
     let mut map = HashMap::with_capacity(object.len());
@@ -686,9 +693,10 @@ pub fn legacy_cache_present(config_dir: &Path) -> bool {
 pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
     let path = glossary_path(config_dir, &glossary.target_lang)
         .ok_or_else(|| format!("Invalid target language: {}", glossary.target_lang))?;
+    let body = serde_json::to_string(glossary).map_err(|e| format!("serialize glossary: {e}"))?;
+    crate::input_limits::ensure_json_output_size(body.len() as u64, "Glossary JSON")?;
     std::fs::create_dir_all(glossary_dir(config_dir))
         .map_err(|e| format!("Could not create glossary dir: {e}"))?;
-    let body = serde_json::to_string(glossary).map_err(|e| format!("serialize glossary: {e}"))?;
     std::fs::write(path, body).map_err(|e| format!("write glossary: {e}"))
 }
 
@@ -697,9 +705,9 @@ pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
 /// language, an unsupported language (which never builds a file) always loads
 /// `None`, and a stale build for another language can never leak in. Never panics.
 pub fn load(config_dir: &Path, lang: &str) -> Option<Glossary> {
-    let body = std::fs::read_to_string(glossary_path(config_dir, lang)?).ok()?;
+    let body = crate::input_limits::read_json_text(&glossary_path(config_dir, lang)?).ok()?;
     let glossary: Glossary = serde_json::from_str(&body).ok()?;
-    if glossary.format != GLOSSARY_FORMAT {
+    if glossary.format != GLOSSARY_FORMAT || glossary.target_lang != lang {
         return None;
     }
     Some(glossary)
@@ -719,7 +727,7 @@ pub fn migrate_legacy_cache(config_dir: &Path) {
     relocate_flat_per_language_files(config_dir);
 
     let legacy = legacy_glossary_path(config_dir);
-    let Ok(body) = std::fs::read_to_string(&legacy) else {
+    let Ok(body) = crate::input_limits::read_json_text(&legacy) else {
         return;
     };
     let Ok(glossary) = serde_json::from_str::<Glossary>(&body) else {
@@ -910,6 +918,25 @@ mod tests {
         // A standalone "Ore" elsewhere still matches when nothing longer covers it.
         let hits = match_terms("Just plain Ore here.", &glossary);
         assert_eq!(hits, vec![("Ore".to_string(), "Erz".to_string())]);
+
+        // The shorter term may still claim a later, non-overlapping occurrence.
+        let hits = match_terms("Iridium Ore and Ore", &glossary);
+        assert_eq!(
+            hits,
+            vec![
+                ("Iridium Ore".to_string(), "Iridiumerz".to_string()),
+                ("Ore".to_string(), "Erz".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn match_continues_after_an_invalid_first_occurrence() {
+        let glossary = glossary_of(vec![entry("Parsnip", "Pastinake", TermKind::Item)]);
+        assert_eq!(
+            match_terms("Parsnips beside a Parsnip", &glossary),
+            vec![("Parsnip".to_string(), "Pastinake".to_string())]
+        );
     }
 
     #[test]
@@ -1093,7 +1120,7 @@ mod tests {
 
     #[test]
     fn builds_from_pack_pairing_english_base_with_pack_strings() {
-        // #163: a game-unsupported language (Thai) builds from an installed pack
+        // A game-unsupported language (Thai) builds from an installed pack
         // whose Strings keys are English-identical. English values come from the
         // unpacked base; the pack supplies the target side.
         let root = crate::test_support::temp_dir("glossary-pack");
@@ -1274,7 +1301,7 @@ mod tests {
 
     #[test]
     fn caches_are_isolated_by_language() {
-        // Building one language must never leak into another (the core #158 fix):
+        // Building one language must never leak into another:
         // a different supported language and an unsupported one both load `None`.
         let dir = crate::test_support::temp_dir("glossary-isolation");
         save(
@@ -1301,6 +1328,19 @@ mod tests {
         );
         assert_eq!(load(&dir, "de"), None);
         assert!(dir.join("glossary").join("glossary-de.json").is_file());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn load_ignores_a_cache_tagged_for_another_language() {
+        let dir = crate::test_support::temp_dir("glossary-wrong-language");
+        let french = glossary_for("fr", vec![entry("Spring", "Printemps", TermKind::Season)]);
+        write(
+            &dir.join("glossary").join("glossary-de.json"),
+            &serde_json::to_string(&french).unwrap(),
+        );
+
+        assert_eq!(load(&dir, "de"), None);
         std::fs::remove_dir_all(&dir).ok();
     }
 
