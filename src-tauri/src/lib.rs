@@ -1,14 +1,14 @@
 //! Stardew i18n Translator — Tauri backend.
 //!
-//! Settings persistence + Stardew auto-detection (M1), the mod scanner and
-//! i18n parser (M1/M2), persisted translation state (M2), the i18n exporter
-//! (M3), and the local-LLM connection probe (M6). Kept minimal per
-//! SCOPE_GUARDRAILS — no plugin/provider abstractions.
+//! Portable settings and translation state, Stardew detection, mod scanning,
+//! i18n import/export, glossary extraction, and local-LLM integration. Kept
+//! minimal per SCOPE_GUARDRAILS — no plugin/provider abstractions.
 
 mod batch;
 mod detection;
 mod export;
 mod glossary;
+mod input_limits;
 mod lang_pack;
 mod language;
 mod llm;
@@ -68,7 +68,7 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
@@ -181,7 +181,24 @@ fn export_mod(
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<export::ExportResult, String> {
-    export::export_mod(&translation_config_dir(&app)?, &mod_unique_id, &files)
+    let config = config_dir(&app)?;
+    let settings = settings::load_checked(&config)?;
+    let mods_root = settings
+        .mods_path
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
+    let target_lang = settings
+        .target_lang
+        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
+    export::validate_paths(&mods_root, &target_lang, &files)?;
+    let translation_config = translations::language_root(&config, &target_lang)?;
+    export::export_mod(&translation_config, &mod_unique_id, &files)
         .inspect_err(|error| log::error!("export_mod({mod_unique_id}) failed: {error}"))
 }
 
@@ -235,7 +252,7 @@ fn build_translation_zip(
     release_zip::build(&translation_config_dir(&app)?, &request)
 }
 
-/// Outcome of an external LLM batch export (M4): where the file landed and what
+/// Outcome of an external LLM batch export: where the file landed and what
 /// it contains. `None` from the command means the user cancelled the picker.
 #[derive(serde::Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -245,7 +262,7 @@ struct LlmExportOutcome {
 }
 
 /// Write the selected strings as an external LLM translation batch
-/// (M4, SPEC §11). Opens a save dialog and writes the minimal format-2
+/// (SPEC §11). Opens a save dialog and writes the minimal format-2
 /// binding plus the selected source strings.
 #[tauri::command]
 fn export_llm_batch(
@@ -272,6 +289,7 @@ fn export_llm_batch(
     let mut body = serde_json::to_string_pretty(&batch_json)
         .map_err(|error| format!("Could not serialize the batch: {error}"))?;
     body.push('\n');
+    ensure_llm_batch_json_size(body.len() as u64)?;
     std::fs::write(&dest, body.as_bytes())
         .map_err(|error| format!("Could not write {}: {error}", dest.display()))?;
 
@@ -281,7 +299,11 @@ fn export_llm_batch(
     }))
 }
 
-/// Import a translated LLM batch/result file for one mod (M4). Opens
+fn ensure_llm_batch_json_size(byte_len: u64) -> Result<(), String> {
+    input_limits::ensure_json_output_size(byte_len, "LLM batch JSON")
+}
+
+/// Import a translated LLM batch/result file for one mod. Opens
 /// a file picker; matches keys against the mod's current strings; stages all
 /// accepted values as `review-needed` in ONE state write. `None` = cancelled.
 #[tauri::command]
@@ -313,8 +335,7 @@ fn import_llm_batch_from_path(
     files: &[export::ExportFileInput],
     source: &Path,
 ) -> Result<batch::ImportSummary, String> {
-    let body = std::fs::read_to_string(source)
-        .map_err(|error| format!("Could not read {}: {error}", source.display()))?;
+    let body = input_limits::read_json_text(source)?;
     // Lenient parse: LLM output sometimes carries trailing commas or comments.
     let parsed = scanner::parse_json_lenient(&body)
         .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
@@ -342,7 +363,7 @@ fn import_llm_batch_from_path(
     Ok(prepared.summary)
 }
 
-/// Import a dropped LLM batch/result path through the same safe M4 pipeline as
+/// Import a dropped LLM batch/result path through the same safe pipeline as
 /// the picker command.
 #[tauri::command]
 fn import_llm_batch_path(
@@ -395,7 +416,7 @@ fn build_glossary(
     let config = config_dir(&app)?;
     let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
     // A game-supported language builds from official content; a game-unsupported
-    // one (e.g. Thai) builds from an installed community language pack (#163).
+    // one (e.g. Thai) builds from an installed community language pack.
     let built = if glossary::game_locale_suffix(&target_lang).is_some() {
         glossary::build_from_game(Path::new(&stardew_path), &target_lang)
     } else {
@@ -444,7 +465,7 @@ fn glossary_status(
     // unmigratable old/invalid cache — the UI surfaces a "rebuild recommended" note.
     let outdated_cache = glossary::legacy_cache_present(&config);
     // For a game-unsupported language, see whether an installed community pack
-    // could supply a glossary (#163). Skipped for supported languages (they build
+    // could supply a glossary. Skipped for supported languages (they build
     // from official content) — so the Mods folder is only scanned when relevant.
     let stardew = Path::new(&stardew_path);
     let game_xnb_present = glossary::game_xnb_present(stardew);
@@ -470,7 +491,7 @@ fn glossary_status(
     })
 }
 
-/// List models from an OpenAI-compatible local server (M6, Issue 15). Doubles as
+/// List models from an OpenAI-compatible local server. Doubles as
 /// the "Test connection" probe: success means the server is reachable.
 #[tauri::command]
 async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
@@ -480,7 +501,7 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
         .inspect_err(|error| log::error!("llm_models({base_url}) failed: {error}"))
 }
 
-/// Translate one source string via the configured local LLM (M6, Issue 16).
+/// Translate one source string via the configured local LLM.
 /// Injects matching official-glossary terms into the prompt and validates the
 /// result's protected tokens (with one stricter retry). `temperature` is the
 /// optional user setting (None = low default).
@@ -532,8 +553,8 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
         .map_err(|error| format!("Could not open URL: {error}"))
 }
 
-/// Append a frontend-side error to the same diagnostic log file as the backend
-/// (v1.1.1). The webview cannot write the portable log itself, so this command
+/// Append a frontend-side error to the same diagnostic log file as the backend.
+/// The webview cannot write the portable log itself, so this command
 /// is the bridge: a caught UI error still lands in `data/logs/` for bug reports.
 /// Fire-and-forget — logging must never itself surface an error to the user.
 #[tauri::command]
@@ -541,7 +562,7 @@ fn log_frontend_error(context: String, message: String) {
     log::error!("[frontend] {context}: {message}");
 }
 
-/// Open the portable `data/logs/` folder in the OS file manager (v1.1.1) so a
+/// Open the portable `data/logs/` folder in the OS file manager so a
 /// user can attach the current log file to a GitHub bug report.
 #[tauri::command]
 fn open_logs_dir(app: AppHandle) -> Result<(), String> {
@@ -677,7 +698,7 @@ fn active_target_lang(app: &AppHandle) -> Result<String, String> {
         .ok_or_else(|| "Choose a target language before editing translations.".to_string())
 }
 
-/// Build the diagnostic-logging plugin (v1.1.1). Writes a rotating log file to
+/// Build the diagnostic-logging plugin. Writes a rotating log file to
 /// the portable `data/logs/` folder so it travels with the app and can be
 /// attached to a bug report — never to the OS log dir. Local only: there is no
 /// network target, consistent with the no-telemetry guarantee. Best-effort: if
@@ -898,5 +919,18 @@ mod portable_tests {
     #[test]
     fn logs_dir_rejects_an_executable_without_parent() {
         assert!(portable_logs_dir_for(Path::new("translator.exe")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod json_output_limit_tests {
+    use super::*;
+
+    #[test]
+    fn llm_batch_guard_matches_the_shared_import_limit() {
+        ensure_llm_batch_json_size(input_limits::MAX_JSON_BYTES).unwrap();
+        let error = ensure_llm_batch_json_size(input_limits::MAX_JSON_BYTES + 1).unwrap_err();
+        assert!(error.contains("LLM batch JSON"));
+        assert!(error.contains("64 MiB"));
     }
 }

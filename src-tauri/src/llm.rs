@@ -1,10 +1,10 @@
-//! Local-LLM client (M6, Issue 15) — OpenAI-compatible endpoints only.
+//! Local-LLM client — OpenAI-compatible endpoints only.
 //!
 //! Both target servers (Ollama, LM Studio) expose an OpenAI-compatible HTTP API,
 //! so a single client covers them plus any other compatible server (LocalAI, Jan,
-//! llama.cpp, …). This is deliberately *not* a provider plugin system (SPEC §19
-//! #6): just a base URL + a `GET /v1/models` reachability probe. The actual
-//! translation call (`POST /v1/chat/completions`) lands in Issue 16.
+//! llama.cpp, …). This is deliberately *not* a provider plugin system (SPEC
+//! §19): just a base URL, a `GET /v1/models` reachability probe, and the
+//! `POST /v1/chat/completions` translation call.
 //!
 //! Requests are loopback-only: no API key, proxy, redirect, or external network.
 
@@ -151,7 +151,7 @@ pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
 }
 
 // ---------------------------------------------------------------------------
-// Translation (Issue 16): translate one string via POST /v1/chat/completions.
+// Translate one string via POST /v1/chat/completions.
 // ---------------------------------------------------------------------------
 
 /// Result of a single-string translation. `missing_tokens` is non-empty when the

@@ -48,7 +48,7 @@ Run checks that match the changed surface instead of the full suite by default.
 corepack pnpm check:docs
 
 # Frontend or shared TypeScript changes
-corepack pnpm exec tsc --noEmit
+corepack pnpm typecheck
 corepack pnpm test
 
 # Rust changes

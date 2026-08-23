@@ -1,9 +1,9 @@
-//! Persisted translation state — M2 / Issue 10 (SPEC §14).
+//! Persisted translation state (SPEC §14).
 //!
 //! Work-in-progress translations are stored **separately** from the mod's own
 //! files: one JSON per mod (keyed by UniqueID) and target language in the
 //! portable `data/` folder. The mod's `default.json` is never touched; export
-//! (M3) writes the final `i18n/<lang>.json`. Each entry records the target text,
+//! writes the final `i18n/<lang>.json`. Each entry records the target text,
 //! its status, and a hash of the source text at save time (for `outdated`
 //! detection on re-scan).
 //!
@@ -178,7 +178,7 @@ pub fn prepare_state_paths(
             blocked.insert(id.to_lowercase());
         }
         warnings.push(format!(
-            "Case-insensitive duplicate mod UniqueID: {}. These mods are read-only until the duplicate is removed.",
+            "Case-insensitive duplicate mod UniqueID: {}. Their translation files were excluded until the duplicate is removed.",
             ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
         ));
     }
@@ -202,8 +202,7 @@ pub fn prepare_state_paths(
         if !legacy.is_file() || destination.exists() {
             continue;
         }
-        let migration = std::fs::read_to_string(&legacy)
-            .map_err(|error| error.to_string())
+        let migration = crate::input_limits::read_json_text(&legacy)
             .and_then(|body| {
                 serde_json::from_str::<ModState>(&body)
                     .map(|_| body)
@@ -244,7 +243,10 @@ fn sibling(path: &Path, suffix: &str) -> PathBuf {
 /// overwrite the file while it is in this condition).
 pub fn load(config_dir: &Path, unique_id: &str) -> Result<ModState, String> {
     let path = state_path(config_dir, unique_id);
-    match std::fs::read_to_string(&path) {
+    if !path.exists() {
+        return Ok(ModState::new());
+    }
+    match crate::input_limits::read_json_text(&path) {
         Ok(body) => serde_json::from_str(&body).map_err(|error| {
             format!(
                 "Saved translation state for {unique_id} is corrupted ({}): {error}. \
@@ -253,7 +255,6 @@ pub fn load(config_dir: &Path, unique_id: &str) -> Result<ModState, String> {
                 path.display()
             )
         }),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(ModState::new()),
         Err(error) => Err(format!(
             "Could not read translation state {}: {error}",
             path.display()
@@ -269,15 +270,17 @@ fn write_state(
     state: &ModState,
     backed_up: &mut HashSet<PathBuf>,
 ) -> Result<(), String> {
+    let body = serde_json::to_string_pretty(state)
+        .map_err(|error| format!("Could not serialize translation state: {error}"))?;
+    crate::input_limits::ensure_json_output_size(body.len() as u64, "Translation state")?;
+    // Defensive: re-parse what we are about to write (mirrors export.rs).
+    serde_json::from_str::<ModState>(&body)
+        .map_err(|error| format!("Generated invalid translation state JSON: {error}"))?;
+
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create translations dir: {error}"))?;
     }
-    let body = serde_json::to_string_pretty(state)
-        .map_err(|error| format!("Could not serialize translation state: {error}"))?;
-    // Defensive: re-parse what we are about to write (mirrors export.rs).
-    serde_json::from_str::<ModState>(&body)
-        .map_err(|error| format!("Generated invalid translation state JSON: {error}"))?;
 
     if path.is_file() && !backed_up.contains(path) {
         std::fs::copy(path, sibling(path, ".bak"))
@@ -503,6 +506,57 @@ mod tests {
         assert!(result.is_err());
         assert_eq!(std::fs::read_to_string(&path).unwrap(), "{ not json");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn oversized_state_errors_before_read_and_is_never_overwritten() {
+        let dir = crate::test_support::temp_dir("translations-oversized");
+        let path = state_path(&dir, "Large.Mod");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(crate::input_limits::MAX_JSON_BYTES + 1)
+            .unwrap();
+
+        let error = load(&dir, "Large.Mod").unwrap_err();
+        assert!(error.contains("64 MiB"), "unexpected error: {error}");
+        assert!(save_one(&dir, "Large.Mod", entry_key("i18n", "k"), entry("v")).is_err());
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().len(),
+            crate::input_limits::MAX_JSON_BYTES + 1
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn oversized_save_leaves_existing_state_untouched() {
+        let dir = crate::test_support::temp_dir("translations-oversized-save");
+        let unique_id = "Large.Save.Mod";
+        let old_key = entry_key("i18n", "old");
+        let old_entry = entry("Bestehend");
+        save_one(&dir, unique_id, old_key.clone(), old_entry.clone()).unwrap();
+
+        let path = state_path(&dir, unique_id);
+        let before = std::fs::read(&path).unwrap();
+        let oversized = StoredString {
+            // One value is the lowest-overhead way to cross the real file
+            // boundary while exercising serialization and the public save path.
+            target: "x".repeat(crate::input_limits::MAX_JSON_BYTES as usize),
+            status: "translated".to_string(),
+            source_hash: source_hash("Large source"),
+        };
+
+        let error =
+            save_one(&dir, unique_id, entry_key("i18n", "too-large"), oversized).unwrap_err();
+        assert!(error.contains("64 MiB"), "unexpected error: {error}");
+        assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(
+            load(&dir, unique_id).unwrap().get(&old_key),
+            Some(&old_entry)
+        );
+        assert!(!sibling(&path, ".bak").exists());
+        assert!(!sibling(&path, ".tmp").exists());
+
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

@@ -4,7 +4,7 @@ import { App } from "./App";
 import { logFrontendError } from "./tauri/commands";
 import "./styles.css";
 
-// Funnel otherwise-uncaught errors into the backend log file (Data/logs, v1.1.1)
+// Funnel otherwise-uncaught errors into the portable backend log file
 // so they survive into a bug report. Both handlers are best-effort.
 window.addEventListener("error", (event) => {
   const error = event.error;

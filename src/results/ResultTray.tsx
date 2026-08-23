@@ -27,7 +27,7 @@ export type ResultTrayData =
       pending: boolean;
       error: string | null;
       result: ExportResult | null;
-      modsWritten: number | null;
+      modsChanged: number | null;
       failedMod?: string | null;
       remainingMods?: string[];
       problems: ResultProblem[];
@@ -159,7 +159,7 @@ export function ResultTray({
               {data.kind === "export" && data.result && (
                 <ExportSnapshot
                   result={data.result}
-                  modsWritten={data.modsWritten}
+                  modsChanged={data.modsChanged}
                 />
               )}
               {data.kind === "export" && data.failedMod && (
@@ -175,7 +175,7 @@ export function ResultTray({
           ) : data.kind === "export" && data.result ? (
             <ExportSnapshot
               result={data.result}
-              modsWritten={data.modsWritten}
+              modsChanged={data.modsChanged}
             />
           ) : data.kind === "import" && data.summary ? (
             <ImportSnapshot summary={data.summary} />
@@ -330,20 +330,28 @@ function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
 
 function ExportSnapshot({
   result,
-  modsWritten,
+  modsChanged,
 }: {
   result: ExportResult;
-  modsWritten: number | null;
+  modsChanged: number | null;
 }) {
+  const changedFiles = result.filesWritten + result.filesRemoved;
   return (
     <div className="resulttray__snapshot">
       <span className="resulttray__eyebrow">Operation summary</span>
       <p>
-        Wrote <strong>{result.totalWrittenKeys}</strong> strings across{" "}
-        <strong>{result.filesWritten}</strong> files
-        {modsWritten !== null ? ` in ${modsWritten} mods` : ""}.
+        Processed <strong>{changedFiles}</strong> target{" "}
+        {changedFiles === 1 ? "file" : "files"}
+        {modsChanged !== null
+          ? ` in ${modsChanged} ${modsChanged === 1 ? "mod" : "mods"}`
+          : ""}
+        . Wrote <strong>{result.totalWrittenKeys}</strong> strings.
       </p>
       <ul>
+        <li>
+          {result.filesRemoved} empty target{" "}
+          {result.filesRemoved === 1 ? "file" : "files"} removed
+        </li>
         <li>{result.totalUntranslated} untranslated omitted</li>
         <li>{result.totalOutdated} outdated exported</li>
         <li>{result.totalReviewNeeded} review-needed exported</li>
@@ -364,7 +372,6 @@ function ImportSnapshot({ summary }: { summary: LlmImportSummary }) {
       <ul>
         <li>{summary.skippedTranslated} translated strings left untouched</li>
         <li>{summary.unmatched} unmatched or empty values</li>
-        <li>{summary.tokenIssues} protected-token problems reported</li>
         <li>{summary.identicalToSource} identical to source</li>
       </ul>
     </div>

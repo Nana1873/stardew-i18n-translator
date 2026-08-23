@@ -1,9 +1,8 @@
-//! Recursive mod scanner — M1 / Issue 4 (SPEC §6).
+//! Recursive mod scanner and lenient SMAPI i18n reader (SPEC §§6–7).
 //!
 //! Walks the Mods folder, finds every `manifest.json`, reads its metadata, and
-//! discovers the translatable `i18n/` units beneath each mod. String contents
-//! are parsed in Issue 5 — this stage only discovers files and groups mods by
-//! package (top-level Mods subfolder, SPEC §7.3).
+//! discovers and reads the translatable `i18n/` units beneath each mod. Mods are
+//! grouped by package (top-level Mods subfolder, SPEC §7).
 //!
 //! Edge cases handled (SPEC §6): nested/multi-component mods (each manifest is
 //! its own mod; `i18n/` is associated with the nearest ancestor manifest),
@@ -17,6 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::input_limits;
 use crate::lang_pack;
 use crate::translations::{self, ModState};
 
@@ -311,15 +311,25 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            match build_i18n_file(&owner, i18n_dir, target_lang, state) {
+            match build_i18n_file(&owner, i18n_dir, mods_path, target_lang, state) {
                 Ok(file) => {
-                    extra_keys.extend(extra_target_keys(
+                    let diagnostics = extra_target_keys(
                         &scanned.name,
                         &file.relative_dir,
                         Path::new(&file.default_path),
                         Path::new(&file.target_path),
-                    ));
-                    scanned.i18n_files.push(file);
+                        mods_path,
+                    );
+                    match diagnostics {
+                        Ok(diagnostics) => {
+                            extra_keys.extend(diagnostics);
+                            scanned.i18n_files.push(file);
+                        }
+                        Err(error) => warnings.push(format!(
+                            "Skipped i18n component {}: {error}",
+                            i18n_dir.display()
+                        )),
+                    }
                 }
                 Err(error) => warnings.push(format!(
                     "Skipped i18n component {}: {error}",
@@ -346,7 +356,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
     }
 
-    // Exclude community language packs (#163): such a pack ships its own `i18n/`
+    // Exclude community language packs: such a pack ships its own `i18n/`
     // (its config-menu strings, already in the pack's language), so it would
     // otherwise appear here as a bogus translation target. A pack is detected by
     // the same signal the glossary source uses — it registers an in-game language
@@ -363,30 +373,6 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         false
     });
 
-    // SMAPI requires globally-unique UniqueIDs and refuses to load duplicates;
-    // our translation state is also keyed by UniqueID (translations.rs), so two
-    // scanned mods sharing one would silently collide on a single state file and
-    // overwrite each other's progress. Warn loudly instead of merging quietly.
-    let mut folders_by_id: std::collections::BTreeMap<&str, Vec<&str>> =
-        std::collections::BTreeMap::new();
-    for scanned in &result_mods {
-        folders_by_id
-            .entry(scanned.unique_id.as_str())
-            .or_default()
-            .push(scanned.folder_path.as_str());
-    }
-    for (id, folders) in &folders_by_id {
-        if folders.len() > 1 {
-            warnings.push(format!(
-                "Duplicate mod UniqueID \"{id}\" found in {} folders ({}). Their saved \
-                 translation progress shares one state file and may overwrite each other; \
-                 SMAPI will not load duplicate UniqueIDs either — remove or fix the extra copy.",
-                folders.len(),
-                folders.join(", ")
-            ));
-        }
-    }
-
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
         mod_count: result_mods.len(),
@@ -402,14 +388,13 @@ fn extra_target_keys(
     relative_dir: &str,
     default_path: &Path,
     target_path: &Path,
-) -> Vec<ExtraKeyDiagnostic> {
-    let Some(target) = read_target_object(target_path) else {
-        return Vec::new();
-    };
-    let source = read_object(default_path).unwrap_or_default();
+    allowed_root: &Path,
+) -> Result<Vec<ExtraKeyDiagnostic>, String> {
+    let target = read_target_object_within_root(target_path, allowed_root)?;
+    let source = read_object_within_root(default_path, allowed_root, "source")?;
     let source_folded: HashSet<String> = source.keys().map(|key| folded_key(key)).collect();
 
-    target
+    Ok(target
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
         .filter(|key| !source_folded.contains(&folded_key(key)))
@@ -419,12 +404,12 @@ fn extra_target_keys(
             target_path: target_path.display().to_string(),
             key: key.clone(),
         })
-        .collect()
+        .collect())
 }
 
 fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<ScannedMod, String> {
-    let body =
-        std::fs::read_to_string(manifest).map_err(|e| format!("unreadable manifest: {e}"))?;
+    let body = input_limits::read_json_text(manifest)
+        .map_err(|error| format!("unreadable manifest: {error}"))?;
     let value = parse_json_lenient(&body).map_err(|e| format!("invalid manifest JSON: {e}"))?;
     let object = value.as_object().ok_or("manifest is not an object")?;
 
@@ -482,12 +467,12 @@ pub struct StringRow {
     pub target: String,
     /// Whether the key exists in the target file (distinguishes "" from absent).
     pub target_present: bool,
-    /// untranslated | translated | review-needed | outdated (v1.5 model, SPEC §9)
+    /// untranslated | translated | review-needed | outdated (SPEC §9)
     pub status: String,
     /// The translator explicitly accepted the current protected-token mismatch.
     pub token_mismatch_accepted: bool,
     /// Section this key belongs to — the nearest standalone `//` comment line
-    /// above it in `default.json` (v1.5, SPEC §7.4). None = no section.
+    /// above it in `default.json` (SPEC §7). None = no section.
     pub section: Option<String>,
 }
 
@@ -510,8 +495,7 @@ pub fn load_strings_checked(
     state: &ModState,
     relative_dir: &str,
 ) -> Result<Vec<StringRow>, String> {
-    let body = std::fs::read_to_string(default_path)
-        .map_err(|error| format!("Could not read {}: {error}", default_path.display()))?;
+    let body = input_limits::read_json_text(default_path)?;
     let source = parse_flat_object(&body, default_path)?;
     let sections = extract_sections(&body);
     let target_map = read_target_object_checked(target_path)?;
@@ -573,8 +557,8 @@ pub fn imported_baselines(
         .collect()
 }
 
-/// Section titles from standalone `//` comment lines in `default.json` (v1.5,
-/// SPEC §7.4): a comment line on its own starts a section, and every key after
+/// Section titles from standalone `//` comment lines in `default.json`
+/// (SPEC §7): a comment line on its own starts a section, and every key after
 /// it (until the next standalone comment) belongs to that section. Returns
 /// folded key → section title. String-aware, so `//` inside a value (URLs) or
 /// a trailing same-line comment never starts a section; `/* */` blocks are
@@ -673,7 +657,7 @@ fn resolve_string(
     key: &str,
 ) -> (String, String) {
     if let Some(stored) = state.get(&translations::entry_key(relative_dir, key)) {
-        // Legacy `not-translatable` (pre-v1.5 status model): kept-English is
+        // Legacy `not-translatable` status: kept-English is
         // now an explicit identical translation ("Keep original"). An empty
         // stored target takes the *current* source text — that pair can't be
         // stale, so it skips the outdated check below.
@@ -704,9 +688,9 @@ fn resolve_string(
 /// Map any stored status (including legacy values) to the recognized set:
 /// `untranslated` | `translated` | `review-needed`. (`outdated` is derived
 /// from the source hash, never stored.) `review-needed` is an AI suggestion
-/// awaiting review (M6); legacy `done`/`imported`/`not-translatable` collapse
-/// to `translated` — kept-English is an explicit identical translation since
-/// v1.5 (resolve_string fills an empty legacy target with the source).
+/// awaiting review; legacy `done`/`imported`/`not-translatable` values collapse
+/// to `translated` — kept-English is an explicit identical translation
+/// (resolve_string fills an empty legacy target with the source).
 fn normalize_status(stored: &str) -> String {
     match stored {
         "untranslated" => "untranslated",
@@ -767,14 +751,8 @@ impl<'a> TargetLookup<'a> {
     }
 }
 
-/// Parse a flat i18n JSON object (lenient), returning its string entries.
-pub(crate) fn read_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
-    read_object_checked(path).ok()
-}
-
 pub(crate) fn read_object_checked(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
-    let body = std::fs::read_to_string(path)
-        .map_err(|error| format!("Could not read {}: {error}", path.display()))?;
+    let body = input_limits::read_json_text(path)?;
     parse_flat_object(&body, path)
 }
 
@@ -799,10 +777,6 @@ fn parse_flat_object(text: &str, path: &Path) -> Result<serde_json::Map<String, 
 /// Read the canonical target file, with SMAPI's Portuguese filename as an
 /// import-only fallback. The scanned path remains `pt.json`, so exports always
 /// use the app's canonical filename and never overwrite `pt-BR.json`.
-pub(crate) fn read_target_object(target_path: &Path) -> Option<serde_json::Map<String, Value>> {
-    read_target_object_checked(target_path).ok()
-}
-
 pub(crate) fn read_target_object_checked(
     target_path: &Path,
 ) -> Result<serde_json::Map<String, Value>, String> {
@@ -833,7 +807,7 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
 /// (total source keys, source keys with a non-empty **working** target — saved
 /// state takes precedence over the imported `<lang>.json` value — and source
 /// keys whose stored status is an unreviewed AI suggestion). The review count
-/// feeds the dashboard's cross-mod review queue (SPEC §7.0 rollout ④).
+/// feeds the dashboard's cross-mod review queue (SPEC §7).
 #[cfg(test)]
 fn count_keys(
     default_path: &Path,
@@ -841,17 +815,24 @@ fn count_keys(
     state: &ModState,
     relative_dir: &str,
 ) -> (usize, usize, usize) {
-    count_keys_checked(default_path, target_path, state, relative_dir).unwrap_or((0, 0, 0))
+    count_keys_checked(default_path, target_path, None, state, relative_dir).unwrap_or((0, 0, 0))
 }
 
 fn count_keys_checked(
     default_path: &Path,
     target_path: &Path,
+    allowed_root: Option<&Path>,
     state: &ModState,
     relative_dir: &str,
 ) -> Result<(usize, usize, usize), String> {
-    let source = read_object_checked(default_path)?;
-    let target_map = read_target_object_checked(target_path)?;
+    let source = match allowed_root {
+        Some(root) => read_object_within_root(default_path, root, "source")?,
+        None => read_object_checked(default_path)?,
+    };
+    let target_map = match allowed_root {
+        Some(root) => read_target_object_within_root(target_path, root)?,
+        None => read_target_object_checked(target_path)?,
+    };
     let target = TargetLookup::new(&target_map);
     let total = source
         .keys()
@@ -889,6 +870,42 @@ fn count_keys_checked(
         })
         .count();
     Ok((total, translated, review_needed))
+}
+
+fn read_target_object_within_root(
+    target_path: &Path,
+    allowed_root: &Path,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let read_path = target_read_path(target_path);
+    if !read_path.is_file() {
+        return Ok(serde_json::Map::new());
+    }
+    read_object_within_root(&read_path, allowed_root, "target")
+}
+
+fn read_object_within_root(
+    path: &Path,
+    allowed_root: &Path,
+    kind: &str,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let canonical_root = std::fs::canonicalize(allowed_root).map_err(|error| {
+        format!(
+            "Could not validate Mods folder {}: {error}",
+            allowed_root.display()
+        )
+    })?;
+    let canonical_read = std::fs::canonicalize(path)
+        .map_err(|error| format!("Could not validate {kind} file {}: {error}", path.display()))?;
+    if !canonical_read.starts_with(&canonical_root) {
+        return Err(format!(
+            "{kind} file resolves outside the configured Mods folder: {}",
+            path.display()
+        ));
+    }
+
+    // Read the resolved file rather than following the original path again;
+    // this narrows the swap window for a link between validation and opening.
+    read_object_checked(&canonical_read)
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -934,6 +951,7 @@ fn nearest_manifest_owner(i18n_dir: &Path, manifest_dirs: &HashSet<PathBuf>) -> 
 fn build_i18n_file(
     mod_dir: &Path,
     i18n_dir: &Path,
+    mods_path: &Path,
     target_lang: &str,
     state: &ModState,
 ) -> Result<ScannedI18nFile, String> {
@@ -945,10 +963,15 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys, review_needed) =
-        count_keys_checked(&default_path, &target_path, state, &relative_dir)?;
+    let (total_keys, translated_keys, review_needed) = count_keys_checked(
+        &default_path,
+        &target_path,
+        Some(mods_path),
+        state,
+        &relative_dir,
+    )?;
     Ok(ScannedI18nFile {
-        target_exists: target_path.is_file(),
+        target_exists: target_read_path(&target_path).is_file(),
         default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
         relative_dir,
@@ -959,9 +982,14 @@ fn build_i18n_file(
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
-/// `default.json`. Bounded by depth and a visited-canonical-path set (cycles).
+/// `default.json`. Bounded by depth, the canonical root, and a
+/// visited-canonical-path set (cycles). Links that resolve outside `root` are
+/// never traversed.
 /// `pub(crate)` so `lang_pack` can reuse the same bounded walk for pack discovery.
 pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut Vec<PathBuf>) {
+    let Ok(canonical_root) = std::fs::canonicalize(root) else {
+        return;
+    };
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
     let mut dirs_seen = 0usize;
@@ -970,7 +998,12 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
         if depth > MAX_DEPTH || dirs_seen >= MAX_DIRS {
             continue;
         }
-        let canonical = std::fs::canonicalize(&dir).unwrap_or_else(|_| dir.clone());
+        let Ok(canonical) = std::fs::canonicalize(&dir) else {
+            continue;
+        };
+        if !canonical.starts_with(&canonical_root) {
+            continue;
+        }
         if !visited.insert(canonical) {
             continue; // cycle / already visited
         }
@@ -985,11 +1018,17 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
                 continue;
             };
 
-            if file_type.is_file() {
-                if path.file_name().is_some_and(|n| n == "manifest.json") {
-                    manifests.push(path);
+            if file_type.is_file() || file_type.is_symlink() {
+                let safe_manifest = path.file_name().is_some_and(|n| n == "manifest.json")
+                    && std::fs::canonicalize(&path).is_ok_and(|canonical| {
+                        canonical.is_file() && canonical.starts_with(&canonical_root)
+                    });
+                if safe_manifest {
+                    manifests.push(path.clone());
                 }
-                continue;
+                if file_type.is_file() {
+                    continue;
+                }
             }
 
             if file_type.is_dir() || file_type.is_symlink() {
@@ -997,7 +1036,14 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
                     .file_name()
                     .is_some_and(|n| n.eq_ignore_ascii_case("i18n"));
                 if is_i18n {
-                    if path.join("default.json").is_file() {
+                    let inside_root = std::fs::canonicalize(&path)
+                        .is_ok_and(|canonical| canonical.starts_with(&canonical_root));
+                    let default_path = path.join("default.json");
+                    let safe_default =
+                        std::fs::canonicalize(&default_path).is_ok_and(|canonical| {
+                            canonical.is_file() && canonical.starts_with(&canonical_root)
+                        });
+                    if inside_root && safe_default {
                         i18n_dirs.push(path);
                     }
                     continue; // no mods nested inside an i18n folder
@@ -1263,7 +1309,7 @@ mod tests {
     #[test]
     fn excludes_community_language_packs_from_scan() {
         // A community language pack ships its own i18n (config strings in its
-        // language). It must be excluded from the translatable list (#163) and
+        // language). It must be excluded from the translatable list and
         // surfaced as a warning, while ordinary mods still list normally.
         let root = crate::test_support::temp_dir("scan-langpack");
         let normal = root.join("Normal");
@@ -1372,6 +1418,150 @@ mod tests {
         assert!(file.target_path.ends_with("de.json"));
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn portuguese_fallback_counts_as_an_existing_target() {
+        let root = crate::test_support::temp_dir("scan-portuguese-fallback");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Mod\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"k\": \"Hello\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("pt-BR.json"),
+            "{ \"k\": \"Olá\" }",
+        );
+
+        let result = scan_mods(&root, "pt", &root);
+        let file = &result.mods[0].i18n_files[0];
+        assert!(file.target_exists);
+        assert!(file.target_path.ends_with("pt.json"));
+        assert_eq!(result.mods[0].translated_keys, 1);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn collect_does_not_follow_directory_links_outside_the_root() {
+        let base = crate::test_support::temp_dir("scan-link-escape");
+        let root = base.join("Mods");
+        let safe = root.join("Safe");
+        let outside = base.join("Outside");
+        write(&safe.join("manifest.json"), r#"{"UniqueID":"safe.mod"}"#);
+        write(&safe.join("i18n/default.json"), r#"{"k":"safe"}"#);
+        write(
+            &outside.join("manifest.json"),
+            r#"{"UniqueID":"outside.mod"}"#,
+        );
+        write(&outside.join("i18n/default.json"), r#"{"k":"outside"}"#);
+
+        let link = root.join("Escaped");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside, &link);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_dir(&outside, &link);
+        if linked.is_err() {
+            // Creating Windows symlinks may require Developer Mode. Linux CI
+            // still exercises this regression test unconditionally.
+            std::fs::remove_dir_all(base).ok();
+            return;
+        }
+
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+        collect(&root, &mut manifests, &mut i18n_dirs);
+
+        assert_eq!(manifests, vec![safe.join("manifest.json")]);
+        assert_eq!(i18n_dirs, vec![safe.join("i18n")]);
+
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn collect_rejects_default_file_links_outside_the_root() {
+        let base = crate::test_support::temp_dir("scan-file-link-escape");
+        let root = base.join("Mods");
+        let mod_dir = root.join("Safe");
+        let outside_default = base.join("outside-default.json");
+        write(&mod_dir.join("manifest.json"), r#"{"UniqueID":"safe.mod"}"#);
+        std::fs::create_dir_all(mod_dir.join("i18n")).unwrap();
+        std::fs::write(&outside_default, r#"{"k":"outside"}"#).unwrap();
+
+        let link = mod_dir.join("i18n/default.json");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside_default, &link);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(&outside_default, &link);
+        if linked.is_err() {
+            std::fs::remove_dir_all(base).ok();
+            return;
+        }
+
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+        collect(&root, &mut manifests, &mut i18n_dirs);
+
+        assert_eq!(manifests, vec![mod_dir.join("manifest.json")]);
+        assert!(i18n_dirs.is_empty());
+
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn scan_rejects_target_file_links_outside_the_root() {
+        let base = crate::test_support::temp_dir("scan-target-link-escape");
+        let root = base.join("Mods");
+        let mod_dir = root.join("Safe");
+        let i18n = mod_dir.join("i18n");
+        let outside_target = base.join("outside-target.json");
+        write(&mod_dir.join("manifest.json"), r#"{"UniqueID":"safe.mod"}"#);
+        write(&i18n.join("default.json"), r#"{"k":"source"}"#);
+        std::fs::write(&outside_target, r#"{"k":"outside"}"#).unwrap();
+
+        let german_link = i18n.join("de.json");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside_target, &german_link);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(&outside_target, &german_link);
+        if linked.is_err() {
+            std::fs::remove_dir_all(base).ok();
+            return;
+        }
+
+        let german = scan_mods(&root, "de", &base.join("data"));
+        assert!(german.mods.is_empty());
+        assert!(german.warnings.iter().any(|warning| {
+            warning.contains("Skipped i18n component")
+                && warning.contains("target file resolves outside")
+        }));
+
+        std::fs::remove_file(&german_link).unwrap();
+        let portuguese_link = i18n.join("pt-BR.json");
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside_target, &portuguese_link);
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(&outside_target, &portuguese_link);
+        if linked.is_err() {
+            std::fs::remove_dir_all(base).ok();
+            return;
+        }
+
+        let portuguese = scan_mods(&root, "pt", &base.join("data"));
+        assert!(portuguese.mods.is_empty());
+        assert!(portuguese.warnings.iter().any(|warning| {
+            warning.contains("Skipped i18n component")
+                && warning.contains("target file resolves outside")
+        }));
+
+        std::fs::remove_dir_all(base).ok();
     }
 
     #[test]
@@ -1820,7 +2010,7 @@ mod tests {
 
     #[test]
     fn legacy_not_translatable_migrates_to_keep_original() {
-        // Pre-v1.5 status model: `not-translatable` entries become "keep
+        // Legacy `not-translatable` entries become "keep
         // original" — translated, with an empty stored target resolving to
         // the current source text (SPEC §9).
         let root = crate::test_support::temp_dir("load-keep-original");

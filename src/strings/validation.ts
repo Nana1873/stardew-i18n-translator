@@ -1,7 +1,7 @@
 /**
- * v1 string validation — M2 / Issue 9 (SPEC §10).
+ * String validation rules (SPEC §10).
  *
- * Five rules, focused on preventing broken mods (not translation quality).
+ * Eight rules, focused on preventing broken mods and surfacing review risks.
  * "Token" here means any Stardew/SMAPI protected token (Content Patcher
  * `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
  * `[...]`, ...) — see protectedTokens.ts. Tokens are compared as multisets, so

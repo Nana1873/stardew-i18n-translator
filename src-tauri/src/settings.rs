@@ -15,7 +15,6 @@
 
 use std::{
     collections::BTreeMap,
-    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
@@ -35,19 +34,23 @@ pub struct AppSettings {
     pub source_lang: String,
     #[serde(default)]
     pub target_lang: Option<String>,
-    /// Optional local-LLM connection (M6). Absent when AI translation is not set up.
+    /// Optional local-LLM connection. Absent when AI translation is not set up.
     #[serde(default)]
     pub llm: Option<LlmSettings>,
-    /// User overrides for the frontend shortcut catalog (v1.1).
+    /// User overrides for the frontend shortcut catalog.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
+    /// Dashboard resume history, kept in the portable data directory together
+    /// with the rest of the application state.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub last_opened: BTreeMap<String, u64>,
     /// Local diagnostic log files are enabled by default. This never controls
     /// telemetry or network reporting; those do not exist.
     #[serde(default = "default_diagnostic_logging")]
     pub diagnostic_logging: bool,
 }
 
-/// Local-LLM connection settings (M6, Issue 15). OpenAI-compatible endpoint only.
+/// Local-LLM connection settings. OpenAI-compatible endpoint only.
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LlmSettings {
@@ -61,7 +64,7 @@ pub struct LlmSettings {
     /// Selected model id (from `GET /v1/models`).
     #[serde(default)]
     pub model: String,
-    /// Optional sampling temperature (M6 scope). `None` = the default (0.2,
+    /// Optional sampling temperature. `None` = the default (0.2,
     /// low — translation wants consistency, not creativity).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
@@ -84,6 +87,7 @@ impl Default for AppSettings {
             target_lang: None,
             llm: None,
             shortcuts: BTreeMap::new(),
+            last_opened: BTreeMap::new(),
             diagnostic_logging: true,
         }
     }
@@ -121,14 +125,15 @@ pub fn load(config_dir: &Path) -> AppSettings {
 /// error is returned so the caller can surface it (no silent data loss).
 pub fn load_checked(config_dir: &Path) -> Result<AppSettings, String> {
     let path = settings_path(config_dir);
-    match std::fs::read_to_string(&path) {
+    if !path.exists() {
+        return Ok(AppSettings::default());
+    }
+    match crate::input_limits::read_json_text(&path) {
         Ok(body) => match parse_and_normalize(&body, false) {
             Ok(settings) => Ok(settings),
             // Main file is corrupt — try the backup before giving up.
             Err(parse_error) => recover_from_backup(&path, &parse_error.to_string()),
         },
-        // No file at all: a fresh portable folder starts with defaults.
-        Err(error) if error.kind() == ErrorKind::NotFound => Ok(AppSettings::default()),
         // The main file exists but cannot be read — try the backup, then fail.
         Err(io_error) => recover_from_backup(&path, &io_error.to_string()),
     }
@@ -139,7 +144,7 @@ pub fn load_checked(config_dir: &Path) -> Result<AppSettings, String> {
 /// failures when the backup is missing or also corrupt.
 fn recover_from_backup(path: &Path, main_error: &str) -> Result<AppSettings, String> {
     let backup = sibling(path, ".bak");
-    match std::fs::read_to_string(&backup) {
+    match crate::input_limits::read_json_text(&backup) {
         Ok(body) => match parse_and_normalize(&body, false) {
             Ok(settings) => {
                 log::warn!(
@@ -169,13 +174,15 @@ fn recover_from_backup(path: &Path, main_error: &str) -> Result<AppSettings, Str
 /// the target (atomic on the same volume).
 pub fn save(config_dir: &Path, settings: &AppSettings) -> Result<(), String> {
     let settings = normalize(settings.clone(), true)?;
-    std::fs::create_dir_all(config_dir)
-        .map_err(|error| format!("Could not create config directory: {error}"))?;
     let body = serde_json::to_string_pretty(&settings)
         .map_err(|error| format!("Could not serialize settings: {error}"))?;
+    crate::input_limits::ensure_json_output_size(body.len() as u64, "Settings JSON")?;
     // Defensive: re-parse what we are about to write (mirrors translations.rs).
     serde_json::from_str::<AppSettings>(&body)
         .map_err(|error| format!("Generated invalid settings JSON: {error}"))?;
+
+    std::fs::create_dir_all(config_dir)
+        .map_err(|error| format!("Could not create config directory: {error}"))?;
 
     let path = settings_path(config_dir);
     // Back up only a *valid* existing file, so a corrupt main never clobbers a
@@ -194,7 +201,7 @@ pub fn save(config_dir: &Path, settings: &AppSettings) -> Result<(), String> {
 
 /// Whether `path` is an existing file that parses as valid settings.
 fn existing_file_is_valid(path: &Path) -> bool {
-    std::fs::read_to_string(path)
+    crate::input_limits::read_json_text(path)
         .ok()
         .and_then(|body| parse_and_normalize(&body, false).ok())
         .is_some()
@@ -246,6 +253,10 @@ mod tests {
             target_lang: Some("de".to_string()),
             llm: None,
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
+            last_opened: BTreeMap::from([(
+                "Pathoschild.ContentPatcher".to_string(),
+                1_722_000_000_000,
+            )]),
             diagnostic_logging: false,
         };
         save(&dir, &settings).unwrap();
@@ -336,7 +347,7 @@ mod tests {
 
     #[test]
     fn settings_without_llm_field_load_with_none() {
-        // A settings.json written before M6 has no `llm` key — it must still load.
+        // Older settings may have no `llm` key and must still load.
         let dir = crate::test_support::temp_dir("settings-no-llm");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -360,6 +371,7 @@ mod tests {
         )
         .unwrap();
         assert!(load(&dir).shortcuts.is_empty());
+        assert!(load(&dir).last_opened.is_empty());
         assert!(load(&dir).diagnostic_logging);
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -435,6 +447,24 @@ mod tests {
         // Both the checked and the infallible entry points recover.
         assert_eq!(load_checked(&dir).unwrap(), sample("ja"));
         assert_eq!(load(&dir), sample("ja"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn oversized_main_recovers_from_valid_backup_without_reading_it() {
+        let dir = crate::test_support::temp_dir("settings-oversized-recover");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = settings_path(&dir);
+        let file = std::fs::File::create(&path).unwrap();
+        file.set_len(crate::input_limits::MAX_JSON_BYTES + 1)
+            .unwrap();
+        std::fs::write(
+            sibling(&path, ".bak"),
+            serde_json::to_string_pretty(&sample("ko")).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(load_checked(&dir).unwrap(), sample("ko"));
         std::fs::remove_dir_all(&dir).ok();
     }
 

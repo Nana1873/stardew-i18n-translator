@@ -1,5 +1,5 @@
 /**
- * String table — M2 / Issues 7-10 (SPEC §7.4).
+ * Virtualized string table and editing workflow (SPEC §§7-10).
  *
  * Loads the selected mod's i18n strings (with saved translation state merged in
  * by the backend) and shows them in a virtualized table. Double-click opens the
@@ -57,7 +57,7 @@ export interface SavedStringSnapshot {
 type SortCol = "status" | "file" | "key" | "source" | "target";
 
 /** One virtualized table line: a string row, or a section divider above a run
- * of rows that share a `// comment` section (SPEC §7.4). */
+ * of rows that share a `// comment` section (SPEC §7). */
 type DisplayItem =
   | { kind: "row"; row: Row; index: number; pos: number }
   | { kind: "section"; title: string; count: number };
@@ -114,7 +114,7 @@ export function StringTable({
     source: string,
     section?: string | null,
   ) => Promise<TranslationResult>;
-  /** Export the given strings as an external LLM batch (M4); absent
+  /** Export the given strings as an external LLM batch; absent
    * when no target language is configured. Resolves null on picker cancel. */
   onLlmBatchExport?: (
     items: LlmBatchItem[],
@@ -150,7 +150,7 @@ export function StringTable({
     col: SortCol;
     dir: "asc" | "desc";
   } | null>(null);
-  /** Items of a running batch AI translation (M6 Issue 17); null = no batch. */
+  /** Items of a running batch AI translation; null = no batch. */
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -248,7 +248,7 @@ export function StringTable({
     anchor.current = null;
   }, [search, statusFilter]);
 
-  // Section dividers (SPEC §7.4): a non-selectable header above each run of
+  // Section dividers (SPEC §7): a non-selectable header above each run of
   // rows sharing a `// comment` section. Sorting scrambles the file order, so
   // dividers only show in the natural order; search/status filters keep them,
   // with live counts of the still-visible rows. `pos` is the row's position
@@ -591,7 +591,7 @@ export function StringTable({
     onCountsChange?.(countTranslated(current), countByStatus(current));
   }
 
-  /** Export the eligible selection as an external LLM batch (M4).
+  /** Export the eligible selection as an external LLM batch.
    * Same eligibility as the AI batch: only strings that still need work. */
   async function startLlmBatchExport() {
     const items: LlmBatchItem[] = batchEligible.map((i) => {
@@ -923,7 +923,7 @@ export function StringTable({
   );
 }
 
-/** Footer status bar (SPEC §7.4): per-status counts + interaction hints.
+/** Footer status bar (SPEC §7): per-status counts + interaction hints.
  * Untranslated/translated always show; the exception statuses only when
  * present, so the bar stays calm on a finished mod. */
 function TableFooter({

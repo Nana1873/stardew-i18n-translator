@@ -97,6 +97,7 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - accepts the relaxed JSON commonly found in real mods;
 - requires source and existing target files to be flat string objects;
 - preserves source key order for later export;
+- does not traverse links that escape the selected Mods folder;
 - warns and skips only a malformed i18n component instead of inventing empty
   rows or stopping the complete scan.
 
@@ -205,6 +206,9 @@ All application state is portable and stored beside the executable:
 - `data/language-state/<lang>/`
 - `data/logs/`
 
+Dashboard recency is part of the portable settings state; the app does not keep
+workflow state in browser-local storage.
+
 Translation state is separate from installed mods. The app does not modify mod
 files until the user explicitly exports.
 
@@ -213,11 +217,12 @@ cannot be represented without loss use `state-<sha256>.json`; a unique valid
 legacy file is copied forward and retained, while ambiguous legacy collisions
 and case-insensitive duplicate IDs are blocked from editing.
 
-Exports validate and serialize the complete selected mod before the first
-write, then use per-file backups and atomic replacement. Portuguese imports
-prefer `pt-BR.json`, while successful exports canonicalize to `pt.json` and
-back up/remove the fallback. Release packages must not contain the user's
-`data/` folder.
+Exports validate and serialize the complete selected mod and prepare rollback
+copies before the first write. Each file still uses a user-visible backup and
+atomic replacement; if a later package write fails, every earlier target is
+restored to its pre-export state. Portuguese imports prefer `pt-BR.json`, while
+successful exports canonicalize to `pt.json` and back up/remove the fallback.
+Release packages must not contain the user's `data/` folder.
 
 ## 15. Current Capabilities
 
@@ -271,6 +276,7 @@ safety gate, and failure to reach a local model must not affect manual use.
 - Large mods require virtualized rendering and efficient scanning.
 - Unicode, JSON key order, protected tokens, and package-relative paths must be
   preserved.
+- Full-buffer JSON and state inputs must be size-bounded before parsing.
 - File-system failures must be reported without leaving partial exports.
 - Optional systems such as glossary, local AI, logging, and Nexus publication
   automation must degrade without breaking the translation workflow.

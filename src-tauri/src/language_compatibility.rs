@@ -193,6 +193,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             diagnostic_logging: true,
             llm: None,
             shortcuts: BTreeMap::new(),
+            last_opened: BTreeMap::new(),
         };
         settings::save(&config, &settings_value).unwrap();
         assert_eq!(
@@ -205,10 +206,9 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
         let scan = scanner::scan_mods(&mods, language.code, &config);
         assert_eq!(scan.mod_count, 1, "{} scan", language.code);
         let scanned_file = &scan.mods[0].i18n_files[0];
-        assert_eq!(
+        assert!(
             scanned_file.target_exists,
-            language.code != "pt",
-            "{} canonical target detection",
+            "{} effective target detection",
             language.code
         );
         assert!(

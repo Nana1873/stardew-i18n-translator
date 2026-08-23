@@ -8,6 +8,25 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Changed
+
+- CI now reports one stable aggregate gate that enforces documentation checks
+  on every change and both frontend and Rust checks whenever code changes.
+- Removed obsolete implementation-planning notes from maintained source and
+  aligned the synthetic language smoke fixture with batch format 2, including
+  Thai.
+
+### Fixed
+
+- Kept scans, JSON imports, and exports within bounded filesystem and input
+  limits, moved long-running scan work off the UI thread, and made multi-file
+  exports restore earlier targets when a later write fails.
+- Corrected Portuguese fallback detection, glossary matching and cache
+  isolation, portable recent-mod state, and target-existence updates after
+  exports remove a translation file.
+- Removed unreachable successful-import token-error fields so the frontend and
+  backend expose the same fail-fast batch contract.
+
 ## [1.4.3] - 2026-08-03
 
 ### Changed

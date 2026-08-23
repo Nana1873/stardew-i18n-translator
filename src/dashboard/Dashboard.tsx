@@ -1,5 +1,5 @@
 /**
- * Dashboard home — v1.5 redesign rollout ④ (SPEC §7.0, docs/design/).
+ * Dashboard home (SPEC §7, docs/design/).
  *
  * The landing screen answers "where do I stand?" before any table loads:
  * overview stat cards, the cross-mod review queue (every unreviewed AI
@@ -21,7 +21,7 @@ interface DashboardProps {
   onOpenReview: (uniqueId: string) => void;
   /** Switch to the work view without picking a mod. */
   onBrowse: () => void;
-  /** modId → epoch ms of the last time it was opened (localStorage). */
+  /** modId -> epoch ms of the last time it was opened (portable settings). */
   lastOpened: Record<string, number>;
 }
 

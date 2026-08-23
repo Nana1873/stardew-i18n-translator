@@ -1,10 +1,10 @@
 /**
  * Settings dialog — the single "settings section accessible from toolbar"
- * (SPEC §19 #5 / §13). Distinct from the first-launch Setup Wizard: this is a
+ * (SPEC §§13 and 19). Distinct from the first-launch Setup Wizard: this is a
  * left-navigation window of editable settings, not a step-by-step flow.
  *
  * Sections: folders (changed by re-running the wizard, per SPEC §4), target
- * language, the optional glossary, and the optional local-AI connection (M6).
+ * language, the optional glossary, and the optional local-AI connection.
  * AI lives here — not in the wizard — because this is a translation-first tool
  * and AI is opt-in.
  */
