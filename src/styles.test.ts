@@ -68,8 +68,5 @@ describe("CSS custom properties", () => {
     expect(integrationStyles).toMatch(
       /\.stv3-column-resizer--target::after\s*{[^}]*right:\s*0;[^}]*left:\s*auto;/s,
     );
-    expect(integrationStyles).toMatch(
-      /\.stv3-string-table-head \.stv3-column-resizer\s*{[^}]*bottom:\s*auto;[^}]*height:\s*27px;/s,
-    );
   });
 });

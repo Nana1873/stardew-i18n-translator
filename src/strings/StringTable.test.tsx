@@ -192,6 +192,16 @@ describe("StringTable V3 workbench", () => {
       gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr)",
     });
     expect(
+      screen
+        .getByRole("button", { name: "Key" })
+        .closest("[role=columnheader]"),
+    ).toHaveStyle({
+      height: "27px",
+      display: "flex",
+      alignItems: "center",
+      padding: "0 8px",
+    });
+    expect(
       screen.getByRole("columnheader", { name: /German translation/ }),
     ).toBeVisible();
     expect(

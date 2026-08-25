@@ -2154,7 +2154,12 @@ export function StringTable({
               <span
                 className="stv3-select-col"
                 role="columnheader"
-                style={{ padding: "6px 8px" }}
+                style={{
+                  height: "27px",
+                  display: "flex",
+                  alignItems: "center",
+                  padding: "0 8px",
+                }}
               >
                 <input
                   ref={selectAllRef}
@@ -2709,8 +2714,11 @@ function SortHeader({
       role="columnheader"
       style={{
         position: resizer ? "relative" : undefined,
+        height: "27px",
+        display: "flex",
+        alignItems: "center",
         minWidth: 0,
-        padding: "6px 8px",
+        padding: "0 8px",
       }}
       aria-sort={
         active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"
