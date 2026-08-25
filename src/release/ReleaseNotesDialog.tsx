@@ -1,4 +1,6 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { Copy, CopyCheck, X } from "lucide-react";
+import { useDialogAccessibility } from "../dialogAccessibility";
 import type { ZipPreview, ZipProblem } from "../tauri/commands";
 import { generateReleaseNotes } from "./releaseNotes";
 
@@ -40,6 +42,11 @@ export function ReleaseNotesDialog({
   const hasConflicts = Boolean(preview?.versionConflicts.length);
   const copyDisabled =
     !generated || !version.trim() || (hasConflicts && !versionConfirmed);
+  const dialogRef = useRef<HTMLElement>(null);
+  const { onDialogKeyDown } = useDialogAccessibility({
+    dialogRef,
+    onEscape: onClose,
+  });
 
   async function copy() {
     if (!generated || copyDisabled) return;
@@ -55,26 +62,43 @@ export function ReleaseNotesDialog({
   }
 
   return (
-    <div className="editor__backdrop" onMouseDown={onClose}>
-      <div
-        className="exportdlg releasedlg"
+    <div className="stv3-flow-overlay">
+      <section
+        ref={dialogRef}
+        className="stv3-flow-dialog"
         role="dialog"
-        aria-label="Translation release notes"
-        onMouseDown={(event) => event.stopPropagation()}
+        aria-modal="true"
+        aria-label="Translation notes"
+        onKeyDown={onDialogKeyDown}
       >
-        <div className="exportdlg__head">
-          <strong>Translation release notes</strong>
-          <span className="editor__crumbs">
-            {preview?.packageName ?? "Preview"}
-          </span>
+        <div className="stv3-flow-head">
+          <div>
+            <h2 className="stv3-heading">Translation notes</h2>
+            <div className="stv3-kicker">
+              Copy-ready draft generated from the current package data
+            </div>
+          </div>
+          <button
+            className="stv3-icon-button"
+            type="button"
+            aria-label="Close translation notes"
+            onClick={onClose}
+          >
+            <X aria-hidden="true" />
+          </button>
         </div>
-        <div className="exportdlg__body">
-          {error && <p className="exportdlg__error">{error}</p>}
-          {!preview && !error && <p>Preparing current package data...</p>}
+
+        <div className="stv3-flow-body">
+          {error && (
+            <div className="stv3-flow-callout is-error" role="alert">
+              <strong>Could not generate notes:</strong> {error}
+            </div>
+          )}
+          {!preview && !error && <p>Preparing current package data …</p>}
           {preview && generated && (
             <>
-              <div className="releasedlg__fields">
-                <label>
+              <div className="stv3-flow-fields">
+                <label className="stv3-flow-field">
                   Advertised package version
                   <input
                     value={version}
@@ -85,7 +109,7 @@ export function ReleaseNotesDialog({
                     }}
                   />
                 </label>
-                <label>
+                <label className="stv3-flow-field">
                   Draft language
                   <select
                     value={outputLanguage}
@@ -101,91 +125,108 @@ export function ReleaseNotesDialog({
                   </select>
                 </label>
               </div>
+
               {generated.fellBackToEnglish && (
-                <p className="zipdlg__notice" role="status">
+                <div className="stv3-flow-callout is-warning" role="status">
                   No maintained template was available for{" "}
                   <code>{outputLanguage}</code>. The complete draft uses
                   English.
-                </p>
+                </div>
               )}
+
               {hasConflicts && (
-                <div className="releasedlg__conflict">
-                  <strong>Component versions differ.</strong>
+                <label className="stv3-flow-callout is-warning stv3-confirm-line">
+                  <input
+                    type="checkbox"
+                    checked={versionConfirmed}
+                    onChange={(event) =>
+                      setVersionConfirmed(event.target.checked)
+                    }
+                  />
                   <span>
-                    Selected from {preview.versionSource}:{" "}
-                    {preview.selectedVersion}. Other versions:{" "}
+                    Component versions differ:{" "}
                     {preview.versionConflicts
                       .map((item) => `${item.modName} ${item.version}`)
                       .join(", ")}
-                    .
+                    . I confirmed the advertised package version{" "}
+                    {version || "above"}.
                   </span>
-                  <label>
-                    <input
-                      type="checkbox"
-                      checked={versionConfirmed}
-                      onChange={(event) =>
-                        setVersionConfirmed(event.target.checked)
-                      }
-                    />
-                    I confirmed the advertised package version above.
-                  </label>
-                </div>
+                </label>
               )}
+
               {preview.problems.length > 0 && (
-                <div className="releasedlg__problems">
-                  <strong>
-                    This package is not release-ready until these problems are
-                    fixed:
-                  </strong>
-                  <ul>
+                <>
+                  <div className="stv3-flow-callout is-error">
+                    <strong>
+                      This package is not release-ready until these problems are
+                      fixed:
+                    </strong>
+                  </div>
+                  <ul className="stv3-flow-list">
                     {preview.problems.map((problem) => (
                       <li
                         key={`${problem.modUniqueId}:${problem.relativeDir}:${problem.key}`}
                       >
+                        <span>
+                          <strong>{problem.modName}</strong>
+                          <br />
+                          <code>{problem.key}</code> · {problem.reason}
+                        </span>
                         <button
+                          className="stv3-button stv3-button-quiet"
                           type="button"
                           onClick={() => onInspect(problem)}
                         >
-                          {problem.modName} <code>{problem.key}</code>
+                          Open issue
                         </button>
-                        <span>{problem.reason}</span>
                       </li>
                     ))}
                   </ul>
-                </div>
+                </>
               )}
-              <textarea
-                className="releasedlg__preview"
-                aria-label="Generated release notes"
-                value={generated.text}
-                readOnly
-                spellCheck={false}
-              />
+
+              <label className="stv3-flow-field">
+                Generated notes
+                <textarea
+                  aria-label="Generated release notes"
+                  value={generated.text}
+                  readOnly
+                  spellCheck={false}
+                />
+              </label>
+
               {copyState === "error" && (
-                <p className="exportdlg__error" role="alert">
+                <div className="stv3-flow-callout is-error" role="alert">
                   Could not access the clipboard.
-                </p>
+                </div>
               )}
             </>
           )}
         </div>
-        <div className="exportdlg__foot">
+
+        <div className="stv3-flow-foot">
           <button
+            className="stv3-button stv3-button-quiet"
             type="button"
-            className="exportdlg__secondary"
             onClick={onClose}
           >
             Close
           </button>
           <button
+            className="stv3-button stv3-button-primary"
             type="button"
             disabled={copyDisabled}
             onClick={() => void copy()}
           >
+            {copyState === "copied" ? (
+              <CopyCheck aria-hidden="true" />
+            ) : (
+              <Copy aria-hidden="true" />
+            )}
             {copyState === "copied" ? "Copied" : "Copy to clipboard"}
           </button>
         </div>
-      </div>
+      </section>
     </div>
   );
 }

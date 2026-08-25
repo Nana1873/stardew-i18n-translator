@@ -16,13 +16,17 @@ describe("ScanDialog", () => {
     render(
       <ScanDialog scanning result={null} error={null} onClose={() => {}} />,
     );
-    expect(screen.getByText("Scanning mods…")).toBeInTheDocument();
-    expect(screen.getByText(/Reading your Mods folder/)).toBeInTheDocument();
-    // No Close button while scanning.
-    expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
+    expect(screen.getByText("Scanning mods …")).toBeInTheDocument();
+    expect(screen.getByText(/Reading manifests and i18n/)).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuetext",
+      "Scanning; exact progress is unavailable",
+    );
+    // The accepted flow retains its action row but cannot close mid-scan.
+    expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
   });
 
-  it("summarizes counts and lists skipped mods on completion", () => {
+  it("shows raw scanner warnings without inventing a skipped-component count", () => {
     render(
       <ScanDialog
         scanning={false}
@@ -31,10 +35,22 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText("Scan complete")).toBeInTheDocument();
-    expect(screen.getByText(/12/)).toBeInTheDocument();
-    expect(screen.getByText(/1 skipped:/)).toBeInTheDocument();
+    expect(screen.getByText("Scan completed")).toBeInTheDocument();
+    expect(
+      screen.getByText(/Read 12 mods and 18 i18n files/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 scanner warning was reported/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/invalid manifest JSON/)).toBeInTheDocument();
+    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
+    expect(
+      screen.getByText("components skipped").previousSibling,
+    ).toHaveTextContent("Unavailable");
+    expect(screen.queryByText(/component was skipped/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /Review changed sources/ }),
+    ).toBeDisabled();
   });
 
   it("shows the error message on failure", () => {
@@ -47,7 +63,9 @@ describe("ScanDialog", () => {
       />,
     );
     expect(screen.getByText("Scan failed")).toBeInTheDocument();
-    expect(screen.getByText("Mods folder not found")).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Mods folder not found",
+    );
   });
 
   it("lists extra target keys as non-blocking diagnostics", () => {
@@ -70,14 +88,14 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText("Optional cleanup")).toBeInTheDocument();
-    expect(screen.getByText(/1 unused translation key/)).toBeInTheDocument();
+    expect(screen.getByText(/Optional cleanup/)).toBeInTheDocument();
+    expect(screen.getByText(/1 unused target key/)).toBeInTheDocument();
     expect(screen.getByText("Example Mod")).toBeInTheDocument();
     expect(
       screen.getByText("E:/Mods/Example/i18n/de.json"),
     ).toBeInTheDocument();
     expect(screen.getByText("removed-key")).toBeInTheDocument();
-    expect(screen.getByText(/SMAPI ignores them/)).toBeInTheDocument();
+    expect(screen.getByText(/SMAPI ignores these keys/)).toBeInTheDocument();
     expect(screen.getByText(/do not affect progress/)).toBeInTheDocument();
   });
 
@@ -93,5 +111,17 @@ describe("ScanDialog", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("closes with Escape even while progress is indeterminate", () => {
+    const onClose = vi.fn();
+    render(
+      <ScanDialog scanning result={null} error={null} onClose={onClose} />,
+    );
+
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Scan" }), {
+      key: "Escape",
+    });
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

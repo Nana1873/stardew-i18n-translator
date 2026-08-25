@@ -1,260 +1,563 @@
-/**
- * Dashboard home (SPEC §7, docs/design/).
- *
- * The landing screen answers "where do I stand?" before any table loads:
- * overview stat cards, the cross-mod review queue (every unreviewed AI
- * suggestion, sorted by backlog size), and "continue where you left off"
- * resume cards. Clicking anything jumps straight into the work view.
- */
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowRight, FileCheck2, GitCompareArrows } from "lucide-react";
 import type { ScanResult, ScannedMod } from "../tauri/commands";
+
+export type OverviewFilter =
+  "has-value" | "translated" | "attention" | "untranslated";
+
+export interface DashboardLastExport {
+  /** Real current-session export label, for example "Last export · Sample". */
+  label: string;
+  /** Real target path returned by the successful export command. */
+  path: string;
+}
 
 interface DashboardProps {
   scan: ScanResult | null;
   scanning: boolean;
-  /** "German (de-DE) · …" subtitle fragment. */
+  /** Real completion time of the latest scan in this running session. */
+  lastScanAt: number | null;
+  /** "German (de)" subtitle fragment. */
   languageLine: string;
   onScan: () => void;
   scanEnabled: boolean;
-  /** Open one mod in the work view. */
   onOpenMod: (uniqueId: string) => void;
-  /** Open one mod filtered down to its review backlog. */
-  onOpenReview: (uniqueId: string) => void;
-  /** Switch to the work view without picking a mod. */
+  onOpenAttention: (
+    uniqueId: string,
+    status: "outdated" | "review-needed",
+  ) => void;
   onBrowse: () => void;
-  /** modId -> epoch ms of the last time it was opened (portable settings). */
+  /** Resume ordering only: modId -> epoch ms of its last open. */
   lastOpened: Record<string, number>;
+  /** Opens the retained result of the latest real scan. */
+  onShowScanDetails?: () => void;
+  /** Applies one of the accepted cross-mod Overview shortcuts. */
+  onOpenOverviewFilter?: (filter: OverviewFilter) => void;
+  /** Latest genuine successful export in this running app session. */
+  lastExport?: DashboardLastExport | null;
+  onShowLastExport?: () => void;
 }
 
-function greeting(): string {
-  const hour = new Date().getHours();
-  if (hour < 5) return "Up late";
-  if (hour < 12) return "Good morning";
-  if (hour < 18) return "Good afternoon";
-  return "Good evening";
+interface StatusTooltipState {
+  text: string;
+  left: number;
+  top: number;
+  anchorCenter: number;
+  anchorTop: number;
+  anchorBottom: number;
 }
 
-function agoLabel(epochMs: number): string {
+const numberFormat = new Intl.NumberFormat("en-US");
+
+function count(value: number): string {
+  return numberFormat.format(value);
+}
+
+function scanAgeLabel(epochMs: number): string {
   const minutes = Math.max(0, Math.round((Date.now() - epochMs) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
+  if (minutes < 1) return "scanned less than a minute ago";
+  if (minutes < 60) return `scanned ${minutes} min ago`;
   const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
+  if (hours < 48)
+    return `scanned ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  const days = Math.round(hours / 24);
+  return `scanned ${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
 export function Dashboard({
   scan,
   scanning,
+  lastScanAt,
   languageLine,
   onScan,
   scanEnabled,
   onOpenMod,
-  onOpenReview,
+  onOpenAttention,
   onBrowse,
   lastOpened,
+  onShowScanDetails,
+  onOpenOverviewFilter,
+  lastExport = null,
+  onShowLastExport,
 }: DashboardProps) {
+  const [statusTooltip, setStatusTooltip] = useState<StatusTooltipState | null>(
+    null,
+  );
+  const statusTooltipRef = useRef<HTMLDivElement>(null);
   const mods = scan?.mods ?? [];
   const withKeys = mods.filter((mod) => mod.totalKeys > 0);
   const totalKeys = withKeys.reduce((sum, mod) => sum + mod.totalKeys, 0);
-  const translatedKeys = withKeys.reduce(
-    (sum, mod) => sum + mod.translatedKeys,
-    0,
-  );
-  const pct =
-    totalKeys > 0 ? Math.round((translatedKeys / totalKeys) * 100) : 0;
+  const withText = withKeys.reduce((sum, mod) => sum + mod.translatedKeys, 0);
+  const open = Math.max(0, totalKeys - withText);
+  const withTextPct =
+    totalKeys > 0 ? Math.round((withText / totalKeys) * 100) : 0;
+  const openPct = totalKeys > 0 ? Math.round((open / totalKeys) * 100) : 0;
   const reviewTotal = mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0);
-  const reviewMods = mods
-    .filter((mod) => mod.reviewNeeded > 0)
-    .sort((a, b) => b.reviewNeeded - a.reviewNeeded)
-    .slice(0, 5);
-  const inProgress = withKeys.filter(
-    (mod) => mod.translatedKeys > 0 && mod.translatedKeys < mod.totalKeys,
-  ).length;
-  const untouched = withKeys.filter((mod) => mod.translatedKeys === 0).length;
+  const allStatusesKnown =
+    withKeys.length > 0 && withKeys.every((mod) => mod.statusCounts != null);
+  const reviewedCurrent = allStatusesKnown
+    ? withKeys.reduce(
+        (sum, mod) => sum + (mod.statusCounts?.translated ?? 0),
+        0,
+      )
+    : null;
+  const reviewedPct =
+    reviewedCurrent != null && totalKeys > 0
+      ? Math.round((reviewedCurrent / totalKeys) * 100)
+      : null;
+  const changedKnown = allStatusesKnown
+    ? withKeys.reduce((sum, mod) => sum + (mod.statusCounts?.outdated ?? 0), 0)
+    : null;
+  const attentionRows = mods
+    .flatMap((mod) => {
+      const rows: Array<{
+        mod: ScannedMod;
+        status: "outdated" | "review-needed";
+        count: number;
+      }> = [];
+      const changed = mod.statusCounts?.outdated;
+      if (changed != null && changed > 0) {
+        rows.push({ mod, status: "outdated", count: changed });
+      }
+      if (mod.reviewNeeded > 0) {
+        rows.push({
+          mod,
+          status: "review-needed",
+          count: mod.reviewNeeded,
+        });
+      }
+      return rows;
+    })
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 4);
   const recent = withKeys
-    .filter((mod) => lastOpened[mod.uniqueId])
+    .filter((mod) => lastOpened[mod.uniqueId] != null)
     .sort((a, b) => lastOpened[b.uniqueId] - lastOpened[a.uniqueId])
-    .slice(0, 3);
+    .slice(0, 4);
+  const continueMod = recent[0] ?? withKeys[0] ?? null;
+  const targetLanguage = languageLine.split(" (")[0].trim() || "target";
+
+  useEffect(() => {
+    const hideTooltip = () => setStatusTooltip(null);
+    window.addEventListener("resize", hideTooltip);
+    return () => window.removeEventListener("resize", hideTooltip);
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!statusTooltip || !statusTooltipRef.current) return;
+    const tip = statusTooltipRef.current.getBoundingClientRect();
+    const left = Math.min(
+      window.innerWidth - tip.width - 8,
+      Math.max(8, statusTooltip.anchorCenter - tip.width / 2),
+    );
+    const below = statusTooltip.anchorBottom + 7;
+    const top =
+      below + tip.height <= window.innerHeight - 8
+        ? below
+        : Math.max(8, statusTooltip.anchorTop - tip.height - 7);
+    const roundedLeft = Math.round(left);
+    const roundedTop = Math.round(top);
+    setStatusTooltip((current) => {
+      if (
+        !current ||
+        (current.left === roundedLeft && current.top === roundedTop)
+      ) {
+        return current;
+      }
+      return { ...current, left: roundedLeft, top: roundedTop };
+    });
+  }, [
+    statusTooltip?.text,
+    statusTooltip?.anchorCenter,
+    statusTooltip?.anchorTop,
+    statusTooltip?.anchorBottom,
+  ]);
+
+  function showStatusHelp(target: HTMLElement, text: string) {
+    const rect = target.getBoundingClientRect();
+    setStatusTooltip({
+      text,
+      left: 8,
+      top: 8,
+      anchorCenter: rect.left + rect.width / 2,
+      anchorTop: rect.top,
+      anchorBottom: rect.bottom,
+    });
+  }
+
+  function openFilter(filter: OverviewFilter) {
+    if (onOpenOverviewFilter) onOpenOverviewFilter(filter);
+    else onBrowse();
+  }
 
   return (
-    <main className="dash" aria-label="Dashboard">
-      <div className="dash__head">
+    <main className="stv3-overview" aria-label="Overview">
+      <div className="stv3-overview-head">
         <div>
-          <h1 className="dash__greeting">{greeting()}</h1>
-          <div className="dash__sub">
+          <h1 className="stv3-heading">Overview</h1>
+          <div className="stv3-kicker">
             {languageLine}
-            {scan ? ` · ${scan.modCount} mods scanned` : ""}
+            {scan ? ` · ${scan.modCount} mods` : " · not scanned"}
+            {scan
+              ? lastScanAt == null
+                ? " · scan time unavailable"
+                : ` · ${scanAgeLabel(lastScanAt)}`
+              : ""}
           </div>
         </div>
+        {continueMod ? (
+          <button
+            className="stv3-button stv3-button-primary"
+            type="button"
+            onClick={() => onOpenMod(continueMod.uniqueId)}
+          >
+            <ArrowRight aria-hidden="true" /> Continue {continueMod.name}
+          </button>
+        ) : (
+          <button
+            className="stv3-button stv3-button-primary"
+            type="button"
+            onClick={onScan}
+            disabled={!scanEnabled}
+          >
+            <GitCompareArrows aria-hidden="true" />
+            {scanning ? "Scanning …" : "Scan mods"}
+          </button>
+        )}
+      </div>
+
+      <div className="stv3-overview-stats">
         <button
+          className="stv3-overview-stat"
           type="button"
-          className="dash__scan"
-          onClick={onScan}
-          disabled={!scanEnabled}
+          onClick={() => openFilter("has-value")}
         >
-          {scanning
-            ? "Scanning…"
-            : scan
-              ? "Scan for changes"
-              : "Scan your Mods folder"}
+          <span>Has {languageLine.split(" (")[0]} text</span>
+          <strong>
+            {scan
+              ? `${count(withText)} / ${count(totalKeys)} · ${withTextPct}%`
+              : "Unavailable"}
+          </strong>
+          <small>Includes values still needing review</small>
+        </button>
+        <button
+          className="stv3-overview-stat"
+          type="button"
+          onClick={() => openFilter("translated")}
+        >
+          <span>Reviewed &amp; current</span>
+          <strong>
+            {reviewedCurrent == null
+              ? "Unavailable"
+              : `${count(reviewedCurrent)} · ${reviewedPct}%`}
+          </strong>
+          <small>
+            {reviewedCurrent == null
+              ? "All-mod status aggregation is not available yet"
+              : "Done for the current English source"}
+          </small>
+        </button>
+        <button
+          className="stv3-overview-stat"
+          type="button"
+          onClick={() => openFilter("attention")}
+        >
+          <span>Needs attention</span>
+          <strong>
+            {!scan
+              ? "Unavailable"
+              : `${count(reviewTotal)} Review · ${
+                  changedKnown == null
+                    ? "Changed unavailable"
+                    : `${count(changedKnown)} Changed`
+                }`}
+          </strong>
+          <small>
+            {!scan
+              ? "No scan data is available"
+              : changedKnown == null
+                ? "Review is known; Changed and unresolved issues unavailable"
+                : "Changed and Review are known; unresolved issues unavailable"}
+          </small>
+        </button>
+        <button
+          className="stv3-overview-stat"
+          type="button"
+          onClick={() => openFilter("untranslated")}
+        >
+          <span>Open</span>
+          <strong>
+            {scan ? `${count(open)} · ${openPct}%` : "Unavailable"}
+          </strong>
+          <small>No target-language value yet</small>
         </button>
       </div>
 
-      {!scan ? (
-        <div className="dash__empty">
-          Scan your Mods folder to see translation progress, the review queue,
-          and where you left off.
-        </div>
+      {scan ? (
+        <button
+          className="stv3-scan-summary"
+          type="button"
+          onClick={onShowScanDetails}
+          disabled={!onShowScanDetails}
+          title={
+            onShowScanDetails
+              ? "Show the latest scan details"
+              : "Latest scan details are unavailable"
+          }
+        >
+          <GitCompareArrows aria-hidden="true" />
+          <span>
+            <strong>
+              Latest scan: {count(scan.modCount)} mods · {count(scan.fileCount)}{" "}
+              i18n files
+            </strong>
+            <span>
+              {scan.warnings.length} scanner{" "}
+              {scan.warnings.length === 1 ? "warning" : "warnings"} ·
+              skipped-component count and change, added, and removed deltas
+              unavailable
+            </span>
+          </span>
+          <span aria-hidden="true">→</span>
+        </button>
       ) : (
-        <>
-          <div className="dash__cards">
-            <div className="dashcard">
-              <div className="dashcard__label">Overall translated</div>
-              <div className="dashcard__value">{pct}%</div>
-              <div className="dashcard__bar">
-                <span
-                  className="dashcard__fill"
-                  style={{ width: `${pct}%`, background: "#5ec488" }}
-                />
-              </div>
-              <div className="dashcard__sub">
-                {translatedKeys.toLocaleString()} / {totalKeys.toLocaleString()}{" "}
-                strings
-              </div>
-            </div>
-            <div className="dashcard dashcard--review">
-              <div className="dashcard__label">Needs review</div>
-              <div className="dashcard__value" style={{ color: "#ec8b3f" }}>
-                {reviewTotal}
-              </div>
-              <div className="dashcard__sub">
-                {reviewTotal > 0
-                  ? `across ${reviewMods.length === 5 ? "5+" : mods.filter((m) => m.reviewNeeded > 0).length} mods`
-                  : "queue is clear"}
-              </div>
-            </div>
-            <div className="dashcard">
-              <div className="dashcard__label">In progress</div>
-              <div className="dashcard__value">{inProgress}</div>
-              <div className="dashcard__sub">mods between 1–99%</div>
-            </div>
-            <div className="dashcard">
-              <div className="dashcard__label">Untouched</div>
-              <div className="dashcard__value">{untouched}</div>
-              <div className="dashcard__sub">mods at 0%</div>
+        <button
+          className="stv3-scan-summary"
+          type="button"
+          onClick={onScan}
+          disabled={!scanEnabled}
+        >
+          <GitCompareArrows aria-hidden="true" />
+          <span>
+            <strong>No scan result available</strong>
+            <span>
+              Scan the configured Mods folder to populate this Overview.
+            </span>
+          </span>
+          <span aria-hidden="true">→</span>
+        </button>
+      )}
+
+      <div className="stv3-last-export">
+        <FileCheck2 aria-hidden="true" />
+        <span>
+          <strong>
+            {lastExport?.label ?? "Last export · Unavailable in this session"}
+          </strong>
+          <code>
+            {lastExport?.path ??
+              "No successful export path is available in this session."}
+          </code>
+        </span>
+        <button
+          className="stv3-button stv3-button-quiet"
+          type="button"
+          onClick={onShowLastExport}
+          disabled={!lastExport || !onShowLastExport}
+        >
+          Show in folder
+        </button>
+      </div>
+
+      <div className="stv3-overview-grid">
+        <section className="stv3-section">
+          <div className="stv3-section-head">
+            <h2 className="stv3-heading">Recently edited</h2>
+            <div className="stv3-kicker">
+              Resume recently opened mods · edit time unavailable
             </div>
           </div>
-
-          {reviewTotal > 0 && (
-            <div className="dash__queue">
-              <div className="dash__queue-head">
-                <span className="dash__queue-icon" aria-hidden>
-                  ⚑
-                </span>
-                <div>
-                  <div className="dash__queue-title">Review queue</div>
-                  <div className="dash__queue-sub">
-                    {reviewTotal} AI suggestion{reviewTotal === 1 ? "" : "s"}{" "}
-                    awaiting your judgement
-                  </div>
-                </div>
-              </div>
-              <div className="dash__queue-rows">
-                {reviewMods.map((mod) => (
-                  <QueueRow
+          <table className="stv3-overview-table">
+            <thead>
+              <tr>
+                <th>Mod</th>
+                <th>Progress</th>
+                <th>Last activity</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.length > 0 ? (
+                recent.map((mod) => (
+                  <RecentRow
                     key={mod.uniqueId}
                     mod={mod}
-                    max={reviewMods[0].reviewNeeded}
-                    onOpen={() => onOpenReview(mod.uniqueId)}
+                    targetLanguage={targetLanguage}
+                    onOpen={() => onOpenMod(mod.uniqueId)}
+                    onShowStatusHelp={showStatusHelp}
+                    onHideStatusHelp={() => setStatusTooltip(null)}
                   />
-                ))}
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={4}>
+                    <span className="stv3-kicker">
+                      Unavailable · no mod has been opened in this portable
+                      workspace yet.
+                    </span>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </section>
+
+        <section className="stv3-section">
+          <div className="stv3-section-head">
+            <h2 className="stv3-heading">Needs attention</h2>
+            <div className="stv3-kicker">
+              Top real Changed and Review queues · unresolved issues unavailable
+            </div>
+          </div>
+          <div className="stv3-attention-list">
+            {attentionRows.map(({ mod, status, count: queueCount }) => (
+              <button
+                key={`${mod.uniqueId}:${status}`}
+                className="stv3-attention-row"
+                type="button"
+                onClick={() => onOpenAttention(mod.uniqueId, status)}
+              >
+                <span>
+                  <span className="stv3-row-title">
+                    {mod.name} · {count(queueCount)}
+                  </span>
+                  {status === "outdated" ? (
+                    <span className="stv3-attention-badges">
+                      <span className="stv3-attention-badge">
+                        Changed source
+                      </span>
+                      <span className="stv3-attention-badge">
+                        Update assistant · Unavailable
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="stv3-row-meta">
+                      AI suggestions awaiting review
+                    </span>
+                  )}
+                </span>
+                <span aria-hidden="true">→</span>
+              </button>
+            ))}
+            {attentionRows.length === 0 && (
+              <div className="stv3-attention-row">
+                <span>
+                  <span className="stv3-row-title">
+                    No known Changed or Review queue
+                  </span>
+                  <span className="stv3-row-meta">
+                    {changedKnown == null
+                      ? "Changed and unresolved issue totals are unavailable."
+                      : "Unresolved issue totals are unavailable."}
+                  </span>
+                </span>
+                <span aria-hidden="true">—</span>
               </div>
-            </div>
-          )}
+            )}
+            <button
+              className="stv3-attention-row"
+              type="button"
+              onClick={() => openFilter("attention")}
+            >
+              <span>
+                <span className="stv3-row-title">View all attention</span>
+                <span className="stv3-row-meta">
+                  Changed and Review use real statuses; unresolved issues stay
+                  unavailable.
+                </span>
+              </span>
+              <span>
+                {scan
+                  ? `${count(reviewTotal)} Review · ${
+                      changedKnown == null
+                        ? "Changed unavailable"
+                        : `${count(changedKnown)} Changed`
+                    } →`
+                  : "Unavailable →"}
+              </span>
+            </button>
+          </div>
+        </section>
+      </div>
 
-          <div className="dash__sectionlabel">Continue where you left off</div>
-          {recent.length > 0 ? (
-            <div className="dash__recent">
-              {recent.map((mod) => (
-                <ResumeCard
-                  key={mod.uniqueId}
-                  mod={mod}
-                  ago={agoLabel(lastOpened[mod.uniqueId])}
-                  onOpen={() => onOpenMod(mod.uniqueId)}
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="dash__sub">
-              Nothing opened yet — pick a mod from the list.
-            </div>
-          )}
-
-          <button type="button" className="dash__browse" onClick={onBrowse}>
-            Browse all mods →
-          </button>
-        </>
+      {statusTooltip && (
+        <div
+          ref={statusTooltipRef}
+          className="stv3-status-tooltip"
+          role="tooltip"
+          style={{ left: statusTooltip.left, top: statusTooltip.top }}
+        >
+          {statusTooltip.text}
+        </div>
       )}
     </main>
   );
 }
 
-function QueueRow({
+function RecentRow({
   mod,
-  max,
+  targetLanguage,
   onOpen,
+  onShowStatusHelp,
+  onHideStatusHelp,
 }: {
   mod: ScannedMod;
-  max: number;
+  targetLanguage: string;
   onOpen: () => void;
+  onShowStatusHelp: (target: HTMLElement, text: string) => void;
+  onHideStatusHelp: () => void;
 }) {
-  const width = max > 0 ? Math.max(6, (mod.reviewNeeded / max) * 100) : 0;
-  return (
-    <button type="button" className="queuerow" onClick={onOpen}>
-      <span className="queuerow__name" title={mod.name}>
-        {mod.name}
-      </span>
-      <span className="queuerow__bar">
-        <span className="queuerow__fill" style={{ width: `${width}%` }} />
-      </span>
-      <span className="queuerow__count">{mod.reviewNeeded}</span>
-    </button>
-  );
-}
+  const openCount = Math.max(0, mod.totalKeys - mod.translatedKeys);
+  const changed = mod.statusCounts?.outdated ?? 0;
+  const status =
+    changed > 0
+      ? {
+          className: "stv3-state is-change",
+          label: `${count(changed)} changed`,
+          help: `The English source changed after this ${targetLanguage} translation was saved. The existing translation may be outdated and should be reviewed.`,
+        }
+      : mod.reviewNeeded > 0
+        ? {
+            className: "stv3-state is-review",
+            label: `${count(mod.reviewNeeded)} to review`,
+            help: "This imported or AI-generated suggestion still needs human approval.",
+          }
+        : openCount > 0
+          ? {
+              className: "stv3-state",
+              label: `${count(openCount)} open`,
+              help: `No accepted ${targetLanguage} translation exists yet.`,
+            }
+          : {
+              className: "stv3-state is-ready",
+              label: "Done",
+              help: `The ${targetLanguage} translation was explicitly saved or accepted for the current English source.`,
+            };
 
-function ResumeCard({
-  mod,
-  ago,
-  onOpen,
-}: {
-  mod: ScannedMod;
-  ago: string;
-  onOpen: () => void;
-}) {
-  const pct = Math.round(mod.progress * 100);
   return (
-    <button type="button" className="recentcard" onClick={onOpen}>
-      <span className="recentcard__top">
-        <span className="recentcard__name" title={mod.name}>
+    <tr>
+      <td>
+        <button className="stv3-overview-link" type="button" onClick={onOpen}>
           {mod.name}
-        </span>
-        <span className="recentcard__pct">{pct}%</span>
-      </span>
-      <span className="dashcard__bar">
+        </button>
+      </td>
+      <td>
+        {count(mod.translatedKeys)} / {count(mod.totalKeys)}
+      </td>
+      <td>Unavailable</td>
+      <td>
         <span
-          className="dashcard__fill"
-          style={{
-            width: `${pct}%`,
-            background: pct >= 100 ? "#5ec488" : "var(--gold)",
-          }}
-        />
-      </span>
-      <span className="recentcard__bottom">
-        <span>
-          {mod.totalKeys.toLocaleString()} strings · {ago}
+          className={status.className}
+          data-status-help={status.help}
+          aria-description={status.help}
+          onPointerEnter={(event) =>
+            onShowStatusHelp(event.currentTarget, status.help)
+          }
+          onPointerLeave={onHideStatusHelp}
+        >
+          {status.label}
         </span>
-        <span className="recentcard__resume">Resume →</span>
-      </span>
-    </button>
+      </td>
+    </tr>
   );
 }

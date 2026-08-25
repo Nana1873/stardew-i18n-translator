@@ -61,8 +61,94 @@ describe("SettingsDialog", () => {
       />,
     );
     expect(screen.getByText("E:/SDV")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Re-run setup…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Setup …" }));
     expect(onReRunSetup).toHaveBeenCalled();
+  });
+
+  it("changes each folder with its native picker and saves only the chosen paths", async () => {
+    const onSave = vi.fn();
+    const onReRunSetup = vi.fn();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "pick_folder") {
+        return Promise.resolve(
+          (args as { title?: string }).title ===
+            "Select your Stardew Valley folder"
+            ? "D:/Games/Stardew Valley"
+            : "D:/Games/Stardew Valley/Mods",
+        );
+      }
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={onReRunSetup}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Change Stardew Valley folder" }),
+    );
+    expect(
+      await screen.findByText("D:/Games/Stardew Valley"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Change Mods folder" }));
+    expect(
+      await screen.findByText("D:/Games/Stardew Valley/Mods"),
+    ).toBeInTheDocument();
+
+    expect(invokeMock).toHaveBeenCalledWith("pick_folder", {
+      title: "Select your Stardew Valley folder",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("pick_folder", {
+      title: "Select your Mods folder",
+    });
+    expect(onReRunSetup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stardewPath: "D:/Games/Stardew Valley",
+        modsPath: "D:/Games/Stardew Valley/Mods",
+      }),
+    );
+  });
+
+  it("keeps the current folder when the native picker is cancelled", async () => {
+    const onSave = vi.fn();
+    const onReRunSetup = vi.fn();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "pick_folder") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={onReRunSetup}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Change Mods folder" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("pick_folder", {
+        title: "Select your Mods folder",
+      }),
+    );
+    expect(screen.getByText("E:/SDV/Mods")).toBeInTheDocument();
+    expect(onReRunSetup).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ modsPath: "E:/SDV/Mods" }),
+    );
   });
 
   it("tests the AI connection and saves the chosen model", async () => {
@@ -76,14 +162,14 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     expect(
       await screen.findByText(/Connected · responded in/),
     ).toBeInTheDocument();
     expect(screen.getByText(/2 models available/)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         targetLang: "de",
@@ -107,7 +193,7 @@ describe("SettingsDialog", () => {
         onReRunSetup={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ llm: null }));
   });
 
@@ -123,7 +209,7 @@ describe("SettingsDialog", () => {
     );
 
     const select = screen.getByLabelText("Target language");
-    const save = screen.getByRole("button", { name: "Save" });
+    const save = screen.getByRole("button", { name: "Save changes" });
     for (const code of [
       "de",
       "es",
@@ -165,7 +251,7 @@ describe("SettingsDialog", () => {
         onReRunSetup={() => {}}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         llm: {
@@ -177,7 +263,9 @@ describe("SettingsDialog", () => {
       }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: "Save changes" }),
+      ).toBeEnabled(),
     );
   });
 
@@ -200,24 +288,26 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
     const field = screen.getByLabelText("AI temperature") as HTMLInputElement;
     expect(field.value).toBe("0.5");
 
     fireEvent.change(field, { target: { value: "0.7" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         llm: expect.objectContaining({ temperature: 0.7 }),
       }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: "Save changes" }),
+      ).toBeEnabled(),
     );
 
-    // Clearing the field falls back to the default (persisted as null).
-    fireEvent.change(field, { target: { value: "" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    // The V3 reset control falls back to the backend default (persisted as null).
+    fireEvent.click(screen.getByRole("button", { name: "Use default" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenLastCalledWith(
       expect.objectContaining({
         llm: expect.objectContaining({ temperature: null }),
@@ -240,7 +330,7 @@ describe("SettingsDialog", () => {
     fireEvent.change(screen.getByLabelText("Target language"), {
       target: { value: "fr" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "settings locked",
@@ -266,7 +356,7 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     fireEvent.change(screen.getByLabelText("AI base URL"), {
       target: { value: "http://localhost:9999/v1" },
@@ -291,25 +381,23 @@ describe("SettingsDialog", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "Folders & Language" }),
+      screen.getByRole("heading", { name: "Folders & language" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
     expect(
       screen.getByRole("heading", { name: "Glossary" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "About" }));
+    expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
+    expect(screen.getByText(packageInfo.version)).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "Stardew i18n Translator" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(`Version ${packageInfo.version}`),
-    ).toBeInTheDocument();
-    expect(screen.getByText("GPL-3.0-or-later")).toBeInTheDocument();
+      screen.getByText("Author & license").parentElement,
+    ).toHaveTextContent("GPL-3.0-or-later");
     expect(screen.getByRole("tab", { name: "Shortcuts" })).toBeInTheDocument();
 
     // Diagnostics: the logs-folder button bridges to the backend command so a
     // user can attach a log file to a bug report.
-    fireEvent.click(screen.getByRole("button", { name: /Open logs folder/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Open logs" }));
     expect(invokeMock).toHaveBeenCalledWith("open_logs_dir", undefined);
   });
 
@@ -323,12 +411,14 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    const folders = screen.getByRole("tab", { name: "Folders & Language" });
+    const folders = screen.getByRole("tab", { name: "Folders & language" });
     folders.focus();
     fireEvent.keyDown(folders, { key: "ArrowDown" });
-    expect(screen.getByRole("tab", { name: "Local AI" })).toHaveFocus();
     expect(
-      screen.getByRole("heading", { name: "Local AI connection" }),
+      screen.getByRole("tab", { name: "Translation engines" }),
+    ).toHaveFocus();
+    expect(
+      screen.getByRole("heading", { name: "Translation engines" }),
     ).toBeVisible();
 
     fireEvent.keyDown(document.activeElement!, { key: "End" });
@@ -356,7 +446,7 @@ describe("SettingsDialog", () => {
     });
     expect(logging).toBeChecked();
     fireEvent.click(logging);
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ diagnosticLogging: false }),
@@ -416,7 +506,7 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(saveShortcut);
     fireEvent.keyDown(saveShortcut, { key: "s", ctrlKey: true });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         shortcuts: { "editor.save": "Ctrl+S" },
@@ -440,7 +530,7 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Shortcuts" }));
     fireEvent.click(screen.getByRole("button", { name: "Reset all" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({ shortcuts: {} }),
     );
@@ -456,9 +546,7 @@ describe("SettingsDialog", () => {
       />,
     );
     fireEvent.click(screen.getByRole("tab", { name: "About" }));
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open project on GitHub ↗" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "GitHub" }));
     expect(invokeMock).toHaveBeenCalledWith("open_url", {
       url: "https://github.com/Nana1873/stardew-i18n-translator",
     });
@@ -603,7 +691,7 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Connection refused (ECONNREFUSED)",
@@ -636,10 +724,110 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("tab", { name: "Local AI" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
     fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
     expect(await screen.findByRole("status")).toHaveTextContent(
       "server reports no loaded models",
     );
+  });
+
+  it("opens the requested V3 page and exposes the complete V3 navigation", () => {
+    const { container } = render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("heading", { name: "Translation engines" }),
+    ).toBeVisible();
+    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(container.querySelector(".stv3-settings-dialog")).not.toBeNull();
+    expect(container.querySelector(".stv3-settings-layout")).not.toBeNull();
+  });
+
+  it("keeps unsupported provider controls visible but unavailable", () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const codex = screen.getByText("Codex CLI").closest("button")!;
+    expect(codex).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(codex);
+    expect(
+      screen.getByRole("region", { name: "Codex CLI unavailable" }),
+    ).toHaveTextContent("Unavailable in this backend phase");
+    expect(screen.getByRole("button", { name: "Check status" })).toBeDisabled();
+
+    const api = screen.getByText("OpenAI API").closest("button")!;
+    expect(api).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(api);
+    expect(
+      screen.getByRole("region", { name: "OpenAI API unavailable" }),
+    ).toHaveTextContent("No API setting is persisted");
+    expect(screen.getByRole("button", { name: "Validate" })).toBeDisabled();
+  });
+
+  it("includes the accepted Ctrl+F string-search shortcut", () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="shortcuts"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Change Focus string search" }),
+    ).toHaveTextContent("Ctrl+F");
+  });
+
+  it("traps Tab, contains shortcuts, closes on Escape, and restores focus", async () => {
+    const trigger = document.createElement("button");
+    document.body.append(trigger);
+    trigger.focus();
+    const bubbled = vi.fn();
+    document.body.addEventListener("keydown", bubbled);
+    const onClose = vi.fn();
+    const { unmount } = render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={onClose}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("tab", { name: "Folders & language" }),
+      ).toHaveFocus(),
+    );
+    const first = screen.getByRole("button", { name: "Close settings" });
+    const last = screen.getByRole("button", { name: "Save changes" });
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(first).toHaveFocus();
+    expect(bubbled).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
+    unmount();
+    expect(trigger).toHaveFocus();
+
+    document.body.removeEventListener("keydown", bubbled);
+    trigger.remove();
   });
 });

@@ -23,6 +23,7 @@ import {
   TARGET_LANGUAGES,
   gameSupportsLanguage,
 } from "../languages";
+import { useDialogAccessibility } from "../dialogAccessibility";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -64,6 +65,12 @@ export function SetupWizard({
   const [glossaryBuilding, setGlossaryBuilding] = useState(false);
   const [glossaryBuilt, setGlossaryBuilt] = useState<GlossaryInfo | null>(null);
   const autoBuildKey = useRef<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const { onDialogKeyDown } = useDialogAccessibility({
+    dialogRef,
+    onEscape: onCancel ?? (() => {}),
+    escapeDisabled: !onCancel || busy,
+  });
 
   useEffect(() => {
     if (step !== 4 || !stardewPath) return;
@@ -211,10 +218,12 @@ export function SetupWizard({
 
   return (
     <div
+      ref={dialogRef}
       className="wizard__backdrop"
       role="dialog"
       aria-modal="true"
       aria-label="Setup"
+      onKeyDown={onDialogKeyDown}
     >
       <div className="wizard wizard--setup">
         <header className="setup__hero">

@@ -15,9 +15,22 @@
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  CopyCheck,
+  Eraser,
+  Equal,
+  ShieldAlert,
+  ShieldCheck,
+  Sparkles,
+  X,
+} from "lucide-react";
 import type {
   GlossaryEntry,
   StringStatus,
@@ -33,8 +46,11 @@ import {
   displayShortcut,
   matchesShortcut,
 } from "../shortcuts";
+import { useModalIsolation } from "../dialogAccessibility";
 
 export interface EditorRow {
+  /** Stable package identity; file/key alone are not unique in All mods. */
+  modUniqueId: string;
   key: string;
   source: string;
   /** Effective current target (saved edit or imported value). */
@@ -53,6 +69,9 @@ interface StringEditorProps {
   index: number;
   total: number;
   modName: string;
+  targetLanguageLabel?: string;
+  /** Configured local model used for a draft created in this editor session. */
+  localAiModel?: string;
   reviewProgress?: { current: number; total: number };
   /** Official game glossary (typed entries), if built. */
   glossary?: GlossaryEntry[] | null;
@@ -69,6 +88,8 @@ interface StringEditorProps {
   ) => Promise<void> | void;
   onClose: () => void;
   onNavigate: (delta: number) => void;
+  onOpenEngineSettings?: () => void;
+  onNotify?: (message: string, tone?: "info" | "success" | "error") => void;
   shortcuts?: ResolvedShortcuts;
 }
 
@@ -144,9 +165,16 @@ function Kbd({ children }: { children: string }) {
 function countTokens(text: string): Map<string, number> {
   const counts = new Map<string, number>();
   for (const token of extractProtectedTokens(text)) {
+    if (token === "\n" || token === "'") continue;
     counts.set(token, (counts.get(token) ?? 0) + 1);
   }
   return counts;
+}
+
+function translationFieldLabel(label: string): string {
+  if (/translation$/i.test(label)) return label;
+  const language = label.replace(/\s+\([^)]*\)\s*$/, "").trim();
+  return language === "Translation" ? language : `${language} translation`;
 }
 
 export function StringEditor({
@@ -154,20 +182,26 @@ export function StringEditor({
   index,
   total,
   modName,
+  targetLanguageLabel = "Translation",
+  localAiModel,
   reviewProgress,
   glossary,
   onTranslate,
   onSave,
   onClose,
   onNavigate,
+  onOpenEngineSettings,
+  onNotify,
   shortcuts = DEFAULT_SHORTCUTS,
 }: StringEditorProps) {
   const [value, setValue] = useState(row.target);
-  // True while the current target is an unreviewed AI suggestion. Cleared
-  // when the user edits the field; confirmed away by Save → translated.
+  // A persisted review suggestion may be approved by saving it, or accepted
+  // with edits. A fresh AI draft is tracked separately below because even an
+  // edited AI draft must enter Review on its first successful persistence.
   const [reviewNeeded, setReviewNeeded] = useState(
     row.status === "review-needed",
   );
+  const [aiDraftPending, setAiDraftPending] = useState(false);
   // True once the user changed anything (text, AI translate). Navigation
   // auto-saves on dirty.
   const [dirty, setDirty] = useState(false);
@@ -175,14 +209,78 @@ export function StringEditor({
     row.tokenMismatchAccepted,
   );
   const [pendingSave, setPendingSave] = useState<"close" | "next" | null>(null);
+  const [pendingMove, setPendingMove] = useState<number | null>(null);
   const [translating, setTranslating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [translateMsg, setTranslateMsg] = useState<string | null>(null);
+  const [translateMsgKind, setTranslateMsgKind] = useState<
+    "note" | "ai-error" | "save-error"
+  >("note");
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "source" | "target">(
+    "idle",
+  );
+  const [statusTooltip, setStatusTooltip] = useState<{
+    text: string;
+    anchorLeft: number;
+    anchorRight: number;
+    anchorTop: number;
+    anchorBottom: number;
+    left: number;
+    top: number;
+  } | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const statusTooltipRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const discardRef = useRef<HTMLElement>(null);
+  const saveAnywayRef = useRef<HTMLElement>(null);
+  const overlayStateRef = useRef({
+    discardOpen: false,
+    pendingSave: null as "close" | "next" | null,
+    pendingMove: null as number | null,
+  });
+  overlayStateRef.current = { discardOpen, pendingSave, pendingMove };
   const aiRequest = useRef(0);
-  const rowIdentity = `${row.file}\0${row.key}\0${row.source}`;
+  const launcherRef = useRef<HTMLElement | null>(null);
+  const rowIdentity = `${row.modUniqueId}\0${row.file}\0${row.key}\0${row.source}`;
   const rowIdentityRef = useRef(rowIdentity);
   rowIdentityRef.current = rowIdentity;
+  useModalIsolation(dialogRef);
+
+  useLayoutEffect(() => {
+    if (!statusTooltip || !statusTooltipRef.current) return;
+    const tip = statusTooltipRef.current.getBoundingClientRect();
+    const anchorWidth = statusTooltip.anchorRight - statusTooltip.anchorLeft;
+    const left = Math.min(
+      window.innerWidth - tip.width - 8,
+      Math.max(8, statusTooltip.anchorLeft + (anchorWidth - tip.width) / 2),
+    );
+    const below = statusTooltip.anchorBottom + 7;
+    const top =
+      below + tip.height <= window.innerHeight - 8
+        ? below
+        : Math.max(8, statusTooltip.anchorTop - tip.height - 7);
+    if (left !== statusTooltip.left || top !== statusTooltip.top) {
+      setStatusTooltip((current) =>
+        current ? { ...current, left, top } : current,
+      );
+    }
+  }, [statusTooltip]);
+
+  useEffect(() => {
+    if (!statusTooltip) return;
+    const hide = () => setStatusTooltip(null);
+    window.addEventListener("resize", hide);
+    return () => window.removeEventListener("resize", hide);
+  }, [statusTooltip]);
+
+  useEffect(() => {
+    launcherRef.current =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    return () => launcherRef.current?.focus();
+  }, []);
 
   // Reset the field whenever the row changes (including via prev/next).
   useEffect(() => {
@@ -190,12 +288,17 @@ export function StringEditor({
     setTranslating(false);
     setValue(row.target);
     setReviewNeeded(row.status === "review-needed");
+    setAiDraftPending(false);
     setMismatchAccepted(row.tokenMismatchAccepted);
     setPendingSave(null);
+    setPendingMove(null);
     setDirty(false);
     setTranslateMsg(null);
+    setTranslateMsgKind("note");
+    setDiscardOpen(false);
+    setCopyState("idle");
     textareaRef.current?.focus();
-  }, [row.key, row.file, row.target, row.status]);
+  }, [rowIdentity, row.target, row.status, row.tokenMismatchAccepted]);
 
   useEffect(
     () => () => {
@@ -204,23 +307,21 @@ export function StringEditor({
     [],
   );
 
-  useEffect(() => {
-    aiRequest.current += 1;
-    setTranslating(false);
-  }, [onTranslate]);
-
   // The status to persist on auto-save (navigation): an unreviewed AI
   // suggestion stays review-needed; otherwise it follows the field
   // (empty → untranslated, text → translated).
   function effectiveStatus(): StringStatus {
     if (value.trim() === "") return "untranslated";
-    if (reviewNeeded) return "review-needed";
+    if (aiDraftPending || reviewNeeded) return "review-needed";
+    if (!dirty && row.status === "outdated") return "outdated";
     return "translated";
   }
 
-  /** The status an explicit Save confirms to (the user has reviewed it). */
+  /** Explicit Save approves persisted Review rows, but a fresh AI draft must
+   * first be persisted to Review even when the user edited the suggestion. */
   function confirmedStatus(): StringStatus {
-    return value.trim() === "" ? "untranslated" : "translated";
+    if (value.trim() === "") return "untranslated";
+    return aiDraftPending ? "review-needed" : "translated";
   }
 
   /** Persist an explicit save after any required token-error confirmation. */
@@ -234,10 +335,12 @@ export function StringEditor({
     setTranslateMsg(null);
     try {
       await onSave(value, confirmedStatus(), acceptTokenMismatch);
+      setAiDraftPending(false);
       if (destination === "next" && index < total - 1) onNavigate(1);
       else onClose();
     } catch (cause) {
       setTranslateMsg(String(cause));
+      setTranslateMsgKind("save-error");
       textareaRef.current?.focus();
     } finally {
       setSaving(false);
@@ -257,7 +360,8 @@ export function StringEditor({
     );
   }
 
-  /** Edit the target by hand: it is now the user's own text, no longer a pending AI suggestion. */
+  /** A manual edit approves an already-persisted Review row. A fresh AI draft
+   * keeps its first-save Review gate until persistence succeeds. */
   function editValue(next: string) {
     aiRequest.current += 1;
     setTranslating(false);
@@ -265,27 +369,32 @@ export function StringEditor({
     setReviewNeeded(false);
     setMismatchAccepted(false);
     setPendingSave(null);
-    setDirty(true);
+    setPendingMove(null);
+    setDirty(next !== row.target);
   }
 
   async function handleTranslate() {
     if (!onTranslate) {
       setTranslateMsg("Configure a local AI in Settings to use translation.");
+      setTranslateMsgKind("ai-error");
       return;
     }
     const request = ++aiRequest.current;
     const identity = rowIdentity;
     setTranslating(true);
     setTranslateMsg(null);
+    setTranslateMsgKind("note");
     try {
       const result = await onTranslate(row.source, row.section);
       if (request !== aiRequest.current || identity !== rowIdentityRef.current)
         return;
       setValue(result.text);
       setReviewNeeded(true); // an AI suggestion awaiting review
+      setAiDraftPending(true);
       setMismatchAccepted(false);
       setPendingSave(null);
-      setDirty(true);
+      setPendingMove(null);
+      setDirty(result.text !== row.target);
       const notes: string[] = [];
       if (result.missingTokens.length > 0) {
         notes.push(
@@ -299,10 +408,12 @@ export function StringEditor({
         );
       }
       setTranslateMsg(notes.length > 0 ? notes.join(" ") : null);
+      setTranslateMsgKind("note");
       textareaRef.current?.focus();
     } catch (cause) {
       if (request !== aiRequest.current) return;
       setTranslateMsg(String(cause));
+      setTranslateMsgKind("ai-error");
     } finally {
       if (request === aiRequest.current) setTranslating(false);
     }
@@ -310,18 +421,36 @@ export function StringEditor({
 
   async function navigate(delta: number) {
     if (saving) return;
-    if (!(dirty || value !== row.target)) {
+    if (!(aiDraftPending || dirty || value !== row.target)) {
       aiRequest.current += 1;
       onNavigate(delta);
       return;
     }
+    if (blockingTokenIssues.length > 0 && !mismatchAccepted) {
+      setPendingMove(delta);
+      return;
+    }
+    await persistNavigation(delta, mismatchAccepted);
+  }
+
+  async function persistNavigation(
+    delta: number,
+    acceptTokenMismatch: boolean,
+  ) {
     setSaving(true);
+    setPendingMove(null);
     try {
-      await onSave(value, effectiveStatus(), false);
+      await onSave(
+        value,
+        acceptTokenMismatch ? confirmedStatus() : effectiveStatus(),
+        acceptTokenMismatch,
+      );
+      setAiDraftPending(false);
       aiRequest.current += 1;
       onNavigate(delta);
     } catch (cause) {
       setTranslateMsg(String(cause));
+      setTranslateMsgKind("save-error");
       textareaRef.current?.focus();
     } finally {
       setSaving(false);
@@ -340,8 +469,33 @@ export function StringEditor({
     setReviewNeeded(false);
     setMismatchAccepted(false);
     setPendingSave(null);
-    setDirty(true);
+    setPendingMove(null);
+    setDirty(row.target !== "");
     textareaRef.current?.focus();
+  }
+
+  function requestClose() {
+    if (saving) return;
+    if (aiDraftPending || dirty || value !== row.target) {
+      setDiscardOpen(true);
+      return;
+    }
+    onClose();
+  }
+
+  async function copyText(kind: "source" | "target") {
+    const text = kind === "source" ? row.source : value;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyState(kind);
+      onNotify?.(
+        kind === "source" ? "Source copied." : "Translation copied.",
+        "success",
+      );
+      window.setTimeout(() => setCopyState("idle"), 1200);
+    } catch {
+      onNotify?.("Could not copy to the clipboard.", "error");
+    }
   }
 
   /** Insert a protected token at the cursor (or replace the selection). */
@@ -351,9 +505,11 @@ export function StringEditor({
     const end = textarea?.selectionEnd ?? value.length;
     const next = value.slice(0, start) + raw + value.slice(end);
     setValue(next);
+    setReviewNeeded(false);
     setMismatchAccepted(false);
     setPendingSave(null);
-    setDirty(true);
+    setPendingMove(null);
+    setDirty(next !== row.target);
     requestAnimationFrame(() => {
       const caret = start + raw.length;
       textarea?.focus();
@@ -385,7 +541,7 @@ export function StringEditor({
       void handleTranslate();
     } else if (matchesShortcut(event, shortcuts["editor.close"])) {
       event.preventDefault();
-      if (!saving) onClose();
+      requestClose();
     }
   }
 
@@ -394,6 +550,68 @@ export function StringEditor({
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented) return;
+      const modalDialogs = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[role="dialog"][aria-modal="true"]',
+        ),
+      ).filter((dialog) => !dialog.hidden);
+      const topmostDialog = modalDialogs.at(-1);
+      if (
+        topmostDialog &&
+        topmostDialog !== dialogRef.current &&
+        !dialogRef.current?.contains(topmostDialog)
+      ) {
+        return;
+      }
+      const overlay = overlayStateRef.current;
+      const overlayOpen = Boolean(
+        overlay.discardOpen ||
+        overlay.pendingSave ||
+        overlay.pendingMove !== null,
+      );
+      if (event.key === "Escape" && overlay.discardOpen) {
+        event.preventDefault();
+        setDiscardOpen(false);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      if (
+        event.key === "Escape" &&
+        (overlay.pendingSave || overlay.pendingMove !== null)
+      ) {
+        event.preventDefault();
+        setPendingSave(null);
+        setPendingMove(null);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        return;
+      }
+      if (event.key === "Tab") {
+        const container =
+          saveAnywayRef.current ?? discardRef.current ?? dialogRef.current;
+        const focusable = container
+          ? Array.from(
+              container.querySelectorAll<HTMLElement>(
+                'button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+              ),
+            ).filter((node) => !node.hasAttribute("hidden"))
+          : [];
+        if (focusable.length > 0) {
+          const first = focusable[0];
+          const last = focusable.at(-1)!;
+          if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+            return;
+          }
+          if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+            return;
+          }
+        }
+      }
+      if (overlayOpen) return;
       onKeyDownRef.current(event);
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -402,275 +620,628 @@ export function StringEditor({
     };
   }, []);
 
+  useEffect(() => {
+    if (!(discardOpen || pendingSave || pendingMove !== null)) return;
+    const nestedDialog = saveAnywayRef.current ?? discardRef.current;
+    nestedDialog
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus();
+  }, [discardOpen, pendingSave, pendingMove]);
+
   const sourceTokenCounts = countTokens(row.source);
   const valueTokenCounts = countTokens(value);
+  const addedTokenCounts = [...valueTokenCounts].filter(
+    ([token, found]) => found > (sourceTokenCounts.get(token) ?? 0),
+  );
+  const hasMissingTokens = [...sourceTokenCounts].some(
+    ([token, required]) => (valueTokenCounts.get(token) ?? 0) < required,
+  );
   const issues = validate(row.source, value, row.targetPresent);
   const blockingTokenIssues = issues.filter(
     (issue) =>
       issue.severity === "error" &&
       (issue.ruleId === "token-missing" || issue.ruleId === "token-added"),
   );
-  const shownStatus = effectiveStatus();
+  const acceptedTokenMismatch =
+    mismatchAccepted && blockingTokenIssues.length > 0;
+  const unacceptedErrors = issues.filter(
+    (issue) =>
+      issue.severity === "error" &&
+      !(
+        acceptedTokenMismatch &&
+        (issue.ruleId === "token-missing" || issue.ruleId === "token-added")
+      ),
+  );
+  const visibleIssues = acceptedTokenMismatch
+    ? issues.filter(
+        (issue) =>
+          issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
+      )
+    : issues;
+  const shownStatus = row.status;
+  const shownStatusLabel: Record<StringStatus, string>[StringStatus] = {
+    untranslated: "Open",
+    outdated: "Changed",
+    "review-needed": "Review",
+    translated: "Done",
+  }[shownStatus];
   const glossaryMatches = matchGlossary(row.source, glossary);
+  const targetFieldLabel = translationFieldLabel(targetLanguageLabel);
+  const targetLanguageName = targetFieldLabel.replace(/\s+translation$/i, "");
+  const targetHelpName =
+    targetLanguageName === "Translation" ? "target" : targetLanguageName;
+  const statusHelp: Record<StringStatus, string> = {
+    untranslated: `No accepted ${targetHelpName} translation exists yet.`,
+    outdated: `The English source changed after this ${targetHelpName} translation was saved. The existing translation may be outdated and should be reviewed.`,
+    "review-needed":
+      "This imported or AI-generated suggestion still needs human approval.",
+    translated: `The ${targetHelpName} translation was explicitly saved or accepted for the current English source.`,
+  };
+  const atQueueEnd = index >= total - 1;
+  const textEdited = value !== row.target;
+  let saveLabel = "Save";
+  let saveNextLabel = atQueueEnd ? "Save & close" : "Save & next";
+  if (row.status === "review-needed") {
+    saveLabel = textEdited ? "Save edited suggestion" : "Approve suggestion";
+    saveNextLabel = textEdited
+      ? atQueueEnd
+        ? "Save edit & close"
+        : "Save edit & next"
+      : atQueueEnd
+        ? "Approve & close"
+        : "Approve & next";
+  } else if (row.status === "outdated") {
+    saveLabel = textEdited ? "Save update" : "Keep translation";
+    saveNextLabel = textEdited
+      ? atQueueEnd
+        ? "Save update & close"
+        : "Save update & next"
+      : atQueueEnd
+        ? "Keep & close"
+        : "Keep & next";
+  }
+  const discardSuggestion = row.status === "review-needed";
 
   return (
-    <div
-      className="editor__backdrop"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Edit string"
-    >
-      <div className="editor">
-        <header className="editor__meta">
-          <span className="editor__title">
-            <code>{row.key}</code>
+    <div className="editor__backdrop stv3-editor-overlay">
+      <section
+        ref={dialogRef}
+        className="editor stv3-editor"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="stv3-editor-title"
+        aria-describedby="stv3-editor-context-description"
+      >
+        <header className="editor__meta stv3-editor-head">
+          <span className="editor__title stv3-editor-title">
+            <span className="stv3-kicker">Edit string</span>
+            <h2 className="stv3-heading" id="stv3-editor-title">
+              {row.key}
+            </h2>
           </span>
-          <span className="editor__meta-right">
+          <span className="editor__meta-right stv3-editor-meta">
             <span className="editor__crumbs">
-              {modName} · {row.file} · {index + 1}/{total}
+              <span id="stv3-editor-context-description">
+                {modName} · {row.file}
+              </span>{" "}
+              <span className="stv3-editor-meta-separator" aria-hidden>
+                ·
+              </span>{" "}
+              {reviewProgress
+                ? `${reviewProgress.current} / ${reviewProgress.total}`
+                : `${index + 1} / ${total}`}
             </span>
             <span
-              className="editor__status"
+              className={`editor__status stv3-state${
+                shownStatus === "translated"
+                  ? " is-ready"
+                  : shownStatus === "review-needed"
+                    ? " is-review"
+                    : shownStatus === "outdated"
+                      ? " is-change"
+                      : ""
+              }`}
               style={{
                 color: STATUS_META[shownStatus].color,
                 borderColor: statusTint(STATUS_META[shownStatus].color, 0.5),
                 background: statusTint(STATUS_META[shownStatus].color, 0.14),
               }}
-              title="Status this string will be saved with"
+              data-status-help={statusHelp[shownStatus]}
+              aria-description={statusHelp[shownStatus]}
+              onPointerEnter={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setStatusTooltip({
+                  text: statusHelp[shownStatus],
+                  anchorLeft: rect.left,
+                  anchorRight: rect.right,
+                  anchorTop: rect.top,
+                  anchorBottom: rect.bottom,
+                  left: rect.left,
+                  top: rect.bottom + 7,
+                });
+              }}
+              onPointerLeave={() => setStatusTooltip(null)}
+              onFocus={(event) => {
+                const rect = event.currentTarget.getBoundingClientRect();
+                setStatusTooltip({
+                  text: statusHelp[shownStatus],
+                  anchorLeft: rect.left,
+                  anchorRight: rect.right,
+                  anchorTop: rect.top,
+                  anchorBottom: rect.bottom,
+                  left: rect.left,
+                  top: rect.bottom + 7,
+                });
+              }}
+              onBlur={() => setStatusTooltip(null)}
             >
               <span aria-hidden>{STATUS_META[shownStatus].glyph}</span>{" "}
-              {STATUS_META[shownStatus].label}
+              {shownStatusLabel}
             </span>
+            <button
+              className="stv3-icon-button"
+              type="button"
+              aria-label="Close editor"
+              onClick={requestClose}
+              disabled={saving}
+            >
+              <X aria-hidden />
+            </button>
           </span>
         </header>
 
-        {reviewProgress && (
-          <div className="editor__review">
-            <span>
-              Reviewing {reviewProgress.current} of {reviewProgress.total}
-            </span>
-            <span
-              className="editor__review-track"
-              role="progressbar"
-              aria-label="Review session progress"
-              aria-valuemin={0}
-              aria-valuemax={reviewProgress.total}
-              aria-valuenow={reviewProgress.current}
-            >
-              <span
-                className="editor__review-fill"
-                style={{
-                  width: `${(reviewProgress.current / reviewProgress.total) * 100}%`,
-                }}
+        <div className="stv3-editor-body">
+          {/* Reserved slots (SPEC §§5, 7 and 10): tokens + glossary rows exist on every
+            string — empty-state text when N/A — so the panes and the action
+            bar never move during a Save & next run. */}
+          <div className="stv3-editor-support">
+            {(sourceTokenCounts.size > 0 || addedTokenCounts.length > 0) && (
+              <div className="editor__slot stv3-editor-support-row">
+                <span className="editor__slot-label stv3-editor-support-label">
+                  Protected tokens
+                </span>
+                <span className="editor__slot-body stv3-glossary-hints">
+                  {sourceTokenCounts.size > 0 || addedTokenCounts.length > 0 ? (
+                    <>
+                      {[...sourceTokenCounts].map(([token, required], i) => {
+                        const satisfied =
+                          (valueTokenCounts.get(token) ?? 0) >= required;
+                        const contents = (
+                          <>
+                            {describeToken(token)}
+                            {required > 1 ? ` ×${required}` : ""}
+                            {satisfied ? " ✓" : ""}
+                          </>
+                        );
+                        return satisfied ? (
+                          <span
+                            key={`source-${i}-${token}`}
+                            className="editor__token stv3-token editor__token--done is-valid"
+                            title={`${token} — all present`}
+                            aria-label={`Token ${token} is present in full`}
+                          >
+                            {contents}
+                          </span>
+                        ) : (
+                          <button
+                            key={`source-${i}-${token}`}
+                            type="button"
+                            className={`editor__token stv3-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`}
+                            title={
+                              acceptedTokenMismatch
+                                ? `${token} — mismatch explicitly accepted for this exact translation`
+                                : `Insert ${token} at the cursor`
+                            }
+                            aria-label={`Insert missing token ${token}`}
+                            onClick={() => insertToken(token)}
+                          >
+                            {contents}
+                          </button>
+                        );
+                      })}
+                      {addedTokenCounts.map(([token, found], i) => (
+                        <span
+                          key={`added-${i}-${token}`}
+                          className={`editor__token stv3-token is-missing${acceptedTokenMismatch ? " is-accepted" : ""}`}
+                          aria-label={`Extra token ${token}`}
+                          title={`Extra token ${token}`}
+                        >
+                          {describeToken(token)}
+                          {found > 1 ? ` ×${found}` : ""}
+                        </span>
+                      ))}
+                      {hasMissingTokens && (
+                        <span className="stv3-kicker">
+                          Click a missing token to insert it
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <span className="editor__slot-empty stv3-kicker">None</span>
+                  )}
+                </span>
+              </div>
+            )}
+
+            {glossaryMatches.length > 0 && (
+              <div className="editor__slot stv3-editor-support-row">
+                <span className="editor__slot-label stv3-editor-support-label">
+                  Glossary hints
+                </span>
+                <span className="editor__slot-body stv3-glossary-hints">
+                  {glossaryMatches.length > 0 ? (
+                    glossaryMatches.map((match, i) => (
+                      <span
+                        key={i}
+                        className="editor__gloss stv3-glossary-term"
+                        title={KIND_LABEL[match.kind]}
+                      >
+                        <span className="editor__gloss-kind" aria-hidden>
+                          {KIND_LABEL[match.kind]}
+                        </span>
+                        {match.source} → {match.target}
+                      </span>
+                    ))
+                  ) : (
+                    <span className="editor__slot-empty stv3-kicker">
+                      No matching hints
+                    </span>
+                  )}
+                </span>
+              </div>
+            )}
+            {(row.status === "review-needed" || aiDraftPending) && (
+              <div className="stv3-editor-support-row">
+                <span className="stv3-editor-support-label">
+                  Suggestion source
+                </span>
+                <span className="stv3-provenance-copy">
+                  <strong>{aiDraftPending ? "Local AI" : "Unavailable"}</strong>{" "}
+                  · {aiDraftPending ? "Draft in editor" : "Awaiting review"} ·{" "}
+                  {aiDraftPending
+                    ? localAiModel || "Model unavailable"
+                    : "Model unavailable"}{" "}
+                  · {aiDraftPending ? "Default" : "Reasoning unavailable"} ·{" "}
+                  {aiDraftPending ? "just now" : "Time unavailable"}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <div className="editor__panes stv3-editor-columns">
+            <div className="editor__pane stv3-field stv3-editor-field">
+              <div className="stv3-editor-field-head">
+                <span>
+                  {row.status === "outdated"
+                    ? "English source update"
+                    : "English source"}
+                </span>
+                <button
+                  className="stv3-icon-button stv3-editor-copy"
+                  type="button"
+                  aria-label="Copy current English source"
+                  onClick={() => void copyText("source")}
+                >
+                  {copyState === "source" ? (
+                    <CopyCheck aria-hidden />
+                  ) : (
+                    <Copy aria-hidden />
+                  )}
+                </button>
+              </div>
+              {row.status === "outdated" ? (
+                <div className="stv3-update-source">
+                  <div className="stv3-update-source-row is-previous">
+                    <span>Previous English</span>
+                    <div>Unavailable</div>
+                  </div>
+                  <div className="stv3-update-source-row is-current">
+                    <span>Current English</span>
+                    <div>{row.source}</div>
+                  </div>
+                </div>
+              ) : (
+                <div className="stv3-editor-source">{row.source}</div>
+              )}
+            </div>
+            <div className="editor__pane stv3-field stv3-editor-field">
+              <span className="stv3-editor-field-head">
+                <label htmlFor="stv3-editor-translation">
+                  {targetFieldLabel}
+                </label>
+                <button
+                  className="stv3-icon-button stv3-editor-copy"
+                  type="button"
+                  aria-label="Copy translation"
+                  onClick={(event) => {
+                    event.preventDefault();
+                    void copyText("target");
+                  }}
+                >
+                  {copyState === "target" ? (
+                    <CopyCheck aria-hidden />
+                  ) : (
+                    <Copy aria-hidden />
+                  )}
+                </button>
+              </span>
+              <textarea
+                id="stv3-editor-translation"
+                className="stv3-textarea"
+                ref={textareaRef}
+                value={value}
+                onChange={(event) => editValue(event.target.value)}
+                readOnly={saving}
               />
-            </span>
+            </div>
+          </div>
+
+          {/* Reserved validation line (fixed min-height — see editor__slot note). */}
+          <div
+            className={`editor__validation stv3-validation${unacceptedErrors.length > 0 ? " is-error" : acceptedTokenMismatch || visibleIssues.length > 0 ? " is-warning" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            {issues.length === 0 ? (
+              <>
+                <ShieldCheck aria-hidden />
+                <span className="editor__valid-ok">No issues found</span>
+              </>
+            ) : (
+              <>
+                <ShieldAlert aria-hidden />
+                {acceptedTokenMismatch && (
+                  <span className="editor__issue editor__issue--warning">
+                    Protected-token mismatch explicitly accepted for this exact
+                    translation. Export is allowed; editing requires
+                    confirmation again.
+                  </span>
+                )}
+                {visibleIssues.map((issue, i) => (
+                  <span
+                    key={i}
+                    className={`editor__issue editor__issue--${issue.severity}`}
+                  >
+                    {issue.message}
+                  </span>
+                ))}
+              </>
+            )}
+            {translateMsg && translateMsgKind === "note" && (
+              <span className="editor__ai-msg">{translateMsg}</span>
+            )}
+          </div>
+
+          {translateMsg && translateMsgKind !== "note" && (
+            <div
+              className="stv3-flow-callout is-error stv3-editor-ai-error"
+              role="alert"
+            >
+              <span>{translateMsg}</span>
+              {translateMsgKind === "ai-error" && onOpenEngineSettings && (
+                <button
+                  className="stv3-button stv3-button-quiet"
+                  type="button"
+                  onClick={onOpenEngineSettings}
+                >
+                  Open Translation engines
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+
+        {(pendingSave || pendingMove !== null) && (
+          <div className="stv3-flow-overlay">
+            <section
+              ref={saveAnywayRef}
+              className="stv3-flow-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="stv3-save-anyway-title"
+              aria-describedby="stv3-save-anyway-description"
+            >
+              <div className="stv3-flow-head">
+                <div>
+                  <h2 className="stv3-heading" id="stv3-save-anyway-title">
+                    Protected token missing
+                  </h2>
+                  <div
+                    className="stv3-kicker"
+                    id="stv3-save-anyway-description"
+                  >
+                    This translation may appear incomplete or broken in game.
+                  </div>
+                </div>
+                <button
+                  className="stv3-icon-button"
+                  type="button"
+                  aria-label="Return to editor"
+                  onClick={() => {
+                    setPendingSave(null);
+                    setPendingMove(null);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                >
+                  <X aria-hidden />
+                </button>
+              </div>
+              <div className="stv3-flow-body">
+                {blockingTokenIssues.map((issue) => (
+                  <p key={issue.message}>{issue.message}</p>
+                ))}
+                <div className="stv3-flow-callout is-warning">
+                  “Save anyway” applies only to this source revision and this
+                  exact translation. Any later edit requires confirmation again.
+                </div>
+              </div>
+              <div className="stv3-flow-foot">
+                <button
+                  className="stv3-button stv3-button-quiet"
+                  type="button"
+                  onClick={() => {
+                    setPendingSave(null);
+                    setPendingMove(null);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                >
+                  Return to editor
+                </button>
+                <button
+                  type="button"
+                  className="editor__save-anyway stv3-button stv3-button-primary"
+                  onClick={() => {
+                    if (pendingSave) void persistConfirmed(pendingSave, true);
+                    else if (pendingMove !== null)
+                      void persistNavigation(pendingMove, true);
+                  }}
+                >
+                  Save anyway
+                </button>
+              </div>
+            </section>
           </div>
         )}
 
-        {/* Reserved slots (SPEC §§5, 7 and 10): tokens + glossary rows exist on every
-            string — empty-state text when N/A — so the panes and the action
-            bar never move during a Save & next run. */}
-        <div className="editor__slot">
-          <span className="editor__slot-label">Tokens</span>
-          <span className="editor__slot-body">
-            {sourceTokenCounts.size > 0 ? (
-              [...sourceTokenCounts].map(([token, required], i) => {
-                const satisfied =
-                  (valueTokenCounts.get(token) ?? 0) >= required;
-                return (
-                  <button
-                    key={i}
-                    type="button"
-                    className={`editor__token${satisfied ? " editor__token--done" : ""}`}
-                    title={
-                      satisfied
-                        ? `${token} — all present`
-                        : `Insert ${token} at the cursor`
-                    }
-                    onClick={() => insertToken(token)}
-                  >
-                    {describeToken(token)}
-                    {required > 1 ? ` ×${required}` : ""}
-                    {satisfied ? " ✓" : ""}
-                  </button>
-                );
-              })
-            ) : (
-              <span className="editor__slot-empty">— none —</span>
-            )}
-          </span>
-        </div>
-
-        <div className="editor__slot">
-          <span className="editor__slot-label">Glossary</span>
-          <span className="editor__slot-body">
-            {glossaryMatches.length > 0 ? (
-              glossaryMatches.map((match, i) => (
-                <button
-                  key={i}
-                  type="button"
-                  className="editor__gloss"
-                  title={`${KIND_LABEL[match.kind]} · insert “${match.target}” at the cursor`}
-                  onClick={() => insertToken(match.target)}
-                >
-                  <span className="editor__gloss-kind" aria-hidden>
-                    {KIND_LABEL[match.kind]}
-                  </span>
-                  {match.source} → {match.target}
-                </button>
-              ))
-            ) : (
-              <span className="editor__slot-empty">— no hints —</span>
-            )}
-          </span>
-        </div>
-
-        <div className="editor__panes">
-          <label className="editor__pane">
-            <span>Original (English)</span>
-            <textarea readOnly value={row.source} />
-          </label>
-          <label className="editor__pane">
-            <span>Translation</span>
-            <textarea
-              ref={textareaRef}
-              value={value}
-              onChange={(event) => editValue(event.target.value)}
-              aria-label="Translation"
-              readOnly={saving}
-            />
-          </label>
-        </div>
-
-        {/* Reserved validation line (fixed min-height — see editor__slot note). */}
-        <div className="editor__validation">
-          {issues.length === 0 ? (
-            <span className="editor__valid-ok">✓ No issues</span>
-          ) : (
-            issues.map((issue, i) => (
-              <span
-                key={i}
-                className={`editor__issue editor__issue--${issue.severity}`}
-              >
-                {issue.message}
-              </span>
-            ))
-          )}
-          {translateMsg && (
-            <span className="editor__ai-msg" role="alert">
-              {translateMsg}
-            </span>
-          )}
-        </div>
-
-        {pendingSave && (
-          <div className="editor__token-confirm" role="alert">
-            <div>
-              <strong>This translation has token errors</strong>
-              <span>
-                It may display incorrectly or break dialogue in-game. Save it
-                anyway?
-              </span>
-            </div>
-            <button type="button" onClick={() => setPendingSave(null)}>
-              Go back
+        <footer className="editor__footer stv3-editor-actions">
+          <div className="stv3-command-actions">
+            <button
+              type="button"
+              className="editor__iconbtn stv3-icon-button"
+              onClick={() => void navigate(-1)}
+              disabled={saving || index === 0}
+              aria-label="Previous string"
+              title={`Previous string — saves changes (${displayShortcut(shortcuts["editor.previous"])})`}
+            >
+              <ChevronLeft aria-hidden />
             </button>
             <button
               type="button"
-              className="editor__save-anyway"
-              onClick={() => void persistConfirmed(pendingSave, true)}
+              className="editor__iconbtn stv3-icon-button"
+              onClick={() => void navigate(1)}
+              disabled={saving || index >= total - 1}
+              aria-label="Next string"
+              title={`Next string — saves changes (${displayShortcut(shortcuts["editor.next"])})`}
             >
-              Save anyway
+              <ChevronRight aria-hidden />
             </button>
+            <button
+              type="button"
+              className="stv3-button stv3-button-quiet"
+              onClick={keepOriginal}
+              disabled={saving}
+              title={`Keep the original text (${displayShortcut(shortcuts["editor.keepOriginal"])})`}
+            >
+              <Equal aria-hidden /> Keep original
+            </button>
+            <button
+              type="button"
+              className="stv3-button stv3-button-quiet"
+              onClick={reset}
+              disabled={saving}
+              aria-label={
+                discardSuggestion
+                  ? "Discard this review suggestion; save to return the string to Open"
+                  : undefined
+              }
+              title={`${discardSuggestion ? "Discard this review suggestion" : "Clear the translation"} (${displayShortcut(shortcuts["editor.reset"])})`}
+            >
+              <Eraser aria-hidden />
+              {discardSuggestion ? "Discard suggestion" : "Clear"}
+            </button>
+            <button
+              type="button"
+              className="editor__ai-btn stv3-button stv3-button-quiet"
+              onClick={() => void handleTranslate()}
+              disabled={translating || saving}
+              title={
+                onTranslate
+                  ? `Translate with Local AI — result lands in Review (${displayShortcut(shortcuts["editor.translate"])})`
+                  : "Local AI is unavailable. Open Translation engines in Settings."
+              }
+            >
+              <Sparkles aria-hidden />
+              {translating ? "Translating…" : "Translate with AI"}{" "}
+              <span className="stv3-context-shortcut">Local AI</span>
+            </button>
+          </div>
+          <div className="stv3-command-actions">
+            <button
+              type="button"
+              className="stv3-button stv3-button-quiet"
+              onClick={() => requestConfirmedSave("close")}
+              disabled={saving}
+              title={`${saveLabel} (${displayShortcut(shortcuts["editor.save"])})`}
+            >
+              {saveLabel} <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
+            </button>
+            <button
+              type="button"
+              className="editor__save stv3-button stv3-button-primary"
+              onClick={() => requestConfirmedSave("next")}
+              disabled={saving}
+              title={`${saveNextLabel} (${displayShortcut(shortcuts["editor.saveNext"])})`}
+            >
+              {saveNextLabel}{" "}
+              <Kbd>{displayShortcut(shortcuts["editor.saveNext"])}</Kbd>
+            </button>
+          </div>
+        </footer>
+
+        {statusTooltip && (
+          <div
+            ref={statusTooltipRef}
+            className="stv3-status-tooltip"
+            role="tooltip"
+            style={{ left: statusTooltip.left, top: statusTooltip.top }}
+          >
+            {statusTooltip.text}
           </div>
         )}
 
-        <footer className="editor__footer">
-          <button
-            type="button"
-            className="editor__save"
-            onClick={() => requestConfirmedSave("next")}
-            disabled={saving}
-            title={`Confirm this string and jump to the next one (${displayShortcut(shortcuts["editor.saveNext"])})`}
-          >
-            Save & next{" "}
-            <Kbd>{displayShortcut(shortcuts["editor.saveNext"])}</Kbd>
-          </button>
-          <button
-            type="button"
-            onClick={() => requestConfirmedSave("close")}
-            disabled={saving}
-            title={`Save and close (${displayShortcut(shortcuts["editor.save"])})`}
-          >
-            Save <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
-          </button>
-          <button
-            type="button"
-            className="editor__ai-btn"
-            onClick={() => void handleTranslate()}
-            disabled={translating || saving}
-            title={
-              onTranslate
-                ? `Translate with the configured local LLM — result lands as “Needs review” (${displayShortcut(shortcuts["editor.translate"])})`
-                : "Configure a local AI in Settings first"
-            }
-          >
-            {translating ? "Translating…" : "AI Translate"}{" "}
-            <Kbd>{displayShortcut(shortcuts["editor.translate"])}</Kbd>
-          </button>
-          <span className="editor__spacer" />
-          <button
-            type="button"
-            className="editor__iconbtn"
-            onClick={() => navigate(-1)}
-            disabled={saving || index === 0}
-            aria-label="Prev"
-            title={`Previous string — saves changes (${displayShortcut(shortcuts["editor.previous"])})`}
-          >
-            ‹
-          </button>
-          <button
-            type="button"
-            className="editor__iconbtn"
-            onClick={() => navigate(1)}
-            disabled={saving || index >= total - 1}
-            aria-label="Next"
-            title={`Next string — saves changes (${displayShortcut(shortcuts["editor.next"])})`}
-          >
-            ›
-          </button>
-          <button
-            type="button"
-            className="editor__iconbtn"
-            onClick={keepOriginal}
-            disabled={saving}
-            aria-label="Keep original"
-            title={`Keep the original text — copies it as the translation (${displayShortcut(shortcuts["editor.keepOriginal"])})`}
-          >
-            ⧉
-          </button>
-          <button
-            type="button"
-            className="editor__iconbtn"
-            onClick={reset}
-            disabled={saving}
-            aria-label="Reset"
-            title={`Clear the translation (${displayShortcut(shortcuts["editor.reset"])})`}
-          >
-            ↺
-          </button>
-          <button
-            type="button"
-            className="editor__iconbtn"
-            onClick={onClose}
-            disabled={saving}
-            aria-label="Cancel"
-            title={`Close without saving (${displayShortcut(shortcuts["editor.close"])})`}
-          >
-            ✕
-          </button>
-        </footer>
-      </div>
+        {discardOpen && (
+          <div className="stv3-flow-overlay">
+            <section
+              ref={discardRef}
+              className="stv3-flow-dialog stv3-flow-dialog-compact"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="stv3-discard-title"
+              aria-describedby="stv3-discard-description"
+            >
+              <div className="stv3-flow-head">
+                <div>
+                  <h2 className="stv3-heading" id="stv3-discard-title">
+                    Discard changes?
+                  </h2>
+                  <div className="stv3-kicker" id="stv3-discard-description">
+                    The current translation has not been saved yet.
+                  </div>
+                </div>
+              </div>
+              <div className="stv3-flow-foot">
+                <button
+                  className="stv3-button stv3-button-quiet"
+                  type="button"
+                  onClick={() => {
+                    setDiscardOpen(false);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                >
+                  Continue editing
+                </button>
+                <button
+                  className="stv3-button stv3-button-danger"
+                  type="button"
+                  onClick={onClose}
+                >
+                  Close without saving
+                </button>
+              </div>
+            </section>
+          </div>
+        )}
+      </section>
     </div>
   );
 }

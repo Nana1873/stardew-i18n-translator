@@ -1,8 +1,14 @@
 export const SHORTCUT_COMMANDS = [
   {
+    id: "table.search",
+    group: "String table",
+    label: "Focus string search",
+    defaultShortcut: "Ctrl+F",
+  },
+  {
     id: "table.edit",
     group: "String table",
-    label: "Edit selected string",
+    label: "Edit string",
     defaultShortcut: "Enter",
   },
   {
@@ -38,7 +44,7 @@ export const SHORTCUT_COMMANDS = [
   {
     id: "editor.keepOriginal",
     group: "String editor",
-    label: "Keep original text",
+    label: "Keep original",
     defaultShortcut: "F2",
   },
   {
@@ -50,13 +56,13 @@ export const SHORTCUT_COMMANDS = [
   {
     id: "editor.translate",
     group: "String editor",
-    label: "Translate with local AI",
+    label: "Translate with AI",
     defaultShortcut: "Ctrl+F5",
   },
   {
     id: "editor.close",
     group: "String editor",
-    label: "Close without saving",
+    label: "Close editor",
     defaultShortcut: "Escape",
   },
 ] as const;

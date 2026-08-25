@@ -1,12 +1,7 @@
-/**
- * Mod scan progress and result dialog (SPEC §6).
- *
- * Shown while a scan runs and afterwards when there is something to review.
- * During the scan it shows a spinner; on completion it summarizes the result
- * (mods / files found) and lists any skipped/malformed mods (warnings) — which
- * the main window otherwise only shows as a count. A clean scan auto-closes.
- */
+import { type CSSProperties, useRef } from "react";
+import { AlertTriangle, CheckCircle2, RefreshCw, X } from "lucide-react";
 import type { ScanResult } from "../tauri/commands";
+import { useDialogAccessibility } from "../dialogAccessibility";
 
 interface ScanDialogProps {
   scanning: boolean;
@@ -15,115 +10,224 @@ interface ScanDialogProps {
   onClose: () => void;
 }
 
+const completeProgress = {
+  "--stv3-batch-progress": "100%",
+} as CSSProperties;
+
 export function ScanDialog({
   scanning,
   result,
   error,
   onClose,
 }: ScanDialogProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const { onDialogKeyDown } = useDialogAccessibility({
+    dialogRef,
+    onEscape: onClose,
+  });
+  const complete = !scanning && !error && result != null;
+  const warningCount = result?.warnings.length ?? 0;
+
   return (
-    <div
-      className="editor__backdrop"
-      onMouseDown={scanning ? undefined : onClose}
-    >
-      <div
-        className="scandlg"
+    <div className="stv3-flow-overlay">
+      <section
+        ref={dialogRef}
+        className="stv3-flow-dialog"
         role="dialog"
+        aria-modal="true"
         aria-label="Scan"
-        onMouseDown={(event) => event.stopPropagation()}
+        onKeyDown={onDialogKeyDown}
       >
-        <div className="scandlg__head">
-          <strong>
-            <span
-              className={`dlgicon ${
-                scanning
-                  ? "dlgicon--gold"
-                  : error
-                    ? "dlgicon--err"
-                    : "dlgicon--ok"
-              }`}
-              aria-hidden
+        <div className="stv3-flow-head">
+          <div>
+            <h2 className="stv3-heading">
+              {scanning
+                ? "Scanning mods …"
+                : error
+                  ? "Scan failed"
+                  : "Scan completed"}
+            </h2>
+            <div className="stv3-kicker">Local Mods folder · read-only</div>
+          </div>
+          {!scanning && (
+            <button
+              className="stv3-icon-button"
+              type="button"
+              aria-label="Close scan"
+              onClick={onClose}
             >
-              {scanning ? "⟳" : error ? "✕" : "✓"}
-            </span>
-            {scanning
-              ? "Scanning mods…"
-              : error
-                ? "Scan failed"
-                : "Scan complete"}
-          </strong>
+              <X aria-hidden="true" />
+            </button>
+          )}
         </div>
 
-        <div className="scandlg__body">
+        <div className="stv3-flow-body">
+          <div className="stv3-progress-row">
+            <span
+              role="progressbar"
+              aria-label="Scan progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={complete ? 100 : undefined}
+              aria-valuetext={
+                scanning
+                  ? "Scanning; exact progress is unavailable"
+                  : complete
+                    ? "Scan completed"
+                    : undefined
+              }
+              style={complete ? completeProgress : undefined}
+            />
+          </div>
+
           {scanning ? (
-            <div className="scandlg__busy">
-              <span className="scandlg__spinner" aria-hidden />
-              <span>Reading your Mods folder…</span>
-            </div>
-          ) : error ? (
-            <p className="scandlg__error">{error}</p>
-          ) : result ? (
             <>
               <p>
-                Found <strong>{result.modCount}</strong>{" "}
-                {result.modCount === 1 ? "mod" : "mods"} ·{" "}
-                <strong>{result.fileCount}</strong>{" "}
-                {result.fileCount === 1 ? "file" : "files"}.
+                <RefreshCw aria-hidden="true" /> Reading manifests and i18n
+                files …
               </p>
-              {result.warnings.length > 0 ? (
-                <div className="scandlg__warnings">
-                  <span className="scandlg__muted">
-                    {result.warnings.length} skipped:
-                  </span>
-                  <ul>
-                    {result.warnings.map((warning, i) => (
-                      <li key={i}>{warning}</li>
-                    ))}
-                  </ul>
-                </div>
-              ) : (result.extraKeys?.length ?? 0) === 0 ? (
-                <p className="scandlg__muted">
-                  No problems — every mod parsed cleanly.
-                </p>
-              ) : null}
-              {(result.extraKeys?.length ?? 0) > 0 && (
-                <div className="scandlg__warnings">
-                  <strong>Optional cleanup</strong>
-                  <p className="scandlg__muted">
-                    {result.extraKeys!.length} unused translation{" "}
-                    {result.extraKeys!.length === 1 ? "key was" : "keys were"}{" "}
-                    found:
-                  </p>
-                  <ul>
-                    {result.extraKeys!.map((diagnostic, i) => (
-                      <li
-                        key={`${diagnostic.targetPath}:${diagnostic.key}:${i}`}
-                      >
-                        <strong>{diagnostic.modName}</strong> ·{" "}
-                        <code>{diagnostic.targetPath}</code> ·{" "}
-                        <code>{diagnostic.key}</code>
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="scandlg__muted">
-                    These keys are no longer present in the source file. SMAPI
-                    ignores them, so they are safe to keep or remove. They do
-                    not affect progress or block export.
-                  </p>
-                </div>
-              )}
+              <div className="stv3-flow-callout">
+                Exact scan progress is unavailable. Existing translation state
+                remains untouched while the local folder is read.
+              </div>
             </>
-          ) : null}
+          ) : error ? (
+            <div className="stv3-flow-callout is-error" role="alert">
+              <strong>Scan failed:</strong> {error}
+            </div>
+          ) : result ? (
+            <ScanResultContent result={result} />
+          ) : (
+            <div className="stv3-flow-callout">Scan result unavailable.</div>
+          )}
         </div>
 
-        {!scanning && (
-          <div className="scandlg__foot">
-            <button type="button" onClick={onClose} autoFocus>
-              Close
-            </button>
-          </div>
-        )}
+        <div className="stv3-flow-foot">
+          <button
+            className="stv3-button stv3-button-quiet"
+            type="button"
+            disabled={scanning}
+            onClick={onClose}
+          >
+            Close
+          </button>
+          <button
+            className="stv3-button stv3-button-quiet"
+            type="button"
+            disabled
+            title="New-string deltas are unavailable in the current scan result"
+          >
+            Open new strings · Unavailable
+          </button>
+          <button
+            className="stv3-button stv3-button-primary"
+            type="button"
+            disabled
+            title="Changed-source deltas are unavailable in the current scan result"
+          >
+            Review changed sources · Unavailable
+          </button>
+        </div>
+
+        <span className="stv3-sr-only" aria-live="polite">
+          {scanning
+            ? "Scan in progress"
+            : error
+              ? `Scan failed: ${error}`
+              : result
+                ? `Scan complete. ${result.modCount} mods and ${result.fileCount} files found. ${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}; skipped-component count unavailable.`
+                : "Scan result unavailable"}
+        </span>
+      </section>
+    </div>
+  );
+}
+
+function ScanResultContent({ result }: { result: ScanResult }) {
+  const warnings = result.warnings;
+  const extraKeys = result.extraKeys ?? [];
+  return (
+    <>
+      <p>
+        <CheckCircle2 aria-hidden="true" /> Read {result.modCount}{" "}
+        {result.modCount === 1 ? "mod" : "mods"} and {result.fileCount}{" "}
+        {result.fileCount === 1 ? "i18n file" : "i18n files"}.
+      </p>
+      <div className="stv3-preflight-metrics" aria-label="Latest scan result">
+        <Metric value={result.modCount} label="mods found" />
+        <Metric value={result.fileCount} label="i18n files" />
+        <Metric value="Unavailable" label="sources changed" />
+        <Metric value="Unavailable" label="strings added" />
+        <Metric value="Unavailable" label="strings removed" />
+        <Metric value="Unavailable" label="components skipped" />
       </div>
+      <div className="stv3-flow-callout">
+        Change, added-string, and removed-string deltas are unavailable in the
+        current backend result. No scan history is invented.
+      </div>
+
+      {warnings.length > 0 ? (
+        <>
+          <div className="stv3-flow-callout is-warning" tabIndex={-1}>
+            <AlertTriangle aria-hidden="true" />{" "}
+            <strong>
+              {warnings.length} scanner{" "}
+              {warnings.length === 1 ? "warning was" : "warnings were"}{" "}
+              reported.
+            </strong>{" "}
+            Existing work was preserved. The current result does not expose a
+            structured skipped-component count.
+          </div>
+          <ul className="stv3-flow-list" aria-label="Scan warnings">
+            {warnings.map((warning, index) => (
+              <li key={`${warning}:${index}`}>
+                <span>{warning}</span>
+                <span>Warning</span>
+              </li>
+            ))}
+          </ul>
+          <p className="stv3-kicker">
+            Structured component, path, and reason fields are unavailable; the
+            scanner's real warning text is shown unchanged.
+          </p>
+        </>
+      ) : (
+        <div className="stv3-flow-callout">
+          No scanner warnings were reported. The skipped-component count is
+          unavailable in the current backend result.
+        </div>
+      )}
+
+      {extraKeys.length > 0 && (
+        <>
+          <div className="stv3-flow-callout is-warning">
+            <strong>Optional cleanup:</strong> {extraKeys.length} unused target{" "}
+            {extraKeys.length === 1 ? "key was" : "keys were"} found. SMAPI
+            ignores these keys; they do not affect progress or block export.
+          </div>
+          <ul className="stv3-flow-list" aria-label="Unused translation keys">
+            {extraKeys.map((diagnostic, index) => (
+              <li key={`${diagnostic.targetPath}:${diagnostic.key}:${index}`}>
+                <span>
+                  <strong>{diagnostic.modName}</strong>
+                  <br />
+                  <code>{diagnostic.targetPath}</code>
+                </span>
+                <code>{diagnostic.key}</code>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
+  );
+}
+
+function Metric({ value, label }: { value: number | string; label: string }) {
+  return (
+    <div className="stv3-preflight-metric">
+      <strong>{value}</strong>
+      <span>{label}</span>
     </div>
   );
 }

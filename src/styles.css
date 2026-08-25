@@ -1508,17 +1508,6 @@ kbd,
   text-overflow: ellipsis;
 }
 
-.sectionrow__count {
-  flex: none;
-  font-size: 9px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: #8a7c52;
-  background: rgba(227, 169, 78, 0.12);
-  border-radius: 4px;
-  padding: 1px 7px;
-}
-
 /* No-results empty state (docs/design/): icon, message, escape hatch. */
 .tableempty {
   display: flex;
@@ -2893,79 +2882,6 @@ kbd,
   border: 1px solid var(--border-strong);
   border-radius: 11px;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5);
-}
-
-/* Native Tauri file-drop target for external LLM batch results. */
-.batchdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  display: grid;
-  place-items: center;
-  padding: 32px;
-  background: rgba(10, 8, 5, 0.78);
-  pointer-events: none;
-}
-
-.batchdrop__card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  width: min(520px, 100%);
-  padding: 36px;
-  background: var(--surface);
-  border: 2px dashed var(--border-strong);
-  border-radius: 14px;
-  box-shadow: 0 28px 70px rgba(0, 0, 0, 0.55);
-  text-align: center;
-}
-
-.batchdrop--valid .batchdrop__card {
-  border-color: var(--success);
-  background: color-mix(in srgb, var(--success) 8%, var(--surface));
-}
-
-.batchdrop--invalid .batchdrop__card {
-  border-color: var(--error);
-  background: color-mix(in srgb, var(--error) 8%, var(--surface));
-}
-
-.batchdrop__icon {
-  display: grid;
-  place-items: center;
-  width: 48px;
-  height: 48px;
-  color: var(--text);
-  border: 1px solid currentColor;
-  border-radius: 50%;
-  font-size: 26px;
-}
-
-.batchdrop--valid .batchdrop__icon {
-  color: var(--success);
-}
-
-.batchdrop--invalid .batchdrop__icon {
-  color: var(--error);
-}
-
-.batchdrop__card strong {
-  font-size: 18px;
-}
-
-.batchdrop__card > span:not(.batchdrop__icon) {
-  color: var(--text-muted);
-  font-size: 13px;
-}
-
-.batchdrop__card code {
-  max-width: 100%;
-  overflow: hidden;
-  color: var(--key);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .exportdlg__head {

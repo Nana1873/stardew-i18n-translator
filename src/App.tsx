@@ -6,6 +6,8 @@
  * Settings. Scans run in the Rust backend and populate the workspace.
  */
 import {
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   useEffect,
   useRef,
@@ -13,12 +15,14 @@ import {
 } from "react";
 import {
   type AppSettings,
+  type ExportAllResult,
   type GlossaryEntry,
   type LlmBatchItem,
   type LlmExportOutcome,
   type LlmImportSummary,
   type ExportResult,
   type ScanResult,
+  type SaveStringEntry,
   type ScannedMod,
   type StringStatus,
   type TranslationResult,
@@ -26,33 +30,60 @@ import {
   type ZipComponentInput,
   type ZipPreview,
   buildTranslationZip,
+  exportAllMods,
   exportLlmBatch,
+  exportLlmBatchToPath,
   exportMod,
-  importLlmBatch,
   importLlmBatchPath,
   loadGlossary,
   loadSettings,
   logFrontendError,
   openFolder,
+  pickLlmBatchDestination,
+  pickLlmBatchFile,
   pickTranslationZipDestination,
   previewTranslationZip,
   saveSettings,
+  saveStrings,
   scanMods,
   translateString,
 } from "./tauri/commands";
+import {
+  Archive,
+  CheckCircle2,
+  CircleX,
+  Download,
+  FileCheck2,
+  FolderUp,
+  Folders,
+  Info,
+  LayoutDashboard,
+  NotebookPen,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  Settings as SettingsIcon,
+  Table2,
+  Upload,
+  X,
+} from "lucide-react";
 import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
-import { Dashboard } from "./dashboard/Dashboard";
+import {
+  Dashboard,
+  type DashboardLastExport,
+  type OverviewFilter,
+} from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import {
+  type AiBatchFinishedResult,
+  type BulkChangeSnapshot,
   type SavedStringSnapshot,
+  type StringTableFilter,
   StringTable,
-  StringTableHeader,
 } from "./strings/StringTable";
-import { GlobalStringSearch } from "./strings/GlobalStringSearch";
-import { STATUS_META, statusTint } from "./strings/status";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import {
@@ -70,6 +101,8 @@ import {
   listenForFileDrops,
 } from "./llm-batch/dragDrop";
 import { resolveShortcuts, type ResolvedShortcuts } from "./shortcuts";
+import { ImportBatchDialog } from "./llm-batch/ImportBatchDialog";
+import { LlmBatchExportDialog } from "./llm-batch/LlmBatchExportDialog";
 
 function setupComplete(settings: AppSettings): boolean {
   return Boolean(
@@ -78,6 +111,34 @@ function setupComplete(settings: AppSettings): boolean {
 }
 
 const LEGACY_LAST_OPENED_KEY = "sit:lastOpened";
+
+function fileNameOf(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+}
+
+function folderOf(path: string): string | null {
+  const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  if (index < 0) return null;
+  if (index === 0) return path.slice(0, 1);
+  if (index === 2 && path[1] === ":") return path.slice(0, 3);
+  return path.slice(0, index);
+}
+
+function completedDashboardExport(
+  title: string,
+  result: ExportResult,
+): DashboardLastExport | null {
+  if (result.blocked) return null;
+  const path =
+    result.files.find((file) => file.written || file.removed)?.targetPath ??
+    result.files[0]?.targetPath;
+  return path
+    ? {
+        label: `Last export · ${title} · this session`,
+        path,
+      }
+    : null;
+}
 
 function readLegacyLastOpened(): {
   found: boolean;
@@ -118,24 +179,35 @@ export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsPage, setSettingsPage] = useState<
+    "folders" | "ai" | "glossary" | "shortcuts" | "about"
+  >("folders");
   const [loaded, setLoaded] = useState(false);
 
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
+  const [lastScanAt, setLastScanAt] = useState<number | null>(null);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
+  const scanDismissedRef = useRef(false);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
-  const [modsWidth, setModsWidth] = useState(460);
+  const [modsWidth, setModsWidth] = useState(340);
+  const [modsCollapsed, setModsCollapsed] = useState(false);
   // Dashboard home vs. two-panel work view (SPEC §7). The toolbar button is
   // the only navigation between both views.
-  const [view, setView] = useState<"home" | "work">("home");
-  // modId -> epoch ms of the last open. This is persisted with the portable
-  // settings so resume cards follow the executable and its data directory.
+  const [view, setView] = useState<"home" | "work">("work");
+  // modId -> epoch ms of the last open. This is only resume ordering, not an
+  // edit timestamp. It is persisted with portable settings.
   const [lastOpened, setLastOpened] = useState<Record<string, number>>({});
 
   const [exporting, setExporting] = useState(false);
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
+  const [lastSuccessfulExport, setLastSuccessfulExport] =
+    useState<DashboardLastExport | null>(null);
+  const [resultHidden, setResultHidden] = useState(false);
+  const latestResultButtonRef = useRef<HTMLButtonElement>(null);
+  const resultToggleButtonRef = useRef<HTMLButtonElement>(null);
   const [zipPreview, setZipPreview] = useState<ZipPreview | null>(null);
   const [zipError, setZipError] = useState<string | null>(null);
   const [zipBuilding, setZipBuilding] = useState(false);
@@ -160,18 +232,65 @@ export function App() {
   } | null>(null);
   const [exportConfirm, setExportConfirm] = useState<{
     kind: "selected" | "all";
+    modUniqueId: string | null;
     title: string;
-    files: number;
+    existingFiles: number;
+    newFiles: number;
     mods: number | null;
+    willWrite: number | null;
+    openOmitted: number | null;
+    changedIncluded: number | null;
+    reviewIncluded: number | null;
+    existingTargetPaths: string[];
+    newTargetPaths: string[];
   } | null>(null);
 
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<StringStatus | "all">("all");
+  const [statusFilter, setStatusFilter] = useState<StringTableFilter>("all");
+  const [stringScope, setStringScope] = useState<"mod" | "all">("mod");
+  const [issuesOnly, setIssuesOnly] = useState(false);
+  const [attentionOnly, setAttentionOnly] = useState(false);
   const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
 
   // External LLM batch import: persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
   const [dropPaths, setDropPaths] = useState<string[] | null>(null);
+  const [importDialogPath, setImportDialogPath] = useState<
+    string | null | undefined
+  >(undefined);
+  const [importDialogInitialError, setImportDialogInitialError] = useState<
+    string | null
+  >(null);
+  const [llmExportDialog, setLlmExportDialog] = useState<{
+    mod: ScannedMod;
+    items: LlmBatchItem[];
+  } | null>(null);
+  const [bulkUndo, setBulkUndo] = useState<BulkChangeSnapshot | null>(null);
+  const [toast, setToast] = useState<{
+    id: number;
+    message: string;
+    tone: "info" | "success" | "error";
+  } | null>(null);
+
+  function presentResult(data: ResultTrayData) {
+    if (data.kind !== "bulk" && data.kind !== "ai-batch") setBulkUndo(null);
+    setResultTray(data);
+    setResultHidden(false);
+  }
+
+  function notify(
+    message: string,
+    tone: "info" | "success" | "error" = "info",
+  ) {
+    setToast({ id: Date.now(), message, tone });
+  }
+
+  useEffect(() => {
+    if (!toast) return;
+    if (toast.tone === "error") return;
+    const timer = window.setTimeout(() => setToast(null), 2800);
+    return () => window.clearTimeout(timer);
+  }, [toast]);
 
   function refreshGlossary(lang: string | null | undefined) {
     // The glossary is cached per target language; with none selected, or for a
@@ -196,7 +315,7 @@ export function App() {
     const startWidth = modsWidth;
     const onMove = (move: MouseEvent) => {
       const next = startWidth + (move.clientX - startX);
-      setModsWidth(Math.min(900, Math.max(300, next)));
+      setModsWidth(Math.min(520, Math.max(260, next)));
     };
     const onUp = () => {
       window.removeEventListener("mousemove", onMove);
@@ -204,6 +323,17 @@ export function App() {
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
+  }
+
+  function resizePaneWithKeyboard(event: ReactKeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    setModsWidth((width) =>
+      Math.min(
+        520,
+        Math.max(260, width + (event.key === "ArrowRight" ? 16 : -16)),
+      ),
+    );
   }
 
   useEffect(() => {
@@ -269,16 +399,18 @@ export function App() {
   }
 
   async function handleSaveSettings(next: AppSettings) {
-    const languageChanged = settings?.targetLang !== next.targetLang;
+    const workspaceChanged =
+      settings?.targetLang !== next.targetLang ||
+      settings?.stardewPath !== next.stardewPath ||
+      settings?.modsPath !== next.modsPath;
     await persist(next);
     setSettingsOpen(false);
     // Settings may have built a glossary or switched language — reload per-language.
     refreshGlossary(next.targetLang);
-    if (languageChanged && setupComplete(next)) {
-      // A language switch changes target files and saved state roots, so refresh
-      // the workspace immediately. Keep optional extra-key cleanup quiet here:
-      // those hints are useful on manual scans, but noisy during a deliberate
-      // language switch.
+    if (workspaceChanged && setupComplete(next)) {
+      // A folder or language switch changes the scanned workspace, so refresh it
+      // immediately. Keep optional extra-key cleanup quiet here: those hints are
+      // useful on manual scans, but noisy during a deliberate settings change.
       await runScan(next, false, () => true, {
         clearExisting: true,
         showExtraKeyDialog: false,
@@ -307,6 +439,7 @@ export function App() {
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
     setScanning(true);
+    scanDismissedRef.current = false;
     setScanError(null);
     setSelectedModId(null);
     if (options.clearExisting) setScan(null);
@@ -318,18 +451,30 @@ export function App() {
       );
       if (!isActive()) return;
       setScan(result);
-      // A clean scan auto-closes; keep the dialog open for actionable scan
-      // diagnostics, including unused keys in existing target files.
-      setScanDialogOpen(
-        result.warnings.length > 0 ||
-          (options.showExtraKeyDialog !== false &&
-            (result.extraKeys?.length ?? 0) > 0),
-      );
+      setLastScanAt(Date.now());
+      const preferred = [...result.mods].sort(
+        (left, right) =>
+          (scanSettings.lastOpened?.[right.uniqueId] ?? 0) -
+          (scanSettings.lastOpened?.[left.uniqueId] ?? 0),
+      )[0];
+      setSelectedModId(preferred?.uniqueId ?? null);
+      setStringScope(preferred ? "mod" : "all");
+      // The accepted desktop flow retains every manually requested completed
+      // scan until the user closes it. Silent scans still surface real
+      // diagnostics without interrupting a clean startup or language switch.
+      if (!scanDismissedRef.current) {
+        setScanDialogOpen(
+          showProgress ||
+            result.warnings.length > 0 ||
+            (options.showExtraKeyDialog !== false &&
+              (result.extraKeys?.length ?? 0) > 0),
+        );
+      }
     } catch (error) {
       logFrontendError("scanMods", String(error));
       if (!isActive()) return;
       setScanError(String(error));
-      setScanDialogOpen(true);
+      if (!scanDismissedRef.current) setScanDialogOpen(true);
     } finally {
       if (isActive()) setScanning(false);
     }
@@ -346,8 +491,6 @@ export function App() {
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
   const selectedModRef = useRef<ScannedMod | null>(selectedMod);
   selectedModRef.current = selectedMod;
-  const reviewTotal =
-    scan?.mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0) ?? 0;
   const inProgressMods =
     scan?.mods.filter(
       (mod) => mod.translatedKeys > 0 && mod.translatedKeys < mod.totalKeys,
@@ -384,7 +527,7 @@ export function App() {
     }
   }
 
-  async function handleDroppedBatch(paths: string[]) {
+  function handleDroppedBatch(paths: string[]) {
     const mod = selectedModRef.current;
     if (!mod) {
       showImportResult(
@@ -395,39 +538,28 @@ export function App() {
       return;
     }
     if (paths.length !== 1) {
-      showImportResult(
-        null,
-        "Drop exactly one LLM batch/result JSON file.",
-        mod.name,
+      setImportDialogInitialError(
+        "Choose only one JSON file. Nothing was imported.",
       );
+      setImportDialogPath(null);
       return;
     }
     const path = paths[0];
     if (!path.toLowerCase().endsWith(".json")) {
-      showImportResult(
-        null,
-        "Only JSON batch/result files can be imported.",
-        mod.name,
+      setImportDialogInitialError(
+        "Invalid file type. Exactly one JSON batch file is required.",
       );
+      setImportDialogPath(path);
       return;
     }
-    try {
-      const summary = await importLlmBatchPath(
-        mod.uniqueId,
-        filesOf(mod),
-        path,
-      );
-      showImportResult(summary, null, mod.name);
-      setReloadToken((token) => token + 1);
-    } catch (error) {
-      logFrontendError("importLlmBatchPath", String(error));
-      showImportResult(null, String(error), mod.name);
-    }
+    setImportDialogInitialError(null);
+    setImportDialogPath(path);
   }
 
   /** Open a mod in the work view and remember it for the resume cards. */
   function openMod(uniqueId: string) {
     setSelectedModId(uniqueId);
+    setStringScope("mod");
     setView("work");
     const nextLastOpened = { ...lastOpened, [uniqueId]: Date.now() };
     setLastOpened(nextLastOpened);
@@ -440,15 +572,30 @@ export function App() {
     }
   }
 
-  /** Drop the current mod selection to return to the cross-mod global search. */
-  function clearModSelection() {
-    setSelectedModId(null);
+  /** Jump from a real dashboard queue into that exact status backlog. */
+  function openAttention(
+    uniqueId: string,
+    status: "outdated" | "review-needed",
+  ) {
+    setStatusFilter(status);
+    setIssuesOnly(false);
+    setAttentionOnly(false);
+    openMod(uniqueId);
   }
 
-  /** Jump from the dashboard queue straight into a mod's review backlog. */
-  function openReview(uniqueId: string) {
-    setStatusFilter("review-needed");
-    openMod(uniqueId);
+  function openOverviewFilter(filter: OverviewFilter) {
+    setSearch("");
+    setIssuesOnly(false);
+    setAttentionOnly(filter === "attention");
+    setStatusFilter(
+      filter === "attention"
+        ? "all"
+        : filter === "has-value"
+          ? "has-value"
+          : filter,
+    );
+    setStringScope("all");
+    setView("work");
   }
 
   /** Keep the mod list / header counts fresh after edits (no rescan needed).
@@ -518,51 +665,73 @@ export function App() {
         mod: ScannedMod,
         items: LlmBatchItem[],
       ): Promise<LlmExportOutcome | null> => {
-        try {
-          const outcome = await exportLlmBatch(mod.uniqueId, items);
-          if (outcome) {
-            setResultTray({
-              kind: "batch-export",
-              title: mod.name,
-              collapsed: false,
-              pending: false,
-              error: null,
-              outcome,
-              problems: [],
-            });
-          }
-          return outcome;
-        } catch (error) {
-          logFrontendError("exportLlmBatch", String(error));
-          setResultTray({
-            kind: "batch-export",
-            title: mod.name,
-            collapsed: false,
-            pending: false,
-            error: String(error),
-            outcome: null,
-            problems: [],
-          });
-          throw error;
-        }
+        setLlmExportDialog({ mod, items });
+        return null;
       }
     : undefined;
 
+  async function savePendingLlmBatch(
+    destinationPath: string | null,
+  ): Promise<boolean> {
+    if (!llmExportDialog) return false;
+    const { mod, items } = llmExportDialog;
+    try {
+      const outcome = destinationPath
+        ? await exportLlmBatchToPath(mod.uniqueId, items, destinationPath)
+        : await exportLlmBatch(mod.uniqueId, items);
+      if (!outcome) return false;
+      presentResult({
+        kind: "batch-export",
+        title: mod.name,
+        collapsed: false,
+        pending: false,
+        error: null,
+        outcome,
+        problems: [],
+      });
+      return true;
+    } catch (error) {
+      logFrontendError(
+        destinationPath ? "exportLlmBatchToPath" : "exportLlmBatch",
+        String(error),
+      );
+      presentResult({
+        kind: "batch-export",
+        title: mod.name,
+        collapsed: false,
+        pending: false,
+        error: String(error),
+        outcome: null,
+        problems: [],
+      });
+      throw error;
+    }
+  }
+
   /** Import a translated external LLM batch for the selected mod. */
-  async function handleImportBatch() {
+  function handleImportBatch() {
+    if (!selectedMod || !targetLang) return;
+    setImportDialogInitialError(null);
+    setImportDialogPath(null);
+  }
+
+  async function importSelectedBatch(path: string) {
     if (!selectedMod || !targetLang) return;
     try {
-      const summary = await importLlmBatch(
+      const summary = await importLlmBatchPath(
         selectedMod.uniqueId,
         filesOf(selectedMod),
+        path,
       );
-      if (!summary) return; // picker cancelled
-      showImportResult(summary, null, selectedMod.name);
-      // State on disk changed behind the table's back — force a reload.
+      setImportDialogPath(undefined);
+      setImportDialogInitialError(null);
+      showImportResult(summary, null, selectedMod.name, path);
       setReloadToken((token) => token + 1);
     } catch (error) {
-      logFrontendError("importLlmBatch", String(error));
-      showImportResult(null, String(error), selectedMod.name);
+      logFrontendError("importLlmBatchPath", String(error));
+      setImportDialogPath(undefined);
+      setImportDialogInitialError(null);
+      showImportResult(null, String(error), selectedMod.name, path);
     }
   }
 
@@ -653,6 +822,9 @@ export function App() {
       initialVersion: version,
       archiveFileName,
     });
+    setZipPreview(null);
+    setZipError(null);
+    setZipContext(null);
   }
 
   function inspectZipProblem(problem: { modUniqueId: string; key: string }) {
@@ -676,7 +848,7 @@ export function App() {
     setZipPreview(null);
     setZipContext(null);
     setZipOverwrite(null);
-    setResultTray({
+    presentResult({
       kind: "zip",
       title: outcome.fileName,
       collapsed: false,
@@ -730,7 +902,7 @@ export function App() {
     relativeDir: string,
     key: string,
   ): string {
-    return `${modUniqueId}\u0000${relativeDir}\u0000${key}`;
+    return JSON.stringify([modUniqueId, relativeDir, key]);
   }
 
   function exportProblems(result: ExportResult): ResultProblem[] {
@@ -749,14 +921,18 @@ export function App() {
     summary: LlmImportSummary | null,
     error: string | null,
     title: string,
+    sourcePath: string | null = null,
   ) {
-    setResultTray({
+    presentResult({
       kind: "import",
       title,
       collapsed: false,
       pending: false,
       error,
       summary,
+      sourcePath,
+      sourceFileName: sourcePath ? fileNameOf(sourcePath) : null,
+      sourceFolder: sourcePath ? folderOf(sourcePath) : null,
       problems: [],
     });
   }
@@ -766,7 +942,7 @@ export function App() {
     retry: { kind: "selected"; modUniqueId: string } | { kind: "all" },
   ) {
     setExporting(true);
-    setResultTray({
+    presentResult({
       kind: "export",
       title,
       collapsed: false,
@@ -795,42 +971,56 @@ export function App() {
     };
   }
 
-  function requestExport() {
-    if (!selectedMod) return;
-    const files = selectedMod.i18nFiles.filter(
-      (file) => file.targetExists,
-    ).length;
-    if (files === 0) {
-      void handleExport();
-      return;
-    }
+  function requestExport(mod = selectedMod) {
+    if (!mod) return;
+    const existingFiles = mod.i18nFiles.filter((file) => file.targetExists);
+    const newFiles = mod.i18nFiles.filter((file) => !file.targetExists);
     setExportConfirm({
       kind: "selected",
-      title: selectedMod.name,
-      files,
+      modUniqueId: mod.uniqueId,
+      title: mod.name,
+      existingFiles: existingFiles.length,
+      newFiles: newFiles.length,
       mods: null,
+      willWrite: mod.translatedKeys,
+      openOmitted: Math.max(0, mod.totalKeys - mod.translatedKeys),
+      changedIncluded: mod.statusCounts?.outdated ?? null,
+      reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
+      existingTargetPaths: existingFiles.map((file) => file.targetPath),
+      newTargetPaths: newFiles.map((file) => file.targetPath),
     });
   }
 
   function requestExportAll() {
     if (!scan) return;
-    const affected = scan.mods.filter((mod) =>
-      mod.i18nFiles.some((file) => file.targetExists),
+    const affected = scan.mods.filter((mod) => mod.i18nFiles.length > 0);
+    const targetFiles = affected.flatMap((mod) => mod.i18nFiles);
+    const existingFiles = targetFiles.filter((file) => file.targetExists);
+    const newFiles = targetFiles.filter((file) => !file.targetExists);
+    const statusCountsKnown = scan.mods.every(
+      (mod) => mod.statusCounts != null,
     );
-    const files = affected.reduce(
-      (sum, mod) =>
-        sum + mod.i18nFiles.filter((file) => file.targetExists).length,
-      0,
-    );
-    if (files === 0) {
-      void handleExportAll();
-      return;
-    }
     setExportConfirm({
       kind: "all",
+      modUniqueId: null,
       title: "All mods",
-      files,
+      existingFiles: existingFiles.length,
+      newFiles: newFiles.length,
       mods: affected.length,
+      willWrite: scan.mods.reduce((sum, mod) => sum + mod.translatedKeys, 0),
+      openOmitted: scan.mods.reduce(
+        (sum, mod) => sum + Math.max(0, mod.totalKeys - mod.translatedKeys),
+        0,
+      ),
+      changedIncluded: statusCountsKnown
+        ? scan.mods.reduce(
+            (sum, mod) => sum + (mod.statusCounts?.outdated ?? 0),
+            0,
+          )
+        : null,
+      reviewIncluded: scan.mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0),
+      existingTargetPaths: existingFiles.map((file) => file.targetPath),
+      newTargetPaths: newFiles.map((file) => file.targetPath),
     });
   }
 
@@ -872,6 +1062,8 @@ export function App() {
       const result = await exportMod(mod.uniqueId, filesOf(mod));
       markExportedTargets(mod.uniqueId, result);
       const contextual = withExportContext(result, mod);
+      const completed = completedDashboardExport(mod.name, contextual);
+      if (completed) setLastSuccessfulExport(completed);
       setResultTray((current) =>
         current?.kind === "export"
           ? {
@@ -897,60 +1089,47 @@ export function App() {
   async function handleExportAll() {
     if (!scan) return;
     beginExport("All mods", { kind: "all" });
-    const merged: ExportResult = {
-      files: [],
-      skipped: [],
-      filesWritten: 0,
-      filesRemoved: 0,
-      totalWrittenKeys: 0,
-      totalUntranslated: 0,
-      totalOutdated: 0,
-      totalReviewNeeded: 0,
-      totalOrphanKeys: 0,
-      blocked: false,
-    };
-    let modsChanged = 0;
-    let failedMod: string | null = null;
-    let remainingMods: string[] = [];
     try {
-      for (const [index, mod] of scan.mods.entries()) {
-        if (mod.i18nFiles.length === 0) continue;
-        failedMod = mod.name;
-        remainingMods = scan.mods.slice(index + 1).map((item) => item.name);
-        const result = await exportMod(mod.uniqueId, filesOf(mod));
-        markExportedTargets(mod.uniqueId, result);
-        merged.files.push(...result.files);
-        // Prefix each skipped key with its mod so the summary stays unambiguous.
-        merged.skipped.push(
-          ...result.skipped.map((skip) => ({
-            ...skip,
+      const outcome: ExportAllResult = await exportAllMods(
+        scan.mods
+          .filter((mod) => mod.i18nFiles.length > 0)
+          .map((mod) => ({
             modUniqueId: mod.uniqueId,
             modName: mod.name,
+            files: filesOf(mod),
           })),
+      );
+      const merged: ExportResult = {
+        files: [],
+        skipped: [],
+        filesWritten: outcome.filesWritten,
+        filesRemoved: outcome.filesRemoved,
+        totalWrittenKeys: outcome.totalWrittenKeys,
+        totalUntranslated: outcome.totalUntranslated,
+        totalOutdated: outcome.totalOutdated,
+        totalReviewNeeded: outcome.totalReviewNeeded,
+        totalOrphanKeys: outcome.totalOrphanKeys,
+        blocked: outcome.blocked,
+      };
+      for (const exported of outcome.mods) {
+        const mod = scan.mods.find(
+          (candidate) => candidate.uniqueId === exported.modUniqueId,
         );
-        merged.filesWritten += result.filesWritten;
-        merged.filesRemoved += result.filesRemoved;
-        merged.totalWrittenKeys += result.totalWrittenKeys;
-        merged.totalUntranslated += result.totalUntranslated;
-        merged.totalOutdated += result.totalOutdated;
-        merged.totalReviewNeeded += result.totalReviewNeeded;
-        merged.totalOrphanKeys += result.totalOrphanKeys;
-        merged.blocked ||= result.blocked;
-        if (result.blocked) {
-          throw new Error(`Export blocked for ${mod.name}.`);
-        }
-        if (result.filesWritten > 0 || result.filesRemoved > 0)
-          modsChanged += 1;
-        failedMod = null;
-        remainingMods = [];
+        if (!mod) continue;
+        const contextual = withExportContext(exported.result, mod);
+        merged.files.push(...contextual.files);
+        merged.skipped.push(...contextual.skipped);
+        markExportedTargets(mod.uniqueId, contextual);
       }
+      const completed = completedDashboardExport("All mods", merged);
+      if (completed) setLastSuccessfulExport(completed);
       setResultTray((current) =>
         current?.kind === "export"
           ? {
               ...current,
               pending: false,
               result: merged,
-              modsChanged,
+              modsChanged: outcome.modsChanged,
               problems: exportProblems(merged),
             }
           : current,
@@ -963,11 +1142,11 @@ export function App() {
               ...current,
               pending: false,
               error: String(error),
-              result: merged,
-              modsChanged,
-              failedMod,
-              remainingMods,
-              problems: exportProblems(merged),
+              result: null,
+              modsChanged: 0,
+              failedMod: null,
+              remainingMods: [],
+              problems: [],
             }
           : current,
       );
@@ -981,6 +1160,23 @@ export function App() {
     else setView("work");
     setStatusFilter("all");
     setSearch(problem.key);
+    setResultHidden(true);
+
+    let attempts = 0;
+    const openMatchingRow = () => {
+      const row = Array.from(
+        document.querySelectorAll<HTMLElement>("[data-string-row]"),
+      ).find((candidate) => candidate.dataset.rowId === problem.id);
+      if (row) {
+        row.dispatchEvent(
+          new MouseEvent("dblclick", { bubbles: true, cancelable: true }),
+        );
+        return;
+      }
+      attempts += 1;
+      if (attempts < 180) window.requestAnimationFrame(openMatchingRow);
+    };
+    window.requestAnimationFrame(openMatchingRow);
   }
 
   function handleStringSaved(snapshot: SavedStringSnapshot) {
@@ -1013,6 +1209,123 @@ export function App() {
     });
   }
 
+  function handleBulkApplied(snapshot: BulkChangeSnapshot) {
+    setBulkUndo(snapshot);
+    if (snapshot.label.startsWith("AI translation ")) {
+      setResultTray((current) =>
+        current?.kind === "ai-batch"
+          ? {
+              ...current,
+              title:
+                new Set(snapshot.rows.map((row) => row.modUniqueId)).size === 1
+                  ? (snapshot.rows[0]?.modName ?? current.title)
+                  : `${new Set(snapshot.rows.map((row) => row.modUniqueId)).size} mods`,
+              undoAvailable: snapshot.rows.length > 0,
+            }
+          : current,
+      );
+      return;
+    }
+    presentResult({
+      kind: "bulk",
+      title: snapshot.label,
+      collapsed: false,
+      pending: false,
+      error: null,
+      problems: [],
+      count: snapshot.rows.length,
+      undoAvailable: snapshot.rows.length > 0,
+    });
+  }
+
+  function handleAiBatchFinished(result: AiBatchFinishedResult) {
+    setBulkUndo(result.undo);
+    if (result.outcome === "complete") return;
+    presentResult({
+      kind: "ai-batch",
+      title: result.modName || selectedMod?.name || "Selected strings",
+      collapsed: false,
+      pending: false,
+      error: result.outcome === "error" ? (result.error ?? null) : null,
+      problems: [],
+      outcome: result.outcome,
+      done: result.done,
+      total: result.total,
+      engine: result.engine,
+      undoAvailable: Boolean(result.undo),
+    });
+    notify(
+      `AI translation ${result.outcome === "cancelled" ? "cancelled" : "failed"} after ${result.done} of ${result.total}. Finished suggestions are in Review.`,
+      result.outcome === "error" ? "error" : "info",
+    );
+  }
+
+  async function undoLatestBulk() {
+    const snapshot = bulkUndo;
+    if (!snapshot) return;
+
+    const byMod = new Map<string, SaveStringEntry[]>();
+    for (const row of snapshot.rows) {
+      const entries = byMod.get(row.modUniqueId) ?? [];
+      entries.push({
+        relativeDir: row.relativeDir,
+        key: row.key,
+        target: row.target,
+        status:
+          row.tokenMismatchAccepted && row.status === "translated"
+            ? "translated-token-mismatch-accepted"
+            : row.tokenMismatchAccepted && row.status === "review-needed"
+              ? "review-needed-token-mismatch-accepted"
+              : row.status,
+        source: row.source,
+      });
+      byMod.set(row.modUniqueId, entries);
+    }
+
+    try {
+      for (const [modUniqueId, entries] of byMod) {
+        await saveStrings(modUniqueId, entries);
+      }
+      setBulkUndo(null);
+      setReloadToken((token) => token + 1);
+      setResultTray((current) =>
+        current?.kind === "bulk"
+          ? {
+              ...current,
+              pending: false,
+              error: null,
+              undone: true,
+              undoAvailable: false,
+            }
+          : current?.kind === "ai-batch"
+            ? {
+                kind: "bulk",
+                title: current.title,
+                collapsed: false,
+                pending: false,
+                error: null,
+                problems: [],
+                count: snapshot.rows.length,
+                undone: true,
+                undoAvailable: false,
+              }
+            : current,
+      );
+      notify(
+        `${snapshot.rows.length} ${snapshot.rows.length === 1 ? "string" : "strings"} restored.`,
+        "success",
+      );
+    } catch (error) {
+      logFrontendError("undoBulk", String(error));
+      setResultTray((current) =>
+        current?.kind === "bulk"
+          ? { ...current, pending: false, error: String(error) }
+          : current,
+      );
+      throw error;
+    }
+  }
+
   function retryResultExport() {
     if (resultTray?.kind !== "export") return;
     const retry = resultTray.retry;
@@ -1023,7 +1336,7 @@ export function App() {
     const mod = scan?.mods.find(
       (candidate) => candidate.uniqueId === retry.modUniqueId,
     );
-    if (mod) void handleExport(mod);
+    if (mod) requestExport(mod);
   }
 
   // "German (de-DE)" subtitle fragment for the dashboard.
@@ -1039,255 +1352,495 @@ export function App() {
     zipError ||
     zipContext ||
     releaseNotes ||
-    zipOverwrite,
+    zipOverwrite ||
+    importDialogPath !== undefined ||
+    llmExportDialog,
   );
-  const trayCollapsed = Boolean(resultTray?.collapsed || focusedDialogOpen);
-  const trayScrollClearance = resultTray ? (trayCollapsed ? 58 : 260) : 0;
+  useEffect(() => {
+    if (!focusedDialogOpen || !resultTray || resultTray.collapsed) return;
+    setResultTray({ ...resultTray, collapsed: true });
+  }, [focusedDialogOpen, resultTray]);
+
+  const trayCollapsed = Boolean(resultTray?.collapsed);
+  const trayScrollClearance =
+    resultTray && !resultHidden ? (trayCollapsed ? 58 : 260) : 0;
 
   return (
-    <div className="app">
-      <Toolbar
-        homeActive={view === "home"}
-        onHome={() => setView(view === "home" ? "work" : "home")}
-        onScan={handleScan}
-        scanEnabled={configured && !scanning}
-        scanning={scanning}
-        onExport={requestExport}
-        exportEnabled={Boolean(selectedMod) && !exporting}
-        onExportAll={requestExportAll}
-        exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
-        exporting={exporting}
-        onBuildZip={() => void requestTranslationZip()}
-        buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
-        onReleaseNotes={() => void requestReleaseNotes()}
-        releaseNotesEnabled={Boolean(selectedMod)}
-        onImportBatch={() => void handleImportBatch()}
-        importBatchEnabled={Boolean(selectedMod)}
-        onOpenSettings={() =>
-          settings ? setSettingsOpen(true) : setWizardOpen(true)
-        }
-        settingsEnabled={loaded}
-        reviewTotal={reviewTotal}
-        onReview={() => setView("home")}
-        search={search}
-        onSearch={setSearch}
-        searchEnabled={Boolean(scan?.mods.length) && view === "work"}
-      />
-      {view === "home" ? (
-        <Dashboard
-          scan={scan}
-          scanning={scanning}
-          languageLine={languageLine}
+    <div id="stv3-dense-demo" className="app stv3-demo">
+      <div className="stv3-window">
+        <V3Toolbar
+          activeView={view === "work" ? "workspace" : "overview"}
+          onWorkspace={() => setView("work")}
+          onOverview={() => setView("home")}
           onScan={handleScan}
           scanEnabled={configured && !scanning}
-          onOpenMod={openMod}
-          onOpenReview={openReview}
-          onBrowse={() => setView("work")}
-          lastOpened={lastOpened}
+          scanning={scanning}
+          onExport={requestExport}
+          exportEnabled={Boolean(selectedMod) && !exporting}
+          onExportAll={requestExportAll}
+          exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
+          exporting={exporting}
+          onBuildZip={() => void requestTranslationZip()}
+          buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
+          onReleaseNotes={() => void requestReleaseNotes()}
+          releaseNotesEnabled={Boolean(selectedMod)}
+          onImportBatch={() => void handleImportBatch()}
+          importBatchEnabled={Boolean(selectedMod)}
+          onOpenSettings={() => {
+            setSettingsPage("folders");
+            if (settings) setSettingsOpen(true);
+            else setWizardOpen(true);
+          }}
+          settingsEnabled={loaded}
+          latestResultAvailable={Boolean(resultTray && resultHidden)}
+          latestResultButtonRef={latestResultButtonRef}
+          onReopenResult={() => {
+            setResultHidden(false);
+            setResultTray((current) =>
+              current ? { ...current, collapsed: false } : current,
+            );
+            window.requestAnimationFrame(() =>
+              resultToggleButtonRef.current?.focus(),
+            );
+          }}
         />
-      ) : (
-        <main className="workspace">
+        {view === "home" ? (
           <section
-            className="panel panel--mods"
-            aria-label="Mod list"
-            style={{ width: modsWidth, flex: "0 0 auto" }}
+            className="stv3-view-panel is-active"
+            aria-label="Translation overview"
           >
-            <div className="panel__header">
-              <span>Mods{scan ? ` · ${scan.modCount}` : ""}</span>
-              {scan && (inProgressMods > 0 || scan.warnings.length > 0) && (
-                <span className="panel__header-meta">
-                  {inProgressMods > 0 && (
-                    <span className="panel__header-tail">
-                      {inProgressMods} in progress
-                    </span>
-                  )}
-                  {scan.warnings.length > 0 && (
-                    <span className="panel__warn">
-                      {scan.warnings.length} skipped
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-            {scan && (
-              <input
-                className="modlist__search"
-                type="search"
-                placeholder="Filter mods…"
-                aria-label="Filter mods"
-                value={modQuery}
-                onChange={(event) => setModQuery(event.target.value)}
-              />
-            )}
-            {scan ? (
-              <ModList
-                mods={scan.mods}
-                selectedId={selectedModId}
-                onSelect={openMod}
-                query={modQuery}
-              />
-            ) : (
-              <div className="panel__empty">
-                {scanError ?? (scanning ? "Scanning…" : "No mods scanned yet.")}
-              </div>
-            )}
+            <Dashboard
+              scan={scan}
+              scanning={scanning}
+              lastScanAt={lastScanAt}
+              languageLine={languageLine}
+              onScan={handleScan}
+              scanEnabled={configured && !scanning}
+              onOpenMod={openMod}
+              onOpenAttention={openAttention}
+              onBrowse={() => setView("work")}
+              lastOpened={lastOpened}
+              onShowScanDetails={
+                scan ? () => setScanDialogOpen(true) : undefined
+              }
+              onOpenOverviewFilter={openOverviewFilter}
+              lastExport={lastSuccessfulExport}
+              onShowLastExport={
+                lastSuccessfulExport
+                  ? () => {
+                      const folder = folderOf(lastSuccessfulExport.path);
+                      if (folder) void openFolder(folder);
+                    }
+                  : undefined
+              }
+            />
           </section>
-          <div
-            className="splitter"
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize mod list"
-            onMouseDown={startResize}
+        ) : (
+          <section
+            className="stv3-view-panel is-active"
+            aria-label="Translation workspace"
+          >
+            <div
+              className="workspace stv3-workbench"
+              style={
+                {
+                  "--stv3-mod-pane-width": `${modsWidth}px`,
+                } as CSSProperties
+              }
+            >
+              <section
+                className={`panel panel--mods stv3-mod-pane${modsCollapsed ? " is-collapsed" : ""}`}
+                aria-label="Mod list"
+              >
+                <div className="panel__header stv3-pane-title">
+                  <div>
+                    <span>Mods{scan ? ` · ${scan.modCount}` : ""}</span>
+                    {scan &&
+                      (inProgressMods > 0 || scan.warnings.length > 0) && (
+                        <span className="panel__header-meta">
+                          {inProgressMods > 0 && (
+                            <span className="panel__header-tail">
+                              {inProgressMods} in progress
+                            </span>
+                          )}
+                          {scan.warnings.length > 0 && (
+                            <button
+                              className="panel__warn stv3-kicker-action"
+                              type="button"
+                              onClick={() => setScanDialogOpen(true)}
+                            >
+                              {scan.warnings.length}{" "}
+                              {scan.warnings.length === 1
+                                ? "warning"
+                                : "warnings"}
+                            </button>
+                          )}
+                        </span>
+                      )}
+                  </div>
+                  <div className="stv3-pane-title-actions">
+                    <button
+                      className="stv3-icon-button stv3-mod-pane-toggle"
+                      type="button"
+                      aria-label={
+                        modsCollapsed ? "Expand mod list" : "Collapse mod list"
+                      }
+                      aria-expanded={!modsCollapsed}
+                      title="Collapse or expand mod list"
+                      onClick={() =>
+                        setModsCollapsed((collapsed) => !collapsed)
+                      }
+                    >
+                      {modsCollapsed ? (
+                        <PanelLeftOpen aria-hidden />
+                      ) : (
+                        <PanelLeftClose aria-hidden />
+                      )}
+                    </button>
+                  </div>
+                </div>
+                {scan && (
+                  <input
+                    className="modlist__search stv3-search"
+                    type="search"
+                    placeholder="Filter mods …"
+                    aria-label="Filter mods"
+                    value={modQuery}
+                    onChange={(event) => setModQuery(event.target.value)}
+                  />
+                )}
+                {scan ? (
+                  <ModList
+                    mods={scan.mods}
+                    selectedId={selectedModId}
+                    onSelect={openMod}
+                    query={modQuery}
+                    onClearQuery={() => setModQuery("")}
+                  />
+                ) : (
+                  <div className="panel__empty">
+                    {scanError ??
+                      (scanning ? "Scanning…" : "No mods scanned yet.")}
+                  </div>
+                )}
+              </section>
+              <div
+                className="splitter stv3-pane-splitter"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize mod list"
+                aria-valuemin={260}
+                aria-valuemax={520}
+                aria-valuenow={modsWidth}
+                tabIndex={0}
+                onMouseDown={startResize}
+                onKeyDown={resizePaneWithKeyboard}
+              />
+              <main
+                className="panel panel--strings stv3-string-pane"
+                aria-label="String table"
+              >
+                <StringTable
+                  mod={selectedMod}
+                  mods={scan?.mods ?? []}
+                  scope={stringScope}
+                  onScopeChange={setStringScope}
+                  search={search}
+                  onSearchChange={setSearch}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={setStatusFilter}
+                  issuesOnly={issuesOnly}
+                  onIssuesOnlyChange={setIssuesOnly}
+                  attentionOnly={attentionOnly}
+                  onAttentionOnlyChange={setAttentionOnly}
+                  showAttentionFilter={stringScope === "all"}
+                  targetLanguageLabel={languageLine}
+                  localAiModel={aiReady ? llm!.model : undefined}
+                  headerMeta={
+                    lastScanAt
+                      ? `scanned ${Math.max(0, Math.round((Date.now() - lastScanAt) / 60_000))} min ago`
+                      : "scan time unavailable"
+                  }
+                  glossary={glossary}
+                  onTranslate={translate}
+                  onLlmBatchExportForMod={llmBatchExport}
+                  onModCountsChange={handleCountsChange}
+                  onOpenMod={openMod}
+                  onClearFilters={() => {
+                    setSearch("");
+                    setStatusFilter("all");
+                    setIssuesOnly(false);
+                    setAttentionOnly(false);
+                  }}
+                  onBulkApplied={handleBulkApplied}
+                  onAiBatchFinished={handleAiBatchFinished}
+                  onNotify={notify}
+                  onOpenEngineSettings={() => {
+                    setSettingsPage("ai");
+                    if (settings) setSettingsOpen(true);
+                    else setWizardOpen(true);
+                  }}
+                  onStringSaved={handleStringSaved}
+                  onEditorOpen={() =>
+                    setResultTray((current) =>
+                      current ? { ...current, collapsed: true } : current,
+                    )
+                  }
+                  bottomClearance={trayScrollClearance}
+                  reloadToken={reloadToken}
+                  shortcuts={shortcuts}
+                />
+              </main>
+            </div>
+          </section>
+        )}
+        {wizardOpen && (
+          <SetupWizard
+            initial={settings}
+            onComplete={handleComplete}
+            onCancel={configured ? () => setWizardOpen(false) : undefined}
           />
-          <StringTablePanel
-            mod={selectedMod}
-            mods={scan?.mods ?? []}
-            search={search}
-            statusFilter={statusFilter}
-            onStatusFilter={setStatusFilter}
-            glossary={glossary}
-            onTranslate={translate}
-            onLlmBatchExport={llmBatchExport}
-            onCountsChange={handleCountsChange}
-            onShowReview={() => setStatusFilter("review-needed")}
-            onOpenReviewQueue={() => setView("home")}
-            onOpenMod={openMod}
-            onClearSelection={clearModSelection}
-            onClearFilters={() => {
-              setSearch("");
-              setStatusFilter("all");
+        )}
+        {settingsOpen && settings && (
+          <SettingsDialog
+            settings={settings}
+            initialPage={settingsPage}
+            onSave={handleSaveSettings}
+            onClose={() => setSettingsOpen(false)}
+            onReRunSetup={() => {
+              setSettingsOpen(false);
+              setWizardOpen(true);
             }}
-            onStringSaved={handleStringSaved}
-            onEditorOpen={() =>
+          />
+        )}
+        {scanDialogOpen && (
+          <ScanDialog
+            scanning={scanning}
+            result={scan}
+            error={scanError}
+            onClose={() => {
+              scanDismissedRef.current = true;
+              setScanDialogOpen(false);
+            }}
+          />
+        )}
+        {resultTray && !resultHidden && (
+          <ResultTray
+            data={resultTray}
+            onToggle={() =>
               setResultTray((current) =>
-                current ? { ...current, collapsed: true } : current,
+                current
+                  ? { ...current, collapsed: !current.collapsed }
+                  : current,
               )
             }
-            bottomClearance={trayScrollClearance}
-            reloadToken={reloadToken}
-            shortcuts={shortcuts}
+            toggleButtonRef={resultToggleButtonRef}
+            onClose={() => {
+              setResultHidden(true);
+              window.requestAnimationFrame(() =>
+                latestResultButtonRef.current?.focus(),
+              );
+            }}
+            onInspect={inspectResultProblem}
+            onRetry={
+              resultTray.kind === "export"
+                ? retryResultExport
+                : resultTray.kind === "import"
+                  ? () => {
+                      setImportDialogInitialError(null);
+                      setImportDialogPath(null);
+                    }
+                  : undefined
+            }
+            onOpenFolder={(path) => void openFolder(path)}
+            onOpenReview={
+              (resultTray.kind === "import" && resultTray.summary?.imported) ||
+              resultTray.kind === "ai-batch"
+                ? () => {
+                    setStatusFilter("review-needed");
+                    setIssuesOnly(false);
+                    setAttentionOnly(false);
+                    setStringScope("mod");
+                    setView("work");
+                    setResultHidden(true);
+                    window.requestAnimationFrame(() => {
+                      const review = Array.from(
+                        document.querySelectorAll<HTMLButtonElement>(
+                          '.stv3-filter[aria-pressed="true"]',
+                        ),
+                      ).find((button) =>
+                        button.textContent?.includes("Review"),
+                      );
+                      review?.focus();
+                    });
+                  }
+                : undefined
+            }
+            onUndoBulk={
+              (resultTray.kind === "bulk" || resultTray.kind === "ai-batch") &&
+              bulkUndo
+                ? undoLatestBulk
+                : undefined
+            }
+            onNotify={(message) => notify(message, "success")}
+            onReleaseNotes={
+              resultTray.kind === "zip" && lastZipRelease
+                ? () =>
+                    setReleaseNotes({
+                      preview: lastZipRelease.preview,
+                      error: null,
+                      initialVersion: lastZipRelease.initialVersion,
+                      archiveFileName: lastZipRelease.archiveFileName,
+                    })
+                : undefined
+            }
           />
-        </main>
-      )}
-      {wizardOpen && (
-        <SetupWizard
-          initial={settings}
-          onComplete={handleComplete}
-          onCancel={configured ? () => setWizardOpen(false) : undefined}
-        />
-      )}
-      {settingsOpen && settings && (
-        <SettingsDialog
-          settings={settings}
-          onSave={handleSaveSettings}
-          onClose={() => setSettingsOpen(false)}
-          onReRunSetup={() => {
-            setSettingsOpen(false);
-            setWizardOpen(true);
-          }}
-        />
-      )}
-      {scanDialogOpen && (
-        <ScanDialog
-          scanning={scanning}
-          result={scan}
-          error={scanError}
-          onClose={() => setScanDialogOpen(false)}
-        />
-      )}
-      {resultTray && (
-        <ResultTray
-          data={
-            trayCollapsed && !resultTray.collapsed
-              ? { ...resultTray, collapsed: true }
-              : resultTray
-          }
-          onToggle={() =>
-            setResultTray((current) =>
-              current ? { ...current, collapsed: !current.collapsed } : current,
-            )
-          }
-          onClose={() => setResultTray(null)}
-          onInspect={inspectResultProblem}
-          onRetry={retryResultExport}
-          onOpenFolder={(path) => void openFolder(path)}
-          onReleaseNotes={
-            resultTray.kind === "zip" && lastZipRelease
-              ? () =>
-                  setReleaseNotes({
-                    preview: lastZipRelease.preview,
-                    error: null,
-                    initialVersion: lastZipRelease.initialVersion,
-                    archiveFileName: lastZipRelease.archiveFileName,
-                  })
-              : undefined
-          }
-        />
-      )}
-      {exportConfirm && (
-        <ExportConfirmDialog
-          modName={exportConfirm.title}
-          files={exportConfirm.files}
-          mods={exportConfirm.mods}
-          onCancel={() => setExportConfirm(null)}
-          onConfirm={() => {
-            const kind = exportConfirm.kind;
-            setExportConfirm(null);
-            if (kind === "selected") void handleExport();
-            else void handleExportAll();
-          }}
-        />
-      )}
-      {(zipPreview || zipError || zipContext) && !releaseNotes && (
-        <TranslationZipDialog
-          key={zipPreview?.defaultFileName ?? "loading"}
-          preview={zipPreview}
-          error={zipError}
-          building={zipBuilding}
-          onInspect={inspectZipProblem}
-          onReleaseNotes={openReleaseNotesFromZip}
-          onBuild={(version, fileName) =>
-            void chooseZipDestination(version, fileName)
-          }
-          onClose={() => {
-            setZipPreview(null);
-            setZipError(null);
-            setZipContext(null);
-          }}
-        />
-      )}
-      {releaseNotes && (
-        <ReleaseNotesDialog
-          key={`${releaseNotes.preview?.defaultFileName ?? "loading"}:${releaseNotes.initialVersion}:${releaseNotes.archiveFileName ?? ""}`}
-          preview={releaseNotes.preview}
-          error={releaseNotes.error}
-          initialVersion={releaseNotes.initialVersion}
-          archiveFileName={releaseNotes.archiveFileName}
-          onInspect={inspectZipProblem}
-          onClose={() => setReleaseNotes(null)}
-        />
-      )}
-      {zipOverwrite && (
-        <ZipOverwriteDialog
-          fileName={
-            zipOverwrite.destination.split(/[\\/]/).pop() ??
-            zipOverwrite.destination
-          }
-          onCancel={() => setZipOverwrite(null)}
-          onConfirm={() => {
-            const destination = zipOverwrite.destination;
-            const version = zipOverwrite.version;
-            setZipOverwrite(null);
-            void buildZipAt(destination, true, version);
-          }}
-        />
-      )}
-      {dropPaths && (
-        <LlmBatchDropOverlay
-          paths={dropPaths}
-          modName={selectedMod?.name ?? null}
-        />
-      )}
+        )}
+        {exportConfirm && (
+          <ExportConfirmDialog
+            modName={exportConfirm.title}
+            existingFiles={exportConfirm.existingFiles}
+            newFiles={exportConfirm.newFiles}
+            mods={exportConfirm.mods}
+            willWrite={exportConfirm.willWrite}
+            openOmitted={exportConfirm.openOmitted}
+            changedIncluded={exportConfirm.changedIncluded}
+            reviewIncluded={exportConfirm.reviewIncluded}
+            acceptedMismatches={null}
+            blockingValidationAvailable={false}
+            existingTargetPaths={exportConfirm.existingTargetPaths}
+            newTargetPaths={exportConfirm.newTargetPaths}
+            lastExportLabel={
+              lastSuccessfulExport
+                ? lastSuccessfulExport.label.replace(
+                    /^Last export/,
+                    "Previous export",
+                  )
+                : null
+            }
+            onCancel={() => setExportConfirm(null)}
+            onConfirm={() => {
+              const kind = exportConfirm.kind;
+              const modUniqueId = exportConfirm.modUniqueId;
+              setExportConfirm(null);
+              if (kind === "selected") {
+                const mod = scan?.mods.find(
+                  (candidate) => candidate.uniqueId === modUniqueId,
+                );
+                if (mod) void handleExport(mod);
+              } else void handleExportAll();
+            }}
+          />
+        )}
+        {(zipPreview || zipError || zipContext) && !releaseNotes && (
+          <TranslationZipDialog
+            key={zipPreview?.defaultFileName ?? "loading"}
+            preview={zipPreview}
+            componentCount={zipContext?.components.length ?? null}
+            error={zipError}
+            building={zipBuilding}
+            onInspect={inspectZipProblem}
+            onReleaseNotes={openReleaseNotesFromZip}
+            onBuild={(version, fileName) =>
+              void chooseZipDestination(version, fileName)
+            }
+            onClose={() => {
+              setZipPreview(null);
+              setZipError(null);
+              setZipContext(null);
+            }}
+          />
+        )}
+        {releaseNotes && (
+          <ReleaseNotesDialog
+            key={`${releaseNotes.preview?.defaultFileName ?? "loading"}:${releaseNotes.initialVersion}:${releaseNotes.archiveFileName ?? ""}`}
+            preview={releaseNotes.preview}
+            error={releaseNotes.error}
+            initialVersion={releaseNotes.initialVersion}
+            archiveFileName={releaseNotes.archiveFileName}
+            onInspect={inspectZipProblem}
+            onClose={() => setReleaseNotes(null)}
+          />
+        )}
+        {zipOverwrite && (
+          <ZipOverwriteDialog
+            fileName={
+              zipOverwrite.destination.split(/[\\/]/).pop() ??
+              zipOverwrite.destination
+            }
+            onCancel={() => setZipOverwrite(null)}
+            onConfirm={() => {
+              const destination = zipOverwrite.destination;
+              const version = zipOverwrite.version;
+              setZipOverwrite(null);
+              void buildZipAt(destination, true, version);
+            }}
+          />
+        )}
+        {dropPaths && (
+          <LlmBatchDropOverlay
+            paths={dropPaths}
+            modName={selectedMod?.name ?? null}
+          />
+        )}
+        {importDialogPath !== undefined && selectedMod && targetLang && (
+          <ImportBatchDialog
+            key={`${selectedMod.uniqueId}:${importDialogPath ?? "picker"}`}
+            targetName={selectedMod.name}
+            targetLanguage={languageLine}
+            initialPath={importDialogPath}
+            initialError={importDialogInitialError}
+            onChooseFile={pickLlmBatchFile}
+            onImport={importSelectedBatch}
+            onClose={() => {
+              setImportDialogPath(undefined);
+              setImportDialogInitialError(null);
+            }}
+          />
+        )}
+        {llmExportDialog && (
+          <LlmBatchExportDialog
+            eligibleCount={llmExportDialog.items.length}
+            modName={llmExportDialog.mod.name}
+            suggestedFileName={`${llmExportDialog.mod.uniqueId.replace(/[<>:"/\\|?*]+/g, ".")}.llm-batch.json`}
+            onChooseDestination={() =>
+              pickLlmBatchDestination(
+                `${llmExportDialog.mod.uniqueId.replace(/[<>:"/\\|?*]+/g, ".")}.llm-batch.json`,
+              )
+            }
+            onSave={savePendingLlmBatch}
+            onClose={() => setLlmExportDialog(null)}
+          />
+        )}
+        {toast && (
+          <div
+            className={`stv3-toast is-${toast.tone}`}
+            role={toast.tone === "error" ? "alert" : "status"}
+            aria-live={toast.tone === "error" ? "assertive" : "polite"}
+            data-visible="true"
+            key={toast.id}
+          >
+            {toast.tone === "success" ? (
+              <CheckCircle2 aria-hidden />
+            ) : toast.tone === "error" ? (
+              <CircleX aria-hidden />
+            ) : (
+              <Info aria-hidden />
+            )}
+            <span>{toast.message}</span>
+            {toast.tone === "error" && (
+              <button
+                className="stv3-toast-dismiss"
+                type="button"
+                aria-label="Dismiss notification"
+                onClick={() => setToast(null)}
+              >
+                <X aria-hidden />
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1317,25 +1870,27 @@ function LlmBatchDropOverlay({
   }
   return (
     <div
-      className={`batchdrop${valid ? " batchdrop--valid" : " batchdrop--invalid"}`}
+      className="stv3-native-drop-state stv3-file-choice stv3-drop-zone is-dragging"
       role="status"
       aria-live="polite"
+      data-drop-valid={valid ? "true" : "false"}
     >
-      <div className="batchdrop__card">
-        <span className="batchdrop__icon" aria-hidden>
-          {valid ? "↓" : "×"}
-        </span>
+      <span>
         <strong>{title}</strong>
-        <span>{detail}</span>
-        {paths.length === 1 && <code>{paths[0]}</code>}
-      </div>
+        <br />
+        <code>{paths.length === 1 ? paths[0] : detail}</code>
+      </span>
+      <span className="stv3-kicker">
+        {paths.length === 1 ? detail : `${paths.length} files selected`}
+      </span>
     </div>
   );
 }
 
-function Toolbar({
-  homeActive,
-  onHome,
+function V3Toolbar({
+  activeView,
+  onWorkspace,
+  onOverview,
   onScan,
   scanEnabled,
   scanning,
@@ -1352,14 +1907,13 @@ function Toolbar({
   importBatchEnabled,
   onOpenSettings,
   settingsEnabled,
-  reviewTotal,
-  onReview,
-  search,
-  onSearch,
-  searchEnabled,
+  latestResultAvailable,
+  latestResultButtonRef,
+  onReopenResult,
 }: {
-  homeActive: boolean;
-  onHome: () => void;
+  activeView: "workspace" | "overview";
+  onWorkspace: () => void;
+  onOverview: () => void;
   onScan: () => void;
   scanEnabled: boolean;
   scanning: boolean;
@@ -1376,389 +1930,233 @@ function Toolbar({
   importBatchEnabled: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
-  /** Unreviewed AI suggestions across every scanned mod (0 hides the pill). */
-  reviewTotal: number;
-  onReview: () => void;
-  search: string;
-  onSearch: (value: string) => void;
-  searchEnabled: boolean;
+  latestResultAvailable: boolean;
+  latestResultButtonRef: React.RefObject<HTMLButtonElement | null>;
+  onReopenResult: () => void;
 }) {
-  const [openMenu, setOpenMenu] = useState<"export" | "import" | null>(null);
-  const actionsRef = useRef<HTMLDivElement>(null);
-  const exportMenuEnabled =
-    exportEnabled || exportAllEnabled || buildZipEnabled || exporting;
+  const [exportOpen, setExportOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const exportTriggerRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!openMenu) return;
-    const closeOutside = (event: PointerEvent) => {
+    if (!exportOpen) return;
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
       if (
+        event instanceof PointerEvent &&
         event.target instanceof Node &&
-        !actionsRef.current?.contains(event.target)
+        menuRef.current?.contains(event.target)
       ) {
-        setOpenMenu(null);
+        return;
       }
+      setExportOpen(false);
+      if (event instanceof KeyboardEvent) exportTriggerRef.current?.focus();
     };
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpenMenu(null);
-    };
-    document.addEventListener("pointerdown", closeOutside);
-    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
     return () => {
-      document.removeEventListener("pointerdown", closeOutside);
-      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
     };
-  }, [openMenu]);
+  }, [exportOpen]);
 
-  function selectMenuAction(action: () => void) {
-    setOpenMenu(null);
+  function run(action: () => void) {
+    setExportOpen(false);
     action();
   }
 
+  function focusFirstMenuItem() {
+    window.requestAnimationFrame(() => {
+      const items = Array.from(
+        menuRef.current?.querySelectorAll<HTMLButtonElement>(
+          '[role="menuitem"]:not(:disabled)',
+        ) ?? [],
+      );
+      items.forEach((item, index) => {
+        item.tabIndex = index === 0 ? 0 : -1;
+      });
+      items[0]?.focus();
+    });
+  }
+
+  function handleExportMenuKey(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]:not(:disabled)',
+      ),
+    );
+    if (items.length === 0) return;
+    const current = items.indexOf(document.activeElement as HTMLButtonElement);
+    let next = current;
+    if (event.key === "ArrowDown") next = (current + 1) % items.length;
+    else if (event.key === "ArrowUp")
+      next = (current - 1 + items.length) % items.length;
+    else if (event.key === "Home") next = 0;
+    else if (event.key === "End") next = items.length - 1;
+    else return;
+    event.preventDefault();
+    items.forEach((item, index) => {
+      item.tabIndex = index === next ? 0 : -1;
+    });
+    items[next].focus();
+  }
+
   return (
-    <header className="toolbar" role="banner">
-      <div
-        className="toolbar__workflow"
-        role="group"
-        aria-label="Translation workflow"
-        ref={actionsRef}
-      >
-        {/* Toggles dashboard ⇄ work view, labelled with the destination so the
-            navigation explains itself (the app name lives in the OS title bar).
-            The toolbar is the only navigation chrome (SPEC §7). */}
+    <div className="stv3-commandbar">
+      <nav className="stv3-command-nav" aria-label="Main views">
         <button
+          className="stv3-nav-button"
           type="button"
-          className="toolbar__title"
-          onClick={onHome}
-          title={
-            homeActive ? "Switch to the mod list" : "Switch to the dashboard"
-          }
+          aria-pressed={activeView === "workspace"}
+          onClick={onWorkspace}
         >
-          <span aria-hidden>{homeActive ? "▤" : "⌂"}</span>{" "}
-          {homeActive ? "Mod list" : "Dashboard"}
+          <Table2 aria-hidden /> Workspace
         </button>
         <button
+          className="stv3-nav-button"
           type="button"
-          className="toolbar__primary"
+          aria-pressed={activeView === "overview"}
+          onClick={onOverview}
+        >
+          <LayoutDashboard aria-hidden /> Overview
+        </button>
+      </nav>
+      <div className="stv3-command-actions">
+        <button
+          className="stv3-button stv3-button-quiet"
+          type="button"
+          aria-label="Scan mods"
+          title="Scan mods"
           onClick={onScan}
           disabled={!scanEnabled}
         >
-          {scanning ? "Scanning…" : "Scan"}
+          <RefreshCw aria-hidden className={scanning ? "is-spinning" : ""} />
+          <span className="stv3-action-label-compact">
+            {scanning ? "Scanning…" : "Scan"}
+          </span>
         </button>
-        <div className="toolbar__menu">
+        <button
+          className="stv3-button stv3-button-quiet"
+          type="button"
+          aria-label="Import LLM batch"
+          title="Import LLM batch"
+          onClick={onImportBatch}
+          disabled={!importBatchEnabled}
+        >
+          <Download aria-hidden />
+          <span className="stv3-action-label-compact">Import …</span>
+        </button>
+        <div className="stv3-menu" ref={menuRef}>
           <button
+            ref={exportTriggerRef}
+            className="stv3-button stv3-button-quiet"
             type="button"
+            aria-label="Export actions"
+            title="Export actions"
             aria-haspopup="menu"
-            aria-expanded={openMenu === "export"}
-            onClick={() =>
-              setOpenMenu((current) => (current === "export" ? null : "export"))
+            aria-expanded={exportOpen}
+            onClick={() => {
+              setExportOpen((open) => {
+                if (!open) focusFirstMenuItem();
+                return !open;
+              });
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") {
+                event.preventDefault();
+                setExportOpen(true);
+                focusFirstMenuItem();
+              }
+            }}
+            disabled={
+              !(exportEnabled || exportAllEnabled || buildZipEnabled) ||
+              exporting
             }
-            disabled={!exportMenuEnabled}
           >
-            {exporting ? "Exporting..." : "Export..."}
+            <Upload aria-hidden />
+            <span className="stv3-action-label-compact">
+              {exporting ? "Exporting…" : "Export …"}
+            </span>
           </button>
-          {openMenu === "export" && (
+          {exportOpen && (
             <div
-              className="toolbar__menu-popover"
+              className="stv3-popover"
               role="menu"
               aria-label="Export"
+              onKeyDown={handleExportMenuKey}
+              onBlur={(event) => {
+                const next = event.relatedTarget;
+                if (
+                  !(next instanceof Node) ||
+                  !event.currentTarget.contains(next)
+                ) {
+                  setExportOpen(false);
+                }
+              }}
             >
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => selectMenuAction(onExport)}
+                onClick={() => run(onExport)}
                 disabled={!exportEnabled}
               >
-                Export to mod folder
+                <FolderUp aria-hidden /> Export current mod
               </button>
+              <div className="stv3-popover-divider" role="separator" />
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => selectMenuAction(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                Export all mods to mod folders
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => selectMenuAction(onBuildZip)}
+                onClick={() => run(onBuildZip)}
                 disabled={!buildZipEnabled}
               >
-                Build release ZIP
+                <Archive aria-hidden /> Build translation ZIP
               </button>
-            </div>
-          )}
-        </div>
-        <div className="toolbar__menu">
-          <button
-            type="button"
-            aria-haspopup="menu"
-            aria-expanded={openMenu === "import"}
-            onClick={() =>
-              setOpenMenu((current) => (current === "import" ? null : "import"))
-            }
-            disabled={!importBatchEnabled}
-          >
-            Import...
-          </button>
-          {openMenu === "import" && (
-            <div
-              className="toolbar__menu-popover"
-              role="menu"
-              aria-label="Import"
-            >
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => selectMenuAction(onImportBatch)}
+                onClick={() => run(onReleaseNotes)}
+                disabled={!releaseNotesEnabled}
               >
-                Import LLM batch translation
+                <NotebookPen aria-hidden /> Translation notes
+              </button>
+              <div className="stv3-popover-divider" role="separator" />
+              <span className="stv3-popover-note" role="presentation">
+                Advanced
+              </span>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                <Folders aria-hidden /> Export all mods …
               </button>
             </div>
           )}
         </div>
-      </div>
-      <div
-        className="toolbar__utility"
-        role="group"
-        aria-label="Translation tools"
-      >
-        <div className="toolbar__filters">
-          {reviewTotal > 0 && (
-            <button
-              type="button"
-              className="panel__review"
-              title="Open the review queue on the dashboard"
-              onClick={onReview}
-            >
-              <span aria-hidden>⚑</span> {reviewTotal} to review
-            </button>
-          )}
-          {searchEnabled && (
-            <input
-              className="toolbar__search"
-              type="search"
-              placeholder="Search strings…"
-              aria-label="Search strings"
-              value={search}
-              onChange={(event) => onSearch(event.target.value)}
-            />
-          )}
-        </div>
         <button
+          className="stv3-button stv3-button-quiet"
           type="button"
-          onClick={onReleaseNotes}
-          disabled={!releaseNotesEnabled}
-          title="Generate copy-ready release text for this translation package"
-        >
-          Translation Notes
-        </button>
-        <button
-          type="button"
+          aria-label="Settings"
+          title="Settings"
           onClick={onOpenSettings}
           disabled={!settingsEnabled}
         >
-          Settings
+          <SettingsIcon aria-hidden />
+          <span className="stv3-action-label-compact">Settings</span>
+        </button>
+        <button
+          ref={latestResultButtonRef}
+          className="stv3-button stv3-button-quiet"
+          type="button"
+          title="Reopen the latest operation result"
+          data-action="reopen-result"
+          hidden={!latestResultAvailable}
+          onClick={onReopenResult}
+        >
+          <FileCheck2 aria-hidden /> Latest result
         </button>
       </div>
-    </header>
-  );
-}
-
-/** Status filter chips above the table (SPEC §§7 and 9): one pill per status with
- * glyph + live count, plus "All". Replaces the old toolbar dropdown. */
-function FilterChips({
-  value,
-  onChange,
-  counts,
-  total,
-}: {
-  value: StringStatus | "all";
-  onChange: (value: StringStatus | "all") => void;
-  counts: Record<StringStatus, number> | null;
-  total: number;
-}) {
-  const order: StringStatus[] = [
-    "untranslated",
-    "translated",
-    "review-needed",
-    "outdated",
-  ];
-  const allActive = value === "all";
-  return (
-    <div className="filterchips" role="group" aria-label="Filter by status">
-      <button
-        type="button"
-        className={`filterchip${allActive ? " filterchip--active" : ""}`}
-        aria-pressed={allActive}
-        style={
-          allActive
-            ? {
-                background: "var(--gold-tint)",
-                color: "#f0e0bd",
-                borderColor: "rgba(227, 169, 78, 0.45)",
-              }
-            : undefined
-        }
-        onClick={() => onChange("all")}
-      >
-        All <span className="filterchip__count">{total}</span>
-      </button>
-      {order.map((status) => {
-        const meta = STATUS_META[status];
-        const count = counts?.[status] ?? 0;
-        const active = value === status;
-        return (
-          <button
-            key={status}
-            type="button"
-            className={`filterchip${active ? " filterchip--active" : ""}`}
-            aria-pressed={active}
-            aria-label={`${meta.label} (${count})`}
-            title={meta.label}
-            style={{
-              color: meta.color,
-              borderColor: statusTint(meta.color, active ? 0.6 : 0.3),
-              background: statusTint(meta.color, active ? 0.2 : 0.1),
-            }}
-            onClick={() => onChange(active ? "all" : status)}
-          >
-            <span aria-hidden>{meta.glyph}</span>
-            <span className="filterchip__count">{count}</span>
-          </button>
-        );
-      })}
     </div>
-  );
-}
-
-function StringTablePanel({
-  mod,
-  mods,
-  search,
-  statusFilter,
-  onStatusFilter,
-  glossary,
-  onTranslate,
-  onLlmBatchExport,
-  onCountsChange,
-  onShowReview,
-  onOpenReviewQueue,
-  onOpenMod,
-  onClearSelection,
-  onClearFilters,
-  onStringSaved,
-  onEditorOpen,
-  bottomClearance,
-  reloadToken,
-  shortcuts,
-}: {
-  mod: ScannedMod | null;
-  mods: ScannedMod[];
-  search: string;
-  statusFilter: StringStatus | "all";
-  onStatusFilter: (value: StringStatus | "all") => void;
-  glossary: GlossaryEntry[] | null;
-  onTranslate?: (
-    source: string,
-    section?: string | null,
-  ) => Promise<TranslationResult>;
-  onLlmBatchExport?: (
-    mod: ScannedMod,
-    items: LlmBatchItem[],
-  ) => Promise<LlmExportOutcome | null>;
-  onCountsChange?: (
-    modId: string,
-    translatedKeys: number,
-    statusCounts: Record<StringStatus, number>,
-  ) => void;
-  /** Filter the table down to the strings that still need review. */
-  onShowReview?: () => void;
-  /** Return to the dashboard's cross-mod review queue. */
-  onOpenReviewQueue?: () => void;
-  /** Open a mod selected from global string-search results. */
-  onOpenMod: (uniqueId: string) => void;
-  /** Drop the mod selection to return to cross-mod global search. */
-  onClearSelection: () => void;
-  /** Reset search + status filter (the no-results escape hatch). */
-  onClearFilters?: () => void;
-  onStringSaved?: (snapshot: SavedStringSnapshot) => void;
-  onEditorOpen?: () => void;
-  bottomClearance: number;
-  reloadToken?: number;
-  shortcuts: ResolvedShortcuts;
-}) {
-  return (
-    <section className="panel panel--strings" aria-label="String table">
-      <div className="panel__header">
-        <span className="panel__header-title">
-          Strings
-          {mod && (
-            <>
-              {" "}
-              · <StringTableHeader mod={mod} onShowReview={onShowReview} />
-            </>
-          )}
-        </span>
-        {mod && (
-          <button
-            type="button"
-            className="panel__back"
-            title="Clear the selected mod and search across all scanned mods"
-            onClick={onClearSelection}
-          >
-            <span aria-hidden>←</span> Search all mods
-          </button>
-        )}
-      </div>
-      {mod && (
-        <FilterChips
-          value={statusFilter}
-          onChange={onStatusFilter}
-          counts={mod.statusCounts ?? null}
-          total={mod.totalKeys}
-        />
-      )}
-      {mod ? (
-        <StringTable
-          key={mod.uniqueId}
-          mod={mod}
-          search={search}
-          statusFilter={statusFilter}
-          glossary={glossary}
-          onTranslate={onTranslate}
-          onLlmBatchExport={
-            onLlmBatchExport
-              ? (items) => onLlmBatchExport(mod, items)
-              : undefined
-          }
-          onClearFilters={onClearFilters}
-          onStringSaved={onStringSaved}
-          onEditorOpen={onEditorOpen}
-          bottomClearance={bottomClearance}
-          reloadToken={reloadToken}
-          shortcuts={shortcuts}
-          onCountsChange={(translatedKeys, statusCounts) =>
-            onCountsChange?.(mod.uniqueId, translatedKeys, statusCounts)
-          }
-        />
-      ) : search.trim() ? (
-        <GlobalStringSearch mods={mods} query={search} onOpenMod={onOpenMod} />
-      ) : (
-        <div className="workspace-empty">
-          <span className="workspace-empty__icon" aria-hidden>
-            ▤
-          </span>
-          <strong>Select a mod to start translating</strong>
-          <span>
-            Pick one from the list, or{" "}
-            <button type="button" onClick={onOpenReviewQueue}>
-              open the review queue
-            </button>{" "}
-            to work the backlog across all mods.
-          </span>
-        </div>
-      )}
-    </section>
   );
 }

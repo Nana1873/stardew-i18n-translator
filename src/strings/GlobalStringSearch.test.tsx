@@ -7,6 +7,21 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
 }));
 
+vi.mock("@tanstack/react-virtual", () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 30,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({
+        key: index,
+        index,
+        start: index * 30,
+        size: 30,
+      })),
+    measure: () => {},
+    scrollToIndex: () => {},
+  }),
+}));
+
 import { GlobalStringSearch } from "./GlobalStringSearch";
 
 const MODS: ScannedMod[] = [
@@ -90,19 +105,26 @@ beforeEach(() => {
 });
 
 describe("GlobalStringSearch", () => {
-  it("searches every mod and opens the matching mod", async () => {
+  it("searches every mod in the shared workbench with passive mod metadata", async () => {
     const onOpenMod = vi.fn();
     render(
       <GlobalStringSearch mods={MODS} query="morgen" onOpenMod={onOpenMod} />,
     );
 
     expect(await screen.findByText("farewell")).toBeInTheDocument();
-    expect(screen.getByText("Second Mod")).toBeInTheDocument();
-    expect(screen.getByText("i18n/dialogue")).toBeInTheDocument();
+    const modLabel = screen.getByText("Second Mod");
     expect(screen.queryByText("greeting")).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: /Second Mod/ }));
-    expect(onOpenMod).toHaveBeenCalledWith("second.mod");
+    expect(screen.getByRole("columnheader", { name: /Mod/ })).toBeVisible();
+    expect(
+      screen.queryByRole("columnheader", { name: /File/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(modLabel);
+    expect(modLabel.closest(".stringrow--data")).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(onOpenMod).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "load_strings"),

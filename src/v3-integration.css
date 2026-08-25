@@ -1,0 +1,146 @@
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  background: #101214;
+}
+
+#stv3-dense-demo.app {
+  display: block;
+  min-height: 0;
+  background: var(--stv3-canvas);
+}
+
+#stv3-dense-demo .stv3-window {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#stv3-dense-demo .stv3-mod-pane.panel,
+#stv3-dense-demo .stv3-string-pane.panel {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+#stv3-dense-demo .stv3-mod-pane .modlist__search {
+  width: auto;
+  margin: 8px 10px;
+}
+
+#stv3-dense-demo .stv3-editor-support {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--stv3-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#stv3-dense-demo .stv3-editor-support-row + .stv3-editor-support-row {
+  border-top: 1px solid var(--stv3-border);
+}
+
+#stv3-dense-demo .stv3-token {
+  min-height: 25px;
+  padding: 3px 7px;
+  color: var(--stv3-orange);
+  background: var(--stv3-orange-soft);
+  border: 1px solid color-mix(in srgb, var(--stv3-orange) 40%, transparent);
+  border-radius: 6px;
+}
+
+#stv3-dense-demo .stv3-token.is-valid {
+  color: var(--stv3-green);
+  background: var(--stv3-green-soft);
+  border-color: color-mix(in srgb, var(--stv3-green) 40%, transparent);
+}
+
+#stv3-dense-demo .stv3-editor .editor__review {
+  margin: 0;
+}
+
+#stv3-dense-demo .stv3-editor .editor__review-track {
+  min-width: 120px;
+}
+
+#stv3-dense-demo .stv3-editor .editor__validation {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+#stv3-dense-demo .stv3-editor .editor__validation.is-error {
+  color: var(--stv3-red);
+  background: var(--stv3-red-soft);
+}
+
+#stv3-dense-demo .stv3-editor .editor__validation.is-warning {
+  color: var(--stv3-orange);
+  background: var(--stv3-orange-soft);
+}
+
+#stv3-dense-demo .stv3-editor .editor__kbd {
+  color: inherit;
+  background: transparent;
+  border: 0;
+}
+
+#stv3-dense-demo .stv3-editor-overlay > .stv3-editor {
+  max-height: min(760px, calc(100dvh - 32px));
+}
+
+#stv3-dense-demo .stv3-editor > .stv3-flow-overlay {
+  position: fixed;
+  z-index: 90;
+}
+
+#stv3-dense-demo .stv3-toast.is-success {
+  border-color: var(--stv3-green);
+}
+
+#stv3-dense-demo .stv3-toast.is-error {
+  border-color: var(--stv3-red);
+}
+
+/* Native Tauri drag-enter uses the accepted compact file-choice state. It is
+   deliberately not a full-window legacy drop scrim. */
+#stv3-dense-demo .stv3-native-drop-state {
+  position: absolute;
+  top: 54px;
+  left: 50%;
+  z-index: 75;
+  width: min(620px, calc(100% - 32px));
+  transform: translateX(-50%);
+  box-shadow: var(--stv3-shadow);
+  pointer-events: none;
+}
+
+#stv3-dense-demo .stv3-native-drop-state[data-drop-valid="false"] {
+  background: var(--stv3-red-soft);
+  border-color: var(--stv3-red);
+}
+
+/* The reference marks table cells; production rows use the same grid as
+   role-based cells so virtualization remains lightweight. */
+#stv3-dense-demo .stv3-string-row [role="cell"].is-search-match {
+  background: color-mix(in srgb, var(--stv3-brand) 12%, transparent);
+  box-shadow: inset 0 -2px 0
+    color-mix(in srgb, var(--stv3-brand) 62%, transparent);
+}
+
+#stv3-dense-demo .is-spinning {
+  animation: stv3-spin 0.9s linear infinite;
+}
+
+@keyframes stv3-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

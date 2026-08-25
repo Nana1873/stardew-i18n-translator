@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { type RefObject, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronUp, Copy, X } from "lucide-react";
 import type {
   ExportResult,
   LlmExportOutcome,
@@ -19,47 +20,495 @@ export interface ResultProblem {
   resolved: boolean;
 }
 
+interface ResultTrayBase {
+  title: string;
+  collapsed: boolean;
+  pending: boolean;
+  error: string | null;
+  problems: ResultProblem[];
+}
+
 export type ResultTrayData =
-  | {
+  | (ResultTrayBase & {
       kind: "export";
-      title: string;
-      collapsed: boolean;
-      pending: boolean;
-      error: string | null;
       result: ExportResult | null;
       modsChanged: number | null;
       failedMod?: string | null;
       remainingMods?: string[];
-      problems: ResultProblem[];
       retry: { kind: "selected"; modUniqueId: string } | { kind: "all" };
-    }
-  | {
+    })
+  | (ResultTrayBase & {
       kind: "import";
-      title: string;
-      collapsed: boolean;
-      pending: boolean;
-      error: string | null;
       summary: LlmImportSummary | null;
-      problems: ResultProblem[];
-    }
-  | {
+      /** Real native-picker/drop path retained by the caller for result details. */
+      sourcePath?: string | null;
+      sourceFileName?: string | null;
+      sourceFolder?: string | null;
+    })
+  | (ResultTrayBase & {
       kind: "batch-export";
-      title: string;
-      collapsed: boolean;
-      pending: false;
-      error: string | null;
       outcome: LlmExportOutcome | null;
-      problems: ResultProblem[];
-    }
-  | {
+    })
+  | (ResultTrayBase & {
       kind: "zip";
-      title: string;
-      collapsed: boolean;
-      pending: false;
-      error: string | null;
       outcome: ZipBuildOutcome | null;
-      problems: ResultProblem[];
+    })
+  | (ResultTrayBase & {
+      kind: "ai-batch";
+      outcome: "cancelled" | "error";
+      done: number;
+      total: number;
+      engine: string;
+      undoAvailable: boolean;
+    })
+  | (ResultTrayBase & {
+      kind: "bulk";
+      count: number;
+      undone?: boolean;
+      undoAvailable: boolean;
+    });
+
+interface ResultNotice {
+  text: string;
+  tone?: "warning" | "error";
+}
+
+interface ResultPath {
+  label: string;
+  path: string;
+}
+
+interface ResultPresentation {
+  label: string;
+  kicker: string;
+  copy: string;
+  tone: "success" | "warning" | "error" | "pending";
+  notices: ResultNotice[];
+  paths: ResultPath[];
+  workflow: string[];
+  openFolderPath: string | null;
+  canOpenReview: boolean;
+}
+
+function fileNameOf(path: string): string {
+  return path.split(/[\\/]/).filter(Boolean).at(-1) || path;
+}
+
+function folderOf(path: string): string | null {
+  const index = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+  if (index < 0) return null;
+  if (index === 0) return path.slice(0, 1);
+  if (index === 2 && path[1] === ":") return path.slice(0, 3);
+  return path.slice(0, index);
+}
+
+function plural(value: number, singular: string, pluralForm = singular + "s") {
+  return value === 1 ? singular : pluralForm;
+}
+
+function presentationFor(
+  data: ResultTrayData,
+  unresolved: ResultProblem[],
+): ResultPresentation {
+  if (data.pending) {
+    return {
+      label: data.kind === "import" ? "Importing" : "Exporting",
+      kicker: "Operation in progress",
+      copy:
+        data.kind === "import"
+          ? "The selected JSON file is being validated and imported."
+          : "Translation files are being prepared and written safely.",
+      tone: "pending",
+      notices: [],
+      paths: [],
+      workflow: [],
+      openFolderPath: null,
+      canOpenReview: false,
     };
+  }
+
+  let result: ResultPresentation;
+
+  if (data.kind === "export") {
+    const exportResult = data.result;
+    const changedFiles = exportResult
+      ? exportResult.filesWritten + exportResult.filesRemoved
+      : 0;
+    const blocked = Boolean(exportResult?.blocked || unresolved.length > 0);
+    const ready =
+      Boolean(exportResult?.blocked) &&
+      data.problems.length > 0 &&
+      unresolved.length === 0;
+    const notices: ResultNotice[] = [];
+    if (exportResult) {
+      if (exportResult.totalUntranslated > 0)
+        notices.push({
+          text:
+            exportResult.totalUntranslated +
+            " untranslated " +
+            plural(exportResult.totalUntranslated, "value") +
+            " omitted; SMAPI will use default.json.",
+        });
+      if (exportResult.totalOutdated > 0 || exportResult.totalReviewNeeded > 0)
+        notices.push({
+          text:
+            exportResult.totalOutdated +
+            " changed and " +
+            exportResult.totalReviewNeeded +
+            " review-needed " +
+            plural(
+              exportResult.totalOutdated + exportResult.totalReviewNeeded,
+              "value",
+            ) +
+            " included.",
+          tone: "warning",
+        });
+      if (exportResult.totalOrphanKeys > 0)
+        notices.push({
+          text:
+            exportResult.totalOrphanKeys +
+            " orphan " +
+            plural(exportResult.totalOrphanKeys, "key") +
+            " removed from output and retained in backups.",
+          tone: "warning",
+        });
+      for (const skipped of exportResult.skipped)
+        notices.push({
+          text:
+            skipped.relativeDir + " / " + skipped.key + ": " + skipped.reason,
+          tone: "error",
+        });
+    }
+    const paths =
+      exportResult?.files
+        .filter((file) => file.written || file.removed)
+        .map((file) => ({
+          label:
+            fileNameOf(file.targetPath) +
+            (file.removed
+              ? file.backedUp
+                ? " · Removed · backup created"
+                : " · Removed"
+              : file.backedUp
+                ? " · Written · backup created"
+                : " · Written"),
+          path: file.targetPath,
+        })) ?? [];
+    const copy = exportResult
+      ? blocked && changedFiles === 0
+        ? "No translation file was changed."
+        : changedFiles +
+          " target " +
+          plural(changedFiles, "file") +
+          " written or removed. " +
+          exportResult.totalWrittenKeys +
+          " " +
+          plural(exportResult.totalWrittenKeys, "string") +
+          " written."
+      : "Result data is unavailable.";
+    result = {
+      label: ready
+        ? "Ready to export again"
+        : blocked
+          ? "Export blocked"
+          : data.modsChanged !== null
+            ? "All mods exported"
+            : "Export completed",
+      kicker: "Operation result",
+      copy,
+      tone: blocked
+        ? "error"
+        : notices.some((item) => item.tone === "warning")
+          ? "warning"
+          : "success",
+      notices,
+      paths,
+      workflow: [],
+      openFolderPath: paths[0] ? folderOf(paths[0].path) : null,
+      canOpenReview: false,
+    };
+    if (data.failedMod) {
+      result.notices.push({
+        text:
+          "Failed at " +
+          data.failedMod +
+          ". Not started: " +
+          ((data.remainingMods?.length ?? 0) > 0
+            ? data.remainingMods?.join(", ")
+            : "none") +
+          ".",
+        tone: "error",
+      });
+    }
+  } else if (data.kind === "import") {
+    const summary = data.summary;
+    const sourceName =
+      data.sourceFileName ||
+      (data.sourcePath ? fileNameOf(data.sourcePath) : null);
+    const paths: ResultPath[] = [];
+    if (sourceName) paths.push({ label: "Source file", path: sourceName });
+    if (data.sourcePath)
+      paths.push({ label: "Imported from", path: data.sourcePath });
+    const notices: ResultNotice[] = [];
+    if (summary?.skippedTranslated)
+      notices.push({
+        text:
+          summary.skippedTranslated +
+          " existing local " +
+          plural(summary.skippedTranslated, "translation") +
+          " preserved.",
+      });
+    if (summary?.unmatched)
+      notices.push({
+        text:
+          summary.unmatched +
+          " unmatched, empty, or non-string " +
+          plural(summary.unmatched, "value") +
+          " skipped.",
+        tone: "warning",
+      });
+    if (summary?.identicalToSource)
+      notices.push({
+        text:
+          summary.identicalToSource +
+          " imported " +
+          plural(summary.identicalToSource, "value") +
+          " identical to the English source.",
+        tone: "warning",
+      });
+    if (!data.sourcePath)
+      notices.push({
+        text: "The imported source path and file name are unavailable.",
+        tone: "warning",
+      });
+    result = {
+      label: "LLM batch imported",
+      kicker: "Operation result",
+      copy: summary
+        ? summary.imported +
+          " of " +
+          summary.totalInFile +
+          " " +
+          plural(summary.totalInFile, "value") +
+          " saved to the review queue."
+        : "Import result data is unavailable.",
+      tone: notices.some((item) => item.tone === "warning")
+        ? "warning"
+        : "success",
+      notices,
+      paths,
+      workflow: [],
+      openFolderPath:
+        data.sourceFolder ||
+        (data.sourcePath ? folderOf(data.sourcePath) : null),
+      canOpenReview: Boolean(summary && summary.imported > 0),
+    };
+  } else if (data.kind === "batch-export") {
+    const outcome = data.outcome;
+    const paths: ResultPath[] = outcome
+      ? [
+          { label: "File name", path: fileNameOf(outcome.path) },
+          { label: "Saved to", path: outcome.path },
+        ]
+      : [];
+    result = {
+      label: "LLM batch exported",
+      kicker: "Operation result",
+      copy: outcome
+        ? outcome.stringCount +
+          " selected open or changed " +
+          plural(outcome.stringCount, "string") +
+          " written."
+        : "Batch export result data is unavailable.",
+      tone: "success",
+      notices: [],
+      paths,
+      workflow: [
+        "Upload the JSON file to an LLM that supports file uploads.",
+        "Send the handoff prompt and download the returned JSON file.",
+        "Import it through Import … or drag and drop.",
+        "Review the results in the review queue.",
+      ],
+      openFolderPath: outcome ? folderOf(outcome.path) : null,
+      canOpenReview: false,
+    };
+  } else if (data.kind === "zip") {
+    const outcome = data.outcome;
+    result = {
+      label: "ZIP created",
+      kicker: "Operation result",
+      copy: outcome
+        ? outcome.strings +
+          " " +
+          plural(outcome.strings, "string") +
+          " packaged into " +
+          outcome.entries +
+          " translation " +
+          plural(outcome.entries, "file") +
+          "."
+        : "ZIP result data is unavailable.",
+      tone: "success",
+      notices: outcome
+        ? [
+            {
+              text:
+                outcome.entries +
+                " translation " +
+                plural(outcome.entries, "file") +
+                " · " +
+                outcome.strings +
+                " " +
+                plural(outcome.strings, "string"),
+            },
+          ]
+        : [],
+      paths: outcome
+        ? [
+            { label: "Archive name", path: outcome.fileName },
+            { label: "Saved to", path: outcome.path },
+          ]
+        : [],
+      workflow: [],
+      openFolderPath: outcome?.folder ?? null,
+      canOpenReview: false,
+    };
+  } else if (data.kind === "ai-batch") {
+    const notStarted = Math.max(0, data.total - data.done);
+    result = {
+      label:
+        data.outcome === "cancelled"
+          ? "AI translation cancelled"
+          : "AI translation failed",
+      kicker: "Operation result",
+      copy:
+        data.done +
+        " completed " +
+        data.engine +
+        " " +
+        plural(data.done, "suggestion") +
+        " remain saved in Review.",
+      tone: data.outcome === "cancelled" ? "warning" : "error",
+      notices: [
+        {
+          text: data.done + " saved · " + notStarted + " not started.",
+          tone: data.outcome === "cancelled" ? "warning" : "error",
+        },
+      ],
+      paths: [],
+      workflow: [],
+      openFolderPath: null,
+      canOpenReview: true,
+    };
+  } else {
+    result = {
+      label: data.undone ? "Batch edit undone" : "Batch edit saved",
+      kicker: "Operation result",
+      copy: data.undone
+        ? data.count +
+          " " +
+          plural(data.count, "string") +
+          " restored to the previous values."
+        : data.count +
+          " selected " +
+          plural(data.count, "string") +
+          " saved. Undo remains available until another result replaces this one.",
+      tone: "success",
+      notices: [],
+      paths: [],
+      workflow: [],
+      openFolderPath: null,
+      canOpenReview: false,
+    };
+  }
+
+  if (data.error) {
+    result.label =
+      data.kind === "import"
+        ? "LLM import rejected"
+        : data.kind === "batch-export"
+          ? "Batch export failed"
+          : data.kind === "zip"
+            ? "ZIP build failed"
+            : data.kind === "ai-batch"
+              ? data.outcome === "cancelled"
+                ? "AI translation cancelled"
+                : "AI translation failed"
+              : data.kind === "bulk"
+                ? "Batch edit failed"
+                : "Export failed";
+    result.tone = "error";
+    result.notices.unshift({ text: data.error, tone: "error" });
+    if (data.kind === "import") result.copy = "No changes were made.";
+  }
+
+  return result;
+}
+
+function resultKey(data: ResultTrayData): string {
+  if (data.kind === "batch-export")
+    return data.kind + "|" + (data.outcome?.path ?? data.title);
+  if (data.kind === "zip")
+    return data.kind + "|" + (data.outcome?.path ?? data.title);
+  if (data.kind === "bulk")
+    return (
+      data.kind +
+      "|" +
+      data.title +
+      "|" +
+      data.count +
+      "|" +
+      Boolean(data.undone)
+    );
+  if (data.kind === "ai-batch")
+    return data.kind + "|" + data.outcome + "|" + data.done + "|" + data.total;
+  if (data.kind === "import")
+    return (
+      data.kind +
+      "|" +
+      data.title +
+      "|" +
+      (data.sourcePath ?? "") +
+      "|" +
+      (data.summary?.imported ?? "")
+    );
+  return (
+    data.kind +
+    "|" +
+    data.title +
+    "|" +
+    (data.result?.totalWrittenKeys ?? "") +
+    "|" +
+    Boolean(data.result?.blocked)
+  );
+}
+
+function copyTextFor(
+  data: ResultTrayData,
+  presentation: ResultPresentation,
+): string {
+  const lines = [
+    presentation.label,
+    data.title,
+    presentation.copy,
+    ...presentation.notices.map((notice) => notice.text),
+    ...presentation.paths.flatMap((item) => [item.label, item.path]),
+    ...presentation.workflow,
+    ...(data.kind === "batch-export" && data.outcome
+      ? [LLM_BATCH_HANDOFF_PROMPT]
+      : []),
+    ...data.problems.map(
+      (problem) =>
+        problem.modName +
+        " · " +
+        problem.relativeDir +
+        " / " +
+        problem.key +
+        " · " +
+        (problem.resolved ? "Resolved" : problem.reason),
+    ),
+  ];
+  return lines.filter((line) => line.trim().length > 0).join("\n");
+}
 
 export function ResultTray({
   data,
@@ -68,312 +517,315 @@ export function ResultTray({
   onInspect,
   onRetry,
   onOpenFolder,
+  onOpenReview,
   onReleaseNotes,
+  onUndoBulk,
+  onNotify,
+  toggleButtonRef,
 }: {
   data: ResultTrayData;
   onToggle: () => void;
   onClose: () => void;
   onInspect: (problem: ResultProblem) => void;
-  onRetry: () => void;
+  onRetry?: () => void;
   onOpenFolder?: (path: string) => void;
+  onOpenReview?: () => void;
   onReleaseNotes?: () => void;
+  onUndoBulk?: () => Promise<void> | void;
+  onNotify?: (message: string) => void;
+  /** Lets the shell restore focus after Latest result is reopened. */
+  toggleButtonRef?: RefObject<HTMLButtonElement | null>;
 }) {
   const unresolved = data.problems.filter((problem) => !problem.resolved);
-  const failed = Boolean(data.error);
-  const blocked = data.kind === "export" && unresolved.length > 0;
-  const readyToRetry =
-    data.kind === "export" &&
-    Boolean(data.result?.blocked) &&
-    data.problems.length > 0 &&
-    unresolved.length === 0;
-  const label = data.pending
-    ? data.kind === "export"
-      ? "Exporting"
-      : "Importing"
-    : failed
-      ? data.kind === "export"
-        ? "Export failed"
-        : data.kind === "import"
-          ? "Import failed"
-          : data.kind === "batch-export"
-            ? "Batch export failed"
-            : "ZIP build failed"
-      : blocked
-        ? "Export blocked"
-        : readyToRetry
-          ? "Ready to export again"
-          : data.kind === "export"
-            ? "Export complete"
-            : data.kind === "import"
-              ? "Batch imported"
-              : data.kind === "batch-export"
-                ? "Batch exported"
-                : "Translation ZIP created";
-
-  return (
-    <aside
-      className={`resulttray${data.collapsed ? " resulttray--collapsed" : ""}`}
-      aria-label="Operation result"
-      aria-live="polite"
-    >
-      <div className="resulttray__head">
-        <button
-          type="button"
-          className="resulttray__toggle"
-          onClick={onToggle}
-          aria-expanded={!data.collapsed}
-        >
-          <span
-            className={`resulttray__status${failed || blocked ? " resulttray__status--error" : ""}`}
-            aria-hidden
-          />
-          <strong>{label}</strong>
-          <span className="resulttray__title">{data.title}</span>
-          {unresolved.length > 0 && (
-            <span className="resulttray__count">{unresolved.length} open</span>
-          )}
-        </button>
-        <button
-          type="button"
-          className="resulttray__icon"
-          onClick={onToggle}
-          aria-label={data.collapsed ? "Expand result" : "Collapse result"}
-        >
-          {data.collapsed ? "+" : "-"}
-        </button>
-        <button
-          type="button"
-          className="resulttray__icon"
-          onClick={onClose}
-          aria-label="Dismiss result"
-        >
-          x
-        </button>
-      </div>
-
-      {!data.collapsed && (
-        <div className="resulttray__body">
-          {data.error ? (
-            <>
-              <p className="resulttray__error">{data.error}</p>
-              {data.kind === "export" && data.result && (
-                <ExportSnapshot
-                  result={data.result}
-                  modsChanged={data.modsChanged}
-                />
-              )}
-              {data.kind === "export" && data.failedMod && (
-                <p>
-                  Failed at <strong>{data.failedMod}</strong>. Not started:{" "}
-                  {(data.remainingMods?.length ?? 0) > 0
-                    ? data.remainingMods!.join(", ")
-                    : "none"}
-                  .
-                </p>
-              )}
-            </>
-          ) : data.kind === "export" && data.result ? (
-            <ExportSnapshot
-              result={data.result}
-              modsChanged={data.modsChanged}
-            />
-          ) : data.kind === "import" && data.summary ? (
-            <ImportSnapshot summary={data.summary} />
-          ) : data.kind === "batch-export" && data.outcome ? (
-            <BatchExportSnapshot outcome={data.outcome} />
-          ) : data.kind === "zip" && data.outcome ? (
-            <div className="resulttray__snapshot">
-              <span className="resulttray__eyebrow">Release archive</span>
-              <p>
-                Wrote <strong>{data.outcome.strings}</strong> strings in{" "}
-                <strong>{data.outcome.entries}</strong> files.
-              </p>
-              <code>{data.outcome.path}</code>
-              {onOpenFolder && (
-                <div className="resulttray__actions">
-                  <button
-                    type="button"
-                    className="resulttray__action"
-                    onClick={() => onOpenFolder(data.outcome!.folder)}
-                  >
-                    Open folder
-                  </button>
-                  {onReleaseNotes && (
-                    <button
-                      type="button"
-                      className="resulttray__action"
-                      onClick={onReleaseNotes}
-                    >
-                      Translation Notes
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          ) : (
-            <p className="resulttray__muted">Working...</p>
-          )}
-
-          {data.problems.length > 0 && (
-            <section className="resulttray__problems">
-              <div className="resulttray__section-title">
-                <strong>Current validation</strong>
-                <span>
-                  {unresolved.length} open,{" "}
-                  {data.problems.length - unresolved.length} resolved
-                </span>
-              </div>
-              <ul>
-                {data.problems.map((problem) => (
-                  <li
-                    key={problem.id}
-                    className={
-                      problem.resolved ? "resulttray__problem--resolved" : ""
-                    }
-                  >
-                    <button type="button" onClick={() => onInspect(problem)}>
-                      <span>
-                        <strong>{problem.modName}</strong>
-                        <code>
-                          {problem.relativeDir} / {problem.key}
-                        </code>
-                      </span>
-                      <small>
-                        {problem.resolved ? "Resolved" : problem.reason}
-                      </small>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {data.kind === "export" &&
-            data.problems.length > 0 &&
-            unresolved.length === 0 &&
-            !data.pending && (
-              <button
-                type="button"
-                className="resulttray__retry"
-                onClick={onRetry}
-              >
-                Export again
-              </button>
-            )}
-        </div>
-      )}
-    </aside>
+  const presentation = useMemo(
+    () => presentationFor(data, unresolved),
+    [data, unresolved],
   );
-}
-
-function BatchExportSnapshot({ outcome }: { outcome: LlmExportOutcome }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
     "idle",
   );
+  const [promptCopyState, setPromptCopyState] = useState<
+    "idle" | "copied" | "error"
+  >("idle");
+  const [undoUsed, setUndoUsed] = useState(false);
+  const [undoRunning, setUndoRunning] = useState(false);
+  const key = resultKey(data);
 
-  async function copyPrompt() {
+  useEffect(() => {
+    setCopyState("idle");
+    setPromptCopyState("idle");
+    setUndoUsed(false);
+    setUndoRunning(false);
+  }, [key]);
+
+  async function copyDetails() {
     try {
-      if (!navigator.clipboard?.writeText) {
+      if (!navigator.clipboard?.writeText)
         throw new Error("Clipboard access is unavailable.");
-      }
-      await navigator.clipboard.writeText(LLM_BATCH_HANDOFF_PROMPT);
+      await navigator.clipboard.writeText(copyTextFor(data, presentation));
       setCopyState("copied");
+      onNotify?.("Result details copied.");
     } catch {
       setCopyState("error");
     }
   }
 
+  async function copyHandoffPrompt() {
+    try {
+      if (!navigator.clipboard?.writeText)
+        throw new Error("Clipboard access is unavailable.");
+      await navigator.clipboard.writeText(LLM_BATCH_HANDOFF_PROMPT);
+      setPromptCopyState("copied");
+      onNotify?.("Handoff prompt copied.");
+    } catch {
+      setPromptCopyState("error");
+      setCopyState("error");
+    }
+  }
+
+  async function undoBulk() {
+    if (!onUndoBulk || undoUsed || undoRunning) return;
+    setUndoRunning(true);
+    try {
+      await onUndoBulk();
+      setUndoUsed(true);
+    } catch {
+      setUndoUsed(false);
+    } finally {
+      setUndoRunning(false);
+    }
+  }
+
+  const showRetry = Boolean(
+    onRetry &&
+    !data.pending &&
+    (data.error || (data.kind === "export" && data.result?.blocked)),
+  );
+  const retryLabel =
+    data.kind === "import" && data.error
+      ? "Choose another file"
+      : "Export again";
+  const issue = unresolved[0] ?? data.problems[0];
+  const showUndo = Boolean(
+    (data.kind === "bulk" || data.kind === "ai-batch") &&
+    data.undoAvailable &&
+    !(data.kind === "bulk" && data.undone) &&
+    !undoUsed &&
+    onUndoBulk,
+  );
+
   return (
-    <div className="resulttray__snapshot">
-      <span className="resulttray__eyebrow">External LLM batch</span>
-      <p>
-        Wrote <strong>{outcome.stringCount}</strong>{" "}
-        {outcome.stringCount === 1 ? "string" : "strings"}.
-      </p>
-      <code>{outcome.path}</code>
-      <strong className="resulttray__workflow-title">
-        Continue in any LLM with file upload
-      </strong>
-      <ol className="resulttray__workflow">
-        <li>Open ChatGPT, Claude, Gemini, or another LLM.</li>
-        <li>
-          Attach the exported <code>*.llm-batch.json</code> file and send this
-          prompt:
-          <div className="resulttray__prompt">
-            <code>{LLM_BATCH_HANDOFF_PROMPT}</code>
+    <aside
+      className="stv3-result"
+      aria-live="polite"
+      aria-label="Latest operation result"
+    >
+      <div className="stv3-result-head">
+        <span
+          className={
+            "stv3-result-status" +
+            (presentation.tone === "pending"
+              ? " is-pending"
+              : presentation.tone === "warning"
+                ? " is-warning"
+                : presentation.tone === "error"
+                  ? " is-error"
+                  : "")
+          }
+          aria-hidden="true"
+        />
+        <div className="stv3-result-title">
+          <strong>{presentation.label}</strong>
+          <span>{data.title}</span>
+        </div>
+        <button
+          ref={toggleButtonRef}
+          className="stv3-icon-button"
+          type="button"
+          aria-label={data.collapsed ? "Expand result" : "Collapse result"}
+          aria-expanded={!data.collapsed}
+          onClick={onToggle}
+        >
+          {data.collapsed ? (
+            <ChevronUp aria-hidden="true" />
+          ) : (
+            <ChevronDown aria-hidden="true" />
+          )}
+        </button>
+        <button
+          className="stv3-icon-button"
+          type="button"
+          aria-label="Hide result"
+          onClick={onClose}
+        >
+          <X aria-hidden="true" />
+        </button>
+      </div>
+
+      {!data.collapsed && (
+        <div className="stv3-result-body">
+          <div className="stv3-kicker">{presentation.kicker}</div>
+          <p className="stv3-result-copy">{presentation.copy}</p>
+
+          {(presentation.notices.length > 0 || copyState === "error") && (
+            <div className="stv3-result-notices">
+              {presentation.notices.map((notice, index) => (
+                <div
+                  className={
+                    "stv3-result-notice" +
+                    (notice.tone ? " is-" + notice.tone : "")
+                  }
+                  key={notice.text + index}
+                >
+                  {notice.text}
+                </div>
+              ))}
+              {copyState === "error" && (
+                <div className="stv3-result-notice is-error" role="alert">
+                  Could not access the clipboard.
+                </div>
+              )}
+            </div>
+          )}
+
+          {(presentation.paths.length > 0 || data.problems.length > 0) && (
+            <div className="stv3-result-details">
+              {presentation.paths.map((item, index) => (
+                <div className="stv3-result-path" key={item.label + index}>
+                  <span>{item.label}</span>
+                  <code>{item.path}</code>
+                </div>
+              ))}
+              {data.problems.map((problem) => (
+                <button
+                  className="stv3-result-path"
+                  type="button"
+                  key={problem.id}
+                  aria-label={
+                    problem.modName +
+                    " · " +
+                    problem.relativeDir +
+                    " / " +
+                    problem.key +
+                    ": " +
+                    (problem.resolved ? "Resolved" : problem.reason)
+                  }
+                  onClick={() => onInspect(problem)}
+                >
+                  <span>
+                    {problem.modName} · {problem.relativeDir}
+                  </span>
+                  <code>
+                    {problem.key} ·{" "}
+                    {problem.resolved ? "Resolved" : problem.reason}
+                  </code>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {data.kind === "batch-export" && data.outcome && (
+            <div className="stv3-result-prompt">
+              <span>Handoff prompt</span>
+              <code>{LLM_BATCH_HANDOFF_PROMPT}</code>
+              <button
+                className="stv3-button stv3-button-quiet"
+                type="button"
+                onClick={() => void copyHandoffPrompt()}
+              >
+                {promptCopyState === "copied" ? "Copied" : "Copy prompt"}
+              </button>
+              {promptCopyState === "copied" && (
+                <span className="stv3-sr-only" role="status">
+                  Handoff prompt copied.
+                </span>
+              )}
+            </div>
+          )}
+
+          {presentation.workflow.length > 0 && (
+            <details className="stv3-result-help">
+              <summary>Show workflow</summary>
+              <ol className="stv3-result-workflow">
+                {presentation.workflow.map((step) => (
+                  <li key={step}>{step}</li>
+                ))}
+              </ol>
+            </details>
+          )}
+
+          <div className="stv3-result-actions">
             <button
+              className="stv3-button stv3-button-quiet"
               type="button"
-              className="resulttray__action"
-              onClick={() => void copyPrompt()}
+              onClick={() => void copyDetails()}
             >
-              {copyState === "copied" ? "Copied" : "Copy prompt"}
+              <Copy aria-hidden="true" />{" "}
+              {copyState === "copied" ? "Copied" : "Copy details"}
             </button>
+            {showUndo && (
+              <button
+                className="stv3-button stv3-button-quiet"
+                type="button"
+                aria-label="Undo the latest batch edit"
+                onClick={() => void undoBulk()}
+                disabled={undoRunning}
+              >
+                {undoRunning ? "Undoing…" : "Undo batch edit"}
+              </button>
+            )}
+            {presentation.openFolderPath && onOpenFolder && (
+              <button
+                className="stv3-button stv3-button-quiet"
+                type="button"
+                onClick={() => onOpenFolder(presentation.openFolderPath!)}
+              >
+                {data.kind === "batch-export"
+                  ? "Show file"
+                  : data.kind === "import"
+                    ? "Show source file"
+                    : "Show in folder"}
+              </button>
+            )}
+            {presentation.canOpenReview && onOpenReview && (
+              <button
+                className="stv3-button stv3-button-quiet"
+                type="button"
+                onClick={onOpenReview}
+              >
+                Open review queue
+              </button>
+            )}
+            {issue && (
+              <button
+                className="stv3-button stv3-button-quiet"
+                type="button"
+                onClick={() => onInspect(issue)}
+              >
+                {unresolved.length === 1 ? "Open issue" : "Open issues"}
+              </button>
+            )}
+            {data.kind === "zip" && data.outcome && onReleaseNotes && (
+              <button
+                className="stv3-button stv3-button-quiet"
+                type="button"
+                onClick={onReleaseNotes}
+              >
+                Translation notes
+              </button>
+            )}
+            {showRetry && (
+              <button
+                className="stv3-button stv3-button-primary"
+                type="button"
+                onClick={onRetry}
+              >
+                {retryLabel}
+              </button>
+            )}
           </div>
-        </li>
-        <li>
-          Download the returned JSON file, then drop it onto the app or choose{" "}
-          <strong>Import... → Import LLM batch translation</strong>.
-        </li>
-        <li>
-          Review the imported strings in the <strong>Needs review</strong>{" "}
-          queue.
-        </li>
-      </ol>
-      {copyState === "error" && (
-        <p className="resulttray__error" role="alert">
-          Could not access the clipboard.
-        </p>
+        </div>
       )}
-    </div>
-  );
-}
-
-function ExportSnapshot({
-  result,
-  modsChanged,
-}: {
-  result: ExportResult;
-  modsChanged: number | null;
-}) {
-  const changedFiles = result.filesWritten + result.filesRemoved;
-  return (
-    <div className="resulttray__snapshot">
-      <span className="resulttray__eyebrow">Operation summary</span>
-      <p>
-        Processed <strong>{changedFiles}</strong> target{" "}
-        {changedFiles === 1 ? "file" : "files"}
-        {modsChanged !== null
-          ? ` in ${modsChanged} ${modsChanged === 1 ? "mod" : "mods"}`
-          : ""}
-        . Wrote <strong>{result.totalWrittenKeys}</strong> strings.
-      </p>
-      <ul>
-        <li>
-          {result.filesRemoved} empty target{" "}
-          {result.filesRemoved === 1 ? "file" : "files"} removed
-        </li>
-        <li>{result.totalUntranslated} untranslated omitted</li>
-        <li>{result.totalOutdated} outdated exported</li>
-        <li>{result.totalReviewNeeded} review-needed exported</li>
-        <li>{result.skipped.length} blocking errors reported</li>
-      </ul>
-    </div>
-  );
-}
-
-function ImportSnapshot({ summary }: { summary: LlmImportSummary }) {
-  return (
-    <div className="resulttray__snapshot">
-      <span className="resulttray__eyebrow">Operation summary</span>
-      <p>
-        Imported <strong>{summary.imported}</strong> of{" "}
-        <strong>{summary.totalInFile}</strong> strings as Needs review.
-      </p>
-      <ul>
-        <li>{summary.skippedTranslated} translated strings left untouched</li>
-        <li>{summary.unmatched} unmatched or empty values</li>
-        <li>{summary.identicalToSource} identical to source</li>
-      </ul>
-    </div>
+    </aside>
   );
 }
