@@ -44,6 +44,12 @@ body {
   right: 0;
 }
 
+#stv3-dense-demo .stv3-column-resizer--target::after {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+
 /* At the supported desktop minimum, selection controls need their own row;
    otherwise the non-wrapping status filters collide with the batch actions. */
 @media (max-width: 1120px) {

@@ -2833,9 +2833,24 @@
   touch-action: none;
 }
 
-#stv3-dense-demo .stv3-column-resizer:hover,
-#stv3-dense-demo .stv3-column-resizer.is-dragging {
-  box-shadow: inset -2px 0 0 var(--stv3-brand);
+#stv3-dense-demo .stv3-column-resizer::after {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 50%;
+  width: 1px;
+  content: "";
+  background: color-mix(in srgb, var(--stv3-border-strong) 78%, transparent);
+  border-radius: 999px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+#stv3-dense-demo .stv3-column-resizer:hover::after,
+#stv3-dense-demo .stv3-column-resizer:focus-visible::after,
+#stv3-dense-demo .stv3-column-resizer.is-dragging::after {
+  width: 2px;
+  background: var(--stv3-brand);
 }
 
 #stv3-dense-demo .stv3-global-mod-col,
