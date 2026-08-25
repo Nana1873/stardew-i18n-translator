@@ -183,6 +183,136 @@ describe("SettingsDialog", () => {
     );
   });
 
+  it("resets a saved LM Studio URL without silently disabling Local AI", async () => {
+    const onSave = vi.fn();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "llm_models") return Promise.resolve(["legacy-model"]);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          llm: {
+            provider: "lmstudio",
+            baseUrl: "http://localhost:9999/v1",
+            model: "legacy-model",
+          },
+        }}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
+    expect(screen.getByLabelText("AI base URL")).toHaveValue(
+      "http://localhost:9999/v1",
+    );
+    expect(screen.getByLabelText("AI model")).toHaveValue("legacy-model");
+
+    fireEvent.click(screen.getByRole("button", { name: "Test connection" }));
+    expect(
+      await screen.findByText(/Connected · responded in/),
+    ).toBeInTheDocument();
+
+    const reset = screen.getByRole("button", {
+      name: "Reset AI base URL to default",
+    });
+    expect(reset).toHaveAttribute("title", "Reset to http://localhost:1234/v1");
+    fireEvent.click(reset);
+
+    expect(screen.getByLabelText("AI base URL")).toHaveValue(
+      "http://localhost:1234/v1",
+    );
+    expect(screen.getByLabelText("AI model")).toBeEnabled();
+    expect(screen.getByLabelText("AI model")).toHaveValue("legacy-model");
+    expect(screen.queryByText(/Connected · responded in/)).toBeNull();
+    expect(reset).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        llm: expect.objectContaining({
+          provider: "lmstudio",
+          baseUrl: "http://localhost:1234/v1",
+          model: "legacy-model",
+        }),
+      }),
+    );
+  });
+
+  it("resets a saved Ollama URL to the Ollama default", () => {
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          llm: {
+            provider: "ollama",
+            baseUrl: "http://localhost:9999/v1",
+            model: "legacy-model",
+          },
+        }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
+    const reset = screen.getByRole("button", {
+      name: "Reset AI base URL to default",
+    });
+    expect(reset).toHaveAttribute(
+      "title",
+      "Reset to http://localhost:11434/v1",
+    );
+
+    fireEvent.click(reset);
+
+    expect(screen.getByLabelText("AI base URL")).toHaveValue(
+      "http://localhost:11434/v1",
+    );
+    expect(screen.getByLabelText("AI base URL")).not.toHaveValue(
+      "http://localhost:1234/v1",
+    );
+    expect(reset).toBeDisabled();
+  });
+
+  it("disables reset for a custom endpoint and explains why", () => {
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://localhost:9999/v1",
+            model: "custom-model",
+          },
+        }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
+    const reset = screen.getByRole("button", {
+      name: "Reset AI base URL to default",
+    });
+
+    expect(reset).toBeDisabled();
+    expect(reset).toHaveAttribute(
+      "title",
+      "Custom endpoints have no default URL",
+    );
+    expect(screen.getByLabelText("AI base URL")).toHaveValue(
+      "http://localhost:9999/v1",
+    );
+  });
+
   it("saves llm null when the AI connection is left untested", () => {
     const onSave = vi.fn();
     render(

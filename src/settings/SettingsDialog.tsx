@@ -12,6 +12,7 @@ import {
   Info,
   Keyboard,
   RefreshCw,
+  RotateCcw,
   Sparkles,
   SquareTerminal,
   X,
@@ -122,6 +123,8 @@ export function SettingsDialog({
   const [llmTemperature, setLlmTemperature] = useState(
     settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
   );
+  const llmDefaultBaseUrl =
+    llmProvider === "custom" ? null : (LLM_PRESETS[llmProvider] ?? null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const llmRequest = useRef(0);
@@ -233,6 +236,15 @@ export function SettingsDialog({
     setLlmModelList(null);
     setLlmResult(null);
     setLlmModel("");
+    setLlmTesting(false);
+  }
+
+  function resetLlmUrl() {
+    if (!llmDefaultBaseUrl) return;
+    llmRequest.current += 1;
+    setLlmBaseUrl(llmDefaultBaseUrl);
+    setLlmModelList(null);
+    setLlmResult(null);
     setLlmTesting(false);
   }
 
@@ -579,19 +591,38 @@ export function SettingsDialog({
                       <option value="custom">Custom (OpenAI-compatible)</option>
                     </select>
                   </label>
-                  <label className="stv3-setting-line">
+                  <div className="stv3-setting-line">
                     <span className="stv3-setting-copy">
                       <strong>Base URL</strong>
                       <span>Local endpoint</span>
                     </span>
-                    <input
-                      className="stv3-setting-input"
-                      value={llmBaseUrl}
-                      placeholder="http://localhost:1234/v1"
-                      aria-label="AI base URL"
-                      onChange={(event) => changeLlmUrl(event.target.value)}
-                    />
-                  </label>
+                    <span className="stv3-setting-input-actions">
+                      <input
+                        className="stv3-setting-input"
+                        value={llmBaseUrl}
+                        placeholder="http://localhost:1234/v1"
+                        aria-label="AI base URL"
+                        onChange={(event) => changeLlmUrl(event.target.value)}
+                      />
+                      <button
+                        className="stv3-icon-button"
+                        type="button"
+                        aria-label="Reset AI base URL to default"
+                        title={
+                          llmDefaultBaseUrl
+                            ? `Reset to ${llmDefaultBaseUrl}`
+                            : "Custom endpoints have no default URL"
+                        }
+                        onClick={resetLlmUrl}
+                        disabled={
+                          !llmDefaultBaseUrl ||
+                          llmBaseUrl.trim() === llmDefaultBaseUrl
+                        }
+                      >
+                        <RotateCcw aria-hidden="true" />
+                      </button>
+                    </span>
+                  </div>
                   <label className="stv3-setting-line">
                     <span className="stv3-setting-copy">
                       <strong>Model</strong>

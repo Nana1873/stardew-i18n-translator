@@ -109,6 +109,215 @@ body {
   border-color: var(--stv3-red);
 }
 
+#stv3-dense-demo .stv3-setting-input-actions {
+  display: flex;
+  width: min(360px, 100%);
+  align-items: center;
+  gap: 6px;
+}
+
+#stv3-dense-demo .stv3-setting-input-actions .stv3-setting-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  width: auto;
+}
+
+/* Setup predates the accepted V3 surface. Keep its established layout and
+   behavior, but bind every visible surface and state to the V3 palette. */
+#stv3-dense-demo .wizard__backdrop {
+  background: color-mix(in srgb, var(--stv3-canvas) 78%, transparent);
+}
+
+#stv3-dense-demo .wizard {
+  color: var(--stv3-text);
+  background: var(--stv3-surface);
+  border-color: var(--stv3-border-strong);
+  box-shadow: 0 24px 64px
+    light-dark(rgba(76, 59, 32, 0.14), rgba(0, 0, 0, 0.42));
+}
+
+#stv3-dense-demo .setup__hero {
+  background:
+    radial-gradient(
+      circle at 85% 0%,
+      color-mix(in srgb, var(--stv3-brand) 14%, transparent),
+      transparent 42%
+    ),
+    var(--stv3-title);
+  border-bottom-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .setup__hero h2,
+#stv3-dense-demo .setup__counter,
+#stv3-dense-demo .setup__heading h3,
+#stv3-dense-demo .setup__howto h4,
+#stv3-dense-demo .setup__status strong {
+  color: var(--stv3-text);
+}
+
+#stv3-dense-demo .setup__hero p,
+#stv3-dense-demo .setup__counter span,
+#stv3-dense-demo .setup__heading p,
+#stv3-dense-demo .setup__step,
+#stv3-dense-demo .setup__step small,
+#stv3-dense-demo .setup__language-card small,
+#stv3-dense-demo .setup__howto li,
+#stv3-dense-demo .setup__howto > p,
+#stv3-dense-demo .setup__status p,
+#stv3-dense-demo .wizard__path--empty {
+  color: var(--stv3-muted);
+}
+
+#stv3-dense-demo .setup__eyebrow,
+#stv3-dense-demo .setup__heading > span,
+#stv3-dense-demo .setup__howto li::before {
+  color: var(--stv3-brand);
+}
+
+#stv3-dense-demo .setup__progress-track {
+  background: var(--stv3-surface-soft);
+}
+
+#stv3-dense-demo .setup__progress-track > span {
+  background: var(--stv3-brand);
+}
+
+#stv3-dense-demo .setup__steps {
+  background: var(--stv3-sidebar);
+  border-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .setup__step--current {
+  color: var(--stv3-text);
+  background: var(--stv3-brand-soft);
+  border-color: color-mix(in srgb, var(--stv3-brand) 42%, var(--stv3-border));
+}
+
+#stv3-dense-demo .setup__step--complete {
+  color: var(--stv3-muted);
+}
+
+#stv3-dense-demo .setup__step-number {
+  color: var(--stv3-faint);
+  background: var(--stv3-surface-raised);
+  border-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .setup__step--current .setup__step-number {
+  color: light-dark(#fffdf7, #20190e);
+  background: var(--stv3-brand);
+  border-color: var(--stv3-brand);
+}
+
+#stv3-dense-demo .setup__step--complete .setup__step-number,
+#stv3-dense-demo .wizard__path-status {
+  color: var(--stv3-green);
+  background: var(--stv3-green-soft);
+  border-color: color-mix(in srgb, var(--stv3-green) 42%, var(--stv3-border));
+}
+
+#stv3-dense-demo .wizard__path--empty .wizard__path-status {
+  color: var(--stv3-faint);
+  background: var(--stv3-surface-soft);
+  border-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .wizard__field span,
+#stv3-dense-demo .wizard__path-content strong {
+  color: var(--stv3-muted);
+}
+
+#stv3-dense-demo .wizard__field input,
+#stv3-dense-demo .wizard__field select,
+#stv3-dense-demo .wizard--setup .wizard__path {
+  color: var(--stv3-text);
+  background: var(--stv3-canvas);
+  border-color: var(--stv3-border-strong);
+}
+
+#stv3-dense-demo .wizard__field input:disabled {
+  color: var(--stv3-muted);
+  background: var(--stv3-surface-soft);
+}
+
+#stv3-dense-demo .wizard__path-content code,
+#stv3-dense-demo .setup__howto li strong {
+  color: var(--stv3-text);
+}
+
+#stv3-dense-demo .wizard button {
+  color: var(--stv3-text);
+  background: var(--stv3-surface-raised);
+  border-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .wizard button:hover:not(:disabled) {
+  background: var(--stv3-surface-soft);
+  border-color: var(--stv3-border-strong);
+}
+
+#stv3-dense-demo .wizard button.wizard__primary {
+  color: light-dark(#fffdf7, #20190e);
+  background: var(--stv3-brand);
+  border-color: var(--stv3-brand);
+}
+
+#stv3-dense-demo .wizard button.wizard__primary:hover:not(:disabled) {
+  background: var(--stv3-brand);
+  border-color: var(--stv3-brand);
+  filter: brightness(1.04);
+}
+
+#stv3-dense-demo .setup__note,
+#stv3-dense-demo .setup__howto,
+#stv3-dense-demo .wizard--setup .setup__language-card,
+#stv3-dense-demo .setup__status {
+  color: var(--stv3-muted);
+  background: var(--stv3-surface-raised);
+  border-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .setup__howto li::before {
+  background: var(--stv3-brand-soft);
+  border-color: color-mix(in srgb, var(--stv3-brand) 42%, var(--stv3-border));
+}
+
+#stv3-dense-demo .setup__howto > p,
+#stv3-dense-demo .setup__footer {
+  border-color: var(--stv3-border);
+}
+
+#stv3-dense-demo .setup__status--neutral {
+  border-left-color: var(--stv3-faint);
+}
+
+#stv3-dense-demo .setup__status--success,
+#stv3-dense-demo .setup__status--ready {
+  border-left-color: var(--stv3-green);
+}
+
+#stv3-dense-demo .setup__status--warning {
+  border-left-color: var(--stv3-orange);
+}
+
+#stv3-dense-demo .wizard--setup .wizard__path--invalid {
+  border-color: var(--stv3-red);
+}
+
+#stv3-dense-demo .wizard__path--invalid .wizard__path-status {
+  color: var(--stv3-red);
+  background: var(--stv3-red-soft);
+}
+
+#stv3-dense-demo .wizard__error,
+#stv3-dense-demo .wizard__bad {
+  color: var(--stv3-red);
+}
+
+#stv3-dense-demo .setup__footer {
+  background: var(--stv3-title);
+}
+
 /* Native Tauri drag-enter uses the accepted compact file-choice state. It is
    deliberately not a full-window legacy drop scrim. */
 #stv3-dense-demo .stv3-native-drop-state {

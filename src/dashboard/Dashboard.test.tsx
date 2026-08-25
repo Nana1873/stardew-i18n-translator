@@ -104,7 +104,7 @@ describe("Dashboard", () => {
     expect(filter).toHaveBeenCalledWith("has-value");
     fireEvent.click(
       screen.getByRole("button", {
-        name: /Unresolved issues · Unavailable/,
+        name: /Validation issues · Unavailable/,
       }),
     );
     expect(filter).toHaveBeenCalledWith("issues");
@@ -240,7 +240,7 @@ describe("Dashboard", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: /View all attention.*2 Review · Changed unavailable/,
+        name: /View combined attention queue.*2 Review · Changed unavailable/,
       }),
     ).toBeInTheDocument();
   });

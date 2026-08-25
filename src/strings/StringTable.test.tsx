@@ -280,12 +280,18 @@ describe("StringTable V3 workbench", () => {
     expect(screen.queryByText("bye")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^All \d/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Has issues/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Validation issues/ }));
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Has issues/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Attention/ }));
+    const needsAttention = screen.getByRole("button", {
+      name: /^Needs attention/,
+    });
+    fireEvent.click(needsAttention);
+    expect(needsAttention).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("button", { name: /^Validation issues/ }),
+    ).toHaveAttribute("aria-pressed", "false");
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
   });
@@ -480,12 +486,16 @@ describe("StringTable V3 workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     select("token");
-    fireEvent.click(screen.getByRole("button", { name: /^Has issues 1$/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Validation issues 1$/ }),
+    );
     expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     select("token");
-    fireEvent.click(screen.getByRole("button", { name: /^Attention 1$/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Needs attention 1$/ }),
+    );
     expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
@@ -628,9 +638,11 @@ describe("StringTable V3 workbench", () => {
     await screen.findByText("token");
 
     expect(
-      screen.queryByRole("button", { name: /^Has issues/ }),
+      screen.queryByRole("button", { name: /^Validation issues/ }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Attention 0$/ })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /^Needs attention 0$/ }),
+    ).toBeVisible();
     expect(rowFor("token").querySelector(".stv3-inline-validation")).toBeNull();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
@@ -868,6 +880,46 @@ describe("StringTable V3 workbench", () => {
     expect(screen.getByText("Ctrl+click adds more")).toBeVisible();
   });
 
+  it("handles Ctrl+A across the workspace while preserving native input selection", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    const search = screen.getByRole("searchbox", { name: "Search strings" });
+    const inputEvent = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(search, inputEvent);
+    expect(inputEvent.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
+
+    const workspaceEvent = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(screen.getByRole("button", { name: "This mod" }), workspaceEvent);
+    expect(workspaceEvent.defaultPrevented).toBe(true);
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
+    const menuEvent = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(
+      screen.getByRole("menuitem", { name: /Copy source text/ }),
+      menuEvent,
+    );
+    expect(menuEvent.defaultPrevented).toBe(true);
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
+  });
+
   it("shows every accepted bulk action and clears selection explicitly", async () => {
     const onNotify = vi.fn();
     render(<StringTable mod={MOD} onNotify={onNotify} />);
@@ -1030,6 +1082,7 @@ describe("StringTable V3 workbench", () => {
     const onTranslate = vi.fn();
     const onLlmBatchExportForMod = vi.fn();
     const onEditorOpen = vi.fn();
+    const onNotify = vi.fn();
     render(
       <StringTable
         mod={MOD}
@@ -1038,6 +1091,7 @@ describe("StringTable V3 workbench", () => {
         onTranslate={onTranslate}
         onLlmBatchExportForMod={onLlmBatchExportForMod}
         onEditorOpen={onEditorOpen}
+        onNotify={onNotify}
       />,
     );
     await screen.findByText("tomorrow");
@@ -1050,14 +1104,24 @@ describe("StringTable V3 workbench", () => {
     ).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
     ).toHaveAttribute(
       "title",
-      "An LLM batch always belongs to exactly one mod.",
+      "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
     );
 
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
+    );
+    expect(onNotify).toHaveBeenCalledWith(
+      "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
+      "info",
+    );
+    expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /2 selected/ }));
     fireEvent.click(
       screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
     );
@@ -1065,6 +1129,37 @@ describe("StringTable V3 workbench", () => {
     expect(await screen.findByText("2 selected across 2 mods")).toBeVisible();
     expect(screen.getByRole("checkbox", { name: /Open/ })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: /Changed/ })).not.toBeChecked();
+  });
+
+  it("explains why selected Done or Review strings are not LLM-exportable", async () => {
+    const onLlmBatchExportForMod = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        onLlmBatchExportForMod={onLlmBatchExportForMod}
+        onNotify={onNotify}
+      />,
+    );
+    await screen.findByText("greeting");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select greeting" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+
+    const action = screen.getByRole("menuitem", {
+      name: /Export selection as LLM batch/,
+    });
+    expect(action).toBeEnabled();
+    expect(action).toHaveAttribute(
+      "title",
+      "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import.",
+    );
+    fireEvent.click(action);
+
+    expect(onNotify).toHaveBeenCalledWith(
+      "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import.",
+      "info",
+    );
+    expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
   });
 
   it("opens the Local AI preview when the engine is unavailable and disables only Start", async () => {

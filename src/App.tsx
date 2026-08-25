@@ -196,9 +196,9 @@ export function App() {
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(340);
   const [modsCollapsed, setModsCollapsed] = useState(false);
-  // Dashboard home vs. two-panel work view (SPEC §7). The toolbar button is
-  // the only navigation between both views.
-  const [view, setView] = useState<"home" | "work">("work");
+  // Dashboard home vs. two-panel work view (SPEC §7). Overview is the app's
+  // landing view; opening a mod or choosing Workspace enters the workbench.
+  const [view, setView] = useState<"home" | "work">("home");
   // modId -> epoch ms of the last open. This is only resume ordering, not an
   // edit timestamp. It is persisted with portable settings.
   const [lastOpened, setLastOpened] = useState<Record<string, number>>({});
@@ -2068,18 +2068,18 @@ function V3Toolbar({
         <button
           className="stv3-nav-button"
           type="button"
-          aria-pressed={activeView === "workspace"}
-          onClick={onWorkspace}
-        >
-          <Table2 aria-hidden /> Workspace
-        </button>
-        <button
-          className="stv3-nav-button"
-          type="button"
           aria-pressed={activeView === "overview"}
           onClick={onOverview}
         >
           <LayoutDashboard aria-hidden /> Overview
+        </button>
+        <button
+          className="stv3-nav-button"
+          type="button"
+          aria-pressed={activeView === "workspace"}
+          onClick={onWorkspace}
+        >
+          <Table2 aria-hidden /> Workspace
         </button>
       </nav>
       <div className="stv3-command-actions">

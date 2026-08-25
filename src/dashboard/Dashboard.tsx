@@ -276,8 +276,8 @@ export function Dashboard({
             {!scan
               ? "No scan data is available"
               : changedKnown == null
-                ? "Review is known; Changed and unresolved issues unavailable"
-                : "Changed and Review are known; unresolved issues unavailable"}
+                ? "Review is known; Changed and validation issues unavailable"
+                : "Changed and Review are known; validation issues unavailable"}
           </small>
         </button>
         <button
@@ -406,7 +406,7 @@ export function Dashboard({
           <div className="stv3-section-head">
             <h2 className="stv3-heading">Needs attention</h2>
             <div className="stv3-kicker">
-              Top real queues · per-mod unresolved issue counts unavailable
+              Top real queues · per-mod validation issue counts unavailable
             </div>
           </div>
           <div className="stv3-attention-list">
@@ -447,8 +447,8 @@ export function Dashboard({
                   </span>
                   <span className="stv3-row-meta">
                     {changedKnown == null
-                      ? "Changed and unresolved issue totals are unavailable."
-                      : "Unresolved issue totals are unavailable."}
+                      ? "Changed and validation issue totals are unavailable."
+                      : "Validation issue totals are unavailable."}
                   </span>
                 </span>
                 <span aria-hidden="true">—</span>
@@ -461,10 +461,10 @@ export function Dashboard({
             >
               <span>
                 <span className="stv3-row-title">
-                  Unresolved issues · Unavailable
+                  Validation issues · Unavailable
                 </span>
                 <span className="stv3-row-meta">
-                  Per-mod unresolved issue counts are unavailable
+                  Per-mod validation issue counts are unavailable
                 </span>
               </span>
               <span aria-hidden="true">→</span>
@@ -475,9 +475,11 @@ export function Dashboard({
               onClick={() => openFilter("attention")}
             >
               <span>
-                <span className="stv3-row-title">View all attention</span>
+                <span className="stv3-row-title">
+                  View combined attention queue
+                </span>
                 <span className="stv3-row-meta">
-                  Changed and Review use real statuses; unresolved issues stay
+                  Changed and Review use real statuses; validation issues stay
                   unavailable.
                 </span>
               </span>

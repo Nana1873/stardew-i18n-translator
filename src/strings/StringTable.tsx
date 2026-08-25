@@ -235,9 +235,9 @@ const STATUS_HELP: Record<
   "review-needed":
     "This imported or AI-generated suggestion still needs human approval.",
   issues:
-    "Validation found an unresolved problem such as a missing protected token.",
+    "Only strings with an unresolved validation problem, such as a missing protected token.",
   attention:
-    "One deduplicated queue of Changed, Review, and unresolved Issues across the current scope.",
+    "The combined queue of Changed, Review, and Validation issues in the current scope.",
   translated:
     "The translation was explicitly saved or accepted for the current English source.",
 };
@@ -312,6 +312,20 @@ function rowNeedsAttention(row: Row): boolean {
     row.status === "outdated" ||
     row.status === "review-needed" ||
     rowHasIssues(row)
+  );
+}
+
+function preservesNativeTextSelection(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement
+  )
+    return true;
+  if (!(target instanceof HTMLInputElement)) return false;
+  return !["button", "checkbox", "radio", "range", "reset", "submit"].includes(
+    target.type,
   );
 }
 
@@ -702,7 +716,8 @@ export function StringTable({
       setIssuesValue(false);
     }
     // Only clear after the final real issue was resolved. A routed empty queue
-    // remains visible as `Has issues 0` instead of silently becoming `All`.
+    // remains visible as `Validation issues 0` instead of silently becoming
+    // `All`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, issueCount, effectiveIssuesOnly]);
 
@@ -802,10 +817,14 @@ export function StringTable({
   const legacyLlmMatches =
     batchMod !== null && batchMod.uniqueId === mod?.uniqueId;
   const canRunLocalAi = batchEligibleRows.length > 0;
+  const llmExportHandlerAvailable = Boolean(
+    onLlmBatchExportForMod || (legacyLlmMatches && onLlmBatchExport),
+  );
   const canExportLlm =
     singleModSelection &&
     batchEligibleRows.length > 0 &&
-    Boolean(onLlmBatchExportForMod || (legacyLlmMatches && onLlmBatchExport));
+    llmExportHandlerAvailable;
+  const llmActionEnabled = selectedRows.length > 0 && llmExportHandlerAvailable;
   const batchPreviewItems = (batch ?? []).filter(
     (item) =>
       (batchIncludeOpen && item.status === "untranslated") ||
@@ -960,12 +979,20 @@ export function StringTable({
 
   function setIssuesValue(next: boolean) {
     resetSelectionForViewChange();
+    if (next && effectiveAttentionOnly) {
+      if (attentionOnly === undefined) setLocalAttentionOnly(false);
+      onAttentionOnlyChange?.(false);
+    }
     if (issuesOnly === undefined) setLocalIssuesOnly(next);
     onIssuesOnlyChange?.(next);
   }
 
   function setAttentionValue(next: boolean) {
     resetSelectionForViewChange();
+    if (next && effectiveIssuesOnly) {
+      if (issuesOnly === undefined) setLocalIssuesOnly(false);
+      onIssuesOnlyChange?.(false);
+    }
     if (next && effectiveStatus !== "all") {
       if (statusFilter === undefined) setLocalStatus("all");
       onStatusFilterChange?.("all");
@@ -1060,6 +1087,28 @@ export function StringTable({
     });
   }
 
+  useEffect(() => {
+    function selectAllFromWorkspace(event: KeyboardEvent) {
+      if (!matchesShortcut(event, shortcuts["table.selectAll"])) return;
+      if (preservesNativeTextSelection(event.target)) return;
+      if (event.defaultPrevented) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (
+        editorSession ||
+        batch ||
+        contextMenu ||
+        bulkMenuOpen ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      )
+        return;
+      setSelection(new Set(visible.map((entry) => entry.identity)));
+    }
+
+    window.addEventListener("keydown", selectAllFromWorkspace);
+    return () => window.removeEventListener("keydown", selectAllFromWorkspace);
+  }, [batch, bulkMenuOpen, contextMenu, editorSession, shortcuts, visible]);
+
   function onBodyKeyDown(event: ReactKeyboardEvent) {
     const searchShortcut =
       (
@@ -1070,10 +1119,6 @@ export function StringTable({
       searchRef.current?.focus();
       searchRef.current?.select();
       return;
-    }
-    if (matchesShortcut(event, shortcuts["table.selectAll"])) {
-      event.preventDefault();
-      setSelection(new Set(visible.map((entry) => entry.identity)));
     }
   }
 
@@ -1526,7 +1571,17 @@ export function StringTable({
   }
 
   async function startLlmBatchExport() {
-    if (!canExportLlm || !batchMod) return;
+    if (!llmExportHandlerAvailable) return;
+    if (!canExportLlm || !batchMod) {
+      setContextMenu(null);
+      setBulkMenuOpen(false);
+      onNotify?.(
+        llmUnavailableReason ??
+          "Select exportable Open or Changed strings from one mod.",
+        "info",
+      );
+      return;
+    }
     const items: LlmBatchItem[] = batchEligibleRows.map((row) => ({
       relativeDir: row.file,
       key: row.key,
@@ -1700,13 +1755,14 @@ export function StringTable({
     : batchEligibleRows.length === 0
       ? "No open or changed strings are selected."
       : null;
-  const llmUnavailableReason = !singleModSelection
-    ? "An LLM batch always belongs to exactly one mod."
-    : batchEligibleRows.length === 0
-      ? "No open or changed strings are selected."
-      : !onLlmBatchExportForMod && !(legacyLlmMatches && onLlmBatchExport)
-        ? "Choose a target language first."
-        : null;
+  const llmUnavailableReason =
+    batchEligibleRows.length === 0
+      ? "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import."
+      : !singleModSelection
+        ? "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod."
+        : !llmExportHandlerAvailable
+          ? "Choose a target language first."
+          : null;
 
   return (
     <div
@@ -1802,7 +1858,7 @@ export function StringTable({
             <span>
               {effectiveSearch.trim()
                 ? `Search preview: ${visible.length} matching rows · ${data.length} strings in ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                : `${visible.length} of ${data.length} strings · ${effectiveIssuesOnly ? "Has issues" : effectiveAttentionOnly ? "Attention" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
+                : `${visible.length} of ${data.length} strings · ${effectiveIssuesOnly ? "Validation issues" : effectiveAttentionOnly ? "Needs attention" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
             </span>
             {(effectiveSearch.trim() ||
               effectiveStatus !== "all" ||
@@ -1888,7 +1944,7 @@ export function StringTable({
                 onBlur={hideStatusHelp}
                 onClick={() => setIssuesValue(!effectiveIssuesOnly)}
               >
-                Has issues{" "}
+                Validation issues{" "}
                 <span className="stv3-filter-count">{issueCount}</span>
               </button>
             </>
@@ -1910,7 +1966,7 @@ export function StringTable({
               onBlur={hideStatusHelp}
               onClick={() => setAttentionValue(!effectiveAttentionOnly)}
             >
-              Attention{" "}
+              Needs attention{" "}
               <span className="stv3-filter-count">{attentionCount}</span>
             </button>
           )}
@@ -1978,11 +2034,11 @@ export function StringTable({
             >
               <span className="stv3-popover-note" role="presentation">
                 <strong>{selection.size} selected</strong> ·{" "}
-                <span>{batchEligibleRows.length} batch eligible</span>
+                <span>{batchEligibleRows.length} Open/Changed exportable</span>
               </span>
               <ActionButtons
                 canRunLocalAi={canRunLocalAi}
-                canExportLlm={canExportLlm}
+                llmActionEnabled={llmActionEnabled}
                 localAiUnavailableReason={localAiUnavailableReason}
                 llmUnavailableReason={llmUnavailableReason}
                 onCopySource={() => void copySelection("source")}
@@ -2335,13 +2391,11 @@ export function StringTable({
             <ActionButtons
               listItems
               canRunLocalAi={canRunLocalAi}
-              canExportLlm={canExportLlm}
+              llmActionEnabled={llmActionEnabled}
               localAiUnavailableReason={localAiUnavailableReason}
               llmUnavailableReason={llmUnavailableReason}
               localAiCount={batchEligibleRows.length}
-              llmCount={
-                singleModSelection ? batchEligibleRows.length : "per mod"
-              }
+              llmCount={batchEligibleRows.length}
               onCopySource={() => void copySelection("source")}
               onCopyTarget={() => void copySelection("target")}
               onMarkDone={() =>
@@ -2392,7 +2446,7 @@ export function StringTable({
 function ActionButtons({
   listItems = false,
   canRunLocalAi,
-  canExportLlm,
+  llmActionEnabled,
   localAiUnavailableReason,
   llmUnavailableReason,
   localAiCount,
@@ -2407,7 +2461,7 @@ function ActionButtons({
 }: {
   listItems?: boolean;
   canRunLocalAi: boolean;
-  canExportLlm: boolean;
+  llmActionEnabled: boolean;
   localAiUnavailableReason: string | null;
   llmUnavailableReason: string | null;
   localAiCount?: number | string;
@@ -2460,11 +2514,9 @@ function ActionButtons({
       </MenuAction>
       <MenuAction
         listItem={listItems}
-        disabled={!canExportLlm}
+        disabled={!llmActionEnabled}
         title={
-          canExportLlm
-            ? "Export selected open or changed strings."
-            : (llmUnavailableReason ?? "Choose a target language first.")
+          llmUnavailableReason ?? "Export selected Open or Changed strings."
         }
         onClick={onLlmExport}
       >

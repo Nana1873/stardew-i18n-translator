@@ -161,15 +161,23 @@ function chooseToolbarAction(menuName: "Export actions", actionName: string) {
   fireEvent.click(screen.getByRole("menuitem", { name: actionName }));
 }
 
+function openWorkspace() {
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+}
+
 describe("App shell", () => {
-  it("renders the accepted V3 toolbar and workspace by default", async () => {
+  it("renders Overview first and opens the complete V3 workspace on demand", async () => {
     mockConfigured();
     render(<App />);
 
-    expect(screen.getByRole("button", { name: "Workspace" })).toHaveAttribute(
+    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );
+    expect(
+      await screen.findByRole("main", { name: "Overview" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(
       screen
         .getByRole("region", { name: "Translation workspace" })
@@ -212,6 +220,7 @@ describe("App shell", () => {
     mockConfigured();
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     const skipped = await screen.findByRole("button", {
       name: "Skipped components unavailable; open scan diagnostics",
     });
@@ -327,7 +336,6 @@ describe("App shell", () => {
     mockConfigured();
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     expect(
       await screen.findByRole("main", { name: "Overview" }),
     ).toBeInTheDocument();
@@ -340,12 +348,17 @@ describe("App shell", () => {
     expect(
       await screen.findByRole("region", { name: "Translation workspace" }),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(
+      await screen.findByRole("main", { name: "Overview" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the actionable no-mod card in the work view", async () => {
     mockConfigured();
     render(<App />);
 
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(
       await screen.findByText("No translatable strings"),
     ).toBeInTheDocument();
@@ -379,6 +392,7 @@ describe("App shell", () => {
       fileCount: 0,
     });
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findByText("1 in progress")).toBeInTheDocument();
   });
@@ -386,6 +400,7 @@ describe("App shell", () => {
   it("asks before replacing an existing selected-mod translation", async () => {
     mockExportConfigured(true);
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Export current mod");
@@ -428,6 +443,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Export current mod");
@@ -463,6 +479,7 @@ describe("App shell", () => {
   it("continues an overwrite only after confirmation", async () => {
     mockExportConfigured(true);
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Export current mod");
@@ -490,6 +507,7 @@ describe("App shell", () => {
   it("shows the complete preflight for a new target and reopens the latest result", async () => {
     mockExportConfigured(false);
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Export current mod");
@@ -558,8 +576,6 @@ describe("App shell", () => {
     });
     render(<App />);
 
-    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     let overview = await screen.findByRole("main", { name: "Overview" });
     expect(overview).toHaveTextContent(
       "Last export · Unavailable in this session",
@@ -617,6 +633,7 @@ describe("App shell", () => {
   it("keeps the result tray collapsed after a top-level dialog closes", async () => {
     mockExportConfigured(false);
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Export current mod");
@@ -667,6 +684,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Export current mod");
@@ -816,6 +834,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select greeting" }),
@@ -890,6 +909,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select greeting" }),
@@ -977,6 +997,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     fireEvent.click(
       await screen.findByRole("checkbox", {
@@ -1047,6 +1068,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     fireEvent.click(
       await screen.findByRole("checkbox", { name: "Select greeting" }),
@@ -1118,6 +1140,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     await screen.findByText("greeting");
     chooseToolbarAction("Export actions", "Export current mod");
@@ -1162,6 +1185,7 @@ describe("App shell", () => {
   it("replaces invalid native-drop details inside the import dialog", async () => {
     mockExportConfigured(false);
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
@@ -1244,6 +1268,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Build translation ZIP");
 
@@ -1321,6 +1346,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     const keyButton = await screen.findByRole("button", { name: "greeting" });
     fireEvent.contextMenu(keyButton);
     fireEvent.click(
@@ -1391,6 +1417,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     const keyButton = await screen.findByRole("button", { name: "greeting" });
     fireEvent.contextMenu(keyButton);
     fireEvent.click(
@@ -1466,6 +1493,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Translation notes");
     await screen.findByLabelText("Generated release notes");
@@ -1519,6 +1547,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Build translation ZIP");
     await screen.findByLabelText("Package version");
@@ -1588,6 +1617,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Build translation ZIP");
     const problems = await screen.findByRole("list", {
@@ -1655,6 +1685,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("Export actions", "Build translation ZIP");
     await screen.findByLabelText("Package version");
@@ -1681,15 +1712,18 @@ describe("App shell", () => {
     mockExportConfigured(false);
     render(<App />);
 
-    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Export actions" }),
+      ).toBeEnabled(),
+    );
 
     const views = screen.getByRole("navigation", { name: "Main views" });
     expect(
-      within(views).getByRole("button", { name: "Workspace" }),
-    ).toBeInTheDocument();
-    expect(
-      within(views).getByRole("button", { name: "Overview" }),
-    ).toBeInTheDocument();
+      within(views)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(["Overview", "Workspace"]);
     expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled();
     expect(
       screen.getByRole("button", { name: "Import LLM batch" }),
@@ -1928,6 +1962,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
@@ -2011,6 +2046,7 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
@@ -2076,6 +2112,7 @@ describe("App shell", () => {
   it("shows multiple or non-JSON native drops as inline invalid import states", async () => {
     mockExportConfigured(false);
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
@@ -2147,9 +2184,10 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
 
-    // The accepted V3 workspace is the configured default and auto-selects the
-    // most recently used (or first real) scanned component.
+    // The accepted V3 workspace auto-selects the most recently used (or first
+    // real) scanned component once the user opens it from Overview.
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     expect(screen.getByRole("treeitem", { name: /7286/ })).toBeInTheDocument();
     expect(
@@ -2213,6 +2251,7 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await screen.findByRole("searchbox", { name: "Search strings" });
     fireEvent.click(screen.getByRole("button", { name: "All mods" }));
@@ -2279,6 +2318,7 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await screen.findByRole("searchbox", { name: "Search strings" });
     fireEvent.click(screen.getByRole("button", { name: "All mods" }));
@@ -2417,6 +2457,7 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
     await screen.findByText("changed.key");
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     fireEvent.click(
@@ -2432,12 +2473,15 @@ describe("App shell", () => {
     expect(screen.queryByText("review.key")).toBeNull();
   });
 
-  it("reveals the otherwise hidden Attention filter from the Overview queue", async () => {
+  it("reveals the otherwise hidden Needs attention filter from the Overview queue", async () => {
     mockExportConfigured(false);
     render(<App />);
+    openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    expect(screen.queryByRole("button", { name: /^Attention\b/ })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention\b/ }),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     const attentionOverview = (await screen.findAllByText("Needs attention"))
@@ -2447,7 +2491,7 @@ describe("App shell", () => {
     fireEvent.click(attentionOverview!);
 
     const attention = await screen.findByRole("button", {
-      name: /^Attention\b/,
+      name: /^Needs attention\b/,
     });
     expect(attention).toHaveAttribute("aria-pressed", "true");
   });
@@ -2471,16 +2515,17 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
     await screen.findByText("token.issue");
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: /Unresolved issues · Unavailable/,
+        name: /Validation issues · Unavailable/,
       }),
     );
 
     const issues = await screen.findByRole("button", {
-      name: /^Has issues\b/,
+      name: /^Validation issues\b/,
     });
     expect(issues).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(issues).toHaveFocus());
@@ -2491,7 +2536,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: /Reviewed & current/ }),
     );
     const remountedIssues = await screen.findByRole("button", {
-      name: /^Has issues\b/,
+      name: /^Validation issues\b/,
     });
     expect(remountedIssues).toHaveAttribute("aria-pressed", "false");
     expect(remountedIssues).not.toHaveFocus();
@@ -2516,6 +2561,7 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
     await screen.findByText("token.issue");
 
     const pendingFrames = new Map<number, FrameRequestCallback>();
@@ -2539,12 +2585,12 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Overview" }));
       fireEvent.click(
         await screen.findByRole("button", {
-          name: /Unresolved issues · Unavailable/,
+          name: /Validation issues · Unavailable/,
         }),
       );
 
       const issues = await screen.findByRole("button", {
-        name: /^Has issues\b/,
+        name: /^Validation issues\b/,
       });
       const routedFrames = [...pendingFrames.keys()];
       expect(routedFrames.length).toBeGreaterThan(0);
@@ -2591,20 +2637,23 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
     await screen.findByText("clean.translation");
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     fireEvent.click(
       await screen.findByRole("button", {
-        name: /Unresolved issues · Unavailable/,
+        name: /Validation issues · Unavailable/,
       }),
     );
 
     const issues = await screen.findByRole("button", {
-      name: /^Has issues 0$/,
+      name: /^Validation issues 0$/,
     });
     expect(issues).toHaveAttribute("aria-pressed", "true");
     await waitFor(() => expect(issues).toHaveFocus());
-    expect(screen.getByText(/0 of 1 strings · Has issues/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/0 of 1 strings · Validation issues/),
+    ).toBeInTheDocument();
     expect(screen.getByText("No matching strings")).toBeInTheDocument();
   });
 
@@ -2651,6 +2700,7 @@ describe("App shell", () => {
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
     expect(dialog).toHaveTextContent("Mods folder not found");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    openWorkspace();
 
     const skipped = screen.getByRole("button", {
       name: "Skipped components unavailable; open scan diagnostics",
@@ -2683,10 +2733,10 @@ describe("App shell", () => {
     );
     finishScan(EMPTY_SCAN);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Scan mods" }));
+    fireEvent.click(screen.getByLabelText("Scan mods"));
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),
     ).toHaveTextContent("Scanning mods");
@@ -2716,17 +2766,17 @@ describe("App shell", () => {
     await waitFor(() => expect(scanResolvers).toHaveLength(1));
     scanResolvers.shift()!(EMPTY_SCAN);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Scan mods" }));
+    fireEvent.click(screen.getByLabelText("Scan mods"));
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
 
     scanResolvers.shift()!(EMPTY_SCAN);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
     );
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
