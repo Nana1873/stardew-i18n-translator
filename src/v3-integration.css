@@ -44,6 +44,14 @@ body {
   right: 0;
 }
 
+/* The production table uses div-based grid cells whose padded content can
+   overflow the fixed 27px header row. Anchor each drag target to that row so
+   its visible hairline cannot continue into the first data row. */
+#stv3-dense-demo .stv3-string-table-head .stv3-column-resizer {
+  bottom: auto;
+  height: 27px;
+}
+
 #stv3-dense-demo .stv3-column-resizer--target::after {
   right: 0;
   left: auto;
