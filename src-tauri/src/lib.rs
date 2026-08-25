@@ -427,12 +427,19 @@ fn pick_llm_batch_file(app: AppHandle) -> Result<Option<String>, String> {
     }
 }
 
-fn import_llm_batch_from_path(
+struct LlmBatchContext {
+    parsed: serde_json::Value,
+    target_lang: String,
+    config: PathBuf,
+    rows_by_dir: std::collections::HashMap<String, Vec<scanner::StringRow>>,
+}
+
+fn load_llm_batch_context(
     app: &AppHandle,
     mod_unique_id: &str,
     files: &[export::ExportFileInput],
     source: &Path,
-) -> Result<batch::ImportSummary, String> {
+) -> Result<LlmBatchContext, String> {
     let body = input_limits::read_json_text(source)?;
     // Lenient parse: LLM output sometimes carries trailing commas or comments.
     let parsed = scanner::parse_json_lenient(&body)
@@ -454,9 +461,51 @@ fn import_llm_batch_from_path(
         );
     }
 
-    let prepared = batch::apply_batch(&parsed, mod_unique_id, &target_lang, &rows_by_dir)?;
+    Ok(LlmBatchContext {
+        parsed,
+        target_lang,
+        config,
+        rows_by_dir,
+    })
+}
+
+/// Analyze one selected LLM result without writing translation state. A file
+/// for another mod returns its binding metadata so the frontend can offer a
+/// deliberate switch and rerun this command with that component's real files.
+#[tauri::command]
+fn preflight_llm_batch_path(
+    app: AppHandle,
+    mod_unique_id: String,
+    files: Vec<export::ExportFileInput>,
+    path: String,
+) -> Result<batch::ImportPreflight, String> {
+    let context = load_llm_batch_context(&app, &mod_unique_id, &files, Path::new(&path))?;
+    batch::preflight_batch(
+        &context.parsed,
+        &mod_unique_id,
+        &context.target_lang,
+        &context.rows_by_dir,
+    )
+    .inspect_err(|error| log::error!("preflight_llm_batch_path({mod_unique_id}) failed: {error}"))
+}
+
+fn import_llm_batch_from_path(
+    app: &AppHandle,
+    mod_unique_id: &str,
+    files: &[export::ExportFileInput],
+    source: &Path,
+) -> Result<batch::ImportSummary, String> {
+    // Import reruns the complete read-only analysis immediately before the
+    // first write, so a changed file or changed local/source state is refused.
+    let context = load_llm_batch_context(app, mod_unique_id, files, source)?;
+    let prepared = batch::apply_batch(
+        &context.parsed,
+        mod_unique_id,
+        &context.target_lang,
+        &context.rows_by_dir,
+    )?;
     if !prepared.entries.is_empty() {
-        translations::save_many(&config, mod_unique_id, prepared.entries)?;
+        translations::save_many(&context.config, mod_unique_id, prepared.entries)?;
     }
     Ok(prepared.summary)
 }
@@ -858,6 +907,7 @@ pub fn run() {
             export_llm_batch_to_path,
             import_llm_batch,
             pick_llm_batch_file,
+            preflight_llm_batch_path,
             import_llm_batch_path,
             build_glossary,
             glossary_status,

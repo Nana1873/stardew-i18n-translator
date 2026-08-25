@@ -5,6 +5,7 @@ import {
   exportLlmBatchToPath,
   pickLlmBatchDestination,
   pickLlmBatchFile,
+  preflightLlmBatchPath,
   saveString,
   type ExportModInput,
 } from "./commands";
@@ -43,6 +44,33 @@ describe("V3 backend command bridges", () => {
     await expect(pickLlmBatchFile()).resolves.toBe("C:\\Temp\\result.json");
 
     expect(invokeMock).toHaveBeenCalledWith("pick_llm_batch_file");
+  });
+
+  it("preflights the chosen LLM batch path without invoking import", async () => {
+    const files = [
+      {
+        relativeDir: "i18n",
+        defaultPath: "C:\\Mods\\Example\\i18n\\default.json",
+        targetPath: "C:\\Mods\\Example\\i18n\\de.json",
+      },
+    ];
+    invokeMock.mockResolvedValue({ ready: true });
+
+    await preflightLlmBatchPath(
+      "example.mod",
+      files,
+      "C:\\Temp\\result.json",
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
+      modUniqueId: "example.mod",
+      files,
+      path: "C:\\Temp\\result.json",
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "import_llm_batch_path",
+      expect.anything(),
+    );
   });
 
   it("chooses an LLM batch destination without exporting", async () => {

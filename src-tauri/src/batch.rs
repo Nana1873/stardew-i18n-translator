@@ -5,7 +5,7 @@
 //! small metadata object unchanged. Import validates the complete binding and
 //! every token before writing any translation state.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -89,6 +89,55 @@ pub struct ImportSummary {
     pub total_in_file: usize,
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportTokenDifference {
+    pub token: String,
+    pub source_count: usize,
+    pub target_count: usize,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportTokenIssue {
+    pub relative_dir: String,
+    pub key: String,
+    pub differences: Vec<ImportTokenDifference>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SnapshotResult {
+    Matched,
+    Mismatch,
+    NotChecked,
+}
+
+/// Read-only analysis shown before an external LLM batch can write state.
+/// A structurally valid file always returns its binding metadata, including
+/// wrong-mod/wrong-language files so the UI can offer a deliberate switch to
+/// another currently scanned component and rerun this preflight there.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPreflight {
+    pub batch_mod_unique_id: String,
+    pub batch_target_lang: String,
+    pub selected_mod_unique_id: String,
+    pub selected_target_lang: String,
+    pub mod_matches: bool,
+    pub language_matches: bool,
+    pub snapshot_result: SnapshotResult,
+    pub supplied_strings: usize,
+    pub matched_strings: usize,
+    pub preserved_local: usize,
+    pub skipped_empty: usize,
+    pub identical_to_source: usize,
+    pub importable: usize,
+    pub protected_token_issues: Vec<ImportTokenIssue>,
+    pub ready: bool,
+    pub blocking_reason: Option<String>,
+}
+
 /// The staged outcome of an import: entries ready for one `save_many` call,
 /// plus the user-facing summary.
 #[derive(Debug)]
@@ -97,14 +146,20 @@ pub struct PreparedImport {
     pub summary: ImportSummary,
 }
 
-/// Validate a translated v2 batch against the selected mod and current source
-/// rows. No caller writes anything unless this complete function succeeds.
-pub fn apply_batch(
-    result: &Value,
-    expected_mod_unique_id: &str,
-    expected_target_lang: &str,
-    rows_by_dir: &HashMap<String, Vec<StringRow>>,
-) -> Result<PreparedImport, String> {
+struct BatchEnvelope<'a> {
+    mod_unique_id: &'a str,
+    target_lang: &'a str,
+    source_snapshot: &'a str,
+    files: &'a Map<String, Value>,
+    supplied_strings: usize,
+}
+
+struct BatchAnalysis {
+    preflight: ImportPreflight,
+    entries: Vec<(String, StoredString)>,
+}
+
+fn batch_envelope(result: &Value) -> Result<BatchEnvelope<'_>, String> {
     let object = result.as_object().ok_or("The file is not a JSON object.")?;
     let format = object.get("format").and_then(Value::as_str).unwrap_or("");
     let version = object.get("version").and_then(Value::as_u64);
@@ -126,18 +181,7 @@ pub fn apply_batch(
         .ok_or("The batch has no valid metadata object. No changes were made.")?;
     let mod_unique_id = required_metadata(metadata, "modUniqueId")?;
     let target_lang = required_metadata(metadata, "targetLang")?;
-    let expected_snapshot = required_metadata(metadata, "sourceSnapshot")?;
-    if mod_unique_id != expected_mod_unique_id {
-        return Err(format!(
-            "This batch belongs to mod \"{mod_unique_id}\", not \"{expected_mod_unique_id}\". No changes were made."
-        ));
-    }
-    if target_lang != expected_target_lang {
-        return Err(format!(
-            "This batch targets language \"{target_lang}\", not \"{expected_target_lang}\". No changes were made."
-        ));
-    }
-
+    let source_snapshot = required_metadata(metadata, "sourceSnapshot")?;
     let files = object
         .get("files")
         .and_then(Value::as_object)
@@ -146,9 +190,7 @@ pub fn apply_batch(
         return Err("The batch contains no files. No changes were made.".to_string());
     }
 
-    let mut current_entries = Vec::new();
-    let mut seen = HashSet::new();
-    let mut total = 0usize;
+    let mut supplied_strings = 0usize;
     for (relative_dir, group) in files {
         let group = group.as_object().ok_or_else(|| {
             format!("Batch file group \"{relative_dir}\" is not an object. No changes were made.")
@@ -158,73 +200,165 @@ pub fn apply_batch(
                 "Batch file group \"{relative_dir}\" is empty. No changes were made."
             ));
         }
-        let rows = rows_by_dir.get(relative_dir).ok_or_else(|| {
-            format!("Batch contains unknown file \"{relative_dir}\". No changes were made.")
-        })?;
         for (key, value) in group {
-            total += 1;
+            supplied_strings += 1;
             if !value.is_string() {
                 return Err(format!(
                     "Translation \"{relative_dir} · {key}\" is not a string. No changes were made."
                 ));
             }
-            let row = rows.iter().find(|row| row.key == *key).ok_or_else(|| {
-                format!(
-                    "Batch contains unknown key \"{relative_dir} · {key}\". No changes were made."
-                )
-            })?;
-            if !seen.insert((relative_dir.as_str(), key.as_str())) {
-                return Err(
-                    "The batch contains duplicate entries. No changes were made.".to_string(),
-                );
-            }
+        }
+    }
+
+    Ok(BatchEnvelope {
+        mod_unique_id,
+        target_lang,
+        source_snapshot,
+        files,
+        supplied_strings,
+    })
+}
+
+fn analyze_batch(
+    result: &Value,
+    expected_mod_unique_id: &str,
+    expected_target_lang: &str,
+    rows_by_dir: &HashMap<String, Vec<StringRow>>,
+) -> Result<BatchAnalysis, String> {
+    let batch = batch_envelope(result)?;
+    let mod_matches = batch.mod_unique_id == expected_mod_unique_id;
+    let language_matches = batch.target_lang == expected_target_lang;
+    let mut preflight = ImportPreflight {
+        batch_mod_unique_id: batch.mod_unique_id.to_string(),
+        batch_target_lang: batch.target_lang.to_string(),
+        selected_mod_unique_id: expected_mod_unique_id.to_string(),
+        selected_target_lang: expected_target_lang.to_string(),
+        mod_matches,
+        language_matches,
+        snapshot_result: SnapshotResult::NotChecked,
+        supplied_strings: batch.supplied_strings,
+        matched_strings: 0,
+        preserved_local: 0,
+        skipped_empty: 0,
+        identical_to_source: 0,
+        importable: 0,
+        protected_token_issues: Vec::new(),
+        ready: false,
+        blocking_reason: None,
+    };
+
+    if !mod_matches {
+        preflight.blocking_reason = Some(format!(
+            "This batch belongs to mod \"{}\", not \"{expected_mod_unique_id}\". No changes were made.",
+            batch.mod_unique_id
+        ));
+        return Ok(BatchAnalysis {
+            preflight,
+            entries: Vec::new(),
+        });
+    }
+    if !language_matches {
+        preflight.blocking_reason = Some(format!(
+            "This batch targets language \"{}\", not \"{expected_target_lang}\". No changes were made.",
+            batch.target_lang
+        ));
+        return Ok(BatchAnalysis {
+            preflight,
+            entries: Vec::new(),
+        });
+    }
+
+    let mut current_entries = Vec::with_capacity(batch.supplied_strings);
+    let mut first_binding_error = None;
+    for (relative_dir, group) in batch.files {
+        let Some(rows) = rows_by_dir.get(relative_dir) else {
+            first_binding_error.get_or_insert_with(|| {
+                format!("Batch contains unknown file \"{relative_dir}\". No changes were made.")
+            });
+            continue;
+        };
+        for key in group
+            .as_object()
+            .expect("batch_envelope validated every file group")
+            .keys()
+        {
+            let Some(row) = rows.iter().find(|row| row.key == *key) else {
+                first_binding_error.get_or_insert_with(|| {
+                    format!(
+                        "Batch contains unknown key \"{relative_dir} · {key}\". No changes were made."
+                    )
+                });
+                continue;
+            };
+            preflight.matched_strings += 1;
             current_entries.push((relative_dir.as_str(), key.as_str(), row.source.as_str()));
         }
     }
 
-    let current_snapshot = source_snapshot(current_entries.into_iter());
-    if current_snapshot != expected_snapshot {
-        return Err(
+    let snapshot_matches = first_binding_error.is_none()
+        && preflight.matched_strings == batch.supplied_strings
+        && source_snapshot(current_entries.into_iter()) == batch.source_snapshot;
+    preflight.snapshot_result = if snapshot_matches {
+        SnapshotResult::Matched
+    } else {
+        SnapshotResult::Mismatch
+    };
+    if !snapshot_matches {
+        preflight.blocking_reason = Some(first_binding_error.unwrap_or_else(|| {
             "The batch file/key set or English source text changed since export. Create a new format-2 batch. No changes were made."
-                .to_string(),
-        );
+                .to_string()
+        }));
+        return Ok(BatchAnalysis {
+            preflight,
+            entries: Vec::new(),
+        });
     }
 
-    let mut prepared = PreparedImport {
-        entries: Vec::new(),
-        summary: ImportSummary {
-            total_in_file: total,
-            ..ImportSummary::default()
-        },
-    };
-    let mut token_problems = Vec::new();
-    for (relative_dir, group) in files {
+    let mut entries = Vec::new();
+    for (relative_dir, group) in batch.files {
         let rows = rows_by_dir
             .get(relative_dir)
-            .expect("file binding was validated above");
-        for (key, value) in group.as_object().expect("group was validated above") {
-            let text = value.as_str().expect("value was validated above");
+            .expect("snapshot validation proved this file binding");
+        for (key, value) in group
+            .as_object()
+            .expect("batch_envelope validated every file group")
+        {
+            let text = value
+                .as_str()
+                .expect("batch_envelope validated every translation value");
             if text.trim().is_empty() {
-                prepared.summary.unmatched += 1;
+                preflight.skipped_empty += 1;
                 continue;
             }
             let row = rows
                 .iter()
                 .find(|row| row.key == *key)
-                .expect("key binding was validated above");
-            if !tokens::token_differences(&row.source, text).is_empty() {
-                token_problems.push(format!("{relative_dir} · {key}"));
+                .expect("snapshot validation proved this key binding");
+            let differences = tokens::token_differences(&row.source, text);
+            if !differences.is_empty() {
+                preflight.protected_token_issues.push(ImportTokenIssue {
+                    relative_dir: relative_dir.clone(),
+                    key: key.clone(),
+                    differences: differences
+                        .into_iter()
+                        .map(|difference| ImportTokenDifference {
+                            token: difference.token,
+                            source_count: difference.source_count,
+                            target_count: difference.target_count,
+                        })
+                        .collect(),
+                });
                 continue;
             }
             if !row.target.trim().is_empty() {
-                prepared.summary.skipped_translated += 1;
+                preflight.preserved_local += 1;
                 continue;
             }
             if text.trim() == row.source.trim() {
-                prepared.summary.identical_to_source += 1;
+                preflight.identical_to_source += 1;
             }
-            prepared.summary.imported += 1;
-            prepared.entries.push((
+            preflight.importable += 1;
+            entries.push((
                 translations::entry_key(relative_dir, key),
                 StoredString {
                     target: text.to_string(),
@@ -234,14 +368,68 @@ pub fn apply_batch(
             ));
         }
     }
-    if !token_problems.is_empty() {
-        return Err(format!(
-            "Protected tokens changed in: {}. Fix the batch and retry. No changes were made.",
-            token_problems.join(", ")
+
+    if preflight.protected_token_issues.is_empty() {
+        preflight.ready = true;
+    } else {
+        let labels = preflight
+            .protected_token_issues
+            .iter()
+            .map(|issue| format!("{} · {}", issue.relative_dir, issue.key))
+            .collect::<Vec<_>>()
+            .join(", ");
+        preflight.blocking_reason = Some(format!(
+            "Protected tokens changed in: {labels}. Fix the batch and retry. No changes were made."
         ));
     }
 
-    Ok(prepared)
+    Ok(BatchAnalysis { preflight, entries })
+}
+
+/// Analyze a translated batch without writing translation state.
+pub fn preflight_batch(
+    result: &Value,
+    expected_mod_unique_id: &str,
+    expected_target_lang: &str,
+    rows_by_dir: &HashMap<String, Vec<StringRow>>,
+) -> Result<ImportPreflight, String> {
+    analyze_batch(
+        result,
+        expected_mod_unique_id,
+        expected_target_lang,
+        rows_by_dir,
+    )
+    .map(|analysis| analysis.preflight)
+}
+
+/// Validate a translated v2 batch against the selected mod and current source
+/// rows. No caller writes anything unless this complete function succeeds.
+pub fn apply_batch(
+    result: &Value,
+    expected_mod_unique_id: &str,
+    expected_target_lang: &str,
+    rows_by_dir: &HashMap<String, Vec<StringRow>>,
+) -> Result<PreparedImport, String> {
+    let analysis = analyze_batch(
+        result,
+        expected_mod_unique_id,
+        expected_target_lang,
+        rows_by_dir,
+    )?;
+    if let Some(reason) = analysis.preflight.blocking_reason {
+        return Err(reason);
+    }
+
+    Ok(PreparedImport {
+        entries: analysis.entries,
+        summary: ImportSummary {
+            imported: analysis.preflight.importable,
+            skipped_translated: analysis.preflight.preserved_local,
+            unmatched: analysis.preflight.skipped_empty,
+            identical_to_source: analysis.preflight.identical_to_source,
+            total_in_file: analysis.preflight.supplied_strings,
+        },
+    })
 }
 
 fn required_metadata<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<&'a str, String> {
@@ -257,6 +445,7 @@ fn required_metadata<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     fn item(dir: &str, key: &str, source: &str) -> BatchExportItem {
         BatchExportItem {
@@ -369,6 +558,146 @@ mod tests {
             .entries
             .iter()
             .all(|(_, entry)| entry.status == "review-needed"));
+    }
+
+    #[test]
+    fn preflight_reports_the_complete_ready_import_without_writing() {
+        let report = preflight_batch(&translated_batch(), "Author.Mod", "de", &rows()).unwrap();
+
+        assert_eq!(report.batch_mod_unique_id, "Author.Mod");
+        assert_eq!(report.batch_target_lang, "de");
+        assert!(report.mod_matches);
+        assert!(report.language_matches);
+        assert_eq!(report.snapshot_result, SnapshotResult::Matched);
+        assert_eq!(report.supplied_strings, 3);
+        assert_eq!(report.matched_strings, 3);
+        assert_eq!(report.preserved_local, 1);
+        assert_eq!(report.skipped_empty, 0);
+        assert_eq!(report.importable, 2);
+        assert!(report.protected_token_issues.is_empty());
+        assert!(report.ready);
+        assert_eq!(report.blocking_reason, None);
+    }
+
+    #[test]
+    fn preflight_exposes_wrong_mod_metadata_for_an_explicit_switch() {
+        let report = preflight_batch(&translated_batch(), "Other.Mod", "de", &rows()).unwrap();
+
+        assert_eq!(report.batch_mod_unique_id, "Author.Mod");
+        assert_eq!(report.selected_mod_unique_id, "Other.Mod");
+        assert!(!report.mod_matches);
+        assert!(report.language_matches);
+        assert_eq!(report.snapshot_result, SnapshotResult::NotChecked);
+        assert_eq!(report.supplied_strings, 3);
+        assert_eq!(report.matched_strings, 0);
+        assert!(!report.ready);
+        assert!(report
+            .blocking_reason
+            .as_deref()
+            .unwrap()
+            .contains("belongs to mod"));
+    }
+
+    #[test]
+    fn preflight_reports_wrong_language_without_checking_the_snapshot() {
+        let report = preflight_batch(&translated_batch(), "Author.Mod", "fr", &rows()).unwrap();
+
+        assert!(report.mod_matches);
+        assert!(!report.language_matches);
+        assert_eq!(report.batch_target_lang, "de");
+        assert_eq!(report.selected_target_lang, "fr");
+        assert_eq!(report.snapshot_result, SnapshotResult::NotChecked);
+        assert_eq!(report.supplied_strings, 3);
+        assert_eq!(report.matched_strings, 0);
+        assert!(!report.ready);
+        assert!(report
+            .blocking_reason
+            .as_deref()
+            .unwrap()
+            .contains("targets language"));
+    }
+
+    #[test]
+    fn preflight_reports_snapshot_mismatch_and_matched_count() {
+        let mut current = rows();
+        current.get_mut("i18n").unwrap()[0].source = "Changed".into();
+
+        let report = preflight_batch(&translated_batch(), "Author.Mod", "de", &current).unwrap();
+
+        assert_eq!(report.snapshot_result, SnapshotResult::Mismatch);
+        assert_eq!(report.supplied_strings, 3);
+        assert_eq!(report.matched_strings, 3);
+        assert!(!report.ready);
+        assert!(report
+            .blocking_reason
+            .as_deref()
+            .unwrap()
+            .contains("English source text changed"));
+    }
+
+    #[test]
+    fn preflight_counts_partial_matches_for_an_unknown_file() {
+        let mut batch = translated_batch();
+        batch["files"]["ghost/i18n"] = serde_json::json!({ "unknown": "Unbekannt" });
+
+        let report = preflight_batch(&batch, "Author.Mod", "de", &rows()).unwrap();
+
+        assert_eq!(report.snapshot_result, SnapshotResult::Mismatch);
+        assert_eq!(report.supplied_strings, 4);
+        assert_eq!(report.matched_strings, 3);
+        assert!(!report.ready);
+        assert!(report
+            .blocking_reason
+            .as_deref()
+            .unwrap()
+            .contains("unknown file"));
+    }
+
+    #[test]
+    fn preflight_returns_structured_token_issues_and_empty_counts() {
+        let mut batch = translated_batch();
+        batch["files"]["i18n"]["hello"] = Value::String("Hallo".into());
+        batch["files"]["sub/i18n"]["bye"] = Value::String(" ".into());
+
+        let report = preflight_batch(&batch, "Author.Mod", "de", &rows()).unwrap();
+
+        assert_eq!(report.snapshot_result, SnapshotResult::Matched);
+        assert_eq!(report.skipped_empty, 1);
+        assert_eq!(report.preserved_local, 1);
+        assert_eq!(report.importable, 0);
+        assert!(!report.ready);
+        assert_eq!(report.protected_token_issues.len(), 1);
+        assert_eq!(report.protected_token_issues[0].relative_dir, "i18n");
+        assert_eq!(report.protected_token_issues[0].key, "hello");
+        assert_eq!(
+            report.protected_token_issues[0].differences[0].token,
+            "{{name}}"
+        );
+        assert_eq!(
+            report.protected_token_issues[0].differences[0].source_count,
+            1
+        );
+        assert_eq!(
+            report.protected_token_issues[0].differences[0].target_count,
+            0
+        );
+    }
+
+    #[test]
+    fn import_revalidates_after_a_successful_preflight() {
+        let batch = translated_batch();
+        let original = rows();
+        assert!(
+            preflight_batch(&batch, "Author.Mod", "de", &original)
+                .unwrap()
+                .ready
+        );
+
+        let mut changed = original;
+        changed.get_mut("sub/i18n").unwrap()[0].source = "Changed after preflight".into();
+
+        let error = apply_batch(&batch, "Author.Mod", "de", &changed).unwrap_err();
+        assert!(error.contains("English source text changed"));
     }
 
     #[test]

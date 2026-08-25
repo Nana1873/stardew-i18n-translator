@@ -431,11 +431,42 @@ export interface LlmImportSummary {
   imported: number;
   /** Untouched — already translated locally. */
   skippedTranslated: number;
-  /** Unknown key/directory, non-string or empty value. */
+  /** Empty translation values intentionally skipped. */
   unmatched: number;
   /** Imported, but identical to the English source. */
   identicalToSource: number;
   totalInFile: number;
+}
+
+export interface LlmImportTokenDifference {
+  token: string;
+  sourceCount: number;
+  targetCount: number;
+}
+
+export interface LlmImportTokenIssue {
+  relativeDir: string;
+  key: string;
+  differences: LlmImportTokenDifference[];
+}
+
+export interface LlmImportPreflight {
+  batchModUniqueId: string;
+  batchTargetLang: string;
+  selectedModUniqueId: string;
+  selectedTargetLang: string;
+  modMatches: boolean;
+  languageMatches: boolean;
+  snapshotResult: "matched" | "mismatch" | "notChecked";
+  suppliedStrings: number;
+  matchedStrings: number;
+  preservedLocal: number;
+  skippedEmpty: number;
+  identicalToSource: number;
+  importable: number;
+  protectedTokenIssues: LlmImportTokenIssue[];
+  ready: boolean;
+  blockingReason: string | null;
 }
 
 /**
@@ -455,6 +486,19 @@ export function importLlmBatch(
 /** Pick a JSON result without importing it yet. Resolves null on cancel. */
 export function pickLlmBatchFile(): Promise<string | null> {
   return invoke<string | null>("pick_llm_batch_file");
+}
+
+/** Analyze a selected batch against the current mod without writing state. */
+export function preflightLlmBatchPath(
+  modUniqueId: string,
+  files: ExportFileInput[],
+  path: string,
+): Promise<LlmImportPreflight> {
+  return invoke<LlmImportPreflight>("preflight_llm_batch_path", {
+    modUniqueId,
+    files,
+    path,
+  });
 }
 
 /** Import a drag-and-dropped LLM batch/result file for one selected mod. */
