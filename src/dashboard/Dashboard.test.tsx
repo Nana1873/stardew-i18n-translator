@@ -61,7 +61,6 @@ describe("Dashboard", () => {
         onScan={vi.fn()}
         scanEnabled
         onOpenMod={vi.fn()}
-        onOpenAttention={vi.fn()}
         onBrowse={vi.fn()}
         lastOpened={{ "sample.mod": Date.now() - 60_000 }}
         onShowScanDetails={scanDetails}
@@ -83,12 +82,10 @@ describe("Dashboard", () => {
     expect(
       screen.getByRole("button", { name: /Reviewed & current/ }),
     ).toHaveTextContent("5 · 50%");
-    expect(
-      screen.getByRole("button", { name: /Needs attention/ }),
-    ).toHaveTextContent("1 Review · 1 Changed");
     expect(screen.getByRole("button", { name: /^Open/ })).toHaveTextContent(
       "3 · 30%",
     );
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(
       screen.getByText(
         /skipped-component count and change, added, and removed deltas unavailable/,
@@ -102,21 +99,18 @@ describe("Dashboard", () => {
 
     fireEvent.click(hasText);
     expect(filter).toHaveBeenCalledWith("has-value");
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /Validation issues · Unavailable/,
-      }),
-    );
-    expect(filter).toHaveBeenCalledWith("issues");
+    fireEvent.click(screen.getByRole("button", { name: /Reviewed & current/ }));
+    expect(filter).toHaveBeenCalledWith("translated");
+    fireEvent.click(screen.getByRole("button", { name: /^Open/ }));
+    expect(filter).toHaveBeenCalledWith("untranslated");
     fireEvent.click(screen.getByRole("button", { name: "Show in folder" }));
     expect(lastExport).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: /Latest scan:/ }));
     expect(scanDetails).toHaveBeenCalledOnce();
   });
 
-  it("uses portable recency only for navigation and opens real attention queues", () => {
+  it("uses portable recency only for navigation", () => {
     const openMod = vi.fn();
-    const openAttention = vi.fn();
     render(
       <Dashboard
         scan={sampleScan()}
@@ -126,7 +120,6 @@ describe("Dashboard", () => {
         onScan={vi.fn()}
         scanEnabled
         onOpenMod={openMod}
-        onOpenAttention={openAttention}
         onBrowse={vi.fn()}
         lastOpened={{ "sample.mod": Date.now() }}
       />,
@@ -150,19 +143,7 @@ describe("Dashboard", () => {
     );
     fireEvent.pointerLeave(recentStatus);
     expect(screen.queryByRole("tooltip")).toBeNull();
-
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /Sample Mod · 1.*Changed source.*Update assistant · Unavailable/,
-      }),
-    );
-    expect(openAttention).toHaveBeenCalledWith("sample.mod", "outdated");
-    fireEvent.click(
-      screen.getByRole("button", {
-        name: /Sample Mod · 1.*AI suggestions awaiting review/,
-      }),
-    );
-    expect(openAttention).toHaveBeenCalledWith("sample.mod", "review-needed");
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
   });
 
   it("does not invent all-mod status or result history", () => {
@@ -176,7 +157,6 @@ describe("Dashboard", () => {
         onScan={vi.fn()}
         scanEnabled
         onOpenMod={vi.fn()}
-        onOpenAttention={vi.fn()}
         onBrowse={vi.fn()}
         lastOpened={{}}
       />,
@@ -185,9 +165,7 @@ describe("Dashboard", () => {
     expect(
       screen.getByRole("button", { name: /Reviewed & current/ }),
     ).toHaveTextContent("Unavailable");
-    expect(
-      screen.getByRole("button", { name: /Needs attention/ }),
-    ).toHaveTextContent("1 Review · Changed unavailable");
+    expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(
       screen.getByText(/Last export · Unavailable in this session/),
     ).toBeInTheDocument();
@@ -195,53 +173,5 @@ describe("Dashboard", () => {
       screen.getByRole("button", { name: "Show in folder" }),
     ).toBeDisabled();
     expect(screen.getByText(/scan time unavailable/)).toBeInTheDocument();
-  });
-
-  it("shows known Changed rows without presenting a partial Changed total as complete", () => {
-    const known = sampleMod({
-      uniqueId: "known.mod",
-      name: "Known Mod",
-      reviewNeeded: 0,
-      statusCounts: {
-        untranslated: 6,
-        translated: 1,
-        outdated: 3,
-        "review-needed": 0,
-      },
-    });
-    const unknown = sampleMod({
-      uniqueId: "unknown.mod",
-      name: "Unknown Mod",
-      reviewNeeded: 2,
-      statusCounts: undefined,
-    });
-    render(
-      <Dashboard
-        scan={sampleScan([known, unknown])}
-        scanning={false}
-        lastScanAt={Date.now()}
-        languageLine="German (de)"
-        onScan={vi.fn()}
-        scanEnabled
-        onOpenMod={vi.fn()}
-        onOpenAttention={vi.fn()}
-        onBrowse={vi.fn()}
-        lastOpened={{}}
-      />,
-    );
-
-    expect(
-      screen.getByRole("button", { name: /Needs attention/ }),
-    ).toHaveTextContent("2 Review · Changed unavailable");
-    expect(
-      screen.getByRole("button", {
-        name: /Known Mod · 3.*Changed source.*Update assistant · Unavailable/,
-      }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", {
-        name: /View combined attention queue.*2 Review · Changed unavailable/,
-      }),
-    ).toBeInTheDocument();
   });
 });

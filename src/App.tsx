@@ -251,8 +251,6 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<StringTableFilter>("all");
   const [stringScope, setStringScope] = useState<"mod" | "all">("mod");
   const [issuesOnly, setIssuesOnly] = useState(false);
-  const [issuesFocusPending, setIssuesFocusPending] = useState(false);
-  const [attentionOnly, setAttentionOnly] = useState(false);
   const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
 
   // External LLM batch import: persistent result tray + reload trigger.
@@ -563,7 +561,6 @@ export function App() {
 
   /** Open a mod in the work view and remember it for the resume cards. */
   function openMod(uniqueId: string) {
-    setIssuesFocusPending(false);
     setSelectedModId(uniqueId);
     setStringScope("mod");
     setView("work");
@@ -578,29 +575,10 @@ export function App() {
     }
   }
 
-  /** Jump from a real dashboard queue into that exact status backlog. */
-  function openAttention(
-    uniqueId: string,
-    status: "outdated" | "review-needed",
-  ) {
-    setStatusFilter(status);
-    setIssuesOnly(false);
-    setAttentionOnly(false);
-    openMod(uniqueId);
-  }
-
   function openOverviewFilter(filter: OverviewFilter) {
     setSearch("");
-    setIssuesOnly(filter === "issues");
-    setIssuesFocusPending(filter === "issues");
-    setAttentionOnly(filter === "attention");
-    setStatusFilter(
-      filter === "attention" || filter === "issues"
-        ? "all"
-        : filter === "has-value"
-          ? "has-value"
-          : filter,
-    );
+    setIssuesOnly(false);
+    setStatusFilter(filter);
     setStringScope("all");
     setView("work");
   }
@@ -1173,10 +1151,7 @@ export function App() {
 
   function inspectResultProblem(problem: ResultProblem) {
     if (problem.modUniqueId) openMod(problem.modUniqueId);
-    else {
-      setIssuesFocusPending(false);
-      setView("work");
-    }
+    else setView("work");
     setStatusFilter("all");
     setSearch(problem.key);
     setResultHidden(true);
@@ -1390,11 +1365,9 @@ export function App() {
         <V3Toolbar
           activeView={view === "work" ? "workspace" : "overview"}
           onWorkspace={() => {
-            setIssuesFocusPending(false);
             setView("work");
           }}
           onOverview={() => {
-            setIssuesFocusPending(false);
             setView("home");
           }}
           onScan={handleScan}
@@ -1442,9 +1415,7 @@ export function App() {
               onScan={handleScan}
               scanEnabled={configured && !scanning}
               onOpenMod={openMod}
-              onOpenAttention={openAttention}
               onBrowse={() => {
-                setIssuesFocusPending(false);
                 setView("work");
               }}
               lastOpened={lastOpened}
@@ -1600,15 +1571,7 @@ export function App() {
                   statusFilter={statusFilter}
                   onStatusFilterChange={setStatusFilter}
                   issuesOnly={issuesOnly}
-                  onIssuesOnlyChange={(value) => {
-                    setIssuesOnly(value);
-                    if (!value) setIssuesFocusPending(false);
-                  }}
-                  focusIssuesFilter={issuesFocusPending}
-                  onIssuesFilterFocused={() => setIssuesFocusPending(false)}
-                  attentionOnly={attentionOnly}
-                  onAttentionOnlyChange={setAttentionOnly}
-                  showAttentionFilter={stringScope === "all"}
+                  onIssuesOnlyChange={setIssuesOnly}
                   targetLanguageLabel={languageLine}
                   localAiModel={aiReady ? llm!.model : undefined}
                   headerMeta={
@@ -1625,8 +1588,6 @@ export function App() {
                     setSearch("");
                     setStatusFilter("all");
                     setIssuesOnly(false);
-                    setIssuesFocusPending(false);
-                    setAttentionOnly(false);
                   }}
                   onBulkApplied={handleBulkApplied}
                   onAiBatchFinished={handleAiBatchFinished}
@@ -1719,9 +1680,7 @@ export function App() {
                 ? () => {
                     setStatusFilter("review-needed");
                     setIssuesOnly(false);
-                    setAttentionOnly(false);
                     setStringScope("mod");
-                    setIssuesFocusPending(false);
                     setView("work");
                     setResultHidden(true);
                     window.requestAnimationFrame(() => {

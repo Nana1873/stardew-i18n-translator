@@ -305,9 +305,25 @@ describe("StringTable V3 workbench", () => {
     ).toHaveLength(2);
   });
 
-  it("filters by search, status, issues, and attention using real rows", async () => {
-    render(<StringTable mod={MOD} showAttentionFilter />);
+  it("filters by search, explicit statuses, and validation issues using real rows", async () => {
+    installBackendRows({
+      "a.b": [
+        ...ROWS["a.b"],
+        {
+          key: "review",
+          source: "Review me",
+          target: "Prüfen",
+          targetPresent: true,
+          status: "review-needed",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention/ }),
+    ).not.toBeInTheDocument();
 
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search strings" }),
@@ -323,21 +339,19 @@ describe("StringTable V3 workbench", () => {
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("bye")).not.toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+    expect(screen.getByText("review")).toBeVisible();
+    expect(screen.queryByText("token")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: /^All \d/ }));
     fireEvent.click(screen.getByRole("button", { name: /^Validation issues/ }));
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
 
-    const needsAttention = screen.getByRole("button", {
-      name: /^Needs attention/,
-    });
-    fireEvent.click(needsAttention);
-    expect(needsAttention).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
     expect(
-      screen.getByRole("button", { name: /^Validation issues/ }),
-    ).toHaveAttribute("aria-pressed", "false");
-    expect(screen.getByText("token")).toBeVisible();
-    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+      screen.queryByRole("button", { name: /^Needs attention/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("searches and marks real mod and file metadata only in All mods", async () => {
@@ -508,9 +522,7 @@ describe("StringTable V3 workbench", () => {
   });
 
   it("clears selection when search, filters, scope, or sort changes", async () => {
-    render(
-      <StringTable mod={MOD} mods={[MOD, OTHER_MOD]} showAttentionFilter />,
-    );
+    render(<StringTable mod={MOD} mods={[MOD, OTHER_MOD]} />);
     await screen.findByText("greeting");
     const select = (key: string) => {
       fireEvent.click(screen.getByRole("checkbox", { name: `Select ${key}` }));
@@ -532,13 +544,6 @@ describe("StringTable V3 workbench", () => {
     select("token");
     fireEvent.click(
       screen.getByRole("button", { name: /^Validation issues 1$/ }),
-    );
-    expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-
-    select("token");
-    fireEvent.click(
-      screen.getByRole("button", { name: /^Needs attention 1$/ }),
     );
     expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
@@ -659,7 +664,7 @@ describe("StringTable V3 workbench", () => {
     expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
   });
 
-  it("treats an accepted token mismatch as resolved in issues, attention, and visuals", async () => {
+  it("treats an accepted token mismatch as resolved in issues and visuals", async () => {
     installBackendRows({
       "a.b": [
         ROWS["a.b"][0],
@@ -672,21 +677,12 @@ describe("StringTable V3 workbench", () => {
       ],
     });
     const onBulkApplied = vi.fn();
-    render(
-      <StringTable
-        mod={MOD}
-        showAttentionFilter
-        onBulkApplied={onBulkApplied}
-      />,
-    );
+    render(<StringTable mod={MOD} onBulkApplied={onBulkApplied} />);
     await screen.findByText("token");
 
     expect(
       screen.queryByRole("button", { name: /^Validation issues/ }),
     ).not.toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Needs attention 0$/ }),
-    ).toBeVisible();
     expect(rowFor("token").querySelector(".stv3-inline-validation")).toBeNull();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));

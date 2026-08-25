@@ -88,7 +88,6 @@ export interface StringTableSummary {
   visible: number;
   total: number;
   issues: number;
-  attention: number;
 }
 
 export interface AiBatchFinishedResult {
@@ -164,12 +163,6 @@ export interface StringTableProps {
   onStatusFilterChange?: (value: StringTableFilter) => void;
   issuesOnly?: boolean;
   onIssuesOnlyChange?: (value: boolean) => void;
-  /** Pending one-shot focus handoff after a routed issue queue opens. */
-  focusIssuesFilter?: boolean;
-  onIssuesFilterFocused?: () => void;
-  attentionOnly?: boolean;
-  onAttentionOnlyChange?: (value: boolean) => void;
-  showAttentionFilter?: boolean;
   /** Real shell-provided heading text; defaults to the active ScannedMod. */
   headerTitle?: string;
   /** Real package/parent context shown before the heading. */
@@ -225,10 +218,7 @@ const DISPLAY_STATUS: Record<
   "review-needed": { label: "Review", className: "is-review" },
 };
 
-const STATUS_HELP: Record<
-  StringStatus | "all" | "issues" | "attention",
-  string
-> = {
+const STATUS_HELP: Record<StringStatus | "all" | "issues", string> = {
   all: "Every string in the current scope.",
   untranslated: "No accepted target translation exists yet.",
   outdated:
@@ -237,8 +227,6 @@ const STATUS_HELP: Record<
     "This imported or AI-generated suggestion still needs human approval.",
   issues:
     "Only strings with an unresolved validation problem, such as a missing protected token.",
-  attention:
-    "The combined queue of Changed, Review, and Validation issues in the current scope.",
   translated:
     "The translation was explicitly saved or accepted for the current English source.",
 };
@@ -308,14 +296,6 @@ function rowValidationIssues(row: Row) {
   return issues.filter(
     (issue) =>
       issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
-  );
-}
-
-function rowNeedsAttention(row: Row): boolean {
-  return (
-    row.status === "outdated" ||
-    row.status === "review-needed" ||
-    rowHasIssues(row)
   );
 }
 
@@ -467,11 +447,6 @@ export function StringTable({
   onStatusFilterChange,
   issuesOnly,
   onIssuesOnlyChange,
-  focusIssuesFilter = false,
-  onIssuesFilterFocused,
-  attentionOnly,
-  onAttentionOnlyChange,
-  showAttentionFilter = false,
   headerTitle,
   headerContext,
   headerMeta,
@@ -499,13 +474,11 @@ export function StringTable({
   const [localSearch, setLocalSearch] = useState("");
   const [localStatus, setLocalStatus] = useState<StringTableFilter>("all");
   const [localIssuesOnly, setLocalIssuesOnly] = useState(false);
-  const [localAttentionOnly, setLocalAttentionOnly] = useState(false);
 
   const effectiveScope = scope ?? localScope;
   const effectiveSearch = search ?? localSearch;
   const effectiveStatus = statusFilter ?? localStatus;
   const effectiveIssuesOnly = issuesOnly ?? localIssuesOnly;
-  const effectiveAttentionOnly = attentionOnly ?? localAttentionOnly;
 
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -541,7 +514,6 @@ export function StringTable({
   const parentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
-  const issuesFilterRef = useRef<HTMLButtonElement>(null);
   const previousLoadedIssueCount = useRef<number | null>(null);
   const rowFocusActive = useRef(false);
   const rowsRef = useRef<Row[] | null>(null);
@@ -644,11 +616,6 @@ export function StringTable({
     () => data.filter((row) => rowHasIssues(row)).length,
     [data],
   );
-  const attentionCount = useMemo(
-    () => data.filter((row) => rowNeedsAttention(row)).length,
-    [data],
-  );
-
   const visible = useMemo(() => {
     const query = effectiveSearch.trim().toLocaleLowerCase("de");
     const filtered: Array<{ row: Row; identity: string; index: number }> = [];
@@ -661,7 +628,6 @@ export function StringTable({
         return;
       }
       if (effectiveIssuesOnly && !rowHasIssues(row)) return;
-      if (effectiveAttentionOnly && !rowNeedsAttention(row)) return;
       if (query) {
         const fields = [row.key, row.source, row.target];
         if (effectiveScope === "all") fields.push(row.modName, row.file);
@@ -688,7 +654,6 @@ export function StringTable({
     effectiveSearch,
     effectiveStatus,
     effectiveIssuesOnly,
-    effectiveAttentionOnly,
     effectiveScope,
     sort,
   ]);
@@ -698,15 +663,8 @@ export function StringTable({
       visible: visible.length,
       total: data.length,
       issues: issueCount,
-      attention: attentionCount,
     });
-  }, [
-    visible.length,
-    data.length,
-    issueCount,
-    attentionCount,
-    onVisibleSummaryChange,
-  ]);
+  }, [visible.length, data.length, issueCount, onVisibleSummaryChange]);
 
   useEffect(() => {
     if (rows == null) {
@@ -728,17 +686,6 @@ export function StringTable({
     // `All`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows, issueCount, effectiveIssuesOnly]);
-
-  useEffect(() => {
-    if (!focusIssuesFilter || rows == null) return;
-    const frame = window.requestAnimationFrame(() => {
-      const filter = issuesFilterRef.current;
-      if (!filter) return;
-      filter.focus();
-      onIssuesFilterFocused?.();
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [focusIssuesFilter, rows, issueCount, onIssuesFilterFocused]);
 
   const visibleIdentitySignature = visible
     .map((entry) => entry.identity)
@@ -961,10 +908,6 @@ export function StringTable({
 
   function setScopeValue(next: StringTableScope) {
     resetSelectionForViewChange();
-    if (next !== "all" && effectiveAttentionOnly) {
-      if (attentionOnly === undefined) setLocalAttentionOnly(false);
-      onAttentionOnlyChange?.(false);
-    }
     if (scope === undefined) setLocalScope(next);
     onScopeChange?.(next);
   }
@@ -979,41 +922,18 @@ export function StringTable({
     resetSelectionForViewChange();
     if (statusFilter === undefined) setLocalStatus(next);
     onStatusFilterChange?.(next);
-    if (effectiveAttentionOnly) {
-      if (attentionOnly === undefined) setLocalAttentionOnly(false);
-      onAttentionOnlyChange?.(false);
-    }
   }
 
   function setIssuesValue(next: boolean) {
     resetSelectionForViewChange();
-    if (next && effectiveAttentionOnly) {
-      if (attentionOnly === undefined) setLocalAttentionOnly(false);
-      onAttentionOnlyChange?.(false);
-    }
     if (issuesOnly === undefined) setLocalIssuesOnly(next);
     onIssuesOnlyChange?.(next);
-  }
-
-  function setAttentionValue(next: boolean) {
-    resetSelectionForViewChange();
-    if (next && effectiveIssuesOnly) {
-      if (issuesOnly === undefined) setLocalIssuesOnly(false);
-      onIssuesOnlyChange?.(false);
-    }
-    if (next && effectiveStatus !== "all") {
-      if (statusFilter === undefined) setLocalStatus("all");
-      onStatusFilterChange?.("all");
-    }
-    if (attentionOnly === undefined) setLocalAttentionOnly(next);
-    onAttentionOnlyChange?.(next);
   }
 
   function clearFilters() {
     setSearchValue("");
     setStatusValue("all");
     setIssuesValue(false);
-    setAttentionValue(false);
     onClearFilters?.();
     requestAnimationFrame(() => searchRef.current?.focus());
   }
@@ -1553,7 +1473,6 @@ export function StringTable({
     if (result.done > 0) {
       setStatusValue("review-needed");
       setIssuesValue(false);
-      setAttentionValue(false);
     }
     if (result.outcome === "complete") {
       onNotify?.(
@@ -1909,12 +1828,11 @@ export function StringTable({
             <span>
               {effectiveSearch.trim()
                 ? `Search preview: ${visible.length} matching rows · ${data.length} strings in ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                : `${visible.length} of ${data.length} strings · ${effectiveIssuesOnly ? "Validation issues" : effectiveAttentionOnly ? "Needs attention" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
+                : `${visible.length} of ${data.length} strings · ${effectiveIssuesOnly ? "Validation issues" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
             </span>
             {(effectiveSearch.trim() ||
               effectiveStatus !== "all" ||
-              effectiveIssuesOnly ||
-              effectiveAttentionOnly) && (
+              effectiveIssuesOnly) && (
               <button
                 className="stv3-query-clear"
                 type="button"
@@ -1937,9 +1855,7 @@ export function StringTable({
                 key={item.value}
                 className="stv3-filter"
                 type="button"
-                aria-pressed={
-                  !effectiveAttentionOnly && effectiveStatus === item.value
-                }
+                aria-pressed={effectiveStatus === item.value}
                 aria-description={
                   STATUS_HELP[item.value === "has-value" ? "all" : item.value]
                 }
@@ -1979,7 +1895,6 @@ export function StringTable({
                 aria-orientation="vertical"
               />
               <button
-                ref={issuesFilterRef}
                 className="stv3-filter stv3-issue-filter"
                 type="button"
                 aria-pressed={effectiveIssuesOnly}
@@ -1999,27 +1914,6 @@ export function StringTable({
                 <span className="stv3-filter-count">{issueCount}</span>
               </button>
             </>
-          )}
-          {(showAttentionFilter || effectiveAttentionOnly) && (
-            <button
-              className="stv3-filter"
-              type="button"
-              aria-pressed={effectiveAttentionOnly}
-              aria-description={STATUS_HELP.attention}
-              data-status-help={STATUS_HELP.attention}
-              onPointerEnter={(event) =>
-                showStatusHelp(event.currentTarget, STATUS_HELP.attention)
-              }
-              onPointerLeave={hideStatusHelp}
-              onFocus={(event) =>
-                showStatusHelp(event.currentTarget, STATUS_HELP.attention)
-              }
-              onBlur={hideStatusHelp}
-              onClick={() => setAttentionValue(!effectiveAttentionOnly)}
-            >
-              Needs attention{" "}
-              <span className="stv3-filter-count">{attentionCount}</span>
-            </button>
           )}
         </div>
 

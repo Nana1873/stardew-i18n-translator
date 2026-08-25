@@ -2,8 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, FileCheck2, GitCompareArrows } from "lucide-react";
 import type { ScanResult, ScannedMod } from "../tauri/commands";
 
-export type OverviewFilter =
-  "has-value" | "translated" | "attention" | "untranslated" | "issues";
+export type OverviewFilter = "has-value" | "translated" | "untranslated";
 
 export interface DashboardLastExport {
   /** Real current-session export label, for example "Last export · Sample". */
@@ -22,10 +21,6 @@ interface DashboardProps {
   onScan: () => void;
   scanEnabled: boolean;
   onOpenMod: (uniqueId: string) => void;
-  onOpenAttention: (
-    uniqueId: string,
-    status: "outdated" | "review-needed",
-  ) => void;
   onBrowse: () => void;
   /** Resume ordering only: modId -> epoch ms of its last open. */
   lastOpened: Record<string, number>;
@@ -72,7 +67,6 @@ export function Dashboard({
   onScan,
   scanEnabled,
   onOpenMod,
-  onOpenAttention,
   onBrowse,
   lastOpened,
   onShowScanDetails,
@@ -92,7 +86,6 @@ export function Dashboard({
   const withTextPct =
     totalKeys > 0 ? Math.round((withText / totalKeys) * 100) : 0;
   const openPct = totalKeys > 0 ? Math.round((open / totalKeys) * 100) : 0;
-  const reviewTotal = mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0);
   const allStatusesKnown =
     withKeys.length > 0 && withKeys.every((mod) => mod.statusCounts != null);
   const reviewedCurrent = allStatusesKnown
@@ -105,31 +98,6 @@ export function Dashboard({
     reviewedCurrent != null && totalKeys > 0
       ? Math.round((reviewedCurrent / totalKeys) * 100)
       : null;
-  const changedKnown = allStatusesKnown
-    ? withKeys.reduce((sum, mod) => sum + (mod.statusCounts?.outdated ?? 0), 0)
-    : null;
-  const attentionRows = mods
-    .flatMap((mod) => {
-      const rows: Array<{
-        mod: ScannedMod;
-        status: "outdated" | "review-needed";
-        count: number;
-      }> = [];
-      const changed = mod.statusCounts?.outdated;
-      if (changed != null && changed > 0) {
-        rows.push({ mod, status: "outdated", count: changed });
-      }
-      if (mod.reviewNeeded > 0) {
-        rows.push({
-          mod,
-          status: "review-needed",
-          count: mod.reviewNeeded,
-        });
-      }
-      return rows;
-    })
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 3);
   const recent = withKeys
     .filter((mod) => lastOpened[mod.uniqueId] != null)
     .sort((a, b) => lastOpened[b.uniqueId] - lastOpened[a.uniqueId])
@@ -260,29 +228,6 @@ export function Dashboard({
         <button
           className="stv3-overview-stat"
           type="button"
-          onClick={() => openFilter("attention")}
-        >
-          <span>Needs attention</span>
-          <strong>
-            {!scan
-              ? "Unavailable"
-              : `${count(reviewTotal)} Review · ${
-                  changedKnown == null
-                    ? "Changed unavailable"
-                    : `${count(changedKnown)} Changed`
-                }`}
-          </strong>
-          <small>
-            {!scan
-              ? "No scan data is available"
-              : changedKnown == null
-                ? "Review is known; Changed and validation issues unavailable"
-                : "Changed and Review are known; validation issues unavailable"}
-          </small>
-        </button>
-        <button
-          className="stv3-overview-stat"
-          type="button"
           onClick={() => openFilter("untranslated")}
         >
           <span>Open</span>
@@ -359,143 +304,47 @@ export function Dashboard({
         </button>
       </div>
 
-      <div className="stv3-overview-grid">
-        <section className="stv3-section">
-          <div className="stv3-section-head">
-            <h2 className="stv3-heading">Recently edited</h2>
-            <div className="stv3-kicker">
-              Resume recently opened mods · edit time unavailable
-            </div>
+      <section className="stv3-section">
+        <div className="stv3-section-head">
+          <h2 className="stv3-heading">Recently edited</h2>
+          <div className="stv3-kicker">
+            Resume recently opened mods · edit time unavailable
           </div>
-          <table className="stv3-overview-table">
-            <thead>
+        </div>
+        <table className="stv3-overview-table">
+          <thead>
+            <tr>
+              <th>Mod</th>
+              <th>Progress</th>
+              <th>Last activity</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recent.length > 0 ? (
+              recent.map((mod) => (
+                <RecentRow
+                  key={mod.uniqueId}
+                  mod={mod}
+                  targetLanguage={targetLanguage}
+                  onOpen={() => onOpenMod(mod.uniqueId)}
+                  onShowStatusHelp={showStatusHelp}
+                  onHideStatusHelp={() => setStatusTooltip(null)}
+                />
+              ))
+            ) : (
               <tr>
-                <th>Mod</th>
-                <th>Progress</th>
-                <th>Last activity</th>
-                <th>Status</th>
+                <td colSpan={4}>
+                  <span className="stv3-kicker">
+                    Unavailable · no mod has been opened in this portable
+                    workspace yet.
+                  </span>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {recent.length > 0 ? (
-                recent.map((mod) => (
-                  <RecentRow
-                    key={mod.uniqueId}
-                    mod={mod}
-                    targetLanguage={targetLanguage}
-                    onOpen={() => onOpenMod(mod.uniqueId)}
-                    onShowStatusHelp={showStatusHelp}
-                    onHideStatusHelp={() => setStatusTooltip(null)}
-                  />
-                ))
-              ) : (
-                <tr>
-                  <td colSpan={4}>
-                    <span className="stv3-kicker">
-                      Unavailable · no mod has been opened in this portable
-                      workspace yet.
-                    </span>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </section>
-
-        <section className="stv3-section">
-          <div className="stv3-section-head">
-            <h2 className="stv3-heading">Needs attention</h2>
-            <div className="stv3-kicker">
-              Top real queues · per-mod validation issue counts unavailable
-            </div>
-          </div>
-          <div className="stv3-attention-list">
-            {attentionRows.map(({ mod, status, count: queueCount }) => (
-              <button
-                key={`${mod.uniqueId}:${status}`}
-                className="stv3-attention-row"
-                type="button"
-                onClick={() => onOpenAttention(mod.uniqueId, status)}
-              >
-                <span>
-                  <span className="stv3-row-title">
-                    {mod.name} · {count(queueCount)}
-                  </span>
-                  {status === "outdated" ? (
-                    <span className="stv3-attention-badges">
-                      <span className="stv3-attention-badge">
-                        Changed source
-                      </span>
-                      <span className="stv3-attention-badge">
-                        Update assistant · Unavailable
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="stv3-row-meta">
-                      AI suggestions awaiting review
-                    </span>
-                  )}
-                </span>
-                <span aria-hidden="true">→</span>
-              </button>
-            ))}
-            {attentionRows.length === 0 && (
-              <div className="stv3-attention-row">
-                <span>
-                  <span className="stv3-row-title">
-                    No known Changed or Review queue
-                  </span>
-                  <span className="stv3-row-meta">
-                    {changedKnown == null
-                      ? "Changed and validation issue totals are unavailable."
-                      : "Validation issue totals are unavailable."}
-                  </span>
-                </span>
-                <span aria-hidden="true">—</span>
-              </div>
             )}
-            <button
-              className="stv3-attention-row"
-              type="button"
-              onClick={() => openFilter("issues")}
-            >
-              <span>
-                <span className="stv3-row-title">
-                  Validation issues · Unavailable
-                </span>
-                <span className="stv3-row-meta">
-                  Per-mod validation issue counts are unavailable
-                </span>
-              </span>
-              <span aria-hidden="true">→</span>
-            </button>
-            <button
-              className="stv3-attention-row"
-              type="button"
-              onClick={() => openFilter("attention")}
-            >
-              <span>
-                <span className="stv3-row-title">
-                  View combined attention queue
-                </span>
-                <span className="stv3-row-meta">
-                  Changed and Review use real statuses; validation issues stay
-                  unavailable.
-                </span>
-              </span>
-              <span>
-                {scan
-                  ? `${count(reviewTotal)} Review · ${
-                      changedKnown == null
-                        ? "Changed unavailable"
-                        : `${count(changedKnown)} Changed`
-                    } →`
-                  : "Unavailable →"}
-              </span>
-            </button>
-          </div>
-        </section>
-      </div>
+          </tbody>
+        </table>
+      </section>
 
       {statusTooltip && (
         <div

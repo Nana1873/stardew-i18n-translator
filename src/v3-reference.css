@@ -1086,7 +1086,7 @@
 
 #stv3-dense-demo .stv3-overview-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   margin-bottom: 12px;
   background: var(--stv3-surface);
   border: 1px solid var(--stv3-border);
@@ -1115,12 +1115,6 @@
   font-weight: 500;
 }
 
-#stv3-dense-demo .stv3-overview-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
-  gap: 12px;
-}
-
 #stv3-dense-demo .stv3-section {
   background: var(--stv3-surface);
   border: 1px solid var(--stv3-border);
@@ -1130,44 +1124,6 @@
 #stv3-dense-demo .stv3-section-head {
   padding: 9px 11px;
   border-bottom: 1px solid var(--stv3-border);
-}
-
-#stv3-dense-demo .stv3-attention-list {
-  display: grid;
-}
-
-#stv3-dense-demo .stv3-attention-row {
-  width: 100%;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  align-items: center;
-  padding: 9px 11px;
-  text-align: left;
-  background: transparent;
-  border: 0;
-  border-bottom: 1px solid var(--stv3-border);
-  cursor: pointer;
-}
-
-#stv3-dense-demo .stv3-attention-row:last-child {
-  border-bottom: 0;
-}
-
-#stv3-dense-demo .stv3-attention-row:hover {
-  background: var(--stv3-surface-raised);
-}
-
-#stv3-dense-demo .stv3-row-title {
-  display: block;
-  font-weight: 500;
-}
-
-#stv3-dense-demo .stv3-row-meta {
-  display: block;
-  margin-top: 2px;
-  color: var(--stv3-muted);
-  font-size: 0.83em;
 }
 
 #stv3-dense-demo .stv3-review-toolbar {
@@ -2135,7 +2091,6 @@
     grid-template-columns: 1fr;
   }
 
-  #stv3-dense-demo .stv3-overview-grid,
   #stv3-dense-demo .stv3-settings-layout {
     grid-template-columns: 1fr;
   }
@@ -2954,21 +2909,6 @@
   white-space: nowrap;
 }
 
-#stv3-dense-demo .stv3-attention-badges {
-  display: inline-flex;
-  gap: 4px;
-  margin-top: 4px;
-  flex-wrap: wrap;
-}
-
-#stv3-dense-demo .stv3-attention-badge {
-  padding: 2px 5px;
-  color: var(--stv3-muted);
-  background: var(--stv3-surface-soft);
-  border-radius: 999px;
-  font-size: 0.75em;
-}
-
 #stv3-dense-demo .stv3-preflight-metrics {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -3137,7 +3077,6 @@
 #stv3-dense-demo .stv3-mod-percent,
 #stv3-dense-demo .stv3-string-meta,
 #stv3-dense-demo .stv3-string-scope-label,
-#stv3-dense-demo .stv3-row-meta,
 #stv3-dense-demo .stv3-statusbar,
 #stv3-dense-demo .stv3-field label,
 #stv3-dense-demo .stv3-editor-support-label {
@@ -3152,7 +3091,6 @@
 #stv3-dense-demo .stv3-overview-table th,
 #stv3-dense-demo .stv3-status-tooltip,
 #stv3-dense-demo .stv3-overview-stat small,
-#stv3-dense-demo .stv3-attention-badge,
 #stv3-dense-demo .stv3-preflight-metric span,
 #stv3-dense-demo .stv3-update-source-row > span,
 #stv3-dense-demo .stv3-engine-card > span > span {

@@ -2197,7 +2197,7 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     const overview = await screen.findByRole("main", { name: "Overview" });
     expect(overview).toHaveTextContent("1 mods");
-    expect(overview).toHaveTextContent("2 Review · Changed unavailable");
+    expect(overview).not.toHaveTextContent("Needs attention");
     fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(
       await screen.findByRole("searchbox", { name: "Search strings" }),
@@ -2340,7 +2340,7 @@ describe("App shell", () => {
     ).toHaveValue("mittags");
   });
 
-  it("the dashboard review queue jumps into the mod filtered to review-needed", async () => {
+  it("keeps Review as an explicit workspace filter", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "scan_mods")
@@ -2389,10 +2389,14 @@ describe("App shell", () => {
     });
 
     render(<App />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Test Mod · 1/ }),
+    openWorkspace();
+    const review = await screen.findByRole("button", { name: /^Review\b/ });
+    fireEvent.click(review);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Review\b/ })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
     );
     expect(
       await screen.findByRole("main", { name: "String table" }),
@@ -2400,7 +2404,7 @@ describe("App shell", () => {
     expect(await screen.findByText("Hallo KI")).toBeInTheDocument();
   });
 
-  it("the dashboard Changed queue opens that mod with the Changed filter", async () => {
+  it("keeps Changed as an explicit workspace filter", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
@@ -2459,12 +2463,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findByText("changed.key");
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: /Test Mod · 1.*Changed source.*Update assistant · Unavailable/,
-      }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Changed\b/ }));
 
     expect(
       await screen.findByRole("button", { name: /^Changed\b/ }),
@@ -2473,7 +2472,7 @@ describe("App shell", () => {
     expect(screen.queryByText("review.key")).toBeNull();
   });
 
-  it("reveals the otherwise hidden Needs attention filter from the Overview queue", async () => {
+  it("does not expose an aggregate Needs attention queue", async () => {
     mockExportConfigured(false);
     render(<App />);
     openWorkspace();
@@ -2483,20 +2482,17 @@ describe("App shell", () => {
       screen.queryByRole("button", { name: /^Needs attention\b/ }),
     ).toBeNull();
 
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-    const attentionOverview = (await screen.findAllByText("Needs attention"))
-      .map((element) => element.closest("button"))
-      .find((element): element is HTMLButtonElement => element != null);
-    expect(attentionOverview).toBeDefined();
-    fireEvent.click(attentionOverview!);
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention\b/ }),
+    ).toBeNull();
 
-    const attention = await screen.findByRole("button", {
-      name: /^Needs attention\b/,
-    });
-    expect(attention).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(await screen.findByText("Recently edited")).toBeInTheDocument();
+    expect(screen.queryByText("Needs attention")).toBeNull();
   });
 
-  it("routes the unavailable Overview issue row to the real global issue queue", async () => {
+  it("keeps Validation issues separate and clears it through an Overview status shortcut", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
@@ -2517,18 +2513,14 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findByText("token.issue");
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     fireEvent.click(
-      await screen.findByRole("button", {
-        name: /Validation issues · Unavailable/,
-      }),
+      screen.getByRole("button", { name: /^Validation issues\b/ }),
     );
 
-    const issues = await screen.findByRole("button", {
+    const issues = screen.getByRole("button", {
       name: /^Validation issues\b/,
     });
     expect(issues).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(issues).toHaveFocus());
     expect(await screen.findByText("token.issue")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
@@ -2539,122 +2531,10 @@ describe("App shell", () => {
       name: /^Validation issues\b/,
     });
     expect(remountedIssues).toHaveAttribute("aria-pressed", "false");
-    expect(remountedIssues).not.toHaveFocus();
-  });
-
-  it("cancels a pending issue-filter focus when the queue is cleared", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
-      if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
-      if (cmd === "load_strings")
-        return Promise.resolve([
-          {
-            key: "token.issue",
-            source: "Hello {{name}}",
-            target: "Hallo",
-            targetPresent: true,
-            status: "translated",
-          },
-        ]);
-      return Promise.resolve(null);
-    });
-
-    render(<App />);
-    openWorkspace();
-    await screen.findByText("token.issue");
-
-    const pendingFrames = new Map<number, FrameRequestCallback>();
-    const cancelledFrames = new Set<number>();
-    let nextFrame = 1;
-    const requestFrame = vi
-      .spyOn(window, "requestAnimationFrame")
-      .mockImplementation((callback) => {
-        const frame = nextFrame++;
-        pendingFrames.set(frame, callback);
-        return frame;
-      });
-    const cancelFrame = vi
-      .spyOn(window, "cancelAnimationFrame")
-      .mockImplementation((frame) => {
-        cancelledFrames.add(frame);
-        pendingFrames.delete(frame);
-      });
-
-    try {
-      fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-      fireEvent.click(
-        await screen.findByRole("button", {
-          name: /Validation issues · Unavailable/,
-        }),
-      );
-
-      const issues = await screen.findByRole("button", {
-        name: /^Validation issues\b/,
-      });
-      const routedFrames = [...pendingFrames.keys()];
-      expect(routedFrames.length).toBeGreaterThan(0);
-
-      fireEvent.click(issues);
-      expect(issues).toHaveAttribute("aria-pressed", "false");
-      await waitFor(() =>
-        expect(routedFrames.some((frame) => cancelledFrames.has(frame))).toBe(
-          true,
-        ),
-      );
-
-      const workspace = screen.getByRole("button", { name: "Workspace" });
-      workspace.focus();
-      act(() => {
-        for (const [frame, callback] of pendingFrames) {
-          if (!cancelledFrames.has(frame)) callback(0);
-        }
-      });
-      expect(workspace).toHaveFocus();
-      expect(issues).not.toHaveFocus();
-    } finally {
-      requestFrame.mockRestore();
-      cancelFrame.mockRestore();
-    }
-  });
-
-  it("keeps and focuses the real empty issue queue when its count is zero", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
-      if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
-      if (cmd === "load_strings")
-        return Promise.resolve([
-          {
-            key: "clean.translation",
-            source: "Hello",
-            target: "Hallo",
-            targetPresent: true,
-            status: "translated",
-          },
-        ]);
-      return Promise.resolve(null);
-    });
-
-    render(<App />);
-    openWorkspace();
-    await screen.findByText("clean.translation");
-    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-    fireEvent.click(
-      await screen.findByRole("button", {
-        name: /Validation issues · Unavailable/,
-      }),
+    expect(screen.getByRole("button", { name: /^Done\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
-
-    const issues = await screen.findByRole("button", {
-      name: /^Validation issues 0$/,
-    });
-    expect(issues).toHaveAttribute("aria-pressed", "true");
-    await waitFor(() => expect(issues).toHaveFocus());
-    expect(
-      screen.getByText(/0 of 1 strings · Validation issues/),
-    ).toBeInTheDocument();
-    expect(screen.getByText("No matching strings")).toBeInTheDocument();
   });
 
   it("opens the scan dialog when an automatic scan has warnings", async () => {
