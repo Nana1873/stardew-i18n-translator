@@ -7,6 +7,7 @@ const integrationStyles = readFileSync(
   resolve("src/v3-integration.css"),
   "utf8",
 );
+const referenceStyles = readFileSync(resolve("src/v3-reference.css"), "utf8");
 describe("CSS custom properties", () => {
   it("declares every variable used by the stylesheet", () => {
     const declared = new Set(
@@ -37,5 +38,14 @@ describe("CSS custom properties", () => {
       "#stv3-dense-demo .wizard__path--empty .wizard__path-status",
     );
     expect(integrationStyles).toContain("color: var(--stv3-faint);");
+  });
+
+  it("keeps the production string workbench inside its pane", () => {
+    expect(integrationStyles).toMatch(
+      /#stv3-dense-demo \.stv3-string-workbench\s*{[^}]*width:\s*100%;[^}]*min-width:\s*0;/s,
+    );
+    expect(referenceStyles).toMatch(
+      /#stv3-dense-demo \.stv3-table-wrap\s*{[^}]*min-width:\s*0;[^}]*overflow-x:\s*auto;/s,
+    );
   });
 });

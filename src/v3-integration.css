@@ -31,6 +31,14 @@ body {
   box-shadow: none;
 }
 
+/* React wraps the accepted header, toolbar, and scrollable table in the
+   existing StringTable root. Let that grid item shrink with its pane so only
+   the table owns horizontal overflow. */
+#stv3-dense-demo .stv3-string-workbench {
+  width: 100%;
+  min-width: 0;
+}
+
 #stv3-dense-demo .stv3-mod-pane .modlist__search {
   width: auto;
   margin: 8px 10px;
