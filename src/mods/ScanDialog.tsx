@@ -7,6 +7,8 @@ interface ScanDialogProps {
   scanning: boolean;
   result: ScanResult | null;
   error: string | null;
+  focusDiagnostics?: boolean;
+  retainedResult?: boolean;
   onClose: () => void;
 }
 
@@ -18,15 +20,29 @@ export function ScanDialog({
   scanning,
   result,
   error,
+  focusDiagnostics = false,
+  retainedResult = false,
   onClose,
 }: ScanDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
     onEscape: onClose,
+    initialFocusSelector: focusDiagnostics
+      ? "[data-scan-diagnostics]"
+      : undefined,
   });
   const complete = !scanning && !error && result != null;
   const warningCount = result?.warnings.length ?? 0;
+  const title = scanning
+    ? "Scanning mods …"
+    : error
+      ? "Scan failed"
+      : retainedResult
+        ? "Latest scan"
+        : result
+          ? "Scan completed"
+          : "Scan unavailable";
 
   return (
     <div className="stv3-flow-overlay">
@@ -40,13 +56,7 @@ export function ScanDialog({
       >
         <div className="stv3-flow-head">
           <div>
-            <h2 className="stv3-heading">
-              {scanning
-                ? "Scanning mods …"
-                : error
-                  ? "Scan failed"
-                  : "Scan completed"}
-            </h2>
+            <h2 className="stv3-heading">{title}</h2>
             <div className="stv3-kicker">Local Mods folder · read-only</div>
           </div>
           {!scanning && (
@@ -146,6 +156,7 @@ export function ScanDialog({
 function ScanResultContent({ result }: { result: ScanResult }) {
   const warnings = result.warnings;
   const extraKeys = result.extraKeys ?? [];
+
   return (
     <>
       <p>
@@ -168,7 +179,11 @@ function ScanResultContent({ result }: { result: ScanResult }) {
 
       {warnings.length > 0 ? (
         <>
-          <div className="stv3-flow-callout is-warning" tabIndex={-1}>
+          <div
+            className="stv3-flow-callout is-warning"
+            tabIndex={-1}
+            data-scan-diagnostics
+          >
             <AlertTriangle aria-hidden="true" />{" "}
             <strong>
               {warnings.length} scanner{" "}
@@ -192,7 +207,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
           </p>
         </>
       ) : (
-        <div className="stv3-flow-callout">
+        <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
           No scanner warnings were reported. The skipped-component count is
           unavailable in the current backend result.
         </div>

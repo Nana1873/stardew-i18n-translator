@@ -208,6 +208,21 @@ describe("App shell", () => {
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 
+  it("keeps the skipped-components control visible as unavailable", async () => {
+    mockConfigured();
+    render(<App />);
+
+    const skipped = await screen.findByRole("button", {
+      name: "Skipped components unavailable; open scan diagnostics",
+    });
+    expect(skipped).toHaveTextContent("Skipped · Unavailable");
+    fireEvent.click(skipped);
+
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    expect(dialog).toHaveTextContent("Latest scan");
+    expect(dialog).toHaveTextContent("skipped-component count is unavailable");
+  });
+
   it("loads dashboard resume history from portable settings", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings")
@@ -2437,6 +2452,162 @@ describe("App shell", () => {
     expect(attention).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("routes the unavailable Overview issue row to the real global issue queue", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "token.issue",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await screen.findByText("token.issue");
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Unresolved issues · Unavailable/,
+      }),
+    );
+
+    const issues = await screen.findByRole("button", {
+      name: /^Has issues\b/,
+    });
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(issues).toHaveFocus());
+    expect(await screen.findByText("token.issue")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Reviewed & current/ }),
+    );
+    const remountedIssues = await screen.findByRole("button", {
+      name: /^Has issues\b/,
+    });
+    expect(remountedIssues).toHaveAttribute("aria-pressed", "false");
+    expect(remountedIssues).not.toHaveFocus();
+  });
+
+  it("cancels a pending issue-filter focus when the queue is cleared", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "token.issue",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await screen.findByText("token.issue");
+
+    const pendingFrames = new Map<number, FrameRequestCallback>();
+    const cancelledFrames = new Set<number>();
+    let nextFrame = 1;
+    const requestFrame = vi
+      .spyOn(window, "requestAnimationFrame")
+      .mockImplementation((callback) => {
+        const frame = nextFrame++;
+        pendingFrames.set(frame, callback);
+        return frame;
+      });
+    const cancelFrame = vi
+      .spyOn(window, "cancelAnimationFrame")
+      .mockImplementation((frame) => {
+        cancelledFrames.add(frame);
+        pendingFrames.delete(frame);
+      });
+
+    try {
+      fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: /Unresolved issues · Unavailable/,
+        }),
+      );
+
+      const issues = await screen.findByRole("button", {
+        name: /^Has issues\b/,
+      });
+      const routedFrames = [...pendingFrames.keys()];
+      expect(routedFrames.length).toBeGreaterThan(0);
+
+      fireEvent.click(issues);
+      expect(issues).toHaveAttribute("aria-pressed", "false");
+      await waitFor(() =>
+        expect(routedFrames.some((frame) => cancelledFrames.has(frame))).toBe(
+          true,
+        ),
+      );
+
+      const workspace = screen.getByRole("button", { name: "Workspace" });
+      workspace.focus();
+      act(() => {
+        for (const [frame, callback] of pendingFrames) {
+          if (!cancelledFrames.has(frame)) callback(0);
+        }
+      });
+      expect(workspace).toHaveFocus();
+      expect(issues).not.toHaveFocus();
+    } finally {
+      requestFrame.mockRestore();
+      cancelFrame.mockRestore();
+    }
+  });
+
+  it("keeps and focuses the real empty issue queue when its count is zero", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "clean.translation",
+            source: "Hello",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await screen.findByText("clean.translation");
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /Unresolved issues · Unavailable/,
+      }),
+    );
+
+    const issues = await screen.findByRole("button", {
+      name: /^Has issues 0$/,
+    });
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+    await waitFor(() => expect(issues).toHaveFocus());
+    expect(screen.getByText(/0 of 1 strings · Has issues/)).toBeInTheDocument();
+    expect(screen.getByText("No matching strings")).toBeInTheDocument();
+  });
+
   it("opens the scan dialog when an automatic scan has warnings", async () => {
     mockConfigured({
       ...EMPTY_SCAN,
@@ -2477,6 +2648,15 @@ describe("App shell", () => {
     });
     render(<App />);
 
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    expect(dialog).toHaveTextContent("Mods folder not found");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+
+    const skipped = screen.getByRole("button", {
+      name: "Skipped components unavailable; open scan diagnostics",
+    });
+    expect(skipped).toHaveTextContent("Skipped · Unavailable");
+    fireEvent.click(skipped);
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),
     ).toHaveTextContent("Mods folder not found");

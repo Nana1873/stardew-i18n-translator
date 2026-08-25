@@ -3,7 +3,7 @@ import { ArrowRight, FileCheck2, GitCompareArrows } from "lucide-react";
 import type { ScanResult, ScannedMod } from "../tauri/commands";
 
 export type OverviewFilter =
-  "has-value" | "translated" | "attention" | "untranslated";
+  "has-value" | "translated" | "attention" | "untranslated" | "issues";
 
 export interface DashboardLastExport {
   /** Real current-session export label, for example "Last export · Sample". */
@@ -129,7 +129,7 @@ export function Dashboard({
       return rows;
     })
     .sort((a, b) => b.count - a.count)
-    .slice(0, 4);
+    .slice(0, 3);
   const recent = withKeys
     .filter((mod) => lastOpened[mod.uniqueId] != null)
     .sort((a, b) => lastOpened[b.uniqueId] - lastOpened[a.uniqueId])
@@ -406,7 +406,7 @@ export function Dashboard({
           <div className="stv3-section-head">
             <h2 className="stv3-heading">Needs attention</h2>
             <div className="stv3-kicker">
-              Top real Changed and Review queues · unresolved issues unavailable
+              Top real queues · per-mod unresolved issue counts unavailable
             </div>
           </div>
           <div className="stv3-attention-list">
@@ -454,6 +454,21 @@ export function Dashboard({
                 <span aria-hidden="true">—</span>
               </div>
             )}
+            <button
+              className="stv3-attention-row"
+              type="button"
+              onClick={() => openFilter("issues")}
+            >
+              <span>
+                <span className="stv3-row-title">
+                  Unresolved issues · Unavailable
+                </span>
+                <span className="stv3-row-meta">
+                  Per-mod unresolved issue counts are unavailable
+                </span>
+              </span>
+              <span aria-hidden="true">→</span>
+            </button>
             <button
               className="stv3-attention-row"
               type="button"

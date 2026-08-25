@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 import { ScanDialog } from "./ScanDialog";
 import type { ScanResult } from "../tauri/commands";
@@ -51,6 +51,53 @@ describe("ScanDialog", () => {
     expect(
       screen.getByRole("button", { name: /Review changed sources/ }),
     ).toBeDisabled();
+  });
+
+  it("focuses the real diagnostic block when opened from the skipped control", async () => {
+    render(
+      <ScanDialog
+        scanning={false}
+        result={RESULT}
+        error={null}
+        focusDiagnostics
+        onClose={() => {}}
+      />,
+    );
+
+    const diagnostics = screen
+      .getByText(/1 scanner warning was reported/)
+      .closest(".stv3-flow-callout");
+    await waitFor(() => expect(diagnostics).toHaveFocus());
+  });
+
+  it("distinguishes a retained scan result from a newly completed scan", () => {
+    render(
+      <ScanDialog
+        scanning={false}
+        result={RESULT}
+        error={null}
+        retainedResult
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Latest scan")).toBeInTheDocument();
+    expect(screen.queryByText("Scan completed")).toBeNull();
+  });
+
+  it("labels a missing scan result as unavailable instead of retained", () => {
+    render(
+      <ScanDialog
+        scanning={false}
+        result={null}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("Scan unavailable")).toBeInTheDocument();
+    expect(screen.getByText("Scan result unavailable.")).toBeInTheDocument();
+    expect(screen.queryByText("Latest scan")).toBeNull();
   });
 
   it("shows the error message on failure", () => {

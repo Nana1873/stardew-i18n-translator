@@ -102,6 +102,12 @@ describe("Dashboard", () => {
 
     fireEvent.click(hasText);
     expect(filter).toHaveBeenCalledWith("has-value");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /Unresolved issues · Unavailable/,
+      }),
+    );
+    expect(filter).toHaveBeenCalledWith("issues");
     fireEvent.click(screen.getByRole("button", { name: "Show in folder" }));
     expect(lastExport).toHaveBeenCalledOnce();
     fireEvent.click(screen.getByRole("button", { name: /Latest scan:/ }));

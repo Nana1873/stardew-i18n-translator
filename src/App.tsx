@@ -189,6 +189,8 @@ export function App() {
   const [scanError, setScanError] = useState<string | null>(null);
   const [lastScanAt, setLastScanAt] = useState<number | null>(null);
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
+  const [scanDiagnosticsFocus, setScanDiagnosticsFocus] = useState(false);
+  const [scanDialogRetained, setScanDialogRetained] = useState(false);
   const scanDismissedRef = useRef(false);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
@@ -249,6 +251,7 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<StringTableFilter>("all");
   const [stringScope, setStringScope] = useState<"mod" | "all">("mod");
   const [issuesOnly, setIssuesOnly] = useState(false);
+  const [issuesFocusPending, setIssuesFocusPending] = useState(false);
   const [attentionOnly, setAttentionOnly] = useState(false);
   const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
 
@@ -440,6 +443,8 @@ export function App() {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
     setScanning(true);
     scanDismissedRef.current = false;
+    setScanDiagnosticsFocus(false);
+    setScanDialogRetained(false);
     setScanError(null);
     setSelectedModId(null);
     if (options.clearExisting) setScan(null);
@@ -558,6 +563,7 @@ export function App() {
 
   /** Open a mod in the work view and remember it for the resume cards. */
   function openMod(uniqueId: string) {
+    setIssuesFocusPending(false);
     setSelectedModId(uniqueId);
     setStringScope("mod");
     setView("work");
@@ -585,10 +591,11 @@ export function App() {
 
   function openOverviewFilter(filter: OverviewFilter) {
     setSearch("");
-    setIssuesOnly(false);
+    setIssuesOnly(filter === "issues");
+    setIssuesFocusPending(filter === "issues");
     setAttentionOnly(filter === "attention");
     setStatusFilter(
-      filter === "attention"
+      filter === "attention" || filter === "issues"
         ? "all"
         : filter === "has-value"
           ? "has-value"
@@ -596,6 +603,15 @@ export function App() {
     );
     setStringScope("all");
     setView("work");
+  }
+
+  function openLatestScan(focusDiagnostics = false) {
+    const canFocusDiagnostics = Boolean(
+      focusDiagnostics && scan && !scanning && !scanError,
+    );
+    setScanDialogRetained(Boolean(scan && !scanning && !scanError));
+    setScanDiagnosticsFocus(canFocusDiagnostics);
+    setScanDialogOpen(true);
   }
 
   /** Keep the mod list / header counts fresh after edits (no rescan needed).
@@ -1157,7 +1173,10 @@ export function App() {
 
   function inspectResultProblem(problem: ResultProblem) {
     if (problem.modUniqueId) openMod(problem.modUniqueId);
-    else setView("work");
+    else {
+      setIssuesFocusPending(false);
+      setView("work");
+    }
     setStatusFilter("all");
     setSearch(problem.key);
     setResultHidden(true);
@@ -1370,8 +1389,14 @@ export function App() {
       <div className="stv3-window">
         <V3Toolbar
           activeView={view === "work" ? "workspace" : "overview"}
-          onWorkspace={() => setView("work")}
-          onOverview={() => setView("home")}
+          onWorkspace={() => {
+            setIssuesFocusPending(false);
+            setView("work");
+          }}
+          onOverview={() => {
+            setIssuesFocusPending(false);
+            setView("home");
+          }}
           onScan={handleScan}
           scanEnabled={configured && !scanning}
           scanning={scanning}
@@ -1418,11 +1443,12 @@ export function App() {
               scanEnabled={configured && !scanning}
               onOpenMod={openMod}
               onOpenAttention={openAttention}
-              onBrowse={() => setView("work")}
+              onBrowse={() => {
+                setIssuesFocusPending(false);
+                setView("work");
+              }}
               lastOpened={lastOpened}
-              onShowScanDetails={
-                scan ? () => setScanDialogOpen(true) : undefined
-              }
+              onShowScanDetails={scan ? () => openLatestScan(false) : undefined}
               onOpenOverviewFilter={openOverviewFilter}
               lastExport={lastSuccessfulExport}
               onShowLastExport={
@@ -1455,28 +1481,52 @@ export function App() {
                 <div className="panel__header stv3-pane-title">
                   <div>
                     <span>Mods{scan ? ` · ${scan.modCount}` : ""}</span>
-                    {scan &&
-                      (inProgressMods > 0 || scan.warnings.length > 0) && (
-                        <span className="panel__header-meta">
-                          {inProgressMods > 0 && (
+                    {configured && (
+                      <span className="panel__header-meta">
+                        {scan && inProgressMods > 0 && (
+                          <>
                             <span className="panel__header-tail">
                               {inProgressMods} in progress
                             </span>
-                          )}
-                          {scan.warnings.length > 0 && (
+                            <span
+                              className="panel__header-tail"
+                              aria-hidden="true"
+                            >
+                              ·
+                            </span>
+                          </>
+                        )}
+                        <button
+                          className="panel__header-tail stv3-kicker-action"
+                          type="button"
+                          aria-label="Skipped components unavailable; open scan diagnostics"
+                          title="Structured skipped-component count unavailable; open scan diagnostics"
+                          onClick={() => openLatestScan(true)}
+                        >
+                          Skipped · Unavailable
+                        </button>
+                        {scan && scan.warnings.length > 0 && (
+                          <>
+                            <span
+                              className="panel__header-tail"
+                              aria-hidden="true"
+                            >
+                              ·
+                            </span>
                             <button
                               className="panel__warn stv3-kicker-action"
                               type="button"
-                              onClick={() => setScanDialogOpen(true)}
+                              onClick={() => openLatestScan(true)}
                             >
                               {scan.warnings.length}{" "}
                               {scan.warnings.length === 1
                                 ? "warning"
                                 : "warnings"}
                             </button>
-                          )}
-                        </span>
-                      )}
+                          </>
+                        )}
+                      </span>
+                    )}
                   </div>
                   <div className="stv3-pane-title-actions">
                     <button
@@ -1550,7 +1600,12 @@ export function App() {
                   statusFilter={statusFilter}
                   onStatusFilterChange={setStatusFilter}
                   issuesOnly={issuesOnly}
-                  onIssuesOnlyChange={setIssuesOnly}
+                  onIssuesOnlyChange={(value) => {
+                    setIssuesOnly(value);
+                    if (!value) setIssuesFocusPending(false);
+                  }}
+                  focusIssuesFilter={issuesFocusPending}
+                  onIssuesFilterFocused={() => setIssuesFocusPending(false)}
                   attentionOnly={attentionOnly}
                   onAttentionOnlyChange={setAttentionOnly}
                   showAttentionFilter={stringScope === "all"}
@@ -1570,6 +1625,7 @@ export function App() {
                     setSearch("");
                     setStatusFilter("all");
                     setIssuesOnly(false);
+                    setIssuesFocusPending(false);
                     setAttentionOnly(false);
                   }}
                   onBulkApplied={handleBulkApplied}
@@ -1618,8 +1674,12 @@ export function App() {
             scanning={scanning}
             result={scan}
             error={scanError}
+            focusDiagnostics={scanDiagnosticsFocus}
+            retainedResult={scanDialogRetained}
             onClose={() => {
               scanDismissedRef.current = true;
+              setScanDiagnosticsFocus(false);
+              setScanDialogRetained(false);
               setScanDialogOpen(false);
             }}
           />
@@ -1661,6 +1721,7 @@ export function App() {
                     setIssuesOnly(false);
                     setAttentionOnly(false);
                     setStringScope("mod");
+                    setIssuesFocusPending(false);
                     setView("work");
                     setResultHidden(true);
                     window.requestAnimationFrame(() => {

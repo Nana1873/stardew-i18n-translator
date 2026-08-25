@@ -163,6 +163,9 @@ export interface StringTableProps {
   onStatusFilterChange?: (value: StringTableFilter) => void;
   issuesOnly?: boolean;
   onIssuesOnlyChange?: (value: boolean) => void;
+  /** Pending one-shot focus handoff after a routed issue queue opens. */
+  focusIssuesFilter?: boolean;
+  onIssuesFilterFocused?: () => void;
   attentionOnly?: boolean;
   onAttentionOnlyChange?: (value: boolean) => void;
   showAttentionFilter?: boolean;
@@ -446,6 +449,8 @@ export function StringTable({
   onStatusFilterChange,
   issuesOnly,
   onIssuesOnlyChange,
+  focusIssuesFilter = false,
+  onIssuesFilterFocused,
   attentionOnly,
   onAttentionOnlyChange,
   showAttentionFilter = false,
@@ -514,6 +519,8 @@ export function StringTable({
   const parentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
+  const issuesFilterRef = useRef<HTMLButtonElement>(null);
+  const previousLoadedIssueCount = useRef<number | null>(null);
   const rowFocusActive = useRef(false);
   const rowsRef = useRef<Row[] | null>(null);
   const contextMenuRef = useRef<HTMLUListElement>(null);
@@ -680,11 +687,35 @@ export function StringTable({
   ]);
 
   useEffect(() => {
-    if (issueCount === 0 && effectiveIssuesOnly) setIssuesValue(false);
-    // `setIssuesValue` deliberately routes through the controlled callback
-    // when App owns the filter.
+    if (rows == null) {
+      previousLoadedIssueCount.current = null;
+      return;
+    }
+    const previous = previousLoadedIssueCount.current;
+    previousLoadedIssueCount.current = issueCount;
+    if (
+      previous != null &&
+      previous > 0 &&
+      issueCount === 0 &&
+      effectiveIssuesOnly
+    ) {
+      setIssuesValue(false);
+    }
+    // Only clear after the final real issue was resolved. A routed empty queue
+    // remains visible as `Has issues 0` instead of silently becoming `All`.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [issueCount, effectiveIssuesOnly]);
+  }, [rows, issueCount, effectiveIssuesOnly]);
+
+  useEffect(() => {
+    if (!focusIssuesFilter || rows == null) return;
+    const frame = window.requestAnimationFrame(() => {
+      const filter = issuesFilterRef.current;
+      if (!filter) return;
+      filter.focus();
+      onIssuesFilterFocused?.();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusIssuesFilter, rows, issueCount, onIssuesFilterFocused]);
 
   const visibleIdentitySignature = visible
     .map((entry) => entry.identity)
@@ -1771,7 +1802,7 @@ export function StringTable({
             <span>
               {effectiveSearch.trim()
                 ? `Search preview: ${visible.length} matching rows · ${data.length} strings in ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                : `${visible.length} of ${data.length} strings · ${effectiveAttentionOnly ? "Attention" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
+                : `${visible.length} of ${data.length} strings · ${effectiveIssuesOnly ? "Has issues" : effectiveAttentionOnly ? "Attention" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
             </span>
             {(effectiveSearch.trim() ||
               effectiveStatus !== "all" ||
@@ -1833,7 +1864,7 @@ export function StringTable({
               </button>
             ))}
           </span>
-          {issueCount > 0 && (
+          {(issueCount > 0 || effectiveIssuesOnly) && (
             <>
               <span
                 className="stv3-filter-separator"
@@ -1841,6 +1872,7 @@ export function StringTable({
                 aria-orientation="vertical"
               />
               <button
+                ref={issuesFilterRef}
                 className="stv3-filter stv3-issue-filter"
                 type="button"
                 aria-pressed={effectiveIssuesOnly}
