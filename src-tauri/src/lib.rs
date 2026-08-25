@@ -294,6 +294,26 @@ struct LlmExportOutcome {
     string_count: usize,
 }
 
+fn write_llm_batch(
+    destination: &Path,
+    mod_unique_id: &str,
+    target_lang: &str,
+    items: &[batch::BatchExportItem],
+) -> Result<LlmExportOutcome, String> {
+    let batch_json = batch::build_batch(mod_unique_id, target_lang, items);
+    let mut body = serde_json::to_string_pretty(&batch_json)
+        .map_err(|error| format!("Could not serialize the batch: {error}"))?;
+    body.push('\n');
+    ensure_llm_batch_json_size(body.len() as u64)?;
+    std::fs::write(destination, body.as_bytes())
+        .map_err(|error| format!("Could not write {}: {error}", destination.display()))?;
+
+    Ok(LlmExportOutcome {
+        path: destination.display().to_string(),
+        string_count: items.len(),
+    })
+}
+
 /// Write the selected strings as an external LLM translation batch
 /// (SPEC §11). Opens a save dialog and writes the minimal format-2
 /// binding plus the selected source strings.
@@ -318,18 +338,44 @@ fn export_llm_batch(
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
 
-    let batch_json = batch::build_batch(&mod_unique_id, &target_lang, &items);
-    let mut body = serde_json::to_string_pretty(&batch_json)
-        .map_err(|error| format!("Could not serialize the batch: {error}"))?;
-    body.push('\n');
-    ensure_llm_batch_json_size(body.len() as u64)?;
-    std::fs::write(&dest, body.as_bytes())
-        .map_err(|error| format!("Could not write {}: {error}", dest.display()))?;
+    write_llm_batch(&dest, &mod_unique_id, &target_lang, &items).map(Some)
+}
 
-    Ok(Some(LlmExportOutcome {
-        path: dest.display().to_string(),
-        string_count: items.len(),
-    }))
+/// Choose an LLM batch destination without writing anything. The caller can
+/// show or change this path before explicitly invoking
+/// `export_llm_batch_to_path`.
+#[tauri::command]
+fn pick_llm_batch_destination(
+    app: AppHandle,
+    suggested_file_name: String,
+) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export LLM translation batch")
+        .set_file_name(suggested_file_name)
+        .add_filter("JSON", &["json"])
+        .blocking_save_file();
+    match picked {
+        Some(file) => file
+            .into_path()
+            .map(|path| Some(path.display().to_string()))
+            .map_err(|error| format!("Could not read the selected path: {error}")),
+        None => Ok(None),
+    }
+}
+
+/// Write the minimal format-2 LLM batch to a destination the user already
+/// selected with `pick_llm_batch_destination`.
+#[tauri::command]
+fn export_llm_batch_to_path(
+    app: AppHandle,
+    mod_unique_id: String,
+    items: Vec<batch::BatchExportItem>,
+    path: String,
+) -> Result<LlmExportOutcome, String> {
+    let target_lang = active_target_lang(&app)?;
+    write_llm_batch(Path::new(&path), &mod_unique_id, &target_lang, &items)
 }
 
 fn ensure_llm_batch_json_size(byte_len: u64) -> Result<(), String> {
@@ -808,6 +854,8 @@ pub fn run() {
             pick_translation_zip_destination,
             build_translation_zip,
             export_llm_batch,
+            pick_llm_batch_destination,
+            export_llm_batch_to_path,
             import_llm_batch,
             pick_llm_batch_file,
             import_llm_batch_path,
@@ -986,5 +1034,28 @@ mod json_output_limit_tests {
         let error = ensure_llm_batch_json_size(input_limits::MAX_JSON_BYTES + 1).unwrap_err();
         assert!(error.contains("LLM batch JSON"));
         assert!(error.contains("64 MiB"));
+    }
+
+    #[test]
+    fn llm_batch_writer_uses_the_existing_format_at_the_selected_path() {
+        let root = test_support::temp_dir("llm-batch-write");
+        std::fs::create_dir_all(&root).unwrap();
+        let destination = root.join("selected.json");
+        let items = vec![batch::BatchExportItem {
+            relative_dir: "i18n".to_string(),
+            key: "hello".to_string(),
+            source: "Hello {{name}}".to_string(),
+        }];
+
+        let outcome = write_llm_batch(&destination, "Author.Mod", "de", &items).unwrap();
+
+        assert_eq!(outcome.path, destination.display().to_string());
+        assert_eq!(outcome.string_count, 1);
+        let body = std::fs::read_to_string(&destination).unwrap();
+        assert!(body.ends_with('\n'));
+        let written: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(written, batch::build_batch("Author.Mod", "de", &items));
+
+        std::fs::remove_dir_all(root).ok();
     }
 }

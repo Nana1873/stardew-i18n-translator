@@ -160,7 +160,9 @@ export function saveString(
   const storedStatus =
     tokenMismatchAccepted && status === "translated"
       ? "translated-token-mismatch-accepted"
-      : status;
+      : tokenMismatchAccepted && status === "review-needed"
+        ? "review-needed-token-mismatch-accepted"
+        : status;
   return invoke<void>("save_string", {
     modUniqueId,
     relativeDir,
@@ -175,7 +177,10 @@ export interface SaveStringEntry {
   relativeDir: string;
   key: string;
   target: string;
-  status: StringStatus;
+  status:
+    | StringStatus
+    | "translated-token-mismatch-accepted"
+    | "review-needed-token-mismatch-accepted";
   source: string;
 }
 
@@ -271,7 +276,9 @@ export interface ExportAllResult {
   blocked: boolean;
 }
 
-export function exportAllMods(mods: ExportModInput[]): Promise<ExportAllResult> {
+export function exportAllMods(
+  mods: ExportModInput[],
+): Promise<ExportAllResult> {
   return invoke<ExportAllResult>("export_all_mods", { mods });
 }
 
@@ -394,6 +401,28 @@ export function exportLlmBatch(
   return invoke<LlmExportOutcome | null>("export_llm_batch", {
     modUniqueId,
     items,
+  });
+}
+
+/** Choose an LLM batch destination without writing the batch yet. */
+export function pickLlmBatchDestination(
+  suggestedFileName: string,
+): Promise<string | null> {
+  return invoke<string | null>("pick_llm_batch_destination", {
+    suggestedFileName,
+  });
+}
+
+/** Write an LLM batch to a destination chosen by the user beforehand. */
+export function exportLlmBatchToPath(
+  modUniqueId: string,
+  items: LlmBatchItem[],
+  path: string,
+): Promise<LlmExportOutcome> {
+  return invoke<LlmExportOutcome>("export_llm_batch_to_path", {
+    modUniqueId,
+    items,
+    path,
   });
 }
 

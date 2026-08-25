@@ -37,6 +37,13 @@ pub struct StoredString {
 /// retaining the export waiver for the exact saved source text.
 pub const TOKEN_MISMATCH_ACCEPTED_STATUS: &str = "translated-token-mismatch-accepted";
 
+/// Stored status used when an unreviewed Local-AI suggestion has an explicitly
+/// accepted protected-token mismatch. It remains `review-needed` in the UI;
+/// the separate storage value preserves the waiver across reloads without
+/// promoting AI output to a confirmed translation.
+pub const REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS: &str =
+    "review-needed-token-mismatch-accepted";
+
 /// Per-mod state: entry key -> stored translation.
 pub type ModState = HashMap<String, StoredString>;
 

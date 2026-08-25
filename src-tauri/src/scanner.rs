@@ -510,8 +510,11 @@ pub fn load_strings_checked(
             let token_mismatch_accepted = state
                 .get(&translations::entry_key(relative_dir, key))
                 .is_some_and(|stored| {
-                    stored.status == translations::TOKEN_MISMATCH_ACCEPTED_STATUS
-                        && stored.source_hash == translations::source_hash(&source_text)
+                    matches!(
+                        stored.status.as_str(),
+                        translations::TOKEN_MISMATCH_ACCEPTED_STATUS
+                            | translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS
+                    ) && stored.source_hash == translations::source_hash(&source_text)
                 });
             StringRow {
                 key: key.clone(),
@@ -694,7 +697,9 @@ fn resolve_string(
 fn normalize_status(stored: &str) -> String {
     match stored {
         "untranslated" => "untranslated",
-        "review-needed" => "review-needed",
+        "review-needed" | translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS => {
+            "review-needed"
+        }
         _ => "translated", // done | imported | translated | outdated | not-translatable
     }
     .to_string()
@@ -1806,6 +1811,38 @@ mod tests {
 
         let rows = load_strings(&default_path, &target_path, &state, "i18n");
         assert_eq!(rows[0].status, "translated");
+        assert!(rows[0].token_mismatch_accepted);
+
+        write(&default_path, r#"{"k":"Hello again$8"}"#);
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "outdated");
+        assert!(!rows[0].token_mismatch_accepted);
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn review_needed_token_mismatch_acceptance_survives_only_the_saved_source_revision() {
+        let root = crate::test_support::temp_dir("accepted-review-token-revision");
+        let i18n = root.join("i18n");
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        write(&default_path, r#"{"k":"Hello$8"}"#);
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id").unwrap();
+
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "review-needed");
         assert!(rows[0].token_mismatch_accepted);
 
         write(&default_path, r#"{"k":"Hello again$8"}"#);
