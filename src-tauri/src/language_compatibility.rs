@@ -194,6 +194,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             llm: None,
             shortcuts: BTreeMap::new(),
             last_opened: BTreeMap::new(),
+            workspace: crate::settings::WorkspaceSettings::default(),
         };
         settings::save(&config, &settings_value).unwrap();
         assert_eq!(

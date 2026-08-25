@@ -22,6 +22,45 @@ export interface LlmSettings {
   temperature?: number | null;
 }
 
+export type WorkspaceSortColumn =
+  | "mod"
+  | "file"
+  | "status"
+  | "key"
+  | "source"
+  | "target";
+
+export interface WorkspaceSort {
+  column: WorkspaceSortColumn;
+  direction: "asc" | "desc";
+}
+
+export interface WorkspaceColumnWidths {
+  mod?: number;
+  file?: number;
+  key?: number;
+  source?: number;
+  target?: number;
+}
+
+export interface WorkspaceSettings {
+  selectedModId?: string | null;
+  modSearch: string;
+  stringSearch: string;
+  stringScope: "mod" | "all";
+  statusFilter:
+    | "all"
+    | "untranslated"
+    | "translated"
+    | "outdated"
+    | "review-needed"
+    | "has-value";
+  issuesOnly: boolean;
+  sort?: WorkspaceSort | null;
+  modPaneWidth?: number | null;
+  columnWidths: WorkspaceColumnWidths;
+}
+
 export interface AppSettings {
   stardewPath: string | null;
   modsPath: string | null;
@@ -33,6 +72,8 @@ export interface AppSettings {
   shortcuts?: ShortcutSettings;
   /** Dashboard resume history stored in portable settings. */
   lastOpened?: Record<string, number>;
+  /** Stable, portable workspace preferences. Session selection/undo are excluded. */
+  workspace?: WorkspaceSettings;
   /** Whether rotating local diagnostic logs are written. Defaults to true. */
   diagnosticLogging?: boolean;
 }

@@ -44,6 +44,11 @@ pub struct AppSettings {
     /// with the rest of the application state.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub last_opened: BTreeMap<String, u64>,
+    /// Portable workbench state. It stores only stable identifiers and view
+    /// preferences; selections, drafts, dialogs, results, and undo snapshots
+    /// intentionally remain session-only.
+    #[serde(default, skip_serializing_if = "WorkspaceSettings::is_default")]
+    pub workspace: WorkspaceSettings,
     /// Local diagnostic log files are enabled by default. This never controls
     /// telemetry or network reporting; those do not exist.
     #[serde(default = "default_diagnostic_logging")]
@@ -70,12 +75,95 @@ pub struct LlmSettings {
     pub temperature: Option<f32>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSort {
+    #[serde(default)]
+    pub column: String,
+    #[serde(default)]
+    pub direction: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceColumnWidths {
+    #[serde(default, rename = "mod", skip_serializing_if = "Option::is_none")]
+    pub mod_column: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<u16>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSettings {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selected_mod_id: Option<String>,
+    #[serde(default)]
+    pub mod_search: String,
+    #[serde(default)]
+    pub string_search: String,
+    #[serde(default = "default_string_scope")]
+    pub string_scope: String,
+    #[serde(default = "default_status_filter")]
+    pub status_filter: String,
+    #[serde(default)]
+    pub issues_only: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sort: Option<WorkspaceSort>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mod_pane_width: Option<u16>,
+    #[serde(default, skip_serializing_if = "WorkspaceColumnWidths::is_default")]
+    pub column_widths: WorkspaceColumnWidths,
+}
+
+impl WorkspaceColumnWidths {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl WorkspaceSettings {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl Default for WorkspaceSettings {
+    fn default() -> Self {
+        Self {
+            selected_mod_id: None,
+            mod_search: String::new(),
+            string_search: String::new(),
+            string_scope: default_string_scope(),
+            status_filter: default_status_filter(),
+            issues_only: false,
+            sort: None,
+            mod_pane_width: None,
+            column_widths: WorkspaceColumnWidths::default(),
+        }
+    }
+}
+
 fn default_source_lang() -> String {
     "default".to_string()
 }
 
 fn default_diagnostic_logging() -> bool {
     true
+}
+
+fn default_string_scope() -> String {
+    "mod".to_string()
+}
+
+fn default_status_filter() -> String {
+    "all".to_string()
 }
 
 impl Default for AppSettings {
@@ -88,6 +176,7 @@ impl Default for AppSettings {
             llm: None,
             shortcuts: BTreeMap::new(),
             last_opened: BTreeMap::new(),
+            workspace: WorkspaceSettings::default(),
             diagnostic_logging: true,
         }
     }
@@ -224,7 +313,55 @@ fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSetting
             crate::llm::validate_base_url(&llm.base_url)?;
         }
     }
+    settings.workspace = normalize_workspace(settings.workspace);
     Ok(settings)
+}
+
+fn normalize_workspace(mut workspace: WorkspaceSettings) -> WorkspaceSettings {
+    if workspace
+        .selected_mod_id
+        .as_deref()
+        .is_some_and(|value| value.trim().is_empty())
+    {
+        workspace.selected_mod_id = None;
+    }
+    if !matches!(workspace.string_scope.as_str(), "mod" | "all") {
+        workspace.string_scope = default_string_scope();
+    }
+    if !matches!(
+        workspace.status_filter.as_str(),
+        "all" | "untranslated" | "translated" | "outdated" | "review-needed" | "has-value"
+    ) {
+        workspace.status_filter = default_status_filter();
+    }
+    workspace.sort = workspace.sort.filter(|sort| {
+        matches!(
+            sort.column.as_str(),
+            "mod" | "file" | "status" | "key" | "source" | "target"
+        ) && matches!(sort.direction.as_str(), "asc" | "desc")
+    });
+    workspace.mod_pane_width = workspace.mod_pane_width.map(|value| value.clamp(260, 520));
+    workspace.column_widths.mod_column = workspace
+        .column_widths
+        .mod_column
+        .map(|value| value.clamp(100, 420));
+    workspace.column_widths.file = workspace
+        .column_widths
+        .file
+        .map(|value| value.clamp(80, 320));
+    workspace.column_widths.key = workspace
+        .column_widths
+        .key
+        .map(|value| value.clamp(140, 480));
+    workspace.column_widths.source = workspace
+        .column_widths
+        .source
+        .map(|value| value.clamp(220, 720));
+    workspace.column_widths.target = workspace
+        .column_widths
+        .target
+        .map(|value| value.clamp(180, 1_600));
+    workspace
 }
 
 #[cfg(test)]
@@ -257,10 +394,34 @@ mod tests {
                 "Pathoschild.ContentPatcher".to_string(),
                 1_722_000_000_000,
             )]),
+            workspace: WorkspaceSettings {
+                selected_mod_id: Some("Pathoschild.ContentPatcher".to_string()),
+                mod_search: "content".to_string(),
+                string_search: "config".to_string(),
+                string_scope: "all".to_string(),
+                status_filter: "review-needed".to_string(),
+                issues_only: true,
+                sort: Some(WorkspaceSort {
+                    column: "key".to_string(),
+                    direction: "asc".to_string(),
+                }),
+                mod_pane_width: Some(384),
+                column_widths: WorkspaceColumnWidths {
+                    mod_column: Some(140),
+                    file: Some(110),
+                    key: Some(280),
+                    source: Some(420),
+                    target: Some(520),
+                },
+            },
             diagnostic_logging: false,
         };
         save(&dir, &settings).unwrap();
         assert_eq!(load(&dir), settings);
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap()).unwrap();
+        assert_eq!(json["workspace"]["columnWidths"]["mod"], 140);
+        assert!(json["workspace"]["columnWidths"].get("modColumn").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -372,8 +533,52 @@ mod tests {
         .unwrap();
         assert!(load(&dir).shortcuts.is_empty());
         assert!(load(&dir).last_opened.is_empty());
+        assert_eq!(load(&dir).workspace, WorkspaceSettings::default());
         assert!(load(&dir).diagnostic_logging);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn invalid_workspace_values_fall_back_without_losing_other_settings() {
+        let dir = crate::test_support::temp_dir("settings-workspace-normalize");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{
+              "sourceLang":"default",
+              "targetLang":"de",
+              "workspace":{
+                "selectedModId":"   ",
+                "modSearch":"keep me",
+                "stringSearch":"also keep me",
+                "stringScope":"package",
+                "statusFilter":"attention",
+                "issuesOnly":true,
+                "sort":{"column":"unknown","direction":"sideways"},
+                "modPaneWidth":999,
+                "columnWidths":{"mod":1,"file":999,"key":1,"source":9999,"target":1}
+              }
+            }"#,
+        )
+        .unwrap();
+
+        let loaded = load_checked(&dir).unwrap();
+
+        assert_eq!(loaded.target_lang.as_deref(), Some("de"));
+        assert_eq!(loaded.workspace.selected_mod_id, None);
+        assert_eq!(loaded.workspace.mod_search, "keep me");
+        assert_eq!(loaded.workspace.string_search, "also keep me");
+        assert_eq!(loaded.workspace.string_scope, "mod");
+        assert_eq!(loaded.workspace.status_filter, "all");
+        assert!(loaded.workspace.issues_only);
+        assert_eq!(loaded.workspace.sort, None);
+        assert_eq!(loaded.workspace.mod_pane_width, Some(520));
+        assert_eq!(loaded.workspace.column_widths.mod_column, Some(100));
+        assert_eq!(loaded.workspace.column_widths.file, Some(320));
+        assert_eq!(loaded.workspace.column_widths.key, Some(140));
+        assert_eq!(loaded.workspace.column_widths.source, Some(720));
+        assert_eq!(loaded.workspace.column_widths.target, Some(180));
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
