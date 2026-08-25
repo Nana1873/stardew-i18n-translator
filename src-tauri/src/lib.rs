@@ -203,6 +203,39 @@ fn export_mod(
 }
 
 #[tauri::command]
+fn export_all_mods(
+    app: AppHandle,
+    mods: Vec<export::ExportModInput>,
+) -> Result<export::ExportAllResult, String> {
+    let config = config_dir(&app)?;
+    let settings = settings::load_checked(&config)?;
+    let mods_root = settings
+        .mods_path
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
+    let target_lang = settings
+        .target_lang
+        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
+    let target_lang = language::normalize_target_code(&target_lang)?;
+    let files = mods
+        .iter()
+        .flat_map(|request| request.files.iter().cloned())
+        .collect::<Vec<_>>();
+    // Validate in one pass so duplicate targets are rejected across mod groups,
+    // not only within each individual group.
+    export::validate_paths(&mods_root, &target_lang, &files)?;
+    let translation_config = translations::language_root(&config, &target_lang)?;
+    export::export_all_mods(&translation_config, &mods)
+        .inspect_err(|error| log::error!("export_all_mods failed: {error}"))
+}
+
+#[tauri::command]
 fn preview_translation_zip(
     app: AppHandle,
     mods_path: String,
@@ -327,6 +360,25 @@ fn import_llm_batch(
     import_llm_batch_from_path(&app, &mod_unique_id, &files, &source)
         .inspect_err(|error| log::error!("import_llm_batch({mod_unique_id}) failed: {error}"))
         .map(Some)
+}
+
+/// Pick an external LLM result without importing it. The caller can use the
+/// returned path with `import_llm_batch_path` after selecting the target mod.
+#[tauri::command]
+fn pick_llm_batch_file(app: AppHandle) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose LLM translation result")
+        .add_filter("JSON", &["json"])
+        .blocking_pick_file();
+    match picked {
+        Some(file) => file
+            .into_path()
+            .map(|path| Some(path.display().to_string()))
+            .map_err(|error| format!("Could not read the selected path: {error}")),
+        None => Ok(None),
+    }
 }
 
 fn import_llm_batch_from_path(
@@ -751,11 +803,13 @@ pub fn run() {
             save_string,
             save_strings,
             export_mod,
+            export_all_mods,
             preview_translation_zip,
             pick_translation_zip_destination,
             build_translation_zip,
             export_llm_batch,
             import_llm_batch,
+            pick_llm_batch_file,
             import_llm_batch_path,
             build_glossary,
             glossary_status,

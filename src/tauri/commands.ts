@@ -244,6 +244,37 @@ export function exportMod(
   return invoke<ExportResult>("export_mod", { modUniqueId, files });
 }
 
+export interface ExportModInput {
+  modUniqueId: string;
+  /** Display metadata only; the backend authorizes paths and state by ID. */
+  modName: string;
+  files: ExportFileInput[];
+}
+
+export interface ExportModResult {
+  modUniqueId: string;
+  modName: string;
+  result: ExportResult;
+}
+
+export interface ExportAllResult {
+  mods: ExportModResult[];
+  modsChanged: number;
+  filesWritten: number;
+  filesRemoved: number;
+  totalWrittenKeys: number;
+  totalUntranslated: number;
+  totalOutdated: number;
+  totalReviewNeeded: number;
+  totalOrphanKeys: number;
+  /** At least one mod blocked the complete transaction before any write. */
+  blocked: boolean;
+}
+
+export function exportAllMods(mods: ExportModInput[]): Promise<ExportAllResult> {
+  return invoke<ExportAllResult>("export_all_mods", { mods });
+}
+
 export interface ZipComponentInput {
   uniqueId: string;
   name: string;
@@ -390,6 +421,11 @@ export function importLlmBatch(
     modUniqueId,
     files,
   });
+}
+
+/** Pick a JSON result without importing it yet. Resolves null on cancel. */
+export function pickLlmBatchFile(): Promise<string | null> {
+  return invoke<string | null>("pick_llm_batch_file");
 }
 
 /** Import a drag-and-dropped LLM batch/result file for one selected mod. */
