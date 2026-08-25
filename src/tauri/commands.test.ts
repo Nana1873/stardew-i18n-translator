@@ -56,11 +56,7 @@ describe("V3 backend command bridges", () => {
     ];
     invokeMock.mockResolvedValue({ ready: true });
 
-    await preflightLlmBatchPath(
-      "example.mod",
-      files,
-      "C:\\Temp\\result.json",
-    );
+    await preflightLlmBatchPath("example.mod", files, "C:\\Temp\\result.json");
 
     expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
       modUniqueId: "example.mod",

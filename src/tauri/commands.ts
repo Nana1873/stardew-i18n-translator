@@ -23,12 +23,7 @@ export interface LlmSettings {
 }
 
 export type WorkspaceSortColumn =
-  | "mod"
-  | "file"
-  | "status"
-  | "key"
-  | "source"
-  | "target";
+  "mod" | "file" | "status" | "key" | "source" | "target";
 
 export interface WorkspaceSort {
   column: WorkspaceSortColumn;
