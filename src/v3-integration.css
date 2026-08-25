@@ -39,6 +39,24 @@ body {
   min-width: 0;
 }
 
+/* Keep the trailing translation handle fully inside the scrollable table. */
+#stv3-dense-demo .stv3-column-resizer--target {
+  right: 0;
+}
+
+/* At the supported desktop minimum, selection controls need their own row;
+   otherwise the non-wrapping status filters collide with the batch actions. */
+@media (max-width: 1120px) {
+  #stv3-dense-demo .stv3-string-toolbar.is-selection-active {
+    grid-template-columns: minmax(130px, 180px) minmax(0, 1fr);
+  }
+
+  #stv3-dense-demo .stv3-string-toolbar.is-selection-active > .stv3-bulk-wrap {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+}
+
 #stv3-dense-demo .stv3-mod-pane .modlist__search {
   width: auto;
   margin: 8px 10px;

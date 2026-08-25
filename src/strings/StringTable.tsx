@@ -10,6 +10,7 @@ import {
   type FocusEvent as ReactFocusEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -108,7 +109,7 @@ interface Row extends StringRow {
 }
 
 type SortCol = "mod" | "file" | "status" | "key" | "source" | "target";
-type ColumnName = "key" | "source";
+type ColumnName = Exclude<SortCol, "status">;
 
 type DisplayItem =
   | { kind: "row"; row: Row; identity: string; index: number; pos: number }
@@ -262,8 +263,11 @@ const COLUMN_LIMITS: Record<
   ColumnName,
   { min: number; max: number; initial: number }
 > = {
+  mod: { min: 100, max: 420, initial: 130 },
+  file: { min: 80, max: 320, initial: 105 },
   key: { min: 140, max: 480, initial: 250 },
   source: { min: 220, max: 720, initial: 360 },
+  target: { min: 180, max: 1_600, initial: 180 },
 };
 
 function identityOf(row: Pick<Row, "modUniqueId" | "file" | "key">): string {
@@ -525,9 +529,13 @@ export function StringTable({
   );
   const statusTooltipRef = useRef<HTMLDivElement>(null);
   const [columnWidths, setColumnWidths] = useState({
+    mod: COLUMN_LIMITS.mod.initial,
+    file: COLUMN_LIMITS.file.initial,
     key: COLUMN_LIMITS.key.initial,
     source: COLUMN_LIMITS.source.initial,
+    target: COLUMN_LIMITS.target.initial,
   });
+  const [targetColumnSized, setTargetColumnSized] = useState(false);
 
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -1610,21 +1618,43 @@ export function StringTable({
 
   function startColumnResize(
     column: ColumnName,
-    event: ReactMouseEvent<HTMLSpanElement>,
+    event: ReactPointerEvent<HTMLSpanElement>,
   ) {
+    if (event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
     hideStatusHelp();
+    const handle = event.currentTarget;
+    const pointerId = event.pointerId;
     const startX = event.clientX;
-    const startWidth = columnWidths[column];
-    const move = (moveEvent: MouseEvent) =>
+    const measuredWidth = handle.parentElement?.getBoundingClientRect().width;
+    const startWidth =
+      column === "target" && measuredWidth && measuredWidth > 0
+        ? Math.round(measuredWidth)
+        : columnWidths[column];
+    if (column === "target" && !targetColumnSized) {
+      adjustColumn(column, startWidth);
+      setTargetColumnSized(true);
+    }
+    handle.classList.add("is-dragging");
+    handle.setPointerCapture?.(pointerId);
+    const move = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       adjustColumn(column, startWidth + moveEvent.clientX - startX);
-    const finish = () => {
-      window.removeEventListener("mousemove", move);
-      window.removeEventListener("mouseup", finish);
     };
-    window.addEventListener("mousemove", move);
-    window.addEventListener("mouseup", finish);
+    const finish = (finishEvent: PointerEvent) => {
+      if (finishEvent.pointerId !== pointerId) return;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", finish);
+      window.removeEventListener("pointercancel", finish);
+      handle.classList.remove("is-dragging");
+      if (handle.hasPointerCapture?.(pointerId)) {
+        handle.releasePointerCapture(pointerId);
+      }
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", finish);
+    window.addEventListener("pointercancel", finish);
   }
 
   function onColumnResizeKeyDown(
@@ -1634,10 +1664,14 @@ export function StringTable({
     hideStatusHelp();
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
-    adjustColumn(
-      column,
-      columnWidths[column] + (event.key === "ArrowRight" ? 16 : -16),
-    );
+    const measuredWidth =
+      event.currentTarget.parentElement?.getBoundingClientRect().width;
+    const startWidth =
+      column === "target" && measuredWidth && measuredWidth > 0
+        ? Math.round(measuredWidth)
+        : columnWidths[column];
+    if (column === "target") setTargetColumnSized(true);
+    adjustColumn(column, startWidth + (event.key === "ArrowRight" ? 16 : -16));
   }
 
   const showModColumn = effectiveScope === "all";
@@ -1647,21 +1681,23 @@ export function StringTable({
       : (mod?.i18nFiles.length ?? 0) > 1;
   const gridTemplateColumns = [
     "34px",
-    ...(showModColumn ? ["minmax(130px, 18%)"] : []),
-    ...(showFileColumn ? ["minmax(105px, 14%)"] : []),
+    ...(showModColumn ? [String(columnWidths.mod) + "px"] : []),
+    ...(showFileColumn ? [String(columnWidths.file) + "px"] : []),
     "102px",
     String(columnWidths.key) + "px",
     String(columnWidths.source) + "px",
-    "minmax(180px, 1fr)",
+    ...(targetColumnSized
+      ? [String(columnWidths.target) + "px", "minmax(0, 1fr)"]
+      : ["minmax(" + String(columnWidths.target) + "px, 1fr)"]),
   ].join(" ");
   const tableMinWidth =
     34 +
-    (showModColumn ? 130 : 0) +
-    (showFileColumn ? 105 : 0) +
+    (showModColumn ? columnWidths.mod : 0) +
+    (showFileColumn ? columnWidths.file : 0) +
     102 +
     columnWidths.key +
     columnWidths.source +
-    180;
+    columnWidths.target;
   const effectiveHeaderTitle =
     headerTitle ??
     (effectiveScope === "all"
@@ -1704,6 +1740,16 @@ export function StringTable({
   const translationColumnLabel = targetLanguageLabel
     ? targetLanguageLabel.split(" (")[0] + " translation"
     : "Translation";
+  const resizerFor = (column: ColumnName, ariaLabel: string) => (
+    <ColumnResizer
+      column={column}
+      value={columnWidths[column]}
+      ariaLabel={ariaLabel}
+      measureRenderedWidth={column === "target" && !targetColumnSized}
+      onPointerDown={(event) => startColumnResize(column, event)}
+      onKeyDown={(event) => onColumnResizeKeyDown(column, event)}
+    />
+  );
 
   if (rows === null) {
     return (
@@ -1828,7 +1874,12 @@ export function StringTable({
         </div>
       </div>
 
-      <div className="stv3-string-toolbar">
+      <div
+        className={
+          "stv3-string-toolbar" +
+          (selection.size > 0 ? " is-selection-active" : "")
+        }
+      >
         <div className="stv3-string-search-line">
           <input
             ref={searchRef}
@@ -2120,6 +2171,7 @@ export function StringTable({
                   col="mod"
                   sort={sort}
                   onSort={toggleSort}
+                  resizer={resizerFor("mod", "Resize mod column")}
                 />
               )}
               {showFileColumn && (
@@ -2128,6 +2180,7 @@ export function StringTable({
                   col="file"
                   sort={sort}
                   onSort={toggleSort}
+                  resizer={resizerFor("file", "Resize file column")}
                 />
               )}
               <SortHeader
@@ -2141,36 +2194,26 @@ export function StringTable({
                 col="key"
                 sort={sort}
                 onSort={toggleSort}
-                resizer={
-                  <ColumnResizer
-                    column="key"
-                    value={columnWidths.key}
-                    onMouseDown={(event) => startColumnResize("key", event)}
-                    onKeyDown={(event) => onColumnResizeKeyDown("key", event)}
-                  />
-                }
+                resizer={resizerFor("key", "Resize key column")}
               />
               <SortHeader
                 label="English source"
                 col="source"
                 sort={sort}
                 onSort={toggleSort}
-                resizer={
-                  <ColumnResizer
-                    column="source"
-                    value={columnWidths.source}
-                    onMouseDown={(event) => startColumnResize("source", event)}
-                    onKeyDown={(event) =>
-                      onColumnResizeKeyDown("source", event)
-                    }
-                  />
-                }
+                resizer={resizerFor("source", "Resize English source column")}
               />
               <SortHeader
                 label={translationColumnLabel}
                 col="target"
                 sort={sort}
                 onSort={toggleSort}
+                resizer={resizerFor(
+                  "target",
+                  translationColumnLabel === "Translation"
+                    ? "Resize translation column"
+                    : `Resize ${translationColumnLabel} column`,
+                )}
               />
             </div>
 
@@ -2573,33 +2616,65 @@ function MenuSeparator({ listItem }: { listItem: boolean }) {
 function ColumnResizer({
   column,
   value,
-  onMouseDown,
+  ariaLabel,
+  measureRenderedWidth,
+  onPointerDown,
   onKeyDown,
 }: {
   column: ColumnName;
   value: number;
-  onMouseDown: (event: ReactMouseEvent<HTMLSpanElement>) => void;
+  ariaLabel: string;
+  measureRenderedWidth: boolean;
+  onPointerDown: (event: ReactPointerEvent<HTMLSpanElement>) => void;
   onKeyDown: (event: ReactKeyboardEvent<HTMLSpanElement>) => void;
 }) {
   const limits = COLUMN_LIMITS[column];
+  const handleRef = useRef<HTMLSpanElement>(null);
+  const [renderedValue, setRenderedValue] = useState(value);
+
+  useLayoutEffect(() => {
+    if (!measureRenderedWidth) {
+      setRenderedValue(value);
+      return;
+    }
+    const header = handleRef.current?.parentElement;
+    if (!header) return;
+    const measure = () => {
+      const width = Math.round(header.getBoundingClientRect().width);
+      setRenderedValue(
+        width > 0 ? Math.min(limits.max, Math.max(limits.min, width)) : value,
+      );
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(header);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer?.disconnect();
+    };
+  }, [limits.max, limits.min, measureRenderedWidth, value]);
+
   return (
     <span
-      className="stv3-column-resizer"
-      role="separator"
-      aria-label={
-        column === "key" ? "Resize key column" : "Resize English source column"
+      ref={handleRef}
+      className={
+        "stv3-column-resizer" +
+        (column === "target" ? " stv3-column-resizer--target" : "")
       }
+      role="separator"
+      aria-label={ariaLabel}
       aria-orientation="vertical"
       aria-valuemin={limits.min}
       aria-valuemax={limits.max}
-      aria-valuenow={value}
+      aria-valuenow={renderedValue}
       tabIndex={0}
-      onMouseDown={onMouseDown}
+      onPointerDown={onPointerDown}
       onKeyDown={onKeyDown}
-      onDoubleClick={() => {
-        // Keyboard Home/End and drag are the accepted interactions. The
-        // no-op double click prevents a text-selection side effect.
-      }}
+      onDoubleClick={(event) => event.preventDefault()}
     />
   );
 }

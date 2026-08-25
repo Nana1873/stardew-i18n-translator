@@ -48,4 +48,13 @@ describe("CSS custom properties", () => {
       /#stv3-dense-demo \.stv3-table-wrap\s*{[^}]*min-width:\s*0;[^}]*overflow-x:\s*auto;/s,
     );
   });
+
+  it("gives active batch controls a separate row at the desktop minimum", () => {
+    expect(integrationStyles).toMatch(
+      /@media \(max-width: 1120px\)[\s\S]*\.stv3-string-toolbar\.is-selection-active\s*{[^}]*grid-template-columns:\s*minmax\(130px, 180px\) minmax\(0, 1fr\);/,
+    );
+    expect(integrationStyles).toMatch(
+      /\.stv3-string-toolbar\.is-selection-active > \.stv3-bulk-wrap\s*{[^}]*grid-column:\s*1 \/ -1;/s,
+    );
+  });
 });

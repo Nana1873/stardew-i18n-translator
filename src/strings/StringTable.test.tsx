@@ -194,7 +194,41 @@ describe("StringTable V3 workbench", () => {
     expect(
       screen.getByRole("columnheader", { name: /German translation/ }),
     ).toBeVisible();
+    expect(
+      screen.queryByRole("separator", { name: "Resize mod column" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize file column" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize status column" }),
+    ).not.toBeInTheDocument();
+    for (const name of [
+      "Resize key column",
+      "Resize English source column",
+      "Resize German translation column",
+    ]) {
+      expect(screen.getByRole("separator", { name })).toBeVisible();
+    }
     expect(container.querySelector(".stv3-table-foot")).toBeNull();
+  });
+
+  it("marks the compact toolbar while batch selection controls are visible", async () => {
+    const { container } = render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    const toolbar = container.querySelector(".stv3-string-toolbar");
+    expect(toolbar).not.toHaveClass("is-selection-active");
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    expect(toolbar).toHaveClass("is-selection-active");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear selected strings" }),
+    );
+    expect(toolbar).not.toHaveClass("is-selection-active");
   });
 
   it("switches scope through a controlled prop callback", async () => {
@@ -1535,25 +1569,92 @@ describe("StringTable V3 workbench", () => {
     });
   });
 
-  it("resizes Key and English source columns in exact 16px steps", async () => {
+  it("resizes every visible content column while status stays fixed", async () => {
+    const secondFile = {
+      ...MOD.i18nFiles[0],
+      relativeDir: "assets/i18n",
+      defaultPath: "x/assets/i18n/default.json",
+      targetPath: "x/assets/i18n/de.json",
+    };
+    const multiMod: ScannedMod = {
+      ...MOD,
+      i18nFiles: [MOD.i18nFiles[0], secondFile],
+    };
+    const { container } = render(
+      <StringTable
+        mod={multiMod}
+        mods={[multiMod]}
+        scope="all"
+        targetLanguageLabel="German (de)"
+      />,
+    );
+    await screen.findAllByText("greeting");
+
+    const resizers = [
+      ["Resize mod column", "146"],
+      ["Resize file column", "121"],
+      ["Resize key column", "266"],
+      ["Resize English source column", "376"],
+      ["Resize German translation column", "196"],
+    ] as const;
+    for (const [name, expectedWidth] of resizers) {
+      const resizer = screen.getByRole("separator", { name });
+      fireEvent.keyDown(resizer, { key: "ArrowRight" });
+      expect(resizer).toHaveAttribute("aria-valuenow", expectedWidth);
+    }
+
+    const header = container.querySelector<HTMLElement>(
+      ".stv3-string-table-head",
+    );
+    expect(header).toHaveStyle({
+      gridTemplateColumns:
+        "34px 146px 121px 102px 266px 376px 196px minmax(0, 1fr)",
+    });
+    expect(
+      screen.queryByRole("separator", { name: "Resize status column" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toHaveStyle({ minWidth: "1241px" });
+  });
+
+  it("drags a column boundary and removes the temporary window listeners", async () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");
-    const keyResizer = screen.getByRole("separator", {
-      name: "Resize key column",
+    const targetResizer = screen.getByRole("separator", {
+      name: "Resize translation column",
     });
-    fireEvent.keyDown(keyResizer, { key: "ArrowRight" });
-    expect(keyResizer).toHaveAttribute("aria-valuenow", "266");
-    fireEvent.keyDown(keyResizer, { key: "End" });
-    expect(keyResizer).toHaveAttribute("aria-valuenow", "266");
+    const targetHeader = targetResizer.parentElement;
+    if (!targetHeader) throw new Error("Missing target column header");
+    vi.spyOn(targetHeader, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: 340,
+      top: 0,
+      bottom: 30,
+      width: 340,
+      height: 30,
+      toJSON: () => ({}),
+    } as DOMRect);
 
-    const sourceResizer = screen.getByRole("separator", {
-      name: "Resize English source column",
+    fireEvent.pointerDown(targetResizer, {
+      button: 2,
+      clientX: 100,
+      pointerId: 6,
     });
-    fireEvent.keyDown(sourceResizer, {
-      key: "ArrowLeft",
-      shiftKey: true,
-    });
-    expect(sourceResizer).toHaveAttribute("aria-valuenow", "344");
+    fireEvent.pointerMove(window, { clientX: 148, pointerId: 6 });
+    expect(targetResizer).not.toHaveClass("is-dragging");
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "180");
+
+    fireEvent.pointerDown(targetResizer, { clientX: 100, pointerId: 7 });
+    expect(targetResizer).toHaveClass("is-dragging");
+    fireEvent.pointerMove(window, { clientX: 52, pointerId: 7 });
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "292");
+    fireEvent.pointerMove(window, { clientX: 148, pointerId: 7 });
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "388");
+    fireEvent.pointerUp(window, { pointerId: 7 });
+    expect(targetResizer).not.toHaveClass("is-dragging");
+    fireEvent.pointerMove(window, { clientX: 196, pointerId: 7 });
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "388");
   });
 
   it("opens the existing editor and saves against the row's true mod/file identity", async () => {
