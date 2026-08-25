@@ -2835,8 +2835,8 @@
 
 #stv3-dense-demo .stv3-column-resizer::after {
   position: absolute;
-  top: 3px;
-  bottom: 3px;
+  top: 6px;
+  bottom: 6px;
   left: 50%;
   width: 1px;
   content: "";

@@ -60,7 +60,7 @@ describe("CSS custom properties", () => {
 
   it("keeps every resizable column boundary visibly discoverable", () => {
     expect(referenceStyles).toMatch(
-      /\.stv3-column-resizer::after\s*{[^}]*width:\s*1px;[^}]*background:\s*color-mix\(/s,
+      /\.stv3-column-resizer::after\s*{[^}]*top:\s*6px;[^}]*bottom:\s*6px;[^}]*width:\s*1px;[^}]*background:\s*color-mix\(/s,
     );
     expect(referenceStyles).toMatch(
       /\.stv3-column-resizer:focus-visible::after,[\s\S]*\.stv3-column-resizer\.is-dragging::after\s*{[^}]*width:\s*2px;[^}]*background:\s*var\(--stv3-brand\);/,
