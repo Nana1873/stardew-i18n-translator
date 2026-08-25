@@ -90,9 +90,21 @@ export interface ScannedMod {
 export interface ScanResult {
   mods: ScannedMod[];
   warnings: string[];
+  /** Exact scanner units that were omitted. Unlike warnings, this is safe to count. */
+  skippedComponents?: SkippedComponent[];
   extraKeys?: ExtraKeyDiagnostic[];
   modCount: number;
   fileCount: number;
+}
+
+export interface SkippedComponent {
+  packageId: string | null;
+  componentUniqueId: string | null;
+  componentName: string | null;
+  /** Safe path relative to the configured Mods folder. */
+  relativeLocation: string;
+  reason: string;
+  restOfPackageLoaded: boolean;
 }
 
 export interface ExtraKeyDiagnostic {
