@@ -43,6 +43,8 @@ beforeEach(() => {
         });
       case "llm_models":
         return Promise.resolve(["llama3.1:8b", "qwen2.5"]);
+      case "codex_cli_status":
+        return Promise.resolve({ installed: false, authenticated: false });
       default:
         return Promise.resolve(null);
     }
@@ -168,6 +170,7 @@ describe("SettingsDialog", () => {
       await screen.findByText(/Connected · responded in/),
     ).toBeInTheDocument();
     expect(screen.getByText(/2 models available/)).toBeInTheDocument();
+    expect(screen.getByLabelText("AI model").tagName).toBe("SELECT");
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
@@ -183,7 +186,7 @@ describe("SettingsDialog", () => {
     );
   });
 
-  it("resets a saved LM Studio URL without silently disabling Local AI", async () => {
+  it("resets a saved LM Studio URL and clears its endpoint-bound model", async () => {
     const onSave = vi.fn();
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
@@ -227,19 +230,15 @@ describe("SettingsDialog", () => {
     expect(screen.getByLabelText("AI base URL")).toHaveValue(
       "http://localhost:1234/v1",
     );
-    expect(screen.getByLabelText("AI model")).toBeEnabled();
-    expect(screen.getByLabelText("AI model")).toHaveValue("legacy-model");
+    expect(screen.getByLabelText("AI model")).toBeDisabled();
+    expect(screen.getByLabelText("AI model")).toHaveValue("");
     expect(screen.queryByText(/Connected · responded in/)).toBeNull();
     expect(reset).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        llm: expect.objectContaining({
-          provider: "lmstudio",
-          baseUrl: "http://localhost:1234/v1",
-          model: "legacy-model",
-        }),
+        llm: null,
       }),
     );
   });
@@ -376,10 +375,16 @@ describe("SettingsDialog", () => {
             model: "qwen2.5",
           },
         }}
+        initialPage="ai"
         onSave={onSave}
         onClose={() => {}}
         onReRunSetup={() => {}}
       />,
+    );
+    expect(screen.getByLabelText("AI model")).toHaveValue("qwen2.5");
+    expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
+      "aria-pressed",
+      "true",
     );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
@@ -880,10 +885,89 @@ describe("SettingsDialog", () => {
     expect(container.querySelector(".stv3-settings-layout")).not.toBeNull();
   });
 
-  it("keeps unsupported provider controls visible but unavailable", () => {
+  it("keeps an available saved Codex default and uses the CLI default model", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({
+          installed: true,
+          authenticated: true,
+          version: "1.2.3",
+          authentication: "ChatGPT account",
+        });
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
     render(
       <SettingsDialog
-        settings={baseSettings}
+        settings={{
+          ...baseSettings,
+          llm: {
+            provider: "ollama",
+            baseUrl: "http://localhost:11434/v1",
+            model: "qwen2.5",
+          },
+          ai: {
+            defaultEngine: "codex",
+            codexReasoning: "high",
+          },
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const codex = screen.getByText("Codex CLI").closest("button")!;
+    expect(codex).not.toHaveAttribute("aria-disabled");
+    await waitFor(() => {
+      expect(codex).toHaveTextContent("Ready · 1.2.3");
+      expect(codex).toHaveAttribute("aria-pressed", "true");
+    });
+    expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
+    expect(screen.queryByLabelText("Codex model")).toBeNull();
+    expect(screen.getByLabelText("Codex reasoning")).toHaveValue("high");
+    expect(screen.getByText("ChatGPT account")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Check status" }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_status"),
+      ).toHaveLength(2),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: {
+          defaultEngine: "codex",
+          codexReasoning: "high",
+        },
+      }),
+    );
+  });
+
+  it("automatically selects Codex when Local AI is not configured", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      return Promise.resolve(null);
+    });
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "local",
+            codexReasoning: "medium",
+          },
+        }}
         initialPage="ai"
         onSave={() => {}}
         onClose={() => {}}
@@ -891,21 +975,51 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    const codex = screen.getByText("Codex CLI").closest("button")!;
-    expect(codex).toHaveAttribute("aria-disabled", "true");
-    fireEvent.click(codex);
+    await waitFor(() => {
+      expect(screen.getByText("Codex CLI").closest("button")).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
+    });
+    expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.queryByText("OpenAI API")).toBeNull();
     expect(
-      screen.getByRole("region", { name: "Codex CLI unavailable" }),
-    ).toHaveTextContent("Unavailable in this backend phase");
-    expect(screen.getByRole("button", { name: "Check status" })).toBeDisabled();
+      invokeMock.mock.calls.some(([cmd]) => String(cmd).startsWith("openai_")),
+    ).toBe(false);
+  });
 
-    const api = screen.getByText("OpenAI API").closest("button")!;
-    expect(api).toHaveAttribute("aria-disabled", "true");
-    fireEvent.click(api);
-    expect(
-      screen.getByRole("region", { name: "OpenAI API unavailable" }),
-    ).toHaveTextContent("No API setting is persisted");
-    expect(screen.getByRole("button", { name: "Validate" })).toBeDisabled();
+  it("opens unavailable engine settings without marking an engine as default", async () => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const local = screen.getByText("Local AI").closest("button")!;
+    const codex = screen.getByText("Codex CLI").closest("button")!;
+    await waitFor(() => expect(codex).toHaveTextContent("Not installed"));
+    expect(local).toHaveAttribute("aria-pressed", "false");
+    expect(codex).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(codex);
+    expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
+    expect(codex).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: { defaultEngine: "local", codexReasoning: "medium" },
+      }),
+    );
   });
 
   it("includes the accepted Ctrl+F string-search shortcut", () => {

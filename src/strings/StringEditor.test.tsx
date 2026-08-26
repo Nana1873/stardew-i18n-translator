@@ -5,8 +5,12 @@
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { StringEditor, type EditorRow } from "./StringEditor";
-import type { GlossaryEntry, TranslationResult } from "../tauri/commands";
+import {
+  StringEditor,
+  type EditorRow,
+  type EditorTranslationResult,
+} from "./StringEditor";
+import type { GlossaryEntry } from "../tauri/commands";
 import { resolveShortcuts } from "../shortcuts";
 
 function row(overrides: Partial<EditorRow> = {}): EditorRow {
@@ -28,7 +32,7 @@ function renderEditor(
   onTranslate?: (
     source: string,
     section?: string | null,
-  ) => Promise<TranslationResult>,
+  ) => Promise<EditorTranslationResult>,
   position: { index: number; total: number } = { index: 0, total: 2 },
   reviewProgress?: { current: number; total: number },
   glossary?: GlossaryEntry[] | null,
@@ -46,7 +50,9 @@ function renderEditor(
       index={position.index}
       total={position.total}
       modName="Test Mod"
-      localAiModel="local-instruct-8b"
+      aiEngineLabel="Codex CLI"
+      aiModel="codex-test-model"
+      aiReasoning="High"
       reviewProgress={reviewProgress}
       glossary={glossary}
       onTranslate={onTranslate}
@@ -224,166 +230,104 @@ describe("StringEditor", () => {
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
   });
 
-  it("AI translate then manual edit and navigation still saves the draft as review-needed", async () => {
+  it("shows a persisted live result in Review with the returned engine metadata", async () => {
     const onTranslate = vi.fn().mockResolvedValue({
       text: "Hallo Welt",
       missingTokens: [],
       glossaryMisses: [],
-    });
-    const { onSave } = renderEditor(
-      { target: "", status: "untranslated" },
-      onTranslate,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Translate/ }));
-    await waitFor(() =>
-      expect(
-        (
-          screen.getByRole("textbox", {
-            name: "Translation",
-          }) as HTMLTextAreaElement
-        ).value,
-      ).toBe("Hallo Welt"),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
-      target: { value: "Hallo Welt!" },
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
-    expect(onSave).toHaveBeenCalledWith("Hallo Welt!", "review-needed", false);
-  });
-
-  it("saves an AI draft to Review on navigation even when its text matches the existing target", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Hallo",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-    const { onSave, onNavigate } = renderEditor({}, onTranslate);
-
-    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
-        "Hallo",
-      ),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Next string" }));
-
-    expect(onSave).toHaveBeenCalledWith("Hallo", "review-needed", false);
-    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
-  });
-
-  it("persists a fresh AI draft to Review before a later manual save can mark it Done", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Hallo Welt",
-      missingTokens: [],
-      glossaryMisses: [],
+      engine: "Codex CLI",
+      model: "Codex default",
+      reasoning: "Medium",
+      persisted: true,
     });
     const onSave = vi.fn();
     const first = renderEditor(
-      { target: "", status: "untranslated" },
+      { target: "", targetPresent: false, status: "untranslated" },
       onTranslate,
       undefined,
       undefined,
       undefined,
       onSave,
     );
-
-    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
-        "Hallo Welt",
-      ),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
-      target: { value: "Hallo Welt!" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-
-    expect(onSave).toHaveBeenLastCalledWith(
-      "Hallo Welt!",
-      "review-needed",
-      false,
-    );
-    await waitFor(() => expect(first.onClose).toHaveBeenCalled());
-    first.unmount();
-
-    const second = renderEditor(
-      {
-        target: "Hallo Welt!",
-        status: "review-needed",
-      },
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      onSave,
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
-      target: { value: "Hallo, Welt!" },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: /Save edited suggestion/ }),
-    );
-
-    expect(onSave).toHaveBeenLastCalledWith(
-      "Hallo, Welt!",
-      "translated",
-      false,
-    );
-    await waitFor(() => expect(second.onClose).toHaveBeenCalled());
-  });
-
-  it("keeps a token-mismatched fresh AI draft in Review after Save anyway", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Hallo",
-      missingTokens: ["{{name}}"],
-      glossaryMisses: [],
-    });
-    const { onSave, onNavigate } = renderEditor(
-      {
-        source: "Hello {{name}}",
-        target: "",
-        status: "untranslated",
-      },
-      onTranslate,
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
-    await waitFor(() =>
-      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
-        "Hallo",
-      ),
-    );
-    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
-      target: { value: "Guten Tag" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Next string" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
-
-    expect(onSave).toHaveBeenCalledWith("Guten Tag", "review-needed", true);
-    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
-  });
-
-  it("shows Local AI provenance as soon as a draft is generated", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Hallo Welt",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-    renderEditor({ target: "", status: "untranslated" }, onTranslate);
 
     expect(screen.queryByText("Suggestion source")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
 
-    expect(await screen.findByText("Suggestion source")).toBeInTheDocument();
     expect(
-      screen.getByText("Local AI", { selector: "strong" }),
+      await screen.findByRole("textbox", { name: "Translation" }),
+    ).toHaveValue("Hallo Welt");
+    expect(onSave).not.toHaveBeenCalled();
+
+    first.rerender(
+      <StringEditor
+        row={row({
+          target: "Hallo Welt",
+          targetPresent: true,
+          status: "review-needed",
+        })}
+        index={0}
+        total={2}
+        modName="Test Mod"
+        aiEngineLabel="Codex CLI"
+        aiModel="codex-test-model"
+        aiReasoning="High"
+        onTranslate={onTranslate}
+        onSave={onSave}
+        onClose={first.onClose}
+        onNavigate={first.onNavigate}
+      />,
+    );
+
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Approve suggestion/ }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Draft in editor/)).toBeInTheDocument();
-    expect(screen.getByText(/local-instruct-8b/)).toBeInTheDocument();
-    expect(screen.getByText(/Default/)).toBeInTheDocument();
-    expect(screen.getByText(/just now/)).toBeInTheDocument();
+    expect(screen.getByText("Suggestion source")).toBeInTheDocument();
+    expect(
+      screen.getByText("Codex CLI", { selector: "strong" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Saved to Review/)).toBeInTheDocument();
+    expect(screen.getByText(/Codex default/)).toBeInTheDocument();
+    expect(screen.getByText(/Medium/)).toBeInTheDocument();
+  });
+
+  it("blocks close, navigation, saving, and editing while live translation is pending", async () => {
+    const pending = deferred<EditorTranslationResult>();
+    const onTranslate = vi.fn(() => pending.promise);
+    const { onSave, onClose, onNavigate } = renderEditor(
+      { target: "", targetPresent: false, status: "untranslated" },
+      onTranslate,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+
+    const field = screen.getByRole("textbox", { name: "Translation" });
+    expect(field).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Close editor" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next string" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    fireEvent.change(field, { target: { value: "Manual overwrite" } });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(field).toHaveValue("");
+
+    pending.resolve({
+      text: "Persisted result",
+      missingTokens: [],
+      glossaryMisses: [],
+      engine: "Codex CLI",
+      model: "codex-test-model",
+      reasoning: "High",
+      persisted: true,
+    });
+
+    await waitFor(() => expect(field).toHaveValue("Persisted result"));
+    expect(field).not.toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Close editor" })).toBeEnabled();
   });
 
   it("shows unavailable persisted provenance without inventing metadata", () => {
@@ -440,7 +384,7 @@ describe("StringEditor", () => {
     );
   });
 
-  it("passes the row section to local AI translation", async () => {
+  it("passes the row section to the configured AI translation callback", async () => {
     const onTranslate = vi.fn().mockResolvedValue({
       text: "Guten Morgen",
       missingTokens: [],
@@ -642,7 +586,7 @@ describe("StringEditor", () => {
     fireEvent.click(translateButton);
 
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Configure a local AI in Settings",
+      "Configure a translation engine in Settings",
     );
     fireEvent.click(
       screen.getByRole("button", { name: "Open Translation engines" }),
@@ -787,27 +731,8 @@ describe("StringEditor", () => {
     expect(field).toHaveFocus();
   });
 
-  it("ignores an AI response after manual input", async () => {
-    const pending = deferred<TranslationResult>();
-    renderEditor(
-      { target: "", status: "untranslated" },
-      vi.fn(() => pending.promise),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
-    const field = screen.getByRole("textbox", { name: "Translation" });
-    fireEvent.change(field, { target: { value: "Mein Text" } });
-    pending.resolve({
-      text: "Verspaetete KI-Antwort",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-
-    await waitFor(() => expect(field).toHaveValue("Mein Text"));
-  });
-
   it("keeps a valid pending AI result across an unrelated parent rerender", async () => {
-    const pending = deferred<TranslationResult>();
+    const pending = deferred<EditorTranslationResult>();
     const firstTranslate = vi.fn(() => pending.promise);
     const replacementTranslate = vi.fn().mockResolvedValue({
       text: "Replacement",
@@ -848,6 +773,10 @@ describe("StringEditor", () => {
       text: "Valid pending result",
       missingTokens: [],
       glossaryMisses: [],
+      engine: "Codex CLI",
+      model: "codex-test-model",
+      reasoning: "High",
+      persisted: true,
     });
 
     await waitFor(() =>

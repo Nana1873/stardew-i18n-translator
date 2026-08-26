@@ -9,6 +9,8 @@ export interface DashboardLastExport {
   label: string;
   /** Real target path returned by the successful export command. */
   path: string;
+  /** Real folder to reveal; differs from path when path names a file. */
+  folder: string;
 }
 
 interface DashboardProps {
@@ -258,9 +260,11 @@ export function Dashboard({
             </strong>
             <span>
               {scan.warnings.length} scanner{" "}
-              {scan.warnings.length === 1 ? "warning" : "warnings"} ·
-              skipped-component count and change, added, and removed deltas
-              unavailable
+              {scan.warnings.length === 1 ? "warning" : "warnings"} ·{" "}
+              {scan.skippedComponents == null
+                ? "skipped-component count unavailable"
+                : `${scan.skippedComponents.length} ${scan.skippedComponents.length === 1 ? "component" : "components"} skipped`}
+              {" · change, added, and removed deltas unavailable"}
             </span>
           </span>
           <span aria-hidden="true">→</span>

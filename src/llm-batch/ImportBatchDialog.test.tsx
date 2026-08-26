@@ -1,7 +1,33 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
 
+import type { LlmImportPreflight } from "../tauri/commands";
 import { ImportBatchDialog } from "./ImportBatchDialog";
+
+const READY_PREFLIGHT: LlmImportPreflight = {
+  batchModUniqueId: "Test.Mod",
+  batchTargetLang: "de",
+  selectedModUniqueId: "Test.Mod",
+  selectedTargetLang: "de",
+  modMatches: true,
+  languageMatches: true,
+  snapshotResult: "matched",
+  suppliedStrings: 2,
+  matchedStrings: 2,
+  preservedLocal: 0,
+  skippedEmpty: 0,
+  identicalToSource: 0,
+  importable: 2,
+  protectedTokenIssues: [],
+  ready: true,
+  blockingReason: null,
+};
+
+function preflight(
+  overrides: Partial<LlmImportPreflight> = {},
+): LlmImportPreflight {
+  return { ...READY_PREFLIGHT, ...overrides };
+}
 
 function renderDialog(
   overrides: Partial<React.ComponentProps<typeof ImportBatchDialog>> = {},
@@ -10,6 +36,7 @@ function renderDialog(
     targetName: "Test Mod",
     targetLanguage: "German (de)",
     onChooseFile: vi.fn().mockResolvedValue(null),
+    onPreflight: vi.fn().mockResolvedValue(READY_PREFLIGHT),
     onImport: vi.fn().mockResolvedValue(undefined),
     onClose: vi.fn(),
     ...overrides,
@@ -43,15 +70,19 @@ describe("ImportBatchDialog", () => {
   it("shows the chosen native path and imports that exact file", async () => {
     const path = "C:\\Temp\\Test Mod.de.llm-result.json";
     const onChooseFile = vi.fn().mockResolvedValue(path);
+    const onPreflight = vi.fn().mockResolvedValue(READY_PREFLIGHT);
     const onImport = vi.fn().mockResolvedValue(undefined);
     const onClose = vi.fn();
-    renderDialog({ onChooseFile, onImport, onClose });
+    renderDialog({ onChooseFile, onPreflight, onImport, onClose });
 
     fireEvent.click(screen.getByRole("button", { name: /Choose file/ }));
     expect(
       await screen.findByText("Test Mod.de.llm-result.json"),
     ).toBeVisible();
     expect(screen.getByText(path)).toBeVisible();
+    expect(await screen.findByText("Ready to import")).toBeVisible();
+    expect(onPreflight).toHaveBeenCalledWith(path);
+    expect(screen.getByText("2 / 2")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Import file" }));
 
@@ -69,6 +100,7 @@ describe("ImportBatchDialog", () => {
         initialPath={path}
         initialError="Invalid file type. Exactly one JSON batch file is required."
         onChooseFile={vi.fn().mockResolvedValue(null)}
+        onPreflight={vi.fn().mockResolvedValue(READY_PREFLIGHT)}
         onImport={onImport}
         onClose={vi.fn()}
       />,
@@ -106,6 +138,7 @@ describe("ImportBatchDialog", () => {
       onClose,
     });
 
+    expect(await screen.findByText("Ready to import")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Import file" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -128,6 +161,7 @@ describe("ImportBatchDialog", () => {
       onClose,
     });
 
+    expect(await screen.findByText("Ready to import")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Import file" }));
     const dialog = await screen.findByRole("dialog", {
       name: "Import LLM batch",
@@ -149,6 +183,7 @@ describe("ImportBatchDialog", () => {
         targetLanguage="German (de)"
         initialPath="C:\\Temp\\batch.json"
         onChooseFile={vi.fn().mockResolvedValue(null)}
+        onPreflight={vi.fn().mockResolvedValue(READY_PREFLIGHT)}
         onImport={onImport}
         onClose={onClose}
       />,
@@ -178,11 +213,13 @@ describe("ImportBatchDialog", () => {
         targetLanguage="German (de)"
         initialPath="C:\\Temp\\batch.json"
         onChooseFile={vi.fn().mockResolvedValue(null)}
+        onPreflight={vi.fn().mockResolvedValue(READY_PREFLIGHT)}
         onImport={vi.fn().mockResolvedValue(undefined)}
         onClose={onClose}
       />,
     );
 
+    expect(await screen.findByText("Ready to import")).toBeVisible();
     const first = screen.getByRole("button", { name: "Cancel import" });
     const last = screen.getByRole("button", { name: "Import file" });
     await waitFor(() => expect(first).toHaveFocus());
@@ -198,5 +235,62 @@ describe("ImportBatchDialog", () => {
 
     document.body.removeEventListener("keydown", bubbled);
     trigger.remove();
+  });
+
+  it("offers the exact matching mod only when canSwitchToMatchingMod allows it", async () => {
+    const path = "C:\\Temp\\other-mod.llm-result.json";
+    const onChooseFile = vi.fn().mockResolvedValue(path);
+    const canSwitchToMatchingMod = vi.fn(
+      (modUniqueId: string) => modUniqueId === "Author.MatchingMod",
+    );
+    const onSwitchToMatchingMod = vi.fn();
+    renderDialog({
+      onChooseFile,
+      onPreflight: vi.fn().mockResolvedValue(
+        preflight({
+          batchModUniqueId: "Author.MatchingMod",
+          selectedModUniqueId: "Author.CurrentMod",
+          modMatches: false,
+          ready: false,
+          blockingReason: "This batch belongs to another mod.",
+        }),
+      ),
+      canSwitchToMatchingMod,
+      onSwitchToMatchingMod,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /Choose file/ }));
+
+    expect(await screen.findByText("Import blocked")).toBeVisible();
+    expect(canSwitchToMatchingMod).toHaveBeenCalledWith("Author.MatchingMod");
+    expect(screen.getByRole("button", { name: "Import file" })).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Switch to matching mod" }),
+    );
+    expect(onSwitchToMatchingMod).toHaveBeenCalledWith("Author.MatchingMod");
+  });
+
+  it("does not offer a switch when the exact batch mod is unavailable", async () => {
+    const canSwitchToMatchingMod = vi.fn().mockReturnValue(false);
+    renderDialog({
+      initialPath: "C:\\Temp\\missing-mod.llm-result.json",
+      onPreflight: vi.fn().mockResolvedValue(
+        preflight({
+          batchModUniqueId: "Author.NotInstalled",
+          selectedModUniqueId: "Author.CurrentMod",
+          modMatches: false,
+          ready: false,
+          blockingReason: "This batch belongs to another mod.",
+        }),
+      ),
+      canSwitchToMatchingMod,
+      onSwitchToMatchingMod: vi.fn(),
+    });
+
+    expect(await screen.findByText("Import blocked")).toBeVisible();
+    expect(canSwitchToMatchingMod).toHaveBeenCalledWith("Author.NotInstalled");
+    expect(
+      screen.queryByRole("button", { name: "Switch to matching mod" }),
+    ).not.toBeInTheDocument();
   });
 });

@@ -35,20 +35,27 @@ import {
   Sparkles,
 } from "lucide-react";
 import {
+  type AiEngine,
+  type AiRunResult,
+  type AiTranslationRequest,
   type GlossaryEntry,
   type LlmBatchItem,
   type LlmExportOutcome,
+  type OperationHistoryEntry,
   type SaveStringEntry,
   type ScannedMod,
   type StringRow,
   type StringStatus,
-  type TranslationResult,
   loadStrings,
   saveString,
-  saveStrings,
+  saveStringGroupsWithUndo,
 } from "../tauri/commands";
-import { StringEditor } from "./StringEditor";
-import { type BatchItem, BatchTranslateDialog } from "./BatchTranslateDialog";
+import { type EditorTranslationResult, StringEditor } from "./StringEditor";
+import {
+  type BatchItem,
+  BatchTranslateDialog,
+  type LiveAiEngineOption,
+} from "./BatchTranslateDialog";
 import { validate, worstSeverity } from "./validation";
 import {
   DEFAULT_SHORTCUTS,
@@ -61,29 +68,6 @@ export type StringTableScope = "mod" | "all";
 export type StringTableFilter = StringStatus | "all" | "has-value";
 export type StringTableNoticeTone = "info" | "success" | "error";
 
-export interface BulkStringSnapshot {
-  identity: string;
-  modUniqueId: string;
-  modName: string;
-  relativeDir: string;
-  key: string;
-  source: string;
-  target: string;
-  targetPresent: boolean;
-  status: StringStatus;
-  tokenMismatchAccepted: boolean;
-}
-
-/** Session-only undo payload. Restoring accepted token decisions requires the
- * existing per-string save command, so the shell receives the exact old row
- * values rather than a lossy batch-entry projection. */
-export interface BulkChangeSnapshot {
-  id: string;
-  label: string;
-  createdAt: number;
-  rows: BulkStringSnapshot[];
-}
-
 export interface StringTableSummary {
   visible: number;
   total: number;
@@ -91,13 +75,15 @@ export interface StringTableSummary {
 }
 
 export interface AiBatchFinishedResult {
+  runId?: string;
   outcome: "complete" | "cancelled" | "error";
   done: number;
   total: number;
   error?: string;
-  engine: "Local AI";
+  engine: string;
+  model?: string;
+  reasoning?: string;
   modName: string;
-  undo: BulkChangeSnapshot | null;
 }
 
 interface Row extends StringRow {
@@ -108,7 +94,14 @@ interface Row extends StringRow {
 }
 
 type SortCol = "mod" | "file" | "status" | "key" | "source" | "target";
-type ColumnName = Exclude<SortCol, "status">;
+type ColumnName = SortCol;
+
+export interface StringTableSort {
+  col: SortCol;
+  dir: "asc" | "desc";
+}
+
+export type StringTableColumnWidths = Record<ColumnName, number>;
 
 type DisplayItem =
   | { kind: "row"; row: Row; identity: string; index: number; pos: number }
@@ -128,10 +121,14 @@ interface ContextMenuState {
 }
 
 interface BatchFinishedResult {
+  runId?: string;
   done: number;
   total: number;
   outcome: "complete" | "cancelled" | "error";
   error?: string;
+  engine?: string;
+  model?: string;
+  reasoning?: string;
 }
 
 interface StatusTooltipState {
@@ -163,6 +160,10 @@ export interface StringTableProps {
   onStatusFilterChange?: (value: StringTableFilter) => void;
   issuesOnly?: boolean;
   onIssuesOnlyChange?: (value: boolean) => void;
+  initialSort?: StringTableSort | null;
+  onSortChange?: (sort: StringTableSort | null) => void;
+  initialColumnWidths?: Partial<StringTableColumnWidths>;
+  onColumnWidthsChange?: (widths: StringTableColumnWidths) => void;
   /** Real shell-provided heading text; defaults to the active ScannedMod. */
   headerTitle?: string;
   /** Real package/parent context shown before the heading. */
@@ -176,7 +177,14 @@ export interface StringTableProps {
   onTranslate?: (
     source: string,
     section?: string | null,
-  ) => Promise<TranslationResult>;
+  ) => Promise<EditorTranslationResult>;
+  liveAiEngines?: LiveAiEngineOption[];
+  defaultAiEngine?: AiEngine;
+  onRunAi?: (
+    engine: AiEngine,
+    request: AiTranslationRequest,
+  ) => Promise<AiRunResult>;
+  onCancelAi?: (runId: string) => Promise<boolean>;
   /** Legacy selected-mod handoff. */
   onLlmBatchExport?: (
     items: LlmBatchItem[],
@@ -196,7 +204,7 @@ export interface StringTableProps {
     byStatus: Record<StringStatus, number>,
   ) => void;
   onVisibleSummaryChange?: (summary: StringTableSummary) => void;
-  onBulkApplied?: (snapshot: BulkChangeSnapshot) => void;
+  onBulkApplied?: (entry: OperationHistoryEntry) => void;
   onAiBatchFinished?: (result: AiBatchFinishedResult) => void;
   onNotify?: (message: string, tone?: StringTableNoticeTone) => void;
   onOpenEngineSettings?: () => void;
@@ -253,10 +261,15 @@ const COLUMN_LIMITS: Record<
 > = {
   mod: { min: 100, max: 420, initial: 130 },
   file: { min: 80, max: 320, initial: 105 },
+  status: { min: 80, max: 240, initial: 102 },
   key: { min: 140, max: 480, initial: 250 },
   source: { min: 220, max: 720, initial: 360 },
   target: { min: 180, max: 1_600, initial: 180 },
 };
+
+/** Fixed trailing rail for validation and row-menu controls. It deliberately
+ * stays outside the resizable translation column. */
+const ROW_ACTIONS_WIDTH = 58;
 
 function identityOf(row: Pick<Row, "modUniqueId" | "file" | "key">): string {
   return JSON.stringify([row.modUniqueId, row.file, row.key]);
@@ -310,30 +323,6 @@ function preservesNativeTextSelection(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLInputElement)) return false;
   return !["button", "checkbox", "radio", "range", "reset", "submit"].includes(
     target.type,
-  );
-}
-
-function snapshotOf(row: Row): BulkStringSnapshot {
-  return {
-    identity: identityOf(row),
-    modUniqueId: row.modUniqueId,
-    modName: row.modName,
-    relativeDir: row.file,
-    key: row.key,
-    source: row.source,
-    target: row.target,
-    targetPresent: row.targetPresent,
-    status: row.status,
-    tokenMismatchAccepted: row.tokenMismatchAccepted,
-  };
-}
-
-function samePersistedValue(row: Row, before: BulkStringSnapshot): boolean {
-  return (
-    row.target === before.target &&
-    row.targetPresent === before.targetPresent &&
-    row.status === before.status &&
-    row.tokenMismatchAccepted === before.tokenMismatchAccepted
   );
 }
 
@@ -447,6 +436,10 @@ export function StringTable({
   onStatusFilterChange,
   issuesOnly,
   onIssuesOnlyChange,
+  initialSort = null,
+  onSortChange,
+  initialColumnWidths,
+  onColumnWidthsChange,
   headerTitle,
   headerContext,
   headerMeta,
@@ -454,6 +447,10 @@ export function StringTable({
   localAiModel,
   glossary = null,
   onTranslate,
+  liveAiEngines,
+  defaultAiEngine = "local",
+  onRunAi,
+  onCancelAi,
   onLlmBatchExport,
   onLlmBatchExportForMod,
   onCountsChange,
@@ -489,26 +486,31 @@ export function StringTable({
   const [activeIdentity, setActiveIdentity] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
-  const [sort, setSort] = useState<{
-    col: SortCol;
-    dir: "asc" | "desc";
-  } | null>(null);
+  const [sort, setSort] = useState<StringTableSort | null>(initialSort);
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const [batchModLabel, setBatchModLabel] = useState("");
-  const [batchIncludeOpen, setBatchIncludeOpen] = useState(true);
-  const [batchIncludeChanged, setBatchIncludeChanged] = useState(false);
   const [statusTooltip, setStatusTooltip] = useState<StatusTooltipState | null>(
     null,
   );
   const statusTooltipRef = useRef<HTMLDivElement>(null);
-  const [columnWidths, setColumnWidths] = useState({
-    mod: COLUMN_LIMITS.mod.initial,
-    file: COLUMN_LIMITS.file.initial,
-    key: COLUMN_LIMITS.key.initial,
-    source: COLUMN_LIMITS.source.initial,
-    target: COLUMN_LIMITS.target.initial,
-  });
-  const [targetColumnSized, setTargetColumnSized] = useState(false);
+  const [columnWidths, setColumnWidths] = useState<StringTableColumnWidths>(
+    () =>
+      Object.fromEntries(
+        (Object.keys(COLUMN_LIMITS) as ColumnName[]).map((column) => {
+          const limits = COLUMN_LIMITS[column];
+          const supplied = initialColumnWidths?.[column];
+          return [
+            column,
+            supplied == null
+              ? limits.initial
+              : Math.min(limits.max, Math.max(limits.min, supplied)),
+          ];
+        }),
+      ) as unknown as StringTableColumnWidths,
+  );
+  const [targetColumnSized, setTargetColumnSized] = useState(
+    initialColumnWidths?.target != null,
+  );
 
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -520,7 +522,6 @@ export function StringTable({
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
   const bulkTriggerRef = useRef<HTMLButtonElement>(null);
-  const batchUndoRef = useRef<BulkStringSnapshot[] | null>(null);
 
   const plan = useMemo(
     () => scopedPlan(effectiveScope, mod, mods),
@@ -759,6 +760,12 @@ export function StringTable({
   const batchEligibleRows = selectedRows.filter(
     (row) => row.status === "untranslated" || row.status === "outdated",
   );
+  const configuredLiveEngine = liveAiEngines?.find(
+    (engine) => engine.id === defaultAiEngine,
+  );
+  const activeLiveEngine = configuredLiveEngine?.ready
+    ? configuredLiveEngine
+    : liveAiEngines?.find((engine) => engine.ready);
   const batchEligibleModIds = new Set(
     batchEligibleRows.map((row) => row.modUniqueId),
   );
@@ -771,7 +778,9 @@ export function StringTable({
     ) ?? null;
   const legacyLlmMatches =
     batchMod !== null && batchMod.uniqueId === mod?.uniqueId;
-  const canRunLocalAi = batchEligibleRows.length > 0;
+  const canRunAi =
+    batchEligibleRows.length > 0 &&
+    (onRunAi ? Boolean(activeLiveEngine) : Boolean(onTranslate));
   const llmExportHandlerAvailable = Boolean(
     onLlmBatchExportForMod || (legacyLlmMatches && onLlmBatchExport),
   );
@@ -780,22 +789,6 @@ export function StringTable({
     batchEligibleRows.length > 0 &&
     llmExportHandlerAvailable;
   const llmActionEnabled = selectedRows.length > 0 && llmExportHandlerAvailable;
-  const batchPreviewItems = (batch ?? []).filter(
-    (item) =>
-      (batchIncludeOpen && item.status === "untranslated") ||
-      (batchIncludeChanged && item.status === "outdated"),
-  );
-  const batchPreviewModIds = new Set(
-    batchPreviewItems
-      .map((item) => data[item.index]?.modUniqueId)
-      .filter((modId): modId is string => Boolean(modId)),
-  );
-  const batchScopeSummary =
-    String(batchPreviewItems.length) +
-    " selected across " +
-    String(batchPreviewModIds.size) +
-    (batchPreviewModIds.size === 1 ? " mod" : " mods");
-
   const allVisibleSelected =
     visible.length > 0 &&
     visible.every((entry) => selection.has(entry.identity));
@@ -884,7 +877,13 @@ export function StringTable({
 
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
-      if (editorSession || batch) return;
+      if (
+        event.defaultPrevented ||
+        editorSession ||
+        batch ||
+        document.querySelector('[role="dialog"][aria-modal="true"]')
+      )
+        return;
       const searchShortcut =
         (
           shortcuts as ResolvedShortcuts &
@@ -941,8 +940,14 @@ export function StringTable({
   function toggleSort(col: SortCol) {
     resetSelectionForViewChange();
     setSort((current) => {
-      if (!current || current.col !== col) return { col, dir: "asc" };
-      return current.dir === "asc" ? { col, dir: "desc" } : null;
+      const next: StringTableSort | null =
+        !current || current.col !== col
+          ? { col, dir: "asc" }
+          : current.dir === "asc"
+            ? { col, dir: "desc" }
+            : null;
+      onSortChange?.(next);
+      return next;
     });
   }
 
@@ -1258,8 +1263,9 @@ export function StringTable({
       return;
     }
 
-    const before = planned.map(({ row }) => snapshotOf(row));
-    const selectedIdentities = new Set(before.map((entry) => entry.identity));
+    const selectedIdentities = new Set(
+      planned.map(({ row }) => identityOf(row)),
+    );
     const plannedByIdentity = new Map(
       planned.map((change) => [identityOf(change.row), change]),
     );
@@ -1280,19 +1286,15 @@ export function StringTable({
       byMod.set(row.modUniqueId, entries);
     }
 
-    const completedMods = new Set<string>();
-    let failure: unknown = null;
-    for (const [modUniqueId, entries] of byMod) {
-      try {
-        await saveStrings(modUniqueId, entries);
-        completedMods.add(modUniqueId);
-      } catch (cause) {
-        failure = cause;
-        break;
-      }
-    }
-
-    if (completedMods.size > 0) {
+    try {
+      const historyEntry = await saveStringGroupsWithUndo(
+        label,
+        [...byMod].map(([modUniqueId, entries]) => ({
+          modUniqueId,
+          entries,
+        })),
+      );
+      const completedMods = new Set(byMod.keys());
       const next = data.map((row) => {
         if (
           !selectedIdentities.has(identityOf(row)) ||
@@ -1313,16 +1315,7 @@ export function StringTable({
       rowsRef.current = next;
       setRows(next);
       reportCounts(next, completedMods);
-
-      const undoRows = before.filter((entry) =>
-        completedMods.has(entry.modUniqueId),
-      );
-      onBulkApplied?.({
-        id: String(Date.now()),
-        label,
-        createdAt: Date.now(),
-        rows: undoRows,
-      });
+      onBulkApplied?.(historyEntry);
       for (const row of next) {
         if (
           !selectedIdentities.has(identityOf(row)) ||
@@ -1339,22 +1332,17 @@ export function StringTable({
           targetPresent: true,
         });
       }
-    }
-
-    setContextMenu(null);
-    setBulkMenuOpen(false);
-    setSelection(new Set());
-    if (failure) {
       onNotify?.(
-        "The batch stopped after a mod failed to save. Completed mods remain changed.",
-        "error",
-      );
-    } else {
-      onNotify?.(
-        String(before.length) +
-          (before.length === 1 ? " string updated." : " strings updated."),
+        String(planned.length) +
+          (planned.length === 1 ? " string updated." : " strings updated."),
         "success",
       );
+    } catch (cause) {
+      onNotify?.(`The batch edit was not saved. ${String(cause)}`, "error");
+    } finally {
+      setContextMenu(null);
+      setBulkMenuOpen(false);
+      setSelection(new Set());
     }
   }
 
@@ -1376,19 +1364,17 @@ export function StringTable({
   }
 
   function startBatch() {
-    if (!canRunLocalAi) return;
+    if (!canRunAi) return;
     onEditorOpen?.();
     const items: BatchItem[] = batchEligibleRows.map((row) => ({
       index: rowIndex.get(identityOf(row)) ?? -1,
+      modUniqueId: row.modUniqueId,
       key: row.key,
       file: row.file,
       source: row.source,
       status: row.status as "untranslated" | "outdated",
       ...(row.section ? { section: row.section } : {}),
     }));
-    batchUndoRef.current = batchEligibleRows.map(snapshotOf);
-    setBatchIncludeOpen(true);
-    setBatchIncludeChanged(false);
     const eligibleModIds = new Set(
       batchEligibleRows.map((row) => row.modUniqueId),
     );
@@ -1438,38 +1424,136 @@ export function StringTable({
     });
   }
 
+  function applyLiveSuggestions(result: AiRunResult) {
+    if (result.suggestions.length === 0) return;
+    const suggestions = new Map(
+      result.suggestions.map((suggestion) => [
+        JSON.stringify([
+          suggestion.identity.modUniqueId,
+          suggestion.identity.relativeDir,
+          suggestion.identity.key,
+        ]),
+        suggestion,
+      ]),
+    );
+    const changedMods = new Set<string>();
+    const current = rowsRef.current ?? [];
+    const next = current.map((row) => {
+      const suggestion = suggestions.get(identityOf(row));
+      if (!suggestion) return row;
+      changedMods.add(row.modUniqueId);
+      return {
+        ...row,
+        target: suggestion.text,
+        status: "review-needed" as StringStatus,
+        targetPresent: true,
+        tokenMismatchAccepted: false,
+      };
+    });
+    rowsRef.current = next;
+    setRows(next);
+    reportCounts(next, changedMods);
+    for (const suggestion of result.suggestions) {
+      const suggestionIdentity = JSON.stringify([
+        suggestion.identity.modUniqueId,
+        suggestion.identity.relativeDir,
+        suggestion.identity.key,
+      ]);
+      const updated = next.find(
+        (row) => identityOf(row) === suggestionIdentity,
+      );
+      if (!updated) continue;
+      onStringSaved?.({
+        modUniqueId: updated.modUniqueId,
+        relativeDir: updated.file,
+        key: updated.key,
+        source: updated.source,
+        target: updated.target,
+        targetPresent: true,
+      });
+    }
+    setStatusValue("review-needed");
+    setIssuesValue(false);
+  }
+
+  async function runLiveBatch(runId: string): Promise<AiRunResult> {
+    if (!onRunAi || !activeLiveEngine)
+      throw new Error("The selected translation engine is unavailable.");
+    const request: AiTranslationRequest = {
+      runId,
+      scope: "selected",
+      includeOpen: true,
+      includeChanged: true,
+      identities: (batch ?? []).map((item) => ({
+        modUniqueId: item.modUniqueId ?? "",
+        relativeDir: item.file,
+        key: item.key,
+      })),
+    };
+    const result = await onRunAi(activeLiveEngine.id, request);
+    applyLiveSuggestions(result);
+    return result;
+  }
+
+  async function runSingleLiveAi(row: Row): Promise<EditorTranslationResult> {
+    if (!onRunAi || !activeLiveEngine)
+      throw new Error("The selected translation engine is unavailable.");
+    const result = await onRunAi(activeLiveEngine.id, {
+      runId:
+        globalThis.crypto?.randomUUID?.() ??
+        `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      scope: "string",
+      includeOpen: true,
+      includeChanged: true,
+      identities: [
+        {
+          modUniqueId: row.modUniqueId,
+          relativeDir: row.file,
+          key: row.key,
+        },
+      ],
+    });
+    applyLiveSuggestions(result);
+    const suggestion = result.suggestions.find(
+      (candidate) =>
+        candidate.identity.modUniqueId === row.modUniqueId &&
+        candidate.identity.relativeDir === row.file &&
+        candidate.identity.key === row.key,
+    );
+    if (!suggestion) {
+      throw new Error(
+        result.error ||
+          "The AI run completed without a suggestion for this string.",
+      );
+    }
+    return {
+      text: suggestion.text,
+      missingTokens: suggestion.tokenDifferences
+        .filter((difference) => difference.targetCount < difference.sourceCount)
+        .flatMap((difference) =>
+          Array.from(
+            { length: difference.sourceCount - difference.targetCount },
+            () => difference.token,
+          ),
+        ),
+      glossaryMisses: suggestion.glossaryMisses,
+      engine: result.engine,
+      model: result.model,
+      reasoning: result.reasoning,
+      persisted: true,
+    };
+  }
+
   function closeBatch() {
     setBatch(null);
     setBatchModLabel("");
     const current = rowsRef.current ?? [];
     reportCounts(current);
-    batchUndoRef.current = null;
   }
 
   function finishBatch(result: BatchFinishedResult) {
     const current = rowsRef.current ?? [];
     reportCounts(current);
-    const changed = (batchUndoRef.current ?? []).filter((snapshot) => {
-      const index = current.findIndex(
-        (row) => identityOf(row) === snapshot.identity,
-      );
-      return index >= 0 && !samePersistedValue(current[index], snapshot);
-    });
-    const now = Date.now();
-    const undo: BulkChangeSnapshot | null =
-      changed.length === 0
-        ? null
-        : {
-            id: String(now),
-            label:
-              result.outcome === "cancelled"
-                ? "AI translation cancelled · suggestions saved to Review"
-                : result.outcome === "error"
-                  ? "AI translation failed · suggestions saved to Review"
-                  : "AI suggestions saved to Review",
-            createdAt: now,
-            rows: changed,
-          };
     if (result.done > 0) {
       setStatusValue("review-needed");
       setIssuesValue(false);
@@ -1484,17 +1568,18 @@ export function StringTable({
       );
     }
     onAiBatchFinished?.({
+      ...(result.runId ? { runId: result.runId } : {}),
       outcome: result.outcome,
       done: result.done,
       total: result.total,
       ...(result.error ? { error: result.error } : {}),
-      engine: "Local AI",
+      engine: result.engine ?? "Local AI",
+      ...(result.model ? { model: result.model } : {}),
+      ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       modName: batchModLabel,
-      undo,
     });
     setBatch(null);
     setBatchModLabel("");
-    batchUndoRef.current = null;
   }
 
   async function startLlmBatchExport() {
@@ -1529,10 +1614,14 @@ export function StringTable({
 
   function adjustColumn(column: ColumnName, value: number) {
     const limits = COLUMN_LIMITS[column];
-    setColumnWidths((current) => ({
-      ...current,
-      [column]: Math.min(limits.max, Math.max(limits.min, value)),
-    }));
+    setColumnWidths((current) => {
+      const next = {
+        ...current,
+        [column]: Math.min(limits.max, Math.max(limits.min, value)),
+      };
+      onColumnWidthsChange?.(next);
+      return next;
+    });
   }
 
   function startColumnResize(
@@ -1602,21 +1691,23 @@ export function StringTable({
     "34px",
     ...(showModColumn ? [String(columnWidths.mod) + "px"] : []),
     ...(showFileColumn ? [String(columnWidths.file) + "px"] : []),
-    "102px",
+    String(columnWidths.status) + "px",
     String(columnWidths.key) + "px",
     String(columnWidths.source) + "px",
     ...(targetColumnSized
       ? [String(columnWidths.target) + "px", "minmax(0, 1fr)"]
       : ["minmax(" + String(columnWidths.target) + "px, 1fr)"]),
+    String(ROW_ACTIONS_WIDTH) + "px",
   ].join(" ");
   const tableMinWidth =
     34 +
     (showModColumn ? columnWidths.mod : 0) +
     (showFileColumn ? columnWidths.file : 0) +
-    102 +
+    columnWidths.status +
     columnWidths.key +
     columnWidths.source +
-    columnWidths.target;
+    columnWidths.target +
+    ROW_ACTIONS_WIDTH;
   const effectiveHeaderTitle =
     headerTitle ??
     (effectiveScope === "all"
@@ -1694,6 +1785,25 @@ export function StringTable({
       : rowIndex.get(editingIdentity);
   const editingRow =
     editingIndex === undefined ? null : (data[editingIndex] ?? null);
+  const editingAiAllowed = Boolean(
+    editingRow &&
+    (editingRow.status === "untranslated" || editingRow.status === "outdated"),
+  );
+  const editorTranslate = editingRow
+    ? onRunAi
+      ? activeLiveEngine?.ready
+        ? () => runSingleLiveAi(editingRow)
+        : undefined
+      : onTranslate
+    : undefined;
+  const editorAiUnavailableReason = !editingAiAllowed
+    ? "AI can only translate Open or Changed strings. Done and Review text must be handled manually."
+    : onRunAi && !activeLiveEngine?.ready
+      ? (configuredLiveEngine?.unavailableReason ??
+        "The default translation engine is not ready. Check it in Settings.")
+      : !editorTranslate
+        ? "Configure a translation engine in Settings to use AI translation."
+        : undefined;
 
   const statusButtons: Array<{
     value: StringTableFilter;
@@ -1715,11 +1825,13 @@ export function StringTable({
     { value: "translated", label: "Done", count: statusCounts.translated },
   ];
 
-  const localAiUnavailableReason = !onTranslate
-    ? "Configure Local AI in Settings."
-    : batchEligibleRows.length === 0
-      ? "No open or changed strings are selected."
-      : null;
+  const aiUnavailableReason = !(onRunAi || onTranslate)
+    ? "Configure a translation engine in Settings."
+    : onRunAi && !activeLiveEngine
+      ? "No translation engine is currently available. Check Settings."
+      : batchEligibleRows.length === 0
+        ? "No open or changed strings are selected."
+        : null;
   const llmUnavailableReason =
     batchEligibleRows.length === 0
       ? "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import."
@@ -1982,9 +2094,9 @@ export function StringTable({
                 <span>{batchEligibleRows.length} Open/Changed exportable</span>
               </span>
               <ActionButtons
-                canRunLocalAi={canRunLocalAi}
+                canRunAi={canRunAi}
                 llmActionEnabled={llmActionEnabled}
-                localAiUnavailableReason={localAiUnavailableReason}
+                aiUnavailableReason={aiUnavailableReason}
                 llmUnavailableReason={llmUnavailableReason}
                 onCopySource={() => void copySelection("source")}
                 onCopyTarget={() => void copySelection("target")}
@@ -2001,7 +2113,7 @@ export function StringTable({
                     "Cleared translations",
                   )
                 }
-                onLocalAi={startBatch}
+                onAi={startBatch}
                 onLlmExport={() => void startLlmBatchExport()}
               />
             </div>
@@ -2087,6 +2199,7 @@ export function StringTable({
                 col="status"
                 sort={sort}
                 onSort={toggleSort}
+                resizer={resizerFor("status", "Resize status column")}
               />
               <SortHeader
                 label="Key"
@@ -2113,6 +2226,12 @@ export function StringTable({
                     ? "Resize translation column"
                     : `Resize ${translationColumnLabel} column`,
                 )}
+              />
+              <span
+                className="stv3-row-actions-col"
+                role="columnheader"
+                aria-label="Row actions"
+                style={{ gridColumn: "-2 / -1" }}
               />
             </div>
 
@@ -2244,7 +2363,11 @@ export function StringTable({
           total={editorSession.identities.length}
           modName={editingRow.modName}
           targetLanguageLabel={targetLanguageLabel}
-          localAiModel={localAiModel}
+          aiEngineLabel={activeLiveEngine?.label ?? "Local AI"}
+          aiModel={activeLiveEngine?.model ?? localAiModel}
+          aiReasoning={activeLiveEngine?.reasoning}
+          translationAllowed={editingAiAllowed}
+          translationUnavailableReason={editorAiUnavailableReason}
           reviewProgress={
             editorSession.review
               ? {
@@ -2254,7 +2377,7 @@ export function StringTable({
               : undefined
           }
           glossary={glossary}
-          onTranslate={onTranslate}
+          onTranslate={editorTranslate}
           onSave={(value, nextStatus, tokenMismatchAccepted) =>
             saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
           }
@@ -2332,9 +2455,9 @@ export function StringTable({
             </li>
             <ActionButtons
               listItems
-              canRunLocalAi={canRunLocalAi}
+              canRunAi={canRunAi}
               llmActionEnabled={llmActionEnabled}
-              localAiUnavailableReason={localAiUnavailableReason}
+              aiUnavailableReason={aiUnavailableReason}
               llmUnavailableReason={llmUnavailableReason}
               localAiCount={batchEligibleRows.length}
               llmCount={batchEligibleRows.length}
@@ -2353,7 +2476,7 @@ export function StringTable({
                   "Cleared translations",
                 )
               }
-              onLocalAi={startBatch}
+              onAi={startBatch}
               onLlmExport={() => void startLlmBatchExport()}
             />
           </ul>
@@ -2364,14 +2487,9 @@ export function StringTable({
         <BatchTranslateDialog
           items={batch}
           modName={batchModLabel}
-          scopeSummary={batchScopeSummary}
-          targetLanguageLabel={targetLanguageLabel}
-          includeOpen={batchIncludeOpen}
-          includeChanged={batchIncludeChanged}
-          onIncludeOpenChange={setBatchIncludeOpen}
-          onIncludeChangedChange={setBatchIncludeChanged}
-          translationReady={Boolean(onTranslate)}
-          translationUnavailableReason="This engine is not ready; check its status in Settings first."
+          engine={activeLiveEngine}
+          onLiveRun={onRunAi ? runLiveBatch : undefined}
+          onCancelLiveRun={onCancelAi}
           onTranslate={
             onTranslate ??
             (() => Promise.reject(new Error("Local AI is not configured.")))
@@ -2387,9 +2505,9 @@ export function StringTable({
 
 function ActionButtons({
   listItems = false,
-  canRunLocalAi,
+  canRunAi,
   llmActionEnabled,
-  localAiUnavailableReason,
+  aiUnavailableReason,
   llmUnavailableReason,
   localAiCount,
   llmCount,
@@ -2398,13 +2516,13 @@ function ActionButtons({
   onMarkDone,
   onKeepOriginal,
   onClear,
-  onLocalAi,
+  onAi,
   onLlmExport,
 }: {
   listItems?: boolean;
-  canRunLocalAi: boolean;
+  canRunAi: boolean;
   llmActionEnabled: boolean;
-  localAiUnavailableReason: string | null;
+  aiUnavailableReason: string | null;
   llmUnavailableReason: string | null;
   localAiCount?: number | string;
   llmCount?: number | string;
@@ -2413,7 +2531,7 @@ function ActionButtons({
   onMarkDone: () => void;
   onKeepOriginal: () => void;
   onClear: () => void;
-  onLocalAi: () => void;
+  onAi: () => void;
   onLlmExport: () => void;
 }) {
   const buttons = (
@@ -2439,16 +2557,16 @@ function ActionButtons({
       <MenuSeparator listItem={listItems} />
       <MenuAction
         listItem={listItems}
-        disabled={!canRunLocalAi}
+        disabled={!canRunAi}
         title={
-          canRunLocalAi
+          canRunAi
             ? "AI output is saved to Review."
-            : (localAiUnavailableReason ?? "Configure Local AI in Settings.")
+            : (aiUnavailableReason ?? "Configure AI in Settings.")
         }
-        onClick={onLocalAi}
+        onClick={onAi}
       >
         <span className="stv3-menu-label">
-          <Sparkles aria-hidden="true" /> Translate selected with AI …
+          <Sparkles aria-hidden="true" /> Translate selected with AI
         </span>
         {localAiCount !== undefined && (
           <span className="stv3-context-shortcut">({localAiCount})</span>
@@ -2916,6 +3034,13 @@ function RowView({
         >
           {row.target || "—"}
         </span>
+      </span>
+      <span
+        className="stv3-row-actions-col"
+        role="cell"
+        aria-label={`Actions for ${row.key}`}
+        style={{ gridColumn: "-2 / -1" }}
+      >
         {severity && (
           <button
             className="stv3-inline-validation"

@@ -37,12 +37,8 @@ proportional to that goal.
 - Manual translation and local-only workflows remain offline. The optional
   Codex CLI backend uses only the CLI's own authentication; never inspect,
   import, or persist Codex authentication files or tokens.
-- The optional OpenAI API backend keeps its API key only in the running process
-  and never persists or logs it. It uses the fixed official Responses API with
-  `store=false` and no tools.
 - When an AI backend is selected, source text, section context, and matching
-  glossary terms are sent to that service. Direct OpenAI API use has separate
-  API costs.
+  glossary terms are sent to that service.
 - Do not add an AI provider marketplace, provider registry, or configurable
   custom cloud base URL. Keep the implemented backends direct and explicit.
 - The desktop app does not perform automatic downloads, Nexus API operations,

@@ -26,9 +26,10 @@ The durable product loop is:
 1. Select or auto-detect the Stardew Valley and Mods folders.
 2. Select a target language.
 3. Scan mods and import available target-language files.
-4. Browse, search, filter, edit, and review strings.
-5. Validate protected Stardew and SMAPI tokens.
-6. Export target-language `i18n` files or a translation package ZIP.
+4. Review the real scan summary on Overview, then open Workspace.
+5. Browse, search, filter, select, edit, and review strings.
+6. Validate protected Stardew and SMAPI tokens.
+7. Export target-language `i18n` files or a translation package ZIP.
 
 Glossary and AI features are optional additions to this loop. They must never
 be required for ordinary translation and export. Manual translation and all
@@ -37,8 +38,7 @@ local-only workflows remain available without contacting a cloud service.
 ## 4. Setup and Languages
 
 Setup stores the Stardew Valley folder, Mods folder, target language, and
-non-secret AI preferences in the portable `data/` folder. An OpenAI API key is
-session-only process state and is never persisted there.
+non-secret AI preferences in the portable `data/` folder.
 
 The source language is the mod's `i18n/default.json`, normally English.
 
@@ -108,19 +108,35 @@ values such as `Nexus:-1` are treated as no Nexus ID.
 
 ## 7. User Interface
 
-The application has a dashboard home and a two-panel work view:
+The application opens on **Overview**, with **Workspace** immediately beside it
+in the primary navigation.
 
-- the left side lists scanned packages and component mods;
-- the right side shows the selected mod's strings;
-- search, status filters, review queues, bulk actions, and keyboard navigation
-  support large translation sets;
-- Settings contains folders, language, glossary, AI backends, shortcuts,
-  logging, and app information;
-- the five latest completed backend operations, including exports, imports,
-  LLM batches, AI runs, ZIP builds, and batch edits, remain available in a
-  compact in-session result tray;
-- the latest batch edit has one in-memory undo snapshot until a newer operation
-  replaces it, and stale undo must never overwrite later string edits.
+Overview uses only real scanner, portable-settings, and current-session result
+data. It shows scan totals and diagnostics, recently opened mods, useful all-mod
+filter shortcuts, and the latest successful export path when those values
+exist. Missing aggregate counts, timestamps, change deltas, or history are shown
+as **Unavailable**; the production UI never fills them with demo data.
+
+Workspace is the two-panel translation view:
+
+- the resizable left pane lists scanned packages and every component mod;
+- the right pane contains one virtualized table for **This mod** and **All
+  mods** scopes;
+- search, status filters, the independent Validation issues filter, sortable
+  columns, multi-select, bulk actions, context menus, tooltips, and keyboard
+  navigation support large translation sets;
+- **Mod**, **File**, **Status**, **Key**, **English Source**, and **Target
+  Translation** are individually resizable when present; validation and row
+  actions remain in a fixed trailing lane;
+- Settings contains folders, language, glossary, the three direct AI backends,
+  shortcuts, logging, and app information;
+- completed operations appear in a compact result tray that can be collapsed,
+  closed, and reopened through **Latest result**. It exposes real paths and file
+  names, **Copy details**, relevant follow-up actions, and the five newest
+  backend history entries for the running session;
+- one reversible batch edit has an in-memory undo snapshot until a newer
+  completed operation replaces it, and stale undo must never overwrite later
+  string edits.
 
 The UI should remain a focused translation tool rather than a general workspace
 or project-management suite.
@@ -128,9 +144,20 @@ or project-management suite.
 ## 8. Editing Workflow
 
 Strings can be edited in the table workflow and the full string editor. The app
-supports manual translation, bulk actions, review navigation, and a
-**Keep original** action that intentionally stores the source text as the target
-text.
+supports manual translation, review navigation, and a **Keep original** action
+that intentionally stores the source text as the target text.
+
+Rows can be selected with checkboxes, Ctrl+click, Shift+click, keyboard
+selection, or Ctrl+A over the current filtered result. Batch actions can copy
+source or target text, mark strings as Done, keep the English source, clear
+translations, run AI translation, or export an external LLM batch. The batch
+trigger and each row's right-click menu expose the same actions. Selection is
+bound to exact mod/file/key identities and is pruned when scope or filters make
+rows unavailable.
+
+Live AI targets only exact selected Open or Changed strings. The backend resolves
+those identities from a fresh scan before sending any source text. Done and
+Review text is not silently replaced.
 
 Saving work updates the portable translation state. Export remains an explicit
 user action.
@@ -139,12 +166,19 @@ user action.
 
 The app uses four string states:
 
-- `untranslated`: no accepted target text;
-- `translated`: manually saved or explicitly accepted;
-- `outdated`: the source changed after the saved translation;
-- `review-needed`: imported AI output that still needs human review.
+- **Open** (`untranslated`): no accepted target text;
+- **Done** (`translated`): manually saved or explicitly accepted;
+- **Changed** (`outdated`): the source changed after the saved translation;
+- **Review** (`review-needed`): imported or AI-generated output that still
+  needs human approval.
 
 **Keep original** is an action, not a fifth status.
+
+**Validation issues** is also not a status. It is an independent filter over
+the current source and target values. Review answers “has a human accepted this
+suggestion?” while validation answers “does the current text trigger a safety
+rule or review warning?” A row can therefore be in Review without a validation
+finding, or have a validation finding while in another status.
 
 ## 10. Validation
 
@@ -158,6 +192,10 @@ The acceptance applies only to that saved source revision; editing the target
 or a changed English source requires confirmation again. Review warnings, such
 as punctuation or newline differences, do not block export.
 
+The **Validation issues** filter includes both blocking errors and non-blocking
+warnings. The row indicator and editor explain the exact finding; the backend
+revalidates the complete export or import scope before the first write.
+
 Untranslated strings do not block export. They are omitted so SMAPI can fall
 back to `default.json`.
 
@@ -169,6 +207,14 @@ and import the completed result.
 The desktop app does not contact that service. The user transfers the file
 manually. Imported values enter `review-needed`, validation runs immediately,
 and already accepted local translations are not silently overwritten.
+
+The export action accepts any number of selected Open or Changed strings from
+one mod. Import accepts one JSON file through the native picker or drag and drop
+and shows a read-only preflight before it can write. The preflight reports the
+batch and selected mod IDs, target language, source snapshot, supplied and
+matched strings, preserved local values, empty values, identical values,
+importable values, and structured protected-token issues. A wrong-mod batch may
+switch to that currently scanned mod and rerun the complete preflight.
 
 Batch format 2 contains only `format`, `version`, `metadata`, and `files`.
 Metadata binds the selected mod ID and target language to one SHA-256 snapshot
@@ -189,6 +235,11 @@ For sharing completed work, the app can build an installable translation ZIP
 containing only generated target-language `i18n` files while preserving the
 package's component folder structure. It can also generate short localized
 publication notes from the same package data.
+
+Direct export is available for the current mod or all scanned mods. Export and
+ZIP results retain the real destination path and file name for result details
+and **Show in folder**. Existing target files receive visible backups, and the
+complete selected scope is validated before any multi-file transaction writes.
 
 ## 13. Supported Files
 
@@ -214,16 +265,20 @@ All application state is portable and stored beside the executable:
 Dashboard recency is part of the portable settings state; the app does not keep
 workflow state in browser-local storage.
 
+Workspace search values, This mod/All mods scope, status and Validation issues
+filters, sort order, selected mod, mod-pane width, and table-column widths are
+also stored in portable settings. Selection, open dialogs, result history, and
+undo snapshots remain session-only.
+
 Result-tray history is bounded to five completed backend operations for the
 running app session. Its single batch-undo snapshot is also memory-only; it is
-not a hidden project log and is never written to portable state. Any later
-successful edit to a touched component makes that snapshot permanently stale,
-even when the edited value is changed back to the batch-written value.
+not a hidden project log and is never written to portable state. A later
+completed operation replaces that snapshot. Any later successful edit to a
+touched component also makes it permanently stale, even when the edited value
+is changed back to the batch-written value.
 
-OpenAI API keys exist only in the running application process and are never
-written to portable state or logs. Codex CLI authentication remains owned by
-the CLI; the app does not read, copy, or persist its authentication files or
-tokens.
+Codex CLI authentication remains owned by the CLI; the app does not read, copy,
+or persist its authentication files or tokens.
 
 Translation state is separate from installed mods. The app does not modify mod
 files until the user explicitly exports.
@@ -248,11 +303,12 @@ The maintained product includes:
 - recursive mod scanning and package grouping;
 - existing translation import;
 - a virtualized string table and editor;
-- search, filters, review queues, and bulk actions;
+- Overview and a two-panel Workspace;
+- search, status and validation filters, resizable sortable columns,
+  multi-select, review queues, context menus, and bulk actions;
 - protected-token validation;
 - optional typed glossary hints;
-- optional AI translation through a localhost endpoint, Codex CLI, or the
-  OpenAI Responses API;
+- optional AI translation through a localhost endpoint or Codex CLI;
 - external LLM batch export and import;
 - target-file export with backups;
 - translation package ZIP creation;
@@ -283,21 +339,20 @@ AI translation is optional. Manual translation and every local-only workflow
 remain offline and usable when an AI backend is unavailable.
 
 Local AI connects only to a user-configured localhost OpenAI-compatible
-endpoint, such as Ollama or LM Studio.
+endpoint, such as Ollama or LM Studio. Settings can restore the selected local
+service's default Base URL, test the connection, and choose a reported model.
 
 The Codex CLI backend invokes an installed CLI and relies exclusively on that
 CLI's own authentication. The app does not inspect, import, copy, or persist
-Codex authentication files or tokens.
-
-The direct OpenAI API backend accepts an API key only for the running app
-process. It uses the fixed official `https://api.openai.com/v1/responses`
-endpoint, sends `store=false`, and enables no tools. Usage is billed separately
-through the user's OpenAI API account.
+Codex authentication files or tokens. It uses the CLI's own default model; the
+app does not maintain a separate Codex model catalogue.
 
 An AI request sends the source text, its section context, and matching glossary
-terms to the selected backend. Every completed suggestion is saved immediately
-as `review-needed`; cancellation or a later provider error retains completed
-Review work. Token validation and human review remain the final safety gates.
+terms to the selected backend. Batch AI always receives exact selected string
+identities and automatically includes selected Open and Changed strings only.
+Every completed suggestion is saved immediately as `review-needed`;
+cancellation or a later provider error retains completed Review work. Token
+validation and human review remain the final safety gates.
 
 These are fixed, direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

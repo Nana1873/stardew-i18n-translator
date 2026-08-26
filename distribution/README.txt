@@ -13,22 +13,24 @@ https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 The application creates a data folder beside the executable on first launch.
 It stores local data there:
 
-- settings.json: selected folders, language, shortcuts, and non-secret AI
-  settings
+- settings.json: selected folders, language, shortcuts, non-secret AI settings,
+  and Workspace search, filter, sort, pane, and column-width preferences
 - glossary/glossary-<lang>.json: optional per-language glossary caches
 - language-state/<lang>/: saved translation work and automatic state backups
 - logs/: optional rotating diagnostic logs
 
+The five latest operation results and the single safe batch-undo snapshot are
+kept only for the running application session. They are not written to the data
+folder. Result details use the real paths and file names returned by the
+backend; values the backend does not provide are shown as Unavailable.
+
 Manual translation and local-only workflows remain offline. The optional Codex
 CLI backend uses only the CLI's own login; the application never reads its
-authentication files or tokens. An OpenAI API key is kept only in the running
-application process and is never written to the data folder.
+authentication files or tokens.
 
-When Codex CLI or OpenAI API translation is selected, source text, section
-context, and matching glossary terms are sent to that service. The OpenAI API
-backend uses the fixed official Responses API with store=false and no tools;
-its use can incur separate API costs. Every AI result requires review before it
-becomes an accepted translation.
+When Codex CLI translation is selected, source text, section context, and
+matching glossary terms are sent through the installed CLI. Every AI result
+requires review before it becomes an accepted translation.
 
 Copy the complete application folder, including data, to move your work to
 another computer.

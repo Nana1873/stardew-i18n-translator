@@ -17,11 +17,14 @@ a searchable editor instead of editing large JSON files by hand.
 
 - Scans a SMAPI Mods folder and finds standard `i18n` translation files.
 - Groups multi-part mods and imports existing translations.
-- Provides search, filters, progress tracking, bulk actions, and review queues.
+- Opens on a real-data Overview and keeps detailed translation work in a
+  two-panel Workspace.
+- Provides search, filters, progress tracking, multi-select, bulk actions,
+  resizable columns, and review queues.
 - Warns about missing or changed Stardew, dialogue, mail, Content Patcher, and
   placeholder tokens before export.
-- Supports manual translation, optional local AI, Codex CLI, OpenAI API, and
-  external LLM batches.
+- Supports manual translation, optional local AI, Codex CLI, and external LLM
+  batches.
 - Supports Stardew's built-in languages and curated custom-language targets.
 - Builds optional glossary hints from local Stardew strings or an installed
   community language pack.
@@ -64,27 +67,67 @@ It is **not** a mod manager or a general Stardew file editor. It does not
 translate arbitrary `content.json`, game data files, dialogue databases, or XNB
 assets, and it does not download or update mods.
 
+## Overview and Workspace
+
+The app opens on **Overview**. It summarizes the latest real scan, lets you
+resume recently opened mods, links into useful all-mod filters, and shows the
+latest successful export path from the current app session. When the backend
+does not provide a value, the UI says **Unavailable** instead of inventing a
+count, timestamp, change delta, or history entry.
+
+**Workspace** places the scanned mod and component list on the left and the
+virtualized string table beside it. You can work on one mod or search across all
+mods, then filter by **Open**, **Changed**, **Review**, or **Done**:
+
+- **Open:** no accepted target-language text exists.
+- **Changed:** the English source changed after the translation was saved.
+- **Review:** imported or AI-generated text still needs human approval.
+- **Done:** the translation was explicitly saved or accepted for the current
+  English source.
+
+**Validation issues** is a separate content-check filter, not another status or
+a combined review queue. It includes blocking protected-token or text
+serialization errors as well as non-blocking warnings such as changed line
+breaks or identical text.
+
+The mod-list divider and the sortable **Mod**, **File**, **Status**, **Key**,
+**English Source**, and **Target Translation** columns can be resized. Search,
+scope, filters, sort order, pane width, and column widths are saved with the
+portable workspace settings.
+
 ## Translation Workflows
 
-You can translate in five ways:
+You can translate in four ways:
 
 - **Manual:** edit strings directly in the string editor.
 - **Local AI:** connect to a local OpenAI-compatible endpoint such as Ollama or
   LM Studio.
 - **Codex CLI:** use an installed Codex CLI through its own existing login. The
   app never reads Codex authentication files or tokens.
-- **OpenAI API:** provide an API key for the current app session and use the
-  fixed official `https://api.openai.com/v1/responses` endpoint. Requests set
-  `store=false` and enable no tools. API usage can incur charges separate from
-  ChatGPT or Codex subscriptions.
 - **External LLM batch:** export a self-contained JSON batch, translate it with a
   file-capable LLM, and import the result. Format 2 uses one compact source
   snapshot to ensure the result still belongs to the selected mod, language,
   files, keys, and current English text before anything is saved.
 
-Manual translation and local-only workflows remain offline. When Codex CLI or
-the OpenAI API is selected, the source text, its section context, and matching
-glossary terms are sent to that service.
+Use row checkboxes, Ctrl+click, Shift+click, or Ctrl+A to select the current
+filtered result. Batch actions can copy text, mark strings as Done, keep the
+English source, clear translations, start AI translation, or export an external
+LLM batch; the same actions are available from the right-click menu. The default
+AI engine is selected in Settings. **Translate selected with AI** immediately
+includes every selected **Open** or **Changed** string and sends no Done or
+Review text. An external batch may contain many selected Open or Changed strings
+but is bound to exactly one mod.
+
+External batch import uses a native file picker or drag and drop. Before the
+Import button is enabled, a read-only preflight checks the mod, target language,
+source snapshot, files, keys, protected tokens, empty results, and existing
+local translations. A batch for another currently scanned mod can switch the
+Workspace to that mod for a fresh preflight. Valid values enter Review, while
+non-empty local translations remain untouched.
+
+Manual translation and local-only workflows remain offline. When Codex CLI is
+selected, the source text, its section context, and matching glossary terms are
+sent through the installed CLI.
 
 AI suggestions always enter the review queue. Each completed suggestion is
 saved immediately, so cancelling a longer run keeps the completed Review work.
@@ -99,6 +142,11 @@ anyway** during review.
 
 ## Exporting and Sharing
 
+The **Export...** menu can export the current mod, export all scanned mods,
+build a translation ZIP, or prepare translation notes. Direct exports validate
+the complete selected scope before the first write, create visible backups for
+existing target files, and roll back an incomplete multi-file write.
+
 **Export... > Build Release ZIP** creates an installable translation archive for
 the selected mod package. It preserves multi-component folder paths and includes
 only generated target-language `i18n` files, not the original mod's DLLs, assets,
@@ -107,11 +155,17 @@ manifests, or backups.
 **Translation Notes** creates short copy-ready publication text using the current
 package, language, coverage, installation guidance, and review state.
 
+The result tray shows real output paths and file names returned by export,
+import, external LLM batch, and ZIP operations. It can be collapsed or closed;
+**Latest result** opens it again, and **Copy details** copies the available
+summary, paths, warnings, and workflow information.
+
 The five latest completed backend operations, including exports, imports, LLM
 batches, AI runs, release ZIPs, and batch edits, remain available in the result
-tray for the current app session. The latest batch edit can be undone until a
-newer operation replaces its undo snapshot; undo refuses to overwrite a string
-that changed afterward, even if it was later changed back.
+tray for the current app session. One reversible batch edit can be undone until
+a newer completed operation replaces its undo snapshot. Undo also refuses to
+overwrite a touched string that was edited afterward, even if it was later
+changed back to the batch value.
 
 ## Local Data and Privacy
 
@@ -122,11 +176,8 @@ Local AI requests go only to the local endpoint you configure. External LLM
 batches leave your computer only when you upload them yourself.
 
 Codex CLI authentication remains entirely owned by the CLI; the app does not
-read or copy its authentication files or tokens. An OpenAI API key exists only
-in the running app process and is never written to `data/`. The direct API
-integration has a fixed official Responses API endpoint, sets `store=false`,
-and provides no tools. The app does not offer a provider marketplace or a
-custom cloud base URL.
+read or copy its authentication files or tokens. The app does not offer a
+provider marketplace or a custom cloud base URL.
 
 Portable data is stored under:
 

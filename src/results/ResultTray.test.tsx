@@ -7,6 +7,7 @@ import {
   type ResultProblem,
   type ResultTrayData,
 } from "./ResultTray";
+import type { OperationHistoryEntry } from "../tauri/commands";
 
 const writeText = vi.fn();
 
@@ -51,6 +52,24 @@ const exportData: ResultTrayData = {
   },
   problems: [problem],
 };
+
+function historyEntry(
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return {
+    id: "operation-1",
+    kind: "export",
+    outcome: "success",
+    title: "Exported Test Mod",
+    summary: "18 translated strings exported.",
+    itemCount: 18,
+    warnings: [],
+    details: [],
+    canUndo: false,
+    completedAtEpochMs: Date.UTC(2026, 7, 26, 10, 0),
+    ...overrides,
+  };
+}
 
 function renderTray(
   data: ResultTrayData,
@@ -264,46 +283,124 @@ describe("ResultTray V3", () => {
   });
 
   it.each([
-    ["cancelled", "AI translation cancelled", "is-warning"],
-    ["error", "AI translation failed", "is-error"],
+    ["complete", 5, null, "AI translation complete", null],
+    ["cancelled", 2, null, "AI translation cancelled", "is-warning"],
+    ["error", 2, "Provider offline", "AI translation failed", "is-error"],
   ] as const)(
-    "shows an exact partial AI %s result with review and undo actions",
-    (outcome, label, toneClass) => {
+    "shows the exact AI %s result with Review work and no frontend undo",
+    (outcome, done, error, label, toneClass) => {
       const openReview = vi.fn();
+      const undo = vi.fn();
       renderTray(
         {
           kind: "ai-batch",
           title: "Test Mod",
           collapsed: false,
           pending: false,
-          error: null,
+          error,
           problems: [],
           outcome,
-          done: 2,
+          done,
           total: 5,
           engine: "Local AI",
-          undoAvailable: true,
+          undoAvailable: false,
         },
-        { onOpenReview: openReview, onUndoBulk: vi.fn() },
+        { onOpenReview: openReview, onUndoBulk: undo },
       );
 
       expect(screen.getByText(label)).toBeInTheDocument();
       expect(
-        screen.getByText(/2 completed Local AI suggestions/),
+        screen.getByText(
+          `${done} Local AI suggestions completed and saved in Review.`,
+        ),
       ).toBeInTheDocument();
-      expect(screen.getByText("2 saved · 3 not started.")).toBeInTheDocument();
-      expect(document.querySelector(".stv3-result-status")).toHaveClass(
-        toneClass,
-      );
+      expect(
+        screen.getByText(`${done} saved · ${5 - done} remaining.`),
+      ).toBeInTheDocument();
+      const status = document.querySelector(".stv3-result-status");
+      if (toneClass) expect(status).toHaveClass(toneClass);
+      else
+        expect(status).not.toHaveClass("is-warning", "is-error", "is-pending");
+      if (error) expect(screen.getByText(error)).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Undo the latest batch edit" }),
+      ).toBeNull();
+      expect(undo).not.toHaveBeenCalled();
       fireEvent.click(
         screen.getByRole("button", { name: "Open review queue" }),
       );
       expect(openReview).toHaveBeenCalledOnce();
-      expect(
-        screen.getByRole("button", { name: "Undo the latest batch edit" }),
-      ).toBeInTheDocument();
     },
   );
+
+  it("renders canonical backend history, selects an entry, and copies its real details", async () => {
+    const newest = historyEntry();
+    const selected = historyEntry({
+      id: "operation-2",
+      kind: "import",
+      outcome: "warning",
+      title: "Imported translations",
+      summary: "18 suggestions saved in Review.",
+      path: "C:/in/result.json",
+      fileName: "result.json",
+      warnings: ["2 existing translations were preserved."],
+      details: [{ label: "Imported", value: "18" }],
+      completedAtEpochMs: Date.UTC(2026, 7, 26, 9, 30),
+    });
+    const onSelectHistory = vi.fn();
+    const onOpenReview = vi.fn();
+    const onNotify = vi.fn();
+    renderTray(
+      {
+        kind: "history",
+        title: selected.title,
+        collapsed: false,
+        pending: false,
+        error: null,
+        problems: [],
+        entry: selected,
+      },
+      {
+        history: [newest, selected],
+        selectedHistoryId: selected.id,
+        onSelectHistory,
+        onOpenReview,
+        onNotify,
+      },
+    );
+
+    const history = screen.getByRole("combobox", {
+      name: "Recent operation results",
+    });
+    const entries = screen.getAllByRole("option");
+    expect(history).toHaveValue(selected.id);
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toHaveTextContent("Latest · Exported Test Mod");
+    expect(entries[1]).toHaveTextContent("import · Imported translations");
+
+    fireEvent.change(history, { target: { value: newest.id } });
+    expect(onSelectHistory).toHaveBeenCalledWith(newest);
+    expect(screen.getByText("Imported translations · warnings")).toBeVisible();
+    expect(screen.getByText(selected.summary)).toBeVisible();
+    expect(screen.getByText(selected.warnings[0])).toBeVisible();
+    expect(screen.getByText("result.json")).toBeVisible();
+    expect(screen.getByText("C:/in/result.json")).toBeVisible();
+    expect(screen.getByText("18")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy details" }));
+    await waitFor(() => expect(writeText).toHaveBeenCalledOnce());
+    const copied = writeText.mock.calls[0][0] as string;
+    expect(copied).toContain("Imported translations · warnings");
+    expect(copied).toContain("18 suggestions saved in Review.");
+    expect(copied).toContain("2 existing translations were preserved.");
+    expect(copied).toContain("File name\nresult.json");
+    expect(copied).toContain("Path\nC:/in/result.json");
+    expect(copied).toContain("Imported\n18");
+    expect(onNotify).toHaveBeenCalledWith("Result details copied.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open review queue" }));
+    expect(onOpenReview).toHaveBeenCalledOnce();
+  });
 
   it("copies generic details assembled only from the current real result", async () => {
     renderTray({

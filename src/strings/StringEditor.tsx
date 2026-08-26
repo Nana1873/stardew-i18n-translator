@@ -37,6 +37,14 @@ import type {
   TermKind,
   TranslationResult,
 } from "../tauri/commands";
+
+export interface EditorTranslationResult extends TranslationResult {
+  engine?: string;
+  model?: string;
+  reasoning?: string;
+  /** Live backend runs persist the suggestion to Review before returning. */
+  persisted?: boolean;
+}
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
 import { STATUS_META, statusTint } from "./status";
@@ -70,16 +78,21 @@ interface StringEditorProps {
   total: number;
   modName: string;
   targetLanguageLabel?: string;
-  /** Configured local model used for a draft created in this editor session. */
-  localAiModel?: string;
+  /** Real configured engine metadata for this editor session. */
+  aiEngineLabel?: string;
+  aiModel?: string;
+  aiReasoning?: string;
+  /** Live AI may only replace Open or Changed rows. */
+  translationAllowed?: boolean;
+  translationUnavailableReason?: string;
   reviewProgress?: { current: number; total: number };
   /** Official game glossary (typed entries), if built. */
   glossary?: GlossaryEntry[] | null;
-  /** Translate the source via the local AI; absent when no AI is configured. */
+  /** Translate the exact row through the configured live engine. */
   onTranslate?: (
     source: string,
     section?: string | null,
-  ) => Promise<TranslationResult>;
+  ) => Promise<EditorTranslationResult>;
   /** Persist the edited target + status for this row. */
   onSave: (
     value: string,
@@ -183,7 +196,11 @@ export function StringEditor({
   total,
   modName,
   targetLanguageLabel = "Translation",
-  localAiModel,
+  aiEngineLabel = "AI",
+  aiModel,
+  aiReasoning,
+  translationAllowed = true,
+  translationUnavailableReason,
   reviewProgress,
   glossary,
   onTranslate,
@@ -216,6 +233,13 @@ export function StringEditor({
   const [translateMsgKind, setTranslateMsgKind] = useState<
     "note" | "ai-error" | "save-error"
   >("note");
+  const [aiProvenance, setAiProvenance] = useState<{
+    engine: string;
+    model: string;
+    reasoning: string;
+    persisted: boolean;
+    value: string;
+  } | null>(null);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "source" | "target">(
     "idle",
@@ -295,6 +319,9 @@ export function StringEditor({
     setDirty(false);
     setTranslateMsg(null);
     setTranslateMsgKind("note");
+    setAiProvenance((current) =>
+      current?.persisted && current.value === row.target ? current : null,
+    );
     setDiscardOpen(false);
     setCopyState("idle");
     textareaRef.current?.focus();
@@ -349,7 +376,7 @@ export function StringEditor({
 
   /** Save normally, or pause for a per-string token-error waiver. */
   function requestConfirmedSave(destination: "close" | "next") {
-    if (saving) return;
+    if (saving || translating) return;
     if (blockingTokenIssues.length > 0 && !mismatchAccepted) {
       setPendingSave(destination);
       return;
@@ -363,6 +390,7 @@ export function StringEditor({
   /** A manual edit approves an already-persisted Review row. A fresh AI draft
    * keeps its first-save Review gate until persistence succeeds. */
   function editValue(next: string) {
+    if (translating) return;
     aiRequest.current += 1;
     setTranslating(false);
     setValue(next);
@@ -374,8 +402,12 @@ export function StringEditor({
   }
 
   async function handleTranslate() {
-    if (!onTranslate) {
-      setTranslateMsg("Configure a local AI in Settings to use translation.");
+    if (translating) return;
+    if (!translationAllowed || !onTranslate) {
+      setTranslateMsg(
+        translationUnavailableReason ??
+          "Configure a translation engine in Settings to use AI translation.",
+      );
       setTranslateMsgKind("ai-error");
       return;
     }
@@ -390,11 +422,18 @@ export function StringEditor({
         return;
       setValue(result.text);
       setReviewNeeded(true); // an AI suggestion awaiting review
-      setAiDraftPending(true);
+      setAiDraftPending(!result.persisted);
       setMismatchAccepted(false);
       setPendingSave(null);
       setPendingMove(null);
-      setDirty(result.text !== row.target);
+      setDirty(result.persisted ? false : result.text !== row.target);
+      setAiProvenance({
+        engine: result.engine || aiEngineLabel,
+        model: result.model || aiModel || "Model unavailable",
+        reasoning: result.reasoning || aiReasoning || "Reasoning unavailable",
+        persisted: Boolean(result.persisted),
+        value: result.text,
+      });
       const notes: string[] = [];
       if (result.missingTokens.length > 0) {
         notes.push(
@@ -420,7 +459,7 @@ export function StringEditor({
   }
 
   async function navigate(delta: number) {
-    if (saving) return;
+    if (saving || translating) return;
     if (!(aiDraftPending || dirty || value !== row.target)) {
       aiRequest.current += 1;
       onNavigate(delta);
@@ -460,11 +499,13 @@ export function StringEditor({
   /** Keep original (F2/F3): copy the source into the field — kept English is
    * an explicit identical translation, so outdated detection still applies. */
   function keepOriginal() {
+    if (translating) return;
     editValue(row.source);
   }
 
   /** Reset (F4): clear the target field; the string becomes untranslated. */
   function reset() {
+    if (translating) return;
     setValue("");
     setReviewNeeded(false);
     setMismatchAccepted(false);
@@ -475,7 +516,7 @@ export function StringEditor({
   }
 
   function requestClose() {
-    if (saving) return;
+    if (saving || translating) return;
     if (aiDraftPending || dirty || value !== row.target) {
       setDiscardOpen(true);
       return;
@@ -500,6 +541,7 @@ export function StringEditor({
 
   /** Insert a protected token at the cursor (or replace the selection). */
   function insertToken(raw: string) {
+    if (translating) return;
     const textarea = textareaRef.current;
     const start = textarea?.selectionStart ?? value.length;
     const end = textarea?.selectionEnd ?? value.length;
@@ -783,7 +825,7 @@ export function StringEditor({
               type="button"
               aria-label="Close editor"
               onClick={requestClose}
-              disabled={saving}
+              disabled={saving || translating}
             >
               <X aria-hidden />
             </button>
@@ -896,13 +938,15 @@ export function StringEditor({
                   Suggestion source
                 </span>
                 <span className="stv3-provenance-copy">
-                  <strong>{aiDraftPending ? "Local AI" : "Unavailable"}</strong>{" "}
-                  · {aiDraftPending ? "Draft in editor" : "Awaiting review"} ·{" "}
-                  {aiDraftPending
-                    ? localAiModel || "Model unavailable"
-                    : "Model unavailable"}{" "}
-                  · {aiDraftPending ? "Default" : "Reasoning unavailable"} ·{" "}
-                  {aiDraftPending ? "just now" : "Time unavailable"}
+                  <strong>{aiProvenance?.engine ?? "Unavailable"}</strong> ·{" "}
+                  {aiProvenance?.persisted
+                    ? "Saved to Review"
+                    : aiDraftPending
+                      ? "Draft in editor"
+                      : "Awaiting review"}{" "}
+                  · {aiProvenance?.model ?? "Model unavailable"} ·{" "}
+                  {aiProvenance?.reasoning ?? "Reasoning unavailable"} ·{" "}
+                  {aiProvenance ? "just now" : "Time unavailable"}
                 </span>
               </div>
             )}
@@ -971,7 +1015,7 @@ export function StringEditor({
                 ref={textareaRef}
                 value={value}
                 onChange={(event) => editValue(event.target.value)}
-                readOnly={saving}
+                readOnly={saving || translating}
               />
             </div>
           </div>
@@ -1109,7 +1153,7 @@ export function StringEditor({
               type="button"
               className="editor__iconbtn stv3-icon-button"
               onClick={() => void navigate(-1)}
-              disabled={saving || index === 0}
+              disabled={saving || translating || index === 0}
               aria-label="Previous string"
               title={`Previous string — saves changes (${displayShortcut(shortcuts["editor.previous"])})`}
             >
@@ -1119,7 +1163,7 @@ export function StringEditor({
               type="button"
               className="editor__iconbtn stv3-icon-button"
               onClick={() => void navigate(1)}
-              disabled={saving || index >= total - 1}
+              disabled={saving || translating || index >= total - 1}
               aria-label="Next string"
               title={`Next string — saves changes (${displayShortcut(shortcuts["editor.next"])})`}
             >
@@ -1129,7 +1173,7 @@ export function StringEditor({
               type="button"
               className="stv3-button stv3-button-quiet"
               onClick={keepOriginal}
-              disabled={saving}
+              disabled={saving || translating}
               title={`Keep the original text (${displayShortcut(shortcuts["editor.keepOriginal"])})`}
             >
               <Equal aria-hidden /> Keep original
@@ -1138,7 +1182,7 @@ export function StringEditor({
               type="button"
               className="stv3-button stv3-button-quiet"
               onClick={reset}
-              disabled={saving}
+              disabled={saving || translating}
               aria-label={
                 discardSuggestion
                   ? "Discard this review suggestion; save to return the string to Open"
@@ -1153,16 +1197,17 @@ export function StringEditor({
               type="button"
               className="editor__ai-btn stv3-button stv3-button-quiet"
               onClick={() => void handleTranslate()}
-              disabled={translating || saving}
+              disabled={translating || saving || !translationAllowed}
               title={
-                onTranslate
-                  ? `Translate with Local AI — result lands in Review (${displayShortcut(shortcuts["editor.translate"])})`
-                  : "Local AI is unavailable. Open Translation engines in Settings."
+                translationAllowed && onTranslate
+                  ? `Translate with ${aiEngineLabel} — result lands in Review (${displayShortcut(shortcuts["editor.translate"])})`
+                  : (translationUnavailableReason ??
+                    "This translation engine is unavailable. Open Translation engines in Settings.")
               }
             >
               <Sparkles aria-hidden />
               {translating ? "Translating…" : "Translate with AI"}{" "}
-              <span className="stv3-context-shortcut">Local AI</span>
+              <span className="stv3-context-shortcut">{aiEngineLabel}</span>
             </button>
           </div>
           <div className="stv3-command-actions">
@@ -1170,7 +1215,7 @@ export function StringEditor({
               type="button"
               className="stv3-button stv3-button-quiet"
               onClick={() => requestConfirmedSave("close")}
-              disabled={saving}
+              disabled={saving || translating}
               title={`${saveLabel} (${displayShortcut(shortcuts["editor.save"])})`}
             >
               {saveLabel} <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
@@ -1179,7 +1224,7 @@ export function StringEditor({
               type="button"
               className="editor__save stv3-button stv3-button-primary"
               onClick={() => requestConfirmedSave("next")}
-              disabled={saving}
+              disabled={saving || translating}
               title={`${saveNextLabel} (${displayShortcut(shortcuts["editor.saveNext"])})`}
             >
               {saveNextLabel}{" "}

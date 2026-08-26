@@ -41,6 +41,16 @@ function sampleScan(mods = [sampleMod()]): ScanResult {
   return {
     mods,
     warnings: ["Skipped malformed optional component"],
+    skippedComponents: [
+      {
+        packageId: "Sample Pack",
+        componentUniqueId: "sample.optional",
+        componentName: "Optional Component",
+        relativeLocation: "Sample/Optional/manifest.json",
+        reason: "invalid manifest JSON",
+        restOfPackageLoaded: true,
+      },
+    ],
     extraKeys: [],
     modCount: mods.length,
     fileCount: mods.reduce((sum, mod) => sum + mod.i18nFiles.length, 0),
@@ -68,6 +78,7 @@ describe("Dashboard", () => {
         lastExport={{
           label: "Last export · Sample Mod",
           path: "E:/Fixtures/Mods/Sample/i18n/de.json",
+          folder: "E:/Fixtures/Mods/Sample/i18n",
         }}
         onShowLastExport={lastExport}
       />,
@@ -88,11 +99,10 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        /skipped-component count and change, added, and removed deltas unavailable/,
+        /1 component skipped · change, added, and removed deltas unavailable/,
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/1 scanner warning/)).toBeInTheDocument();
-    expect(screen.queryByText(/1 skipped/)).toBeNull();
     expect(
       screen.getByText("E:/Fixtures/Mods/Sample/i18n/de.json"),
     ).toBeInTheDocument();
@@ -148,9 +158,11 @@ describe("Dashboard", () => {
 
   it("does not invent all-mod status or result history", () => {
     const withoutStatusCounts = sampleMod({ statusCounts: undefined });
+    const scanWithoutStructuredSkips = sampleScan([withoutStatusCounts]);
+    delete scanWithoutStructuredSkips.skippedComponents;
     render(
       <Dashboard
-        scan={sampleScan([withoutStatusCounts])}
+        scan={scanWithoutStructuredSkips}
         scanning={false}
         lastScanAt={null}
         languageLine="German (de)"
@@ -168,6 +180,9 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(
       screen.getByText(/Last export · Unavailable in this session/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/skipped-component count unavailable/),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Show in folder" }),

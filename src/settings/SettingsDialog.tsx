@@ -6,7 +6,6 @@ import {
 } from "react";
 import {
   BookOpen,
-  Cloud,
   Folder,
   HardDrive,
   Info,
@@ -19,9 +18,12 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  type AiEngine,
   type AppSettings,
+  type CodexCliStatus,
   type GlossaryStatus,
   buildGlossary,
+  codexCliStatus,
   glossaryStatus,
   llmModels,
   openLogsDir,
@@ -83,7 +85,12 @@ interface LlmConnectionResult {
   error?: string;
 }
 
-type EnginePanel = "local" | "codex" | "api";
+type EnginePanel = "local" | "codex";
+
+const DEFAULT_AI_SETTINGS = {
+  defaultEngine: "local" as AiEngine,
+  codexReasoning: "medium" as const,
+};
 
 export function SettingsDialog({
   settings,
@@ -92,8 +99,18 @@ export function SettingsDialog({
   onReRunSetup,
   initialPage = "folders",
 }: SettingsDialogProps) {
+  const savedAi = settings.ai ?? DEFAULT_AI_SETTINGS;
+  const savedDefaultEngine =
+    savedAi.defaultEngine === "local" || savedAi.defaultEngine === "codex"
+      ? savedAi.defaultEngine
+      : null;
   const [page, setPage] = useState<SettingsPage>(initialPage);
-  const [enginePanel, setEnginePanel] = useState<EnginePanel>("local");
+  const [preferredEngine, setPreferredEngine] = useState<AiEngine | null>(
+    savedDefaultEngine,
+  );
+  const [enginePanel, setEnginePanel] = useState<EnginePanel>(
+    savedDefaultEngine ?? "local",
+  );
   const [stardewPath, setStardewPath] = useState(settings.stardewPath ?? "");
   const [modsPath, setModsPath] = useState(settings.modsPath ?? "");
   const [folderPicking, setFolderPicking] = useState<"stardew" | "mods" | null>(
@@ -123,12 +140,37 @@ export function SettingsDialog({
   const [llmTemperature, setLlmTemperature] = useState(
     settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
   );
+  const [codexReasoning, setCodexReasoning] = useState<
+    "low" | "medium" | "high"
+  >(savedAi.codexReasoning);
+  const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
+  const [codexChecking, setCodexChecking] = useState(false);
   const llmDefaultBaseUrl =
     llmProvider === "custom" ? null : (LLM_PRESETS[llmProvider] ?? null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const llmRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
+  const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
+  const codexAvailable = Boolean(
+    codexStatus?.installed && codexStatus.authenticated,
+  );
+  const defaultEngine: AiEngine | null =
+    preferredEngine === "codex" && codexStatus === null
+      ? null
+      : preferredEngine === "local" && localAvailable
+        ? "local"
+        : preferredEngine === "codex" && codexAvailable
+          ? "codex"
+          : localAvailable
+            ? "local"
+            : codexAvailable
+              ? "codex"
+              : null;
+
+  useEffect(() => {
+    if (defaultEngine) setEnginePanel(defaultEngine);
+  }, [defaultEngine]);
 
   useEffect(
     () => () => {
@@ -136,6 +178,29 @@ export function SettingsDialog({
     },
     [],
   );
+
+  useEffect(() => {
+    let active = true;
+    setCodexChecking(true);
+    codexCliStatus()
+      .then((status) => {
+        if (active) setCodexStatus(status);
+      })
+      .catch((cause) => {
+        if (!active) return;
+        setCodexStatus({
+          installed: false,
+          authenticated: false,
+          error: String(cause),
+        });
+      })
+      .finally(() => {
+        if (active) setCodexChecking(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
@@ -245,6 +310,7 @@ export function SettingsDialog({
     setLlmBaseUrl(llmDefaultBaseUrl);
     setLlmModelList(null);
     setLlmResult(null);
+    setLlmModel("");
     setLlmTesting(false);
   }
 
@@ -280,6 +346,26 @@ export function SettingsDialog({
     }
   }
 
+  function chooseEngine(panel: EnginePanel) {
+    setEnginePanel(panel);
+    setPreferredEngine(panel);
+  }
+
+  async function checkCodexStatus() {
+    setCodexChecking(true);
+    try {
+      setCodexStatus(await codexCliStatus());
+    } catch (cause) {
+      setCodexStatus({
+        installed: false,
+        authenticated: false,
+        error: String(cause),
+      });
+    } finally {
+      setCodexChecking(false);
+    }
+  }
+
   async function save() {
     const url = llmBaseUrl.trim();
     const parsedTemperature = Number.parseFloat(llmTemperature);
@@ -301,6 +387,10 @@ export function SettingsDialog({
           ).map((command) => [command.id, shortcuts[command.id]]),
         ),
         diagnosticLogging,
+        ai: {
+          defaultEngine: defaultEngine ?? "local",
+          codexReasoning,
+        },
         llm:
           url && llmModel
             ? {
@@ -512,19 +602,19 @@ export function SettingsDialog({
             >
               <h3>Translation engines</h3>
               <p className="stv3-settings-intro">
-                Local AI is available for the quick editor and batch actions.
-                Every AI output enters Review.
+                Choose the default engine for the quick editor and batch
+                actions. Every AI output enters Review.
               </p>
               <div
-                className="stv3-engine-list"
+                className="stv3-engine-list stv3-engine-list-two"
                 role="group"
-                aria-label="Translation engine details"
+                aria-label="Default translation engine"
               >
                 <button
                   className="stv3-engine-card"
                   type="button"
-                  aria-pressed={enginePanel === "local"}
-                  onClick={() => setEnginePanel("local")}
+                  aria-pressed={defaultEngine === "local"}
+                  onClick={() => chooseEngine("local")}
                 >
                   <HardDrive aria-hidden="true" />
                   <span>
@@ -532,7 +622,7 @@ export function SettingsDialog({
                     <span>
                       {llmResult?.kind === "connected"
                         ? "Ready · localhost"
-                        : settings.llm
+                        : localAvailable
                           ? "Configured · localhost"
                           : "Not configured · localhost"}
                     </span>
@@ -541,27 +631,21 @@ export function SettingsDialog({
                 <button
                   className="stv3-engine-card"
                   type="button"
-                  aria-pressed={enginePanel === "codex"}
-                  aria-disabled="true"
-                  onClick={() => setEnginePanel("codex")}
+                  aria-pressed={defaultEngine === "codex"}
+                  onClick={() => chooseEngine("codex")}
                 >
                   <SquareTerminal aria-hidden="true" />
                   <span>
                     <strong>Codex CLI</strong>
-                    <span>Unavailable</span>
-                  </span>
-                </button>
-                <button
-                  className="stv3-engine-card"
-                  type="button"
-                  aria-pressed={enginePanel === "api"}
-                  aria-disabled="true"
-                  onClick={() => setEnginePanel("api")}
-                >
-                  <Cloud aria-hidden="true" />
-                  <span>
-                    <strong>OpenAI API</strong>
-                    <span>Unavailable</span>
+                    <span>
+                      {codexStatus
+                        ? codexStatus.installed && codexStatus.authenticated
+                          ? `Ready${codexStatus.version ? ` · ${codexStatus.version}` : ""}`
+                          : codexStatus.installed
+                            ? "Installed · sign-in required"
+                            : "Not installed"
+                        : "Check status"}
+                    </span>
                   </span>
                 </button>
               </div>
@@ -724,117 +808,85 @@ export function SettingsDialog({
                   "stv3-engine-panel" +
                   (enginePanel === "codex" ? " is-active" : "")
                 }
-                aria-label="Codex CLI unavailable"
+                aria-label="Codex CLI"
                 hidden={enginePanel !== "codex"}
               >
                 <div className="stv3-settings-group">
                   <div className="stv3-setting-line">
                     <span className="stv3-setting-copy">
                       <strong>Codex CLI status</strong>
-                      <span>Unavailable in this backend phase</span>
+                      <span>
+                        {codexChecking
+                          ? "Checking the installed Codex CLI…"
+                          : codexStatus
+                            ? codexStatus.error
+                              ? codexStatus.error
+                              : codexStatus.installed
+                                ? codexStatus.authenticated
+                                  ? `Ready${codexStatus.version ? ` · ${codexStatus.version}` : ""}`
+                                  : "Installed · sign in with Codex CLI first"
+                                : "Codex CLI is not installed or not discoverable"
+                            : "Not checked in this session"}
+                      </span>
                     </span>
                     <button
                       className="stv3-button stv3-button-quiet"
                       type="button"
-                      disabled
+                      onClick={() => void checkCodexStatus()}
+                      disabled={codexChecking}
                     >
-                      Check status
+                      {codexChecking ? "Checking…" : "Check status"}
                     </button>
                   </div>
                   <label className="stv3-setting-line">
                     <span className="stv3-setting-copy">
-                      <strong>Model</strong>
-                      <span>No provider bridge is configured</span>
-                    </span>
-                    <input
-                      className="stv3-setting-input"
-                      value="Unavailable"
-                      disabled
-                      readOnly
-                    />
-                  </label>
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
                       <strong>Reasoning</strong>
-                      <span>Unavailable</span>
+                      <span>Applied to translation runs</span>
                     </span>
-                    <select className="stv3-select" disabled>
-                      <option>Unavailable</option>
+                    <select
+                      className="stv3-select"
+                      value={codexReasoning}
+                      onChange={(event) =>
+                        setCodexReasoning(
+                          event.target.value as "low" | "medium" | "high",
+                        )
+                      }
+                      aria-label="Codex reasoning"
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
                     </select>
                   </label>
                   <div className="stv3-setting-line">
                     <span className="stv3-setting-copy">
                       <strong>Authentication</strong>
-                      <span>No account or authentication files are read</span>
+                      <span>
+                        {codexStatus?.authenticated
+                          ? codexStatus.authentication ||
+                            "Authenticated by Codex CLI"
+                          : "Uses the CLI's own sign-in; this app never reads authentication files"}
+                      </span>
                     </span>
-                    <span className="stv3-state is-change">Unavailable</span>
+                    <span
+                      className={
+                        "stv3-state " +
+                        (codexStatus?.installed && codexStatus.authenticated
+                          ? "is-ready"
+                          : "is-change")
+                      }
+                    >
+                      {codexStatus?.installed && codexStatus.authenticated
+                        ? "Ready"
+                        : "Unavailable"}
+                    </span>
                   </div>
                 </div>
                 <p className="stv3-kicker">
-                  These controls are retained from the accepted V3 interface.
-                  They do not persist settings or simulate a provider.
+                  Codex CLI uses its existing ChatGPT sign-in and account limits
+                  and default model. Runs are ephemeral and read-only. The app
+                  does not inspect or persist CLI authentication data.
                 </p>
-              </section>
-
-              <section
-                className={
-                  "stv3-engine-panel" +
-                  (enginePanel === "api" ? " is-active" : "")
-                }
-                aria-label="OpenAI API unavailable"
-                hidden={enginePanel !== "api"}
-              >
-                <div className="stv3-settings-group">
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
-                      <strong>API key</strong>
-                      <span>Unavailable; no key is accepted or stored</span>
-                    </span>
-                    <input
-                      className="stv3-setting-input"
-                      type="password"
-                      placeholder="Unavailable"
-                      disabled
-                    />
-                  </label>
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
-                      <strong>Model ID</strong>
-                      <span>No cloud provider bridge is configured</span>
-                    </span>
-                    <input
-                      className="stv3-setting-input"
-                      placeholder="Unavailable"
-                      disabled
-                    />
-                  </label>
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
-                      <strong>Reasoning</strong>
-                      <span>Unavailable</span>
-                    </span>
-                    <select className="stv3-select" disabled>
-                      <option>Unavailable</option>
-                    </select>
-                  </label>
-                  <div className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
-                      <strong>Configuration</strong>
-                      <span>Unavailable in this backend phase</span>
-                    </span>
-                    <button
-                      className="stv3-button stv3-button-quiet"
-                      type="button"
-                      disabled
-                    >
-                      Validate
-                    </button>
-                  </div>
-                </div>
-                <div className="stv3-flow-callout is-warning">
-                  Cloud processing is unavailable. No API setting is persisted
-                  and no request is sent.
-                </div>
               </section>
               <p className="stv3-kicker">
                 External LLM batch stays separate because it is a manual file

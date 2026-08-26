@@ -74,7 +74,7 @@ describe("ExportConfirmDialog", () => {
     ).toHaveLength(2);
   });
 
-  it("shows only supplied real preflight counts and target paths", () => {
+  it("labels supplied counts as current-scan aggregates", () => {
     render(
       <ExportConfirmDialog
         modName="Test Mod"
@@ -91,21 +91,35 @@ describe("ExportConfirmDialog", () => {
     );
 
     expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "8will be written",
+      "8currently eligible",
+    );
+    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
+      "2currently open",
+    );
+    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
+      "1currently changed",
+    );
+    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
+      "2currently in review",
     );
     expect(
       screen.getByText("E:/Fixtures/Mods/Test/i18n/de.json"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/3 included strings still need attention/),
+      screen.getByText(
+        /3 included strings are not Done: 1 Changed and 2 in Review/,
+      ),
     ).toBeInTheDocument();
     expect(
       screen.getByText(/blocker preflight is unavailable/),
     ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Counts above describe the current scan/),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Unavailable before export")).toBeNull();
   });
 
-  it("keeps unavailable preflight values explicit instead of inventing them", () => {
+  it("keeps unavailable current-scan aggregates explicit", () => {
     render(
       <ExportConfirmDialog
         modName="Test Mod"
@@ -142,7 +156,7 @@ describe("ExportConfirmDialog", () => {
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
 
-  it("blocks export and opens the real preflight problem", () => {
+  it("blocks export and opens a supplied backend validation problem", () => {
     const inspect = vi.fn();
     const confirm = vi.fn();
     render(

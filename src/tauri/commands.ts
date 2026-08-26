@@ -22,15 +22,11 @@ export interface LlmSettings {
   temperature?: number | null;
 }
 
-export type AiEngine = "local" | "codex" | "openai";
+export type AiEngine = "local" | "codex";
 
 export interface AiSettings {
   defaultEngine: AiEngine;
-  /** Blank means the Codex CLI default; personal CLI config is ignored. */
-  codexModel: string;
   codexReasoning: "low" | "medium" | "high";
-  openaiModel: string;
-  openaiReasoning: "low" | "medium" | "high";
 }
 
 export type WorkspaceSortColumn =
@@ -44,6 +40,7 @@ export interface WorkspaceSort {
 export interface WorkspaceColumnWidths {
   mod?: number;
   file?: number;
+  status?: number;
   key?: number;
   source?: number;
   target?: number;
@@ -772,7 +769,7 @@ export function translateString(
   });
 }
 
-export type AiScope = "string" | "selected" | "component" | "package";
+export type AiScope = "string" | "selected";
 
 export interface AiStringIdentity {
   /** Exact scanner identities. Rust resolves current source/section data. */
@@ -798,12 +795,6 @@ export type AiTranslationRequest =
       /** Explicit rows may span multiple scanned mods. */
       identities: AiStringIdentity[];
       subjectModUniqueId?: never;
-    })
-  | (AiTranslationRequestBase & {
-      scope: "component" | "package";
-      /** Rust derives the complete current component/package from this mod. */
-      subjectModUniqueId: string;
-      identities?: never;
     });
 
 export interface AiTokenDifference {
@@ -845,11 +836,6 @@ export interface CodexCliStatus {
   error?: string;
 }
 
-export interface OpenAiSessionStatus {
-  connected: boolean;
-  model?: string;
-}
-
 export function translateWithLocalAi(
   request: AiTranslationRequest,
 ): Promise<AiRunResult> {
@@ -864,28 +850,6 @@ export function translateWithCodexCli(
   request: AiTranslationRequest,
 ): Promise<AiRunResult> {
   return invoke<AiRunResult>("translate_with_codex_cli", { request });
-}
-
-/** Validate and hand an API key to Rust for this process session only. */
-export function openAiConnect(
-  apiKey: string,
-  model: string,
-): Promise<OpenAiSessionStatus> {
-  return invoke<OpenAiSessionStatus>("openai_connect", { apiKey, model });
-}
-
-export function openAiSessionStatus(): Promise<OpenAiSessionStatus> {
-  return invoke<OpenAiSessionStatus>("openai_session_status");
-}
-
-export function openAiDisconnect(): Promise<boolean> {
-  return invoke<boolean>("openai_disconnect");
-}
-
-export function translateWithOpenAiApi(
-  request: AiTranslationRequest,
-): Promise<AiRunResult> {
-  return invoke<AiRunResult>("translate_with_openai_api", { request });
 }
 
 export function cancelAiRun(runId: string): Promise<boolean> {

@@ -1,6 +1,7 @@
 import { FileSearch, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
+import type { LlmImportPreflight } from "../tauri/commands";
 
 interface ImportBatchDialogProps {
   targetName: string;
@@ -8,7 +9,10 @@ interface ImportBatchDialogProps {
   initialPath?: string | null;
   initialError?: string | null;
   onChooseFile: () => Promise<string | null>;
+  onPreflight: (path: string) => Promise<LlmImportPreflight>;
   onImport: (path: string) => Promise<void>;
+  canSwitchToMatchingMod?: (modUniqueId: string) => boolean;
+  onSwitchToMatchingMod?: (modUniqueId: string) => void;
   onClose: () => void;
 }
 
@@ -22,7 +26,10 @@ export function ImportBatchDialog({
   initialPath = null,
   initialError = null,
   onChooseFile,
+  onPreflight,
   onImport,
+  canSwitchToMatchingMod,
+  onSwitchToMatchingMod,
   onClose,
 }: ImportBatchDialogProps) {
   const [path, setPath] = useState(initialPath);
@@ -31,6 +38,9 @@ export function ImportBatchDialog({
   const [invalidSelection, setInvalidSelection] = useState(
     Boolean(initialError),
   );
+  const [checking, setChecking] = useState(false);
+  const [preflight, setPreflight] = useState<LlmImportPreflight | null>(null);
+  const preflightRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
@@ -38,12 +48,47 @@ export function ImportBatchDialog({
     escapeDisabled: pending,
   });
 
+  async function check(selectedPath: string) {
+    const request = ++preflightRequest.current;
+    setChecking(true);
+    setPreflight(null);
+    setError(null);
+    try {
+      const result = await onPreflight(selectedPath);
+      if (request === preflightRequest.current) setPreflight(result);
+    } catch (cause) {
+      if (request === preflightRequest.current) setError(String(cause));
+    } finally {
+      if (request === preflightRequest.current) setChecking(false);
+    }
+  }
+
+  useEffect(() => {
+    if (
+      !initialPath ||
+      initialError ||
+      !initialPath.toLowerCase().endsWith(".json")
+    )
+      return;
+    void check(initialPath);
+    // A changed selected component remounts this dialog from App via its key.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(
+    () => () => {
+      preflightRequest.current += 1;
+    },
+    [],
+  );
+
   async function choose() {
     setError(null);
     try {
       const chosen = await onChooseFile();
       if (chosen) {
         setPath(chosen);
+        setPreflight(null);
         if (!chosen.toLocaleLowerCase("en").endsWith(".json")) {
           setInvalidSelection(true);
           setError(
@@ -51,6 +96,7 @@ export function ImportBatchDialog({
           );
         } else {
           setInvalidSelection(false);
+          await check(chosen);
         }
       }
     } catch (cause) {
@@ -59,7 +105,7 @@ export function ImportBatchDialog({
   }
 
   async function confirm() {
-    if (!path || pending) return;
+    if (!path || pending || !preflight?.ready) return;
     setPending(true);
     setError(null);
     try {
@@ -133,10 +179,123 @@ export function ImportBatchDialog({
             Existing translations stay unchanged. Valid imported values go to
             Review.
           </div>
-          <div className="stv3-flow-callout is-warning">
-            Detailed import preflight is unavailable in this phase. The backend
-            still validates the complete file before the first write.
-          </div>
+          {checking && (
+            <div className="stv3-flow-callout" role="status">
+              Checking mod, language, source snapshot, keys, and protected
+              tokens…
+            </div>
+          )}
+          {preflight && (
+            <div
+              className={
+                "stv3-import-preflight" +
+                (preflight.ready ? " is-ready" : " is-blocked")
+              }
+              aria-label="LLM import preflight"
+            >
+              <div className="stv3-import-preflight-head">
+                <strong>
+                  {preflight.ready ? "Ready to import" : "Import blocked"}
+                </strong>
+                <span
+                  className={
+                    "stv3-state " + (preflight.ready ? "is-ready" : "is-change")
+                  }
+                >
+                  {preflight.ready ? "Validated" : "No writes"}
+                </span>
+              </div>
+              <dl className="stv3-import-preflight-grid">
+                <div>
+                  <dt>Mod / component</dt>
+                  <dd>
+                    {preflight.modMatches
+                      ? preflight.selectedModUniqueId
+                      : `${preflight.batchModUniqueId} does not match ${preflight.selectedModUniqueId}`}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Target language</dt>
+                  <dd>
+                    {preflight.batchTargetLang} ·{" "}
+                    {preflight.languageMatches ? "matched" : "mismatch"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Source snapshot</dt>
+                  <dd>{preflight.snapshotResult}</dd>
+                </div>
+                <div>
+                  <dt>Strings supplied / matched</dt>
+                  <dd>
+                    {preflight.suppliedStrings} / {preflight.matchedStrings}
+                  </dd>
+                </div>
+                <div>
+                  <dt>Ready for Review</dt>
+                  <dd>{preflight.importable}</dd>
+                </div>
+                <div>
+                  <dt>Local translations preserved</dt>
+                  <dd>{preflight.preservedLocal}</dd>
+                </div>
+                <div>
+                  <dt>Empty values skipped</dt>
+                  <dd>{preflight.skippedEmpty}</dd>
+                </div>
+                <div>
+                  <dt>Identical to source</dt>
+                  <dd>{preflight.identicalToSource}</dd>
+                </div>
+              </dl>
+              {preflight.protectedTokenIssues.length > 0 && (
+                <details className="stv3-result-help">
+                  <summary>
+                    {preflight.protectedTokenIssues.length} protected-token{" "}
+                    {preflight.protectedTokenIssues.length === 1
+                      ? "issue"
+                      : "issues"}
+                  </summary>
+                  <ul className="stv3-import-preflight-issues">
+                    {preflight.protectedTokenIssues.map((issue) => (
+                      <li key={`${issue.relativeDir}\0${issue.key}`}>
+                        <code>
+                          {issue.relativeDir} / {issue.key}
+                        </code>
+                        <span>
+                          {issue.differences
+                            .map(
+                              (difference) =>
+                                `${difference.token}: source ${difference.sourceCount}, import ${difference.targetCount}`,
+                            )
+                            .join(" · ")}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              {preflight.blockingReason && (
+                <div className="stv3-flow-callout is-error" role="alert">
+                  {preflight.blockingReason}
+                </div>
+              )}
+              {!preflight.modMatches &&
+                onSwitchToMatchingMod &&
+                (canSwitchToMatchingMod?.(preflight.batchModUniqueId) ??
+                  true) && (
+                  <button
+                    className="stv3-button stv3-button-quiet"
+                    type="button"
+                    onClick={() =>
+                      onSwitchToMatchingMod(preflight.batchModUniqueId)
+                    }
+                  >
+                    Switch to matching mod
+                  </button>
+                )}
+            </div>
+          )}
           {error && (
             <div className="stv3-flow-callout is-error" role="alert">
               {error}
@@ -155,10 +314,16 @@ export function ImportBatchDialog({
           <button
             className="stv3-button stv3-button-primary"
             type="button"
-            disabled={!path || invalidSelection || pending}
+            disabled={
+              !path ||
+              invalidSelection ||
+              pending ||
+              checking ||
+              !preflight?.ready
+            }
             onClick={() => void confirm()}
           >
-            {pending ? "Importing…" : "Import file"}
+            {pending ? "Importing…" : checking ? "Checking…" : "Import file"}
           </button>
         </div>
       </section>

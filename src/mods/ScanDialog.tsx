@@ -34,6 +34,7 @@ export function ScanDialog({
   });
   const complete = !scanning && !error && result != null;
   const warningCount = result?.warnings.length ?? 0;
+  const skippedCount = result?.skippedComponents?.length;
   const title = scanning
     ? "Scanning mods …"
     : error
@@ -145,7 +146,7 @@ export function ScanDialog({
             : error
               ? `Scan failed: ${error}`
               : result
-                ? `Scan complete. ${result.modCount} mods and ${result.fileCount} files found. ${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}; skipped-component count unavailable.`
+                ? `Scan complete. ${result.modCount} mods and ${result.fileCount} files found. ${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}; ${skippedCount == null ? "skipped-component count unavailable" : `${skippedCount} ${skippedCount === 1 ? "component" : "components"} skipped`}.`
                 : "Scan result unavailable"}
         </span>
       </section>
@@ -155,6 +156,7 @@ export function ScanDialog({
 
 function ScanResultContent({ result }: { result: ScanResult }) {
   const warnings = result.warnings;
+  const skipped = result.skippedComponents;
   const extraKeys = result.extraKeys ?? [];
 
   return (
@@ -170,12 +172,70 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         <Metric value="Unavailable" label="sources changed" />
         <Metric value="Unavailable" label="strings added" />
         <Metric value="Unavailable" label="strings removed" />
-        <Metric value="Unavailable" label="components skipped" />
+        <Metric
+          value={skipped == null ? "Unavailable" : skipped.length}
+          label="components skipped"
+        />
       </div>
       <div className="stv3-flow-callout">
         Change, added-string, and removed-string deltas are unavailable in the
         current backend result. No scan history is invented.
       </div>
+
+      {skipped == null ? (
+        <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
+          Structured skipped-component details are unavailable in this scan
+          result.
+        </div>
+      ) : skipped.length > 0 ? (
+        <>
+          <div
+            className="stv3-flow-callout is-warning"
+            tabIndex={-1}
+            data-scan-diagnostics
+          >
+            <AlertTriangle aria-hidden="true" />{" "}
+            <strong>{skipped.length}</strong>{" "}
+            {skipped.length === 1 ? "component was" : "components were"}{" "}
+            skipped. Other readable components remain loaded.
+          </div>
+          <ul className="stv3-flow-list" aria-label="Skipped components">
+            {skipped.map((component, index) => (
+              <li
+                key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
+              >
+                <span>
+                  <strong>
+                    {component.componentName ??
+                      component.componentUniqueId ??
+                      component.packageId ??
+                      "Unnamed component"}
+                  </strong>
+                  {component.packageId && (
+                    <>
+                      <br />
+                      <span>Package: {component.packageId}</span>
+                    </>
+                  )}
+                  <br />
+                  <code>{component.relativeLocation}</code>
+                  <br />
+                  <span>{component.reason}</span>
+                </span>
+                <span>
+                  {component.restOfPackageLoaded
+                    ? "Rest of package loaded"
+                    : "Package not otherwise loaded"}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
+          No components were skipped.
+        </div>
+      )}
 
       {warnings.length > 0 ? (
         <>
@@ -190,8 +250,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
               {warnings.length === 1 ? "warning was" : "warnings were"}{" "}
               reported.
             </strong>{" "}
-            Existing work was preserved. The current result does not expose a
-            structured skipped-component count.
+            Existing work was preserved.
           </div>
           <ul className="stv3-flow-list" aria-label="Scan warnings">
             {warnings.map((warning, index) => (
@@ -202,14 +261,12 @@ function ScanResultContent({ result }: { result: ScanResult }) {
             ))}
           </ul>
           <p className="stv3-kicker">
-            Structured component, path, and reason fields are unavailable; the
-            scanner's real warning text is shown unchanged.
+            Scanner warning text is shown unchanged.
           </p>
         </>
       ) : (
         <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
-          No scanner warnings were reported. The skipped-component count is
-          unavailable in the current backend result.
+          No scanner warnings were reported.
         </div>
       )}
 

@@ -1,20 +1,27 @@
 /**
- * BatchTranslateDialog in isolation — filtering, serial persistence,
- * cancellation, progress, completion reporting, and modal keyboard behavior.
+ * BatchTranslateDialog in isolation — immediate selected-string execution,
+ * compact progress, cancellation, Review persistence, and completion reporting.
  */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { useState } from "react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { vi } from "vitest";
 import {
   BatchTranslateDialog,
   type BatchFinishedResult,
   type BatchItem,
+  type LiveAiEngineOption,
 } from "./BatchTranslateDialog";
-import type { TranslationResult } from "../tauri/commands";
+import type { AiRunResult, TranslationResult } from "../tauri/commands";
 
 const ITEMS: BatchItem[] = [
   {
     index: 0,
+    modUniqueId: "a.b",
     key: "first.key",
     file: "i18n",
     source: "One",
@@ -23,115 +30,130 @@ const ITEMS: BatchItem[] = [
   },
   {
     index: 1,
+    modUniqueId: "a.b",
     key: "second.key",
     file: "i18n",
     source: "Two",
-    status: "untranslated",
+    status: "outdated",
   },
 ];
+
+const CODEX_ENGINE: LiveAiEngineOption = {
+  id: "codex",
+  label: "Codex CLI",
+  ready: true,
+  model: "gpt-5.6",
+  reasoning: "high",
+  note: "Uses the signed-in Codex CLI.",
+};
 
 function ok(text: string): TranslationResult {
   return { text, missingTokens: [], glossaryMisses: [] };
 }
 
+function liveResult(overrides: Partial<AiRunResult> = {}): AiRunResult {
+  return {
+    runId: "run-1",
+    engine: "codex",
+    model: "gpt-5.6",
+    reasoning: "high",
+    scope: "selected",
+    requested: 2,
+    completed: 2,
+    outcome: "complete",
+    suggestions: [],
+    ...overrides,
+  };
+}
+
 function renderDialog(
-  onTranslate: (
-    source: string,
-    section?: string | null,
-  ) => Promise<TranslationResult>,
   options: {
     items?: BatchItem[];
+    engine?: LiveAiEngineOption;
+    onLiveRun?: (runId: string) => Promise<AiRunResult>;
+    onCancelLiveRun?: (runId: string) => Promise<boolean>;
+    onTranslate?: (
+      source: string,
+      section?: string | null,
+    ) => Promise<TranslationResult>;
     onResult?: (item: BatchItem, text: string) => Promise<void>;
     onFinished?: (result: BatchFinishedResult) => void;
     onClose?: () => void;
-    translationReady?: boolean;
-    translationUnavailableReason?: string;
   } = {},
 ) {
-  const items = options.items ?? ITEMS;
+  const onTranslate =
+    options.onTranslate ?? vi.fn(async (source: string) => ok(source));
   const onResult = options.onResult ?? vi.fn(async () => undefined);
   const onFinished = options.onFinished ?? vi.fn();
   const onClose = options.onClose ?? vi.fn();
-  function Harness() {
-    const [includeOpen, setIncludeOpen] = useState(true);
-    const [includeChanged, setIncludeChanged] = useState(false);
-    return (
-      <BatchTranslateDialog
-        items={items}
-        modName="Test Mod"
-        scopeSummary="2 selected · Test Mod"
-        targetLanguageLabel="German (de)"
-        includeOpen={includeOpen}
-        includeChanged={includeChanged}
-        onIncludeOpenChange={setIncludeOpen}
-        onIncludeChangedChange={setIncludeChanged}
-        translationReady={options.translationReady}
-        translationUnavailableReason={options.translationUnavailableReason}
-        onTranslate={onTranslate}
-        onResult={onResult}
-        onFinished={onFinished}
-        onClose={onClose}
-      />
-    );
-  }
-
-  const view = render(<Harness />);
-  return { ...view, onResult, onFinished, onClose };
-}
-
-function startRun() {
-  fireEvent.click(screen.getByRole("button", { name: "Start AI translation" }));
+  const view = render(
+    <BatchTranslateDialog
+      items={options.items ?? ITEMS}
+      modName="Test Mod"
+      engine={options.engine}
+      onLiveRun={options.onLiveRun}
+      onCancelLiveRun={options.onCancelLiveRun}
+      onTranslate={onTranslate}
+      onResult={onResult}
+      onFinished={onFinished}
+      onClose={onClose}
+    />,
+  );
+  return { ...view, onTranslate, onResult, onFinished, onClose };
 }
 
 describe("BatchTranslateDialog", () => {
-  it("keeps preview available but blocks Start when the selected engine is not ready", () => {
-    const onTranslate = vi.fn(async (source: string) => ok(source));
-    renderDialog(onTranslate, {
-      translationReady: false,
-      translationUnavailableReason:
-        "This engine is not ready; check its status in Settings first.",
+  it("starts the configured live engine immediately with only compact progress and Cancel", async () => {
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onLiveRun = vi.fn(
+      (_runId: string) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const { onResult, onFinished, onClose } = renderDialog({
+      engine: CODEX_ENGINE,
+      onLiveRun,
     });
 
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "This engine is not ready; check its status in Settings first.",
-    );
-    const start = screen.getByRole("button", {
-      name: "Start AI translation",
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const runId = onLiveRun.mock.calls[0][0];
+    expect(runId).toEqual(expect.any(String));
+    expect(
+      screen.getByRole("dialog", { name: "AI translation progress" }),
+    ).toBeVisible();
+    expect(
+      screen.getByText(/Codex CLI .* completed suggestions enter Review/),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Start AI translation/ }),
+    ).not.toBeInTheDocument();
+    const progress = screen.getByRole("progressbar", {
+      name: "AI translation progress",
     });
-    expect(start).toBeDisabled();
-    expect(start).toHaveAttribute(
-      "title",
-      "Configure or check this translation engine in Settings first.",
-    );
-    fireEvent.click(start);
-    expect(onTranslate).not.toHaveBeenCalled();
+    expect(progress).toHaveAttribute("data-indeterminate", "true");
+    expect(progress).not.toHaveAttribute("aria-valuenow");
+
+    act(() => resolveRun(liveResult({ runId })));
+
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+    expect(onFinished).toHaveBeenCalledWith({
+      runId,
+      done: 2,
+      total: 2,
+      outcome: "complete",
+      engine: "Codex CLI",
+      model: "gpt-5.6",
+      reasoning: "high",
+    });
+    expect(onResult).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("starts with independent Open and Changed filters", async () => {
-    const onTranslate = vi.fn(async (source: string) => ok(`X-${source}`));
-    renderDialog(onTranslate, {
-      items: [ITEMS[0], { ...ITEMS[1], status: "outdated" }],
-    });
-
-    const open = screen.getByRole("checkbox", { name: /Open/ });
-    const changed = screen.getByRole("checkbox", { name: /Changed/ });
-    expect(open).toBeChecked();
-    expect(changed).not.toBeChecked();
-    expect(screen.getByText("1 strings")).toBeVisible();
-    expect(screen.getByText("2 selected · Test Mod")).toBeVisible();
-
-    fireEvent.click(changed);
-    expect(screen.getByText("2 strings")).toBeVisible();
-    fireEvent.click(open);
-    expect(screen.getByText("1 strings")).toBeVisible();
-    startRun();
-
-    await screen.findByText("Batch translation complete");
-    expect(onTranslate).toHaveBeenCalledOnce();
-    expect(onTranslate).toHaveBeenCalledWith("Two", undefined);
-  });
-
-  it("translates all included items serially and reports completion", async () => {
+  it("translates the selected Open and Changed items serially and hands every result to Review persistence", async () => {
     const calls: string[] = [];
     const onTranslate = vi.fn(async (source: string) => {
       calls.push(source);
@@ -139,36 +161,31 @@ describe("BatchTranslateDialog", () => {
     });
     const onResult = vi.fn(async () => undefined);
     const onFinished = vi.fn();
-    const { onClose } = renderDialog(onTranslate, { onResult, onFinished });
-    startRun();
+    const { onClose } = renderDialog({
+      onTranslate,
+      onResult,
+      onFinished,
+    });
 
-    await screen.findByText("Batch translation complete");
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
     expect(calls).toEqual(["One", "Two"]);
     expect(onTranslate).toHaveBeenNthCalledWith(1, "One", "Dialogue");
     expect(onTranslate).toHaveBeenNthCalledWith(2, "Two", undefined);
     expect(onResult).toHaveBeenNthCalledWith(1, ITEMS[0], "X-One");
     expect(onResult).toHaveBeenNthCalledWith(2, ITEMS[1], "X-Two");
-    expect(onFinished).toHaveBeenCalledOnce();
     expect(onFinished).toHaveBeenCalledWith({
       done: 2,
       total: 2,
       outcome: "complete",
+      engine: "Local AI",
     });
     expect(onFinished.mock.invocationCallOrder[0]).toBeGreaterThan(
       onResult.mock.invocationCallOrder.at(-1)!,
     );
-    const progress = screen.getByRole("progressbar", {
-      name: "AI translation progress",
-    });
-    expect(progress).toHaveAttribute("aria-valuenow", "100");
-    expect(progress).toHaveStyle("--stv3-batch-progress: 100%");
-    expect(screen.getByText(/saved as “Needs review”/)).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("cancel finishes the in-flight string, saves it, then stops", async () => {
+  it("cancels after the in-flight local result is saved to Review", async () => {
     let release: (result: TranslationResult) => void = () => {};
     const onTranslate = vi
       .fn()
@@ -176,128 +193,100 @@ describe("BatchTranslateDialog", () => {
         () => new Promise<TranslationResult>((resolve) => (release = resolve)),
       )
       .mockResolvedValue(ok("never reached"));
-    const { onResult, onFinished } = renderDialog(onTranslate);
-    startRun();
+    const { onResult, onFinished, onClose } = renderDialog({ onTranslate });
 
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
-    release(ok("Eins"));
+    await waitFor(() => expect(onTranslate).toHaveBeenCalledOnce());
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("button", { name: "Cancelling…" })).toBeDisabled();
+    act(() => release(ok("Eins")));
 
-    await screen.findByText("Batch translation cancelled");
-    expect(onResult).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
     expect(onResult).toHaveBeenCalledWith(ITEMS[0], "Eins");
-    expect(onTranslate).toHaveBeenCalledTimes(1);
+    expect(onTranslate).toHaveBeenCalledOnce();
     expect(onFinished).toHaveBeenCalledWith({
       done: 1,
       total: 2,
       outcome: "cancelled",
+      engine: "Local AI",
     });
-    expect(screen.getByText(/Re-run later to continue/)).toBeInTheDocument();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("turns Escape into a safe cancellation while a request is in flight", async () => {
-    let release: (result: TranslationResult) => void = () => {};
-    const onTranslate = vi.fn(
-      () => new Promise<TranslationResult>((resolve) => (release = resolve)),
+  it("forwards live cancellation to the backend and keeps backend Review work authoritative", async () => {
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onLiveRun = vi.fn(
+      (_runId: string) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
     );
-    const { onClose, onFinished } = renderDialog(onTranslate);
-    startRun();
-
-    const dialog = await screen.findByRole("dialog", {
-      name: "Batch AI translation",
+    const onCancelLiveRun = vi.fn(async () => true);
+    const { onResult, onFinished, onClose } = renderDialog({
+      engine: CODEX_ENGINE,
+      onLiveRun,
+      onCancelLiveRun,
     });
-    fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByText("Cancelling…")).toBeVisible();
-    release(ok("Eins"));
 
-    await screen.findByText("Batch translation cancelled");
-    expect(onFinished).toHaveBeenCalledWith(
-      expect.objectContaining({ outcome: "cancelled" }),
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const runId = onLiveRun.mock.calls[0][0];
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancelLiveRun).toHaveBeenCalledWith(runId);
+    expect(screen.getByRole("heading", { name: "Cancelling…" })).toBeVisible();
+
+    act(() =>
+      resolveRun(
+        liveResult({
+          runId,
+          requested: 2,
+          completed: 1,
+          outcome: "cancelled",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "first.key",
+              },
+              text: "Eins",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }),
+      ),
     );
-  });
 
-  it("reports completion when Cancel arrives during the final in-flight string", async () => {
-    let release: (result: TranslationResult) => void = () => {};
-    const onTranslate = vi.fn(
-      () => new Promise<TranslationResult>((resolve) => (release = resolve)),
-    );
-    const onFinished = vi.fn();
-    renderDialog(onTranslate, { items: [ITEMS[0]], onFinished });
-    startRun();
-
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
-    release(ok("Eins"));
-
-    await screen.findByText("Batch translation complete");
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
     expect(onFinished).toHaveBeenCalledWith({
+      runId,
       done: 1,
-      total: 1,
-      outcome: "complete",
+      total: 2,
+      outcome: "cancelled",
+      engine: "Codex CLI",
+      model: "gpt-5.6",
+      reasoning: "high",
     });
-    expect(screen.queryByText("Batch translation cancelled")).toBeNull();
+    expect(onResult).not.toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("a server error aborts the run and keeps the partial progress", async () => {
+  it("reports an error with the completed Review count and closes", async () => {
     const onTranslate = vi
       .fn()
       .mockResolvedValueOnce(ok("Eins"))
-      .mockRejectedValueOnce("Could not reach http://localhost:1234");
-    const { onResult, onFinished } = renderDialog(onTranslate);
-    startRun();
+      .mockRejectedValueOnce(new Error("Local AI offline"));
+    const { onResult, onFinished, onClose } = renderDialog({ onTranslate });
 
-    await screen.findByText("Batch translation failed");
-    expect(
-      screen.getByText(/Could not reach http:\/\/localhost:1234/),
-    ).toBeInTheDocument();
-    expect(onResult).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+    expect(onResult).toHaveBeenCalledOnce();
     expect(onFinished).toHaveBeenCalledWith({
       done: 1,
       total: 2,
       outcome: "error",
-      error: "Could not reach http://localhost:1234",
+      error: "Error: Local AI offline",
+      engine: "Local AI",
     });
-    expect(screen.getByText(/Re-run later to continue/)).toBeInTheDocument();
-  });
-
-  it("lists strings whose result still misses protected tokens", async () => {
-    const onTranslate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        text: "kaputt",
-        missingTokens: ["{{name}}"],
-        glossaryMisses: [],
-      })
-      .mockResolvedValueOnce(ok("gut"));
-    renderDialog(onTranslate);
-    startRun();
-
-    await screen.findByText("Batch translation complete");
-    expect(screen.getByText(/Dropped protected tokens/)).toBeInTheDocument();
-    expect(screen.getByText("first.key")).toBeInTheDocument();
-  });
-
-  it("traps Tab, closes on Escape before start, and restores trigger focus", async () => {
-    const trigger = document.createElement("button");
-    document.body.append(trigger);
-    trigger.focus();
-    const parentKeyDown = vi.fn();
-    document.body.addEventListener("keydown", parentKeyDown);
-    const { onClose, unmount } = renderDialog(async (source) => ok(source));
-
-    const first = screen.getByRole("button", { name: "Cancel AI translation" });
-    await waitFor(() => expect(first).toHaveFocus());
-    fireEvent.keyDown(first, { key: "Tab", shiftKey: true });
-    expect(
-      screen.getByRole("button", { name: "Start AI translation" }),
-    ).toHaveFocus();
-    expect(parentKeyDown).not.toHaveBeenCalled();
-
-    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(onClose).toHaveBeenCalledOnce();
-    unmount();
-    expect(trigger).toHaveFocus();
-
-    document.body.removeEventListener("keydown", parentKeyDown);
-    trigger.remove();
   });
 });

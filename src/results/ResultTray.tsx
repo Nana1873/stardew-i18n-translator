@@ -4,6 +4,7 @@ import type {
   ExportResult,
   LlmExportOutcome,
   LlmImportSummary,
+  OperationHistoryEntry,
   ZipBuildOutcome,
 } from "../tauri/commands";
 
@@ -21,6 +22,8 @@ export interface ResultProblem {
 }
 
 interface ResultTrayBase {
+  /** Canonical backend history identity once the operation completed. */
+  operationId?: string | null;
   title: string;
   collapsed: boolean;
   pending: boolean;
@@ -55,7 +58,7 @@ export type ResultTrayData =
     })
   | (ResultTrayBase & {
       kind: "ai-batch";
-      outcome: "cancelled" | "error";
+      outcome: "complete" | "cancelled" | "error";
       done: number;
       total: number;
       engine: string;
@@ -66,6 +69,10 @@ export type ResultTrayData =
       count: number;
       undone?: boolean;
       undoAvailable: boolean;
+    })
+  | (ResultTrayBase & {
+      kind: "history";
+      entry: OperationHistoryEntry;
     });
 
 interface ResultNotice {
@@ -129,7 +136,51 @@ function presentationFor(
 
   let result: ResultPresentation;
 
-  if (data.kind === "export") {
+  if (data.kind === "history") {
+    const entry = data.entry;
+    const label =
+      entry.outcome === "success"
+        ? entry.title
+        : entry.outcome === "warning"
+          ? `${entry.title} · warnings`
+          : entry.outcome === "cancelled"
+            ? `${entry.title} · cancelled`
+            : entry.outcome === "blocked"
+              ? `${entry.title} · blocked`
+              : `${entry.title} · failed`;
+    const pathDetails: ResultPath[] = [
+      ...(entry.fileName ? [{ label: "File name", path: entry.fileName }] : []),
+      ...(entry.path ? [{ label: "Path", path: entry.path }] : []),
+      ...entry.details.map((detail) => ({
+        label: detail.label,
+        path: detail.value,
+      })),
+    ];
+    result = {
+      label,
+      kicker: "Backend operation history",
+      copy: entry.summary,
+      tone:
+        entry.outcome === "success"
+          ? "success"
+          : entry.outcome === "warning" || entry.outcome === "cancelled"
+            ? "warning"
+            : "error",
+      notices: entry.warnings.map((warning) => ({
+        text: warning,
+        tone: entry.outcome === "failed" ? "error" : "warning",
+      })),
+      paths: pathDetails,
+      workflow: [],
+      openFolderPath: entry.path
+        ? entry.fileName
+          ? folderOf(entry.path)
+          : entry.path
+        : null,
+      canOpenReview:
+        (entry.kind === "import" || entry.kind === "ai") && entry.itemCount > 0,
+    };
+  } else if (data.kind === "export") {
     const exportResult = data.result;
     const changedFiles = exportResult
       ? exportResult.filesWritten + exportResult.filesRemoved
@@ -376,28 +427,42 @@ function presentationFor(
     const notStarted = Math.max(0, data.total - data.done);
     result = {
       label:
-        data.outcome === "cancelled"
-          ? "AI translation cancelled"
-          : "AI translation failed",
+        data.outcome === "complete"
+          ? "AI translation complete"
+          : data.outcome === "cancelled"
+            ? "AI translation cancelled"
+            : "AI translation failed",
       kicker: "Operation result",
       copy:
         data.done +
-        " completed " +
+        " " +
         data.engine +
         " " +
         plural(data.done, "suggestion") +
-        " remain saved in Review.",
-      tone: data.outcome === "cancelled" ? "warning" : "error",
+        " completed and saved in Review.",
+      tone:
+        data.outcome === "complete"
+          ? "success"
+          : data.outcome === "cancelled"
+            ? "warning"
+            : "error",
       notices: [
         {
-          text: data.done + " saved · " + notStarted + " not started.",
-          tone: data.outcome === "cancelled" ? "warning" : "error",
+          text: data.done + " saved · " + notStarted + " remaining.",
+          ...(data.outcome === "complete"
+            ? {}
+            : {
+                tone:
+                  data.outcome === "cancelled"
+                    ? ("warning" as const)
+                    : ("error" as const),
+              }),
         },
       ],
       paths: [],
       workflow: [],
       openFolderPath: null,
-      canOpenReview: true,
+      canOpenReview: data.done > 0,
     };
   } else {
     result = {
@@ -433,9 +498,11 @@ function presentationFor(
               ? data.outcome === "cancelled"
                 ? "AI translation cancelled"
                 : "AI translation failed"
-              : data.kind === "bulk"
-                ? "Batch edit failed"
-                : "Export failed";
+              : data.kind === "history"
+                ? "Operation failed"
+                : data.kind === "bulk"
+                  ? "Batch edit failed"
+                  : "Export failed";
     result.tone = "error";
     result.notices.unshift({ text: data.error, tone: "error" });
     if (data.kind === "import") result.copy = "No changes were made.";
@@ -445,6 +512,8 @@ function presentationFor(
 }
 
 function resultKey(data: ResultTrayData): string {
+  if (data.operationId) return `${data.kind}|${data.operationId}`;
+  if (data.kind === "history") return `${data.kind}|${data.entry.id}`;
   if (data.kind === "batch-export")
     return data.kind + "|" + (data.outcome?.path ?? data.title);
   if (data.kind === "zip")
@@ -522,6 +591,9 @@ export function ResultTray({
   onUndoBulk,
   onNotify,
   toggleButtonRef,
+  history = [],
+  selectedHistoryId = null,
+  onSelectHistory,
 }: {
   data: ResultTrayData;
   onToggle: () => void;
@@ -535,6 +607,10 @@ export function ResultTray({
   onNotify?: (message: string) => void;
   /** Lets the shell restore focus after Latest result is reopened. */
   toggleButtonRef?: RefObject<HTMLButtonElement | null>;
+  /** Canonical, newest-first backend operation history (bounded to five). */
+  history?: OperationHistoryEntry[];
+  selectedHistoryId?: string | null;
+  onSelectHistory?: (entry: OperationHistoryEntry) => void;
 }) {
   const unresolved = data.problems.filter((problem) => !problem.resolved);
   const presentation = useMemo(
@@ -607,9 +683,11 @@ export function ResultTray({
       : "Export again";
   const issue = unresolved[0] ?? data.problems[0];
   const showUndo = Boolean(
-    (data.kind === "bulk" || data.kind === "ai-batch") &&
-    data.undoAvailable &&
-    !(data.kind === "bulk" && data.undone) &&
+    (data.kind === "bulk" || data.kind === "ai-batch"
+      ? data.undoAvailable && !(data.kind === "bulk" && data.undone)
+      : data.kind === "history"
+        ? data.entry.canUndo
+        : false) &&
     !undoUsed &&
     onUndoBulk,
   );
@@ -665,6 +743,42 @@ export function ResultTray({
       {!data.collapsed && (
         <div className="stv3-result-body">
           <div className="stv3-kicker">{presentation.kicker}</div>
+          {history.length > 0 && onSelectHistory && (
+            <label className="stv3-result-history">
+              <span>Result</span>
+              <select
+                className="stv3-select"
+                aria-label="Recent operation results"
+                value={
+                  selectedHistoryId &&
+                  history.some((entry) => entry.id === selectedHistoryId)
+                    ? selectedHistoryId
+                    : ""
+                }
+                onChange={(event) => {
+                  const entry = history.find(
+                    (candidate) => candidate.id === event.currentTarget.value,
+                  );
+                  if (entry) onSelectHistory(entry);
+                }}
+              >
+                {!history.some((entry) => entry.id === selectedHistoryId) && (
+                  <option value="" disabled>
+                    Current result
+                  </option>
+                )}
+                {history.map((entry, index) => (
+                  <option key={entry.id} value={entry.id}>
+                    {index === 0 ? "Latest" : entry.kind} · {entry.title} ·{" "}
+                    {new Date(entry.completedAtEpochMs).toLocaleTimeString([], {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <p className="stv3-result-copy">{presentation.copy}</p>
 
           {(presentation.notices.length > 0 || copyState === "error") && (
@@ -784,7 +898,9 @@ export function ResultTray({
                   ? "Show file"
                   : data.kind === "import"
                     ? "Show source file"
-                    : "Show in folder"}
+                    : data.kind === "history" && data.entry.fileName
+                      ? "Show file"
+                      : "Show in folder"}
               </button>
             )}
             {presentation.canOpenReview && onOpenReview && (

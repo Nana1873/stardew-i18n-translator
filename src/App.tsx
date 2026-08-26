@@ -14,39 +14,49 @@ import {
   useState,
 } from "react";
 import {
+  type AiEngine,
+  type AiRunResult,
+  type AiSettings,
+  type AiTranslationRequest,
   type AppSettings,
+  type CodexCliStatus,
   type ExportAllResult,
   type GlossaryEntry,
   type LlmBatchItem,
   type LlmExportOutcome,
   type LlmImportSummary,
+  type OperationHistoryEntry,
+  type OperationKind,
   type ExportResult,
   type ScanResult,
-  type SaveStringEntry,
   type ScannedMod,
   type StringStatus,
-  type TranslationResult,
   type ZipBuildOutcome,
   type ZipComponentInput,
   type ZipPreview,
   buildTranslationZip,
+  cancelAiRun,
+  codexCliStatus,
   exportAllMods,
   exportLlmBatch,
   exportLlmBatchToPath,
   exportMod,
   importLlmBatchPath,
+  listOperationHistory,
   loadGlossary,
   loadSettings,
   logFrontendError,
   openFolder,
   pickLlmBatchDestination,
   pickLlmBatchFile,
+  preflightLlmBatchPath,
   pickTranslationZipDestination,
   previewTranslationZip,
   saveSettings,
-  saveStrings,
   scanMods,
-  translateString,
+  translateWithCodexCli,
+  translateWithLocalAi,
+  undoBatchEdit,
 } from "./tauri/commands";
 import {
   Archive,
@@ -79,11 +89,13 @@ import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import {
   type AiBatchFinishedResult,
-  type BulkChangeSnapshot,
   type SavedStringSnapshot,
+  type StringTableColumnWidths,
   type StringTableFilter,
+  type StringTableSort,
   StringTable,
 } from "./strings/StringTable";
+import type { LiveAiEngineOption } from "./strings/BatchTranslateDialog";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import {
@@ -112,6 +124,11 @@ function setupComplete(settings: AppSettings): boolean {
 
 const LEGACY_LAST_OPENED_KEY = "sit:lastOpened";
 
+const DEFAULT_AI_SETTINGS: AiSettings = {
+  defaultEngine: "local",
+  codexReasoning: "medium",
+};
+
 function fileNameOf(path: string): string {
   return path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
 }
@@ -136,8 +153,44 @@ function completedDashboardExport(
     ? {
         label: `Last export · ${title} · this session`,
         path,
+        folder: folderOf(path) ?? path,
       }
     : null;
+}
+
+function dashboardExportFromHistory(
+  entries: OperationHistoryEntry[],
+): DashboardLastExport | null {
+  const entry = entries.find(
+    (candidate) =>
+      candidate.kind === "export" &&
+      (candidate.outcome === "success" || candidate.outcome === "warning") &&
+      Boolean(candidate.path),
+  );
+  if (!entry?.path) return null;
+  const component = entry.details.find(
+    (detail) => detail.label === "Component",
+  )?.value;
+  const label = entry.title.startsWith("All-mod")
+    ? "All mods"
+    : component || "Translation files";
+  return {
+    label: `Last export · ${label} · this session`,
+    path: entry.path,
+    folder: entry.fileName ? (folderOf(entry.path) ?? entry.path) : entry.path,
+  };
+}
+
+function normalizedHistory(value: unknown): OperationHistoryEntry[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is OperationHistoryEntry =>
+    Boolean(
+      entry &&
+      typeof entry === "object" &&
+      typeof (entry as OperationHistoryEntry).id === "string" &&
+      typeof (entry as OperationHistoryEntry).kind === "string",
+    ),
+  );
 }
 
 function readLegacyLastOpened(): {
@@ -177,6 +230,9 @@ function clearLegacyLastOpened() {
 
 export function App() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
+  const settingsRef = useRef<AppSettings | null>(null);
+  const workspaceHydratedRef = useRef(false);
+  settingsRef.current = settings;
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<
@@ -205,6 +261,16 @@ export function App() {
 
   const [exporting, setExporting] = useState(false);
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
+  const [operationHistory, setOperationHistory] = useState<
+    OperationHistoryEntry[]
+  >([]);
+  const aiHistoryByRunIdRef = useRef(new Map<string, OperationHistoryEntry>());
+  const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(
+    null,
+  );
+  const [resultDetails, setResultDetails] = useState<
+    Record<string, ResultTrayData>
+  >({});
   const [lastSuccessfulExport, setLastSuccessfulExport] =
     useState<DashboardLastExport | null>(null);
   const [resultHidden, setResultHidden] = useState(false);
@@ -251,7 +317,12 @@ export function App() {
   const [statusFilter, setStatusFilter] = useState<StringTableFilter>("all");
   const [stringScope, setStringScope] = useState<"mod" | "all">("mod");
   const [issuesOnly, setIssuesOnly] = useState(false);
+  const [tableSort, setTableSort] = useState<StringTableSort | null>(null);
+  const [tableColumnWidths, setTableColumnWidths] = useState<
+    Partial<StringTableColumnWidths>
+  >({});
   const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
+  const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
 
   // External LLM batch import: persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
@@ -266,7 +337,6 @@ export function App() {
     mod: ScannedMod;
     items: LlmBatchItem[];
   } | null>(null);
-  const [bulkUndo, setBulkUndo] = useState<BulkChangeSnapshot | null>(null);
   const [toast, setToast] = useState<{
     id: number;
     message: string;
@@ -274,8 +344,97 @@ export function App() {
   } | null>(null);
 
   function presentResult(data: ResultTrayData) {
-    if (data.kind !== "bulk" && data.kind !== "ai-batch") setBulkUndo(null);
+    setSelectedHistoryId(data.operationId ?? null);
     setResultTray(data);
+    setResultHidden(false);
+  }
+
+  function historyResult(entry: OperationHistoryEntry): ResultTrayData {
+    return {
+      kind: "history",
+      operationId: entry.id,
+      entry,
+      title: entry.title,
+      collapsed: false,
+      pending: false,
+      error: null,
+      problems: [],
+    };
+  }
+
+  function presentCompletedResult(
+    data: ResultTrayData,
+    entry: OperationHistoryEntry,
+  ) {
+    const attached = { ...data, operationId: entry.id } as ResultTrayData;
+    setResultDetails((current) => ({ ...current, [entry.id]: attached }));
+    setSelectedHistoryId(entry.id);
+    setResultTray(attached);
+    setResultHidden(false);
+  }
+
+  async function refreshCompletedResult(
+    data: ResultTrayData,
+    expectedKind: OperationKind,
+  ) {
+    try {
+      const entries = normalizedHistory(await listOperationHistory());
+      setOperationHistory(entries);
+      const lastExport = dashboardExportFromHistory(entries);
+      if (lastExport) setLastSuccessfulExport(lastExport);
+      const entry = entries.find(
+        (candidate) => candidate.kind === expectedKind,
+      );
+      if (entry) {
+        presentCompletedResult(data, entry);
+        return;
+      }
+    } catch (error) {
+      logFrontendError("listOperationHistory", String(error));
+    }
+    // The operation itself still succeeded even if the bounded feedback list
+    // is temporarily unavailable. Keep its real command result visible.
+    presentResult(data);
+  }
+
+  async function refreshOperationHistory() {
+    try {
+      const entries = normalizedHistory(await listOperationHistory());
+      setOperationHistory(entries);
+      const lastExport = dashboardExportFromHistory(entries);
+      if (lastExport) setLastSuccessfulExport(lastExport);
+      setResultDetails((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(([id]) =>
+            entries.some((entry) => entry.id === id),
+          ),
+        ),
+      );
+      return entries;
+    } catch (error) {
+      logFrontendError("listOperationHistory", String(error));
+      return [];
+    }
+  }
+
+  async function refreshAiAvailability() {
+    try {
+      setCodexStatus(await codexCliStatus());
+    } catch (cause) {
+      setCodexStatus({
+        installed: false,
+        authenticated: false,
+        error: String(cause),
+      });
+    }
+  }
+
+  function selectHistoryEntry(entry: OperationHistoryEntry) {
+    const detail = resultDetails[entry.id];
+    setSelectedHistoryId(entry.id);
+    setResultTray(
+      detail ? { ...detail, collapsed: false } : historyResult(entry),
+    );
     setResultHidden(false);
   }
 
@@ -292,6 +451,11 @@ export function App() {
     const timer = window.setTimeout(() => setToast(null), 2800);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    void refreshOperationHistory();
+    void refreshAiAvailability();
+  }, []);
 
   function refreshGlossary(lang: string | null | undefined) {
     // The glossary is cached per target language; with none selected, or for a
@@ -351,6 +515,26 @@ export function App() {
           ? { ...loadedSettings, lastOpened: legacy.entries }
           : loadedSettings;
 
+        const workspace = effectiveSettings.workspace;
+        setModQuery(workspace?.modSearch ?? "");
+        setSearch(workspace?.stringSearch ?? "");
+        setStringScope(workspace?.stringScope ?? "mod");
+        setStatusFilter(workspace?.statusFilter ?? "all");
+        setIssuesOnly(workspace?.issuesOnly ?? false);
+        setModsWidth(
+          Math.min(520, Math.max(260, workspace?.modPaneWidth ?? 340)),
+        );
+        setTableSort(
+          workspace?.sort
+            ? {
+                col: workspace.sort.column,
+                dir: workspace.sort.direction,
+              }
+            : null,
+        );
+        setTableColumnWidths(workspace?.columnWidths ?? {});
+        workspaceHydratedRef.current = true;
+
         setSettings(effectiveSettings);
         setLastOpened(effectiveSettings.lastOpened ?? {});
         if (legacy.found) {
@@ -382,14 +566,67 @@ export function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const current = settingsRef.current;
+    if (
+      !loaded ||
+      !workspaceHydratedRef.current ||
+      !current ||
+      (setupComplete(current) && !scan)
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const latest = settingsRef.current;
+      if (!latest) return;
+      const workspace = {
+        selectedModId,
+        modSearch: modQuery,
+        stringSearch: search,
+        stringScope,
+        statusFilter,
+        issuesOnly,
+        sort: tableSort
+          ? { column: tableSort.col, direction: tableSort.dir }
+          : null,
+        modPaneWidth: Math.round(modsWidth),
+        columnWidths: tableColumnWidths,
+      } satisfies NonNullable<AppSettings["workspace"]>;
+      if (JSON.stringify(latest.workspace) === JSON.stringify(workspace)) {
+        return;
+      }
+      const next = { ...latest, workspace };
+      settingsRef.current = next;
+      setSettings(next);
+      void saveSettings(next).catch((error) =>
+        logFrontendError("saveWorkspace", String(error)),
+      );
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    loaded,
+    scan,
+    selectedModId,
+    modQuery,
+    search,
+    stringScope,
+    statusFilter,
+    issuesOnly,
+    tableSort,
+    tableColumnWidths,
+    modsWidth,
+  ]);
+
   async function handleComplete(next: AppSettings) {
     // The wizard does not edit the AI connection — carry the existing one through
     // so re-running setup to change folders never wipes the local-AI config.
     const merged: AppSettings = {
       ...next,
       llm: settings?.llm ?? null,
+      ai: settings?.ai ?? DEFAULT_AI_SETTINGS,
       shortcuts: settings?.shortcuts ?? {},
       lastOpened: settings?.lastOpened ?? {},
+      workspace: settings?.workspace,
       diagnosticLogging: settings?.diagnosticLogging ?? true,
     };
     await persist(merged);
@@ -405,6 +642,7 @@ export function App() {
       settings?.stardewPath !== next.stardewPath ||
       settings?.modsPath !== next.modsPath;
     await persist(next);
+    void refreshAiAvailability();
     setSettingsOpen(false);
     // Settings may have built a glossary or switched language — reload per-language.
     refreshGlossary(next.targetLang);
@@ -436,6 +674,8 @@ export function App() {
     options: {
       clearExisting?: boolean;
       showExtraKeyDialog?: boolean;
+      preserveSelection?: boolean;
+      showDiagnostics?: boolean;
     } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
@@ -444,7 +684,16 @@ export function App() {
     setScanDiagnosticsFocus(false);
     setScanDialogRetained(false);
     setScanError(null);
-    setSelectedModId(null);
+    const selectionBeforeScan =
+      options.preserveSelection === false
+        ? scanSettings.workspace?.selectedModId
+        : (selectedModId ?? scanSettings.workspace?.selectedModId);
+    const scopeBeforeScan =
+      options.preserveSelection === false
+        ? (scanSettings.workspace?.stringScope ?? "mod")
+        : selectedModId
+          ? stringScope
+          : (scanSettings.workspace?.stringScope ?? stringScope);
     if (options.clearExisting) setScan(null);
     setScanDialogOpen(showProgress);
     try {
@@ -455,20 +704,29 @@ export function App() {
       if (!isActive()) return;
       setScan(result);
       setLastScanAt(Date.now());
-      const preferred = [...result.mods].sort(
-        (left, right) =>
-          (scanSettings.lastOpened?.[right.uniqueId] ?? 0) -
-          (scanSettings.lastOpened?.[left.uniqueId] ?? 0),
-      )[0];
+      const requested = result.mods.find(
+        (candidate) => candidate.uniqueId === selectionBeforeScan,
+      );
+      const preferred =
+        requested ??
+        [...result.mods].sort(
+          (left, right) =>
+            (scanSettings.lastOpened?.[right.uniqueId] ?? 0) -
+            (scanSettings.lastOpened?.[left.uniqueId] ?? 0),
+        )[0];
       setSelectedModId(preferred?.uniqueId ?? null);
-      setStringScope(preferred ? "mod" : "all");
+      setStringScope(preferred ? scopeBeforeScan : "all");
       // The accepted desktop flow retains every manually requested completed
       // scan until the user closes it. Silent scans still surface real
       // diagnostics without interrupting a clean startup or language switch.
-      if (!scanDismissedRef.current) {
+      if (
+        !scanDismissedRef.current &&
+        (showProgress || options.showDiagnostics !== false)
+      ) {
         setScanDialogOpen(
           showProgress ||
             result.warnings.length > 0 ||
+            (result.skippedComponents?.length ?? 0) > 0 ||
             (options.showExtraKeyDialog !== false &&
               (result.extraKeys?.length ?? 0) > 0),
         );
@@ -637,19 +895,57 @@ export function App() {
   // A local-AI translate callback, only when a model is configured. Passed
   // to the editor; absent → the editor shows a "configure AI" hint on Ctrl+F5.
   const llm = settings?.llm;
-  const aiReady = Boolean(llm?.baseUrl && llm?.model);
-  const translate = aiReady
-    ? (source: string, section?: string | null): Promise<TranslationResult> =>
-        translateString(
-          llm!.baseUrl,
-          llm!.model,
-          source,
-          settings?.targetLang ?? "",
-          languageLabel,
-          section,
-          llm!.temperature,
-        )
-    : undefined;
+  const aiSettings = settings?.ai ?? DEFAULT_AI_SETTINGS;
+  const localAiReady = Boolean(llm?.baseUrl.trim() && llm.model.trim());
+  const codexAiReady = Boolean(
+    codexStatus?.installed && codexStatus.authenticated,
+  );
+  const liveAiEngines: LiveAiEngineOption[] = [
+    {
+      id: "local",
+      label: "Local AI",
+      ready: localAiReady,
+      model: llm?.model || "Model unavailable",
+      reasoning: "Default",
+      unavailableReason: localAiReady
+        ? undefined
+        : "Set a local Base URL and choose a model in Settings.",
+      note: localAiReady
+        ? `${llm!.baseUrl} · local service`
+        : "Local endpoint unavailable",
+    },
+    {
+      id: "codex",
+      label: "Codex CLI",
+      ready: codexAiReady,
+      model: "Codex default",
+      reasoning: aiSettings.codexReasoning,
+      unavailableReason: codexAiReady
+        ? undefined
+        : codexStatus?.installed
+          ? "Codex CLI is installed, but it is not signed in."
+          : codexStatus?.error || "Codex CLI is not installed or discoverable.",
+      note: codexStatus?.version
+        ? `Codex CLI ${codexStatus.version}`
+        : "Uses the Codex CLI account on this computer",
+    },
+  ];
+
+  async function runAi(
+    engine: AiEngine,
+    request: AiTranslationRequest,
+  ): Promise<AiRunResult> {
+    const result =
+      engine === "local"
+        ? await translateWithLocalAi(request)
+        : await translateWithCodexCli(request);
+    const entries = await refreshOperationHistory();
+    const entry = entries.find((candidate) => candidate.kind === "ai");
+    if (entry && request.scope !== "string") {
+      aiHistoryByRunIdRef.current.set(result.runId, entry);
+    }
+    return result;
+  }
 
   // External LLM batch export: needs a target language for the batch
   // metadata/instructions; absent → the menu item explains why it's disabled.
@@ -674,15 +970,18 @@ export function App() {
         ? await exportLlmBatchToPath(mod.uniqueId, items, destinationPath)
         : await exportLlmBatch(mod.uniqueId, items);
       if (!outcome) return false;
-      presentResult({
-        kind: "batch-export",
-        title: mod.name,
-        collapsed: false,
-        pending: false,
-        error: null,
-        outcome,
-        problems: [],
-      });
+      await refreshCompletedResult(
+        {
+          kind: "batch-export",
+          title: mod.name,
+          collapsed: false,
+          pending: false,
+          error: null,
+          outcome,
+          problems: [],
+        },
+        "batch-export",
+      );
       return true;
     } catch (error) {
       logFrontendError(
@@ -842,15 +1141,18 @@ export function App() {
     setZipPreview(null);
     setZipContext(null);
     setZipOverwrite(null);
-    presentResult({
-      kind: "zip",
-      title: outcome.fileName,
-      collapsed: false,
-      pending: false,
-      error: null,
-      outcome,
-      problems: [],
-    });
+    void refreshCompletedResult(
+      {
+        kind: "zip",
+        title: outcome.fileName,
+        collapsed: false,
+        pending: false,
+        error: null,
+        outcome,
+        problems: [],
+      },
+      "zip",
+    );
   }
 
   async function buildZipAt(
@@ -917,7 +1219,7 @@ export function App() {
     title: string,
     sourcePath: string | null = null,
   ) {
-    presentResult({
+    const data: ResultTrayData = {
       kind: "import",
       title,
       collapsed: false,
@@ -928,7 +1230,9 @@ export function App() {
       sourceFileName: sourcePath ? fileNameOf(sourcePath) : null,
       sourceFolder: sourcePath ? folderOf(sourcePath) : null,
       problems: [],
-    });
+    };
+    if (summary && !error) void refreshCompletedResult(data, "import");
+    else presentResult(data);
   }
 
   function beginExport(
@@ -1058,15 +1362,21 @@ export function App() {
       const contextual = withExportContext(result, mod);
       const completed = completedDashboardExport(mod.name, contextual);
       if (completed) setLastSuccessfulExport(completed);
-      setResultTray((current) =>
-        current?.kind === "export"
-          ? {
-              ...current,
-              pending: false,
-              result: contextual,
-              problems: exportProblems(contextual),
-            }
-          : current,
+      await refreshCompletedResult(
+        {
+          kind: "export",
+          title: mod.name,
+          collapsed: false,
+          pending: false,
+          error: null,
+          result: contextual,
+          modsChanged: null,
+          failedMod: null,
+          remainingMods: [],
+          problems: exportProblems(contextual),
+          retry: { kind: "selected", modUniqueId: mod.uniqueId },
+        },
+        "export",
       );
     } catch (error) {
       logFrontendError("exportMod", String(error));
@@ -1117,16 +1427,21 @@ export function App() {
       }
       const completed = completedDashboardExport("All mods", merged);
       if (completed) setLastSuccessfulExport(completed);
-      setResultTray((current) =>
-        current?.kind === "export"
-          ? {
-              ...current,
-              pending: false,
-              result: merged,
-              modsChanged: outcome.modsChanged,
-              problems: exportProblems(merged),
-            }
-          : current,
+      await refreshCompletedResult(
+        {
+          kind: "export",
+          title: "All mods",
+          collapsed: false,
+          pending: false,
+          error: null,
+          result: merged,
+          modsChanged: outcome.modsChanged,
+          failedMod: null,
+          remainingMods: [],
+          problems: exportProblems(merged),
+          retry: { kind: "all" },
+        },
+        "export",
       );
     } catch (error) {
       logFrontendError("exportAll", String(error));
@@ -1203,39 +1518,41 @@ export function App() {
     });
   }
 
-  function handleBulkApplied(snapshot: BulkChangeSnapshot) {
-    setBulkUndo(snapshot);
-    if (snapshot.label.startsWith("AI translation ")) {
-      setResultTray((current) =>
-        current?.kind === "ai-batch"
-          ? {
-              ...current,
-              title:
-                new Set(snapshot.rows.map((row) => row.modUniqueId)).size === 1
-                  ? (snapshot.rows[0]?.modName ?? current.title)
-                  : `${new Set(snapshot.rows.map((row) => row.modUniqueId)).size} mods`,
-              undoAvailable: snapshot.rows.length > 0,
-            }
-          : current,
+  function handleBulkApplied(entry: OperationHistoryEntry) {
+    if (!entry?.id) {
+      notify(
+        "The batch edit was saved, but operation history is unavailable.",
+        "info",
       );
       return;
     }
-    presentResult({
-      kind: "bulk",
-      title: snapshot.label,
-      collapsed: false,
-      pending: false,
-      error: null,
-      problems: [],
-      count: snapshot.rows.length,
-      undoAvailable: snapshot.rows.length > 0,
-    });
+    setOperationHistory((current) =>
+      [
+        entry,
+        ...current
+          .filter((candidate) => candidate.id !== entry.id)
+          .map((candidate) =>
+            candidate.canUndo ? { ...candidate, canUndo: false } : candidate,
+          ),
+      ].slice(0, 5),
+    );
+    presentCompletedResult(
+      {
+        kind: "bulk",
+        title: entry.title,
+        collapsed: false,
+        pending: false,
+        error: null,
+        problems: [],
+        count: entry.itemCount,
+        undoAvailable: entry.canUndo,
+      },
+      entry,
+    );
   }
 
   function handleAiBatchFinished(result: AiBatchFinishedResult) {
-    setBulkUndo(result.undo);
-    if (result.outcome === "complete") return;
-    presentResult({
+    const data: ResultTrayData = {
       kind: "ai-batch",
       title: result.modName || selectedMod?.name || "Selected strings",
       collapsed: false,
@@ -1246,73 +1563,73 @@ export function App() {
       done: result.done,
       total: result.total,
       engine: result.engine,
-      undoAvailable: Boolean(result.undo),
-    });
-    notify(
-      `AI translation ${result.outcome === "cancelled" ? "cancelled" : "failed"} after ${result.done} of ${result.total}. Finished suggestions are in Review.`,
-      result.outcome === "error" ? "error" : "info",
-    );
+      undoAvailable: false,
+    };
+    const historyEntry = result.runId
+      ? aiHistoryByRunIdRef.current.get(result.runId)
+      : undefined;
+    if (historyEntry) {
+      presentCompletedResult(data, historyEntry);
+      aiHistoryByRunIdRef.current.delete(result.runId!);
+    } else {
+      // Provider setup/launch failures can happen before Rust records a
+      // completed run. Show that real transient error without attaching an
+      // older AI history entry.
+      presentResult(data);
+    }
+    if (result.done > 0) {
+      setReloadToken((token) => token + 1);
+      if (settings) {
+        void runScan(settings, false, () => true, {
+          preserveSelection: true,
+          showExtraKeyDialog: false,
+          showDiagnostics: false,
+        });
+      }
+    }
+    if (result.outcome !== "complete") {
+      notify(
+        `AI translation ${result.outcome === "cancelled" ? "cancelled" : "failed"} after ${result.done} of ${result.total}. Finished suggestions are in Review.`,
+        result.outcome === "error" ? "error" : "info",
+      );
+    }
   }
 
   async function undoLatestBulk() {
-    const snapshot = bulkUndo;
-    if (!snapshot) return;
-
-    const byMod = new Map<string, SaveStringEntry[]>();
-    for (const row of snapshot.rows) {
-      const entries = byMod.get(row.modUniqueId) ?? [];
-      entries.push({
-        relativeDir: row.relativeDir,
-        key: row.key,
-        target: row.target,
-        status:
-          row.tokenMismatchAccepted && row.status === "translated"
-            ? "translated-token-mismatch-accepted"
-            : row.tokenMismatchAccepted && row.status === "review-needed"
-              ? "review-needed-token-mismatch-accepted"
-              : row.status,
-        source: row.source,
-      });
-      byMod.set(row.modUniqueId, entries);
-    }
+    const operation = operationHistory.find(
+      (entry) => entry.id === selectedHistoryId && entry.canUndo,
+    );
+    if (!operation) return;
 
     try {
-      for (const [modUniqueId, entries] of byMod) {
-        await saveStrings(modUniqueId, entries);
-      }
-      setBulkUndo(null);
+      const undone = await undoBatchEdit(operation.id);
       setReloadToken((token) => token + 1);
-      setResultTray((current) =>
-        current?.kind === "bulk"
-          ? {
-              ...current,
-              pending: false,
-              error: null,
-              undone: true,
-              undoAvailable: false,
-            }
-          : current?.kind === "ai-batch"
-            ? {
-                kind: "bulk",
-                title: current.title,
-                collapsed: false,
-                pending: false,
-                error: null,
-                problems: [],
-                count: snapshot.rows.length,
-                undone: true,
-                undoAvailable: false,
-              }
-            : current,
+      const entries = await refreshOperationHistory();
+      if (!entries.some((entry) => entry.id === undone.id)) {
+        setOperationHistory((current) => [undone, ...current].slice(0, 5));
+      }
+      presentCompletedResult(
+        {
+          kind: "bulk",
+          title: undone.title,
+          collapsed: false,
+          pending: false,
+          error: null,
+          problems: [],
+          count: undone.itemCount,
+          undone: true,
+          undoAvailable: false,
+        },
+        undone,
       );
       notify(
-        `${snapshot.rows.length} ${snapshot.rows.length === 1 ? "string" : "strings"} restored.`,
+        `${undone.itemCount} ${undone.itemCount === 1 ? "string" : "strings"} restored.`,
         "success",
       );
     } catch (error) {
       logFrontendError("undoBulk", String(error));
       setResultTray((current) =>
-        current?.kind === "bulk"
+        current?.kind === "bulk" || current?.kind === "history"
           ? { ...current, pending: false, error: String(error) }
           : current,
       );
@@ -1358,6 +1675,9 @@ export function App() {
   const trayCollapsed = Boolean(resultTray?.collapsed);
   const trayScrollClearance =
     resultTray && !resultHidden ? (trayCollapsed ? 58 : 260) : 0;
+  const selectedHistoryEntry = operationHistory.find(
+    (entry) => entry?.id === selectedHistoryId,
+  );
 
   return (
     <div id="stv3-dense-demo" className="app stv3-demo">
@@ -1425,8 +1745,7 @@ export function App() {
               onShowLastExport={
                 lastSuccessfulExport
                   ? () => {
-                      const folder = folderOf(lastSuccessfulExport.path);
-                      if (folder) void openFolder(folder);
+                      void openFolder(lastSuccessfulExport.folder);
                     }
                   : undefined
               }
@@ -1470,11 +1789,18 @@ export function App() {
                         <button
                           className="panel__header-tail stv3-kicker-action"
                           type="button"
-                          aria-label="Skipped components unavailable; open scan diagnostics"
-                          title="Structured skipped-component count unavailable; open scan diagnostics"
+                          aria-label={
+                            scan?.skippedComponents == null
+                              ? "Skipped components unavailable; open scan diagnostics"
+                              : `${scan.skippedComponents.length} skipped ${scan.skippedComponents.length === 1 ? "component" : "components"}; open scan diagnostics`
+                          }
+                          title="Open structured scan diagnostics"
                           onClick={() => openLatestScan(true)}
                         >
-                          Skipped · Unavailable
+                          Skipped ·{" "}
+                          {scan?.skippedComponents == null
+                            ? "Unavailable"
+                            : scan.skippedComponents.length}
                         </button>
                         {scan && scan.warnings.length > 0 && (
                           <>
@@ -1572,15 +1898,22 @@ export function App() {
                   onStatusFilterChange={setStatusFilter}
                   issuesOnly={issuesOnly}
                   onIssuesOnlyChange={setIssuesOnly}
+                  initialSort={tableSort}
+                  onSortChange={setTableSort}
+                  initialColumnWidths={tableColumnWidths}
+                  onColumnWidthsChange={setTableColumnWidths}
                   targetLanguageLabel={languageLine}
-                  localAiModel={aiReady ? llm!.model : undefined}
+                  localAiModel={localAiReady ? llm!.model : undefined}
+                  liveAiEngines={liveAiEngines}
+                  defaultAiEngine={aiSettings.defaultEngine}
+                  onRunAi={runAi}
+                  onCancelAi={cancelAiRun}
                   headerMeta={
                     lastScanAt
                       ? `scanned ${Math.max(0, Math.round((Date.now() - lastScanAt) / 60_000))} min ago`
                       : "scan time unavailable"
                   }
                   glossary={glossary}
-                  onTranslate={translate}
                   onLlmBatchExportForMod={llmBatchExport}
                   onModCountsChange={handleCountsChange}
                   onOpenMod={openMod}
@@ -1623,7 +1956,10 @@ export function App() {
             settings={settings}
             initialPage={settingsPage}
             onSave={handleSaveSettings}
-            onClose={() => setSettingsOpen(false)}
+            onClose={() => {
+              setSettingsOpen(false);
+              void refreshAiAvailability();
+            }}
             onReRunSetup={() => {
               setSettingsOpen(false);
               setWizardOpen(true);
@@ -1648,6 +1984,9 @@ export function App() {
         {resultTray && !resultHidden && (
           <ResultTray
             data={resultTray}
+            history={operationHistory}
+            selectedHistoryId={selectedHistoryId}
+            onSelectHistory={selectHistoryEntry}
             onToggle={() =>
               setResultTray((current) =>
                 current
@@ -1676,7 +2015,11 @@ export function App() {
             onOpenFolder={(path) => void openFolder(path)}
             onOpenReview={
               (resultTray.kind === "import" && resultTray.summary?.imported) ||
-              resultTray.kind === "ai-batch"
+              resultTray.kind === "ai-batch" ||
+              (resultTray.kind === "history" &&
+                (resultTray.entry.kind === "import" ||
+                  resultTray.entry.kind === "ai") &&
+                resultTray.entry.itemCount > 0)
                 ? () => {
                     setStatusFilter("review-needed");
                     setIssuesOnly(false);
@@ -1697,10 +2040,7 @@ export function App() {
                 : undefined
             }
             onUndoBulk={
-              (resultTray.kind === "bulk" || resultTray.kind === "ai-batch") &&
-              bulkUndo
-                ? undoLatestBulk
-                : undefined
+              selectedHistoryEntry?.canUndo ? undoLatestBulk : undefined
             }
             onNotify={(message) => notify(message, "success")}
             onReleaseNotes={
@@ -1811,7 +2151,38 @@ export function App() {
             initialPath={importDialogPath}
             initialError={importDialogInitialError}
             onChooseFile={pickLlmBatchFile}
+            onPreflight={(path) =>
+              preflightLlmBatchPath(
+                selectedMod.uniqueId,
+                filesOf(selectedMod),
+                path,
+              )
+            }
             onImport={importSelectedBatch}
+            canSwitchToMatchingMod={(modUniqueId) =>
+              Boolean(
+                scan?.mods.some(
+                  (candidate) => candidate.uniqueId === modUniqueId,
+                ),
+              )
+            }
+            onSwitchToMatchingMod={
+              scan?.mods.some(
+                (candidate) => candidate.uniqueId !== selectedMod.uniqueId,
+              )
+                ? (modUniqueId) => {
+                    if (
+                      !scan?.mods.some(
+                        (candidate) => candidate.uniqueId === modUniqueId,
+                      )
+                    )
+                      return;
+                    setSelectedModId(modUniqueId);
+                    setStringScope("mod");
+                    setView("work");
+                  }
+                : undefined
+            }
             onClose={() => {
               setImportDialogPath(undefined);
               setImportDialogInitialError(null);

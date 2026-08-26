@@ -2820,15 +2820,17 @@
 }
 
 #stv3-dense-demo [data-string-row] .stv3-translation-cell {
-  padding-right: 31px;
+  padding-right: 8px;
 }
 
-#stv3-dense-demo [data-string-row] .stv3-translation-cell.has-validation-issue {
-  padding-right: 55px;
-}
-
-#stv3-dense-demo .stv3-translation-cell.has-validation-issue .stv3-row-more {
-  right: 30px;
+#stv3-dense-demo .stv3-row-actions-col {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  min-width: 0;
+  height: 100%;
+  padding: 0 6px;
 }
 
 #stv3-dense-demo .stv3-row-more {
@@ -2847,6 +2849,17 @@
   border-radius: 5px;
   opacity: 0;
   cursor: pointer;
+}
+
+#stv3-dense-demo
+  [data-string-row]
+  .stv3-row-actions-col
+  .stv3-inline-validation,
+#stv3-dense-demo [data-string-row] .stv3-row-actions-col .stv3-row-more {
+  position: static;
+  inset: auto;
+  flex: none;
+  transform: none;
 }
 
 #stv3-dense-demo [data-string-row]:hover .stv3-row-more,

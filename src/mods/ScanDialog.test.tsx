@@ -6,6 +6,16 @@ import type { ScanResult } from "../tauri/commands";
 const RESULT: ScanResult = {
   mods: [],
   warnings: ["Skipped E:/Mods/Broken/manifest.json: invalid manifest JSON"],
+  skippedComponents: [
+    {
+      packageId: "Sample Pack",
+      componentUniqueId: "sample.broken",
+      componentName: "Broken Component",
+      relativeLocation: "Sample/Broken/manifest.json",
+      reason: "invalid manifest JSON",
+      restOfPackageLoaded: true,
+    },
+  ],
   extraKeys: [],
   modCount: 12,
   fileCount: 18,
@@ -26,7 +36,7 @@ describe("ScanDialog", () => {
     expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
   });
 
-  it("shows raw scanner warnings without inventing a skipped-component count", () => {
+  it("shows structured skipped components alongside raw scanner warnings", () => {
     render(
       <ScanDialog
         scanning={false}
@@ -42,15 +52,59 @@ describe("ScanDialog", () => {
     expect(
       screen.getByText(/1 scanner warning was reported/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/invalid manifest JSON/)).toBeInTheDocument();
-    expect(screen.getAllByText("Unavailable")).toHaveLength(4);
-    expect(
-      screen.getByText("components skipped").previousSibling,
-    ).toHaveTextContent("Unavailable");
-    expect(screen.queryByText(/component was skipped/)).toBeNull();
+    expect(screen.getAllByText(/invalid manifest JSON/)).toHaveLength(2);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
+    const skippedMetric = screen
+      .getByText("components skipped")
+      .closest(".stv3-preflight-metric");
+    expect(skippedMetric).toHaveTextContent("1components skipped");
+    expect(screen.getByText(/component was skipped/)).toBeInTheDocument();
+    expect(screen.getByText("Broken Component")).toBeInTheDocument();
+    expect(screen.getByText("Package: Sample Pack")).toBeInTheDocument();
+    expect(screen.getByText("Sample/Broken/manifest.json")).toBeInTheDocument();
+    expect(screen.getByText("Rest of package loaded")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Review changed sources/ }),
     ).toBeDisabled();
+  });
+
+  it("distinguishes a known zero skipped count from an unavailable field", () => {
+    const { rerender } = render(
+      <ScanDialog
+        scanning={false}
+        result={{ ...RESULT, skippedComponents: [] }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    let skippedMetric = screen
+      .getByText("components skipped")
+      .closest(".stv3-preflight-metric");
+    expect(skippedMetric).toHaveTextContent("0components skipped");
+    expect(screen.getByText("No components were skipped.")).toBeInTheDocument();
+    expect(
+      screen.queryByText(
+        /Structured skipped-component details are unavailable/,
+      ),
+    ).toBeNull();
+
+    rerender(
+      <ScanDialog
+        scanning={false}
+        result={{ ...RESULT, skippedComponents: undefined }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    skippedMetric = screen
+      .getByText("components skipped")
+      .closest(".stv3-preflight-metric");
+    expect(skippedMetric).toHaveTextContent("Unavailablecomponents skipped");
+    expect(
+      screen.getByText(/Structured skipped-component details are unavailable/),
+    ).toBeInTheDocument();
   });
 
   it("focuses the real diagnostic block when opened from the skipped control", async () => {
@@ -65,7 +119,7 @@ describe("ScanDialog", () => {
     );
 
     const diagnostics = screen
-      .getByText(/1 scanner warning was reported/)
+      .getByText(/component was skipped/)
       .closest(".stv3-flow-callout");
     await waitFor(() => expect(diagnostics).toHaveFocus());
   });

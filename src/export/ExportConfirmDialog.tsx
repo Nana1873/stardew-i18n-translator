@@ -14,7 +14,7 @@ interface ExportConfirmDialogProps {
   /** Number of target files which do not exist yet and will be created. */
   newFiles?: number;
   mods?: number | null;
-  /** Real preflight values. Null means the current backend does not expose it. */
+  /** Current scan aggregates. Null means the UI cannot derive the value. */
   willWrite?: number | null;
   openOmitted?: number | null;
   changedIncluded?: number | null;
@@ -131,10 +131,10 @@ export function ExportConfirmDialog({
                 className="stv3-preflight-metrics"
                 aria-label="Export readiness"
               >
-                <Metric value={willWrite} label="will be written" />
-                <Metric value={openOmitted} label="open omitted" />
-                <Metric value={changedIncluded} label="changed included" />
-                <Metric value={reviewIncluded} label="review included" />
+                <Metric value={willWrite} label="currently eligible" />
+                <Metric value={openOmitted} label="currently open" />
+                <Metric value={changedIncluded} label="currently changed" />
+                <Metric value={reviewIncluded} label="currently in review" />
                 <Metric
                   value={acceptedMismatches}
                   label="accepted mismatches"
@@ -183,16 +183,14 @@ export function ExportConfirmDialog({
               ) : attention > 0 ? (
                 <div className="stv3-flow-callout is-warning">
                   <AlertTriangle aria-hidden="true" /> {attention} included{" "}
-                  {attention === 1
-                    ? "string still needs"
-                    : "strings still need"}{" "}
-                  attention: {changedIncluded} changed and {reviewIncluded}{" "}
-                  awaiting review. Protected-token blocker preflight is
-                  unavailable; the backend remains the final write guard.
+                  {attention === 1 ? "string is" : "strings are"} not Done:{" "}
+                  {changedIncluded} Changed and {reviewIncluded} in Review.
+                  Protected-token blocker preflight is unavailable; the backend
+                  remains the final write guard.
                 </div>
               ) : blockingValidationAvailable ? (
                 <div className="stv3-flow-callout">
-                  Ready to export. No included strings need attention.
+                  Ready to export. No included strings are Changed or in Review.
                 </div>
               ) : (
                 <div className="stv3-flow-callout">
@@ -201,6 +199,12 @@ export function ExportConfirmDialog({
                   validated by the backend when export starts.
                 </div>
               )}
+
+              <div className="stv3-kicker">
+                Counts above describe the current scan. The backend revalidates
+                the complete scope atomically when export starts; no file is
+                changed if a blocking issue is found.
+              </div>
 
               {acceptedMismatches != null && acceptedMismatches > 0 && (
                 <div className="stv3-flow-callout">
