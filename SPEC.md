@@ -37,8 +37,7 @@ local-only workflows remain available without contacting a cloud service.
 ## 4. Setup and Languages
 
 Setup stores the Stardew Valley folder, Mods folder, target language, and
-non-secret AI preferences in the portable `data/` folder. An OpenAI API key is
-session-only process state and is never persisted there.
+non-secret AI preferences in the portable `data/` folder.
 
 The source language is the mod's `i18n/default.json`, normally English.
 
@@ -220,10 +219,8 @@ not a hidden project log and is never written to portable state. Any later
 successful edit to a touched component makes that snapshot permanently stale,
 even when the edited value is changed back to the batch-written value.
 
-OpenAI API keys exist only in the running application process and are never
-written to portable state or logs. Codex CLI authentication remains owned by
-the CLI; the app does not read, copy, or persist its authentication files or
-tokens.
+Codex CLI authentication remains owned by the CLI; the app does not read, copy,
+or persist its authentication files or tokens.
 
 Translation state is separate from installed mods. The app does not modify mod
 files until the user explicitly exports.
@@ -251,8 +248,7 @@ The maintained product includes:
 - search, filters, review queues, and bulk actions;
 - protected-token validation;
 - optional typed glossary hints;
-- optional AI translation through a localhost endpoint, Codex CLI, or the
-  OpenAI Responses API;
+- optional AI translation through a localhost endpoint or Codex CLI;
 - external LLM batch export and import;
 - target-file export with backups;
 - translation package ZIP creation;
@@ -287,19 +283,15 @@ endpoint, such as Ollama or LM Studio.
 
 The Codex CLI backend invokes an installed CLI and relies exclusively on that
 CLI's own authentication. The app does not inspect, import, copy, or persist
-Codex authentication files or tokens.
-
-The direct OpenAI API backend accepts an API key only for the running app
-process. It uses the fixed official `https://api.openai.com/v1/responses`
-endpoint, sends `store=false`, and enables no tools. Usage is billed separately
-through the user's OpenAI API account.
+Codex authentication files or tokens. It uses the CLI's own default model; the
+app does not maintain a separate Codex model catalogue.
 
 An AI request sends the source text, its section context, and matching glossary
 terms to the selected backend. Every completed suggestion is saved immediately
 as `review-needed`; cancellation or a later provider error retains completed
 Review work. Token validation and human review remain the final safety gates.
 
-These are fixed, direct integrations. The product does not provide a provider
+These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.
 
 ## 18. Technical Constraints

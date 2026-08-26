@@ -20,8 +20,8 @@ a searchable editor instead of editing large JSON files by hand.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about missing or changed Stardew, dialogue, mail, Content Patcher, and
   placeholder tokens before export.
-- Supports manual translation, optional local AI, Codex CLI, OpenAI API, and
-  external LLM batches.
+- Supports manual translation, optional local AI, Codex CLI, and external LLM
+  batches.
 - Supports Stardew's built-in languages and curated custom-language targets.
 - Builds optional glossary hints from local Stardew strings or an installed
   community language pack.
@@ -66,25 +66,22 @@ assets, and it does not download or update mods.
 
 ## Translation Workflows
 
-You can translate in five ways:
+You can translate in four ways:
 
 - **Manual:** edit strings directly in the string editor.
 - **Local AI:** connect to a local OpenAI-compatible endpoint such as Ollama or
   LM Studio.
 - **Codex CLI:** use an installed Codex CLI through its own existing login. The
-  app never reads Codex authentication files or tokens.
-- **OpenAI API:** provide an API key for the current app session and use the
-  fixed official `https://api.openai.com/v1/responses` endpoint. Requests set
-  `store=false` and enable no tools. API usage can incur charges separate from
-  ChatGPT or Codex subscriptions.
+  app never reads Codex authentication files or tokens and uses the CLI's own
+  default model.
 - **External LLM batch:** export a self-contained JSON batch, translate it with a
   file-capable LLM, and import the result. Format 2 uses one compact source
   snapshot to ensure the result still belongs to the selected mod, language,
   files, keys, and current English text before anything is saved.
 
-Manual translation and local-only workflows remain offline. When Codex CLI or
-the OpenAI API is selected, the source text, its section context, and matching
-glossary terms are sent to that service.
+Manual translation and local-only workflows remain offline. When Codex CLI is
+selected, the source text, its section context, and matching glossary terms are
+sent through the installed CLI.
 
 AI suggestions always enter the review queue. Each completed suggestion is
 saved immediately, so cancelling a longer run keeps the completed Review work.
@@ -122,11 +119,8 @@ Local AI requests go only to the local endpoint you configure. External LLM
 batches leave your computer only when you upload them yourself.
 
 Codex CLI authentication remains entirely owned by the CLI; the app does not
-read or copy its authentication files or tokens. An OpenAI API key exists only
-in the running app process and is never written to `data/`. The direct API
-integration has a fixed official Responses API endpoint, sets `store=false`,
-and provides no tools. The app does not offer a provider marketplace or a
-custom cloud base URL.
+read or copy its authentication files or tokens. The app does not offer a
+provider marketplace or a custom cloud base URL.
 
 Portable data is stored under:
 

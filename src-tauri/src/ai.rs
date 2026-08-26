@@ -1,8 +1,8 @@
 //! Shared, provider-neutral data contract for live AI translation.
 //!
 //! This is intentionally a small validation/prompt module, not a provider
-//! registry. `codex_cli.rs`, `openai_api.rs`, and the existing local `llm.rs`
-//! remain direct adapters with their own availability and authentication rules.
+//! registry. `codex_cli.rs` and the existing local `llm.rs` remain direct
+//! adapters with their own availability and authentication rules.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -13,7 +13,6 @@ use std::sync::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use zeroize::Zeroizing;
 
 use crate::{llm, tokens, translations};
 
@@ -26,13 +25,7 @@ const MAX_PROVIDER_TEXT_BYTES: usize = 256 * 1024;
 
 #[derive(Default)]
 pub struct AiRuntimeState {
-    openai_session: Mutex<Option<OpenAiSessionSecret>>,
     active_run: Mutex<Option<ActiveRun>>,
-}
-
-struct OpenAiSessionSecret {
-    key: Zeroizing<String>,
-    model: String,
 }
 
 struct ActiveRun {
@@ -79,44 +72,6 @@ impl AiRuntimeState {
         };
         active.cancelled.store(true, Ordering::Release);
         Ok(true)
-    }
-
-    pub(crate) fn set_openai_session(
-        &self,
-        key: Zeroizing<String>,
-        model: String,
-    ) -> Result<(), String> {
-        *self
-            .openai_session
-            .lock()
-            .map_err(|_| "The OpenAI session state is unavailable.".to_string())? =
-            Some(OpenAiSessionSecret { key, model });
-        Ok(())
-    }
-
-    pub(crate) fn openai_session(&self) -> Result<Option<(Zeroizing<String>, String)>, String> {
-        self.openai_session
-            .lock()
-            .map(|session| {
-                session
-                    .as_ref()
-                    .map(|session| (session.key.clone(), session.model.clone()))
-            })
-            .map_err(|_| "The OpenAI session state is unavailable.".to_string())
-    }
-
-    pub fn clear_openai_session(&self) -> Result<bool, String> {
-        self.openai_session
-            .lock()
-            .map(|mut session| session.take().is_some())
-            .map_err(|_| "The OpenAI session state is unavailable.".to_string())
-    }
-
-    pub fn openai_session_model(&self) -> Result<Option<String>, String> {
-        self.openai_session
-            .lock()
-            .map(|session| session.as_ref().map(|session| session.model.clone()))
-            .map_err(|_| "The OpenAI session state is unavailable.".to_string())
     }
 }
 
@@ -167,8 +122,6 @@ pub enum AiScope {
     #[serde(rename = "string")]
     OneString,
     Selected,
-    Component,
-    Package,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -187,12 +140,8 @@ pub struct AiTranslationRequest {
     /// Frontend-generated id used only to target cancellation.
     pub run_id: String,
     pub scope: AiScope,
-    /// Required only for component/package scopes. The backend resolves the
-    /// complete current component or containing package from a fresh scan.
-    #[serde(default)]
-    pub subject_mod_unique_id: Option<String>,
-    /// Explicit identities are accepted only for one-string/selected scopes.
-    /// Source text and section metadata always come from the fresh backend scan.
+    /// Exact identities for one string or the user's selected rows. Source text
+    /// and section metadata always come from the fresh backend scan.
     #[serde(default)]
     pub identities: Vec<AiStringIdentity>,
     pub include_open: bool,
@@ -209,13 +158,6 @@ pub(crate) struct AiScopeRow {
     pub target_path: PathBuf,
     pub expected_stored: Option<translations::StoredString>,
     pub expected_revision: u64,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AiScopeComponent {
-    pub mod_unique_id: String,
-    pub package_id: String,
-    pub rows: Vec<AiScopeRow>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -327,26 +269,12 @@ pub(crate) fn validate_request_shape(request: &AiTranslationRequest) -> Result<(
         return Err("The AI string identities are too large.".to_string());
     }
 
-    let subject = request.subject_mod_unique_id.as_deref();
     match request.scope {
-        AiScope::OneString if request.identities.len() != 1 || subject.is_some() => {
-            return Err(
-                "The one-string AI scope requires exactly one identity and no subject mod."
-                    .to_string(),
-            );
+        AiScope::OneString if request.identities.len() != 1 => {
+            return Err("The one-string AI scope requires exactly one identity.".to_string());
         }
-        AiScope::Selected if request.identities.is_empty() || subject.is_some() => {
-            return Err(
-                "The selected AI scope requires identities and no subject mod.".to_string(),
-            );
-        }
-        AiScope::Component | AiScope::Package
-            if !request.identities.is_empty() || subject.is_none_or(|value| value.is_empty()) =>
-        {
-            return Err(
-                "Component and package AI scopes require a subject mod and no identities."
-                    .to_string(),
-            );
+        AiScope::Selected if request.identities.is_empty() => {
+            return Err("The selected AI scope requires identities.".to_string());
         }
         _ => {}
     }
@@ -369,58 +297,33 @@ fn row_is_included(request: &AiTranslationRequest, row: &AiScopeRow) -> bool {
 
 pub(crate) fn resolve_scope(
     request: &AiTranslationRequest,
-    components: &[AiScopeComponent],
+    rows: &[AiScopeRow],
 ) -> Result<Vec<AiScopeRow>, String> {
     validate_request_shape(request)?;
 
     let mut current = HashMap::new();
-    for row in components.iter().flat_map(|component| &component.rows) {
+    for row in rows {
         if current.insert(&row.identity, row).is_some() {
             return Err("The latest scan contains an ambiguous string identity.".to_string());
         }
     }
 
-    let resolved = match request.scope {
-        AiScope::OneString | AiScope::Selected => request
-            .identities
-            .iter()
-            .map(|identity| {
-                let row = current.get(identity).copied().ok_or_else(|| {
-                    "An AI string identity is stale or is not present in the latest scan."
-                        .to_string()
-                })?;
-                if !row_is_included(request, row) {
-                    return Err(
-                        "A selected AI string is no longer Open or Changed in the latest scan."
-                            .to_string(),
-                    );
-                }
-                Ok(row.clone())
-            })
-            .collect::<Result<Vec<_>, String>>()?,
-        AiScope::Component | AiScope::Package => {
-            let subject_id = request.subject_mod_unique_id.as_deref().ok_or_else(|| {
-                "The AI scope does not identify its current component.".to_string()
+    let resolved = request
+        .identities
+        .iter()
+        .map(|identity| {
+            let row = current.get(identity).copied().ok_or_else(|| {
+                "An AI string identity is stale or is not present in the latest scan.".to_string()
             })?;
-            let subject = components
-                .iter()
-                .find(|component| component.mod_unique_id == subject_id)
-                .ok_or_else(|| {
-                    "The AI subject mod is stale or is not present in the latest scan.".to_string()
-                })?;
-            components
-                .iter()
-                .filter(|component| {
-                    request.scope == AiScope::Package && component.package_id == subject.package_id
-                        || request.scope == AiScope::Component
-                            && component.mod_unique_id == subject.mod_unique_id
-                })
-                .flat_map(|component| component.rows.iter())
-                .filter(|row| row_is_included(request, row))
-                .cloned()
-                .collect()
-        }
-    };
+            if !row_is_included(request, row) {
+                return Err(
+                    "A selected AI string is no longer Open or Changed in the latest scan."
+                        .to_string(),
+                );
+            }
+            Ok(row.clone())
+        })
+        .collect::<Result<Vec<_>, String>>()?;
     if resolved.is_empty() {
         return Err("No Open or Changed strings match this AI scope.".to_string());
     }
@@ -685,35 +588,25 @@ mod tests {
         AiTranslationRequest {
             run_id: "run-1".to_string(),
             scope,
-            subject_mod_unique_id: None,
             identities,
             include_open: true,
             include_changed: true,
         }
     }
 
-    fn component(
-        mod_unique_id: &str,
-        package_id: &str,
-        rows: &[(&str, &str, &str)],
-    ) -> AiScopeComponent {
-        AiScopeComponent {
-            mod_unique_id: mod_unique_id.to_string(),
-            package_id: package_id.to_string(),
-            rows: rows
-                .iter()
-                .map(|(key, source, status)| AiScopeRow {
-                    identity: identity(mod_unique_id, "i18n", key),
-                    source: source.to_string(),
-                    section: None,
-                    status: status.to_string(),
-                    default_path: PathBuf::from(r"C:\fixture\i18n\default.json"),
-                    target_path: PathBuf::from(r"C:\fixture\i18n\de.json"),
-                    expected_stored: None,
-                    expected_revision: 0,
-                })
-                .collect(),
-        }
+    fn rows(mod_unique_id: &str, rows: &[(&str, &str, &str)]) -> Vec<AiScopeRow> {
+        rows.iter()
+            .map(|(key, source, status)| AiScopeRow {
+                identity: identity(mod_unique_id, "i18n", key),
+                source: source.to_string(),
+                section: None,
+                status: status.to_string(),
+                default_path: PathBuf::from(r"C:\fixture\i18n\default.json"),
+                target_path: PathBuf::from(r"C:\fixture\i18n\de.json"),
+                expected_stored: None,
+                expected_revision: 0,
+            })
+            .collect()
     }
 
     #[test]
@@ -727,14 +620,10 @@ mod tests {
         .is_err());
         assert!(validate_request_shape(&request(AiScope::Selected, vec![])).is_err());
 
-        let mut duplicate = request(AiScope::Selected, vec![one.clone(), one]);
+        let duplicate = request(AiScope::Selected, vec![one.clone(), one]);
         assert!(validate_request_shape(&duplicate)
             .unwrap_err()
             .contains("duplicate"));
-
-        duplicate.scope = AiScope::Package;
-        duplicate.subject_mod_unique_id = Some("mod.one".to_string());
-        assert!(validate_request_shape(&duplicate).is_err());
 
         let oversized = request(
             AiScope::Selected,
@@ -745,14 +634,31 @@ mod tests {
         assert!(validate_request_shape(&oversized)
             .unwrap_err()
             .contains("more than"));
+
+        for removed_scope in ["component", "package"] {
+            let parsed = serde_json::from_value::<AiTranslationRequest>(serde_json::json!({
+                "runId": "run-legacy",
+                "scope": removed_scope,
+                "identities": [
+                    {"modUniqueId": "mod.one", "relativeDir": "i18n", "key": "key"}
+                ],
+                "includeOpen": true,
+                "includeChanged": false
+            }));
+            assert!(
+                parsed.is_err(),
+                "{removed_scope} must not remain a live-AI scope"
+            );
+        }
     }
 
     #[test]
     fn selected_scope_resolves_exact_current_rows_across_mods() {
-        let components = vec![
-            component("mod.a", "Pack A", &[(" key ", "Current A", "untranslated")]),
-            component("mod.b", "Pack B", &[("b", "Current B", "outdated")]),
-        ];
+        let rows = [
+            rows("mod.a", &[(" key ", "Current A", "untranslated")]),
+            rows("mod.b", &[("b", "Current B", "outdated")]),
+        ]
+        .concat();
         let request = request(
             AiScope::Selected,
             vec![
@@ -761,7 +667,7 @@ mod tests {
             ],
         );
 
-        let resolved = resolve_scope(&request, &components).unwrap();
+        let resolved = resolve_scope(&request, &rows).unwrap();
 
         assert_eq!(resolved[0].source, "Current B");
         assert_eq!(resolved[1].source, "Current A");
@@ -770,64 +676,28 @@ mod tests {
 
     #[test]
     fn stale_or_no_longer_eligible_explicit_identity_is_rejected() {
-        let components = vec![component(
+        let rows = rows(
             "mod.a",
-            "Pack",
             &[
                 ("done", "Done", "translated"),
                 ("open", "Open", "untranslated"),
             ],
-        )];
+        );
         assert!(resolve_scope(
             &request(
                 AiScope::OneString,
                 vec![identity("mod.a", "i18n", "missing")],
             ),
-            &components,
+            &rows,
         )
         .unwrap_err()
         .contains("stale"));
         assert!(resolve_scope(
             &request(AiScope::OneString, vec![identity("mod.a", "i18n", "done")],),
-            &components,
+            &rows,
         )
         .unwrap_err()
         .contains("no longer"));
-    }
-
-    #[test]
-    fn broad_scopes_derive_current_rows_and_never_include_done_or_review() {
-        let components = vec![
-            component(
-                "mod.a",
-                "Pack",
-                &[
-                    ("open-a", "Open A", "untranslated"),
-                    ("changed-a", "Changed A", "outdated"),
-                    ("done-a", "Done A", "translated"),
-                    ("review-a", "Review A", "review-needed"),
-                ],
-            ),
-            component("mod.b", "Pack", &[("open-b", "Open B", "untranslated")]),
-            component("mod.c", "Other", &[("open-c", "Open C", "untranslated")]),
-        ];
-        let mut component_request = request(AiScope::Component, vec![]);
-        component_request.subject_mod_unique_id = Some("mod.a".to_string());
-        component_request.include_changed = false;
-        let component_rows = resolve_scope(&component_request, &components).unwrap();
-        assert_eq!(component_rows.len(), 1);
-        assert_eq!(component_rows[0].identity.key, "open-a");
-
-        let mut package_request = request(AiScope::Package, vec![]);
-        package_request.subject_mod_unique_id = Some("mod.a".to_string());
-        let package_rows = resolve_scope(&package_request, &components).unwrap();
-        assert_eq!(
-            package_rows
-                .iter()
-                .map(|row| row.identity.key.as_str())
-                .collect::<Vec<_>>(),
-            vec!["open-a", "changed-a", "open-b"]
-        );
     }
 
     #[test]
@@ -854,12 +724,10 @@ mod tests {
 
     #[test]
     fn provider_schema_binds_exact_ids_and_count() {
-        let rows = component(
+        let rows = rows(
             "mod.a",
-            "Pack",
             &[("a", "Hello", "untranslated"), ("b", "Bye", "outdated")],
-        )
-        .rows;
+        );
         let prepared = prepare_items(&rows, |_| Vec::new()).unwrap();
         let prompt = build_provider_prompt("German", &prepared).unwrap();
         assert!(prompt.instructions.contains("every supplied id"));
@@ -871,12 +739,10 @@ mod tests {
 
     #[test]
     fn output_is_reordered_and_rejects_missing_duplicate_unknown_or_empty_data() {
-        let rows = component(
+        let rows = rows(
             "mod.a",
-            "Pack",
             &[("a", "Hello", "untranslated"), ("b", "Bye", "outdated")],
-        )
-        .rows;
+        );
         let prepared = prepare_items(&rows, |_| Vec::new()).unwrap();
         let reversed = vec![
             ProviderTranslation {
@@ -908,12 +774,7 @@ mod tests {
 
     #[test]
     fn every_suggestion_is_review_only_and_carries_complete_token_differences() {
-        let rows = component(
-            "mod.a",
-            "Pack",
-            &[(" key ", "Hello {{name}}", "untranslated")],
-        )
-        .rows;
+        let rows = rows("mod.a", &[(" key ", "Hello {{name}}", "untranslated")]);
         let prepared = prepare_items(&rows, |_| Vec::new()).unwrap();
         let result = suggestions(
             &prepared,

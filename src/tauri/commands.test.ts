@@ -14,7 +14,6 @@ import {
   saveStringsWithUndo,
   translateWithCodexCli,
   translateWithLocalAi,
-  translateWithOpenAiApi,
   undoBatchEdit,
   type AiTranslationRequest,
   type ExportModInput,
@@ -202,11 +201,17 @@ describe("backend command bridges", () => {
     });
   });
 
-  it("sends broad scopes as a subject plus status filters, without row data", async () => {
+  it("sends selected identities and status filters without source row data", async () => {
     const request: AiTranslationRequest = {
-      runId: "run-package",
-      scope: "package",
-      subjectModUniqueId: "example.component",
+      runId: "run-selected",
+      scope: "selected",
+      identities: [
+        {
+          modUniqueId: "example.component",
+          relativeDir: "i18n",
+          key: "greeting",
+        },
+      ],
       includeOpen: true,
       includeChanged: true,
     };
@@ -216,13 +221,7 @@ describe("backend command bridges", () => {
     expect(invokeMock).toHaveBeenLastCalledWith("translate_with_local_ai", {
       request,
     });
-    expect(request).not.toHaveProperty("identities");
     expect(request).not.toHaveProperty("targetLanguage");
     expect(request).not.toHaveProperty("items");
-
-    await translateWithOpenAiApi(request);
-    expect(invokeMock).toHaveBeenLastCalledWith("translate_with_openai_api", {
-      request,
-    });
   });
 });

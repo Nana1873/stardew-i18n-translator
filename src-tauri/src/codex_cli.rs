@@ -1091,13 +1091,8 @@ pub async fn status() -> CodexCliStatus {
         })
 }
 
-fn translation_args(
-    working_dir: &Path,
-    schema_path: &Path,
-    model: &str,
-    reasoning: &str,
-) -> Vec<OsString> {
-    let mut args = vec![
+fn translation_args(working_dir: &Path, schema_path: &Path, reasoning: &str) -> Vec<OsString> {
+    vec![
         OsString::from("--ask-for-approval"),
         OsString::from("never"),
         OsString::from("--strict-config"),
@@ -1120,17 +1115,11 @@ fn translation_args(
         OsString::from("features.shell_tool=false"),
         OsString::from("--config"),
         OsString::from(format!("model_reasoning_effort=\"{reasoning}\"")),
-    ];
-    if !model.trim().is_empty() {
-        args.push(OsString::from("--model"));
-        args.push(OsString::from(model.trim()));
-    }
-    args.push(OsString::from("-"));
-    args
+        OsString::from("-"),
+    ]
 }
 
 pub async fn translate_chunk(
-    model: &str,
     reasoning: &str,
     target_language: &str,
     items: &[PreparedAiItem],
@@ -1138,7 +1127,6 @@ pub async fn translate_chunk(
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
     let reasoning = ai::normalize_reasoning(reasoning)?;
     let prompt = ai::build_provider_prompt(target_language, items)?;
-    let model = model.to_string();
     let expected = items.to_vec();
     tauri::async_runtime::spawn_blocking(move || {
         let executable = resolve_codex_executable().map_err(ProviderFailure::Message)?;
@@ -1149,7 +1137,7 @@ pub async fn translate_chunk(
         std::fs::write(&schema_path, schema)
             .map_err(|error| format!("Could not write the Codex output schema: {error}"))?;
         let input = format!("{}\n\nInput JSON:\n{}", prompt.instructions, prompt.input);
-        let args = translation_args(&temp.path, &schema_path, &model, &reasoning);
+        let args = translation_args(&temp.path, &schema_path, &reasoning);
         match run_command(
             &executable,
             &args,
@@ -1230,7 +1218,6 @@ mod tests {
         let args = translation_args(
             Path::new(r"C:\Temp\empty"),
             Path::new(r"C:\Temp\schema.json"),
-            "",
             "medium",
         );
         let args: Vec<String> = args
@@ -1487,7 +1474,6 @@ mod tests {
             expected_revision: 0,
         }];
         let translated = tauri::async_runtime::block_on(translate_chunk(
-            "",
             "low",
             "German",
             &items,
