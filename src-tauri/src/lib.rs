@@ -16,6 +16,7 @@ mod language;
 mod llm;
 mod operation_history;
 mod release_zip;
+mod scan_snapshot;
 mod scanner;
 mod settings;
 mod tokens;
@@ -77,7 +78,20 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
-    let result = scanner::scan_mods(Path::new(&mods_path), &target_lang, &config);
+    let mods_root = PathBuf::from(mods_path.trim());
+    if !mods_root.is_dir() {
+        return Err(format!(
+            "The selected Mods folder {} is unavailable.",
+            mods_root.display()
+        ));
+    }
+    let mut result = scanner::scan_mods(&mods_root, &target_lang, &config);
+    if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
+        log::warn!("Could not update source-change scan baseline: {error}");
+        result.warnings.push(format!(
+            "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
+        ));
+    }
     if !result.warnings.is_empty() {
         log::warn!(
             "scan_mods({mods_path}): {} warning(s)",

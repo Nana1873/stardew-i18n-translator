@@ -38,6 +38,16 @@ pub struct ScannedI18nFile {
     /// Source keys whose saved status is an unreviewed AI suggestion
     /// (`review-needed`) — feeds the dashboard review queue.
     pub review_needed: usize,
+    /// Semantic source hashes used only for the portable previous-scan
+    /// comparison. Source text itself is never persisted in the snapshot.
+    #[serde(skip)]
+    pub(crate) source_hashes: Vec<SourceKeyHash>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SourceKeyHash {
+    pub key: String,
+    pub source_hash: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -73,6 +83,28 @@ pub struct ScanResult {
     pub extra_keys: Vec<ExtraKeyDiagnostic>,
     pub mod_count: usize,
     pub file_count: usize,
+    /// English-source changes observed since the preceding successful scan of
+    /// this Mods folder. `None` is reserved for a snapshot persistence error.
+    pub source_deltas: Option<ScanDeltas>,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanDeltas {
+    pub sources_changed: usize,
+    pub strings_added: usize,
+    pub strings_removed: usize,
+    /// Exact current rows opened by the scan result actions.
+    pub added_strings: Vec<ScanStringIdentity>,
+    pub changed_sources: Vec<ScanStringIdentity>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanStringIdentity {
+    pub mod_unique_id: String,
+    pub relative_dir: String,
+    pub key: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -455,6 +487,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         warnings,
         skipped_components,
         extra_keys,
+        source_deltas: None,
     }
 }
 
@@ -935,16 +968,18 @@ fn count_keys(
     state: &ModState,
     relative_dir: &str,
 ) -> (usize, usize, usize) {
-    count_keys_checked(default_path, target_path, None, state, relative_dir).unwrap_or((0, 0, 0))
+    inspect_keys_checked(default_path, target_path, None, state, relative_dir)
+        .map(|(total, translated, review_needed, _)| (total, translated, review_needed))
+        .unwrap_or((0, 0, 0))
 }
 
-fn count_keys_checked(
+fn inspect_keys_checked(
     default_path: &Path,
     target_path: &Path,
     allowed_root: Option<&Path>,
     state: &ModState,
     relative_dir: &str,
-) -> Result<(usize, usize, usize), String> {
+) -> Result<(usize, usize, usize, Vec<SourceKeyHash>), String> {
     let source = match allowed_root {
         Some(root) => read_object_within_root(default_path, root, "source")?,
         None => read_object_checked(default_path)?,
@@ -989,7 +1024,15 @@ fn count_keys_checked(
             .1 == "review-needed"
         })
         .count();
-    Ok((total, translated, review_needed))
+    let source_hashes = source
+        .iter()
+        .filter(|(key, _)| !is_ignored_i18n_key(key))
+        .map(|(key, value)| SourceKeyHash {
+            key: key.clone(),
+            source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
+        })
+        .collect();
+    Ok((total, translated, review_needed, source_hashes))
 }
 
 fn read_target_object_within_root(
@@ -1083,7 +1126,7 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys, review_needed) = count_keys_checked(
+    let (total_keys, translated_keys, review_needed, source_hashes) = inspect_keys_checked(
         &default_path,
         &target_path,
         Some(mods_path),
@@ -1098,6 +1141,7 @@ fn build_i18n_file(
         total_keys,
         translated_keys,
         review_needed,
+        source_hashes,
     })
 }
 

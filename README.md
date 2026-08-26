@@ -16,6 +16,7 @@ a searchable editor instead of editing large JSON files by hand.
 ## What It Does
 
 - Scans a SMAPI Mods folder and finds standard `i18n` translation files.
+- Shows English-source changes, additions, and removals since the previous scan.
 - Groups multi-part mods and imports existing translations.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about missing or changed Stardew, dialogue, mail, Content Patcher, and
@@ -125,6 +126,7 @@ provider marketplace or a custom cloud base URL.
 Portable data is stored under:
 
 - `data/settings.json`
+- `data/scan-source-snapshot.json`
 - `data/language-state/<language>/`
 - `data/glossary/`
 - `data/logs/`

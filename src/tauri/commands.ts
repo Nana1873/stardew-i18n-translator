@@ -142,6 +142,22 @@ export interface ScanResult {
   extraKeys?: ExtraKeyDiagnostic[];
   modCount: number;
   fileCount: number;
+  /** English-source changes observed since the previous scan of this Mods folder. */
+  sourceDeltas?: ScanDeltas | null;
+}
+
+export interface ScanDeltas {
+  sourcesChanged: number;
+  stringsAdded: number;
+  stringsRemoved: number;
+  addedStrings: ScanStringIdentity[];
+  changedSources: ScanStringIdentity[];
+}
+
+export interface ScanStringIdentity {
+  modUniqueId: string;
+  relativeDir: string;
+  key: string;
 }
 
 export interface SkippedComponent {
