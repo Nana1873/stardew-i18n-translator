@@ -127,6 +127,7 @@ function importHistory(
     summary: "1 value saved to Review",
     path: "C:/results/test.llm-result.json",
     fileName: "test.llm-result.json",
+    details: [{ label: "Component", value: "a.b" }],
     ...overrides,
   });
 }
@@ -358,6 +359,7 @@ describe("App shell", () => {
       name: "0 skipped components; open scan diagnostics",
     });
     expect(skipped).toHaveTextContent("Skipped · 0");
+    expect(within(skipped).getByText("0")).toHaveClass("stv3-pane-count");
     fireEvent.click(skipped);
 
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
@@ -1451,6 +1453,165 @@ describe("App shell", () => {
         name: "Undo the latest batch edit",
       }),
     ).toBeNull();
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Open review queue" }),
+    );
+    expect(screen.getByRole("button", { name: "This mod" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("opens a multi-mod AI result without hiding Review rows in one component", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+      i18nFiles: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "y/i18n/default.json",
+          targetPath: "y/i18n/de.json",
+          targetExists: false,
+          totalKeys: 1,
+          translatedKeys: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      totalKeys: 1,
+      translatedKeys: 0,
+      reviewNeeded: 0,
+      progress: 0,
+      status: "untranslated",
+    });
+    scan.modCount = 2;
+    scan.fileCount = 2;
+
+    let releaseTranslation: ((result: AiRunResult) => void) | null = null;
+    let activeRunId = "";
+    let completed = false;
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-test",
+            temperature: 0.2,
+          },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") {
+        const modUniqueId = (args as { modUniqueId: string }).modUniqueId;
+        const first = modUniqueId === "a.b";
+        return Promise.resolve([
+          {
+            key: first ? "first" : "second",
+            source: first ? "First" : "Second",
+            target: completed ? (first ? "Erste" : "Zweite") : "",
+            targetPresent: completed,
+            status: completed ? "review-needed" : "untranslated",
+          },
+        ]);
+      }
+      if (cmd === "translate_with_local_ai") {
+        activeRunId = (args as { request: { runId: string } }).request.runId;
+        backendHistory = [
+          aiHistory({
+            outcome: "success",
+            itemCount: 2,
+            title: "Local AI translation run",
+            summary: "2 suggestions saved to Review",
+          }),
+        ];
+        return new Promise((resolve) => {
+          releaseTranslation = resolve;
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+    fireEvent.click(await screen.findByRole("button", { name: "All mods" }));
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select first" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select second" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("translate_with_local_ai", {
+        request: expect.objectContaining({
+          identities: [
+            { modUniqueId: "a.b", relativeDir: "i18n", key: "first" },
+            {
+              modUniqueId: "second.mod",
+              relativeDir: "i18n",
+              key: "second",
+            },
+          ],
+        }),
+      }),
+    );
+    if (!releaseTranslation) throw new Error("AI request did not start");
+    completed = true;
+    act(() => {
+      releaseTranslation?.({
+        runId: activeRunId,
+        engine: "local",
+        model: "local-test",
+        reasoning: "default",
+        scope: "selected",
+        requested: 2,
+        completed: 2,
+        outcome: "complete",
+        suggestions: [
+          {
+            identity: {
+              modUniqueId: "a.b",
+              relativeDir: "i18n",
+              key: "first",
+            },
+            text: "Erste",
+            status: "review-needed",
+            tokenDifferences: [],
+            glossaryMisses: [],
+          },
+          {
+            identity: {
+              modUniqueId: "second.mod",
+              relativeDir: "i18n",
+              key: "second",
+            },
+            text: "Zweite",
+            status: "review-needed",
+            tokenDifferences: [],
+            glossaryMisses: [],
+          },
+        ],
+      });
+    });
+
+    const result = await screen.findByRole("complementary", {
+      name: "Latest operation result",
+    });
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Open review queue" }),
+    );
+    expect(screen.getByRole("button", { name: "All mods" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("keeps error toasts assertive and dismissible while success stays polite", async () => {
@@ -1514,7 +1675,7 @@ describe("App shell", () => {
     ).toBeNull();
   });
 
-  it("keeps export problems available while navigating and refreshes one saved string", async () => {
+  it("resolves an export problem after its token mismatch is explicitly accepted", async () => {
     const blocked = {
       ...EXPORT_RESULT,
       files: [],
@@ -1567,10 +1728,8 @@ describe("App shell", () => {
     ).toBeNull();
 
     await screen.findByRole("dialog", { name: "greeting" });
-    fireEvent.change(screen.getByLabelText("German translation"), {
-      target: { value: "Hallo {{name}}" },
-    });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "greeting" })).toBeNull(),
     );
@@ -2555,6 +2714,10 @@ describe("App shell", () => {
     ).toBeNull();
     expect(screen.getByRole("button", { name: "Latest result" })).toBeVisible();
     expect(screen.getByRole("button", { name: /^Review/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "This mod" })).toHaveAttribute(
       "aria-pressed",
       "true",
     );

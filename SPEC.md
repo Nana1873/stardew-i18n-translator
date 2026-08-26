@@ -128,8 +128,8 @@ Workspace is the two-panel translation view:
 - **Mod**, **File**, **Status**, **Key**, **English Source**, and **Target
   Translation** are individually resizable when present; validation and row
   actions remain in a fixed trailing lane;
-- Settings contains folders, language, glossary, the three direct AI backends,
-  shortcuts, logging, and app information;
+- Settings contains folders, language, glossary, the direct Local AI and Codex
+  CLI backends, shortcuts, logging, and app information;
 - completed operations appear in a compact result tray that can be collapsed,
   closed, and reopened through **Latest result**. It exposes real paths and file
   names, **Copy details**, relevant follow-up actions, and the five newest

@@ -671,6 +671,38 @@ describe("SettingsDialog", () => {
     );
   });
 
+  it("does not restore one default shortcut when another command uses it", () => {
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          shortcuts: {
+            "table.search": "Ctrl+G",
+            "table.edit": "Ctrl+F",
+          },
+        }}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Shortcuts" }));
+    const searchShortcut = screen.getByRole("button", {
+      name: "Change Focus string search",
+    });
+    expect(searchShortcut).toHaveTextContent("Ctrl+G");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Reset Focus string search" }),
+    );
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Ctrl+F is already assigned to “Edit string”",
+    );
+    expect(searchShortcut).toHaveTextContent("Ctrl+G");
+  });
+
   it("opens the repository from About", () => {
     render(
       <SettingsDialog
@@ -986,13 +1018,23 @@ describe("SettingsDialog", () => {
       "aria-pressed",
       "false",
     );
+    fireEvent.click(screen.getByText("Local AI").closest("button")!);
+    expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByText("Codex CLI").closest("button")).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByRole("region", { name: "Local AI" })).toBeVisible();
     expect(screen.queryByText("OpenAI API")).toBeNull();
     expect(
       invokeMock.mock.calls.some(([cmd]) => String(cmd).startsWith("openai_")),
     ).toBe(false);
   });
 
-  it("opens unavailable engine settings without marking an engine as default", async () => {
+  it("highlights unavailable engine settings without saving them as the default", async () => {
     const onSave = vi.fn();
     render(
       <SettingsDialog
@@ -1007,12 +1049,13 @@ describe("SettingsDialog", () => {
     const local = screen.getByText("Local AI").closest("button")!;
     const codex = screen.getByText("Codex CLI").closest("button")!;
     await waitFor(() => expect(codex).toHaveTextContent("Not installed"));
-    expect(local).toHaveAttribute("aria-pressed", "false");
+    expect(local).toHaveAttribute("aria-pressed", "true");
     expect(codex).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(codex);
     expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
-    expect(codex).toHaveAttribute("aria-pressed", "false");
+    expect(codex).toHaveAttribute("aria-pressed", "true");
+    expect(local).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(

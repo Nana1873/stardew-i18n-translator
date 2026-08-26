@@ -29,6 +29,8 @@ interface ResultTrayBase {
   pending: boolean;
   error: string | null;
   problems: ResultProblem[];
+  /** Components associated with the Review result, when known. */
+  reviewModUniqueIds?: string[];
 }
 
 export type ResultTrayData =

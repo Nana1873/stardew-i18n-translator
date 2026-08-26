@@ -350,6 +350,16 @@ export function App() {
   }
 
   function historyResult(entry: OperationHistoryEntry): ResultTrayData {
+    const reviewModUniqueIds =
+      entry.kind === "import"
+        ? [
+            ...new Set(
+              entry.details
+                .filter((detail) => detail.label === "Component")
+                .map((detail) => detail.value),
+            ),
+          ]
+        : [];
     return {
       kind: "history",
       operationId: entry.id,
@@ -359,6 +369,7 @@ export function App() {
       pending: false,
       error: null,
       problems: [],
+      ...(reviewModUniqueIds.length > 0 ? { reviewModUniqueIds } : {}),
     };
   }
 
@@ -1018,13 +1029,25 @@ export function App() {
       );
       setImportDialogPath(undefined);
       setImportDialogInitialError(null);
-      showImportResult(summary, null, selectedMod.name, path);
+      showImportResult(
+        summary,
+        null,
+        selectedMod.name,
+        path,
+        selectedMod.uniqueId,
+      );
       setReloadToken((token) => token + 1);
     } catch (error) {
       logFrontendError("importLlmBatchPath", String(error));
       setImportDialogPath(undefined);
       setImportDialogInitialError(null);
-      showImportResult(null, String(error), selectedMod.name, path);
+      showImportResult(
+        null,
+        String(error),
+        selectedMod.name,
+        path,
+        selectedMod.uniqueId,
+      );
     }
   }
 
@@ -1218,6 +1241,7 @@ export function App() {
     error: string | null,
     title: string,
     sourcePath: string | null = null,
+    reviewModUniqueId?: string,
   ) {
     const data: ResultTrayData = {
       kind: "import",
@@ -1230,6 +1254,7 @@ export function App() {
       sourceFileName: sourcePath ? fileNameOf(sourcePath) : null,
       sourceFolder: sourcePath ? folderOf(sourcePath) : null,
       problems: [],
+      ...(reviewModUniqueId ? { reviewModUniqueIds: [reviewModUniqueId] } : {}),
     };
     if (summary && !error) void refreshCompletedResult(data, "import");
     else presentResult(data);
@@ -1502,7 +1527,14 @@ export function App() {
         snapshot.source,
         snapshot.target,
         snapshot.targetPresent,
-      ).filter((issue) => issue.severity === "error");
+      ).filter(
+        (issue) =>
+          issue.severity === "error" &&
+          !(
+            snapshot.tokenMismatchAccepted &&
+            (issue.ruleId === "token-missing" || issue.ruleId === "token-added")
+          ),
+      );
       return {
         ...current,
         problems: current.problems.map((problem) =>
@@ -1564,6 +1596,7 @@ export function App() {
       total: result.total,
       engine: result.engine,
       undoAvailable: false,
+      reviewModUniqueIds: result.modUniqueIds,
     };
     const historyEntry = result.runId
       ? aiHistoryByRunIdRef.current.get(result.runId)
@@ -1593,6 +1626,38 @@ export function App() {
         result.outcome === "error" ? "error" : "info",
       );
     }
+  }
+
+  function openResultReviewQueue() {
+    const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
+    const reviewModIds = [
+      ...new Set(
+        (resultTray?.reviewModUniqueIds ?? []).filter((id) =>
+          knownModIds.has(id),
+        ),
+      ),
+    ];
+    setSearch("");
+    setStatusFilter("review-needed");
+    setIssuesOnly(false);
+    if (reviewModIds.length === 1) {
+      setSelectedModId(reviewModIds[0]);
+      setStringScope("mod");
+    } else {
+      // Multiple or older history entries have no single safe component.
+      // All mods guarantees the requested Review results are not hidden.
+      setStringScope("all");
+    }
+    setView("work");
+    setResultHidden(true);
+    window.requestAnimationFrame(() => {
+      const review = Array.from(
+        document.querySelectorAll<HTMLButtonElement>(
+          '.stv3-filter[aria-pressed="true"]',
+        ),
+      ).find((button) => button.textContent?.includes("Review"));
+      review?.focus();
+    });
   }
 
   async function undoLatestBulk() {
@@ -1770,7 +1835,17 @@ export function App() {
               >
                 <div className="panel__header stv3-pane-title">
                   <div>
-                    <span>Mods{scan ? ` · ${scan.modCount}` : ""}</span>
+                    <span>
+                      Mods
+                      {scan && (
+                        <>
+                          {" · "}
+                          <span className="stv3-pane-count">
+                            {scan.modCount}
+                          </span>
+                        </>
+                      )}
+                    </span>
                     {configured && (
                       <span className="panel__header-meta">
                         {scan && inProgressMods > 0 && (
@@ -1798,9 +1873,13 @@ export function App() {
                           onClick={() => openLatestScan(true)}
                         >
                           Skipped ·{" "}
-                          {scan?.skippedComponents == null
-                            ? "Unavailable"
-                            : scan.skippedComponents.length}
+                          {scan?.skippedComponents == null ? (
+                            "Unavailable"
+                          ) : (
+                            <span className="stv3-pane-count">
+                              {scan.skippedComponents.length}
+                            </span>
+                          )}
                         </button>
                         {scan && scan.warnings.length > 0 && (
                           <>
@@ -1903,6 +1982,7 @@ export function App() {
                   initialColumnWidths={tableColumnWidths}
                   onColumnWidthsChange={setTableColumnWidths}
                   targetLanguageLabel={languageLine}
+                  targetLanguageCode={targetLang ?? undefined}
                   localAiModel={localAiReady ? llm!.model : undefined}
                   liveAiEngines={liveAiEngines}
                   defaultAiEngine={aiSettings.defaultEngine}
@@ -2020,23 +2100,7 @@ export function App() {
                 (resultTray.entry.kind === "import" ||
                   resultTray.entry.kind === "ai") &&
                 resultTray.entry.itemCount > 0)
-                ? () => {
-                    setStatusFilter("review-needed");
-                    setIssuesOnly(false);
-                    setStringScope("mod");
-                    setView("work");
-                    setResultHidden(true);
-                    window.requestAnimationFrame(() => {
-                      const review = Array.from(
-                        document.querySelectorAll<HTMLButtonElement>(
-                          '.stv3-filter[aria-pressed="true"]',
-                        ),
-                      ).find((button) =>
-                        button.textContent?.includes("Review"),
-                      );
-                      review?.focus();
-                    });
-                  }
+                ? openResultReviewQueue
                 : undefined
             }
             onUndoBulk={

@@ -452,6 +452,12 @@
   color: var(--stv3-text);
 }
 
+#stv3-dense-demo .stv3-pane-count {
+  color: var(--stv3-brand-muted);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
 #stv3-dense-demo .stv3-scope-toggle {
   display: inline-flex;
   flex: none;

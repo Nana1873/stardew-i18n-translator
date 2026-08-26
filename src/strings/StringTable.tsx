@@ -84,6 +84,7 @@ export interface AiBatchFinishedResult {
   model?: string;
   reasoning?: string;
   modName: string;
+  modUniqueIds: string[];
 }
 
 interface Row extends StringRow {
@@ -147,6 +148,7 @@ export interface SavedStringSnapshot {
   source: string;
   target: string;
   targetPresent: boolean;
+  tokenMismatchAccepted: boolean;
 }
 
 export interface StringTableProps {
@@ -171,6 +173,7 @@ export interface StringTableProps {
   /** Additional real metadata (for example scan age); omitted when unknown. */
   headerMeta?: string | readonly string[];
   targetLanguageLabel?: string;
+  targetLanguageCode?: string;
   localAiModel?: string;
   glossary?: GlossaryEntry[] | null;
   onClearFilters?: () => void;
@@ -312,6 +315,27 @@ function rowValidationIssues(row: Row) {
   );
 }
 
+function searchForms(value: string, locale?: string): string[] {
+  const forms = [value.toLowerCase()];
+  if (locale) {
+    try {
+      forms.push(value.toLocaleLowerCase(locale));
+    } catch {
+      // A custom SMAPI language code must not break search. The Unicode
+      // default form above remains a safe fallback.
+    }
+  }
+  return [...new Set(forms)];
+}
+
+function searchMatches(value: string, query: string, locale?: string): boolean {
+  if (!query) return false;
+  const needles = searchForms(query, locale);
+  return searchForms(value, locale).some((candidate) =>
+    needles.some((needle) => candidate.includes(needle)),
+  );
+}
+
 function preservesNativeTextSelection(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) return false;
   if (target.isContentEditable) return true;
@@ -444,6 +468,7 @@ export function StringTable({
   headerContext,
   headerMeta,
   targetLanguageLabel,
+  targetLanguageCode,
   localAiModel,
   glossary = null,
   onTranslate,
@@ -618,7 +643,7 @@ export function StringTable({
     [data],
   );
   const visible = useMemo(() => {
-    const query = effectiveSearch.trim().toLocaleLowerCase("de");
+    const query = effectiveSearch.trim();
     const filtered: Array<{ row: Row; identity: string; index: number }> = [];
     data.forEach((row, index) => {
       if (
@@ -632,8 +657,12 @@ export function StringTable({
       if (query) {
         const fields = [row.key, row.source, row.target];
         if (effectiveScope === "all") fields.push(row.modName, row.file);
-        const haystack = fields.join("\n").toLocaleLowerCase("de");
-        if (!haystack.includes(query)) return;
+        if (
+          !fields.some((field) =>
+            searchMatches(field, query, targetLanguageCode),
+          )
+        )
+          return;
       }
       filtered.push({ row, identity: identityOf(row), index });
     });
@@ -1229,6 +1258,7 @@ export function StringTable({
       source: row.source,
       target,
       targetPresent: true,
+      tokenMismatchAccepted,
     });
   }
 
@@ -1330,6 +1360,7 @@ export function StringTable({
           source: row.source,
           target: row.target,
           targetPresent: true,
+          tokenMismatchAccepted: row.tokenMismatchAccepted,
         });
       }
       onNotify?.(
@@ -1421,6 +1452,7 @@ export function StringTable({
       source: saved.source,
       target: saved.target,
       targetPresent: true,
+      tokenMismatchAccepted: false,
     });
   }
 
@@ -1470,6 +1502,7 @@ export function StringTable({
         source: updated.source,
         target: updated.target,
         targetPresent: true,
+        tokenMismatchAccepted: false,
       });
     }
     setStatusValue("review-needed");
@@ -1577,6 +1610,13 @@ export function StringTable({
       ...(result.model ? { model: result.model } : {}),
       ...(result.reasoning ? { reasoning: result.reasoning } : {}),
       modName: batchModLabel,
+      modUniqueIds: [
+        ...new Set(
+          (batch ?? [])
+            .map((item) => item.modUniqueId)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ],
     });
     setBatch(null);
     setBatchModLabel("");
@@ -2279,9 +2319,8 @@ export function StringTable({
                       dataIndex={entry.index}
                       showMod={showModColumn}
                       showFile={showFileColumn}
-                      searchQuery={effectiveSearch
-                        .trim()
-                        .toLocaleLowerCase("de")}
+                      searchQuery={effectiveSearch.trim()}
+                      searchLocale={targetLanguageCode}
                       searchAllMetadata={effectiveScope === "all"}
                       translationColumnLabel={translationColumnLabel}
                       selected={selection.has(entry.identity)}
@@ -2759,6 +2798,7 @@ interface RowViewProps {
   showMod: boolean;
   showFile: boolean;
   searchQuery: string;
+  searchLocale?: string;
   searchAllMetadata: boolean;
   translationColumnLabel: string;
   selected: boolean;
@@ -2787,6 +2827,7 @@ function RowView({
   showMod,
   showFile,
   searchQuery,
+  searchLocale,
   searchAllMetadata,
   translationColumnLabel,
   selected,
@@ -2816,7 +2857,7 @@ function RowView({
     Boolean(
       searchQuery &&
       (!metadata || searchAllMetadata) &&
-      value.toLocaleLowerCase("de").includes(searchQuery),
+      searchMatches(value, searchQuery, searchLocale),
     );
   const modMatches = matchesSearch(row.modName, true);
   const fileMatches = matchesSearch(row.file, true);

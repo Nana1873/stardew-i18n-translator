@@ -613,7 +613,7 @@ export function SettingsDialog({
                 <button
                   className="stv3-engine-card"
                   type="button"
-                  aria-pressed={defaultEngine === "local"}
+                  aria-pressed={enginePanel === "local"}
                   onClick={() => chooseEngine("local")}
                 >
                   <HardDrive aria-hidden="true" />
@@ -631,7 +631,7 @@ export function SettingsDialog({
                 <button
                   className="stv3-engine-card"
                   type="button"
-                  aria-pressed={defaultEngine === "codex"}
+                  aria-pressed={enginePanel === "codex"}
                   onClick={() => chooseEngine("codex")}
                 >
                   <SquareTerminal aria-hidden="true" />
@@ -883,9 +883,9 @@ export function SettingsDialog({
                   </div>
                 </div>
                 <p className="stv3-kicker">
-                  Codex CLI uses its existing ChatGPT sign-in and account limits
-                  and default model. Runs are ephemeral and read-only. The app
-                  does not inspect or persist CLI authentication data.
+                  Codex CLI uses its existing CLI sign-in, account limits, and
+                  default model. Runs are ephemeral and read-only. The app does
+                  not inspect or persist CLI authentication data.
                 </p>
               </section>
               <p className="stv3-kicker">
@@ -1300,7 +1300,18 @@ function ShortcutsSettings({
   }
 
   function reset(command: ShortcutCommand) {
-    onChange({ ...shortcuts, [command]: DEFAULT_SHORTCUTS[command] });
+    const shortcut = DEFAULT_SHORTCUTS[command];
+    const conflict = SHORTCUT_COMMANDS.find(
+      (candidate) =>
+        candidate.id !== command && shortcuts[candidate.id] === shortcut,
+    );
+    if (conflict) {
+      setError(
+        `${displayShortcut(shortcut)} is already assigned to “${conflict.label}”.`,
+      );
+      return;
+    }
+    onChange({ ...shortcuts, [command]: shortcut });
     setCapturing(null);
     setError(null);
   }

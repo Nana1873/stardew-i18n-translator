@@ -49,14 +49,28 @@ describe("ModList", () => {
   });
 
   it("groups a multi-component package under an expandable parent", () => {
+    const contentPatcher = mod({
+      uniqueId: "cp",
+      name: "[CP] RSV",
+      packageId: "Ridgeside",
+      nexusId: 7286,
+      reviewNeeded: 2,
+    });
+    contentPatcher.i18nFiles = [
+      ...contentPatcher.i18nFiles,
+      {
+        ...contentPatcher.i18nFiles[0],
+        relativeDir: "assets/i18n",
+      },
+    ];
     const mods = [
+      contentPatcher,
       mod({
-        uniqueId: "cp",
-        name: "[CP] RSV",
+        uniqueId: "cc",
+        name: "[CC] RSV",
         packageId: "Ridgeside",
-        nexusId: 7286,
+        reviewNeeded: 1,
       }),
-      mod({ uniqueId: "cc", name: "[CC] RSV", packageId: "Ridgeside" }),
     ];
     render(<ModList mods={mods} selectedId={null} onSelect={() => {}} />);
 
@@ -64,9 +78,10 @@ describe("ModList", () => {
     expect(screen.getByText("Ridgeside")).toBeInTheDocument();
     expect(screen.getByText("[CP] RSV")).toBeInTheDocument();
     expect(screen.getByText("[CC] RSV")).toBeInTheDocument();
-    expect(screen.getByRole("treeitem", { name: /Ridgeside/ })).toHaveAttribute(
-      "aria-expanded",
-      "true",
+    const packageRow = screen.getByRole("treeitem", { name: /Ridgeside/ });
+    expect(packageRow).toHaveAttribute("aria-expanded", "true");
+    expect(packageRow.getAttribute("title")).toContain(
+      "3 awaiting review, 3 i18n files",
     );
     // The real Nexus id is surfaced both on the parent (rolled up) and on the
     // [CP] child that owns it (SPEC §7).

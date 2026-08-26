@@ -15,6 +15,8 @@ interface PackageGroup {
   nexusId: number | null;
   totalKeys: number;
   translatedKeys: number;
+  reviewNeeded: number;
+  fileCount: number;
   progress: number;
 }
 
@@ -57,12 +59,22 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       (sum, mod) => sum + mod.translatedKeys,
       0,
     );
+    const reviewNeeded = sortedMods.reduce(
+      (sum, mod) => sum + mod.reviewNeeded,
+      0,
+    );
+    const fileCount = sortedMods.reduce(
+      (sum, mod) => sum + mod.i18nFiles.length,
+      0,
+    );
     return {
       packageId,
       mods: sortedMods,
       nexusId: sortedMods.find((mod) => mod.nexusId != null)?.nexusId ?? null,
       totalKeys,
       translatedKeys,
+      reviewNeeded,
+      fileCount,
       progress: totalKeys > 0 ? translatedKeys / totalKeys : 0,
     };
   }).sort((a, b) => byName(groupLabel(a), groupLabel(b)));
@@ -423,7 +435,7 @@ function PackageNode({
         type="button"
         role="treeitem"
         aria-expanded={expanded}
-        title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} strings translated, ${percent} percent.`}
+        title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} strings translated, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
         onClick={() => setOpen((value) => !value)}
       >
         <strong>

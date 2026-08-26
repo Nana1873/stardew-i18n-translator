@@ -586,6 +586,39 @@ describe("StringTable V3 workbench", () => {
     );
   });
 
+  it("uses the target language's case rules when searching translations", async () => {
+    installBackendRows({
+      "a.b": [
+        {
+          key: "light",
+          source: "Light",
+          target: "IŞIK",
+          targetPresent: true,
+          status: "translated",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    render(
+      <StringTable
+        mod={MOD}
+        targetLanguageLabel="Turkish (tr)"
+        targetLanguageCode="tr"
+      />,
+    );
+    await screen.findByText("light");
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "ışık" } },
+    );
+
+    expect(screen.getByText("light")).toBeVisible();
+    expect(
+      rowFor("light").querySelector('[data-search-field="translation"]'),
+    ).toHaveClass("is-search-match");
+  });
+
   it("clears selection when search, filters, scope, or sort changes", async () => {
     render(<StringTable mod={MOD} mods={[MOD, OTHER_MOD]} />);
     await screen.findByText("greeting");
@@ -1288,6 +1321,7 @@ describe("StringTable V3 workbench", () => {
     const onLlmBatchExportForMod = vi.fn();
     const onEditorOpen = vi.fn();
     const onNotify = vi.fn();
+    const onAiBatchFinished = vi.fn();
     render(
       <StringTable
         mod={MOD}
@@ -1297,6 +1331,7 @@ describe("StringTable V3 workbench", () => {
         onLlmBatchExportForMod={onLlmBatchExportForMod}
         onEditorOpen={onEditorOpen}
         onNotify={onNotify}
+        onAiBatchFinished={onAiBatchFinished}
       />,
     );
     await screen.findByText("tomorrow");
@@ -1353,6 +1388,11 @@ describe("StringTable V3 workbench", () => {
       expect(
         screen.queryByRole("dialog", { name: "AI translation progress" }),
       ).not.toBeInTheDocument(),
+    );
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modUniqueIds: ["a.b", "c.d"],
+      }),
     );
   });
 
@@ -1747,6 +1787,7 @@ describe("StringTable V3 workbench", () => {
       error: "Error: Local AI offline",
       engine: "Local AI",
       modName: "Test Mod",
+      modUniqueIds: ["a.b"],
     });
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
     expect(onStatusFilterChange).not.toHaveBeenCalled();
