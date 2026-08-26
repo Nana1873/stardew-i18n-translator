@@ -58,6 +58,12 @@ describe("CSS custom properties", () => {
     );
   });
 
+  it("uses the same gold accent for every workspace summary number", () => {
+    expect(referenceStyles).toMatch(
+      /#stv3-dense-demo \.stv3-pane-count\s*{[^}]*color:\s*var\(--stv3-brand\);[^}]*font-size:\s*11px;/s,
+    );
+  });
+
   it("keeps every resizable column boundary visibly discoverable", () => {
     expect(referenceStyles).toMatch(
       /\.stv3-column-resizer::after\s*{[^}]*top:\s*6px;[^}]*bottom:\s*6px;[^}]*width:\s*1px;[^}]*background:\s*color-mix\(/s,

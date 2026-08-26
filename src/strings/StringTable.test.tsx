@@ -1253,6 +1253,41 @@ describe("StringTable V3 workbench", () => {
     );
   });
 
+  it("keeps target-file presence unchanged when clearing a saved draft", async () => {
+    installBackendRows({
+      "a.b": [
+        {
+          key: "draft",
+          source: "Draft",
+          target: "Entwurf",
+          targetPresent: false,
+          status: "review-needed",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    const onStringSaved = vi.fn();
+    render(<StringTable mod={MOD} onStringSaved={onStringSaved} />);
+    await screen.findByText("draft");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select draft" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Clear translation/ }),
+    );
+
+    await waitFor(() => expect(onStringSaved).toHaveBeenCalledOnce());
+    expect(onStringSaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "draft",
+        target: "",
+        targetPresent: false,
+      }),
+    );
+    expect(rowFor("draft")).toHaveAttribute("data-status", "untranslated");
+    expect(rowFor("draft").querySelector(".stv3-inline-validation")).toBeNull();
+  });
+
   it("keeps every selected component unchanged when the atomic batch fails", async () => {
     invokeMock.mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "load_strings") {
@@ -1630,11 +1665,19 @@ describe("StringTable V3 workbench", () => {
     expect(onStringSaved).toHaveBeenCalledTimes(2);
     expect(onStringSaved).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ key: "bye", target: "Tschüss" }),
+      expect.objectContaining({
+        key: "bye",
+        target: "Tschüss",
+        targetPresent: false,
+      }),
     );
     expect(onStringSaved).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ key: "token", target: "Hallo {{name}}" }),
+      expect.objectContaining({
+        key: "token",
+        target: "Hallo {{name}}",
+        targetPresent: true,
+      }),
     );
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),

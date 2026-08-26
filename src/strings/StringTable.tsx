@@ -1243,7 +1243,6 @@ export function StringTable({
             ...candidate,
             target,
             status: nextStatus,
-            targetPresent: true,
             tokenMismatchAccepted,
           }
         : candidate,
@@ -1257,7 +1256,7 @@ export function StringTable({
       key: row.key,
       source: row.source,
       target,
-      targetPresent: true,
+      targetPresent: row.targetPresent,
       tokenMismatchAccepted,
     });
   }
@@ -1337,7 +1336,6 @@ export function StringTable({
         return {
           ...row,
           target: change.target,
-          targetPresent: true,
           status: change.status,
           tokenMismatchAccepted: change.tokenMismatchAccepted,
         };
@@ -1359,7 +1357,7 @@ export function StringTable({
           key: row.key,
           source: row.source,
           target: row.target,
-          targetPresent: true,
+          targetPresent: row.targetPresent,
           tokenMismatchAccepted: row.tokenMismatchAccepted,
         });
       }
@@ -1437,7 +1435,6 @@ export function StringTable({
             ...candidate,
             target: text,
             status: "review-needed" as StringStatus,
-            targetPresent: true,
             tokenMismatchAccepted: false,
           }
         : candidate,
@@ -1451,7 +1448,7 @@ export function StringTable({
       key: saved.key,
       source: saved.source,
       target: saved.target,
-      targetPresent: true,
+      targetPresent: saved.targetPresent,
       tokenMismatchAccepted: false,
     });
   }
@@ -1478,7 +1475,6 @@ export function StringTable({
         ...row,
         target: suggestion.text,
         status: "review-needed" as StringStatus,
-        targetPresent: true,
         tokenMismatchAccepted: false,
       };
     });
@@ -1501,7 +1497,7 @@ export function StringTable({
         key: updated.key,
         source: updated.source,
         target: updated.target,
-        targetPresent: true,
+        targetPresent: updated.targetPresent,
         tokenMismatchAccepted: false,
       });
     }

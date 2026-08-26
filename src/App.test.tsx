@@ -648,7 +648,12 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
 
-    expect(await screen.findByText("1 in progress")).toBeInTheDocument();
+    const inProgress = await screen.findByText(
+      (_content, node) =>
+        node?.classList.contains("panel__header-tail") === true &&
+        node.textContent === "1 in progress",
+    );
+    expect(within(inProgress).getByText("1")).toHaveClass("stv3-pane-count");
   });
 
   it("asks before replacing an existing selected-mod translation", async () => {

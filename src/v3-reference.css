@@ -453,7 +453,8 @@
 }
 
 #stv3-dense-demo .stv3-pane-count {
-  color: var(--stv3-brand-muted);
+  color: var(--stv3-brand);
+  font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }

@@ -1851,7 +1851,10 @@ export function App() {
                         {scan && inProgressMods > 0 && (
                           <>
                             <span className="panel__header-tail">
-                              {inProgressMods} in progress
+                              <span className="stv3-pane-count">
+                                {inProgressMods}
+                              </span>{" "}
+                              in progress
                             </span>
                             <span
                               className="panel__header-tail"
