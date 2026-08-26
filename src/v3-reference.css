@@ -2295,12 +2295,6 @@
   display: none;
 }
 
-#stv3-dense-demo [data-action="reopen-result"][hidden] {
-  display: inline-flex !important;
-  visibility: hidden;
-  pointer-events: none;
-}
-
 #stv3-dense-demo .stv3-mod-group-row {
   width: 100%;
   color: inherit;

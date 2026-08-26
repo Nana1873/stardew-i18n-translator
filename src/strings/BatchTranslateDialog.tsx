@@ -87,6 +87,7 @@ export function BatchTranslateDialog({
   const [cancelError, setCancelError] = useState<string | null>(null);
   const cancelRef = useRef(false);
   const runIdRef = useRef(createRunId());
+  const liveRunPromiseRef = useRef<Promise<AiRunResult> | null>(null);
   const reportedRef = useRef(false);
   const dialogRef = useRef<HTMLElement>(null);
 
@@ -125,7 +126,8 @@ export function BatchTranslateDialog({
     (async () => {
       if (onLiveRun) {
         try {
-          const result = await onLiveRun(runId);
+          liveRunPromiseRef.current ??= onLiveRun(runId);
+          const result = await liveRunPromiseRef.current;
           if (!active) return;
           setDone(result.completed);
           finish({

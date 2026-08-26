@@ -2311,6 +2311,9 @@ describe("App shell", () => {
     expect(stableLatestResult).not.toBeNull();
     expect(stableLatestResult).toHaveAttribute("hidden");
     expect(stableLatestResult).toHaveAttribute("data-action", "reopen-result");
+    expect(stableLatestResult?.nextElementSibling).toBe(
+      screen.getByRole("button", { name: "Settings" }),
+    );
     fireEvent.keyDown(exportButton, { key: "ArrowDown" });
     const currentExport = screen.getByRole("menuitem", {
       name: "Export current mod",

@@ -2590,17 +2590,6 @@ function V3Toolbar({
           )}
         </div>
         <button
-          className="stv3-button stv3-button-quiet"
-          type="button"
-          aria-label="Settings"
-          title="Settings"
-          onClick={onOpenSettings}
-          disabled={!settingsEnabled}
-        >
-          <SettingsIcon aria-hidden />
-          <span className="stv3-action-label-compact">Settings</span>
-        </button>
-        <button
           ref={latestResultButtonRef}
           className="stv3-button stv3-button-quiet"
           type="button"
@@ -2610,6 +2599,17 @@ function V3Toolbar({
           onClick={onReopenResult}
         >
           <FileCheck2 aria-hidden /> Latest result
+        </button>
+        <button
+          className="stv3-button stv3-button-quiet"
+          type="button"
+          aria-label="Settings"
+          title="Settings"
+          onClick={onOpenSettings}
+          disabled={!settingsEnabled}
+        >
+          <SettingsIcon aria-hidden />
+          <span className="stv3-action-label-compact">Settings</span>
         </button>
       </div>
     </div>
