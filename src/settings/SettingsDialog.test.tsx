@@ -440,7 +440,7 @@ describe("SettingsDialog", () => {
       ).toBeEnabled(),
     );
 
-    // The V3 reset control falls back to the backend default (persisted as null).
+    // The reset control falls back to the backend default (persisted as null).
     fireEvent.click(screen.getByRole("button", { name: "Use default" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenLastCalledWith(
@@ -898,7 +898,7 @@ describe("SettingsDialog", () => {
     );
   });
 
-  it("opens the requested V3 page and exposes the complete V3 navigation", () => {
+  it("opens the requested page and exposes the complete navigation", () => {
     const { container } = render(
       <SettingsDialog
         settings={baseSettings}
@@ -918,8 +918,12 @@ describe("SettingsDialog", () => {
       ),
     ).toBeVisible();
     expect(screen.getAllByRole("tab")).toHaveLength(5);
-    expect(container.querySelector(".stv3-settings-dialog")).not.toBeNull();
-    expect(container.querySelector(".stv3-settings-layout")).not.toBeNull();
+    expect(
+      container.querySelector(".translator-settings-dialog"),
+    ).not.toBeNull();
+    expect(
+      container.querySelector(".translator-settings-layout"),
+    ).not.toBeNull();
   });
 
   it("keeps an available saved Codex default and uses the CLI default model", async () => {

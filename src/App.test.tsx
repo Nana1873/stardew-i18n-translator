@@ -314,7 +314,7 @@ function openWorkspace() {
 }
 
 describe("App shell", () => {
-  it("renders Overview first and opens the complete V3 workspace on demand", async () => {
+  it("renders Overview first and opens the complete workspace on demand", async () => {
     mockConfigured();
     render(<App />);
 
@@ -329,8 +329,8 @@ describe("App shell", () => {
     expect(
       screen
         .getByRole("region", { name: "Translation workspace" })
-        .querySelector(".stv3-workbench"),
-    ).toHaveStyle({ "--stv3-mod-pane-width": "340px" });
+        .querySelector(".translator-workbench"),
+    ).toHaveStyle({ "--translator-mod-pane-width": "340px" });
     expect(
       screen.getByRole("region", { name: "Mod list" }),
     ).toBeInTheDocument();
@@ -373,7 +373,7 @@ describe("App shell", () => {
       name: "0 skipped components; open scan diagnostics",
     });
     expect(skipped).toHaveTextContent("Skipped · 0");
-    expect(within(skipped).getByText("0")).toHaveClass("stv3-pane-count");
+    expect(within(skipped).getByText("0")).toHaveClass("translator-pane-count");
     fireEvent.click(skipped);
 
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
@@ -504,7 +504,7 @@ describe("App shell", () => {
     ).toHaveLength(1);
   });
 
-  it("the V3 navigation switches between Workspace and Overview", async () => {
+  it("switches between Workspace and Overview", async () => {
     mockConfigured();
     render(<App />);
 
@@ -665,16 +665,18 @@ describe("App shell", () => {
 
     const heading = await screen.findByText(
       (_content, node) =>
-        node?.classList.contains("stv3-pane-heading") === true &&
+        node?.classList.contains("translator-pane-heading") === true &&
         node.textContent === "Mods · 1",
     );
-    expect(within(heading).getByText("1")).toHaveClass("stv3-pane-count");
+    expect(within(heading).getByText("1")).toHaveClass("translator-pane-count");
     const inProgress = await screen.findByText(
       (_content, node) =>
         node?.classList.contains("panel__header-tail") === true &&
         node.textContent === "1 in progress",
     );
-    expect(within(inProgress).getByText("1")).toHaveClass("stv3-pane-count");
+    expect(within(inProgress).getByText("1")).toHaveClass(
+      "translator-pane-count",
+    );
   });
 
   it("asks before replacing an existing selected-mod translation", async () => {
@@ -1671,7 +1673,7 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy source text" }));
 
     const errorToast = await screen.findByRole("alert");
-    expect(errorToast).toHaveClass("stv3-toast", "is-error");
+    expect(errorToast).toHaveClass("translator-toast", "is-error");
     expect(errorToast).toHaveAttribute("aria-live", "assertive");
     expect(errorToast.querySelector(".lucide-circle-x")).not.toBeNull();
 
@@ -1693,7 +1695,7 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy source text" }));
     const successToast = await screen.findByRole("status");
-    expect(successToast).toHaveClass("stv3-toast", "is-success");
+    expect(successToast).toHaveClass("translator-toast", "is-success");
     expect(successToast).toHaveAttribute("aria-live", "polite");
     expect(successToast.querySelector(".lucide-circle-check")).not.toBeNull();
     expect(
@@ -2308,7 +2310,7 @@ describe("App shell", () => {
     );
   });
 
-  it("exposes the complete keyboard-accessible V3 command bar", async () => {
+  it("exposes the complete keyboard-accessible command bar", async () => {
     mockExportConfigured(false);
     render(<App />);
 
@@ -2677,10 +2679,10 @@ describe("App shell", () => {
       });
     });
     expect(await screen.findByText("Import into Test Mod")).toBeInTheDocument();
-    const dropState = document.querySelector(".stv3-native-drop-state");
+    const dropState = document.querySelector(".translator-native-drop-state");
     expect(dropState).toHaveClass(
-      "stv3-file-choice",
-      "stv3-drop-zone",
+      "translator-file-choice",
+      "translator-drop-zone",
       "is-dragging",
     );
     expect(document.querySelector(".batchdrop")).toBeNull();
@@ -2908,7 +2910,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
 
-    // The accepted V3 workspace auto-selects the most recently used (or first
+    // The workspace auto-selects the most recently used (or first
     // real) scanned component once the user opens it from Overview.
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     expect(screen.getByRole("treeitem", { name: /7286/ })).toBeInTheDocument();

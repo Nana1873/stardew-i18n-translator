@@ -433,27 +433,30 @@ export function SettingsDialog({
   );
 
   return (
-    <div className="stv3-settings-overlay">
+    <div className="translator-settings-overlay">
       <section
         ref={dialogRef}
-        className="stv3-settings-dialog"
+        className="translator-settings-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="stv3-settings-title"
-        aria-describedby="stv3-settings-description"
+        aria-labelledby="translator-settings-title"
+        aria-describedby="translator-settings-description"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-settings-head">
+        <div className="translator-settings-head">
           <div>
-            <h2 className="stv3-heading" id="stv3-settings-title">
+            <h2 className="translator-heading" id="translator-settings-title">
               Settings
             </h2>
-            <div className="stv3-kicker" id="stv3-settings-description">
+            <div
+              className="translator-kicker"
+              id="translator-settings-description"
+            >
               Stored locally beside the application
             </div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Close settings"
             onClick={onClose}
@@ -463,9 +466,9 @@ export function SettingsDialog({
           </button>
         </div>
 
-        <div className="stv3-settings-layout">
+        <div className="translator-settings-layout">
           <nav
-            className="stv3-settings-nav"
+            className="translator-settings-nav"
             aria-label="Settings sections"
             role="tablist"
             aria-orientation="vertical"
@@ -473,7 +476,7 @@ export function SettingsDialog({
             {SETTINGS_PAGES.map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                className="stv3-settings-tab"
+                className="translator-settings-tab"
                 type="button"
                 role="tab"
                 aria-selected={page === id}
@@ -489,29 +492,30 @@ export function SettingsDialog({
             ))}
           </nav>
 
-          <div className="stv3-settings-content">
+          <div className="translator-settings-content">
             <section
               id="settings-panel-folders"
               className={
-                "stv3-settings-page" + (page === "folders" ? " is-active" : "")
+                "translator-settings-page" +
+                (page === "folders" ? " is-active" : "")
               }
               role="tabpanel"
               aria-label="Folders & language"
               hidden={page !== "folders"}
             >
               <h3>Folders & language</h3>
-              <p className="stv3-settings-intro">
+              <p className="translator-settings-intro">
                 The app only reads mods and game content from the selected
                 folders.
               </p>
-              <div className="stv3-settings-group">
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+              <div className="translator-settings-group">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Stardew Valley</strong>
                     <span>{stardewPath || "Unavailable"}</span>
                   </span>
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     aria-label="Change Stardew Valley folder"
                     aria-busy={folderPicking === "stardew"}
@@ -521,13 +525,13 @@ export function SettingsDialog({
                     Change
                   </button>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Mods</strong>
                     <span>{modsPath || "Unavailable"}</span>
                   </span>
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     aria-label="Change Mods folder"
                     aria-busy={folderPicking === "mods"}
@@ -537,8 +541,8 @@ export function SettingsDialog({
                     Change
                   </button>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Source language</strong>
                     <span>
                       From <code>i18n/default.json</code>
@@ -546,13 +550,13 @@ export function SettingsDialog({
                   </span>
                   <span>{SOURCE_LANGUAGE_LABEL}</span>
                 </div>
-                <label className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <label className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Target language</strong>
                     <span>Standard or curated custom language code</span>
                   </span>
                   <select
-                    className="stv3-select"
+                    className="translator-select"
                     value={targetLang}
                     onChange={(event) => setTargetLang(event.target.value)}
                     aria-label="Target language"
@@ -567,15 +571,15 @@ export function SettingsDialog({
                     ))}
                   </select>
                 </label>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Run setup again</strong>
                     <span>
                       Game folder, Mods folder, language, and optional glossary
                     </span>
                   </span>
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     onClick={onReRunSetup}
                     disabled={saving || folderPicking !== null}
@@ -584,7 +588,7 @@ export function SettingsDialog({
                   </button>
                 </div>
                 {folderError && (
-                  <p className="stv3-shortcut-error" role="alert">
+                  <p className="translator-shortcut-error" role="alert">
                     {folderError}
                   </p>
                 )}
@@ -594,26 +598,26 @@ export function SettingsDialog({
             <section
               id="settings-panel-ai"
               className={
-                "stv3-settings-page" + (page === "ai" ? " is-active" : "")
+                "translator-settings-page" + (page === "ai" ? " is-active" : "")
               }
               role="tabpanel"
               aria-label="Translation engines"
               hidden={page !== "ai"}
             >
               <h3>Translation engines</h3>
-              <p className="stv3-settings-intro">
+              <p className="translator-settings-intro">
                 Choose the default engine for the quick editor and batch
                 actions. Every AI output enters Review. A run may send up to two
                 preceding and two following English strings as read-only
                 context; only selected strings can be saved.
               </p>
               <div
-                className="stv3-engine-list stv3-engine-list-two"
+                className="translator-engine-list translator-engine-list-two"
                 role="group"
                 aria-label="Default translation engine"
               >
                 <button
-                  className="stv3-engine-card"
+                  className="translator-engine-card"
                   type="button"
                   aria-pressed={enginePanel === "local"}
                   onClick={() => chooseEngine("local")}
@@ -631,7 +635,7 @@ export function SettingsDialog({
                   </span>
                 </button>
                 <button
-                  className="stv3-engine-card"
+                  className="translator-engine-card"
                   type="button"
                   aria-pressed={enginePanel === "codex"}
                   onClick={() => chooseEngine("codex")}
@@ -654,20 +658,20 @@ export function SettingsDialog({
 
               <section
                 className={
-                  "stv3-engine-panel" +
+                  "translator-engine-panel" +
                   (enginePanel === "local" ? " is-active" : "")
                 }
                 aria-label="Local AI"
                 hidden={enginePanel !== "local"}
               >
-                <div className="stv3-settings-group">
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                <div className="translator-settings-group">
+                  <label className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Local service</strong>
                       <span>Localhost only</span>
                     </span>
                     <select
-                      className="stv3-select"
+                      className="translator-select"
                       value={llmProvider}
                       onChange={(event) => pickLlmProvider(event.target.value)}
                       aria-label="AI provider"
@@ -677,21 +681,21 @@ export function SettingsDialog({
                       <option value="custom">Custom (OpenAI-compatible)</option>
                     </select>
                   </label>
-                  <div className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Base URL</strong>
                       <span>Local endpoint</span>
                     </span>
-                    <span className="stv3-setting-input-actions">
+                    <span className="translator-setting-input-actions">
                       <input
-                        className="stv3-setting-input"
+                        className="translator-setting-input"
                         value={llmBaseUrl}
                         placeholder="http://localhost:1234/v1"
                         aria-label="AI base URL"
                         onChange={(event) => changeLlmUrl(event.target.value)}
                       />
                       <button
-                        className="stv3-icon-button"
+                        className="translator-icon-button"
                         type="button"
                         aria-label="Reset AI base URL to default"
                         title={
@@ -709,13 +713,13 @@ export function SettingsDialog({
                       </button>
                     </span>
                   </div>
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                  <label className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Model</strong>
                       <span>Available after a successful connection test</span>
                     </span>
                     <select
-                      className="stv3-select"
+                      className="translator-select"
                       value={llmModel}
                       onChange={(event) => setLlmModel(event.target.value)}
                       aria-label="AI model"
@@ -731,8 +735,8 @@ export function SettingsDialog({
                       ))}
                     </select>
                   </label>
-                  <div className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Temperature</strong>
                       <span>
                         {llmTemperature || "0.2"} · range 0–2
@@ -751,7 +755,7 @@ export function SettingsDialog({
                       }
                     />
                     <button
-                      className="stv3-button stv3-button-quiet"
+                      className="translator-button translator-button-quiet"
                       type="button"
                       onClick={() => setLlmTemperature("")}
                       disabled={!llmTemperature}
@@ -760,10 +764,10 @@ export function SettingsDialog({
                     </button>
                   </div>
                   <div
-                    className="stv3-setting-line"
+                    className="translator-setting-line"
                     role={llmResult?.kind === "failed" ? "alert" : "status"}
                   >
-                    <span className="stv3-setting-copy">
+                    <span className="translator-setting-copy">
                       <strong>Connection</strong>
                       <span>
                         {llmResult?.kind === "connected"
@@ -786,7 +790,7 @@ export function SettingsDialog({
                       </span>
                     </span>
                     <button
-                      className="stv3-button stv3-button-quiet"
+                      className="translator-button translator-button-quiet"
                       type="button"
                       onClick={() => void testLlmConnection()}
                       disabled={llmTesting || !llmBaseUrl.trim()}
@@ -799,7 +803,7 @@ export function SettingsDialog({
                     </button>
                   </div>
                 </div>
-                <p className="stv3-kicker">
+                <p className="translator-kicker">
                   If the service is unavailable, manual translation, import, and
                   export remain fully available.
                 </p>
@@ -807,15 +811,15 @@ export function SettingsDialog({
 
               <section
                 className={
-                  "stv3-engine-panel" +
+                  "translator-engine-panel" +
                   (enginePanel === "codex" ? " is-active" : "")
                 }
                 aria-label="Codex CLI"
                 hidden={enginePanel !== "codex"}
               >
-                <div className="stv3-settings-group">
-                  <div className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                <div className="translator-settings-group">
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Codex CLI status</strong>
                       <span>
                         {codexChecking
@@ -832,7 +836,7 @@ export function SettingsDialog({
                       </span>
                     </span>
                     <button
-                      className="stv3-button stv3-button-quiet"
+                      className="translator-button translator-button-quiet"
                       type="button"
                       onClick={() => void checkCodexStatus()}
                       disabled={codexChecking}
@@ -840,13 +844,13 @@ export function SettingsDialog({
                       {codexChecking ? "Checking…" : "Check status"}
                     </button>
                   </div>
-                  <label className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                  <label className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Reasoning</strong>
                       <span>Applied to translation runs</span>
                     </span>
                     <select
-                      className="stv3-select"
+                      className="translator-select"
                       value={codexReasoning}
                       onChange={(event) =>
                         setCodexReasoning(
@@ -860,8 +864,8 @@ export function SettingsDialog({
                       <option value="high">High</option>
                     </select>
                   </label>
-                  <div className="stv3-setting-line">
-                    <span className="stv3-setting-copy">
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Authentication</strong>
                       <span>
                         {codexStatus?.authenticated
@@ -872,7 +876,7 @@ export function SettingsDialog({
                     </span>
                     <span
                       className={
-                        "stv3-state " +
+                        "translator-state " +
                         (codexStatus?.installed && codexStatus.authenticated
                           ? "is-ready"
                           : "is-change")
@@ -884,13 +888,13 @@ export function SettingsDialog({
                     </span>
                   </div>
                 </div>
-                <p className="stv3-kicker">
+                <p className="translator-kicker">
                   Codex CLI uses its existing CLI sign-in, account limits, and
                   default model. Runs are ephemeral and read-only. The app does
                   not inspect or persist CLI authentication data.
                 </p>
               </section>
-              <p className="stv3-kicker">
+              <p className="translator-kicker">
                 External LLM batch stays separate because it is a manual file
                 export/import workflow.
               </p>
@@ -914,31 +918,32 @@ export function SettingsDialog({
             <section
               id="settings-panel-about"
               className={
-                "stv3-settings-page" + (page === "about" ? " is-active" : "")
+                "translator-settings-page" +
+                (page === "about" ? " is-active" : "")
               }
               role="tabpanel"
               aria-label="About"
               hidden={page !== "about"}
             >
               <h3>About</h3>
-              <p className="stv3-settings-intro">
+              <p className="translator-settings-intro">
                 Stardew i18n Translator · version {packageInfo.version}.
               </p>
-              <div className="stv3-settings-group">
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+              <div className="translator-settings-group">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Version</strong>
                     <span>Portable Windows application</span>
                   </span>
                   <span>{packageInfo.version}</span>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Author & license</strong>
                     <span>Nana · GPL-3.0-or-later</span>
                   </span>
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     onClick={() =>
                       void openUrl(
@@ -949,13 +954,13 @@ export function SettingsDialog({
                     GitHub
                   </button>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Technology</strong>
                     <span>Tauri 2 · Rust · React · TypeScript</span>
                   </span>
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     onClick={() =>
                       void openUrl(
@@ -966,21 +971,21 @@ export function SettingsDialog({
                     License
                   </button>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Portable data</strong>
                     <span>
                       Stored next to the application in the Data folder
                     </span>
                   </span>
-                  <span className="stv3-state is-ready">Local</span>
+                  <span className="translator-state is-ready">Local</span>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Local diagnostic logs</strong>
                     <span>Rotating and never sent automatically</span>
                   </span>
-                  <label className="stv3-switch">
+                  <label className="translator-switch">
                     <input
                       type="checkbox"
                       checked={diagnosticLogging}
@@ -992,13 +997,13 @@ export function SettingsDialog({
                     <span />
                   </label>
                 </div>
-                <div className="stv3-setting-line">
-                  <span className="stv3-setting-copy">
+                <div className="translator-setting-line">
+                  <span className="translator-setting-copy">
                     <strong>Logs for bug reports</strong>
                     <span>Opens the portable logs folder</span>
                   </span>
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     onClick={() => void openLogsDir()}
                   >
@@ -1006,7 +1011,7 @@ export function SettingsDialog({
                   </button>
                 </div>
               </div>
-              <p className="stv3-kicker">
+              <p className="translator-kicker">
                 Stardew Valley and ConcernedApe are trademarks or property of
                 their respective owners. This project is independent and not
                 officially affiliated.
@@ -1015,20 +1020,20 @@ export function SettingsDialog({
           </div>
         </div>
 
-        <div className="stv3-settings-head">
-          <span className="stv3-kicker">
+        <div className="translator-settings-head">
+          <span className="translator-kicker">
             {saveError
               ? "Settings could not be saved"
               : "Settings are stored in the portable Data folder"}
           </span>
           {saveError && (
-            <span className="stv3-shortcut-error" role="alert">
+            <span className="translator-shortcut-error" role="alert">
               {saveError}
             </span>
           )}
-          <div className="stv3-settings-actions">
+          <div className="translator-settings-actions">
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={onClose}
               disabled={saving || folderPicking !== null}
@@ -1036,7 +1041,7 @@ export function SettingsDialog({
               Cancel
             </button>
             <button
-              className="stv3-button stv3-button-primary"
+              className="translator-button translator-button-primary"
               type="button"
               onClick={() => void save()}
               disabled={saving || folderPicking !== null}
@@ -1100,45 +1105,47 @@ function GlossarySettings({
   return (
     <section
       id="settings-panel-glossary"
-      className={"stv3-settings-page" + (active ? " is-active" : "")}
+      className={"translator-settings-page" + (active ? " is-active" : "")}
       role="tabpanel"
       aria-label="Glossary"
       hidden={!active}
     >
       <h3>Glossary</h3>
-      <p className="stv3-settings-intro">
+      <p className="translator-settings-intro">
         Optional official term hints from local Stardew strings. The glossary
         does not translate ordinary prose.
       </p>
-      <div className="stv3-glossary-summary">
-        <div className="stv3-glossary-main">
+      <div className="translator-glossary-summary">
+        <div className="translator-glossary-main">
           <strong>{state}</strong>
           <span>
             {language} · source: {source}
           </span>
         </div>
-        <div className="stv3-glossary-number">
+        <div className="translator-glossary-number">
           <strong>{cached ? cached.termCount.toLocaleString() : "—"}</strong>
           <span>{cached ? "terms" : "terms unavailable"}</span>
         </div>
       </div>
 
-      <div className="stv3-settings-group">
-        <div className="stv3-setting-line">
-          <span className="stv3-setting-copy">
+      <div className="translator-settings-group">
+        <div className="translator-setting-line">
+          <span className="translator-setting-copy">
             <strong>Source</strong>
             <span>{source}</span>
           </span>
           <span
-            className={"stv3-state " + (available ? "is-ready" : "is-change")}
+            className={
+              "translator-state " + (available ? "is-ready" : "is-change")
+            }
           >
             {available ? "Available" : "Unavailable"}
           </span>
         </div>
 
         {!supported && glossary?.packAvailable && available && (
-          <div className="stv3-setting-line">
-            <span className="stv3-setting-copy">
+          <div className="translator-setting-line">
+            <span className="translator-setting-copy">
               <strong>Community language pack</strong>
               <span>
                 Stardew Valley doesn’t include this language, but{" "}
@@ -1146,13 +1153,13 @@ function GlossarySettings({
                 glossary sources.
               </span>
             </span>
-            <span className="stv3-state is-ready">Detected</span>
+            <span className="translator-state is-ready">Detected</span>
           </div>
         )}
 
         {!supported && glossary?.packAvailable && !available && (
-          <div className="stv3-setting-line">
-            <span className="stv3-setting-copy">
+          <div className="translator-setting-line">
+            <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
                 A community language pack was detected
@@ -1161,7 +1168,7 @@ function GlossarySettings({
               </span>
             </span>
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={() =>
                 void openUrl("https://github.com/Pathoschild/StardewXnbHack")
@@ -1173,21 +1180,21 @@ function GlossarySettings({
         )}
 
         {!supported && glossary && !glossary.packAvailable && (
-          <div className="stv3-setting-line">
-            <span className="stv3-setting-copy">
+          <div className="translator-setting-line">
+            <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
                 Stardew Valley doesn’t include this language, so no official
                 glossary is available. Translation and export still work fully.
               </span>
             </span>
-            <span className="stv3-state is-change">Unavailable</span>
+            <span className="translator-state is-change">Unavailable</span>
           </div>
         )}
 
         {supported && glossary && !available && (
-          <div className="stv3-setting-line">
-            <span className="stv3-setting-copy">
+          <div className="translator-setting-line">
+            <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
                 No glossary-ready game Strings were found. Direct game XNB files
@@ -1195,7 +1202,7 @@ function GlossarySettings({
               </span>
             </span>
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={() =>
                 void openUrl("https://github.com/Pathoschild/StardewXnbHack")
@@ -1207,8 +1214,8 @@ function GlossarySettings({
         )}
 
         {canBuild && (
-          <div className="stv3-setting-line">
-            <span className="stv3-setting-copy">
+          <div className="translator-setting-line">
+            <span className="translator-setting-copy">
               <strong>{language} cache</strong>
               <span>
                 {cached
@@ -1218,7 +1225,7 @@ function GlossarySettings({
               </span>
             </span>
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={onBuild}
               disabled={building}
@@ -1238,24 +1245,24 @@ function GlossarySettings({
         )}
 
         {glossary?.outdatedCache && (
-          <div className="stv3-setting-line">
-            <span className="stv3-setting-copy">
+          <div className="translator-setting-line">
+            <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
                 An older glossary from a previous version was found — rebuild
                 recommended.
               </span>
             </span>
-            <span className="stv3-state is-change">Outdated</span>
+            <span className="translator-state is-change">Outdated</span>
           </div>
         )}
       </div>
       {error && (
-        <p className="stv3-shortcut-error" role="alert">
+        <p className="translator-shortcut-error" role="alert">
           {error}
         </p>
       )}
-      <p className="stv3-kicker">
+      <p className="translator-kicker">
         If the glossary is unavailable, scanning, translation, review, and
         export still work normally.
       </p>
@@ -1321,20 +1328,20 @@ function ShortcutsSettings({
   return (
     <section
       id="settings-panel-shortcuts"
-      className={"stv3-settings-page" + (active ? " is-active" : "")}
+      className={"translator-settings-page" + (active ? " is-active" : "")}
       role="tabpanel"
       aria-label="Shortcuts"
       hidden={!active}
     >
-      <div className="stv3-settings-title-row">
+      <div className="translator-settings-title-row">
         <div>
           <h3>Shortcuts</h3>
-          <p className="stv3-settings-intro">
+          <p className="translator-settings-intro">
             Click a shortcut, then press the new key combination.
           </p>
         </div>
         <button
-          className="stv3-button stv3-button-quiet"
+          className="translator-button translator-button-quiet"
           type="button"
           onClick={() => {
             onChange({ ...DEFAULT_SHORTCUTS });
@@ -1346,11 +1353,11 @@ function ShortcutsSettings({
         </button>
       </div>
       {error && (
-        <p className="stv3-shortcut-error" role="alert">
+        <p className="translator-shortcut-error" role="alert">
           {error}
         </p>
       )}
-      <div className="stv3-shortcut-list">
+      <div className="translator-shortcut-list">
         {SHORTCUT_COMMANDS.map((command, index) => {
           const startsGroup =
             index === 0 || SHORTCUT_COMMANDS[index - 1].group !== command.group;
@@ -1359,7 +1366,7 @@ function ShortcutsSettings({
           return (
             <div key={command.id}>
               {startsGroup && <h4>{command.group}</h4>}
-              <div className="stv3-shortcut-row">
+              <div className="translator-shortcut-row">
                 <span>{command.label}</span>
                 <button
                   type="button"
@@ -1391,7 +1398,7 @@ function ShortcutsSettings({
           );
         })}
       </div>
-      <p className="stv3-kicker">
+      <p className="translator-kicker">
         Window and developer shortcuts such as Alt+F4 and Ctrl+Shift+I are
         reserved. Plain letters require a modifier.
       </p>

@@ -55,10 +55,10 @@ describe("ExportConfirmDialog", () => {
     );
     const existingTargets = screen
       .getByText("Existing target · backed up as .json.bak")
-      .closest(".stv3-result-path");
+      .closest(".translator-result-path");
     const newTargets = screen
       .getByText("New targets · created by this export")
-      .closest(".stv3-result-path");
+      .closest(".translator-result-path");
     expect(existingTargets).not.toBeNull();
     expect(newTargets).not.toBeNull();
     expect(
@@ -211,7 +211,7 @@ describe("ExportConfirmDialog", () => {
       />,
     );
 
-    fireEvent.mouseDown(container.querySelector(".stv3-flow-overlay")!);
+    fireEvent.mouseDown(container.querySelector(".translator-flow-overlay")!);
     expect(onCancel).not.toHaveBeenCalled();
     fireEvent.keyDown(
       screen.getByRole("dialog", { name: "Confirm export overwrite" }),

@@ -52,20 +52,20 @@ export function TranslationZipDialog({
   });
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog"
+        className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
         aria-busy={building}
         aria-label="Build translation ZIP"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">Build translation ZIP</h2>
-            <div className="stv3-kicker">
+            <h2 className="translator-heading">Build translation ZIP</h2>
+            <div className="translator-kicker">
               {preview
                 ? `${preview.packageName} · ${
                     componentCount == null
@@ -78,7 +78,7 @@ export function TranslationZipDialog({
             </div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Close ZIP preview"
             onClick={onClose}
@@ -88,17 +88,17 @@ export function TranslationZipDialog({
           </button>
         </div>
 
-        <div className="stv3-flow-body">
+        <div className="translator-flow-body">
           {error && (
-            <div className="stv3-flow-callout is-error" role="alert">
+            <div className="translator-flow-callout is-error" role="alert">
               <strong>Could not prepare ZIP:</strong> {error}
             </div>
           )}
           {!preview && !error && <p>Preparing current package data …</p>}
           {preview && (
             <>
-              <div className="stv3-flow-fields">
-                <label className="stv3-flow-field">
+              <div className="translator-flow-fields">
+                <label className="translator-flow-field">
                   Package version
                   <input
                     value={version}
@@ -109,19 +109,19 @@ export function TranslationZipDialog({
                     }}
                   />
                 </label>
-                <label className="stv3-flow-field">
+                <label className="translator-flow-field">
                   Archive name
                   <input value={fileName} readOnly />
                 </label>
               </div>
 
-              <p className="stv3-kicker">
+              <p className="translator-kicker">
                 Version selected from <strong>{preview.versionSource}</strong>.
                 The native save dialog lets you edit the final filename.
               </p>
 
               {hasVersionConflicts && (
-                <label className="stv3-flow-callout is-warning stv3-confirm-line">
+                <label className="translator-flow-callout is-warning translator-confirm-line">
                   <input
                     type="checkbox"
                     checked={versionConfirmed}
@@ -143,7 +143,10 @@ export function TranslationZipDialog({
 
               {preview.problems.length > 0 && (
                 <>
-                  <div className="stv3-flow-callout is-error" role="alert">
+                  <div
+                    className="translator-flow-callout is-error"
+                    role="alert"
+                  >
                     <strong>ZIP blocked:</strong> {preview.problems.length}{" "}
                     {preview.problems.length === 1
                       ? "problem must"
@@ -152,7 +155,7 @@ export function TranslationZipDialog({
                     written.
                   </div>
                   <ul
-                    className="stv3-flow-list"
+                    className="translator-flow-list"
                     aria-label="Blocking ZIP problems"
                   >
                     {preview.problems.map((problem) => (
@@ -165,7 +168,7 @@ export function TranslationZipDialog({
                           <code>{problem.key}</code> · {problem.reason}
                         </span>
                         <button
-                          className="stv3-button stv3-button-quiet"
+                          className="translator-button translator-button-quiet"
                           type="button"
                           onClick={() => onInspect(problem)}
                           disabled={building}
@@ -181,7 +184,7 @@ export function TranslationZipDialog({
               <div>
                 <strong>Included files</strong>
                 {preview.entries.length > 0 ? (
-                  <ul className="stv3-flow-list">
+                  <ul className="translator-flow-list">
                     {preview.entries.map((entry) => (
                       <li key={entry.archivePath}>
                         <code>{entry.archivePath}</code>
@@ -198,21 +201,21 @@ export function TranslationZipDialog({
                     ))}
                   </ul>
                 ) : (
-                  <div className="stv3-flow-callout">
+                  <div className="translator-flow-callout">
                     No translated files are ready to package.
                   </div>
                 )}
               </div>
 
               {preview.omittedComponents.length > 0 && (
-                <p className="stv3-kicker">
+                <p className="translator-kicker">
                   Omitted without translated output:{" "}
                   {preview.omittedComponents.join(", ")}.
                 </p>
               )}
 
               {preview.warnings.length > 0 && (
-                <div className="stv3-flow-callout is-warning">
+                <div className="translator-flow-callout is-warning">
                   <AlertTriangle aria-hidden="true" />
                   <ul>
                     {preview.warnings.map((warning, index) => (
@@ -222,7 +225,7 @@ export function TranslationZipDialog({
                 </div>
               )}
 
-              <p className="stv3-kicker">
+              <p className="translator-kicker">
                 {preview.totalStrings} of {preview.totalSourceStrings} source
                 strings will be included from the real package preview.
               </p>
@@ -230,9 +233,9 @@ export function TranslationZipDialog({
           )}
         </div>
 
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={onClose}
             disabled={building}
@@ -240,7 +243,7 @@ export function TranslationZipDialog({
             Cancel
           </button>
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             disabled={!preview || building || !version.trim()}
             onClick={() => onReleaseNotes(version.trim(), fileName)}
@@ -248,7 +251,7 @@ export function TranslationZipDialog({
             Translation notes
           </button>
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             disabled={
               !preview ||
@@ -284,22 +287,24 @@ export function ZipOverwriteDialog({
   });
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog stv3-flow-dialog-compact"
+        className="translator-flow-dialog translator-flow-dialog-compact"
         role="dialog"
         aria-modal="true"
         aria-label="Confirm ZIP overwrite"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">Replace existing ZIP?</h2>
-            <div className="stv3-kicker">Explicit overwrite confirmation</div>
+            <h2 className="translator-heading">Replace existing ZIP?</h2>
+            <div className="translator-kicker">
+              Explicit overwrite confirmation
+            </div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Cancel ZIP overwrite"
             onClick={onCancel}
@@ -307,26 +312,26 @@ export function ZipOverwriteDialog({
             <X aria-hidden="true" />
           </button>
         </div>
-        <div className="stv3-flow-body">
-          <div className="stv3-result-path">
+        <div className="translator-flow-body">
+          <div className="translator-result-path">
             <span>Existing archive</span>
             <code>{fileName}</code>
           </div>
-          <div className="stv3-flow-callout is-warning">
+          <div className="translator-flow-callout is-warning">
             The existing archive is kept unless the replacement finishes
             successfully.
           </div>
         </div>
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={onCancel}
           >
             Cancel
           </button>
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             onClick={onConfirm}
           >

@@ -31,7 +31,7 @@ interface IsolationSnapshot {
 export function useModalIsolation(dialogRef: RefObject<HTMLElement | null>) {
   useEffect(() => {
     const dialog = dialogRef.current;
-    const root = dialog?.closest<HTMLElement>("#stv3-dense-demo");
+    const root = dialog?.closest<HTMLElement>("#stardew-i18n-translator");
     if (!dialog || !root) return;
 
     const snapshots: IsolationSnapshot[] = [];
@@ -65,7 +65,7 @@ export function useModalIsolation(dialogRef: RefObject<HTMLElement | null>) {
   }, [dialogRef]);
 }
 
-/** The keyboard and focus behavior shared by the V3 modal overlays. */
+/** The keyboard and focus behavior shared by the application modal overlays. */
 export function useDialogAccessibility({
   dialogRef,
   onEscape,

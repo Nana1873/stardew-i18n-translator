@@ -119,27 +119,27 @@ export function ImportBatchDialog({
   }
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog"
+        className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="stv3-import-title"
-        aria-describedby="stv3-import-description"
+        aria-labelledby="translator-import-title"
+        aria-describedby="translator-import-description"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading" id="stv3-import-title">
+            <h2 className="translator-heading" id="translator-import-title">
               Import LLM batch
             </h2>
-            <div className="stv3-kicker">
+            <div className="translator-kicker">
               Target: {targetName} · {targetLanguage}
             </div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Cancel import"
             onClick={onClose}
@@ -148,13 +148,13 @@ export function ImportBatchDialog({
             <X aria-hidden />
           </button>
         </div>
-        <div className="stv3-flow-body">
-          <p id="stv3-import-description">
+        <div className="translator-flow-body">
+          <p id="translator-import-description">
             Choose the translated JSON returned by your LLM. It must match this
             mod, {targetLanguage}, and the current English source.
           </p>
           <div
-            className="stv3-file-choice stv3-drop-zone"
+            className="translator-file-choice translator-drop-zone"
             data-import-valid={
               invalidSelection ? "false" : path ? "true" : undefined
             }
@@ -167,7 +167,7 @@ export function ImportBatchDialog({
               </code>
             </span>
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={() => void choose()}
               disabled={pending}
@@ -175,12 +175,12 @@ export function ImportBatchDialog({
               <FileSearch aria-hidden /> Choose file …
             </button>
           </div>
-          <div className="stv3-flow-callout">
+          <div className="translator-flow-callout">
             Existing translations stay unchanged. Valid imported values go to
             Review.
           </div>
           {checking && (
-            <div className="stv3-flow-callout" role="status">
+            <div className="translator-flow-callout" role="status">
               Checking mod, language, source snapshot, keys, and protected
               tokens…
             </div>
@@ -188,24 +188,25 @@ export function ImportBatchDialog({
           {preflight && (
             <div
               className={
-                "stv3-import-preflight" +
+                "translator-import-preflight" +
                 (preflight.ready ? " is-ready" : " is-blocked")
               }
               aria-label="LLM import preflight"
             >
-              <div className="stv3-import-preflight-head">
+              <div className="translator-import-preflight-head">
                 <strong>
                   {preflight.ready ? "Ready to import" : "Import blocked"}
                 </strong>
                 <span
                   className={
-                    "stv3-state " + (preflight.ready ? "is-ready" : "is-change")
+                    "translator-state " +
+                    (preflight.ready ? "is-ready" : "is-change")
                   }
                 >
                   {preflight.ready ? "Validated" : "No writes"}
                 </span>
               </div>
-              <dl className="stv3-import-preflight-grid">
+              <dl className="translator-import-preflight-grid">
                 <div>
                   <dt>Mod / component</dt>
                   <dd>
@@ -249,14 +250,14 @@ export function ImportBatchDialog({
                 </div>
               </dl>
               {preflight.protectedTokenIssues.length > 0 && (
-                <details className="stv3-result-help">
+                <details className="translator-result-help">
                   <summary>
                     {preflight.protectedTokenIssues.length} protected-token{" "}
                     {preflight.protectedTokenIssues.length === 1
                       ? "issue"
                       : "issues"}
                   </summary>
-                  <ul className="stv3-import-preflight-issues">
+                  <ul className="translator-import-preflight-issues">
                     {preflight.protectedTokenIssues.map((issue) => (
                       <li key={`${issue.relativeDir}\0${issue.key}`}>
                         <code>
@@ -276,7 +277,7 @@ export function ImportBatchDialog({
                 </details>
               )}
               {preflight.blockingReason && (
-                <div className="stv3-flow-callout is-error" role="alert">
+                <div className="translator-flow-callout is-error" role="alert">
                   {preflight.blockingReason}
                 </div>
               )}
@@ -285,7 +286,7 @@ export function ImportBatchDialog({
                 (canSwitchToMatchingMod?.(preflight.batchModUniqueId) ??
                   true) && (
                   <button
-                    className="stv3-button stv3-button-quiet"
+                    className="translator-button translator-button-quiet"
                     type="button"
                     onClick={() =>
                       onSwitchToMatchingMod(preflight.batchModUniqueId)
@@ -297,14 +298,14 @@ export function ImportBatchDialog({
             </div>
           )}
           {error && (
-            <div className="stv3-flow-callout is-error" role="alert">
+            <div className="translator-flow-callout is-error" role="alert">
               {error}
             </div>
           )}
         </div>
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={onClose}
             disabled={pending}
@@ -312,7 +313,7 @@ export function ImportBatchDialog({
             Cancel
           </button>
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             disabled={
               !path ||

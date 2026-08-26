@@ -696,14 +696,14 @@ export function ResultTray({
 
   return (
     <aside
-      className="stv3-result"
+      className="translator-result"
       aria-live="polite"
       aria-label="Latest operation result"
     >
-      <div className="stv3-result-head">
+      <div className="translator-result-head">
         <span
           className={
-            "stv3-result-status" +
+            "translator-result-status" +
             (presentation.tone === "pending"
               ? " is-pending"
               : presentation.tone === "warning"
@@ -714,13 +714,13 @@ export function ResultTray({
           }
           aria-hidden="true"
         />
-        <div className="stv3-result-title">
+        <div className="translator-result-title">
           <strong>{presentation.label}</strong>
           <span>{data.title}</span>
         </div>
         <button
           ref={toggleButtonRef}
-          className="stv3-icon-button"
+          className="translator-icon-button"
           type="button"
           aria-label={data.collapsed ? "Expand result" : "Collapse result"}
           aria-expanded={!data.collapsed}
@@ -733,7 +733,7 @@ export function ResultTray({
           )}
         </button>
         <button
-          className="stv3-icon-button"
+          className="translator-icon-button"
           type="button"
           aria-label="Hide result"
           onClick={onClose}
@@ -743,13 +743,13 @@ export function ResultTray({
       </div>
 
       {!data.collapsed && (
-        <div className="stv3-result-body">
-          <div className="stv3-kicker">{presentation.kicker}</div>
+        <div className="translator-result-body">
+          <div className="translator-kicker">{presentation.kicker}</div>
           {history.length > 0 && onSelectHistory && (
-            <label className="stv3-result-history">
+            <label className="translator-result-history">
               <span>Result</span>
               <select
-                className="stv3-select"
+                className="translator-select"
                 aria-label="Recent operation results"
                 value={
                   selectedHistoryId &&
@@ -781,14 +781,14 @@ export function ResultTray({
               </select>
             </label>
           )}
-          <p className="stv3-result-copy">{presentation.copy}</p>
+          <p className="translator-result-copy">{presentation.copy}</p>
 
           {(presentation.notices.length > 0 || copyState === "error") && (
-            <div className="stv3-result-notices">
+            <div className="translator-result-notices">
               {presentation.notices.map((notice, index) => (
                 <div
                   className={
-                    "stv3-result-notice" +
+                    "translator-result-notice" +
                     (notice.tone ? " is-" + notice.tone : "")
                   }
                   key={notice.text + index}
@@ -797,7 +797,7 @@ export function ResultTray({
                 </div>
               ))}
               {copyState === "error" && (
-                <div className="stv3-result-notice is-error" role="alert">
+                <div className="translator-result-notice is-error" role="alert">
                   Could not access the clipboard.
                 </div>
               )}
@@ -805,16 +805,19 @@ export function ResultTray({
           )}
 
           {(presentation.paths.length > 0 || data.problems.length > 0) && (
-            <div className="stv3-result-details">
+            <div className="translator-result-details">
               {presentation.paths.map((item, index) => (
-                <div className="stv3-result-path" key={item.label + index}>
+                <div
+                  className="translator-result-path"
+                  key={item.label + index}
+                >
                   <span>{item.label}</span>
                   <code>{item.path}</code>
                 </div>
               ))}
               {data.problems.map((problem) => (
                 <button
-                  className="stv3-result-path"
+                  className="translator-result-path"
                   type="button"
                   key={problem.id}
                   aria-label={
@@ -841,18 +844,18 @@ export function ResultTray({
           )}
 
           {data.kind === "batch-export" && data.outcome && (
-            <div className="stv3-result-prompt">
+            <div className="translator-result-prompt">
               <span>Handoff prompt</span>
               <code>{LLM_BATCH_HANDOFF_PROMPT}</code>
               <button
-                className="stv3-button stv3-button-quiet"
+                className="translator-button translator-button-quiet"
                 type="button"
                 onClick={() => void copyHandoffPrompt()}
               >
                 {promptCopyState === "copied" ? "Copied" : "Copy prompt"}
               </button>
               {promptCopyState === "copied" && (
-                <span className="stv3-sr-only" role="status">
+                <span className="translator-sr-only" role="status">
                   Handoff prompt copied.
                 </span>
               )}
@@ -860,9 +863,9 @@ export function ResultTray({
           )}
 
           {presentation.workflow.length > 0 && (
-            <details className="stv3-result-help">
+            <details className="translator-result-help">
               <summary>Show workflow</summary>
-              <ol className="stv3-result-workflow">
+              <ol className="translator-result-workflow">
                 {presentation.workflow.map((step) => (
                   <li key={step}>{step}</li>
                 ))}
@@ -870,9 +873,9 @@ export function ResultTray({
             </details>
           )}
 
-          <div className="stv3-result-actions">
+          <div className="translator-result-actions">
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={() => void copyDetails()}
             >
@@ -881,7 +884,7 @@ export function ResultTray({
             </button>
             {showUndo && (
               <button
-                className="stv3-button stv3-button-quiet"
+                className="translator-button translator-button-quiet"
                 type="button"
                 aria-label="Undo the latest batch edit"
                 onClick={() => void undoBulk()}
@@ -892,7 +895,7 @@ export function ResultTray({
             )}
             {presentation.openFolderPath && onOpenFolder && (
               <button
-                className="stv3-button stv3-button-quiet"
+                className="translator-button translator-button-quiet"
                 type="button"
                 onClick={() => onOpenFolder(presentation.openFolderPath!)}
               >
@@ -907,7 +910,7 @@ export function ResultTray({
             )}
             {presentation.canOpenReview && onOpenReview && (
               <button
-                className="stv3-button stv3-button-quiet"
+                className="translator-button translator-button-quiet"
                 type="button"
                 onClick={onOpenReview}
               >
@@ -916,7 +919,7 @@ export function ResultTray({
             )}
             {issue && (
               <button
-                className="stv3-button stv3-button-quiet"
+                className="translator-button translator-button-quiet"
                 type="button"
                 onClick={() => onInspect(issue)}
               >
@@ -925,7 +928,7 @@ export function ResultTray({
             )}
             {data.kind === "zip" && data.outcome && onReleaseNotes && (
               <button
-                className="stv3-button stv3-button-quiet"
+                className="translator-button translator-button-quiet"
                 type="button"
                 onClick={onReleaseNotes}
               >
@@ -934,7 +937,7 @@ export function ResultTray({
             )}
             {showRetry && (
               <button
-                className="stv3-button stv3-button-primary"
+                className="translator-button translator-button-primary"
                 type="button"
                 onClick={onRetry}
               >

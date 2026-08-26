@@ -28,7 +28,7 @@ describe("dialog accessibility", () => {
   it("isolates every sibling layer and restores it when the modal unmounts", () => {
     const onClose = vi.fn();
     const { rerender } = render(
-      <div id="stv3-dense-demo">
+      <div id="stardew-i18n-translator">
         <button type="button">Command bar</button>
         <main>
           <button type="button">Workbench</button>
@@ -45,7 +45,7 @@ describe("dialog accessibility", () => {
     expect(workbench.inert).toBe(true);
 
     rerender(
-      <div id="stv3-dense-demo">
+      <div id="stardew-i18n-translator">
         <button type="button">Command bar</button>
         <main>
           <button type="button">Workbench</button>
@@ -64,7 +64,7 @@ describe("dialog accessibility", () => {
   it("traps Tab and handles Escape inside the active layer", () => {
     const onClose = vi.fn();
     render(
-      <div id="stv3-dense-demo">
+      <div id="stardew-i18n-translator">
         <TestDialog onClose={onClose} />
       </div>,
     );

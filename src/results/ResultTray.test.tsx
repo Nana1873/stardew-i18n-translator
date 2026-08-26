@@ -86,8 +86,8 @@ function renderTray(
   return { ...render(<ResultTray {...props} />), props };
 }
 
-describe("ResultTray V3", () => {
-  it("uses the accepted V3 shell and keeps every issue navigable", () => {
+describe("ResultTray", () => {
+  it("uses the result shell and keeps every issue navigable", () => {
     const inspect = vi.fn();
     const close = vi.fn();
     const toggle = vi.fn();
@@ -101,10 +101,10 @@ describe("ResultTray V3", () => {
       screen.getByRole("complementary", {
         name: "Latest operation result",
       }),
-    ).toHaveClass("stv3-result");
-    expect(container.querySelector(".stv3-result-head")).not.toBeNull();
-    expect(container.querySelector(".stv3-result-body")).not.toBeNull();
-    expect(container.querySelector(".stv3-result-status")).toHaveClass(
+    ).toHaveClass("translator-result");
+    expect(container.querySelector(".translator-result-head")).not.toBeNull();
+    expect(container.querySelector(".translator-result-body")).not.toBeNull();
+    expect(container.querySelector(".translator-result-status")).toHaveClass(
       "is-error",
     );
 
@@ -139,8 +139,8 @@ describe("ResultTray V3", () => {
     expect(
       screen.getByRole("button", { name: "Expand result" }),
     ).toHaveAttribute("aria-expanded", "false");
-    expect(container.querySelector(".stv3-result-body")).toBeNull();
-    expect(container.querySelector(".stv3-result-status")).toHaveClass(
+    expect(container.querySelector(".translator-result-body")).toBeNull();
+    expect(container.querySelector(".translator-result-status")).toHaveClass(
       "is-pending",
     );
 
@@ -168,11 +168,9 @@ describe("ResultTray V3", () => {
       />,
     );
     expect(screen.getByText("ZIP created")).toBeInTheDocument();
-    expect(container.querySelector(".stv3-result-status")).not.toHaveClass(
-      "is-warning",
-      "is-error",
-      "is-pending",
-    );
+    expect(
+      container.querySelector(".translator-result-status"),
+    ).not.toHaveClass("is-warning", "is-error", "is-pending");
 
     const warning: ResultTrayData = {
       kind: "import",
@@ -198,7 +196,7 @@ describe("ResultTray V3", () => {
         onInspect={vi.fn()}
       />,
     );
-    expect(container.querySelector(".stv3-result-status")).toHaveClass(
+    expect(container.querySelector(".translator-result-status")).toHaveClass(
       "is-warning",
     );
 
@@ -211,7 +209,7 @@ describe("ResultTray V3", () => {
       />,
     );
     expect(screen.getByText("LLM import rejected")).toBeInTheDocument();
-    expect(container.querySelector(".stv3-result-status")).toHaveClass(
+    expect(container.querySelector(".translator-result-status")).toHaveClass(
       "is-error",
     );
   });
@@ -317,7 +315,7 @@ describe("ResultTray V3", () => {
       expect(
         screen.getByText(`${done} saved · ${5 - done} remaining.`),
       ).toBeInTheDocument();
-      const status = document.querySelector(".stv3-result-status");
+      const status = document.querySelector(".translator-result-status");
       if (toneClass) expect(status).toHaveClass(toneClass);
       else
         expect(status).not.toHaveClass("is-warning", "is-error", "is-pending");
@@ -517,11 +515,11 @@ describe("ResultTray V3", () => {
       { onOpenFolder: vi.fn(), onReleaseNotes: vi.fn() },
     );
     expect(screen.getByRole("button", { name: "Show in folder" })).toHaveClass(
-      "stv3-button",
-      "stv3-button-quiet",
+      "translator-button",
+      "translator-button-quiet",
     );
     expect(
       screen.getByRole("button", { name: "Translation notes" }),
-    ).toHaveClass("stv3-button", "stv3-button-quiet");
+    ).toHaveClass("translator-button", "translator-button-quiet");
   });
 });

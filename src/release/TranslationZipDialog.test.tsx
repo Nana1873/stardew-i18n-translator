@@ -225,13 +225,13 @@ describe("ZipOverwriteDialog", () => {
         onClose={vi.fn()}
       />
     );
-    const { rerender } = render(<div id="stv3-dense-demo">{zip}</div>);
+    const { rerender } = render(<div id="stardew-i18n-translator">{zip}</div>);
     expect(
       await screen.findByRole("dialog", { name: "Build translation ZIP" }),
     ).toBeVisible();
 
     rerender(
-      <div id="stv3-dense-demo">
+      <div id="stardew-i18n-translator">
         {zip}
         <ZipOverwriteDialog
           fileName="translation.zip"
@@ -248,7 +248,7 @@ describe("ZipOverwriteDialog", () => {
       screen.queryByRole("dialog", { name: "Build translation ZIP" }),
     ).toBeNull();
 
-    rerender(<div id="stv3-dense-demo">{zip}</div>);
+    rerender(<div id="stardew-i18n-translator">{zip}</div>);
     expect(
       await screen.findByRole("dialog", { name: "Build translation ZIP" }),
     ).toBeVisible();

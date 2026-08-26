@@ -64,24 +64,26 @@ export function LlmBatchExportDialog({
   }
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog"
+        className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Save LLM batch"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">Export selection as LLM batch</h2>
-            <div className="stv3-kicker">
+            <h2 className="translator-heading">
+              Export selection as LLM batch
+            </h2>
+            <div className="translator-kicker">
               {eligibleCount} eligible strings · {modName}
             </div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Cancel batch export"
             onClick={onClose}
@@ -90,12 +92,12 @@ export function LlmBatchExportDialog({
             <X aria-hidden />
           </button>
         </div>
-        <div className="stv3-flow-body">
-          <label className="stv3-flow-field">
+        <div className="translator-flow-body">
+          <label className="translator-flow-field">
             File name
             <input value={displayedFileName} readOnly />
           </label>
-          <div className="stv3-file-choice">
+          <div className="translator-file-choice">
             <span>
               <strong>Save location</strong>
               <br />
@@ -104,7 +106,7 @@ export function LlmBatchExportDialog({
               </code>
             </span>
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               disabled={pending || choosing}
               onClick={() => void chooseDestination()}
@@ -112,19 +114,19 @@ export function LlmBatchExportDialog({
               {choosing ? "Choosing…" : "Change …"}
             </button>
           </div>
-          <div className="stv3-flow-callout">
+          <div className="translator-flow-callout">
             Only selected open or changed strings are exported. Done entries and
             strings already awaiting review are excluded.
           </div>
           {error && (
-            <div className="stv3-flow-callout is-error" role="alert">
+            <div className="translator-flow-callout is-error" role="alert">
               {error}
             </div>
           )}
         </div>
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={onClose}
             disabled={pending || choosing}
@@ -132,7 +134,7 @@ export function LlmBatchExportDialog({
             Cancel
           </button>
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             onClick={() => void save()}
             disabled={pending || choosing || eligibleCount === 0}

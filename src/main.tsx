@@ -3,8 +3,8 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App";
 import { logFrontendError } from "./tauri/commands";
 import "./styles.css";
-import "./v3-reference.css";
-import "./v3-integration.css";
+import "./translator.css";
+import "./translator-overrides.css";
 
 // Funnel otherwise-uncaught errors into the portable backend log file
 // so they survive into a bug report. Both handlers are best-effort.

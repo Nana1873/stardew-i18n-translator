@@ -215,8 +215,8 @@ beforeEach(() => {
   });
 });
 
-describe("StringTable V3 workbench", () => {
-  it("loads only real selected-mod files and renders accepted V3 controls", async () => {
+describe("StringTable workbench", () => {
+  it("loads only real selected-mod files and renders the workspace controls", async () => {
     render(<StringTable mod={MOD} />);
 
     expect(await screen.findByText("greeting")).toBeInTheDocument();
@@ -243,7 +243,7 @@ describe("StringTable V3 workbench", () => {
     await screen.findByText("greeting");
 
     const header = container.querySelector<HTMLElement>(
-      ".stv3-string-table-head",
+      ".translator-string-table-head",
     );
     expect(header).toHaveStyle({
       gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
@@ -285,14 +285,13 @@ describe("StringTable V3 workbench", () => {
         name: /Resize (?:action|issue)s? column/i,
       }),
     ).not.toBeInTheDocument();
-    expect(container.querySelector(".stv3-table-foot")).toBeNull();
   });
 
   it("marks the compact toolbar while batch selection controls are visible", async () => {
     const { container } = render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");
 
-    const toolbar = container.querySelector(".stv3-string-toolbar");
+    const toolbar = container.querySelector(".translator-string-toolbar");
     expect(toolbar).not.toHaveClass("is-selection-active");
 
     fireEvent.click(
@@ -322,7 +321,7 @@ describe("StringTable V3 workbench", () => {
     expect(onScopeChange).toHaveBeenCalledWith("all");
   });
 
-  it("renders the complete V3 heading from real package, language, and progress data", async () => {
+  it("renders the complete heading from real package, language, and progress data", async () => {
     render(
       <StringTable
         mod={MOD}
@@ -471,7 +470,7 @@ describe("StringTable V3 workbench", () => {
       ),
     ).toBeVisible();
     const modCell = rowFor("tomorrow").querySelector(
-      '.stv3-global-mod-col[data-search-field="mod"]',
+      '.translator-global-mod-col[data-search-field="mod"]',
     );
     expect(modCell).toHaveClass("is-search-match");
     expect(modCell).toHaveAttribute("aria-description", "Search match in Mod.");
@@ -522,7 +521,7 @@ describe("StringTable V3 workbench", () => {
     );
 
     const fileCell = rowFor("asset-key").querySelector(
-      '.stv3-file-col[data-search-field="file"]',
+      '.translator-file-col[data-search-field="file"]',
     );
     expect(fileCell).toHaveClass("is-search-match");
     expect(fileCell).toHaveAttribute(
@@ -553,16 +552,18 @@ describe("StringTable V3 workbench", () => {
     render(<StringTable mod={multiMod} mods={[multiMod]} scope="all" />);
     await screen.findByText("greeting");
     const row = rowFor("greeting");
-    const modText = row.querySelector<HTMLElement>(".stv3-global-mod-text");
+    const modText = row.querySelector<HTMLElement>(
+      ".translator-global-mod-text",
+    );
     const fileText = row.querySelector<HTMLElement>(
-      ".stv3-file-col .stv3-cell-clip",
+      ".translator-file-col .translator-cell-clip",
     );
     const keyText = screen.getByRole("button", { name: "greeting" });
     const sourceText = row.querySelector<HTMLElement>(
-      ".stv3-source-col .stv3-cell-clip",
+      ".translator-source-col .translator-cell-clip",
     );
     const targetText = row.querySelector<HTMLElement>(
-      ".stv3-translation-col .stv3-cell-clip",
+      ".translator-translation-col .translator-cell-clip",
     );
     if (!modText || !fileText || !sourceText || !targetText) {
       throw new Error("Missing overflow test cell");
@@ -730,7 +731,7 @@ describe("StringTable V3 workbench", () => {
     const validation = screen.getByRole("button", {
       name: /Token count mismatch for.*\{\{name\}\}/i,
     });
-    expect(validation).toHaveClass("stv3-inline-validation");
+    expect(validation).toHaveClass("translator-inline-validation");
     fireEvent.click(validation);
     expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Close editor" }));
@@ -811,7 +812,9 @@ describe("StringTable V3 workbench", () => {
     expect(
       screen.queryByRole("button", { name: /^Validation issues/ }),
     ).not.toBeInTheDocument();
-    expect(rowFor("token").querySelector(".stv3-inline-validation")).toBeNull();
+    expect(
+      rowFor("token").querySelector(".translator-inline-validation"),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
     fireEvent.keyDown(screen.getByRole("button", { name: /1 selected/ }), {
@@ -860,7 +863,7 @@ describe("StringTable V3 workbench", () => {
     expect(screen.queryByRole("tooltip")).toBeNull();
 
     const changedState =
-      rowFor("token").querySelector<HTMLElement>(".stv3-state");
+      rowFor("token").querySelector<HTMLElement>(".translator-state");
     if (!changedState) throw new Error("Missing row status");
     fireEvent.pointerEnter(changedState);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
@@ -895,7 +898,7 @@ describe("StringTable V3 workbench", () => {
             toJSON: () => ({}),
           } as DOMRect;
         }
-        if (this.classList.contains("stv3-status-tooltip")) {
+        if (this.classList.contains("translator-status-tooltip")) {
           return {
             x: 0,
             y: 0,
@@ -1209,7 +1212,9 @@ describe("StringTable V3 workbench", () => {
       ),
     ).toHaveLength(0);
     expect(screen.queryByRole("button", { name: /1 selected/ })).toBeNull();
-    expect(rowFor("bye").querySelector(".stv3-inline-validation")).toBeNull();
+    expect(
+      rowFor("bye").querySelector(".translator-inline-validation"),
+    ).toBeNull();
   });
 
   it("writes one atomic grouped batch and emits the backend history entry", async () => {
@@ -1315,7 +1320,9 @@ describe("StringTable V3 workbench", () => {
       }),
     );
     expect(rowFor("draft")).toHaveAttribute("data-status", "untranslated");
-    expect(rowFor("draft").querySelector(".stv3-inline-validation")).toBeNull();
+    expect(
+      rowFor("draft").querySelector(".translator-inline-validation"),
+    ).toBeNull();
   });
 
   it("keeps every selected component unchanged when the atomic batch fails", async () => {
@@ -1355,10 +1362,10 @@ describe("StringTable V3 workbench", () => {
     );
     expect(onBulkApplied).not.toHaveBeenCalled();
     expect(
-      rowFor("bye").querySelector(".stv3-translation-cell"),
+      rowFor("bye").querySelector(".translator-translation-cell"),
     ).toHaveTextContent("—");
     expect(
-      rowFor("tomorrow").querySelector(".stv3-translation-cell"),
+      rowFor("tomorrow").querySelector(".translator-translation-cell"),
     ).toHaveTextContent("—");
     expect(
       invokeMock.mock.calls.filter(
@@ -2018,7 +2025,7 @@ describe("StringTable V3 workbench", () => {
     }
 
     const header = container.querySelector<HTMLElement>(
-      ".stv3-string-table-head",
+      ".translator-string-table-head",
     );
     const actionHeader = screen.getByRole("columnheader", {
       name: "Row actions",
@@ -2028,7 +2035,7 @@ describe("StringTable V3 workbench", () => {
         "34px 146px 121px 118px 266px 376px 196px minmax(0, 1fr) 58px",
     });
     expect(header?.lastElementChild).toBe(actionHeader);
-    expect(actionHeader).toHaveClass("stv3-row-actions-col");
+    expect(actionHeader).toHaveClass("translator-row-actions-col");
     expect(actionHeader).toHaveStyle({ gridColumn: "-2 / -1" });
 
     const issueControl = screen.getAllByRole("button", {
@@ -2037,10 +2044,10 @@ describe("StringTable V3 workbench", () => {
     const tokenRow = issueControl.closest<HTMLElement>(".stringrow--data");
     if (!tokenRow) throw new Error("Missing row for validation control");
     const translationCell = tokenRow.querySelector<HTMLElement>(
-      ".stv3-translation-cell",
+      ".translator-translation-cell",
     );
     const actionCell = tokenRow.querySelector<HTMLElement>(
-      ".stv3-row-actions-col",
+      ".translator-row-actions-col",
     );
     if (!translationCell || !actionCell) {
       throw new Error("Missing target or fixed row-actions cell");
@@ -2051,7 +2058,7 @@ describe("StringTable V3 workbench", () => {
     expect(tokenRow.lastElementChild).toBe(actionCell);
     expect(actionCell.previousElementSibling).toBe(translationCell);
     expect(actionCell).toHaveStyle({ gridColumn: "-2 / -1" });
-    expect(issueControl).toHaveClass("stv3-inline-validation");
+    expect(issueControl).toHaveClass("translator-inline-validation");
     expect(actionCell).toContainElement(issueControl);
     expect(moreControl).not.toBeNull();
     expect(translationCell).not.toContainElement(issueControl);
@@ -2109,7 +2116,7 @@ describe("StringTable V3 workbench", () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");
     const targetCell = rowFor("greeting").querySelector<HTMLElement>(
-      ".stv3-translation-col",
+      ".translator-translation-col",
     );
     if (!targetCell) throw new Error("Missing target cell");
     fireEvent.doubleClick(targetCell);

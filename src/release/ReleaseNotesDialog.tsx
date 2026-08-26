@@ -62,24 +62,24 @@ export function ReleaseNotesDialog({
   }
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog"
+        className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Translation notes"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">Translation notes</h2>
-            <div className="stv3-kicker">
+            <h2 className="translator-heading">Translation notes</h2>
+            <div className="translator-kicker">
               Copy-ready draft generated from the current package data
             </div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Close translation notes"
             onClick={onClose}
@@ -88,17 +88,17 @@ export function ReleaseNotesDialog({
           </button>
         </div>
 
-        <div className="stv3-flow-body">
+        <div className="translator-flow-body">
           {error && (
-            <div className="stv3-flow-callout is-error" role="alert">
+            <div className="translator-flow-callout is-error" role="alert">
               <strong>Could not generate notes:</strong> {error}
             </div>
           )}
           {!preview && !error && <p>Preparing current package data …</p>}
           {preview && generated && (
             <>
-              <div className="stv3-flow-fields">
-                <label className="stv3-flow-field">
+              <div className="translator-flow-fields">
+                <label className="translator-flow-field">
                   Advertised package version
                   <input
                     value={version}
@@ -109,7 +109,7 @@ export function ReleaseNotesDialog({
                     }}
                   />
                 </label>
-                <label className="stv3-flow-field">
+                <label className="translator-flow-field">
                   Draft language
                   <select
                     value={outputLanguage}
@@ -127,7 +127,10 @@ export function ReleaseNotesDialog({
               </div>
 
               {generated.fellBackToEnglish && (
-                <div className="stv3-flow-callout is-warning" role="status">
+                <div
+                  className="translator-flow-callout is-warning"
+                  role="status"
+                >
                   No maintained template was available for{" "}
                   <code>{outputLanguage}</code>. The complete draft uses
                   English.
@@ -135,7 +138,7 @@ export function ReleaseNotesDialog({
               )}
 
               {hasConflicts && (
-                <label className="stv3-flow-callout is-warning stv3-confirm-line">
+                <label className="translator-flow-callout is-warning translator-confirm-line">
                   <input
                     type="checkbox"
                     checked={versionConfirmed}
@@ -156,13 +159,13 @@ export function ReleaseNotesDialog({
 
               {preview.problems.length > 0 && (
                 <>
-                  <div className="stv3-flow-callout is-error">
+                  <div className="translator-flow-callout is-error">
                     <strong>
                       This package is not release-ready until these problems are
                       fixed:
                     </strong>
                   </div>
-                  <ul className="stv3-flow-list">
+                  <ul className="translator-flow-list">
                     {preview.problems.map((problem) => (
                       <li
                         key={`${problem.modUniqueId}:${problem.relativeDir}:${problem.key}`}
@@ -173,7 +176,7 @@ export function ReleaseNotesDialog({
                           <code>{problem.key}</code> · {problem.reason}
                         </span>
                         <button
-                          className="stv3-button stv3-button-quiet"
+                          className="translator-button translator-button-quiet"
                           type="button"
                           onClick={() => onInspect(problem)}
                         >
@@ -185,7 +188,7 @@ export function ReleaseNotesDialog({
                 </>
               )}
 
-              <label className="stv3-flow-field">
+              <label className="translator-flow-field">
                 Generated notes
                 <textarea
                   aria-label="Generated release notes"
@@ -196,7 +199,7 @@ export function ReleaseNotesDialog({
               </label>
 
               {copyState === "error" && (
-                <div className="stv3-flow-callout is-error" role="alert">
+                <div className="translator-flow-callout is-error" role="alert">
                   Could not access the clipboard.
                 </div>
               )}
@@ -204,16 +207,16 @@ export function ReleaseNotesDialog({
           )}
         </div>
 
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={onClose}
           >
             Close
           </button>
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             disabled={copyDisabled}
             onClick={() => void copy()}

@@ -1,7 +1,7 @@
 /**
  * Backwards-compatible all-mod search entrypoint.
  *
- * V3 deliberately has one string workbench rather than a second search-only
+ * The app deliberately has one string workbench rather than a second search-only
  * table. The shell can migrate to StringTable directly; this wrapper keeps the
  * existing call site and tests on the same real, virtualized implementation.
  */

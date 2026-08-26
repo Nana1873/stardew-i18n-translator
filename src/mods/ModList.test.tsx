@@ -95,7 +95,7 @@ describe("ModList", () => {
     ];
     render(<ModList mods={mods} selectedId={null} onSelect={() => {}} />);
 
-    const branches = document.querySelectorAll(".stv3-tree-branch");
+    const branches = document.querySelectorAll(".translator-tree-branch");
     expect(branches).toHaveLength(2);
     expect(branches[0]).not.toHaveClass("is-last");
     expect(branches[1]).toHaveClass("is-last");
@@ -119,10 +119,10 @@ describe("ModList", () => {
       />,
     );
     const fill = document.querySelector(
-      ".stv3-mod-progress span",
+      ".translator-mod-progress span",
     ) as HTMLElement | null;
     expect(fill).not.toBeNull();
-    expect(fill!.style.getPropertyValue("--stv3-progress")).toBe("50%");
+    expect(fill!.style.getPropertyValue("--translator-progress")).toBe("50%");
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
 
@@ -256,7 +256,7 @@ describe("ModList", () => {
         onSelect={() => {}}
       />,
     );
-    expect(document.querySelector(".stv3-tree-branch")).toBeNull();
+    expect(document.querySelector(".translator-tree-branch")).toBeNull();
   });
 
   it("opens the selected mod folder from the context menu", () => {

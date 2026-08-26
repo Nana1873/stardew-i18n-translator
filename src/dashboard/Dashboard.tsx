@@ -161,11 +161,11 @@ export function Dashboard({
   }
 
   return (
-    <main className="stv3-overview" aria-label="Overview">
-      <div className="stv3-overview-head">
+    <main className="translator-overview" aria-label="Overview">
+      <div className="translator-overview-head">
         <div>
-          <h1 className="stv3-heading">Overview</h1>
-          <div className="stv3-kicker">
+          <h1 className="translator-heading">Overview</h1>
+          <div className="translator-kicker">
             {languageLine}
             {scan ? ` · ${scan.modCount} mods` : " · not scanned"}
             {scan
@@ -177,7 +177,7 @@ export function Dashboard({
         </div>
         {continueMod ? (
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             onClick={() => onOpenMod(continueMod.uniqueId)}
           >
@@ -185,7 +185,7 @@ export function Dashboard({
           </button>
         ) : (
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             onClick={onScan}
             disabled={!scanEnabled}
@@ -196,9 +196,9 @@ export function Dashboard({
         )}
       </div>
 
-      <div className="stv3-overview-stats">
+      <div className="translator-overview-stats">
         <button
-          className="stv3-overview-stat"
+          className="translator-overview-stat"
           type="button"
           onClick={() => openFilter("has-value")}
         >
@@ -211,7 +211,7 @@ export function Dashboard({
           <small>Includes values still needing review</small>
         </button>
         <button
-          className="stv3-overview-stat"
+          className="translator-overview-stat"
           type="button"
           onClick={() => openFilter("translated")}
         >
@@ -228,7 +228,7 @@ export function Dashboard({
           </small>
         </button>
         <button
-          className="stv3-overview-stat"
+          className="translator-overview-stat"
           type="button"
           onClick={() => openFilter("untranslated")}
         >
@@ -242,7 +242,7 @@ export function Dashboard({
 
       {scan ? (
         <button
-          className="stv3-scan-summary"
+          className="translator-scan-summary"
           type="button"
           onClick={onShowScanDetails}
           disabled={!onShowScanDetails}
@@ -271,7 +271,7 @@ export function Dashboard({
         </button>
       ) : (
         <button
-          className="stv3-scan-summary"
+          className="translator-scan-summary"
           type="button"
           onClick={onScan}
           disabled={!scanEnabled}
@@ -287,7 +287,7 @@ export function Dashboard({
         </button>
       )}
 
-      <div className="stv3-last-export">
+      <div className="translator-last-export">
         <FileCheck2 aria-hidden="true" />
         <span>
           <strong>
@@ -299,7 +299,7 @@ export function Dashboard({
           </code>
         </span>
         <button
-          className="stv3-button stv3-button-quiet"
+          className="translator-button translator-button-quiet"
           type="button"
           onClick={onShowLastExport}
           disabled={!lastExport || !onShowLastExport}
@@ -308,14 +308,14 @@ export function Dashboard({
         </button>
       </div>
 
-      <section className="stv3-section">
-        <div className="stv3-section-head">
-          <h2 className="stv3-heading">Recently edited</h2>
-          <div className="stv3-kicker">
+      <section className="translator-section">
+        <div className="translator-section-head">
+          <h2 className="translator-heading">Recently edited</h2>
+          <div className="translator-kicker">
             Resume recently opened mods · edit time unavailable
           </div>
         </div>
-        <table className="stv3-overview-table">
+        <table className="translator-overview-table">
           <thead>
             <tr>
               <th>Mod</th>
@@ -339,7 +339,7 @@ export function Dashboard({
             ) : (
               <tr>
                 <td colSpan={4}>
-                  <span className="stv3-kicker">
+                  <span className="translator-kicker">
                     Unavailable · no mod has been opened in this portable
                     workspace yet.
                   </span>
@@ -353,7 +353,7 @@ export function Dashboard({
       {statusTooltip && (
         <div
           ref={statusTooltipRef}
-          className="stv3-status-tooltip"
+          className="translator-status-tooltip"
           role="tooltip"
           style={{ left: statusTooltip.left, top: statusTooltip.top }}
         >
@@ -382,24 +382,24 @@ function RecentRow({
   const status =
     changed > 0
       ? {
-          className: "stv3-state is-change",
+          className: "translator-state is-change",
           label: `${count(changed)} changed`,
           help: `The English source changed after this ${targetLanguage} translation was saved. The existing translation may be outdated and should be reviewed.`,
         }
       : mod.reviewNeeded > 0
         ? {
-            className: "stv3-state is-review",
+            className: "translator-state is-review",
             label: `${count(mod.reviewNeeded)} to review`,
             help: "This imported or AI-generated suggestion still needs human approval.",
           }
         : openCount > 0
           ? {
-              className: "stv3-state",
+              className: "translator-state",
               label: `${count(openCount)} open`,
               help: `No accepted ${targetLanguage} translation exists yet.`,
             }
           : {
-              className: "stv3-state is-ready",
+              className: "translator-state is-ready",
               label: "Done",
               help: `The ${targetLanguage} translation was explicitly saved or accepted for the current English source.`,
             };
@@ -407,7 +407,11 @@ function RecentRow({
   return (
     <tr>
       <td>
-        <button className="stv3-overview-link" type="button" onClick={onOpen}>
+        <button
+          className="translator-overview-link"
+          type="button"
+          onClick={onOpen}
+        >
           {mod.name}
         </button>
       </td>

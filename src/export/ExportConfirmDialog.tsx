@@ -65,27 +65,29 @@ export function ExportConfirmDialog({
   const allMods = mods != null;
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog"
+        className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Confirm export overwrite"
         aria-describedby={
-          blockingProblem ? "stv3-export-blocker" : "stv3-export-summary"
+          blockingProblem
+            ? "translator-export-blocker"
+            : "translator-export-summary"
         }
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">
+            <h2 className="translator-heading">
               {allMods ? "Export all mods?" : "Export current mod?"}
             </h2>
-            <div className="stv3-kicker">{modName}</div>
+            <div className="translator-kicker">{modName}</div>
           </div>
           <button
-            className="stv3-icon-button"
+            className="translator-icon-button"
             type="button"
             aria-label="Cancel export"
             onClick={onCancel}
@@ -94,10 +96,10 @@ export function ExportConfirmDialog({
           </button>
         </div>
 
-        <div className="stv3-flow-body">
+        <div className="translator-flow-body">
           {!blockingProblem && (
             <>
-              <p id="stv3-export-summary">
+              <p id="translator-export-summary">
                 {replacing && (
                   <>
                     This export replaces <strong>{existingFiles}</strong>{" "}
@@ -128,7 +130,7 @@ export function ExportConfirmDialog({
               </p>
 
               <div
-                className="stv3-preflight-metrics"
+                className="translator-preflight-metrics"
                 aria-label="Export readiness"
               >
                 <Metric value={willWrite} label="currently eligible" />
@@ -142,7 +144,7 @@ export function ExportConfirmDialog({
               </div>
 
               {existingTargetPaths.length > 0 && (
-                <div className="stv3-result-path">
+                <div className="translator-result-path">
                   <span>
                     {existingTargetPaths.length === 1
                       ? "Existing target"
@@ -155,7 +157,7 @@ export function ExportConfirmDialog({
                 </div>
               )}
               {newTargetPaths.length > 0 && (
-                <div className="stv3-result-path">
+                <div className="translator-result-path">
                   <span>
                     {newTargetPaths.length === 1 ? "New target" : "New targets"}{" "}
                     · created by this export
@@ -167,21 +169,21 @@ export function ExportConfirmDialog({
               )}
               {existingTargetPaths.length === 0 &&
                 newTargetPaths.length === 0 && (
-                  <div className="stv3-result-path">
+                  <div className="translator-result-path">
                     <span>Targets</span>
                     <code>Unavailable before export</code>
                   </div>
                 )}
 
               {attention == null ? (
-                <div className="stv3-flow-callout">
+                <div className="translator-flow-callout">
                   Changed and review aggregates are unavailable before this
                   export. Protected-token blocker preflight is also unavailable;
                   the backend validates the complete selected scope before any
                   file is written.
                 </div>
               ) : attention > 0 ? (
-                <div className="stv3-flow-callout is-warning">
+                <div className="translator-flow-callout is-warning">
                   <AlertTriangle aria-hidden="true" /> {attention} included{" "}
                   {attention === 1 ? "string is" : "strings are"} not Done:{" "}
                   {changedIncluded} Changed and {reviewIncluded} in Review.
@@ -189,25 +191,25 @@ export function ExportConfirmDialog({
                   remains the final write guard.
                 </div>
               ) : blockingValidationAvailable ? (
-                <div className="stv3-flow-callout">
+                <div className="translator-flow-callout">
                   Ready to export. No included strings are Changed or in Review.
                 </div>
               ) : (
-                <div className="stv3-flow-callout">
+                <div className="translator-flow-callout">
                   Export readiness · Unavailable before export. Known changed
                   and review counts are clear, but protected-token blockers are
                   validated by the backend when export starts.
                 </div>
               )}
 
-              <div className="stv3-kicker">
+              <div className="translator-kicker">
                 Counts above describe the current scan. The backend revalidates
                 the complete scope atomically when export starts; no file is
                 changed if a blocking issue is found.
               </div>
 
               {acceptedMismatches != null && acceptedMismatches > 0 && (
-                <div className="stv3-flow-callout">
+                <div className="translator-flow-callout">
                   <strong>Accepted mismatch:</strong> {acceptedMismatches}{" "}
                   {acceptedMismatches === 1
                     ? "exact source revision may"
@@ -216,9 +218,9 @@ export function ExportConfirmDialog({
                 </div>
               )}
 
-              <details className="stv3-export-details">
+              <details className="translator-export-details">
                 <summary>Safety and previous export</summary>
-                <div className="stv3-export-details-body">
+                <div className="translator-export-details-body">
                   <span>
                     The complete scope is validated before writing. Existing
                     files receive visible <code>.json.bak</code> backups and a
@@ -239,8 +241,8 @@ export function ExportConfirmDialog({
 
           {blockingProblem && (
             <div
-              className="stv3-flow-callout is-error"
-              id="stv3-export-blocker"
+              className="translator-flow-callout is-error"
+              id="translator-export-blocker"
               role="alert"
             >
               <strong>Export blocked:</strong>{" "}
@@ -250,9 +252,9 @@ export function ExportConfirmDialog({
           )}
         </div>
 
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={onCancel}
           >
@@ -260,7 +262,7 @@ export function ExportConfirmDialog({
           </button>
           {blockingProblem && (
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={onInspectProblem}
               disabled={!onInspectProblem}
@@ -269,7 +271,7 @@ export function ExportConfirmDialog({
             </button>
           )}
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             onClick={onConfirm}
             disabled={blockingProblem != null}
@@ -288,7 +290,7 @@ export function ExportConfirmDialog({
 
 function Metric({ value, label }: { value: number | null; label: string }) {
   return (
-    <div className="stv3-preflight-metric">
+    <div className="translator-preflight-metric">
       <strong>{value == null ? "Unavailable" : value}</strong>
       <span>{label}</span>
     </div>

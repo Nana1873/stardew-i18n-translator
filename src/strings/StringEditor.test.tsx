@@ -490,8 +490,10 @@ describe("StringEditor", () => {
     const warning = screen.getByText(
       /mismatch explicitly accepted for this exact translation/i,
     );
-    expect(warning.closest(".stv3-validation")).toHaveClass("is-warning");
-    expect(warning.closest(".stv3-validation")).not.toHaveClass("is-error");
+    expect(warning.closest(".translator-validation")).toHaveClass("is-warning");
+    expect(warning.closest(".translator-validation")).not.toHaveClass(
+      "is-error",
+    );
     expect(screen.getByRole("button", { name: /saveName/i })).toHaveClass(
       "is-accepted",
     );
@@ -622,7 +624,7 @@ describe("StringEditor", () => {
 
     const note = await screen.findByText(/AI dropped token/);
     expect(note).toHaveClass("editor__ai-msg");
-    expect(note.closest(".stv3-editor-ai-error")).toBeNull();
+    expect(note.closest(".translator-editor-ai-error")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Open Translation engines" }),
     ).not.toBeInTheDocument();
@@ -826,7 +828,7 @@ describe("StringEditor", () => {
     );
 
     const hints = Array.from(
-      document.querySelectorAll<HTMLElement>(".stv3-glossary-term"),
+      document.querySelectorAll<HTMLElement>(".translator-glossary-term"),
     ).map((hint) => hint.textContent ?? "");
     expect(hints.some((hint) => hint.includes("Iridium Ore"))).toBe(true);
     // The bare "Ore" must not also appear — the longer term claimed the span.
@@ -845,7 +847,7 @@ describe("StringEditor", () => {
     );
 
     const hints = Array.from(
-      document.querySelectorAll<HTMLElement>(".stv3-glossary-term"),
+      document.querySelectorAll<HTMLElement>(".translator-glossary-term"),
     ).map((hint) => hint.textContent ?? "");
     expect(hints.some((hint) => hint.includes("Iridium Ore"))).toBe(true);
     expect(hints.some((hint) => hint.includes("Ore → Erz"))).toBe(true);

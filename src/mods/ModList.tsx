@@ -82,7 +82,7 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
 
 function progressStyle(progress: number): CSSProperties {
   return {
-    "--stv3-progress": `${Math.round(progress * 100)}%`,
+    "--translator-progress": `${Math.round(progress * 100)}%`,
   } as CSSProperties;
 }
 
@@ -164,7 +164,7 @@ export function ModList({
 
   function onTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     const row = (event.target as HTMLElement).closest<HTMLElement>(
-      ".stv3-mod-row[role='treeitem']",
+      ".translator-mod-row[role='treeitem']",
     );
     if (!row) return;
     if (
@@ -199,7 +199,7 @@ export function ModList({
     event.preventDefault();
     const rows = Array.from(
       event.currentTarget.querySelectorAll<HTMLElement>(
-        ".stv3-mod-row[role='treeitem']",
+        ".translator-mod-row[role='treeitem']",
       ),
     );
     const index = rows.indexOf(row);
@@ -253,14 +253,14 @@ export function ModList({
 
   return (
     <>
-      <div className="stv3-mod-columns" aria-hidden="true">
+      <div className="translator-mod-columns" aria-hidden="true">
         <span>Mod</span>
         <span>Ver.</span>
         <span>Nexus</span>
         <span>Progress</span>
       </div>
       <div
-        className="stv3-mod-list"
+        className="translator-mod-list"
         role="tree"
         aria-label="Mods"
         onKeyDown={onTreeKeyDown}
@@ -297,7 +297,7 @@ export function ModList({
       </div>
 
       {visible.length === 0 && (
-        <div className="stv3-empty-state" data-mod-empty>
+        <div className="translator-empty-state" data-mod-empty>
           <SearchX aria-hidden="true" />
           <strong>
             {query.trim() ? "No mods found" : "No translatable mods found"}
@@ -309,7 +309,7 @@ export function ModList({
           </span>
           {query.trim() && (
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={onClearQuery}
               disabled={!onClearQuery}
@@ -323,7 +323,7 @@ export function ModList({
       {menu && (
         <>
           <div
-            className="stv3-context-scrim"
+            className="translator-context-scrim"
             onMouseDown={() => closeMenu(false)}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -332,7 +332,7 @@ export function ModList({
           />
           <ul
             ref={menuRef}
-            className="stv3-context-menu"
+            className="translator-context-menu"
             style={{ left: menu.x, top: menu.y }}
             role="menu"
             aria-label="Mod actions"
@@ -347,7 +347,7 @@ export function ModList({
               }
             }}
           >
-            <li className="stv3-context-count" role="presentation">
+            <li className="translator-context-count" role="presentation">
               <span>{menu.mod.name}</span>
             </li>
             <li role="none">
@@ -359,7 +359,7 @@ export function ModList({
                   closeMenu(false);
                 }}
               >
-                <span className="stv3-menu-label">
+                <span className="translator-menu-label">
                   <FolderOpen aria-hidden="true" /> Open mod folder
                 </span>
               </button>
@@ -383,11 +383,14 @@ export function ModList({
                   closeMenu(false);
                 }}
               >
-                <span className="stv3-menu-label">
+                <span className="translator-menu-label">
                   <ExternalLink aria-hidden="true" /> Open on Nexus
                 </span>
                 {menu.mod.nexusId == null && (
-                  <span className="stv3-context-shortcut" aria-hidden="true">
+                  <span
+                    className="translator-context-shortcut"
+                    aria-hidden="true"
+                  >
                     Unavailable
                   </span>
                 )}
@@ -431,7 +434,7 @@ function PackageNode({
   return (
     <>
       <button
-        className="stv3-mod-group-row"
+        className="translator-mod-group-row"
         type="button"
         role="treeitem"
         aria-expanded={expanded}
@@ -440,18 +443,18 @@ function PackageNode({
       >
         <strong>
           <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
-          <span className="stv3-mod-group-name">{group.packageId}</span>
+          <span className="translator-mod-group-name">{group.packageId}</span>
           <span
-            className="stv3-mod-component-badge"
+            className="translator-mod-component-badge"
             title={`${group.mods.length} translatable components`}
           >
             {group.mods.length} comps.
           </span>
         </strong>
         <span />
-        <span className="stv3-mod-nexus">{group.nexusId ?? "—"}</span>
-        <span className="stv3-mod-percent">{percent}%</span>
-        <span className="stv3-mod-progress" aria-hidden="true">
+        <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
+        <span className="translator-mod-percent">{percent}%</span>
+        <span className="translator-mod-progress" aria-hidden="true">
           <span style={progressStyle(group.progress)} />
         </span>
       </button>
@@ -504,7 +507,7 @@ function ModRow({
   const multipleSources = mod.i18nFiles.length > 1;
   return (
     <div
-      className={`stv3-mod-row${child ? " is-child" : ""}`}
+      className={`translator-mod-row${child ? " is-child" : ""}`}
       role="treeitem"
       aria-current={selected ? "true" : undefined}
       tabIndex={tabStop ? 0 : -1}
@@ -515,26 +518,28 @@ function ModRow({
       onClick={() => onSelect(mod.uniqueId)}
       onContextMenu={(event) => onContextMenu(mod, event, event.currentTarget)}
     >
-      <span className={`stv3-mod-name${multipleSources ? " has-files" : ""}`}>
+      <span
+        className={`translator-mod-name${multipleSources ? " has-files" : ""}`}
+      >
         {child && (
           <span
-            className={`stv3-tree-branch${lastChild ? " is-last" : ""}`}
+            className={`translator-tree-branch${lastChild ? " is-last" : ""}`}
             aria-hidden="true"
           />
         )}
-        <span className="stv3-mod-label">{mod.name}</span>
+        <span className="translator-mod-label">{mod.name}</span>
         {multipleSources && (
           <span
-            className="stv3-mod-file-badge"
+            className="translator-mod-file-badge"
             title={`${mod.i18nFiles.length} i18n source folders`}
           >
             {mod.i18nFiles.length} i18n sources
           </span>
         )}
       </span>
-      <span className="stv3-mod-version">{mod.version || "—"}</span>
+      <span className="translator-mod-version">{mod.version || "—"}</span>
       <span
-        className="stv3-mod-nexus"
+        className="translator-mod-nexus"
         title={
           mod.nexusId == null
             ? "No Nexus Mods link available"
@@ -543,15 +548,15 @@ function ModRow({
       >
         {mod.nexusId ?? "—"}
       </span>
-      <span className="stv3-mod-percent">
+      <span className="translator-mod-percent">
         {mod.totalKeys > 0 ? `${percent}%` : "—"}
       </span>
-      <span className="stv3-mod-progress" aria-hidden="true">
+      <span className="translator-mod-progress" aria-hidden="true">
         <span style={progressStyle(mod.progress)} />
       </span>
       <button
         type="button"
-        className="stv3-row-more"
+        className="translator-row-more"
         aria-label={`More actions for ${mod.name}`}
         aria-haspopup="menu"
         aria-expanded={menuOpen}

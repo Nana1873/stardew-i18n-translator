@@ -1,5 +1,5 @@
 /**
- * Accepted V3 string workbench.
+ * Primary string workbench.
  *
  * One virtualized grid serves both the selected-mod and all-mod scopes. Every
  * row is backed by load_strings data; selection is keyed by mod/file/key so
@@ -196,7 +196,7 @@ export interface StringTableProps {
   onLlmBatchExport?: (
     items: LlmBatchItem[],
   ) => Promise<LlmExportOutcome | null>;
-  /** Scope-aware handoff used by the V3 all-mod table. */
+  /** Scope-aware handoff used by the all-mod table. */
   onLlmBatchExportForMod?: (
     mod: ScannedMod,
     items: LlmBatchItem[],
@@ -880,7 +880,7 @@ export function StringTable({
   useLayoutEffect(() => {
     const menu = contextMenuRef.current;
     if (!contextMenu || !menu) return;
-    const appWindow = document.getElementById("stv3-dense-demo");
+    const appWindow = document.getElementById("stardew-i18n-translator");
     const width = appWindow?.clientWidth ?? window.innerWidth;
     const height = appWindow?.clientHeight ?? window.innerHeight;
     const left = Math.min(
@@ -1129,7 +1129,7 @@ export function StringTable({
     returnElement: HTMLElement | null = null,
   ) {
     const appBox = document
-      .getElementById("stv3-dense-demo")
+      .getElementById("stardew-i18n-translator")
       ?.getBoundingClientRect();
     setActiveIdentity(identity);
     setSelection((current) =>
@@ -1821,8 +1821,8 @@ export function StringTable({
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
   const gridStyle = {
-    "--stv3-key-column": String(columnWidths.key) + "px",
-    "--stv3-source-column": String(columnWidths.source) + "px",
+    "--translator-key-column": String(columnWidths.key) + "px",
+    "--translator-source-column": String(columnWidths.source) + "px",
   } as CSSProperties;
   const translationColumnLabel = targetLanguageLabel
     ? targetLanguageLabel.split(" (")[0] + " translation"
@@ -1840,14 +1840,14 @@ export function StringTable({
 
   if (rows === null) {
     return (
-      <div className="panel__empty stv3-empty-state" role="status">
+      <div className="panel__empty translator-empty-state" role="status">
         Loading strings…
       </div>
     );
   }
   if (error) {
     return (
-      <div className="panel__empty stv3-empty-state" role="alert">
+      <div className="panel__empty translator-empty-state" role="alert">
         {error}
       </div>
     );
@@ -1921,46 +1921,46 @@ export function StringTable({
   return (
     <div
       className={
-        "stringtable stv3-string-workbench" +
+        "stringtable translator-string-workbench" +
         (showFileColumn ? " stringtable--multifile" : "") +
-        (showModColumn ? " stv3-string-workbench--global" : "")
+        (showModColumn ? " translator-string-workbench--global" : "")
       }
       style={gridStyle}
       data-scope={effectiveScope}
     >
-      <div className="stv3-string-head">
-        <div className="stv3-string-title">
+      <div className="translator-string-head">
+        <div className="translator-string-title">
           <h1 tabIndex={-1}>
             {effectiveHeaderContext && (
-              <span className="stv3-string-parent-context">
+              <span className="translator-string-parent-context">
                 <span>{effectiveHeaderContext}</span>
                 <span aria-hidden="true">›</span>
               </span>
             )}
             <span>{effectiveHeaderTitle}</span>
           </h1>
-          <div className="stv3-string-meta">
+          <div className="translator-string-meta">
             {headerMetaItems.map((item, index) => (
               <span key={String(index) + "-" + item}>{item}</span>
             ))}
             {data.length > 0 && (
-              <span className="stv3-progress-inline" aria-hidden="true">
+              <span className="translator-progress-inline" aria-hidden="true">
                 <span style={{ width: String(workingProgress) + "%" }} />
               </span>
             )}
           </div>
         </div>
-        <div className="stv3-string-scope">
+        <div className="translator-string-scope">
           <span
-            className="stv3-string-scope-label"
-            id="stv3-string-scope-label"
+            className="translator-string-scope-label"
+            id="translator-string-scope-label"
           >
             Show strings from:
           </span>
           <div
-            className="stv3-scope-toggle"
+            className="translator-scope-toggle"
             role="group"
-            aria-labelledby="stv3-string-scope-label"
+            aria-labelledby="translator-string-scope-label"
           >
             <button
               type="button"
@@ -1984,14 +1984,14 @@ export function StringTable({
 
       <div
         className={
-          "stv3-string-toolbar" +
+          "translator-string-toolbar" +
           (selection.size > 0 ? " is-selection-active" : "")
         }
       >
-        <div className="stv3-string-search-line">
+        <div className="translator-string-search-line">
           <input
             ref={searchRef}
-            className="stv3-search"
+            className="translator-search"
             type="search"
             aria-label="Search strings"
             placeholder={
@@ -2010,7 +2010,7 @@ export function StringTable({
             }}
           />
           <div
-            className="stv3-query-summary"
+            className="translator-query-summary"
             aria-live="polite"
             aria-atomic="true"
           >
@@ -2026,7 +2026,7 @@ export function StringTable({
               effectiveIssuesOnly ||
               identityFilterSet) && (
               <button
-                className="stv3-query-clear"
+                className="translator-query-clear"
                 type="button"
                 onClick={clearFilters}
               >
@@ -2036,16 +2036,19 @@ export function StringTable({
           </div>
         </div>
 
-        <div className="stv3-filters" aria-label="Filter by string status">
+        <div
+          className="translator-filters"
+          aria-label="Filter by string status"
+        >
           <span
-            className="stv3-status-filter-set"
+            className="translator-status-filter-set"
             role="group"
             aria-label="Status"
           >
             {statusButtons.map((item) => (
               <button
                 key={item.value}
-                className="stv3-filter"
+                className="translator-filter"
                 type="button"
                 aria-pressed={effectiveStatus === item.value}
                 aria-description={
@@ -2075,19 +2078,19 @@ export function StringTable({
                 onClick={() => setStatusValue(item.value)}
               >
                 {item.label}{" "}
-                <span className="stv3-filter-count">{item.count}</span>
+                <span className="translator-filter-count">{item.count}</span>
               </button>
             ))}
           </span>
           {(issueCount > 0 || effectiveIssuesOnly) && (
             <>
               <span
-                className="stv3-filter-separator"
+                className="translator-filter-separator"
                 role="separator"
                 aria-orientation="vertical"
               />
               <button
-                className="stv3-filter stv3-issue-filter"
+                className="translator-filter translator-issue-filter"
                 type="button"
                 aria-pressed={effectiveIssuesOnly}
                 aria-description={STATUS_HELP.issues}
@@ -2103,21 +2106,23 @@ export function StringTable({
                 onClick={() => setIssuesValue(!effectiveIssuesOnly)}
               >
                 Validation issues{" "}
-                <span className="stv3-filter-count">{issueCount}</span>
+                <span className="translator-filter-count">{issueCount}</span>
               </button>
             </>
           )}
         </div>
 
-        <div className="stv3-bulk-wrap">
+        <div className="translator-bulk-wrap">
           {selection.size > 0 && (
-            <span className="stv3-selection-hint">Ctrl+click adds more</span>
+            <span className="translator-selection-hint">
+              Ctrl+click adds more
+            </span>
           )}
           {selection.size > 0 && (
             <>
               <button
                 ref={bulkTriggerRef}
-                className="stv3-button stv3-button-quiet stv3-bulk-button"
+                className="translator-button translator-button-quiet translator-bulk-button"
                 type="button"
                 aria-haspopup="menu"
                 aria-expanded={bulkMenuOpen}
@@ -2139,7 +2144,7 @@ export function StringTable({
                 <span>{selection.size} selected</span>
               </button>
               <button
-                className="stv3-query-clear"
+                className="translator-query-clear"
                 type="button"
                 aria-label="Clear selected strings"
                 onClick={() => {
@@ -2156,7 +2161,7 @@ export function StringTable({
           {bulkMenuOpen && (
             <div
               ref={bulkMenuRef}
-              className="stv3-popover"
+              className="translator-popover"
               role="menu"
               aria-label="Batch actions"
               onKeyDown={(event) =>
@@ -2169,7 +2174,7 @@ export function StringTable({
                 }
               }}
             >
-              <span className="stv3-popover-note" role="presentation">
+              <span className="translator-popover-note" role="presentation">
                 <strong>{selection.size} selected</strong> ·{" "}
                 <span>{batchEligibleRows.length} Open/Changed exportable</span>
               </span>
@@ -2201,18 +2206,18 @@ export function StringTable({
         </div>
       </div>
 
-      <div className="stv3-table-wrap">
-        <span className="stv3-sr-only" id="stv3-table-help">
+      <div className="translator-table-wrap">
+        <span className="translator-sr-only" id="translator-table-help">
           Use Up and Down Arrow to move between rows, Enter to edit, Space to
           select, and Shift plus F10 for row actions.
         </span>
         {visible.length === 0 ? (
-          <div className="tableempty stv3-empty-state">
+          <div className="tableempty translator-empty-state">
             <SearchX aria-hidden="true" />
             <strong>No matching strings</strong>
             <span>Change the filter, scope, or search text.</span>
             <button
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               type="button"
               onClick={clearFilters}
             >
@@ -2221,14 +2226,14 @@ export function StringTable({
           </div>
         ) : (
           <div
-            className="stv3-string-table"
+            className="translator-string-table"
             role="table"
             aria-label="Translation strings"
-            aria-describedby="stv3-table-help"
+            aria-describedby="translator-table-help"
             style={{ minWidth: tableMinWidth }}
           >
             <div
-              className="stringrow stringrow--head stv3-string-table-head"
+              className="stringrow stringrow--head translator-string-table-head"
               role="row"
               style={{
                 gridTemplateColumns,
@@ -2238,7 +2243,7 @@ export function StringTable({
               }}
             >
               <span
-                className="stv3-select-col"
+                className="translator-select-col"
                 role="columnheader"
                 style={{
                   height: "27px",
@@ -2249,7 +2254,7 @@ export function StringTable({
               >
                 <input
                   ref={selectAllRef}
-                  className="stv3-selection-box"
+                  className="translator-selection-box"
                   type="checkbox"
                   aria-label="Select all visible strings"
                   checked={allVisibleSelected}
@@ -2308,7 +2313,7 @@ export function StringTable({
                 )}
               />
               <span
-                className="stv3-row-actions-col"
+                className="translator-row-actions-col"
                 role="columnheader"
                 aria-label="Row actions"
                 style={{ gridColumn: "-2 / -1" }}
@@ -2317,7 +2322,7 @@ export function StringTable({
 
             <div
               ref={parentRef}
-              className="stringtable__body stv3-string-table-body"
+              className="stringtable__body translator-string-table-body"
               role="rowgroup"
               onKeyDown={onBodyKeyDown}
             >
@@ -2335,7 +2340,7 @@ export function StringTable({
                     return (
                       <div
                         key={"section-" + item.index + "-" + entry.title}
-                        className="sectionrow stv3-section-row"
+                        className="sectionrow translator-section-row"
                         style={{
                           position: "absolute",
                           top: 0,
@@ -2408,7 +2413,7 @@ export function StringTable({
                         if (
                           next &&
                           !next.matches(".stringrow--data") &&
-                          !next.closest(".stv3-context-menu")
+                          !next.closest(".translator-context-menu")
                         ) {
                           rowFocusActive.current = false;
                         }
@@ -2427,7 +2432,7 @@ export function StringTable({
       {statusTooltip && (
         <div
           ref={statusTooltipRef}
-          className="stv3-status-tooltip"
+          className="translator-status-tooltip"
           role="tooltip"
           style={{ left: statusTooltip.left, top: statusTooltip.top }}
         >
@@ -2479,7 +2484,7 @@ export function StringTable({
       {contextMenu && (
         <>
           <div
-            className="ctxmenu__scrim stv3-context-scrim"
+            className="ctxmenu__scrim translator-context-scrim"
             onMouseDown={() => closeContextMenu(false)}
             onContextMenu={(event) => {
               event.preventDefault();
@@ -2488,7 +2493,7 @@ export function StringTable({
           />
           <ul
             ref={contextMenuRef}
-            className="ctxmenu stv3-context-menu"
+            className="ctxmenu translator-context-menu"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             role="menu"
             aria-label="String actions"
@@ -2505,7 +2510,7 @@ export function StringTable({
             }}
           >
             {selection.size > 1 && (
-              <li className="ctxmenu__count stv3-popover-note">
+              <li className="ctxmenu__count translator-popover-note">
                 {selection.size} selected
               </li>
             )}
@@ -2524,10 +2529,10 @@ export function StringTable({
                   )
                 }
               >
-                <span className="stv3-menu-label">
+                <span className="translator-menu-label">
                   <Pencil aria-hidden="true" /> Edit string
                 </span>
-                <span className="stv3-context-shortcut">
+                <span className="translator-context-shortcut">
                   {displayShortcut(shortcuts["table.edit"])}
                 </span>
               </button>
@@ -2644,11 +2649,11 @@ function ActionButtons({
         }
         onClick={onAi}
       >
-        <span className="stv3-menu-label">
+        <span className="translator-menu-label">
           <Sparkles aria-hidden="true" /> Translate selected with AI
         </span>
         {localAiCount !== undefined && (
-          <span className="stv3-context-shortcut">({localAiCount})</span>
+          <span className="translator-context-shortcut">({localAiCount})</span>
         )}
       </MenuAction>
       <MenuAction
@@ -2659,12 +2664,12 @@ function ActionButtons({
         }
         onClick={onLlmExport}
       >
-        <span className="stv3-menu-label">
+        <span className="translator-menu-label">
           <FileJson aria-hidden="true" />{" "}
           {listItems ? "Export LLM batch" : "Export selection as LLM batch"}
         </span>
         {llmCount !== undefined && (
-          <span className="stv3-context-shortcut">({llmCount})</span>
+          <span className="translator-context-shortcut">({llmCount})</span>
         )}
       </MenuAction>
     </>
@@ -2705,7 +2710,9 @@ function MenuAction({
 }
 
 function MenuSeparator({ listItem }: { listItem: boolean }) {
-  const separator = <div className="stv3-popover-divider" role="separator" />;
+  const separator = (
+    <div className="translator-popover-divider" role="separator" />
+  );
   return listItem ? <li role="none">{separator}</li> : separator;
 }
 
@@ -2758,8 +2765,8 @@ function ColumnResizer({
     <span
       ref={handleRef}
       className={
-        "stv3-column-resizer" +
-        (column === "target" ? " stv3-column-resizer--target" : "")
+        "translator-column-resizer" +
+        (column === "target" ? " translator-column-resizer--target" : "")
       }
       role="separator"
       aria-label={ariaLabel}
@@ -2797,10 +2804,10 @@ function SortHeader({
   return (
     <span
       className={
-        "stv3-" +
+        "translator-" +
         (col === "target" ? "translation" : col) +
         "-col" +
-        (resizer ? " stv3-resizable-col" : "")
+        (resizer ? " translator-resizable-col" : "")
       }
       role="columnheader"
       style={{
@@ -2818,7 +2825,7 @@ function SortHeader({
       <button
         type="button"
         className={
-          "stringrow__sort stv3-sort-button" +
+          "stringrow__sort translator-sort-button" +
           (active ? " stringrow__sort--active" : "")
         }
         onClick={() => onSort(col)}
@@ -2927,7 +2934,7 @@ function RowView({
   return (
     <div
       className={
-        "stringrow stringrow--data stv3-string-row" +
+        "stringrow stringrow--data translator-string-row" +
         (selected ? " stringrow--selected is-selected" : "")
       }
       style={{
@@ -2973,12 +2980,12 @@ function RowView({
       }}
     >
       <span
-        className="stv3-select-col"
+        className="translator-select-col"
         role="cell"
         style={{ padding: "4px 8px" }}
       >
         <input
-          className="stv3-selection-box"
+          className="translator-selection-box"
           type="checkbox"
           aria-label={"Select " + row.key}
           checked={selected}
@@ -2990,7 +2997,7 @@ function RowView({
       {showMod && (
         <span
           className={
-            "stv3-global-mod-col" + (modMatches ? " is-search-match" : "")
+            "translator-global-mod-col" + (modMatches ? " is-search-match" : "")
           }
           role="cell"
           data-search-field="mod"
@@ -2999,7 +3006,7 @@ function RowView({
         >
           <span
             ref={modOverflow.ref}
-            className="stv3-cell-clip stv3-global-mod-text"
+            className="translator-cell-clip translator-global-mod-text"
             title={modOverflow.title}
           >
             {row.modName}
@@ -3009,7 +3016,7 @@ function RowView({
       {showFile && (
         <span
           className={
-            "stringrow__file stv3-file-col" +
+            "stringrow__file translator-file-col" +
             (fileMatches ? " is-search-match" : "")
           }
           role="cell"
@@ -3019,7 +3026,7 @@ function RowView({
         >
           <span
             ref={fileOverflow.ref}
-            className="stv3-cell-clip"
+            className="translator-cell-clip"
             title={fileOverflow.title}
           >
             {row.file}
@@ -3027,13 +3034,13 @@ function RowView({
         </span>
       )}
       <span
-        className="stringrow__status stv3-status-col"
+        className="stringrow__status translator-status-col"
         role="cell"
         style={{ minWidth: 0, padding: "4px 8px" }}
       >
         <span
           className={
-            "stv3-state" +
+            "translator-state" +
             (displayStatus.className ? " " + displayStatus.className : "")
           }
           data-status-help={statusHelp}
@@ -3048,7 +3055,8 @@ function RowView({
       </span>
       <span
         className={
-          "stringrow__key stv3-key-col" + (keyMatches ? " is-search-match" : "")
+          "stringrow__key translator-key-col" +
+          (keyMatches ? " is-search-match" : "")
         }
         role="cell"
         data-search-field="key"
@@ -3058,7 +3066,7 @@ function RowView({
         <button
           ref={keyOverflow.ref}
           type="button"
-          className="stv3-key-button"
+          className="translator-key-button"
           title={keyOverflow.title}
           tabIndex={-1}
           onClick={(event) => {
@@ -3072,7 +3080,7 @@ function RowView({
       </span>
       <span
         className={
-          "stringrow__src stv3-source-col" +
+          "stringrow__src translator-source-col" +
           (sourceMatches ? " is-search-match" : "")
         }
         role="cell"
@@ -3084,7 +3092,7 @@ function RowView({
       >
         <span
           ref={sourceOverflow.ref}
-          className="stv3-cell-clip"
+          className="translator-cell-clip"
           title={sourceOverflow.title}
         >
           {row.source}
@@ -3092,8 +3100,8 @@ function RowView({
       </span>
       <span
         className={
-          "stringrow__tgt stv3-translation-col" +
-          " stv3-translation-cell" +
+          "stringrow__tgt translator-translation-col" +
+          " translator-translation-cell" +
           (targetMatches ? " is-search-match" : "") +
           (row.target ? "" : " stringrow__tgt--empty") +
           (severity ? " has-validation-issue" : "")
@@ -3110,21 +3118,21 @@ function RowView({
       >
         <span
           ref={targetOverflow.ref}
-          className="stv3-cell-clip"
+          className="translator-cell-clip"
           title={targetOverflow.title}
         >
           {row.target || "—"}
         </span>
       </span>
       <span
-        className="stv3-row-actions-col"
+        className="translator-row-actions-col"
         role="cell"
         aria-label={`Actions for ${row.key}`}
         style={{ gridColumn: "-2 / -1" }}
       >
         {severity && (
           <button
-            className="stv3-inline-validation"
+            className="translator-inline-validation"
             type="button"
             aria-label={issueHelp}
             data-status-help={issueHelp}
@@ -3146,7 +3154,7 @@ function RowView({
           </button>
         )}
         <button
-          className="stv3-row-more"
+          className="translator-row-more"
           type="button"
           aria-label={"More actions for " + row.key}
           aria-haspopup="menu"

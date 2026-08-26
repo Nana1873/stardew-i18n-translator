@@ -745,28 +745,28 @@ export function StringEditor({
   const discardSuggestion = row.status === "review-needed";
 
   return (
-    <div className="editor__backdrop stv3-editor-overlay">
+    <div className="editor__backdrop translator-editor-overlay">
       <section
         ref={dialogRef}
-        className="editor stv3-editor"
+        className="editor translator-editor"
         role="dialog"
         aria-modal="true"
-        aria-labelledby="stv3-editor-title"
-        aria-describedby="stv3-editor-context-description"
+        aria-labelledby="translator-editor-title"
+        aria-describedby="translator-editor-context-description"
       >
-        <header className="editor__meta stv3-editor-head">
-          <span className="editor__title stv3-editor-title">
-            <span className="stv3-kicker">Edit string</span>
-            <h2 className="stv3-heading" id="stv3-editor-title">
+        <header className="editor__meta translator-editor-head">
+          <span className="editor__title translator-editor-title">
+            <span className="translator-kicker">Edit string</span>
+            <h2 className="translator-heading" id="translator-editor-title">
               {row.key}
             </h2>
           </span>
-          <span className="editor__meta-right stv3-editor-meta">
+          <span className="editor__meta-right translator-editor-meta">
             <span className="editor__crumbs">
-              <span id="stv3-editor-context-description">
+              <span id="translator-editor-context-description">
                 {modName} · {row.file}
               </span>{" "}
-              <span className="stv3-editor-meta-separator" aria-hidden>
+              <span className="translator-editor-meta-separator" aria-hidden>
                 ·
               </span>{" "}
               {reviewProgress
@@ -774,7 +774,7 @@ export function StringEditor({
                 : `${index + 1} / ${total}`}
             </span>
             <span
-              className={`editor__status stv3-state${
+              className={`editor__status translator-state${
                 shownStatus === "translated"
                   ? " is-ready"
                   : shownStatus === "review-needed"
@@ -821,7 +821,7 @@ export function StringEditor({
               {shownStatusLabel}
             </span>
             <button
-              className="stv3-icon-button"
+              className="translator-icon-button"
               type="button"
               aria-label="Close editor"
               onClick={requestClose}
@@ -832,17 +832,17 @@ export function StringEditor({
           </span>
         </header>
 
-        <div className="stv3-editor-body">
+        <div className="translator-editor-body">
           {/* Reserved slots (SPEC §§5, 7 and 10): tokens + glossary rows exist on every
             string — empty-state text when N/A — so the panes and the action
             bar never move during a Save & next run. */}
-          <div className="stv3-editor-support">
+          <div className="translator-editor-support">
             {(sourceTokenCounts.size > 0 || addedTokenCounts.length > 0) && (
-              <div className="editor__slot stv3-editor-support-row">
-                <span className="editor__slot-label stv3-editor-support-label">
+              <div className="editor__slot translator-editor-support-row">
+                <span className="editor__slot-label translator-editor-support-label">
                   Protected tokens
                 </span>
-                <span className="editor__slot-body stv3-glossary-hints">
+                <span className="editor__slot-body translator-glossary-hints">
                   {sourceTokenCounts.size > 0 || addedTokenCounts.length > 0 ? (
                     <>
                       {[...sourceTokenCounts].map(([token, required], i) => {
@@ -858,7 +858,7 @@ export function StringEditor({
                         return satisfied ? (
                           <span
                             key={`source-${i}-${token}`}
-                            className="editor__token stv3-token editor__token--done is-valid"
+                            className="editor__token translator-token editor__token--done is-valid"
                             title={`${token} — all present`}
                             aria-label={`Token ${token} is present in full`}
                           >
@@ -868,7 +868,7 @@ export function StringEditor({
                           <button
                             key={`source-${i}-${token}`}
                             type="button"
-                            className={`editor__token stv3-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`}
+                            className={`editor__token translator-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`}
                             title={
                               acceptedTokenMismatch
                                 ? `${token} — mismatch explicitly accepted for this exact translation`
@@ -884,7 +884,7 @@ export function StringEditor({
                       {addedTokenCounts.map(([token, found], i) => (
                         <span
                           key={`added-${i}-${token}`}
-                          className={`editor__token stv3-token is-missing${acceptedTokenMismatch ? " is-accepted" : ""}`}
+                          className={`editor__token translator-token is-missing${acceptedTokenMismatch ? " is-accepted" : ""}`}
                           aria-label={`Extra token ${token}`}
                           title={`Extra token ${token}`}
                         >
@@ -893,29 +893,31 @@ export function StringEditor({
                         </span>
                       ))}
                       {hasMissingTokens && (
-                        <span className="stv3-kicker">
+                        <span className="translator-kicker">
                           Click a missing token to insert it
                         </span>
                       )}
                     </>
                   ) : (
-                    <span className="editor__slot-empty stv3-kicker">None</span>
+                    <span className="editor__slot-empty translator-kicker">
+                      None
+                    </span>
                   )}
                 </span>
               </div>
             )}
 
             {glossaryMatches.length > 0 && (
-              <div className="editor__slot stv3-editor-support-row">
-                <span className="editor__slot-label stv3-editor-support-label">
+              <div className="editor__slot translator-editor-support-row">
+                <span className="editor__slot-label translator-editor-support-label">
                   Glossary hints
                 </span>
-                <span className="editor__slot-body stv3-glossary-hints">
+                <span className="editor__slot-body translator-glossary-hints">
                   {glossaryMatches.length > 0 ? (
                     glossaryMatches.map((match, i) => (
                       <span
                         key={i}
-                        className="editor__gloss stv3-glossary-term"
+                        className="editor__gloss translator-glossary-term"
                         title={KIND_LABEL[match.kind]}
                       >
                         <span className="editor__gloss-kind" aria-hidden>
@@ -925,7 +927,7 @@ export function StringEditor({
                       </span>
                     ))
                   ) : (
-                    <span className="editor__slot-empty stv3-kicker">
+                    <span className="editor__slot-empty translator-kicker">
                       No matching hints
                     </span>
                   )}
@@ -933,11 +935,11 @@ export function StringEditor({
               </div>
             )}
             {(row.status === "review-needed" || aiDraftPending) && (
-              <div className="stv3-editor-support-row">
-                <span className="stv3-editor-support-label">
+              <div className="translator-editor-support-row">
+                <span className="translator-editor-support-label">
                   Suggestion source
                 </span>
-                <span className="stv3-provenance-copy">
+                <span className="translator-provenance-copy">
                   <strong>{aiProvenance?.engine ?? "Unavailable"}</strong> ·{" "}
                   {aiProvenance?.persisted
                     ? "Saved to Review"
@@ -952,16 +954,16 @@ export function StringEditor({
             )}
           </div>
 
-          <div className="editor__panes stv3-editor-columns">
-            <div className="editor__pane stv3-field stv3-editor-field">
-              <div className="stv3-editor-field-head">
+          <div className="editor__panes translator-editor-columns">
+            <div className="editor__pane translator-field translator-editor-field">
+              <div className="translator-editor-field-head">
                 <span>
                   {row.status === "outdated"
                     ? "English source update"
                     : "English source"}
                 </span>
                 <button
-                  className="stv3-icon-button stv3-editor-copy"
+                  className="translator-icon-button translator-editor-copy"
                   type="button"
                   aria-label="Copy current English source"
                   onClick={() => void copyText("source")}
@@ -974,27 +976,27 @@ export function StringEditor({
                 </button>
               </div>
               {row.status === "outdated" ? (
-                <div className="stv3-update-source">
-                  <div className="stv3-update-source-row is-previous">
+                <div className="translator-update-source">
+                  <div className="translator-update-source-row is-previous">
                     <span>Previous English</span>
                     <div>Unavailable</div>
                   </div>
-                  <div className="stv3-update-source-row is-current">
+                  <div className="translator-update-source-row is-current">
                     <span>Current English</span>
                     <div>{row.source}</div>
                   </div>
                 </div>
               ) : (
-                <div className="stv3-editor-source">{row.source}</div>
+                <div className="translator-editor-source">{row.source}</div>
               )}
             </div>
-            <div className="editor__pane stv3-field stv3-editor-field">
-              <span className="stv3-editor-field-head">
-                <label htmlFor="stv3-editor-translation">
+            <div className="editor__pane translator-field translator-editor-field">
+              <span className="translator-editor-field-head">
+                <label htmlFor="translator-editor-translation">
                   {targetFieldLabel}
                 </label>
                 <button
-                  className="stv3-icon-button stv3-editor-copy"
+                  className="translator-icon-button translator-editor-copy"
                   type="button"
                   aria-label="Copy translation"
                   onClick={(event) => {
@@ -1010,8 +1012,8 @@ export function StringEditor({
                 </button>
               </span>
               <textarea
-                id="stv3-editor-translation"
-                className="stv3-textarea"
+                id="translator-editor-translation"
+                className="translator-textarea"
                 ref={textareaRef}
                 value={value}
                 onChange={(event) => editValue(event.target.value)}
@@ -1022,7 +1024,7 @@ export function StringEditor({
 
           {/* Reserved validation line (fixed min-height — see editor__slot note). */}
           <div
-            className={`editor__validation stv3-validation${unacceptedErrors.length > 0 ? " is-error" : acceptedTokenMismatch || visibleIssues.length > 0 ? " is-warning" : ""}`}
+            className={`editor__validation translator-validation${unacceptedErrors.length > 0 ? " is-error" : acceptedTokenMismatch || visibleIssues.length > 0 ? " is-warning" : ""}`}
             role="status"
             aria-live="polite"
           >
@@ -1058,13 +1060,13 @@ export function StringEditor({
 
           {translateMsg && translateMsgKind !== "note" && (
             <div
-              className="stv3-flow-callout is-error stv3-editor-ai-error"
+              className="translator-flow-callout is-error translator-editor-ai-error"
               role="alert"
             >
               <span>{translateMsg}</span>
               {translateMsgKind === "ai-error" && onOpenEngineSettings && (
                 <button
-                  className="stv3-button stv3-button-quiet"
+                  className="translator-button translator-button-quiet"
                   type="button"
                   onClick={onOpenEngineSettings}
                 >
@@ -1076,29 +1078,32 @@ export function StringEditor({
         </div>
 
         {(pendingSave || pendingMove !== null) && (
-          <div className="stv3-flow-overlay">
+          <div className="translator-flow-overlay">
             <section
               ref={saveAnywayRef}
-              className="stv3-flow-dialog"
+              className="translator-flow-dialog"
               role="dialog"
               aria-modal="true"
-              aria-labelledby="stv3-save-anyway-title"
-              aria-describedby="stv3-save-anyway-description"
+              aria-labelledby="translator-save-anyway-title"
+              aria-describedby="translator-save-anyway-description"
             >
-              <div className="stv3-flow-head">
+              <div className="translator-flow-head">
                 <div>
-                  <h2 className="stv3-heading" id="stv3-save-anyway-title">
+                  <h2
+                    className="translator-heading"
+                    id="translator-save-anyway-title"
+                  >
                     Protected token missing
                   </h2>
                   <div
-                    className="stv3-kicker"
-                    id="stv3-save-anyway-description"
+                    className="translator-kicker"
+                    id="translator-save-anyway-description"
                   >
                     This translation may appear incomplete or broken in game.
                   </div>
                 </div>
                 <button
-                  className="stv3-icon-button"
+                  className="translator-icon-button"
                   type="button"
                   aria-label="Return to editor"
                   onClick={() => {
@@ -1110,18 +1115,18 @@ export function StringEditor({
                   <X aria-hidden />
                 </button>
               </div>
-              <div className="stv3-flow-body">
+              <div className="translator-flow-body">
                 {blockingTokenIssues.map((issue) => (
                   <p key={issue.message}>{issue.message}</p>
                 ))}
-                <div className="stv3-flow-callout is-warning">
+                <div className="translator-flow-callout is-warning">
                   “Save anyway” applies only to this source revision and this
                   exact translation. Any later edit requires confirmation again.
                 </div>
               </div>
-              <div className="stv3-flow-foot">
+              <div className="translator-flow-foot">
                 <button
-                  className="stv3-button stv3-button-quiet"
+                  className="translator-button translator-button-quiet"
                   type="button"
                   onClick={() => {
                     setPendingSave(null);
@@ -1133,7 +1138,7 @@ export function StringEditor({
                 </button>
                 <button
                   type="button"
-                  className="editor__save-anyway stv3-button stv3-button-primary"
+                  className="editor__save-anyway translator-button translator-button-primary"
                   onClick={() => {
                     if (pendingSave) void persistConfirmed(pendingSave, true);
                     else if (pendingMove !== null)
@@ -1147,11 +1152,11 @@ export function StringEditor({
           </div>
         )}
 
-        <footer className="editor__footer stv3-editor-actions">
-          <div className="stv3-command-actions">
+        <footer className="editor__footer translator-editor-actions">
+          <div className="translator-command-actions">
             <button
               type="button"
-              className="editor__iconbtn stv3-icon-button"
+              className="editor__iconbtn translator-icon-button"
               onClick={() => void navigate(-1)}
               disabled={saving || translating || index === 0}
               aria-label="Previous string"
@@ -1161,7 +1166,7 @@ export function StringEditor({
             </button>
             <button
               type="button"
-              className="editor__iconbtn stv3-icon-button"
+              className="editor__iconbtn translator-icon-button"
               onClick={() => void navigate(1)}
               disabled={saving || translating || index >= total - 1}
               aria-label="Next string"
@@ -1171,7 +1176,7 @@ export function StringEditor({
             </button>
             <button
               type="button"
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               onClick={keepOriginal}
               disabled={saving || translating}
               title={`Keep the original text (${displayShortcut(shortcuts["editor.keepOriginal"])})`}
@@ -1180,7 +1185,7 @@ export function StringEditor({
             </button>
             <button
               type="button"
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               onClick={reset}
               disabled={saving || translating}
               aria-label={
@@ -1195,7 +1200,7 @@ export function StringEditor({
             </button>
             <button
               type="button"
-              className="editor__ai-btn stv3-button stv3-button-quiet"
+              className="editor__ai-btn translator-button translator-button-quiet"
               onClick={() => void handleTranslate()}
               disabled={translating || saving || !translationAllowed}
               title={
@@ -1207,13 +1212,15 @@ export function StringEditor({
             >
               <Sparkles aria-hidden />
               {translating ? "Translating…" : "Translate with AI"}{" "}
-              <span className="stv3-context-shortcut">{aiEngineLabel}</span>
+              <span className="translator-context-shortcut">
+                {aiEngineLabel}
+              </span>
             </button>
           </div>
-          <div className="stv3-command-actions">
+          <div className="translator-command-actions">
             <button
               type="button"
-              className="stv3-button stv3-button-quiet"
+              className="translator-button translator-button-quiet"
               onClick={() => requestConfirmedSave("close")}
               disabled={saving || translating}
               title={`${saveLabel} (${displayShortcut(shortcuts["editor.save"])})`}
@@ -1222,7 +1229,7 @@ export function StringEditor({
             </button>
             <button
               type="button"
-              className="editor__save stv3-button stv3-button-primary"
+              className="editor__save translator-button translator-button-primary"
               onClick={() => requestConfirmedSave("next")}
               disabled={saving || translating}
               title={`${saveNextLabel} (${displayShortcut(shortcuts["editor.saveNext"])})`}
@@ -1236,7 +1243,7 @@ export function StringEditor({
         {statusTooltip && (
           <div
             ref={statusTooltipRef}
-            className="stv3-status-tooltip"
+            className="translator-status-tooltip"
             role="tooltip"
             style={{ left: statusTooltip.left, top: statusTooltip.top }}
           >
@@ -1245,28 +1252,34 @@ export function StringEditor({
         )}
 
         {discardOpen && (
-          <div className="stv3-flow-overlay">
+          <div className="translator-flow-overlay">
             <section
               ref={discardRef}
-              className="stv3-flow-dialog stv3-flow-dialog-compact"
+              className="translator-flow-dialog translator-flow-dialog-compact"
               role="dialog"
               aria-modal="true"
-              aria-labelledby="stv3-discard-title"
-              aria-describedby="stv3-discard-description"
+              aria-labelledby="translator-discard-title"
+              aria-describedby="translator-discard-description"
             >
-              <div className="stv3-flow-head">
+              <div className="translator-flow-head">
                 <div>
-                  <h2 className="stv3-heading" id="stv3-discard-title">
+                  <h2
+                    className="translator-heading"
+                    id="translator-discard-title"
+                  >
                     Discard changes?
                   </h2>
-                  <div className="stv3-kicker" id="stv3-discard-description">
+                  <div
+                    className="translator-kicker"
+                    id="translator-discard-description"
+                  >
                     The current translation has not been saved yet.
                   </div>
                 </div>
               </div>
-              <div className="stv3-flow-foot">
+              <div className="translator-flow-foot">
                 <button
-                  className="stv3-button stv3-button-quiet"
+                  className="translator-button translator-button-quiet"
                   type="button"
                   onClick={() => {
                     setDiscardOpen(false);
@@ -1276,7 +1289,7 @@ export function StringEditor({
                   Continue editing
                 </button>
                 <button
-                  className="stv3-button stv3-button-danger"
+                  className="translator-button translator-button-danger"
                   type="button"
                   onClick={onClose}
                 >

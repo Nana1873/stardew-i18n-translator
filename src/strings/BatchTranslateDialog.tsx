@@ -228,32 +228,32 @@ export function BatchTranslateDialog({
   const indeterminate = Boolean(onLiveRun && !hasLiveProgress);
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog stv3-ai-progress-dialog"
+        className="translator-flow-dialog translator-ai-progress-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="AI translation progress"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">
+            <h2 className="translator-heading">
               <Sparkles aria-hidden="true" />{" "}
               {cancelRequested
                 ? "Cancelling…"
                 : "Translating selected strings…"}
             </h2>
-            <div className="stv3-kicker">
+            <div className="translator-kicker">
               {engine?.label ?? "AI"} · completed suggestions enter Review ·{" "}
               {modName}
             </div>
           </div>
         </div>
 
-        <div className="stv3-flow-body">
-          <div className="stv3-ai-count">
+        <div className="translator-flow-body">
+          <div className="translator-ai-count">
             <span>
               {currentKey ? (
                 <>
@@ -267,7 +267,7 @@ export function BatchTranslateDialog({
               {done} / {total}
             </strong>
           </div>
-          <div className="stv3-progress-row">
+          <div className="translator-progress-row">
             <span
               role="progressbar"
               aria-label="AI translation progress"
@@ -282,21 +282,21 @@ export function BatchTranslateDialog({
               data-indeterminate={indeterminate ? "true" : undefined}
               style={
                 {
-                  "--stv3-batch-progress": `${indeterminate ? 35 : progress}%`,
+                  "--translator-batch-progress": `${indeterminate ? 35 : progress}%`,
                 } as CSSProperties
               }
             />
           </div>
           {cancelError && (
-            <div className="stv3-flow-callout is-error" role="alert">
+            <div className="translator-flow-callout is-error" role="alert">
               {cancelError}
             </div>
           )}
         </div>
 
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             onClick={cancel}
             disabled={cancelRequested}

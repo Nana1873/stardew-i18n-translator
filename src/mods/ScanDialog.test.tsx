@@ -70,17 +70,21 @@ describe("ScanDialog", () => {
     expect(screen.getAllByText(/invalid manifest JSON/)).toHaveLength(2);
     expect(screen.queryByText("Unavailable")).toBeNull();
     expect(
-      screen.getByText("sources changed").closest(".stv3-preflight-metric"),
+      screen
+        .getByText("sources changed")
+        .closest(".translator-preflight-metric"),
     ).toHaveTextContent("2sources changed");
     expect(
-      screen.getByText("strings added").closest(".stv3-preflight-metric"),
+      screen.getByText("strings added").closest(".translator-preflight-metric"),
     ).toHaveTextContent("3strings added");
     expect(
-      screen.getByText("strings removed").closest(".stv3-preflight-metric"),
+      screen
+        .getByText("strings removed")
+        .closest(".translator-preflight-metric"),
     ).toHaveTextContent("1strings removed");
     const skippedMetric = screen
       .getByText("components skipped")
-      .closest(".stv3-preflight-metric");
+      .closest(".translator-preflight-metric");
     expect(skippedMetric).toHaveTextContent("1components skipped");
     expect(screen.getByText("Broken Component")).toBeInTheDocument();
     expect(screen.getByText("Package: Sample Pack")).toBeInTheDocument();
@@ -103,7 +107,7 @@ describe("ScanDialog", () => {
 
     let skippedMetric = screen
       .getByText("components skipped")
-      .closest(".stv3-preflight-metric");
+      .closest(".translator-preflight-metric");
     expect(skippedMetric).toHaveTextContent("0components skipped");
     expect(screen.queryByText("No components were skipped.")).toBeNull();
     expect(
@@ -123,7 +127,7 @@ describe("ScanDialog", () => {
 
     skippedMetric = screen
       .getByText("components skipped")
-      .closest(".stv3-preflight-metric");
+      .closest(".translator-preflight-metric");
     expect(skippedMetric).toHaveTextContent("Unavailablecomponents skipped");
     expect(
       screen.getByText(/Skipped-component details unavailable/),

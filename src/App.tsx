@@ -1686,7 +1686,7 @@ export function App() {
     window.requestAnimationFrame(() => {
       const review = Array.from(
         document.querySelectorAll<HTMLButtonElement>(
-          '.stv3-filter[aria-pressed="true"]',
+          '.translator-filter[aria-pressed="true"]',
         ),
       ).find((button) => button.textContent?.includes("Review"));
       review?.focus();
@@ -1778,9 +1778,9 @@ export function App() {
   );
 
   return (
-    <div id="stv3-dense-demo" className="app stv3-demo">
-      <div className="stv3-window">
-        <V3Toolbar
+    <div id="stardew-i18n-translator" className="app">
+      <div className="translator-window">
+        <AppToolbar
           activeView={view === "work" ? "workspace" : "overview"}
           onWorkspace={() => {
             setView("work");
@@ -1822,7 +1822,7 @@ export function App() {
         />
         {view === "home" ? (
           <section
-            className="stv3-view-panel is-active"
+            className="translator-view-panel is-active"
             aria-label="Translation overview"
           >
             <Dashboard
@@ -1851,29 +1851,29 @@ export function App() {
           </section>
         ) : (
           <section
-            className="stv3-view-panel is-active"
+            className="translator-view-panel is-active"
             aria-label="Translation workspace"
           >
             <div
-              className="workspace stv3-workbench"
+              className="workspace translator-workbench"
               style={
                 {
-                  "--stv3-mod-pane-width": `${modsWidth}px`,
+                  "--translator-mod-pane-width": `${modsWidth}px`,
                 } as CSSProperties
               }
             >
               <section
-                className={`panel panel--mods stv3-mod-pane${modsCollapsed ? " is-collapsed" : ""}`}
+                className={`panel panel--mods translator-mod-pane${modsCollapsed ? " is-collapsed" : ""}`}
                 aria-label="Mod list"
               >
-                <div className="panel__header stv3-pane-title">
+                <div className="panel__header translator-pane-title">
                   <div>
-                    <span className="stv3-pane-heading">
+                    <span className="translator-pane-heading">
                       Mods
                       {scan && (
                         <>
                           {" · "}
-                          <span className="stv3-pane-count">
+                          <span className="translator-pane-count">
                             {scan.modCount}
                           </span>
                         </>
@@ -1884,7 +1884,7 @@ export function App() {
                         {scan && inProgressMods > 0 && (
                           <>
                             <span className="panel__header-tail">
-                              <span className="stv3-pane-count">
+                              <span className="translator-pane-count">
                                 {inProgressMods}
                               </span>{" "}
                               in progress
@@ -1898,7 +1898,7 @@ export function App() {
                           </>
                         )}
                         <button
-                          className="panel__header-tail stv3-kicker-action"
+                          className="panel__header-tail translator-kicker-action"
                           type="button"
                           aria-label={
                             scan?.skippedComponents == null
@@ -1912,7 +1912,7 @@ export function App() {
                           {scan?.skippedComponents == null ? (
                             "Unavailable"
                           ) : (
-                            <span className="stv3-pane-count">
+                            <span className="translator-pane-count">
                               {scan.skippedComponents.length}
                             </span>
                           )}
@@ -1926,7 +1926,7 @@ export function App() {
                               ·
                             </span>
                             <button
-                              className="panel__warn stv3-kicker-action"
+                              className="panel__warn translator-kicker-action"
                               type="button"
                               onClick={() => openLatestScan(true)}
                             >
@@ -1940,9 +1940,9 @@ export function App() {
                       </span>
                     )}
                   </div>
-                  <div className="stv3-pane-title-actions">
+                  <div className="translator-pane-title-actions">
                     <button
-                      className="stv3-icon-button stv3-mod-pane-toggle"
+                      className="translator-icon-button translator-mod-pane-toggle"
                       type="button"
                       aria-label={
                         modsCollapsed ? "Expand mod list" : "Collapse mod list"
@@ -1963,7 +1963,7 @@ export function App() {
                 </div>
                 {scan && (
                   <input
-                    className="modlist__search stv3-search"
+                    className="modlist__search translator-search"
                     type="search"
                     placeholder="Filter mods …"
                     aria-label="Filter mods"
@@ -1987,7 +1987,7 @@ export function App() {
                 )}
               </section>
               <div
-                className="splitter stv3-pane-splitter"
+                className="splitter translator-pane-splitter"
                 role="separator"
                 aria-orientation="vertical"
                 aria-label="Resize mod list"
@@ -1999,7 +1999,7 @@ export function App() {
                 onKeyDown={resizePaneWithKeyboard}
               />
               <main
-                className="panel panel--strings stv3-string-pane"
+                className="panel panel--strings translator-string-pane"
                 aria-label="String table"
               >
                 <StringTable
@@ -2305,7 +2305,7 @@ export function App() {
         )}
         {toast && (
           <div
-            className={`stv3-toast is-${toast.tone}`}
+            className={`translator-toast is-${toast.tone}`}
             role={toast.tone === "error" ? "alert" : "status"}
             aria-live={toast.tone === "error" ? "assertive" : "polite"}
             data-visible="true"
@@ -2321,7 +2321,7 @@ export function App() {
             <span>{toast.message}</span>
             {toast.tone === "error" && (
               <button
-                className="stv3-toast-dismiss"
+                className="translator-toast-dismiss"
                 type="button"
                 aria-label="Dismiss notification"
                 onClick={() => setToast(null)}
@@ -2361,7 +2361,7 @@ function LlmBatchDropOverlay({
   }
   return (
     <div
-      className="stv3-native-drop-state stv3-file-choice stv3-drop-zone is-dragging"
+      className="translator-native-drop-state translator-file-choice translator-drop-zone is-dragging"
       role="status"
       aria-live="polite"
       data-drop-valid={valid ? "true" : "false"}
@@ -2371,14 +2371,14 @@ function LlmBatchDropOverlay({
         <br />
         <code>{paths.length === 1 ? paths[0] : detail}</code>
       </span>
-      <span className="stv3-kicker">
+      <span className="translator-kicker">
         {paths.length === 1 ? detail : `${paths.length} files selected`}
       </span>
     </div>
   );
 }
 
-function V3Toolbar({
+function AppToolbar({
   activeView,
   onWorkspace,
   onOverview,
@@ -2493,10 +2493,10 @@ function V3Toolbar({
   }
 
   return (
-    <div className="stv3-commandbar">
-      <nav className="stv3-command-nav" aria-label="Main views">
+    <div className="translator-commandbar">
+      <nav className="translator-command-nav" aria-label="Main views">
         <button
-          className="stv3-nav-button"
+          className="translator-nav-button"
           type="button"
           aria-pressed={activeView === "overview"}
           onClick={onOverview}
@@ -2504,7 +2504,7 @@ function V3Toolbar({
           <LayoutDashboard aria-hidden /> Overview
         </button>
         <button
-          className="stv3-nav-button"
+          className="translator-nav-button"
           type="button"
           aria-pressed={activeView === "workspace"}
           onClick={onWorkspace}
@@ -2512,9 +2512,9 @@ function V3Toolbar({
           <Table2 aria-hidden /> Workspace
         </button>
       </nav>
-      <div className="stv3-command-actions">
+      <div className="translator-command-actions">
         <button
-          className="stv3-button stv3-button-quiet"
+          className="translator-button translator-button-quiet"
           type="button"
           aria-label="Scan mods"
           title="Scan mods"
@@ -2522,12 +2522,12 @@ function V3Toolbar({
           disabled={!scanEnabled}
         >
           <RefreshCw aria-hidden className={scanning ? "is-spinning" : ""} />
-          <span className="stv3-action-label-compact">
+          <span className="translator-action-label-compact">
             {scanning ? "Scanning…" : "Scan"}
           </span>
         </button>
         <button
-          className="stv3-button stv3-button-quiet"
+          className="translator-button translator-button-quiet"
           type="button"
           aria-label="Import LLM batch"
           title="Import LLM batch"
@@ -2535,12 +2535,12 @@ function V3Toolbar({
           disabled={!importBatchEnabled}
         >
           <Download aria-hidden />
-          <span className="stv3-action-label-compact">Import …</span>
+          <span className="translator-action-label-compact">Import …</span>
         </button>
-        <div className="stv3-menu" ref={menuRef}>
+        <div className="translator-menu" ref={menuRef}>
           <button
             ref={exportTriggerRef}
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             aria-label="Export actions"
             title="Export actions"
@@ -2565,13 +2565,13 @@ function V3Toolbar({
             }
           >
             <Upload aria-hidden />
-            <span className="stv3-action-label-compact">
+            <span className="translator-action-label-compact">
               {exporting ? "Exporting…" : "Export …"}
             </span>
           </button>
           {exportOpen && (
             <div
-              className="stv3-popover"
+              className="translator-popover"
               role="menu"
               aria-label="Export"
               onKeyDown={handleExportMenuKey}
@@ -2593,7 +2593,7 @@ function V3Toolbar({
               >
                 <FolderUp aria-hidden /> Export current mod
               </button>
-              <div className="stv3-popover-divider" role="separator" />
+              <div className="translator-popover-divider" role="separator" />
               <button
                 type="button"
                 role="menuitem"
@@ -2610,8 +2610,8 @@ function V3Toolbar({
               >
                 <NotebookPen aria-hidden /> Translation notes
               </button>
-              <div className="stv3-popover-divider" role="separator" />
-              <span className="stv3-popover-note" role="presentation">
+              <div className="translator-popover-divider" role="separator" />
+              <span className="translator-popover-note" role="presentation">
                 Advanced
               </span>
               <button
@@ -2627,7 +2627,7 @@ function V3Toolbar({
         </div>
         <button
           ref={latestResultButtonRef}
-          className="stv3-button stv3-button-quiet"
+          className="translator-button translator-button-quiet"
           type="button"
           title="Reopen the latest operation result"
           data-action="reopen-result"
@@ -2637,7 +2637,7 @@ function V3Toolbar({
           <FileCheck2 aria-hidden /> Latest result
         </button>
         <button
-          className="stv3-button stv3-button-quiet"
+          className="translator-button translator-button-quiet"
           type="button"
           aria-label="Settings"
           title="Settings"
@@ -2645,7 +2645,7 @@ function V3Toolbar({
           disabled={!settingsEnabled}
         >
           <SettingsIcon aria-hidden />
-          <span className="stv3-action-label-compact">Settings</span>
+          <span className="translator-action-label-compact">Settings</span>
         </button>
       </div>
     </div>

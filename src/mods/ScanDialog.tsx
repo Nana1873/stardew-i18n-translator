@@ -15,7 +15,7 @@ interface ScanDialogProps {
 }
 
 const completeProgress = {
-  "--stv3-batch-progress": "100%",
+  "--translator-batch-progress": "100%",
 } as CSSProperties;
 
 export function ScanDialog({
@@ -51,23 +51,25 @@ export function ScanDialog({
           : "Scan unavailable";
 
   return (
-    <div className="stv3-flow-overlay">
+    <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="stv3-flow-dialog"
+        className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Scan"
         onKeyDown={onDialogKeyDown}
       >
-        <div className="stv3-flow-head">
+        <div className="translator-flow-head">
           <div>
-            <h2 className="stv3-heading">{title}</h2>
-            <div className="stv3-kicker">Local Mods folder · read-only</div>
+            <h2 className="translator-heading">{title}</h2>
+            <div className="translator-kicker">
+              Local Mods folder · read-only
+            </div>
           </div>
           {!scanning && (
             <button
-              className="stv3-icon-button"
+              className="translator-icon-button"
               type="button"
               aria-label="Close scan"
               onClick={onClose}
@@ -77,8 +79,8 @@ export function ScanDialog({
           )}
         </div>
 
-        <div className="stv3-flow-body">
-          <div className="stv3-progress-row">
+        <div className="translator-flow-body">
+          <div className="translator-progress-row">
             <span
               role="progressbar"
               aria-label="Scan progress"
@@ -102,25 +104,27 @@ export function ScanDialog({
                 <RefreshCw aria-hidden="true" /> Reading manifests and i18n
                 files …
               </p>
-              <div className="stv3-flow-callout">
+              <div className="translator-flow-callout">
                 Exact scan progress is unavailable. Existing translation state
                 remains untouched while the local folder is read.
               </div>
             </>
           ) : error ? (
-            <div className="stv3-flow-callout is-error" role="alert">
+            <div className="translator-flow-callout is-error" role="alert">
               <strong>Scan failed:</strong> {error}
             </div>
           ) : result ? (
             <ScanResultContent result={result} />
           ) : (
-            <div className="stv3-flow-callout">Scan result unavailable.</div>
+            <div className="translator-flow-callout">
+              Scan result unavailable.
+            </div>
           )}
         </div>
 
-        <div className="stv3-flow-foot">
+        <div className="translator-flow-foot">
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             disabled={scanning}
             onClick={onClose}
@@ -128,7 +132,7 @@ export function ScanDialog({
             Close
           </button>
           <button
-            className="stv3-button stv3-button-quiet"
+            className="translator-button translator-button-quiet"
             type="button"
             disabled={
               scanning ||
@@ -148,7 +152,7 @@ export function ScanDialog({
             Open new strings · {sourceDeltas?.stringsAdded ?? "Unavailable"}
           </button>
           <button
-            className="stv3-button stv3-button-primary"
+            className="translator-button translator-button-primary"
             type="button"
             disabled={
               scanning ||
@@ -170,7 +174,7 @@ export function ScanDialog({
           </button>
         </div>
 
-        <span className="stv3-sr-only" aria-live="polite">
+        <span className="translator-sr-only" aria-live="polite">
           {scanning
             ? "Scan in progress"
             : error
@@ -215,7 +219,10 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         {result.modCount === 1 ? "mod" : "mods"} and {result.fileCount}{" "}
         {result.fileCount === 1 ? "i18n file" : "i18n files"}.
       </p>
-      <div className="stv3-preflight-metrics" aria-label="Latest scan result">
+      <div
+        className="translator-preflight-metrics"
+        aria-label="Latest scan result"
+      >
         <Metric value={result.modCount} label="mods found" />
         <Metric value={result.fileCount} label="i18n files" />
         <Metric
@@ -237,7 +244,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
       </div>
 
       <div
-        className={`stv3-flow-callout${hasDiagnostics ? " is-warning" : ""}`}
+        className={`translator-flow-callout${hasDiagnostics ? " is-warning" : ""}`}
         tabIndex={-1}
         data-scan-diagnostics
       >
@@ -255,7 +262,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         )}
 
         {skipped && skipped.length > 0 && (
-          <ul className="stv3-flow-list" aria-label="Skipped components">
+          <ul className="translator-flow-list" aria-label="Skipped components">
             {skipped.map((component, index) => (
               <li
                 key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
@@ -289,7 +296,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         )}
 
         {warnings.length > 0 && (
-          <ul className="stv3-flow-list" aria-label="Scan warnings">
+          <ul className="translator-flow-list" aria-label="Scan warnings">
             {warnings.map((warning, index) => (
               <li key={`${warning}:${index}`}>
                 <span>{warning}</span>
@@ -300,7 +307,10 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         )}
 
         {extraKeys.length > 0 && (
-          <ul className="stv3-flow-list" aria-label="Unused translation keys">
+          <ul
+            className="translator-flow-list"
+            aria-label="Unused translation keys"
+          >
             {extraKeys.map((diagnostic, index) => (
               <li key={`${diagnostic.targetPath}:${diagnostic.key}:${index}`}>
                 <span>
@@ -320,7 +330,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
 
 function Metric({ value, label }: { value: number | string; label: string }) {
   return (
-    <div className="stv3-preflight-metric">
+    <div className="translator-preflight-metric">
       <strong>{value}</strong>
       <span>{label}</span>
     </div>
