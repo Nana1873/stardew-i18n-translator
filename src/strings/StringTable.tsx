@@ -43,6 +43,7 @@ import {
   type LlmExportOutcome,
   type OperationHistoryEntry,
   type SaveStringEntry,
+  type ScanStringIdentity,
   type ScannedMod,
   type StringRow,
   type StringStatus,
@@ -156,6 +157,9 @@ export interface StringTableProps {
   mods?: ScannedMod[];
   scope?: StringTableScope;
   onScopeChange?: (scope: StringTableScope) => void;
+  /** Optional exact, transient subset opened from the latest scan result. */
+  identityFilter?: readonly ScanStringIdentity[];
+  identityFilterLabel?: string;
   search?: string;
   onSearchChange?: (value: string) => void;
   statusFilter?: StringTableFilter;
@@ -454,6 +458,8 @@ export function StringTable({
   mods,
   scope,
   onScopeChange,
+  identityFilter,
+  identityFilterLabel,
   search,
   onSearchChange,
   statusFilter,
@@ -642,10 +648,27 @@ export function StringTable({
     () => data.filter((row) => rowHasIssues(row)).length,
     [data],
   );
+  const identityFilterSet = useMemo(
+    () =>
+      identityFilter?.length
+        ? new Set(
+            identityFilter.map((identity) =>
+              JSON.stringify([
+                identity.modUniqueId,
+                identity.relativeDir,
+                identity.key,
+              ]),
+            ),
+          )
+        : null,
+    [identityFilter],
+  );
   const visible = useMemo(() => {
     const query = effectiveSearch.trim();
     const filtered: Array<{ row: Row; identity: string; index: number }> = [];
     data.forEach((row, index) => {
+      const identity = identityOf(row);
+      if (identityFilterSet && !identityFilterSet.has(identity)) return;
       if (
         effectiveStatus === "has-value"
           ? row.target.trim().length === 0
@@ -664,7 +687,7 @@ export function StringTable({
         )
           return;
       }
-      filtered.push({ row, identity: identityOf(row), index });
+      filtered.push({ row, identity, index });
     });
     if (sort) {
       const direction = sort.dir === "asc" ? 1 : -1;
@@ -685,8 +708,22 @@ export function StringTable({
     effectiveStatus,
     effectiveIssuesOnly,
     effectiveScope,
+    identityFilterSet,
     sort,
   ]);
+
+  const filterSummary = [
+    identityFilterSet
+      ? identityFilterLabel?.trim() || "Latest scan subset"
+      : null,
+    effectiveIssuesOnly
+      ? "Validation issues"
+      : effectiveStatus !== "all" || !identityFilterSet
+        ? FILTER_LABEL[effectiveStatus]
+        : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 
   useEffect(() => {
     onVisibleSummaryChange?.({
@@ -1979,12 +2016,15 @@ export function StringTable({
           >
             <span>
               {effectiveSearch.trim()
-                ? `Search preview: ${visible.length} matching rows · ${data.length} strings in ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                : `${visible.length} of ${data.length} strings · ${effectiveIssuesOnly ? "Validation issues" : FILTER_LABEL[effectiveStatus]} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
+                ? identityFilterSet
+                  ? `Search preview: ${visible.length} matching rows · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`
+                  : `Search preview: ${visible.length} matching rows · ${data.length} strings in ${effectiveScope === "all" ? "All mods" : "This mod"}`
+                : `${visible.length} of ${data.length} strings · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
             </span>
             {(effectiveSearch.trim() ||
               effectiveStatus !== "all" ||
-              effectiveIssuesOnly) && (
+              effectiveIssuesOnly ||
+              identityFilterSet) && (
               <button
                 className="stv3-query-clear"
                 type="button"

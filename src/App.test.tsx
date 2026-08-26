@@ -202,6 +202,13 @@ const EMPTY_SCAN = {
   skippedComponents: [],
   modCount: 0,
   fileCount: 0,
+  sourceDeltas: {
+    sourcesChanged: 0,
+    stringsAdded: 0,
+    stringsRemoved: 0,
+    addedStrings: [],
+    changedSources: [],
+  },
 };
 
 const EXPORT_RESULT = {
@@ -263,6 +270,13 @@ function exportScan(targetExists: boolean) {
     skippedComponents: [],
     modCount: 1,
     fileCount: 1,
+    sourceDeltas: {
+      sourcesChanged: 0,
+      stringsAdded: 0,
+      stringsRemoved: 0,
+      addedStrings: [],
+      changedSources: [],
+    },
   };
 }
 
@@ -364,7 +378,8 @@ describe("App shell", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
     expect(dialog).toHaveTextContent("Latest scan");
-    expect(dialog).toHaveTextContent("No components were skipped");
+    expect(dialog).toHaveTextContent("No scanner warnings were reported");
+    expect(dialog).not.toHaveTextContent("No components were skipped");
   });
 
   it("loads dashboard resume history from portable settings", async () => {
@@ -3334,6 +3349,56 @@ describe("App shell", () => {
       ),
     );
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("opens the exact new-string subset from the completed scan", async () => {
+    const deltaScan = {
+      ...exportScan(false),
+      sourceDeltas: {
+        sourcesChanged: 0,
+        stringsAdded: 1,
+        stringsRemoved: 0,
+        addedStrings: [
+          { modUniqueId: "a.b", relativeDir: "i18n", key: "new.key" },
+        ],
+        changedSources: [],
+      },
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(deltaScan);
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "new.key",
+            source: "New source",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+            tokenMismatchAccepted: false,
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open new strings · 1" }),
+    );
+
+    expect(await screen.findByText("new.key")).toBeVisible();
+    expect(
+      screen.getByText(
+        "1 of 1 strings · New strings from latest scan · All mods",
+      ),
+    ).toBeVisible();
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 

@@ -29,6 +29,7 @@ import {
   type OperationKind,
   type ExportResult,
   type ScanResult,
+  type ScanStringIdentity,
   type ScannedMod,
   type StringStatus,
   type ZipBuildOutcome,
@@ -247,6 +248,10 @@ export function App() {
   const [scanDialogOpen, setScanDialogOpen] = useState(false);
   const [scanDiagnosticsFocus, setScanDiagnosticsFocus] = useState(false);
   const [scanDialogRetained, setScanDialogRetained] = useState(false);
+  const [scanStringFilter, setScanStringFilter] = useState<{
+    label: string;
+    identities: ScanStringIdentity[];
+  } | null>(null);
   const scanDismissedRef = useRef(false);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
@@ -694,6 +699,7 @@ export function App() {
     scanDismissedRef.current = false;
     setScanDiagnosticsFocus(false);
     setScanDialogRetained(false);
+    setScanStringFilter(null);
     setScanError(null);
     const selectionBeforeScan =
       options.preserveSelection === false
@@ -859,6 +865,33 @@ export function App() {
     setScanDialogRetained(Boolean(scan && !scanning && !scanError));
     setScanDiagnosticsFocus(canFocusDiagnostics);
     setScanDialogOpen(true);
+  }
+
+  function closeScanDialog() {
+    scanDismissedRef.current = true;
+    setScanDiagnosticsFocus(false);
+    setScanDialogRetained(false);
+    setScanDialogOpen(false);
+  }
+
+  function openScanStrings(kind: "added" | "changed") {
+    const deltas = scan?.sourceDeltas;
+    const identities =
+      kind === "added" ? deltas?.addedStrings : deltas?.changedSources;
+    if (!identities?.length) return;
+    setScanStringFilter({
+      label:
+        kind === "added"
+          ? "New strings from latest scan"
+          : "Changed sources from latest scan",
+      identities,
+    });
+    setSearch("");
+    setStatusFilter("all");
+    setIssuesOnly(false);
+    setStringScope("all");
+    setView("work");
+    closeScanDialog();
   }
 
   /** Keep the mod list / header counts fresh after edits (no rescan needed).
@@ -1974,6 +2007,8 @@ export function App() {
                   mods={scan?.mods ?? []}
                   scope={stringScope}
                   onScopeChange={setStringScope}
+                  identityFilter={scanStringFilter?.identities}
+                  identityFilterLabel={scanStringFilter?.label}
                   search={search}
                   onSearchChange={setSearch}
                   statusFilter={statusFilter}
@@ -2004,6 +2039,7 @@ export function App() {
                     setSearch("");
                     setStatusFilter("all");
                     setIssuesOnly(false);
+                    setScanStringFilter(null);
                   }}
                   onBulkApplied={handleBulkApplied}
                   onAiBatchFinished={handleAiBatchFinished}
@@ -2056,12 +2092,9 @@ export function App() {
             error={scanError}
             focusDiagnostics={scanDiagnosticsFocus}
             retainedResult={scanDialogRetained}
-            onClose={() => {
-              scanDismissedRef.current = true;
-              setScanDiagnosticsFocus(false);
-              setScanDialogRetained(false);
-              setScanDialogOpen(false);
-            }}
+            onOpenAddedStrings={() => openScanStrings("added")}
+            onReviewChangedSources={() => openScanStrings("changed")}
+            onClose={closeScanDialog}
           />
         )}
         {resultTray && !resultHidden && (

@@ -1456,6 +1456,14 @@
   border-radius: 5px;
 }
 
+#stv3-dense-demo .stv3-flow-callout > p {
+  margin: 0;
+}
+
+#stv3-dense-demo .stv3-flow-callout > .stv3-flow-list {
+  margin-top: 8px;
+}
+
 #stv3-dense-demo .stv3-flow-callout.is-warning {
   background: var(--stv3-orange-soft);
   border-left-color: var(--stv3-orange);

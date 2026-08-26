@@ -370,6 +370,36 @@ describe("StringTable V3 workbench", () => {
     ).toHaveLength(2);
   });
 
+  it("shows only the exact transient string identities opened from a scan result", async () => {
+    const onClearFilters = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        identityFilter={[
+          {
+            modUniqueId: "c.d",
+            relativeDir: "i18n/dialogue",
+            key: "tomorrow",
+          },
+        ]}
+        identityFilterLabel="New strings from latest scan"
+        onClearFilters={onClearFilters}
+      />,
+    );
+
+    expect(await screen.findByText("tomorrow")).toBeVisible();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "1 of 4 strings · New strings from latest scan · All mods",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onClearFilters).toHaveBeenCalledOnce();
+  });
+
   it("filters by search, explicit statuses, and validation issues using real rows", async () => {
     installBackendRows({
       "a.b": [

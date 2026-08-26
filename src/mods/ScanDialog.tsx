@@ -9,6 +9,8 @@ interface ScanDialogProps {
   error: string | null;
   focusDiagnostics?: boolean;
   retainedResult?: boolean;
+  onOpenAddedStrings?: () => void;
+  onReviewChangedSources?: () => void;
   onClose: () => void;
 }
 
@@ -22,6 +24,8 @@ export function ScanDialog({
   error,
   focusDiagnostics = false,
   retainedResult = false,
+  onOpenAddedStrings,
+  onReviewChangedSources,
   onClose,
 }: ScanDialogProps) {
   const dialogRef = useRef<HTMLElement>(null);
@@ -35,6 +39,7 @@ export function ScanDialog({
   const complete = !scanning && !error && result != null;
   const warningCount = result?.warnings.length ?? 0;
   const skippedCount = result?.skippedComponents?.length;
+  const sourceDeltas = result?.sourceDeltas;
   const title = scanning
     ? "Scanning mods …"
     : error
@@ -125,18 +130,43 @@ export function ScanDialog({
           <button
             className="stv3-button stv3-button-quiet"
             type="button"
-            disabled
-            title="New-string deltas are unavailable in the current scan result"
+            disabled={
+              scanning ||
+              !sourceDeltas ||
+              sourceDeltas.stringsAdded === 0 ||
+              !onOpenAddedStrings
+            }
+            title={
+              sourceDeltas
+                ? sourceDeltas.stringsAdded === 0
+                  ? "No new strings were found in this scan"
+                  : "Show exactly the strings added since the previous scan"
+                : "New-string deltas are unavailable in the current scan result"
+            }
+            onClick={onOpenAddedStrings}
           >
-            Open new strings · Unavailable
+            Open new strings · {sourceDeltas?.stringsAdded ?? "Unavailable"}
           </button>
           <button
             className="stv3-button stv3-button-primary"
             type="button"
-            disabled
-            title="Changed-source deltas are unavailable in the current scan result"
+            disabled={
+              scanning ||
+              !sourceDeltas ||
+              sourceDeltas.sourcesChanged === 0 ||
+              !onReviewChangedSources
+            }
+            title={
+              sourceDeltas
+                ? sourceDeltas.sourcesChanged === 0
+                  ? "No English sources changed in this scan"
+                  : "Show exactly the sources changed since the previous scan"
+                : "Changed-source deltas are unavailable in the current scan result"
+            }
+            onClick={onReviewChangedSources}
           >
-            Review changed sources · Unavailable
+            Review changed sources ·{" "}
+            {sourceDeltas?.sourcesChanged ?? "Unavailable"}
           </button>
         </div>
 
@@ -158,6 +188,25 @@ function ScanResultContent({ result }: { result: ScanResult }) {
   const warnings = result.warnings;
   const skipped = result.skippedComponents;
   const extraKeys = result.extraKeys ?? [];
+  const diagnosticParts: string[] = [];
+  if (warnings.length > 0) {
+    diagnosticParts.push(
+      `${warnings.length} scanner ${warnings.length === 1 ? "warning" : "warnings"}`,
+    );
+  }
+  if (skipped == null) {
+    diagnosticParts.push("Skipped-component details unavailable");
+  } else if (skipped.length > 0) {
+    diagnosticParts.push(
+      `${skipped.length} ${skipped.length === 1 ? "component" : "components"} skipped`,
+    );
+  }
+  if (extraKeys.length > 0) {
+    diagnosticParts.push(
+      `${extraKeys.length} unused target ${extraKeys.length === 1 ? "key" : "keys"}`,
+    );
+  }
+  const hasDiagnostics = diagnosticParts.length > 0;
 
   return (
     <>
@@ -169,36 +218,43 @@ function ScanResultContent({ result }: { result: ScanResult }) {
       <div className="stv3-preflight-metrics" aria-label="Latest scan result">
         <Metric value={result.modCount} label="mods found" />
         <Metric value={result.fileCount} label="i18n files" />
-        <Metric value="Unavailable" label="sources changed" />
-        <Metric value="Unavailable" label="strings added" />
-        <Metric value="Unavailable" label="strings removed" />
+        <Metric
+          value={result.sourceDeltas?.sourcesChanged ?? "Unavailable"}
+          label="sources changed"
+        />
+        <Metric
+          value={result.sourceDeltas?.stringsAdded ?? "Unavailable"}
+          label="strings added"
+        />
+        <Metric
+          value={result.sourceDeltas?.stringsRemoved ?? "Unavailable"}
+          label="strings removed"
+        />
         <Metric
           value={skipped == null ? "Unavailable" : skipped.length}
           label="components skipped"
         />
       </div>
-      <div className="stv3-flow-callout">
-        Change, added-string, and removed-string deltas are unavailable in the
-        current backend result. No scan history is invented.
-      </div>
 
-      {skipped == null ? (
-        <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
-          Structured skipped-component details are unavailable in this scan
-          result.
-        </div>
-      ) : skipped.length > 0 ? (
-        <>
-          <div
-            className="stv3-flow-callout is-warning"
-            tabIndex={-1}
-            data-scan-diagnostics
-          >
+      <div
+        className={`stv3-flow-callout${hasDiagnostics ? " is-warning" : ""}`}
+        tabIndex={-1}
+        data-scan-diagnostics
+      >
+        {hasDiagnostics ? (
+          <p>
             <AlertTriangle aria-hidden="true" />{" "}
-            <strong>{skipped.length}</strong>{" "}
-            {skipped.length === 1 ? "component was" : "components were"}{" "}
-            skipped. Other readable components remain loaded.
-          </div>
+            <strong>{diagnosticParts.join(" · ")}.</strong>
+            {(warnings.length > 0 || (skipped?.length ?? 0) > 0) &&
+              " Existing work was preserved."}
+            {extraKeys.length > 0 &&
+              " SMAPI ignores unused target keys; they do not affect progress or block export."}
+          </p>
+        ) : (
+          <p>No scanner warnings were reported.</p>
+        )}
+
+        {skipped && skipped.length > 0 && (
           <ul className="stv3-flow-list" aria-label="Skipped components">
             {skipped.map((component, index) => (
               <li
@@ -230,28 +286,9 @@ function ScanResultContent({ result }: { result: ScanResult }) {
               </li>
             ))}
           </ul>
-        </>
-      ) : (
-        <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
-          No components were skipped.
-        </div>
-      )}
+        )}
 
-      {warnings.length > 0 ? (
-        <>
-          <div
-            className="stv3-flow-callout is-warning"
-            tabIndex={-1}
-            data-scan-diagnostics
-          >
-            <AlertTriangle aria-hidden="true" />{" "}
-            <strong>
-              {warnings.length} scanner{" "}
-              {warnings.length === 1 ? "warning was" : "warnings were"}{" "}
-              reported.
-            </strong>{" "}
-            Existing work was preserved.
-          </div>
+        {warnings.length > 0 && (
           <ul className="stv3-flow-list" aria-label="Scan warnings">
             {warnings.map((warning, index) => (
               <li key={`${warning}:${index}`}>
@@ -260,23 +297,9 @@ function ScanResultContent({ result }: { result: ScanResult }) {
               </li>
             ))}
           </ul>
-          <p className="stv3-kicker">
-            Scanner warning text is shown unchanged.
-          </p>
-        </>
-      ) : (
-        <div className="stv3-flow-callout" tabIndex={-1} data-scan-diagnostics>
-          No scanner warnings were reported.
-        </div>
-      )}
+        )}
 
-      {extraKeys.length > 0 && (
-        <>
-          <div className="stv3-flow-callout is-warning">
-            <strong>Optional cleanup:</strong> {extraKeys.length} unused target{" "}
-            {extraKeys.length === 1 ? "key was" : "keys were"} found. SMAPI
-            ignores these keys; they do not affect progress or block export.
-          </div>
+        {extraKeys.length > 0 && (
           <ul className="stv3-flow-list" aria-label="Unused translation keys">
             {extraKeys.map((diagnostic, index) => (
               <li key={`${diagnostic.targetPath}:${diagnostic.key}:${index}`}>
@@ -289,8 +312,8 @@ function ScanResultContent({ result }: { result: ScanResult }) {
               </li>
             ))}
           </ul>
-        </>
-      )}
+        )}
+      </div>
     </>
   );
 }

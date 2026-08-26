@@ -19,6 +19,21 @@ const RESULT: ScanResult = {
   extraKeys: [],
   modCount: 12,
   fileCount: 18,
+  sourceDeltas: {
+    sourcesChanged: 2,
+    stringsAdded: 3,
+    stringsRemoved: 1,
+    addedStrings: [
+      { modUniqueId: "sample.mod", relativeDir: "i18n", key: "new.key" },
+    ],
+    changedSources: [
+      {
+        modUniqueId: "sample.mod",
+        relativeDir: "i18n",
+        key: "changed.key",
+      },
+    ],
+  },
 };
 
 describe("ScanDialog", () => {
@@ -50,15 +65,23 @@ describe("ScanDialog", () => {
       screen.getByText(/Read 12 mods and 18 i18n files/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/1 scanner warning was reported/),
+      screen.getByText(/1 scanner warning · 1 component skipped/),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/invalid manifest JSON/)).toHaveLength(2);
-    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
+    expect(screen.queryByText("Unavailable")).toBeNull();
+    expect(
+      screen.getByText("sources changed").closest(".stv3-preflight-metric"),
+    ).toHaveTextContent("2sources changed");
+    expect(
+      screen.getByText("strings added").closest(".stv3-preflight-metric"),
+    ).toHaveTextContent("3strings added");
+    expect(
+      screen.getByText("strings removed").closest(".stv3-preflight-metric"),
+    ).toHaveTextContent("1strings removed");
     const skippedMetric = screen
       .getByText("components skipped")
       .closest(".stv3-preflight-metric");
     expect(skippedMetric).toHaveTextContent("1components skipped");
-    expect(screen.getByText(/component was skipped/)).toBeInTheDocument();
     expect(screen.getByText("Broken Component")).toBeInTheDocument();
     expect(screen.getByText("Package: Sample Pack")).toBeInTheDocument();
     expect(screen.getByText("Sample/Broken/manifest.json")).toBeInTheDocument();
@@ -82,7 +105,7 @@ describe("ScanDialog", () => {
       .getByText("components skipped")
       .closest(".stv3-preflight-metric");
     expect(skippedMetric).toHaveTextContent("0components skipped");
-    expect(screen.getByText("No components were skipped.")).toBeInTheDocument();
+    expect(screen.queryByText("No components were skipped.")).toBeNull();
     expect(
       screen.queryByText(
         /Structured skipped-component details are unavailable/,
@@ -103,7 +126,7 @@ describe("ScanDialog", () => {
       .closest(".stv3-preflight-metric");
     expect(skippedMetric).toHaveTextContent("Unavailablecomponents skipped");
     expect(
-      screen.getByText(/Structured skipped-component details are unavailable/),
+      screen.getByText(/Skipped-component details unavailable/),
     ).toBeInTheDocument();
   });
 
@@ -118,9 +141,7 @@ describe("ScanDialog", () => {
       />,
     );
 
-    const diagnostics = screen
-      .getByText(/component was skipped/)
-      .closest(".stv3-flow-callout");
+    const diagnostics = document.querySelector("[data-scan-diagnostics]");
     await waitFor(() => expect(diagnostics).toHaveFocus());
   });
 
@@ -189,15 +210,71 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText(/Optional cleanup/)).toBeInTheDocument();
     expect(screen.getByText(/1 unused target key/)).toBeInTheDocument();
     expect(screen.getByText("Example Mod")).toBeInTheDocument();
     expect(
       screen.getByText("E:/Mods/Example/i18n/de.json"),
     ).toBeInTheDocument();
     expect(screen.getByText("removed-key")).toBeInTheDocument();
-    expect(screen.getByText(/SMAPI ignores these keys/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/SMAPI ignores unused target keys/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/do not affect progress/)).toBeInTheDocument();
+  });
+
+  it("uses one diagnostics box and keeps redundant zero-state prose out", () => {
+    render(
+      <ScanDialog
+        scanning={false}
+        result={{
+          ...RESULT,
+          warnings: [],
+          skippedComponents: [],
+          sourceDeltas: {
+            sourcesChanged: 0,
+            stringsAdded: 0,
+            stringsRemoved: 0,
+            addedStrings: [],
+            changedSources: [],
+          },
+        }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getAllByText("No scanner warnings were reported."),
+    ).toHaveLength(1);
+    expect(document.querySelectorAll("[data-scan-diagnostics]")).toHaveLength(
+      1,
+    );
+    expect(screen.queryByText(/No components were skipped/)).toBeNull();
+    expect(screen.queryByText(/No scan history is invented/)).toBeNull();
+  });
+
+  it("opens the exact added and changed scan subsets", () => {
+    const onOpenAddedStrings = vi.fn();
+    const onReviewChangedSources = vi.fn();
+    render(
+      <ScanDialog
+        scanning={false}
+        result={RESULT}
+        error={null}
+        onOpenAddedStrings={onOpenAddedStrings}
+        onReviewChangedSources={onReviewChangedSources}
+        onClose={() => {}}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open new strings · 3" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Review changed sources · 2" }),
+    );
+    expect(onOpenAddedStrings).toHaveBeenCalledOnce();
+    expect(onReviewChangedSources).toHaveBeenCalledOnce();
   });
 
   it("calls onClose when Close is clicked", () => {
