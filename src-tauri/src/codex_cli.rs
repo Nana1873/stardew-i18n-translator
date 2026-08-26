@@ -200,11 +200,7 @@ fn run_app_server_request(
     {
         windows_process::run_jsonl_request(
             executable,
-            &[
-                OsString::from("--strict-config"),
-                OsString::from("app-server"),
-                OsString::from("--stdio"),
-            ],
+            &model_list_app_server_args(),
             initialize,
             request,
             request_id,
@@ -218,6 +214,13 @@ fn run_app_server_request(
         let _ = (executable, initialize, request, request_id, working_dir);
         Err("Codex CLI integration is available only on Windows.".to_string())
     }
+}
+
+fn model_list_app_server_args() -> [OsString; 2] {
+    // Model discovery is read-only and must tolerate a newer Codex Desktop
+    // config than the installed CLI understands. Translation runs remain
+    // strict and ignore user config entirely.
+    [OsString::from("app-server"), OsString::from("--stdio")]
 }
 
 #[cfg(windows)]
@@ -1113,7 +1116,7 @@ mod windows_process {
                 return Err("Codex app-server rejected initialization.".to_string());
             }
 
-            write_json_line(&mut stdin, r#"{"method":"initialized","params":{}}"#)?;
+            write_json_line(&mut stdin, r#"{"method":"initialized"}"#)?;
             write_json_line(&mut stdin, request)?;
             wait_for_json_response(
                 &process,
@@ -2053,6 +2056,17 @@ mod tests {
             "medium",
         );
         assert!(!args.iter().any(|arg| arg == "--model"));
+    }
+
+    #[test]
+    fn model_list_does_not_reject_newer_codex_config_fields() {
+        let args = model_list_app_server_args();
+        let args = args
+            .iter()
+            .map(|arg| arg.to_string_lossy().to_string())
+            .collect::<Vec<_>>();
+        assert_eq!(args, ["app-server", "--stdio"]);
+        assert!(!args.contains(&"--strict-config".to_string()));
     }
 
     #[test]
