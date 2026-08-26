@@ -1835,7 +1835,7 @@ export function App() {
               >
                 <div className="panel__header stv3-pane-title">
                   <div>
-                    <span>
+                    <span className="stv3-pane-heading">
                       Mods
                       {scan && (
                         <>

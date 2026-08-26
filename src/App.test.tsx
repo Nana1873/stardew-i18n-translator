@@ -648,6 +648,12 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
 
+    const heading = await screen.findByText(
+      (_content, node) =>
+        node?.classList.contains("stv3-pane-heading") === true &&
+        node.textContent === "Mods · 1",
+    );
+    expect(within(heading).getByText("1")).toHaveClass("stv3-pane-count");
     const inProgress = await screen.findByText(
       (_content, node) =>
         node?.classList.contains("panel__header-tail") === true &&

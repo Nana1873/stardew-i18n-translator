@@ -431,6 +431,10 @@
   border-bottom: 1px solid var(--stv3-border);
 }
 
+#stv3-dense-demo .stv3-pane-heading {
+  display: block;
+}
+
 #stv3-dense-demo .stv3-pane-title-actions {
   min-width: 0;
   display: inline-flex;
