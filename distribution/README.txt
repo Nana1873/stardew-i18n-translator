@@ -28,6 +28,11 @@ Manual translation and local-only workflows remain offline. The optional Codex
 CLI backend uses only the CLI's own login; the application never reads its
 authentication files or tokens.
 
+Optional Local AI translation sends source text, section context, and matching
+glossary terms only to the loopback service configured in Settings. The
+service-reported model list and non-secret endpoint settings are stored locally;
+no API key or custom cloud endpoint is stored.
+
 When Codex CLI translation is selected, source text, section context, and
 matching glossary terms are sent through the installed CLI. Every AI result
 requires review before it becomes an accepted translation.

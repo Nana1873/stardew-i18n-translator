@@ -110,6 +110,11 @@ You can translate in four ways:
   snapshot to ensure the result still belongs to the selected mod, language,
   files, keys, and current English text before anything is saved.
 
+Settings automatically prefers an available engine. Local AI models come from
+the configured local service and its Base URL can be reset to the selected
+provider's default. Codex CLI uses its own default model; the app only configures
+the reasoning effort for its translation runs.
+
 Use row checkboxes, Ctrl+click, Shift+click, or Ctrl+A to select the current
 filtered result. Batch actions can copy text, mark strings as Done, keep the
 English source, clear translations, start AI translation, or export an external
@@ -133,6 +138,8 @@ sent through the installed CLI.
 AI suggestions always enter the review queue. Each completed suggestion is
 saved immediately, so cancelling a longer run keeps the completed Review work.
 Suggestions are never treated as finished translations automatically.
+**Open review queue** returns to the affected component when it is known and to
+**All mods** for a multi-component run, so cross-mod results are not hidden.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;
@@ -148,12 +155,12 @@ build a translation ZIP, or prepare translation notes. Direct exports validate
 the complete selected scope before the first write, create visible backups for
 existing target files, and roll back an incomplete multi-file write.
 
-**Export... > Build Release ZIP** creates an installable translation archive for
-the selected mod package. It preserves multi-component folder paths and includes
-only generated target-language `i18n` files, not the original mod's DLLs, assets,
-manifests, or backups.
+**Export … > Build translation ZIP** creates an installable translation archive
+for the selected mod package. It preserves multi-component folder paths and
+includes only generated target-language `i18n` files, not the original mod's
+DLLs, assets, manifests, or backups.
 
-**Translation Notes** creates short copy-ready publication text using the current
+**Translation notes** creates short copy-ready publication text using the current
 package, language, coverage, installation guidance, and review state.
 
 The result tray shows real output paths and file names returned by export,
