@@ -25,11 +25,12 @@ mod xnb;
 #[cfg(test)]
 mod language_compatibility;
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::{fs::OpenOptions, io::Write};
 
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
@@ -1087,13 +1088,36 @@ fn prepare_ai_request(
     }
     let resolved = ai::resolve_scope(request, &rows)?;
     let glossary = load_active_glossary(&config, &target_lang);
-    let prepared = ai::prepare_items(&resolved, |source| {
+    let prepared = ai::prepare_items_with_context(&resolved, &rows, |source| {
         glossary
             .as_ref()
             .map(|glossary| glossary::match_terms(source, glossary))
             .unwrap_or_default()
     })?;
     Ok((settings, target_language, translation_root, prepared))
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiRunProgress<'a> {
+    run_id: &'a str,
+    completed: usize,
+    total: usize,
+}
+
+fn emit_ai_progress(app: &AppHandle, run_id: &str, completed: usize, total: usize) {
+    if let Err(error) = app.emit(
+        "ai-run-progress",
+        AiRunProgress {
+            run_id,
+            completed,
+            total,
+        },
+    ) {
+        // Progress is convenience state only. The final command result remains
+        // authoritative if an event cannot be delivered to the webview.
+        log::warn!("Could not emit AI run progress: {error}");
+    }
 }
 
 fn ai_run_result(
@@ -1261,19 +1285,34 @@ async fn translate_with_local_ai(
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
+    emit_ai_progress(&app, &request.run_id, 0, prepared.len());
     for item in &prepared {
         if lease.cancelled.load(Ordering::Acquire) {
             outcome = ai::AiRunOutcome::Cancelled;
             break;
         }
+        let before_context = item
+            .context
+            .before
+            .iter()
+            .map(|entry| entry.source.clone())
+            .collect::<Vec<_>>();
+        let after_context = item
+            .context
+            .after
+            .iter()
+            .map(|entry| entry.source.clone())
+            .collect::<Vec<_>>();
         let translation = tokio::select! {
-            result = llm::translate(
+            result = llm::translate_with_context(
                 &local.base_url,
                 &local.model,
                 &item.source,
                 &target_language,
                 item.section.as_deref(),
                 &item.glossary_pairs,
+                &before_context,
+                &after_context,
                 local.temperature,
             ) => result.map_err(ai::ProviderFailure::Message),
             () = ai::wait_for_cancel(lease.cancelled.clone()) => Err(ai::ProviderFailure::Cancelled),
@@ -1287,12 +1326,14 @@ async fn translate_with_local_ai(
                 }],
             ) {
                 Ok(completed) => {
-                    if let Err(cause) = stage_ai_suggestions(
+                    let staged_result = stage_ai_suggestions(
                         &translation_root,
                         std::slice::from_ref(item),
                         completed,
                         &mut suggestions,
-                    ) {
+                    );
+                    emit_ai_progress(&app, &request.run_id, suggestions.len(), prepared.len());
+                    if let Err(cause) = staged_result {
                         outcome = ai::AiRunOutcome::Error;
                         error = Some(cause);
                         break;
@@ -1308,7 +1349,11 @@ async fn translate_with_local_ai(
                 outcome = ai::AiRunOutcome::Cancelled;
                 break;
             }
-            Err(ai::ProviderFailure::Message(cause)) => {
+            Err(
+                ai::ProviderFailure::Message(cause)
+                | ai::ProviderFailure::Transient(cause)
+                | ai::ProviderFailure::InvalidResponse(cause),
+            ) => {
                 outcome = ai::AiRunOutcome::Error;
                 error = Some(cause);
                 break;
@@ -1354,7 +1399,12 @@ async fn translate_with_codex_cli(
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
-    for chunk in ai::chunks(&prepared) {
+    let chunks = ai::chunks(&prepared)?;
+    let mut pending = VecDeque::from(chunks);
+    let mut isolated_failures = 0usize;
+    let mut last_isolated_failure = None;
+    emit_ai_progress(&app, &request.run_id, 0, prepared.len());
+    while let Some(chunk) = pending.pop_front() {
         if lease.cancelled.load(Ordering::Acquire) {
             outcome = ai::AiRunOutcome::Cancelled;
             break;
@@ -1367,32 +1417,98 @@ async fn translate_with_codex_cli(
         )
         .await
         {
-            Ok(translations) => match ai::suggestions(chunk, translations) {
-                Ok(completed) => {
-                    if let Err(cause) =
-                        stage_ai_suggestions(&translation_root, chunk, completed, &mut suggestions)
-                    {
+            Ok(translations) => {
+                let mut cancel_after_staging = false;
+                let translations = match codex_cli::repair_token_mismatches_once(
+                    &reasoning,
+                    &target_language,
+                    chunk,
+                    &translations,
+                    lease.cancelled.clone(),
+                )
+                .await
+                {
+                    Ok(repair) => {
+                        cancel_after_staging = repair.cancelled;
+                        repair.translations
+                    }
+                    Err(ai::ProviderFailure::Cancelled) => {
+                        // The main translation is already structurally valid.
+                        // Persist it with its blocking token issue before
+                        // honoring cancellation of the optional repair pass.
+                        cancel_after_staging = true;
+                        translations
+                    }
+                    Err(
+                        ai::ProviderFailure::Message(cause)
+                        | ai::ProviderFailure::Transient(cause)
+                        | ai::ProviderFailure::InvalidResponse(cause),
+                    ) => {
+                        // Token repair is optional and gets exactly one attempt.
+                        // Keep the structurally valid original so its blocking
+                        // token validation reaches Review for a human decision.
+                        log::warn!("Codex token repair was not applied: {cause}");
+                        translations
+                    }
+                };
+                match ai::suggestions(chunk, translations) {
+                    Ok(completed) => {
+                        let staged_result = stage_ai_suggestions(
+                            &translation_root,
+                            chunk,
+                            completed,
+                            &mut suggestions,
+                        );
+                        emit_ai_progress(&app, &request.run_id, suggestions.len(), prepared.len());
+                        if let Err(cause) = staged_result {
+                            outcome = ai::AiRunOutcome::Error;
+                            error = Some(cause);
+                            break;
+                        }
+                        if cancel_after_staging {
+                            outcome = ai::AiRunOutcome::Cancelled;
+                            break;
+                        }
+                    }
+                    Err(cause) => {
                         outcome = ai::AiRunOutcome::Error;
                         error = Some(cause);
                         break;
                     }
                 }
-                Err(cause) => {
-                    outcome = ai::AiRunOutcome::Error;
-                    error = Some(cause);
-                    break;
-                }
-            },
+            }
             Err(ai::ProviderFailure::Cancelled) => {
                 outcome = ai::AiRunOutcome::Cancelled;
                 break;
             }
-            Err(ai::ProviderFailure::Message(cause)) => {
+            Err(ai::ProviderFailure::InvalidResponse(_cause)) if chunk.len() > 1 => {
+                let middle = ai::recovery_split_index(chunk)
+                    .expect("a multi-item recovery chunk always has a split point");
+                let (left, right) = chunk.split_at(middle);
+                // Process the left half first while keeping the whole operation
+                // iterative and bounded.
+                pending.push_front(right);
+                pending.push_front(left);
+            }
+            Err(ai::ProviderFailure::InvalidResponse(cause)) => {
+                isolated_failures += 1;
+                last_isolated_failure = Some(cause);
+            }
+            Err(ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause)) => {
                 outcome = ai::AiRunOutcome::Error;
                 error = Some(cause);
                 break;
             }
         }
+    }
+    if outcome == ai::AiRunOutcome::Complete && isolated_failures > 0 {
+        outcome = ai::AiRunOutcome::Error;
+        let cause = last_isolated_failure
+            .as_deref()
+            .unwrap_or("The AI provider returned invalid structured translation data.");
+        error = Some(format!(
+            "{isolated_failures} selected string(s) could not be translated after bounded response recovery. {cause}"
+        ));
     }
     outcome = lease.finish(outcome)?;
     let result = ai_run_result(
@@ -1918,6 +2034,7 @@ mod ai_run_contract_tests {
             source: "Hello".to_string(),
             section: None,
             glossary_pairs: Vec::new(),
+            context: ai::AiPromptContext::isolated(0),
             default_path,
             target_path,
             expected_stored: None,
