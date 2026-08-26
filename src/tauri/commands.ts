@@ -44,6 +44,7 @@ export interface WorkspaceSort {
 export interface WorkspaceColumnWidths {
   mod?: number;
   file?: number;
+  status?: number;
   key?: number;
   source?: number;
   target?: number;

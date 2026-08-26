@@ -132,6 +132,8 @@ pub struct WorkspaceColumnWidths {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub file: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<u16>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<u16>,
@@ -431,6 +433,10 @@ fn normalize_workspace(mut workspace: WorkspaceSettings) -> WorkspaceSettings {
         .column_widths
         .file
         .map(|value| value.clamp(80, 320));
+    workspace.column_widths.status = workspace
+        .column_widths
+        .status
+        .map(|value| value.clamp(80, 240));
     workspace.column_widths.key = workspace
         .column_widths
         .key
@@ -498,6 +504,7 @@ mod tests {
                 column_widths: WorkspaceColumnWidths {
                     mod_column: Some(140),
                     file: Some(110),
+                    status: Some(118),
                     key: Some(280),
                     source: Some(420),
                     target: Some(520),
@@ -698,7 +705,7 @@ mod tests {
                 "issuesOnly":true,
                 "sort":{"column":"unknown","direction":"sideways"},
                 "modPaneWidth":999,
-                "columnWidths":{"mod":1,"file":999,"key":1,"source":9999,"target":1}
+                "columnWidths":{"mod":1,"file":999,"status":999,"key":1,"source":9999,"target":1}
               }
             }"#,
         )
@@ -717,6 +724,7 @@ mod tests {
         assert_eq!(loaded.workspace.mod_pane_width, Some(520));
         assert_eq!(loaded.workspace.column_widths.mod_column, Some(100));
         assert_eq!(loaded.workspace.column_widths.file, Some(320));
+        assert_eq!(loaded.workspace.column_widths.status, Some(240));
         assert_eq!(loaded.workspace.column_widths.key, Some(140));
         assert_eq!(loaded.workspace.column_widths.source, Some(720));
         assert_eq!(loaded.workspace.column_widths.target, Some(180));
