@@ -38,7 +38,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub llm: Option<LlmSettings>,
     /// Live-engine preferences. Credentials and readiness are deliberately not
-    /// represented here: Codex owns its login and the OpenAI key is memory-only.
+    /// represented here: Codex owns its own login.
     #[serde(default, skip_serializing_if = "AiSettings::is_default")]
     pub ai: AiSettings,
     /// User overrides for the frontend shortcut catalog.
@@ -84,17 +84,8 @@ pub struct LlmSettings {
 pub struct AiSettings {
     #[serde(default = "default_ai_engine")]
     pub default_engine: String,
-    /// Blank means the Codex CLI default while user config is ignored. The app never hardcodes a
-    /// Codex model catalogue.
-    #[serde(default)]
-    pub codex_model: String,
     #[serde(default = "default_ai_reasoning")]
     pub codex_reasoning: String,
-    /// User-entered model id for the fixed OpenAI Responses API endpoint.
-    #[serde(default)]
-    pub openai_model: String,
-    #[serde(default = "default_ai_reasoning")]
-    pub openai_reasoning: String,
 }
 
 impl AiSettings {
@@ -107,10 +98,7 @@ impl Default for AiSettings {
     fn default() -> Self {
         Self {
             default_engine: default_ai_engine(),
-            codex_model: String::new(),
             codex_reasoning: default_ai_reasoning(),
-            openai_model: String::new(),
-            openai_reasoning: default_ai_reasoning(),
         }
     }
 }
@@ -365,38 +353,17 @@ fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSetting
 
 fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
     settings.default_engine = settings.default_engine.trim().to_ascii_lowercase();
-    if !matches!(
-        settings.default_engine.as_str(),
-        "local" | "codex" | "openai"
-    ) {
+    if !matches!(settings.default_engine.as_str(), "local" | "codex") {
         if strict {
             return Err("The default AI engine is invalid.".to_string());
         }
         settings.default_engine = default_ai_engine();
     }
 
-    for (label, model) in [
-        ("Codex CLI", &mut settings.codex_model),
-        ("OpenAI API", &mut settings.openai_model),
-    ] {
-        *model = model.trim().to_string();
-        if model.len() > 200 || model.chars().any(char::is_control) {
-            if strict {
-                return Err(format!("The {label} model id is invalid."));
-            }
-            model.clear();
-        }
-    }
-
-    for reasoning in [
-        &mut settings.codex_reasoning,
-        &mut settings.openai_reasoning,
-    ] {
-        match crate::ai::normalize_reasoning(reasoning) {
-            Ok(normalized) => *reasoning = normalized,
-            Err(error) if strict => return Err(error),
-            Err(_) => *reasoning = default_ai_reasoning(),
-        }
+    match crate::ai::normalize_reasoning(&settings.codex_reasoning) {
+        Ok(normalized) => settings.codex_reasoning = normalized,
+        Err(error) if strict => return Err(error),
+        Err(_) => settings.codex_reasoning = default_ai_reasoning(),
     }
     Ok(())
 }
@@ -479,10 +446,7 @@ mod tests {
             llm: None,
             ai: AiSettings {
                 default_engine: "codex".to_string(),
-                codex_model: String::new(),
                 codex_reasoning: "high".to_string(),
-                openai_model: "gpt-example".to_string(),
-                openai_reasoning: "low".to_string(),
             },
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
             last_opened: BTreeMap::from([(
@@ -534,7 +498,31 @@ mod tests {
         assert_eq!(loaded.ai, AiSettings::default());
         assert_eq!(loaded.ai.default_engine, "local");
         assert_eq!(loaded.ai.codex_reasoning, "medium");
-        assert_eq!(loaded.ai.openai_reasoning, "medium");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn removed_openai_and_codex_model_preferences_are_ignored_safely() {
+        let dir = crate::test_support::temp_dir("settings-removed-ai-fields");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"sourceLang":"default","ai":{"defaultEngine":"openai","codexModel":"legacy-codex-model","codexReasoning":"low","openaiModel":"legacy-openai-model","openaiReasoning":"high","apiKey":"legacy-test-value"}}"#,
+        )
+        .unwrap();
+
+        let loaded = load_checked(&dir).unwrap();
+        assert_eq!(loaded.ai.default_engine, "local");
+        assert_eq!(loaded.ai.codex_reasoning, "low");
+
+        let serialized = serde_json::to_value(loaded).unwrap();
+        let ai = serialized.get("ai").and_then(serde_json::Value::as_object);
+        assert!(ai.is_none_or(|ai| {
+            !ai.contains_key("codexModel")
+                && !ai.contains_key("openaiModel")
+                && !ai.contains_key("openaiReasoning")
+                && !ai.contains_key("apiKey")
+        }));
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -558,7 +546,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             settings_path(&dir),
-            r#"{"sourceLang":"default","ai":{"defaultEngine":"future","codexReasoning":"max","openaiReasoning":"sideways"}}"#,
+            r#"{"sourceLang":"default","ai":{"defaultEngine":"future","codexReasoning":"max"}}"#,
         )
         .unwrap();
         assert_eq!(load_checked(&dir).unwrap().ai, AiSettings::default());

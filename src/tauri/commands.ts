@@ -26,6 +26,7 @@ export type AiEngine = "local" | "codex";
 
 export interface AiSettings {
   defaultEngine: AiEngine;
+  /** Codex uses its own default model; only reasoning effort is configurable. */
   codexReasoning: "low" | "medium" | "high";
 }
 
@@ -788,13 +789,11 @@ export type AiTranslationRequest =
   | (AiTranslationRequestBase & {
       scope: "string";
       identities: [AiStringIdentity];
-      subjectModUniqueId?: never;
     })
   | (AiTranslationRequestBase & {
       scope: "selected";
       /** Explicit rows may span multiple scanned mods. */
       identities: AiStringIdentity[];
-      subjectModUniqueId?: never;
     });
 
 export interface AiTokenDifference {

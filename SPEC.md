@@ -354,7 +354,7 @@ Every completed suggestion is saved immediately as `review-needed`;
 cancellation or a later provider error retains completed Review work. Token
 validation and human review remain the final safety gates.
 
-These are fixed, direct integrations. The product does not provide a provider
+These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.
 
 ## 18. Technical Constraints

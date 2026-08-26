@@ -14,7 +14,6 @@ mod input_limits;
 mod lang_pack;
 mod language;
 mod llm;
-mod openai_api;
 mod operation_history;
 mod release_zip;
 mod scanner;
@@ -1057,11 +1056,10 @@ fn prepare_ai_request(
     // load rows only through the paths returned by that scan.
     let scan = scanner::scan_mods(&mods_path, &target_lang, &config);
     let translation_root = translations::language_root(&config, &target_lang)?;
-    let mut components = Vec::with_capacity(scan.mods.len());
+    let mut rows = Vec::new();
     for scanned in scan.mods {
         let state_snapshot = translations::load_snapshot(&translation_root, &scanned.unique_id)?;
         let state = &state_snapshot.state;
-        let mut rows = Vec::new();
         for file in scanned.i18n_files {
             let default_path = PathBuf::from(&file.default_path);
             let target_path = PathBuf::from(&file.target_path);
@@ -1086,13 +1084,8 @@ fn prepare_ai_request(
                 }
             }));
         }
-        components.push(ai::AiScopeComponent {
-            mod_unique_id: scanned.unique_id,
-            package_id: scanned.package_id,
-            rows,
-        });
     }
-    let resolved = ai::resolve_scope(request, &components)?;
+    let resolved = ai::resolve_scope(request, &rows)?;
     let glossary = load_active_glossary(&config, &target_lang);
     let prepared = ai::prepare_items(&resolved, |source| {
         glossary
@@ -1196,14 +1189,11 @@ fn remember_ai_run(
     let engine_label = match result.engine.as_str() {
         "local" => "Local AI",
         "codex" => "Codex CLI",
-        "openai" => "OpenAI API",
         _ => "AI",
     };
     let scope = match result.scope {
         ai::AiScope::OneString => "One string",
         ai::AiScope::Selected => "Selected strings",
-        ai::AiScope::Component => "Current component",
-        ai::AiScope::Package => "Current package",
     };
     let summary = match result.outcome {
         ai::AiRunOutcome::Complete => {
@@ -1249,7 +1239,7 @@ fn remember_ai_run(
 
 /// Real local-AI batch contract. The existing single-string command remains for
 /// backwards compatibility; the redesigned UI uses this bounded request/result
-/// shape for all three live engines.
+/// shape for both live engines.
 #[tauri::command]
 async fn translate_with_local_ai(
     app: AppHandle,
@@ -1360,7 +1350,6 @@ async fn translate_with_codex_cli(
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
         prepare_ai_request(&app, &request)?;
-    let model = settings.ai.codex_model;
     let reasoning = ai::normalize_reasoning(&settings.ai.codex_reasoning)?;
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
@@ -1371,7 +1360,6 @@ async fn translate_with_codex_cli(
             break;
         }
         match codex_cli::translate_chunk(
-            &model,
             &reasoning,
             &target_language,
             chunk,
@@ -1410,128 +1398,13 @@ async fn translate_with_codex_cli(
     let result = ai_run_result(
         &request,
         prepared.len(),
-        (
-            "codex",
-            if model.is_empty() {
-                "Codex default".to_string()
-            } else {
-                model
-            },
-            reasoning,
-        ),
+        ("codex", "Codex default".to_string(), reasoning),
         suggestions,
         outcome,
         error,
     );
     log::info!(
         "Codex CLI run finished: {}/{} suggestions ({:?})",
-        result.completed,
-        result.requested,
-        result.outcome
-    );
-    remember_ai_run(&history, &result);
-    Ok(result)
-}
-
-#[tauri::command]
-async fn openai_connect(
-    state: State<'_, ai::AiRuntimeState>,
-    api_key: String,
-    model: String,
-) -> Result<openai_api::OpenAiSessionStatus, String> {
-    openai_api::connect(&state, api_key, model).await
-}
-
-#[tauri::command]
-fn openai_session_status(
-    state: State<'_, ai::AiRuntimeState>,
-) -> Result<openai_api::OpenAiSessionStatus, String> {
-    openai_api::status(&state)
-}
-
-#[tauri::command]
-fn openai_disconnect(state: State<'_, ai::AiRuntimeState>) -> Result<bool, String> {
-    state.clear_openai_session()
-}
-
-#[tauri::command]
-async fn translate_with_openai_api(
-    app: AppHandle,
-    state: State<'_, ai::AiRuntimeState>,
-    history: State<'_, operation_history::OperationHistoryState>,
-    request: ai::AiTranslationRequest,
-) -> Result<ai::AiRunResult, String> {
-    ai::validate_request_shape(&request)?;
-    let lease = state.begin_run(&request.run_id)?;
-    let (settings, target_language, translation_root, prepared) =
-        prepare_ai_request(&app, &request)?;
-    let configured_model = openai_api::validate_model(&settings.ai.openai_model)?;
-    let reasoning = ai::normalize_reasoning(&settings.ai.openai_reasoning)?;
-    let (key, session_model) = state.openai_session()?.ok_or_else(|| {
-        "Enter and validate an OpenAI API key for this session first.".to_string()
-    })?;
-    if session_model != configured_model {
-        return Err(
-            "The configured OpenAI model changed. Validate the API key and model again."
-                .to_string(),
-        );
-    }
-    let mut suggestions = Vec::with_capacity(prepared.len());
-    let mut outcome = ai::AiRunOutcome::Complete;
-    let mut error = None;
-    for chunk in ai::chunks(&prepared) {
-        if lease.cancelled.load(Ordering::Acquire) {
-            outcome = ai::AiRunOutcome::Cancelled;
-            break;
-        }
-        match openai_api::translate_chunk(
-            key.clone(),
-            &configured_model,
-            &reasoning,
-            &target_language,
-            chunk,
-            lease.cancelled.clone(),
-        )
-        .await
-        {
-            Ok(translations) => match ai::suggestions(chunk, translations) {
-                Ok(completed) => {
-                    if let Err(cause) =
-                        stage_ai_suggestions(&translation_root, chunk, completed, &mut suggestions)
-                    {
-                        outcome = ai::AiRunOutcome::Error;
-                        error = Some(cause);
-                        break;
-                    }
-                }
-                Err(cause) => {
-                    outcome = ai::AiRunOutcome::Error;
-                    error = Some(cause);
-                    break;
-                }
-            },
-            Err(ai::ProviderFailure::Cancelled) => {
-                outcome = ai::AiRunOutcome::Cancelled;
-                break;
-            }
-            Err(ai::ProviderFailure::Message(cause)) => {
-                outcome = ai::AiRunOutcome::Error;
-                error = Some(cause);
-                break;
-            }
-        }
-    }
-    outcome = lease.finish(outcome)?;
-    let result = ai_run_result(
-        &request,
-        prepared.len(),
-        ("openai", configured_model, reasoning),
-        suggestions,
-        outcome,
-        error,
-    );
-    log::info!(
-        "OpenAI API run finished: {}/{} suggestions ({:?})",
         result.completed,
         result.requested,
         result.outcome
@@ -1781,10 +1654,6 @@ pub fn run() {
             translate_with_local_ai,
             codex_cli_status,
             translate_with_codex_cli,
-            openai_connect,
-            openai_session_status,
-            openai_disconnect,
-            translate_with_openai_api,
             cancel_ai_run,
             open_url,
             log_frontend_error,
@@ -1990,9 +1859,12 @@ mod ai_run_contract_tests {
     fn failed_run_reports_resolved_count_and_keeps_completed_suggestions() {
         let request = ai::AiTranslationRequest {
             run_id: "run-partial".to_string(),
-            scope: ai::AiScope::Package,
-            subject_mod_unique_id: Some("example.component".to_string()),
-            identities: Vec::new(),
+            scope: ai::AiScope::Selected,
+            identities: vec![ai::AiStringIdentity {
+                mod_unique_id: "example.component".to_string(),
+                relative_dir: "i18n".to_string(),
+                key: "greeting".to_string(),
+            }],
             include_open: true,
             include_changed: true,
         };
