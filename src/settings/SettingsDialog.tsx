@@ -20,9 +20,11 @@ import {
 import {
   type AiEngine,
   type AppSettings,
+  type CodexCliModel,
   type CodexCliStatus,
   type GlossaryStatus,
   buildGlossary,
+  codexCliModels,
   codexCliStatus,
   glossaryStatus,
   llmModels,
@@ -89,8 +91,11 @@ type EnginePanel = "local" | "codex";
 
 const DEFAULT_AI_SETTINGS = {
   defaultEngine: "local" as AiEngine,
+  codexModel: null,
   codexReasoning: "medium" as const,
 };
+
+const CODEX_REASONING_OPTIONS = ["low", "medium", "high"] as const;
 
 export function SettingsDialog({
   settings,
@@ -143,6 +148,10 @@ export function SettingsDialog({
   const [codexReasoning, setCodexReasoning] = useState<
     "low" | "medium" | "high"
   >(savedAi.codexReasoning);
+  const [codexModel, setCodexModel] = useState(savedAi.codexModel ?? "");
+  const [codexModels, setCodexModels] = useState<CodexCliModel[] | null>(null);
+  const [codexModelsLoading, setCodexModelsLoading] = useState(false);
+  const [codexModelsError, setCodexModelsError] = useState<string | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
   const [codexChecking, setCodexChecking] = useState(false);
   const llmDefaultBaseUrl =
@@ -167,10 +176,37 @@ export function SettingsDialog({
             : codexAvailable
               ? "codex"
               : null;
+  const selectedCodexModel = codexModels?.find(
+    (candidate) => candidate.model === codexModel,
+  );
+  const codexReasoningOptions = selectedCodexModel?.supportedReasoningEfforts
+    .length
+    ? CODEX_REASONING_OPTIONS.filter((reasoning) =>
+        selectedCodexModel.supportedReasoningEfforts.includes(reasoning),
+      )
+    : CODEX_REASONING_OPTIONS;
 
   useEffect(() => {
     if (defaultEngine) setEnginePanel(defaultEngine);
   }, [defaultEngine]);
+
+  useEffect(() => {
+    if (
+      !selectedCodexModel ||
+      selectedCodexModel.supportedReasoningEfforts.length === 0 ||
+      selectedCodexModel.supportedReasoningEfforts.includes(codexReasoning)
+    ) {
+      return;
+    }
+    setCodexReasoning(
+      selectedCodexModel.defaultReasoningEffort &&
+        selectedCodexModel.supportedReasoningEfforts.includes(
+          selectedCodexModel.defaultReasoningEffort,
+        )
+        ? selectedCodexModel.defaultReasoningEffort
+        : selectedCodexModel.supportedReasoningEfforts[0],
+    );
+  }, [codexReasoning, selectedCodexModel]);
 
   useEffect(
     () => () => {
@@ -183,8 +219,28 @@ export function SettingsDialog({
     let active = true;
     setCodexChecking(true);
     codexCliStatus()
-      .then((status) => {
-        if (active) setCodexStatus(status);
+      .then(async (status) => {
+        if (!active) return;
+        setCodexStatus(status);
+        if (!status.installed || !status.authenticated) return;
+        setCodexModelsLoading(true);
+        setCodexModelsError(null);
+        try {
+          const models = await codexCliModels();
+          if (!active) return;
+          setCodexModels(models);
+          setCodexModel((current) =>
+            models.some((model) => model.model === current)
+              ? current
+              : (models.find((model) => model.isDefault)?.model ??
+                models[0]?.model ??
+                current),
+          );
+        } catch (cause) {
+          if (active) setCodexModelsError(String(cause));
+        } finally {
+          if (active) setCodexModelsLoading(false);
+        }
       })
       .catch((cause) => {
         if (!active) return;
@@ -354,7 +410,27 @@ export function SettingsDialog({
   async function checkCodexStatus() {
     setCodexChecking(true);
     try {
-      setCodexStatus(await codexCliStatus());
+      const status = await codexCliStatus();
+      setCodexStatus(status);
+      if (status.installed && status.authenticated) {
+        setCodexModelsLoading(true);
+        setCodexModelsError(null);
+        try {
+          const models = await codexCliModels();
+          setCodexModels(models);
+          setCodexModel((current) =>
+            models.some((model) => model.model === current)
+              ? current
+              : (models.find((model) => model.isDefault)?.model ??
+                models[0]?.model ??
+                current),
+          );
+        } catch (cause) {
+          setCodexModelsError(String(cause));
+        } finally {
+          setCodexModelsLoading(false);
+        }
+      }
     } catch (cause) {
       setCodexStatus({
         installed: false,
@@ -364,6 +440,10 @@ export function SettingsDialog({
     } finally {
       setCodexChecking(false);
     }
+  }
+
+  function chooseCodexModel(model: string) {
+    setCodexModel(model);
   }
 
   async function save() {
@@ -389,6 +469,7 @@ export function SettingsDialog({
         diagnosticLogging,
         ai: {
           defaultEngine: defaultEngine ?? "local",
+          codexModel: codexModel || null,
           codexReasoning,
         },
         llm:
@@ -846,6 +927,44 @@ export function SettingsDialog({
                   </div>
                   <label className="translator-setting-line">
                     <span className="translator-setting-copy">
+                      <strong>Model</strong>
+                      <span>
+                        {codexModelsLoading
+                          ? "Loading models from Codex CLI…"
+                          : codexModels?.length
+                            ? "Reported by the installed Codex CLI"
+                            : codexModelsError
+                              ? codexModel
+                                ? "Model list unavailable · keeping the saved selection"
+                                : "Model list unavailable · using the CLI default"
+                              : "Uses the CLI default when no model is selected"}
+                      </span>
+                    </span>
+                    <select
+                      className="translator-select"
+                      value={codexModel}
+                      onChange={(event) => chooseCodexModel(event.target.value)}
+                      aria-label="Codex model"
+                      disabled={codexModelsLoading || !codexModels?.length}
+                    >
+                      {!codexModels?.length && (
+                        <option value={codexModel}>
+                          {codexModel
+                            ? `${codexModel} · saved`
+                            : "Codex CLI default"}
+                        </option>
+                      )}
+                      {codexModels?.map((model) => (
+                        <option key={model.model} value={model.model}>
+                          {model.displayName === model.model
+                            ? model.displayName
+                            : `${model.displayName} · ${model.model}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Reasoning</strong>
                       <span>Applied to translation runs</span>
                     </span>
@@ -859,9 +978,11 @@ export function SettingsDialog({
                       }
                       aria-label="Codex reasoning"
                     >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
+                      {codexReasoningOptions.map((reasoning) => (
+                        <option key={reasoning} value={reasoning}>
+                          {reasoning[0].toUpperCase() + reasoning.slice(1)}
+                        </option>
+                      ))}
                     </select>
                   </label>
                   <div className="translator-setting-line">
@@ -890,8 +1011,8 @@ export function SettingsDialog({
                 </div>
                 <p className="translator-kicker">
                   Codex CLI uses its existing CLI sign-in, account limits, and
-                  default model. Runs are ephemeral and read-only. The app does
-                  not inspect or persist CLI authentication data.
+                  the selected model. Runs are ephemeral and read-only. The app
+                  does not inspect or persist CLI authentication data.
                 </p>
               </section>
               <p className="translator-kicker">

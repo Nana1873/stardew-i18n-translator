@@ -926,7 +926,7 @@ describe("SettingsDialog", () => {
     ).not.toBeNull();
   });
 
-  it("keeps an available saved Codex default and uses the CLI default model", async () => {
+  it("keeps an available saved Codex model and exposes the CLI catalog", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
       if (cmd === "codex_cli_status")
@@ -936,6 +936,23 @@ describe("SettingsDialog", () => {
           version: "1.2.3",
           authentication: "ChatGPT account",
         });
+      if (cmd === "codex_cli_models")
+        return Promise.resolve([
+          {
+            model: "gpt-5.6-sol",
+            displayName: "GPT-5.6-Sol",
+            isDefault: true,
+            defaultReasoningEffort: "low",
+            supportedReasoningEfforts: ["low", "medium", "high"],
+          },
+          {
+            model: "gpt-5.5",
+            displayName: "GPT-5.5",
+            isDefault: false,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: ["low", "medium", "high"],
+          },
+        ]);
       return Promise.resolve(null);
     });
     const onSave = vi.fn();
@@ -950,6 +967,7 @@ describe("SettingsDialog", () => {
           },
           ai: {
             defaultEngine: "codex",
+            codexModel: "gpt-5.5",
             codexReasoning: "high",
           },
         }}
@@ -971,7 +989,10 @@ describe("SettingsDialog", () => {
       "false",
     );
     expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
-    expect(screen.queryByLabelText("Codex model")).toBeNull();
+    expect(screen.getByLabelText("Codex model")).toHaveValue("gpt-5.5");
+    expect(screen.getByLabelText("Codex model")).toHaveTextContent(
+      "GPT-5.6-Sol",
+    );
     expect(screen.getByLabelText("Codex reasoning")).toHaveValue("high");
     expect(screen.getByText("ChatGPT account")).toBeVisible();
 
@@ -981,13 +1002,71 @@ describe("SettingsDialog", () => {
         invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_status"),
       ).toHaveLength(2),
     );
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_models"),
+      ).toHaveLength(2),
+    );
+
+    fireEvent.change(screen.getByLabelText("Codex model"), {
+      target: { value: "gpt-5.6-sol" },
+    });
+    expect(screen.getByLabelText("Codex model")).toHaveValue("gpt-5.6-sol");
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: {
           defaultEngine: "codex",
+          codexModel: "gpt-5.6-sol",
           codexReasoning: "high",
+        },
+      }),
+    );
+  });
+
+  it("keeps Codex ready with the CLI default when its model list is unavailable", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "codex_cli_models")
+        return Promise.reject(new Error("model list unavailable"));
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "codex",
+            codexReasoning: "medium",
+          },
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Codex model")).toBeDisabled(),
+    );
+    expect(screen.getByLabelText("Codex model")).toHaveValue("");
+    expect(screen.getByText(/using the CLI default/i)).toBeVisible();
+    expect(screen.getByText("Codex CLI").closest("button")).toHaveTextContent(
+      "Ready",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: {
+          defaultEngine: "codex",
+          codexModel: null,
+          codexReasoning: "medium",
         },
       }),
     );
@@ -998,6 +1077,23 @@ describe("SettingsDialog", () => {
       if (cmd === "glossary_status") return Promise.resolve(null);
       if (cmd === "codex_cli_status")
         return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "codex_cli_models")
+        return Promise.resolve([
+          {
+            model: "gpt-5.6-terra",
+            displayName: "GPT-5.6-Terra",
+            isDefault: false,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: ["low", "medium", "high"],
+          },
+          {
+            model: "gpt-5.6-sol",
+            displayName: "GPT-5.6-Sol",
+            isDefault: true,
+            defaultReasoningEffort: "low",
+            supportedReasoningEfforts: ["low", "medium", "high"],
+          },
+        ]);
       return Promise.resolve(null);
     });
     render(
@@ -1006,6 +1102,7 @@ describe("SettingsDialog", () => {
           ...baseSettings,
           ai: {
             defaultEngine: "local",
+            codexModel: "retired-model",
             codexReasoning: "medium",
           },
         }}
@@ -1022,6 +1119,7 @@ describe("SettingsDialog", () => {
         "true",
       );
       expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
+      expect(screen.getByLabelText("Codex model")).toHaveValue("gpt-5.6-sol");
     });
     expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
       "aria-pressed",
@@ -1069,7 +1167,11 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
-        ai: { defaultEngine: "local", codexReasoning: "medium" },
+        ai: {
+          defaultEngine: "local",
+          codexModel: null,
+          codexReasoning: "medium",
+        },
       }),
     );
   });

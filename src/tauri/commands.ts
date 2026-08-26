@@ -27,7 +27,8 @@ export type AiEngine = "local" | "codex";
 
 export interface AiSettings {
   defaultEngine: AiEngine;
-  /** Codex uses its own default model; only reasoning effort is configurable. */
+  /** Exact model reported by the installed Codex CLI; absent = CLI default. */
+  codexModel?: string | null;
   codexReasoning: "low" | "medium" | "high";
 }
 
@@ -867,6 +868,15 @@ export interface CodexCliStatus {
   error?: string;
 }
 
+export interface CodexCliModel {
+  /** Exact value passed to `codex exec --model`. */
+  model: string;
+  displayName: string;
+  isDefault: boolean;
+  defaultReasoningEffort?: "low" | "medium" | "high";
+  supportedReasoningEfforts: ("low" | "medium" | "high")[];
+}
+
 export function translateWithLocalAi(
   request: AiTranslationRequest,
 ): Promise<AiRunResult> {
@@ -875,6 +885,10 @@ export function translateWithLocalAi(
 
 export function codexCliStatus(): Promise<CodexCliStatus> {
   return invoke<CodexCliStatus>("codex_cli_status");
+}
+
+export function codexCliModels(): Promise<CodexCliModel[]> {
+  return invoke<CodexCliModel[]>("codex_cli_models");
 }
 
 export function translateWithCodexCli(

@@ -127,6 +127,7 @@ const LEGACY_LAST_OPENED_KEY = "sit:lastOpened";
 
 const DEFAULT_AI_SETTINGS: AiSettings = {
   defaultEngine: "local",
+  codexModel: null,
   codexReasoning: "medium",
 };
 
@@ -962,7 +963,7 @@ export function App() {
       id: "codex",
       label: "Codex CLI",
       ready: codexAiReady,
-      model: "Codex default",
+      model: aiSettings.codexModel || "Codex default",
       reasoning: aiSettings.codexReasoning,
       unavailableReason: codexAiReady
         ? undefined

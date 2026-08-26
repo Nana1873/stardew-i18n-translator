@@ -3,6 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelAiRun,
+  codexCliModels,
   codexCliStatus,
   exportAllMods,
   exportLlmBatchToPath,
@@ -216,6 +217,18 @@ describe("backend command bridges", () => {
     invokeMock.mockResolvedValueOnce({ installed: true, authenticated: true });
     await codexCliStatus();
     expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_status");
+
+    invokeMock.mockResolvedValueOnce([
+      {
+        model: "gpt-5.6-sol",
+        displayName: "GPT-5.6-Sol",
+        isDefault: true,
+        defaultReasoningEffort: "low",
+        supportedReasoningEfforts: ["low", "medium", "high"],
+      },
+    ]);
+    await codexCliModels();
+    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_models");
 
     invokeMock.mockResolvedValueOnce({ outcome: "complete", suggestions: [] });
     await translateWithCodexCli(request);
