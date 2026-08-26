@@ -73,8 +73,10 @@ You can translate in four ways:
 - **Local AI:** connect to a local OpenAI-compatible endpoint such as Ollama or
   LM Studio.
 - **Codex CLI:** use an installed Codex CLI through its own existing login. The
-  app never reads Codex authentication files or tokens and uses the CLI's own
-  default model.
+  app never reads Codex authentication files or tokens. Settings lists the
+  models reported by the installed CLI and stores only the selected model id;
+  if that list is unavailable, translation remains available with the CLI's
+  own default model.
 - **External LLM batch:** export a self-contained JSON batch, translate it with a
   file-capable LLM, and import the result. Format 2 uses one compact source
   snapshot to ensure the result still belongs to the selected mod, language,
