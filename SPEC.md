@@ -99,12 +99,19 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - accepts the relaxed JSON commonly found in real mods;
 - requires source and existing target files to be flat string objects;
 - preserves source key order for later export;
+- compares the decoded English source inventory with the preceding successful
+  scan of the same Mods folder and reports changed, added, and removed strings;
 - does not traverse links that escape the selected Mods folder;
 - warns and skips only a malformed i18n component instead of inventing empty
   rows or stopping the complete scan.
 
 A positive `Nexus:<id>` update key may be shown as an external link. Sentinel
 values such as `Nexus:-1` are treated as no Nexus ID.
+
+Source comparison uses component UniqueID, relative i18n directory, and exact
+key as the stable identity. The first scan of a Mods folder creates the
+baseline and therefore reports zero observed changes. The snapshot contains
+hashes only; target-language changes do not affect it.
 
 ## 7. User Interface
 
@@ -258,6 +265,7 @@ The glossary sources in section 5 are the only narrow read-only exception.
 All application state is portable and stored beside the executable:
 
 - `data/settings.json`
+- `data/scan-source-snapshot.json`
 - `data/glossary/glossary-<lang>.json`
 - `data/language-state/<lang>/`
 - `data/logs/`

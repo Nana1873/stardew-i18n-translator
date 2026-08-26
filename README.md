@@ -16,6 +16,7 @@ a searchable editor instead of editing large JSON files by hand.
 ## What It Does
 
 - Scans a SMAPI Mods folder and finds standard `i18n` translation files.
+- Shows English-source changes, additions, and removals since the previous scan.
 - Groups multi-part mods and imports existing translations.
 - Opens on a real-data Overview and keeps detailed translation work in a
   two-panel Workspace.
@@ -216,6 +217,7 @@ saved by the run.
 Portable data is stored under:
 
 - `data/settings.json`
+- `data/scan-source-snapshot.json`
 - `data/language-state/<language>/`
 - `data/glossary/`
 - `data/logs/`
