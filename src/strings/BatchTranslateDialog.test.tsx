@@ -10,7 +10,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { vi } from "vitest";
+import { beforeEach, vi } from "vitest";
 import {
   BatchTranslateDialog,
   type BatchFinishedResult,
@@ -18,6 +18,17 @@ import {
   type LiveAiEngineOption,
 } from "./BatchTranslateDialog";
 import type { AiRunResult, TranslationResult } from "../tauri/commands";
+
+const eventApi = vi.hoisted(() => ({ listen: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: eventApi.listen }));
+
+let unlistenProgress: ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  unlistenProgress = vi.fn();
+  eventApi.listen.mockReset();
+  eventApi.listen.mockResolvedValue(unlistenProgress);
+});
 
 const ITEMS: BatchItem[] = [
   {
@@ -187,6 +198,68 @@ describe("BatchTranslateDialog", () => {
       reasoning: "high",
     });
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("shows matching live backend progress and ignores progress from other runs", async () => {
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onLiveRun = vi.fn(
+      (_runId: string) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const { onFinished } = renderDialog({
+      engine: CODEX_ENGINE,
+      onLiveRun,
+    });
+
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const runId = onLiveRun.mock.calls[0][0];
+    expect(eventApi.listen).toHaveBeenCalledWith(
+      "ai-run-progress",
+      expect.any(Function),
+    );
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    const progress = screen.getByRole("progressbar", {
+      name: "AI translation progress",
+    });
+
+    act(() =>
+      receiveProgress({
+        payload: { runId: "another-run", completed: 99, total: 100 },
+      }),
+    );
+    expect(screen.getByText("0 / 2")).toBeVisible();
+    expect(progress).toHaveAttribute("data-indeterminate", "true");
+
+    act(() =>
+      receiveProgress({
+        payload: { runId, completed: 320, total: 1_000 },
+      }),
+    );
+    expect(screen.getByText("320 / 1000")).toBeVisible();
+    expect(progress).not.toHaveAttribute("data-indeterminate");
+    expect(progress).toHaveAttribute("aria-valuenow", "32");
+    expect(progress).toHaveAttribute(
+      "aria-valuetext",
+      "320 of 1000 strings translated",
+    );
+
+    act(() => resolveRun(liveResult({ runId })));
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+  });
+
+  it("removes the live progress listener when the dialog unmounts", async () => {
+    const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
+    const { unmount } = renderDialog({
+      engine: CODEX_ENGINE,
+      onLiveRun,
+    });
+
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    unmount();
+
+    expect(unlistenProgress).toHaveBeenCalledOnce();
   });
 
   it("translates the selected Open and Changed items serially and hands every result to Review persistence", async () => {

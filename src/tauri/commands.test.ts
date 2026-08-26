@@ -1,10 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelAiRun,
   codexCliStatus,
   exportAllMods,
   exportLlmBatchToPath,
+  listenAiRunProgress,
   listOperationHistory,
   pickLlmBatchDestination,
   pickLlmBatchFile,
@@ -16,15 +18,42 @@ import {
   translateWithLocalAi,
   undoBatchEdit,
   type AiTranslationRequest,
+  type AiRunProgress,
   type ExportModInput,
 } from "./commands";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 const invokeMock = vi.mocked(invoke);
+const listenMock = vi.mocked(listen);
 
 describe("backend command bridges", () => {
-  beforeEach(() => invokeMock.mockReset());
+  beforeEach(() => {
+    invokeMock.mockReset();
+    listenMock.mockReset();
+  });
+
+  it("forwards typed AI progress events and returns the listener cleanup", async () => {
+    const progress: AiRunProgress = {
+      runId: "run-1",
+      completed: 32,
+      total: 100,
+    };
+    const handler = vi.fn();
+    const unlisten = vi.fn();
+    listenMock.mockResolvedValue(unlisten);
+
+    await expect(listenAiRunProgress(handler)).resolves.toBe(unlisten);
+    expect(listenMock).toHaveBeenCalledWith(
+      "ai-run-progress",
+      expect.any(Function),
+    );
+
+    const receiveProgress = listenMock.mock.calls[0][1];
+    receiveProgress({ event: "ai-run-progress", id: 1, payload: progress });
+    expect(handler).toHaveBeenCalledWith(progress);
+  });
 
   it("passes all export groups to the atomic aggregate command", async () => {
     const mods: ExportModInput[] = [

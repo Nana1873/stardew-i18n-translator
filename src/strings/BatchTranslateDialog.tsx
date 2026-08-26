@@ -14,6 +14,7 @@ import type {
   AiRunResult,
   TranslationResult,
 } from "../tauri/commands";
+import { listenAiRunProgress } from "../tauri/commands";
 
 export interface LiveAiEngineOption {
   id: AiEngine;
@@ -82,6 +83,8 @@ export function BatchTranslateDialog({
   onClose,
 }: BatchTranslateDialogProps) {
   const [done, setDone] = useState(0);
+  const [liveTotal, setLiveTotal] = useState<number | null>(null);
+  const [hasLiveProgress, setHasLiveProgress] = useState(false);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
@@ -121,10 +124,34 @@ export function BatchTranslateDialog({
 
   useEffect(() => {
     let active = true;
+    let unlistenProgress: (() => void) | null = null;
     const runId = runIdRef.current;
+
+    function releaseProgressListener() {
+      const unlisten = unlistenProgress;
+      unlistenProgress = null;
+      unlisten?.();
+    }
 
     (async () => {
       if (onLiveRun) {
+        try {
+          const unlisten = await listenAiRunProgress((event) => {
+            if (!active || event.runId !== runId) return;
+            setDone(event.completed);
+            setLiveTotal(event.total);
+            setHasLiveProgress(true);
+          });
+          if (!active) {
+            unlisten();
+            return;
+          }
+          unlistenProgress = unlisten;
+        } catch {
+          // The final command result remains authoritative when event delivery
+          // is unavailable (for example in a browser-only preview).
+        }
+        if (!active) return;
         try {
           liveRunPromiseRef.current ??= onLiveRun(runId);
           const result = await liveRunPromiseRef.current;
@@ -190,14 +217,15 @@ export function BatchTranslateDialog({
 
     return () => {
       active = false;
+      releaseProgressListener();
     };
     // Items are an immutable selection snapshot for this one run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const total = items.length;
+  const total = liveTotal ?? items.length;
   const progress = total > 0 ? Math.round((done / total) * 100) : 0;
-  const indeterminate = Boolean(onLiveRun && done === 0);
+  const indeterminate = Boolean(onLiveRun && !hasLiveProgress);
 
   return (
     <div className="stv3-flow-overlay">

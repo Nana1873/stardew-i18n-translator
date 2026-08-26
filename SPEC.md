@@ -348,11 +348,42 @@ Codex authentication files or tokens. It uses the CLI's own default model; the
 app does not maintain a separate Codex model catalogue.
 
 An AI request sends the source text, its section context, and matching glossary
-terms to the selected backend. Batch AI always receives exact selected string
-identities and automatically includes selected Open and Changed strings only.
-Every completed suggestion is saved immediately as `review-needed`;
-cancellation or a later provider error retains completed Review work. Token
-validation and human review remain the final safety gates.
+terms to the selected backend. Each run is bound to exactly one currently
+selected target language; built-in and curated custom-language targets use the
+same workflow. Batch AI receives exact selected string identities and includes
+selected Open and Changed strings only.
+
+The backend preserves source order and may include up to two preceding and two
+following English source strings from the same component, relative i18n file,
+section, and meaningful contiguous key-prefix group. These boundaries keep
+related dialogue or menu-like entries together without inventing topic or
+reference metadata that SMAPI i18n files do not contain. Neighboring
+strings are read-only context. The output contract permits only selected IDs,
+so context-only strings cannot be returned as translations or written to state.
+
+Live runs accept at most 4,096 selected strings and 8 MiB of selected source
+text. Codex CLI selections are divided into adaptive batches of at most 100
+selected strings and 96 KiB of actual serialized input. Oversized neighboring
+context is removed farthest-first; the selected source is never trimmed.
+
+Codex CLI recovery is limited: one transient failure may be retried, while an
+invalid structured response gets one corrected attempt. If it remains invalid,
+only that Codex CLI batch is halved until the failing string is isolated, so
+unrelated strings can continue. A protected-token mismatch gets one targeted
+Codex CLI repair attempt with the exact required and returned token counts when
+that repair input fits the same 96 KiB bound. An individually oversized repair
+input skips the extra call. If repair fails or is skipped, the best structurally
+valid suggestion enters Review with the existing blocking validation issue.
+Local AI keeps its direct single-string request and existing one-time
+protected-token retry.
+
+The compact progress dialog receives persisted progress such as `320 / 1000`
+and retains its existing Cancel action. Every completed suggestion is saved
+immediately as `review-needed`; cancellation or a later provider error retains
+completed Review work. A later run over the same scope naturally processes the
+remaining Open or Changed strings instead of maintaining a separate persistent
+AI job history, queue, or checkpoint store. Human review remains the final
+safety gate.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

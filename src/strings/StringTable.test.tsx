@@ -1691,7 +1691,8 @@ describe("StringTable V3 workbench", () => {
     );
 
     await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
-    expect(onStatusFilterChange).toHaveBeenCalledWith("review-needed");
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /2 selected/ })).toBeVisible();
     expect(onNotify).not.toHaveBeenCalled();
     expect(onBulkApplied).not.toHaveBeenCalled();
     expect(onAiBatchFinished).toHaveBeenCalledWith(
@@ -1709,7 +1710,7 @@ describe("StringTable V3 workbench", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("reports an AI error after partial progress and switches to Review", async () => {
+  it("reports an AI error after partial progress and keeps the remaining selection", async () => {
     const onTranslate = vi
       .fn()
       .mockResolvedValueOnce({
@@ -1742,7 +1743,8 @@ describe("StringTable V3 workbench", () => {
     );
 
     await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
-    expect(onStatusFilterChange).toHaveBeenCalledWith("review-needed");
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
     expect(onNotify).not.toHaveBeenCalled();
     expect(onBulkApplied).not.toHaveBeenCalled();
     expect(onAiBatchFinished).toHaveBeenCalledWith(

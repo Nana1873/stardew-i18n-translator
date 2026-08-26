@@ -603,7 +603,9 @@ export function SettingsDialog({
               <h3>Translation engines</h3>
               <p className="stv3-settings-intro">
                 Choose the default engine for the quick editor and batch
-                actions. Every AI output enters Review.
+                actions. Every AI output enters Review. A run may send up to two
+                preceding and two following English strings as read-only
+                context; only selected strings can be saved.
               </p>
               <div
                 className="stv3-engine-list stv3-engine-list-two"

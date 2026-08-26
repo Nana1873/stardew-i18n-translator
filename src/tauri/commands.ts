@@ -3,6 +3,7 @@
  * Keeping invoke calls in one place gives the rest of the UI a plain async API.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ShortcutSettings } from "../shortcuts";
 
 export interface DetectedInstall {
@@ -824,6 +825,21 @@ export interface AiRunResult {
   error?: string;
   /** Already persisted by Rust in Review; return values are for display/reload only. */
   suggestions: AiSuggestion[];
+}
+
+export interface AiRunProgress {
+  runId: string;
+  completed: number;
+  total: number;
+}
+
+/** Listen for persisted Review progress from the currently running AI command. */
+export function listenAiRunProgress(
+  handler: (progress: AiRunProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<AiRunProgress>("ai-run-progress", (event) => {
+    handler(event.payload);
+  });
 }
 
 export interface CodexCliStatus {

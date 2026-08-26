@@ -15,8 +15,15 @@ request and the existing product behavior decide what work is appropriate.
   limited to a user-configured localhost OpenAI-compatible endpoint.
 - The optional Codex CLI backend relies exclusively on the CLI's own login. The
   app does not read, copy, or persist Codex authentication files or tokens.
-- AI requests send source text, section context, and matching glossary terms to
-  the selected service.
+- Each live AI run uses exactly one selected target language. Requests send the
+  selected source text, section context, and matching glossary terms to the
+  selected service and may add up to two preceding and following English source
+  strings from the same component, i18n file, and section as read-only context.
+  Only exact selected Open or Changed IDs may be returned or saved.
+- Keep large Codex CLI runs adaptively bounded by item count and request size.
+  Save completed suggestions immediately to Review, limit Codex recovery to
+  retries and splitting of the affected batch, and resume from string status
+  instead of a persistent AI job history, queue, or checkpoint store.
 - Keep the AI integrations fixed and direct. Do not add a provider marketplace,
   provider registry, or configurable custom cloud base URL.
 - The glossary is optional. Missing glossary data must never block scanning,

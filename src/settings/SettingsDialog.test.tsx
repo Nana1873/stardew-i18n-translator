@@ -912,6 +912,11 @@ describe("SettingsDialog", () => {
     expect(
       screen.getByRole("heading", { name: "Translation engines" }),
     ).toBeVisible();
+    expect(
+      screen.getByText(
+        /two preceding and two following English strings as read-only context/i,
+      ),
+    ).toBeVisible();
     expect(screen.getAllByRole("tab")).toHaveLength(5);
     expect(container.querySelector(".stv3-settings-dialog")).not.toBeNull();
     expect(container.querySelector(".stv3-settings-layout")).not.toBeNull();

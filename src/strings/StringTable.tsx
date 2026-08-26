@@ -1456,7 +1456,7 @@ export function StringTable({
     });
   }
 
-  function applyLiveSuggestions(result: AiRunResult) {
+  function applyLiveSuggestions(result: AiRunResult, showReview = true) {
     if (result.suggestions.length === 0) return;
     const suggestions = new Map(
       result.suggestions.map((suggestion) => [
@@ -1505,8 +1505,10 @@ export function StringTable({
         tokenMismatchAccepted: false,
       });
     }
-    setStatusValue("review-needed");
-    setIssuesValue(false);
+    if (showReview) {
+      setStatusValue("review-needed");
+      setIssuesValue(false);
+    }
   }
 
   async function runLiveBatch(runId: string): Promise<AiRunResult> {
@@ -1524,7 +1526,9 @@ export function StringTable({
       })),
     };
     const result = await onRunAi(activeLiveEngine.id, request);
-    applyLiveSuggestions(result);
+    // A partial/cancelled live run keeps the current filter and selection so
+    // the remaining Open/Changed rows can be started again immediately.
+    applyLiveSuggestions(result, false);
     return result;
   }
 
@@ -1587,7 +1591,7 @@ export function StringTable({
   function finishBatch(result: BatchFinishedResult) {
     const current = rowsRef.current ?? [];
     reportCounts(current);
-    if (result.done > 0) {
+    if (result.outcome === "complete" && result.done > 0) {
       setStatusValue("review-needed");
       setIssuesValue(false);
     }

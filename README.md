@@ -124,6 +124,13 @@ includes every selected **Open** or **Changed** string and sends no Done or
 Review text. An external batch may contain many selected Open or Changed strings
 but is bound to exactly one mod.
 
+Each live AI run uses the currently selected target language; built-in and
+curated custom-language targets follow the same workflow. To preserve local
+context, the request includes up to two preceding and two following English
+source strings from the same component, relative i18n file, and section. These
+neighbors are read-only context: only exact selected Open or Changed IDs may be
+returned and saved.
+
 External batch import uses a native file picker or drag and drop. Before the
 Import button is enabled, a read-only preflight checks the mod, target language,
 source snapshot, files, keys, protected tokens, empty results, and existing
@@ -131,13 +138,27 @@ local translations. A batch for another currently scanned mod can switch the
 Workspace to that mod for a fresh preflight. Valid values enter Review, while
 non-empty local translations remain untouched.
 
-Manual translation and local-only workflows remain offline. When Codex CLI is
-selected, the source text, its section context, and matching glossary terms are
-sent through the installed CLI.
+Manual translation and local-only workflows remain offline. Live AI requests
+send the selected English source text, its section context, matching glossary
+terms, and the bounded neighboring context described above to the selected
+backend.
 
-AI suggestions always enter the review queue. Each completed suggestion is
-saved immediately, so cancelling a longer run keeps the completed Review work.
-Suggestions are never treated as finished translations automatically.
+Large Codex CLI selections are divided into adaptive batches of at most 100
+selected strings and 96 KiB of serialized input; one live run accepts up to
+4,096 strings or 8 MiB of selected source text. Recovery is limited to the
+affected batch: a transient failure is retried once, and a persistently invalid
+response is split until a failing string is isolated so unrelated work can
+continue. A protected-token mismatch gets one targeted repair attempt and stays
+a blocking Review issue if it still differs. An individually oversized repair
+input is kept for Review without another provider call.
+
+The compact progress dialog shows persisted progress such as `320 / 1000` and
+keeps its Cancel action. AI suggestions always enter the review queue and each
+completed suggestion is saved immediately. Cancelling or restarting a longer
+run therefore keeps completed Review work and naturally leaves only the
+remaining Open or Changed strings to process; there is no separate persistent
+AI job queue or checkpoint history. Suggestions are never treated as finished
+translations automatically.
 **Open review queue** returns to the affected component when it is known and to
 **All mods** for a multi-component run, so cross-mod results are not hidden.
 
@@ -186,6 +207,11 @@ batches leave your computer only when you upload them yourself.
 Codex CLI authentication remains entirely owned by the CLI; the app does not
 read or copy its authentication files or tokens. The app does not offer a
 provider marketplace or a custom cloud base URL.
+
+Live AI may send up to two preceding and two following unselected English source
+strings from the same component, i18n file, section, and related key group as
+read-only context. Context-only strings cannot be returned as translations or
+saved by the run.
 
 Portable data is stored under:
 
