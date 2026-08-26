@@ -34,8 +34,19 @@ proportional to that goal.
   `i18n/<lang>.json` files.
 - Glossary extraction may read the narrow, read-only Stardew and community-pack
   `Strings` sources described in [SPEC.md](SPEC.md).
-- The desktop app does not contain cloud API keys, automatic downloads, Nexus
-  API operations, mod-manager features, or Git integration.
+- Manual translation and local-only workflows remain offline. The optional
+  Codex CLI backend uses only the CLI's own authentication; never inspect,
+  import, or persist Codex authentication files or tokens.
+- The optional OpenAI API backend keeps its API key only in the running process
+  and never persists or logs it. It uses the fixed official Responses API with
+  `store=false` and no tools.
+- When an AI backend is selected, source text, section context, and matching
+  glossary terms are sent to that service. Direct OpenAI API use has separate
+  API costs.
+- Do not add an AI provider marketplace, provider registry, or configurable
+  custom cloud base URL. Keep the implemented backends direct and explicit.
+- The desktop app does not perform automatic downloads, Nexus API operations,
+  mod-manager features, or Git integration.
 - AI output always enters the review workflow rather than becoming final
   automatically.
 

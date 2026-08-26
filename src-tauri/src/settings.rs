@@ -37,6 +37,10 @@ pub struct AppSettings {
     /// Optional local-LLM connection. Absent when AI translation is not set up.
     #[serde(default)]
     pub llm: Option<LlmSettings>,
+    /// Live-engine preferences. Credentials and readiness are deliberately not
+    /// represented here: Codex owns its login and the OpenAI key is memory-only.
+    #[serde(default, skip_serializing_if = "AiSettings::is_default")]
+    pub ai: AiSettings,
     /// User overrides for the frontend shortcut catalog.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub shortcuts: BTreeMap<String, String>,
@@ -73,6 +77,42 @@ pub struct LlmSettings {
     /// low — translation wants consistency, not creativity).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AiSettings {
+    #[serde(default = "default_ai_engine")]
+    pub default_engine: String,
+    /// Blank means the Codex CLI default while user config is ignored. The app never hardcodes a
+    /// Codex model catalogue.
+    #[serde(default)]
+    pub codex_model: String,
+    #[serde(default = "default_ai_reasoning")]
+    pub codex_reasoning: String,
+    /// User-entered model id for the fixed OpenAI Responses API endpoint.
+    #[serde(default)]
+    pub openai_model: String,
+    #[serde(default = "default_ai_reasoning")]
+    pub openai_reasoning: String,
+}
+
+impl AiSettings {
+    fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl Default for AiSettings {
+    fn default() -> Self {
+        Self {
+            default_engine: default_ai_engine(),
+            codex_model: String::new(),
+            codex_reasoning: default_ai_reasoning(),
+            openai_model: String::new(),
+            openai_reasoning: default_ai_reasoning(),
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
@@ -118,14 +158,8 @@ pub struct WorkspaceSettings {
     pub sort: Option<WorkspaceSort>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mod_pane_width: Option<u16>,
-    #[serde(default, skip_serializing_if = "WorkspaceColumnWidths::is_default")]
+    #[serde(default)]
     pub column_widths: WorkspaceColumnWidths,
-}
-
-impl WorkspaceColumnWidths {
-    fn is_default(&self) -> bool {
-        self == &Self::default()
-    }
 }
 
 impl WorkspaceSettings {
@@ -158,6 +192,14 @@ fn default_diagnostic_logging() -> bool {
     true
 }
 
+fn default_ai_engine() -> String {
+    "local".to_string()
+}
+
+fn default_ai_reasoning() -> String {
+    "medium".to_string()
+}
+
 fn default_string_scope() -> String {
     "mod".to_string()
 }
@@ -174,6 +216,7 @@ impl Default for AppSettings {
             source_lang: default_source_lang(),
             target_lang: None,
             llm: None,
+            ai: AiSettings::default(),
             shortcuts: BTreeMap::new(),
             last_opened: BTreeMap::new(),
             workspace: WorkspaceSettings::default(),
@@ -313,8 +356,47 @@ fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSetting
             crate::llm::validate_base_url(&llm.base_url)?;
         }
     }
+    normalize_ai(&mut settings.ai, validate_llm)?;
     settings.workspace = normalize_workspace(settings.workspace);
     Ok(settings)
+}
+
+fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
+    settings.default_engine = settings.default_engine.trim().to_ascii_lowercase();
+    if !matches!(
+        settings.default_engine.as_str(),
+        "local" | "codex" | "openai"
+    ) {
+        if strict {
+            return Err("The default AI engine is invalid.".to_string());
+        }
+        settings.default_engine = default_ai_engine();
+    }
+
+    for (label, model) in [
+        ("Codex CLI", &mut settings.codex_model),
+        ("OpenAI API", &mut settings.openai_model),
+    ] {
+        *model = model.trim().to_string();
+        if model.len() > 200 || model.chars().any(char::is_control) {
+            if strict {
+                return Err(format!("The {label} model id is invalid."));
+            }
+            model.clear();
+        }
+    }
+
+    for reasoning in [
+        &mut settings.codex_reasoning,
+        &mut settings.openai_reasoning,
+    ] {
+        match crate::ai::normalize_reasoning(reasoning) {
+            Ok(normalized) => *reasoning = normalized,
+            Err(error) if strict => return Err(error),
+            Err(_) => *reasoning = default_ai_reasoning(),
+        }
+    }
+    Ok(())
 }
 
 fn normalize_workspace(mut workspace: WorkspaceSettings) -> WorkspaceSettings {
@@ -389,6 +471,13 @@ mod tests {
             source_lang: "default".to_string(),
             target_lang: Some("de".to_string()),
             llm: None,
+            ai: AiSettings {
+                default_engine: "codex".to_string(),
+                codex_model: String::new(),
+                codex_reasoning: "high".to_string(),
+                openai_model: "gpt-example".to_string(),
+                openai_reasoning: "low".to_string(),
+            },
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
             last_opened: BTreeMap::from([(
                 "Pathoschild.ContentPatcher".to_string(),
@@ -422,7 +511,60 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap()).unwrap();
         assert_eq!(json["workspace"]["columnWidths"]["mod"], 140);
         assert!(json["workspace"]["columnWidths"].get("modColumn").is_none());
+        assert_eq!(json["ai"]["defaultEngine"], "codex");
+        assert!(json["ai"].get("apiKey").is_none());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn old_settings_get_safe_live_ai_defaults_without_any_credential_field() {
+        let dir = crate::test_support::temp_dir("settings-old-ai-defaults");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(settings_path(&dir), r#"{"sourceLang":"default"}"#).unwrap();
+
+        let loaded = load_checked(&dir).unwrap();
+
+        assert_eq!(loaded.ai, AiSettings::default());
+        assert_eq!(loaded.ai.default_engine, "local");
+        assert_eq!(loaded.ai.codex_reasoning, "medium");
+        assert_eq!(loaded.ai.openai_reasoning, "medium");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn serialized_non_default_workspace_always_exposes_column_widths() {
+        let settings = AppSettings {
+            workspace: WorkspaceSettings {
+                mod_search: "query".to_string(),
+                ..WorkspaceSettings::default()
+            },
+            ..AppSettings::default()
+        };
+
+        let json = serde_json::to_value(settings).unwrap();
+        assert_eq!(json["workspace"]["columnWidths"], serde_json::json!({}));
+    }
+
+    #[test]
+    fn invalid_live_ai_preferences_normalize_on_load_and_fail_before_save() {
+        let dir = crate::test_support::temp_dir("settings-invalid-ai");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            settings_path(&dir),
+            r#"{"sourceLang":"default","ai":{"defaultEngine":"future","codexReasoning":"max","openaiReasoning":"sideways"}}"#,
+        )
+        .unwrap();
+        assert_eq!(load_checked(&dir).unwrap().ai, AiSettings::default());
+
+        let invalid = AppSettings {
+            ai: AiSettings {
+                default_engine: "future".to_string(),
+                ..AiSettings::default()
+            },
+            ..AppSettings::default()
+        };
+        assert!(save(&dir, &invalid).is_err());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

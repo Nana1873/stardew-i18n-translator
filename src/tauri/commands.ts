@@ -22,6 +22,17 @@ export interface LlmSettings {
   temperature?: number | null;
 }
 
+export type AiEngine = "local" | "codex" | "openai";
+
+export interface AiSettings {
+  defaultEngine: AiEngine;
+  /** Blank means the Codex CLI default; personal CLI config is ignored. */
+  codexModel: string;
+  codexReasoning: "low" | "medium" | "high";
+  openaiModel: string;
+  openaiReasoning: "low" | "medium" | "high";
+}
+
 export type WorkspaceSortColumn =
   "mod" | "file" | "status" | "key" | "source" | "target";
 
@@ -63,6 +74,8 @@ export interface AppSettings {
   targetLang: string | null;
   /** Optional local-LLM connection; null until AI translation is set up. */
   llm?: LlmSettings | null;
+  /** Live-engine preferences only. API keys/readiness are never persisted. */
+  ai?: AiSettings;
   /** User overrides for the keyboard shortcut catalog. */
   shortcuts?: ShortcutSettings;
   /** Dashboard resume history stored in portable settings. */
@@ -241,6 +254,79 @@ export function saveStrings(
   entries: SaveStringEntry[],
 ): Promise<void> {
   return invoke<void>("save_strings", { modUniqueId, entries });
+}
+
+export type OperationKind =
+  | "import"
+  | "export"
+  | "zip"
+  | "batch-export"
+  | "batch-edit"
+  | "batch-undo"
+  | "ai";
+
+export type OperationOutcome =
+  "success" | "warning" | "cancelled" | "blocked" | "failed";
+
+export interface OperationDetail {
+  label: string;
+  value: string;
+}
+
+/** One real, completed backend result retained for this app session only. */
+export interface OperationHistoryEntry {
+  id: string;
+  kind: OperationKind;
+  outcome: OperationOutcome;
+  title: string;
+  summary: string;
+  itemCount: number;
+  path?: string;
+  fileName?: string;
+  warnings: string[];
+  details: OperationDetail[];
+  canUndo: boolean;
+  completedAtEpochMs: number;
+}
+
+/** Save one component's batch edit and retain its single safe undo snapshot. */
+export function saveStringsWithUndo(
+  modUniqueId: string,
+  title: string,
+  entries: SaveStringEntry[],
+): Promise<OperationHistoryEntry> {
+  return invoke<OperationHistoryEntry>("save_strings_with_undo", {
+    modUniqueId,
+    title,
+    entries,
+  });
+}
+
+export interface SaveStringGroup {
+  modUniqueId: string;
+  entries: SaveStringEntry[];
+}
+
+/** Save one multi-component action with one backend-owned safe undo snapshot. */
+export function saveStringGroupsWithUndo(
+  title: string,
+  groups: SaveStringGroup[],
+): Promise<OperationHistoryEntry> {
+  return invoke<OperationHistoryEntry>("save_string_groups_with_undo", {
+    title,
+    groups,
+  });
+}
+
+export function listOperationHistory(): Promise<OperationHistoryEntry[]> {
+  return invoke<OperationHistoryEntry[]>("list_operation_history");
+}
+
+/** Restore only while no touched component has been saved since the batch. */
+export function undoBatchEdit(
+  operationId: string,
+): Promise<OperationHistoryEntry> {
+  return invoke<OperationHistoryEntry>("undo_batch_edit", { operationId });
 }
 
 export interface ExportFileInput {
@@ -684,6 +770,126 @@ export function translateString(
     section: section ?? null,
     temperature: temperature ?? null,
   });
+}
+
+export type AiScope = "string" | "selected" | "component" | "package";
+
+export interface AiStringIdentity {
+  /** Exact scanner identities. Rust resolves current source/section data. */
+  modUniqueId: string;
+  relativeDir: string;
+  key: string;
+}
+
+interface AiTranslationRequestBase {
+  runId: string;
+  includeOpen: boolean;
+  includeChanged: boolean;
+}
+
+export type AiTranslationRequest =
+  | (AiTranslationRequestBase & {
+      scope: "string";
+      identities: [AiStringIdentity];
+      subjectModUniqueId?: never;
+    })
+  | (AiTranslationRequestBase & {
+      scope: "selected";
+      /** Explicit rows may span multiple scanned mods. */
+      identities: AiStringIdentity[];
+      subjectModUniqueId?: never;
+    })
+  | (AiTranslationRequestBase & {
+      scope: "component" | "package";
+      /** Rust derives the complete current component/package from this mod. */
+      subjectModUniqueId: string;
+      identities?: never;
+    });
+
+export interface AiTokenDifference {
+  token: string;
+  sourceCount: number;
+  targetCount: number;
+}
+
+export interface AiSuggestion {
+  /** Real scanner identity restored only after provider output validation. */
+  identity: AiStringIdentity;
+  text: string;
+  /** Fixed by Rust; live AI never returns Done. */
+  status: "review-needed";
+  tokenDifferences: AiTokenDifference[];
+  glossaryMisses: string[];
+}
+
+export interface AiRunResult {
+  runId: string;
+  engine: AiEngine;
+  model: string;
+  reasoning: string;
+  scope: AiScope;
+  requested: number;
+  completed: number;
+  outcome: "complete" | "cancelled" | "error";
+  error?: string;
+  /** Already persisted by Rust in Review; return values are for display/reload only. */
+  suggestions: AiSuggestion[];
+}
+
+export interface CodexCliStatus {
+  installed: boolean;
+  authenticated: boolean;
+  version?: string;
+  /** Sanitized label only; the app never reads CLI auth files or tokens. */
+  authentication?: string;
+  error?: string;
+}
+
+export interface OpenAiSessionStatus {
+  connected: boolean;
+  model?: string;
+}
+
+export function translateWithLocalAi(
+  request: AiTranslationRequest,
+): Promise<AiRunResult> {
+  return invoke<AiRunResult>("translate_with_local_ai", { request });
+}
+
+export function codexCliStatus(): Promise<CodexCliStatus> {
+  return invoke<CodexCliStatus>("codex_cli_status");
+}
+
+export function translateWithCodexCli(
+  request: AiTranslationRequest,
+): Promise<AiRunResult> {
+  return invoke<AiRunResult>("translate_with_codex_cli", { request });
+}
+
+/** Validate and hand an API key to Rust for this process session only. */
+export function openAiConnect(
+  apiKey: string,
+  model: string,
+): Promise<OpenAiSessionStatus> {
+  return invoke<OpenAiSessionStatus>("openai_connect", { apiKey, model });
+}
+
+export function openAiSessionStatus(): Promise<OpenAiSessionStatus> {
+  return invoke<OpenAiSessionStatus>("openai_session_status");
+}
+
+export function openAiDisconnect(): Promise<boolean> {
+  return invoke<boolean>("openai_disconnect");
+}
+
+export function translateWithOpenAiApi(
+  request: AiTranslationRequest,
+): Promise<AiRunResult> {
+  return invoke<AiRunResult>("translate_with_openai_api", { request });
+}
+
+export function cancelAiRun(runId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_ai_run", { runId });
 }
 
 export function openUrl(url: string): Promise<void> {

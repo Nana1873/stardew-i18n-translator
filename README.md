@@ -20,7 +20,8 @@ a searchable editor instead of editing large JSON files by hand.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about missing or changed Stardew, dialogue, mail, Content Patcher, and
   placeholder tokens before export.
-- Supports manual translation, optional local AI, and external LLM batches.
+- Supports manual translation, optional local AI, Codex CLI, OpenAI API, and
+  external LLM batches.
 - Supports Stardew's built-in languages and curated custom-language targets.
 - Builds optional glossary hints from local Stardew strings or an installed
   community language pack.
@@ -65,18 +66,29 @@ assets, and it does not download or update mods.
 
 ## Translation Workflows
 
-You can translate in three ways:
+You can translate in five ways:
 
 - **Manual:** edit strings directly in the string editor.
 - **Local AI:** connect to a local OpenAI-compatible endpoint such as Ollama or
   LM Studio.
+- **Codex CLI:** use an installed Codex CLI through its own existing login. The
+  app never reads Codex authentication files or tokens.
+- **OpenAI API:** provide an API key for the current app session and use the
+  fixed official `https://api.openai.com/v1/responses` endpoint. Requests set
+  `store=false` and enable no tools. API usage can incur charges separate from
+  ChatGPT or Codex subscriptions.
 - **External LLM batch:** export a self-contained JSON batch, translate it with a
   file-capable LLM, and import the result. Format 2 uses one compact source
   snapshot to ensure the result still belongs to the selected mod, language,
   files, keys, and current English text before anything is saved.
 
-AI suggestions always enter the review queue. They are never treated as finished
-translations automatically.
+Manual translation and local-only workflows remain offline. When Codex CLI or
+the OpenAI API is selected, the source text, its section context, and matching
+glossary terms are sent to that service.
+
+AI suggestions always enter the review queue. Each completed suggestion is
+saved immediately, so cancelling a longer run keeps the completed Review work.
+Suggestions are never treated as finished translations automatically.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;
@@ -95,17 +107,26 @@ manifests, or backups.
 **Translation Notes** creates short copy-ready publication text using the current
 package, language, coverage, installation guidance, and review state.
 
-Completed exports, imports, LLM batches, and release ZIPs remain available in the
-result tray without blocking the translation workspace.
+The five latest completed backend operations, including exports, imports, LLM
+batches, AI runs, release ZIPs, and batch edits, remain available in the result
+tray for the current app session. The latest batch edit can be undone until a
+newer operation replaces its undo snapshot; undo refuses to overwrite a string
+that changed afterward, even if it was later changed back.
 
 ## Local Data and Privacy
 
-The desktop app has no accounts, analytics, telemetry, cloud API keys, or Nexus
-API access. Scanning, editing, validation, glossary generation, and export happen
-locally.
+The desktop app has no accounts, analytics, telemetry, or Nexus API access.
+Scanning, editing, validation, glossary generation, and export happen locally.
 
 Local AI requests go only to the local endpoint you configure. External LLM
 batches leave your computer only when you upload them yourself.
+
+Codex CLI authentication remains entirely owned by the CLI; the app does not
+read or copy its authentication files or tokens. An OpenAI API key exists only
+in the running app process and is never written to `data/`. The direct API
+integration has a fixed official Responses API endpoint, sets `store=false`,
+and provides no tools. The app does not offer a provider marketplace or a
+custom cloud base URL.
 
 Portable data is stored under:
 

@@ -11,8 +11,17 @@ request and the existing product behavior decide what work is appropriate.
   dictionaries to build an optional glossary.
 - It is not a mod manager, download manager, Nexus client, Git client, or general
   Stardew content editor.
-- It does not store cloud credentials or call cloud AI services. Local AI is
+- Manual translation and local-only workflows remain offline. Local AI is
   limited to a user-configured localhost OpenAI-compatible endpoint.
+- The optional Codex CLI backend relies exclusively on the CLI's own login. The
+  app does not read, copy, or persist Codex authentication files or tokens.
+- The optional OpenAI API backend keeps its key only in the running process. It
+  calls the fixed official Responses API with `store=false` and no tools; API
+  usage has separate costs.
+- AI requests send source text, section context, and matching glossary terms to
+  the selected service.
+- Keep the AI integrations fixed and direct. Do not add a provider marketplace,
+  provider registry, or configurable custom cloud base URL.
 - The glossary is optional. Missing glossary data must never block scanning,
   editing, validation, or export.
 - AI-generated translations always require review.
