@@ -31,12 +31,14 @@ The durable product loop is:
 6. Export target-language `i18n` files or a translation package ZIP.
 
 Glossary and AI features are optional additions to this loop. They must never
-be required for ordinary translation and export.
+be required for ordinary translation and export. Manual translation and all
+local-only workflows remain available without contacting a cloud service.
 
 ## 4. Setup and Languages
 
-Setup stores the Stardew Valley folder, Mods folder, target language, and local
-AI settings in the portable `data/` folder.
+Setup stores the Stardew Valley folder, Mods folder, target language, and
+non-secret AI preferences in the portable `data/` folder. An OpenAI API key is
+session-only process state and is never persisted there.
 
 The source language is the mod's `i18n/default.json`, normally English.
 
@@ -112,10 +114,13 @@ The application has a dashboard home and a two-panel work view:
 - the right side shows the selected mod's strings;
 - search, status filters, review queues, bulk actions, and keyboard navigation
   support large translation sets;
-- Settings contains folders, language, glossary, local AI, shortcuts, logging,
-  and app information;
-- completed exports, imports, batches, and ZIP builds remain available in a
-  compact result tray.
+- Settings contains folders, language, glossary, AI backends, shortcuts,
+  logging, and app information;
+- the five latest completed backend operations, including exports, imports,
+  LLM batches, AI runs, ZIP builds, and batch edits, remain available in a
+  compact in-session result tray;
+- the latest batch edit has one in-memory undo snapshot until a newer operation
+  replaces it, and stale undo must never overwrite later string edits.
 
 The UI should remain a focused translation tool rather than a general workspace
 or project-management suite.
@@ -209,6 +214,17 @@ All application state is portable and stored beside the executable:
 Dashboard recency is part of the portable settings state; the app does not keep
 workflow state in browser-local storage.
 
+Result-tray history is bounded to five completed backend operations for the
+running app session. Its single batch-undo snapshot is also memory-only; it is
+not a hidden project log and is never written to portable state. Any later
+successful edit to a touched component makes that snapshot permanently stale,
+even when the edited value is changed back to the batch-written value.
+
+OpenAI API keys exist only in the running application process and are never
+written to portable state or logs. Codex CLI authentication remains owned by
+the CLI; the app does not read, copy, or persist its authentication files or
+tokens.
+
 Translation state is separate from installed mods. The app does not modify mod
 files until the user explicitly exports.
 
@@ -235,7 +251,8 @@ The maintained product includes:
 - search, filters, review queues, and bulk actions;
 - protected-token validation;
 - optional typed glossary hints;
-- optional localhost AI translation;
+- optional AI translation through a localhost endpoint, Codex CLI, or the
+  OpenAI Responses API;
 - external LLM batch export and import;
 - target-file export with backups;
 - translation package ZIP creation;
@@ -252,21 +269,38 @@ does not provide:
 
 - mod installation, activation, updating, profiles, or load-order management;
 - automatic translation discovery or downloads;
-- cloud AI credentials or an AI provider marketplace;
+- persisted cloud AI credentials, an AI provider marketplace or registry, or
+  configurable custom cloud base URLs;
 - Nexus API operations;
 - internal Git repositories or project files;
 - a general Content Patcher interpreter;
 - arbitrary JSON or XNB editing;
 - automatic publishing of translation mods from inside the desktop app.
 
-## 17. Local AI
+## 17. Optional AI Backends
 
-Local AI is optional and connects only to a user-configured localhost
-OpenAI-compatible endpoint, such as Ollama or LM Studio.
+AI translation is optional. Manual translation and every local-only workflow
+remain offline and usable when an AI backend is unavailable.
 
-Single-string and batch suggestions may use source context and matching glossary
-terms. Output always enters `review-needed`. Token validation remains the final
-safety gate, and failure to reach a local model must not affect manual use.
+Local AI connects only to a user-configured localhost OpenAI-compatible
+endpoint, such as Ollama or LM Studio.
+
+The Codex CLI backend invokes an installed CLI and relies exclusively on that
+CLI's own authentication. The app does not inspect, import, copy, or persist
+Codex authentication files or tokens.
+
+The direct OpenAI API backend accepts an API key only for the running app
+process. It uses the fixed official `https://api.openai.com/v1/responses`
+endpoint, sends `store=false`, and enables no tools. Usage is billed separately
+through the user's OpenAI API account.
+
+An AI request sends the source text, its section context, and matching glossary
+terms to the selected backend. Every completed suggestion is saved immediately
+as `review-needed`; cancellation or a later provider error retains completed
+Review work. Token validation and human review remain the final safety gates.
+
+These are fixed, direct integrations. The product does not provide a provider
+marketplace, provider registry, or configurable custom cloud base URL.
 
 ## 18. Technical Constraints
 
@@ -278,7 +312,7 @@ safety gate, and failure to reach a local model must not affect manual use.
   preserved.
 - Full-buffer JSON and state inputs must be size-bounded before parsing.
 - File-system failures must be reported without leaving partial exports.
-- Optional systems such as glossary, local AI, logging, and Nexus publication
+- Optional systems such as glossary, AI backends, logging, and Nexus publication
   automation must degrade without breaking the translation workflow.
 
 ## 19. Simplicity Principles

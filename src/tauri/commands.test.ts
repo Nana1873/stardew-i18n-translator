@@ -1,11 +1,22 @@
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  cancelAiRun,
+  codexCliStatus,
   exportAllMods,
   exportLlmBatchToPath,
+  listOperationHistory,
   pickLlmBatchDestination,
   pickLlmBatchFile,
+  preflightLlmBatchPath,
   saveString,
+  saveStringGroupsWithUndo,
+  saveStringsWithUndo,
+  translateWithCodexCli,
+  translateWithLocalAi,
+  translateWithOpenAiApi,
+  undoBatchEdit,
+  type AiTranslationRequest,
   type ExportModInput,
 } from "./commands";
 
@@ -13,7 +24,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 
 const invokeMock = vi.mocked(invoke);
 
-describe("V3 backend command bridges", () => {
+describe("backend command bridges", () => {
   beforeEach(() => invokeMock.mockReset());
 
   it("passes all export groups to the atomic aggregate command", async () => {
@@ -43,6 +54,29 @@ describe("V3 backend command bridges", () => {
     await expect(pickLlmBatchFile()).resolves.toBe("C:\\Temp\\result.json");
 
     expect(invokeMock).toHaveBeenCalledWith("pick_llm_batch_file");
+  });
+
+  it("preflights the chosen LLM batch path without invoking import", async () => {
+    const files = [
+      {
+        relativeDir: "i18n",
+        defaultPath: "C:\\Mods\\Example\\i18n\\default.json",
+        targetPath: "C:\\Mods\\Example\\i18n\\de.json",
+      },
+    ];
+    invokeMock.mockResolvedValue({ ready: true });
+
+    await preflightLlmBatchPath("example.mod", files, "C:\\Temp\\result.json");
+
+    expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
+      modUniqueId: "example.mod",
+      files,
+      path: "C:\\Temp\\result.json",
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "import_llm_batch_path",
+      expect.anything(),
+    );
   });
 
   it("chooses an LLM batch destination without exporting", async () => {
@@ -93,6 +127,102 @@ describe("V3 backend command bridges", () => {
       target: "Hallo$7",
       status: "review-needed-token-mismatch-accepted",
       source: "Hello$8",
+    });
+  });
+
+  it("exposes bounded result history and the conditional batch undo command", async () => {
+    const entries = [
+      {
+        relativeDir: "i18n",
+        key: "greeting",
+        target: "Hallo",
+        status: "translated" as const,
+        source: "Hello",
+      },
+    ];
+    invokeMock.mockResolvedValueOnce({ id: "operation-1", canUndo: true });
+
+    await saveStringsWithUndo("example.mod", "Marked as done", entries);
+    expect(invokeMock).toHaveBeenLastCalledWith("save_strings_with_undo", {
+      modUniqueId: "example.mod",
+      title: "Marked as done",
+      entries,
+    });
+
+    const groups = [
+      { modUniqueId: "example.mod", entries },
+      { modUniqueId: "example.content-pack", entries },
+    ];
+    invokeMock.mockResolvedValueOnce({ id: "operation-2", canUndo: true });
+    await saveStringGroupsWithUndo("Marked as done", groups);
+    expect(invokeMock).toHaveBeenLastCalledWith(
+      "save_string_groups_with_undo",
+      { title: "Marked as done", groups },
+    );
+
+    invokeMock.mockResolvedValueOnce([{ id: "operation-1" }]);
+    await listOperationHistory();
+    expect(invokeMock).toHaveBeenLastCalledWith("list_operation_history");
+
+    invokeMock.mockResolvedValueOnce({ id: "operation-2", canUndo: false });
+    await undoBatchEdit("operation-1");
+    expect(invokeMock).toHaveBeenLastCalledWith("undo_batch_edit", {
+      operationId: "operation-1",
+    });
+  });
+
+  it("keeps Codex status separate from a bounded translation request", async () => {
+    const request: AiTranslationRequest = {
+      runId: "run-1",
+      scope: "selected",
+      identities: [
+        {
+          modUniqueId: " example.mod ",
+          relativeDir: "i18n/sub ",
+          key: " greeting ",
+        },
+      ],
+      includeOpen: true,
+      includeChanged: false,
+    };
+    invokeMock.mockResolvedValueOnce({ installed: true, authenticated: true });
+    await codexCliStatus();
+    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_status");
+
+    invokeMock.mockResolvedValueOnce({ outcome: "complete", suggestions: [] });
+    await translateWithCodexCli(request);
+    expect(invokeMock).toHaveBeenLastCalledWith("translate_with_codex_cli", {
+      request,
+    });
+
+    invokeMock.mockResolvedValueOnce(true);
+    await cancelAiRun("run-1");
+    expect(invokeMock).toHaveBeenLastCalledWith("cancel_ai_run", {
+      runId: "run-1",
+    });
+  });
+
+  it("sends broad scopes as a subject plus status filters, without row data", async () => {
+    const request: AiTranslationRequest = {
+      runId: "run-package",
+      scope: "package",
+      subjectModUniqueId: "example.component",
+      includeOpen: true,
+      includeChanged: true,
+    };
+    invokeMock.mockResolvedValue({ outcome: "complete", suggestions: [] });
+
+    await translateWithLocalAi(request);
+    expect(invokeMock).toHaveBeenLastCalledWith("translate_with_local_ai", {
+      request,
+    });
+    expect(request).not.toHaveProperty("identities");
+    expect(request).not.toHaveProperty("targetLanguage");
+    expect(request).not.toHaveProperty("items");
+
+    await translateWithOpenAiApi(request);
+    expect(invokeMock).toHaveBeenLastCalledWith("translate_with_openai_api", {
+      request,
     });
   });
 });

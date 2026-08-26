@@ -225,7 +225,7 @@ fn effective_temperature(setting: Option<f32>) -> f32 {
 /// `"English -> Target"` labels. **Soft** check: a case-insensitive substring
 /// match on the target term, so inflected forms still count (German
 /// "Pastinaken" contains "Pastinake"). Misses are a hint, never an error.
-fn glossary_misses(target: &str, glossary_pairs: &[(String, String)]) -> Vec<String> {
+pub(crate) fn glossary_misses(target: &str, glossary_pairs: &[(String, String)]) -> Vec<String> {
     let haystack = target.to_lowercase();
     glossary_pairs
         .iter()
@@ -236,7 +236,7 @@ fn glossary_misses(target: &str, glossary_pairs: &[(String, String)]) -> Vec<Str
 
 /// Section headings come from mod comments, so treat them as short untrusted
 /// metadata: collapse whitespace/control characters and cap their prompt size.
-fn clean_section(section: Option<&str>) -> Option<String> {
+pub(crate) fn clean_section(section: Option<&str>) -> Option<String> {
     let clean = section?
         .split_whitespace()
         .collect::<Vec<_>>()
@@ -260,6 +260,29 @@ fn language_style_rules(target_language: &str) -> &'static str {
     } else {
         ""
     }
+}
+
+/// Provider-independent translation instructions shared by the local client,
+/// Codex CLI, and OpenAI API adapters. Keeping the safety rules in one place
+/// prevents one live engine from silently receiving weaker token guidance.
+pub(crate) fn translation_instructions(target_language: &str) -> String {
+    let language_style = language_style_rules(target_language);
+    format!(
+        "You are a professional translator for Stardew Valley mods. \
+         Translate the supplied text from English into {target_language}.\n\
+         Rules:\n\
+         - Output only the requested translation data. No explanations or notes.\n\
+         - Preserve every placeholder/token EXACTLY as written and untranslated, \
+           e.g. {{{{Token}}}}, {{0}}, $b, ${{a^b}}$, [item], %item ... %%, @, ^, #$b#. \
+           Do not add, remove, reorder, or alter them.\n\
+         - Preserve every existing quote character EXACTLY. Never replace straight \
+           quotes/apostrophes with typographic quotes or another quote style: \
+           'test' must stay enclosed by ' characters, never become „test“, “test”, \
+           or \"test\".\n\
+         - Keep the same line breaks.\n\
+         - Translate naturally and concisely; keep game terminology consistent.\
+         {language_style}"
+    )
 }
 
 #[derive(Deserialize)]
@@ -323,24 +346,8 @@ pub(crate) fn build_messages(
     glossary_pairs: &[(String, String)],
     retry_missing: Option<&[String]>,
 ) -> Vec<ChatMessage> {
-    let mut system = String::new();
-    let language_style = language_style_rules(target_language);
-    system.push_str(&format!(
-        "You are a professional translator for Stardew Valley mods. \
-         Translate the user's text from English into {target_language}.\n\
-         Rules:\n\
-         - Output ONLY the translation. No quotes, no explanations, no notes.\n\
-         - Preserve every placeholder/token EXACTLY as written and untranslated, \
-           e.g. {{{{Token}}}}, {{0}}, $b, ${{a^b}}$, [item], %item ... %%, @, ^, #$b#. \
-           Do not add, remove, reorder, or alter them.\n\
-         - Preserve every existing quote character EXACTLY. Never replace straight \
-           quotes/apostrophes with typographic quotes or another quote style: \
-           'test' must stay enclosed by ' characters, never become „test“, “test”, \
-           or \"test\".\n\
-         - Keep the same line breaks.\n\
-         - Translate naturally and concisely; keep game terminology consistent.\
-         {language_style}"
-    ));
+    let mut system = translation_instructions(target_language);
+    system.push_str("\n- For this single-string request, return only the translated text.");
 
     if let Some(section) = clean_section(section) {
         system.push_str(&format!(

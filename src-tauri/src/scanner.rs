@@ -66,9 +66,28 @@ pub struct ScannedMod {
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
     pub warnings: Vec<String>,
+    /// Components that were deliberately omitted from this scan. Unlike
+    /// `warnings`, every entry corresponds to an actual skipped unit and is
+    /// safe to count and display in the scan result UI.
+    pub skipped_components: Vec<SkippedComponent>,
     pub extra_keys: Vec<ExtraKeyDiagnostic>,
     pub mod_count: usize,
     pub file_count: usize,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedComponent {
+    pub package_id: Option<String>,
+    pub component_unique_id: Option<String>,
+    pub component_name: Option<String>,
+    /// Location relative to the configured Mods folder; never an absolute
+    /// personal path.
+    pub relative_location: String,
+    pub reason: String,
+    /// True when another real translation component from this package remains
+    /// available in the final scan result.
+    pub rest_of_package_loaded: bool,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -236,6 +255,7 @@ pub fn extract_nexus_id(update_keys: &[String]) -> Option<u64> {
 /// translation state from `config_dir` is merged into progress counts.
 pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> ScanResult {
     let mut warnings = Vec::new();
+    let mut skipped_components = Vec::new();
     let language_root = match translations::language_root(config_dir, target_lang) {
         Ok(root) => Some(root),
         Err(error) => {
@@ -264,7 +284,17 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                 order.push(dir.to_path_buf());
                 mods.insert(dir.to_path_buf(), scanned);
             }
-            Err(reason) => warnings.push(format!("Skipped {}: {reason}", manifest.display())),
+            Err(reason) => {
+                warnings.push(format!("Skipped {}: {reason}", manifest.display()));
+                skipped_components.push(SkippedComponent {
+                    package_id: package_id_for(dir, mods_path),
+                    component_unique_id: None,
+                    component_name: None,
+                    relative_location: safe_relative_location(manifest, mods_path),
+                    reason: safe_skip_reason(&reason, mods_path),
+                    rest_of_package_loaded: false,
+                });
+            }
         }
     }
 
@@ -294,6 +324,13 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         if let Some(scanned) = mods.get_mut(&owner) {
             let unique_id = scanned.unique_id.clone();
             if blocked_state_ids.contains(&unique_id.to_lowercase()) {
+                skipped_components.push(skipped_i18n_component(
+                    scanned,
+                    i18n_dir,
+                    mods_path,
+                    "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely."
+                        .to_string(),
+                ));
                 continue;
             }
             let state = match state_cache.entry(unique_id.clone()) {
@@ -325,16 +362,32 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                             extra_keys.extend(diagnostics);
                             scanned.i18n_files.push(file);
                         }
-                        Err(error) => warnings.push(format!(
-                            "Skipped i18n component {}: {error}",
-                            i18n_dir.display()
-                        )),
+                        Err(error) => {
+                            warnings.push(format!(
+                                "Skipped i18n component {}: {error}",
+                                i18n_dir.display()
+                            ));
+                            skipped_components.push(skipped_i18n_component(
+                                scanned,
+                                i18n_dir,
+                                mods_path,
+                                safe_skip_reason(&error, mods_path),
+                            ));
+                        }
                     }
                 }
-                Err(error) => warnings.push(format!(
-                    "Skipped i18n component {}: {error}",
-                    i18n_dir.display()
-                )),
+                Err(error) => {
+                    warnings.push(format!(
+                        "Skipped i18n component {}: {error}",
+                        i18n_dir.display()
+                    ));
+                    skipped_components.push(skipped_i18n_component(
+                        scanned,
+                        i18n_dir,
+                        mods_path,
+                        safe_skip_reason(&error, mods_path),
+                    ));
+                }
             }
         }
     }
@@ -362,16 +415,37 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // the same signal the glossary source uses — it registers an in-game language
     // via `Data/AdditionalLanguages`. The content.json parse runs only for the
     // already-filtered mods that have i18n, so the cost stays bounded.
-    result_mods.retain(|scanned| {
+    let mut retained_mods = Vec::with_capacity(result_mods.len());
+    for scanned in result_mods {
         if lang_pack::registered_language_codes(Path::new(&scanned.folder_path)).is_empty() {
-            return true;
+            retained_mods.push(scanned);
+            continue;
         }
         warnings.push(format!(
             "Skipped \"{}\": detected as a community language pack, not a translation target.",
             scanned.name
         ));
-        false
-    });
+        skipped_components.push(SkippedComponent {
+            package_id: Some(scanned.package_id.clone()),
+            component_unique_id: Some(scanned.unique_id.clone()),
+            component_name: Some(scanned.name.clone()),
+            relative_location: safe_relative_location(Path::new(&scanned.folder_path), mods_path),
+            reason: "Detected as a community language pack, not a translation target.".to_string(),
+            rest_of_package_loaded: false,
+        });
+    }
+    result_mods = retained_mods;
+
+    let loaded_packages: HashSet<&str> = result_mods
+        .iter()
+        .map(|scanned| scanned.package_id.as_str())
+        .collect();
+    for skipped in &mut skipped_components {
+        skipped.rest_of_package_loaded = skipped
+            .package_id
+            .as_deref()
+            .is_some_and(|package_id| loaded_packages.contains(package_id));
+    }
 
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
@@ -379,8 +453,49 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         file_count,
         mods: result_mods,
         warnings,
+        skipped_components,
         extra_keys,
     }
+}
+
+fn skipped_i18n_component(
+    scanned: &ScannedMod,
+    i18n_dir: &Path,
+    mods_path: &Path,
+    reason: String,
+) -> SkippedComponent {
+    SkippedComponent {
+        package_id: Some(scanned.package_id.clone()),
+        component_unique_id: Some(scanned.unique_id.clone()),
+        component_name: Some(scanned.name.clone()),
+        relative_location: safe_relative_location(&i18n_dir.join("default.json"), mods_path),
+        reason,
+        rest_of_package_loaded: false,
+    }
+}
+
+fn safe_relative_location(path: &Path, mods_path: &Path) -> String {
+    path.strip_prefix(mods_path)
+        .ok()
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .filter(|relative| !relative.is_empty())
+        .unwrap_or_else(|| "Unavailable".to_string())
+}
+
+fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
+    let mut safe = reason.to_string();
+    let mut roots = vec![mods_path.display().to_string()];
+    if let Ok(canonical) = std::fs::canonicalize(mods_path) {
+        roots.push(canonical.display().to_string());
+    }
+    for root in roots {
+        if root.is_empty() {
+            continue;
+        }
+        safe = safe.replace(&root, "Mods");
+        safe = safe.replace(&root.replace('\\', "/"), "Mods");
+    }
+    safe
 }
 
 fn extra_target_keys(
@@ -1307,6 +1422,11 @@ mod tests {
             "expected a duplicate-UniqueID warning, got: {:?}",
             result.warnings
         );
+        assert_eq!(result.skipped_components.len(), 2);
+        assert!(result.skipped_components.iter().all(|skipped| {
+            skipped.component_unique_id.as_deref() == Some("same.id")
+                && !skipped.rest_of_package_loaded
+        }));
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1353,6 +1473,16 @@ mod tests {
             "expected a language-pack exclusion warning, got: {:?}",
             result.warnings
         );
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].component_unique_id.as_deref(),
+            Some("ell.thai")
+        );
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Stardew Valley - THAI"
+        );
+        assert!(!result.skipped_components[0].rest_of_package_loaded);
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1692,6 +1822,83 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("assets")));
+        assert_eq!(result.skipped_components.len(), 1);
+        let skipped = &result.skipped_components[0];
+        assert_eq!(skipped.package_id.as_deref(), Some("Mod"));
+        assert_eq!(skipped.component_unique_id.as_deref(), Some("Author.Mod"));
+        assert_eq!(skipped.component_name.as_deref(), Some("Mod"));
+        assert_eq!(skipped.relative_location, "Mod/assets/i18n/default.json");
+        assert!(skipped.rest_of_package_loaded);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn structured_skip_for_the_only_broken_i18n_component_is_not_loaded() {
+        let root = crate::test_support::temp_dir("scanner-only-component-error");
+        let mod_dir = root.join("Solo");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Solo","UniqueID":"Author.Solo"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), "{ broken");
+
+        let result = scan_mods(&root, "de", &root);
+
+        assert_eq!(result.mod_count, 0);
+        assert_eq!(result.file_count, 0);
+        assert_eq!(result.skipped_components.len(), 1);
+        let skipped = &result.skipped_components[0];
+        assert_eq!(skipped.package_id.as_deref(), Some("Solo"));
+        assert_eq!(skipped.component_unique_id.as_deref(), Some("Author.Solo"));
+        assert_eq!(skipped.relative_location, "Solo/i18n/default.json");
+        assert!(!skipped.rest_of_package_loaded);
+        assert!(!skipped.reason.contains(&root.display().to_string()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn malformed_manifest_reports_its_package_and_loaded_sibling() {
+        let root = crate::test_support::temp_dir("scanner-manifest-component-error");
+        let package = root.join("Bundle");
+        write(
+            &package.join("Good/manifest.json"),
+            r#"{"Name":"Good","UniqueID":"Author.Good"}"#,
+        );
+        write(&package.join("Good/i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(&package.join("Broken/manifest.json"), "{ broken");
+
+        let result = scan_mods(&root, "de", &root);
+
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.skipped_components.len(), 1);
+        let skipped = &result.skipped_components[0];
+        assert_eq!(skipped.package_id.as_deref(), Some("Bundle"));
+        assert_eq!(skipped.component_unique_id, None);
+        assert_eq!(skipped.component_name, None);
+        assert_eq!(skipped.relative_location, "Bundle/Broken/manifest.json");
+        assert!(skipped.rest_of_package_loaded);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn state_load_warning_does_not_invent_a_skipped_component() {
+        let root = crate::test_support::temp_dir("scanner-state-warning");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(
+            &root.join("language-state/de/translations/Author.Mod.json"),
+            "{ broken",
+        );
+
+        let result = scan_mods(&root, "de", &root);
+
+        assert_eq!(result.mod_count, 1);
+        assert!(!result.warnings.is_empty());
+        assert!(result.skipped_components.is_empty());
         std::fs::remove_dir_all(root).ok();
     }
 

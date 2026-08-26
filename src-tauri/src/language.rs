@@ -13,6 +13,34 @@ pub fn normalize_target_code(value: &str) -> Result<String, String> {
         .ok_or_else(|| format!("Unsupported target language: {value}"))
 }
 
+/// English provider label for one canonical target code. Live AI callers use
+/// this mapping instead of trusting a human-readable label from the webview.
+pub fn target_language_name(value: &str) -> Result<&'static str, String> {
+    let normalized = normalize_target_code(value)?;
+    match normalized.as_str() {
+        "de" => Ok("German"),
+        "es" => Ok("Spanish"),
+        "fr" => Ok("French"),
+        "hu" => Ok("Hungarian"),
+        "it" => Ok("Italian"),
+        "ja" => Ok("Japanese"),
+        "ko" => Ok("Korean"),
+        "pt" => Ok("Portuguese"),
+        "ru" => Ok("Russian"),
+        "tr" => Ok("Turkish"),
+        "zh" => Ok("Chinese"),
+        "vi" => Ok("Vietnamese"),
+        "id" => Ok("Indonesian"),
+        "uk" => Ok("Ukrainian"),
+        "pl" => Ok("Polish"),
+        "fi" => Ok("Finnish"),
+        "nl" => Ok("Dutch"),
+        "cs" => Ok("Czech"),
+        "th" => Ok("Thai"),
+        _ => unreachable!("normalize_target_code accepted an unmapped language"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -32,5 +60,35 @@ mod tests {
         ] {
             assert!(normalize_target_code(value).is_err(), "accepted {value:?}");
         }
+    }
+
+    #[test]
+    fn every_supported_code_has_a_stable_english_provider_name() {
+        let expected = [
+            ("de", "German"),
+            ("es", "Spanish"),
+            ("fr", "French"),
+            ("hu", "Hungarian"),
+            ("it", "Italian"),
+            ("ja", "Japanese"),
+            ("ko", "Korean"),
+            ("pt", "Portuguese"),
+            ("ru", "Russian"),
+            ("tr", "Turkish"),
+            ("zh", "Chinese"),
+            ("vi", "Vietnamese"),
+            ("id", "Indonesian"),
+            ("uk", "Ukrainian"),
+            ("pl", "Polish"),
+            ("fi", "Finnish"),
+            ("nl", "Dutch"),
+            ("cs", "Czech"),
+            ("th", "Thai"),
+        ];
+        assert_eq!(expected.len(), TARGET_LANGUAGE_CODES.len());
+        for (code, name) in expected {
+            assert_eq!(target_language_name(code).unwrap(), name);
+        }
+        assert!(target_language_name("en").is_err());
     }
 }
