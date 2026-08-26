@@ -84,6 +84,9 @@ pub struct LlmSettings {
 pub struct AiSettings {
     #[serde(default = "default_ai_engine")]
     pub default_engine: String,
+    /// Optional Codex CLI model id. `None` keeps the CLI's own default.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub codex_model: Option<String>,
     #[serde(default = "default_ai_reasoning")]
     pub codex_reasoning: String,
 }
@@ -98,6 +101,7 @@ impl Default for AiSettings {
     fn default() -> Self {
         Self {
             default_engine: default_ai_engine(),
+            codex_model: None,
             codex_reasoning: default_ai_reasoning(),
         }
     }
@@ -360,6 +364,26 @@ fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
         settings.default_engine = default_ai_engine();
     }
 
+    settings.codex_model = match settings.codex_model.take() {
+        Some(model) => {
+            let model = model.trim();
+            let invalid = model.starts_with('-')
+                || model.chars().count() > 200
+                || model.chars().any(char::is_control);
+            if invalid {
+                if strict {
+                    return Err("The Codex CLI model is invalid.".to_string());
+                }
+                None
+            } else if model.is_empty() {
+                None
+            } else {
+                Some(model.to_string())
+            }
+        }
+        None => None,
+    };
+
     match crate::ai::normalize_reasoning(&settings.codex_reasoning) {
         Ok(normalized) => settings.codex_reasoning = normalized,
         Err(error) if strict => return Err(error),
@@ -446,6 +470,7 @@ mod tests {
             llm: None,
             ai: AiSettings {
                 default_engine: "codex".to_string(),
+                codex_model: Some("gpt-5.6-sol".to_string()),
                 codex_reasoning: "high".to_string(),
             },
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
@@ -483,6 +508,7 @@ mod tests {
         assert_eq!(json["workspace"]["columnWidths"]["mod"], 140);
         assert!(json["workspace"]["columnWidths"].get("modColumn").is_none());
         assert_eq!(json["ai"]["defaultEngine"], "codex");
+        assert_eq!(json["ai"]["codexModel"], "gpt-5.6-sol");
         assert!(json["ai"].get("apiKey").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -497,12 +523,13 @@ mod tests {
 
         assert_eq!(loaded.ai, AiSettings::default());
         assert_eq!(loaded.ai.default_engine, "local");
+        assert_eq!(loaded.ai.codex_model, None);
         assert_eq!(loaded.ai.codex_reasoning, "medium");
         std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
-    fn removed_openai_and_codex_model_preferences_are_ignored_safely() {
+    fn codex_model_is_retained_while_removed_openai_preferences_are_ignored() {
         let dir = crate::test_support::temp_dir("settings-removed-ai-fields");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
@@ -513,12 +540,13 @@ mod tests {
 
         let loaded = load_checked(&dir).unwrap();
         assert_eq!(loaded.ai.default_engine, "local");
+        assert_eq!(loaded.ai.codex_model.as_deref(), Some("legacy-codex-model"));
         assert_eq!(loaded.ai.codex_reasoning, "low");
 
         let serialized = serde_json::to_value(loaded).unwrap();
         let ai = serialized.get("ai").and_then(serde_json::Value::as_object);
         assert!(ai.is_none_or(|ai| {
-            !ai.contains_key("codexModel")
+            ai.get("codexModel") == Some(&serde_json::json!("legacy-codex-model"))
                 && !ai.contains_key("openaiModel")
                 && !ai.contains_key("openaiReasoning")
                 && !ai.contains_key("apiKey")

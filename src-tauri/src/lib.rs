@@ -1399,6 +1399,11 @@ async fn codex_cli_status() -> codex_cli::CodexCliStatus {
 }
 
 #[tauri::command]
+async fn codex_cli_models() -> Result<Vec<codex_cli::CodexCliModel>, String> {
+    codex_cli::models().await
+}
+
+#[tauri::command]
 async fn translate_with_codex_cli(
     app: AppHandle,
     state: State<'_, ai::AiRuntimeState>,
@@ -1409,6 +1414,7 @@ async fn translate_with_codex_cli(
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
         prepare_ai_request(&app, &request)?;
+    let codex_model = settings.ai.codex_model.clone();
     let reasoning = ai::normalize_reasoning(&settings.ai.codex_reasoning)?;
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
@@ -1424,6 +1430,7 @@ async fn translate_with_codex_cli(
             break;
         }
         match codex_cli::translate_chunk(
+            codex_model.as_deref(),
             &reasoning,
             &target_language,
             chunk,
@@ -1434,6 +1441,7 @@ async fn translate_with_codex_cli(
             Ok(translations) => {
                 let mut cancel_after_staging = false;
                 let translations = match codex_cli::repair_token_mismatches_once(
+                    codex_model.as_deref(),
                     &reasoning,
                     &target_language,
                     chunk,
@@ -1528,7 +1536,11 @@ async fn translate_with_codex_cli(
     let result = ai_run_result(
         &request,
         prepared.len(),
-        ("codex", "Codex default".to_string(), reasoning),
+        (
+            "codex",
+            codex_model.unwrap_or_else(|| "Codex default".to_string()),
+            reasoning,
+        ),
         suggestions,
         outcome,
         error,
@@ -1783,6 +1795,7 @@ pub fn run() {
             translate_string,
             translate_with_local_ai,
             codex_cli_status,
+            codex_cli_models,
             translate_with_codex_cli,
             cancel_ai_run,
             open_url,

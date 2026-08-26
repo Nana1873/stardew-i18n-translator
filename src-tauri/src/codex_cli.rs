@@ -4,6 +4,7 @@
 //! `codex exec` for bounded structured translation chunks. It never reads the
 //! CLI's auth/config files or receives an auth token.
 
+use std::collections::HashSet;
 use std::ffi::{OsStr, OsString};
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -13,11 +14,12 @@ use std::sync::{
 };
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::ai::{self, PreparedAiItem, ProviderFailure, ProviderTranslation};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
+const MODEL_LIST_TIMEOUT: Duration = Duration::from_secs(15);
 const TRANSLATION_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_DIAGNOSTIC_OUTPUT_BYTES: u64 = 128 * 1024;
 const MAX_FINAL_OUTPUT_BYTES: u64 = 2 * 1024 * 1024;
@@ -49,6 +51,58 @@ pub struct CodexCliStatus {
     pub authentication: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexCliModel {
+    /// Exact value accepted by `codex exec --model`.
+    pub model: String,
+    pub display_name: String,
+    pub is_default: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub default_reasoning_effort: Option<String>,
+    pub supported_reasoning_efforts: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelListResponse {
+    result: Option<ModelListResult>,
+    error: Option<ModelListError>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelListResult {
+    data: Vec<ModelListEntry>,
+    next_cursor: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelListError {
+    message: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelListEntry {
+    model: String,
+    display_name: String,
+    #[serde(default)]
+    hidden: bool,
+    #[serde(default)]
+    is_default: bool,
+    #[serde(default)]
+    default_reasoning_effort: Option<String>,
+    #[serde(default)]
+    supported_reasoning_efforts: Vec<ModelReasoningEffort>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ModelReasoningEffort {
+    reasoning_effort: String,
 }
 
 struct TempRunDir {
@@ -131,6 +185,37 @@ fn run_command(
             cancelled,
             output_limits,
         );
+        Err("Codex CLI integration is available only on Windows.".to_string())
+    }
+}
+
+fn run_app_server_request(
+    executable: &Path,
+    initialize: &str,
+    request: &str,
+    request_id: u64,
+    working_dir: &Path,
+) -> Result<String, String> {
+    #[cfg(windows)]
+    {
+        windows_process::run_jsonl_request(
+            executable,
+            &[
+                OsString::from("--strict-config"),
+                OsString::from("app-server"),
+                OsString::from("--stdio"),
+            ],
+            initialize,
+            request,
+            request_id,
+            working_dir,
+            MODEL_LIST_TIMEOUT,
+            STATUS_OUTPUT_LIMITS,
+        )
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (executable, initialize, request, request_id, working_dir);
         Err("Codex CLI integration is available only on Windows.".to_string())
     }
 }
@@ -717,6 +802,115 @@ mod windows_process {
         Ok(receiver)
     }
 
+    fn start_line_reader(
+        mut file: File,
+        budget: Arc<OutputBudget>,
+        io_failed: Arc<AtomicBool>,
+    ) -> Result<Receiver<Result<Vec<u8>, String>>, String> {
+        let (sender, receiver) = mpsc::channel();
+        std::thread::Builder::new()
+            .name("codex-stdout-jsonl".to_string())
+            .spawn(move || {
+                let mut pending = Vec::new();
+                let mut chunk = [0u8; 8 * 1024];
+                loop {
+                    match file.read(&mut chunk) {
+                        Ok(0) => {
+                            if !pending.is_empty() {
+                                let _ = sender.send(Ok(pending));
+                            }
+                            break;
+                        }
+                        Ok(read) => {
+                            let keep = budget.reserve(read);
+                            pending.extend_from_slice(&chunk[..keep]);
+                            while let Some(newline) = pending.iter().position(|byte| *byte == b'\n')
+                            {
+                                let line = pending.drain(..=newline).collect::<Vec<_>>();
+                                if sender.send(Ok(line)).is_err() {
+                                    return;
+                                }
+                            }
+                            if keep < read {
+                                break;
+                            }
+                        }
+                        Err(error) => {
+                            io_failed.store(true, Ordering::Release);
+                            let _ = sender.send(Err(format!(
+                                "Could not read Codex app-server output: {error}"
+                            )));
+                            break;
+                        }
+                    }
+                }
+            })
+            .map_err(|error| format!("Could not start the Codex JSONL reader: {error}"))?;
+        Ok(receiver)
+    }
+
+    fn write_json_line(file: &mut File, body: &str) -> Result<(), String> {
+        file.write_all(body.as_bytes())
+            .and_then(|()| file.write_all(b"\n"))
+            .and_then(|()| file.flush())
+            .map_err(|error| format!("Could not send a request to Codex app-server: {error}"))
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn wait_for_json_response(
+        process: &SuspendedProcess,
+        receiver: &Receiver<Result<Vec<u8>, String>>,
+        response_id: u64,
+        started: Instant,
+        timeout: Duration,
+        stdout_budget: &OutputBudget,
+        stderr_budget: &OutputBudget,
+        io_failed: &AtomicBool,
+    ) -> Result<String, String> {
+        loop {
+            if started.elapsed() >= timeout {
+                return Err("Codex CLI did not return its model list in time.".to_string());
+            }
+            if stdout_budget.overflowed.load(Ordering::Acquire)
+                || stderr_budget.overflowed.load(Ordering::Acquire)
+            {
+                return Err("Codex CLI returned too much model-list output.".to_string());
+            }
+            if io_failed.load(Ordering::Acquire) {
+                return Err("Could not capture Codex app-server output.".to_string());
+            }
+
+            match receiver.recv_timeout(POLL_INTERVAL) {
+                Ok(Ok(line)) => {
+                    let Ok(response) = serde_json::from_slice::<serde_json::Value>(&line) else {
+                        // The native CLI protocol is JSONL, but a launcher may
+                        // write its own bounded diagnostics to stdout. Ignore
+                        // those lines and continue routing by response id.
+                        continue;
+                    };
+                    if response.get("id").and_then(serde_json::Value::as_u64) == Some(response_id) {
+                        return String::from_utf8(line).map_err(|_| {
+                            "Codex CLI returned non-UTF-8 model-list data.".to_string()
+                        });
+                    }
+                }
+                Ok(Err(error)) => return Err(error),
+                Err(mpsc::RecvTimeoutError::Timeout) => {
+                    if let Some(code) = process.poll()? {
+                        return Err(format!(
+                            "Codex app-server stopped before returning its model list (exit code {code})."
+                        ));
+                    }
+                }
+                Err(mpsc::RecvTimeoutError::Disconnected) => {
+                    return Err(
+                        "Codex app-server closed before returning its model list.".to_string()
+                    );
+                }
+            }
+        }
+    }
+
     fn start_writer(
         mut file: File,
         body: Option<&str>,
@@ -864,6 +1058,88 @@ mod windows_process {
                 })
             }
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn run_jsonl_request(
+        executable: &Path,
+        args: &[OsString],
+        initialize: &str,
+        request: &str,
+        request_id: u64,
+        working_dir: &Path,
+        timeout: Duration,
+        output_limits: OutputLimits,
+    ) -> Result<String, String> {
+        let started = Instant::now();
+        let (mut process, io) = SuspendedProcess::spawn(executable, args, working_dir)?;
+        let ProcessIo {
+            mut stdin,
+            stdout,
+            stderr,
+        } = io;
+        let stdout_budget = Arc::new(OutputBudget::new(
+            usize::try_from(output_limits.stdout).unwrap_or(usize::MAX),
+        ));
+        let stderr_budget = Arc::new(OutputBudget::new(
+            usize::try_from(output_limits.stderr).unwrap_or(usize::MAX),
+        ));
+        let io_failed = Arc::new(AtomicBool::new(false));
+        let stdout_receiver =
+            start_line_reader(stdout, Arc::clone(&stdout_budget), Arc::clone(&io_failed))?;
+        let stderr_receiver = start_reader(
+            "stderr",
+            stderr,
+            Arc::clone(&stderr_budget),
+            Arc::clone(&io_failed),
+        )?;
+
+        let exchange = (|| {
+            process.resume()?;
+            write_json_line(&mut stdin, initialize)?;
+            let initialized = wait_for_json_response(
+                &process,
+                &stdout_receiver,
+                1,
+                started,
+                timeout,
+                &stdout_budget,
+                &stderr_budget,
+                &io_failed,
+            )?;
+            let initialized: serde_json::Value = serde_json::from_str(&initialized)
+                .map_err(|_| "Codex CLI returned invalid initialization data.".to_string())?;
+            if initialized.get("error").is_some() {
+                return Err("Codex app-server rejected initialization.".to_string());
+            }
+
+            write_json_line(&mut stdin, r#"{"method":"initialized","params":{}}"#)?;
+            write_json_line(&mut stdin, request)?;
+            wait_for_json_response(
+                &process,
+                &stdout_receiver,
+                request_id,
+                started,
+                timeout,
+                &stdout_budget,
+                &stderr_budget,
+                &io_failed,
+            )
+        })();
+
+        // Closing stdin lets the one-shot app-server stop. The job-object
+        // termination remains the bounded fallback for every outcome.
+        drop(stdin);
+        process.terminate_tree_and_wait();
+        drop(stdout_receiver);
+        let stderr = receive_capture(stderr_receiver, "stderr");
+        let overflowed = stdout_budget.overflowed.load(Ordering::Acquire)
+            || stderr_budget.overflowed.load(Ordering::Acquire);
+        if overflowed {
+            return Err("Codex CLI returned too much model-list output.".to_string());
+        }
+        stderr?;
+        exchange
     }
 }
 
@@ -1096,8 +1372,136 @@ pub async fn status() -> CodexCliStatus {
         })
 }
 
-fn translation_args(working_dir: &Path, schema_path: &Path, reasoning: &str) -> Vec<OsString> {
-    vec![
+fn clean_model_value(value: &str) -> Option<String> {
+    let value = value.trim();
+    (!value.is_empty()
+        && !value.starts_with('-')
+        && value.chars().count() <= 200
+        && !value.chars().any(char::is_control))
+    .then(|| value.to_string())
+}
+
+fn clean_display_name(value: &str, fallback: &str) -> String {
+    let value = value
+        .trim()
+        .chars()
+        .filter(|character| !character.is_control())
+        .take(100)
+        .collect::<String>();
+    if value.is_empty() {
+        fallback.to_string()
+    } else {
+        value
+    }
+}
+
+fn parse_model_list_response(body: &str) -> Result<ModelListResult, String> {
+    let response: ModelListResponse = serde_json::from_str(body)
+        .map_err(|_| "Codex CLI returned an unreadable model list.".to_string())?;
+    if let Some(error) = response.error {
+        let message = one_line(&error.message, 160)
+            .unwrap_or_else(|| "The model-list request was rejected.".to_string());
+        return Err(format!("Codex CLI could not list models: {message}"));
+    }
+    response
+        .result
+        .ok_or_else(|| "Codex CLI returned no model-list result.".to_string())
+}
+
+fn list_models_sync() -> Result<Vec<CodexCliModel>, String> {
+    const PAGE_LIMIT: usize = 100;
+    const MAX_PAGES: usize = 8;
+    const MAX_MODELS: usize = 500;
+
+    let executable = resolve_codex_executable()?;
+    let temp = TempRunDir::create("codex-models")?;
+    let initialize = serde_json::json!({
+        "method": "initialize",
+        "id": 1,
+        "params": {
+            "clientInfo": {
+                "name": "stardew_i18n_translator",
+                "title": "Stardew i18n Translator",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        }
+    })
+    .to_string();
+    let mut cursor: Option<String> = None;
+    let mut seen_cursors = HashSet::new();
+    let mut seen_models = HashSet::new();
+    let mut models = Vec::new();
+
+    for _ in 0..MAX_PAGES {
+        let mut params = serde_json::json!({
+            "limit": PAGE_LIMIT,
+            "includeHidden": false
+        });
+        if let Some(cursor) = cursor.as_deref() {
+            params["cursor"] = serde_json::Value::String(cursor.to_string());
+        }
+        let request = serde_json::json!({
+            "method": "model/list",
+            "id": 2,
+            "params": params
+        })
+        .to_string();
+        let response = run_app_server_request(&executable, &initialize, &request, 2, &temp.path)?;
+        let page = parse_model_list_response(&response)?;
+
+        for entry in page.data {
+            if entry.hidden || models.len() >= MAX_MODELS {
+                continue;
+            }
+            let Some(model) = clean_model_value(&entry.model) else {
+                continue;
+            };
+            if !seen_models.insert(model.clone()) {
+                continue;
+            }
+            let mut reasoning = entry
+                .supported_reasoning_efforts
+                .into_iter()
+                .filter_map(|effort| ai::normalize_reasoning(&effort.reasoning_effort).ok())
+                .collect::<Vec<_>>();
+            reasoning.dedup();
+            let default_reasoning_effort = entry
+                .default_reasoning_effort
+                .and_then(|effort| ai::normalize_reasoning(&effort).ok());
+            models.push(CodexCliModel {
+                display_name: clean_display_name(&entry.display_name, &model),
+                model,
+                is_default: entry.is_default,
+                default_reasoning_effort,
+                supported_reasoning_efforts: reasoning,
+            });
+        }
+
+        let Some(next_cursor) = page.next_cursor.filter(|value| !value.is_empty()) else {
+            return Ok(models);
+        };
+        if models.len() >= MAX_MODELS || !seen_cursors.insert(next_cursor.clone()) {
+            return Ok(models);
+        }
+        cursor = Some(next_cursor);
+    }
+
+    Ok(models)
+}
+
+pub async fn models() -> Result<Vec<CodexCliModel>, String> {
+    tauri::async_runtime::spawn_blocking(list_models_sync)
+        .await
+        .map_err(|_| "The Codex CLI model-list worker stopped unexpectedly.".to_string())?
+}
+
+fn translation_args(
+    working_dir: &Path,
+    schema_path: &Path,
+    model: Option<&str>,
+    reasoning: &str,
+) -> Vec<OsString> {
+    let mut args = vec![
         OsString::from("--ask-for-approval"),
         OsString::from("never"),
         OsString::from("--strict-config"),
@@ -1105,6 +1509,12 @@ fn translation_args(working_dir: &Path, schema_path: &Path, reasoning: &str) -> 
         OsString::from("--ephemeral"),
         OsString::from("--ignore-user-config"),
         OsString::from("--ignore-rules"),
+    ];
+    if let Some(model) = model {
+        args.push(OsString::from("--model"));
+        args.push(OsString::from(model));
+    }
+    args.extend([
         OsString::from("--sandbox"),
         OsString::from("read-only"),
         OsString::from("--skip-git-repo-check"),
@@ -1121,7 +1531,8 @@ fn translation_args(working_dir: &Path, schema_path: &Path, reasoning: &str) -> 
         OsString::from("--config"),
         OsString::from(format!("model_reasoning_effort=\"{reasoning}\"")),
         OsString::from("-"),
-    ]
+    ]);
+    args
 }
 
 fn is_authentication_failure(stdout: &str, stderr: &str) -> bool {
@@ -1369,6 +1780,7 @@ where
 }
 
 async fn run_prompt_once(
+    model: Option<String>,
     reasoning: String,
     prompt: ai::ProviderPrompt,
     expected: Vec<PreparedAiItem>,
@@ -1390,7 +1802,7 @@ async fn run_prompt_once(
             ProviderFailure::Message(format!("Could not write the Codex output schema: {error}"))
         })?;
         let input = format!("{}\n\nInput JSON:\n{}", prompt.instructions, prompt.input);
-        let args = translation_args(&temp.path, &schema_path, &reasoning);
+        let args = translation_args(&temp.path, &schema_path, model.as_deref(), &reasoning);
         match run_command(
             &executable,
             &args,
@@ -1434,6 +1846,7 @@ async fn run_prompt_once(
 }
 
 async fn run_translation_attempt(
+    model: Option<String>,
     reasoning: String,
     target_language: String,
     items: Vec<PreparedAiItem>,
@@ -1442,7 +1855,7 @@ async fn run_translation_attempt(
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
     let prompt =
         build_translation_attempt_prompt(&target_language, &items, structural_error.as_deref())?;
-    run_prompt_once(reasoning, prompt, items, cancelled).await
+    run_prompt_once(model, reasoning, prompt, items, cancelled).await
 }
 
 async fn translate_chunk_with_recovery<F, Fut>(
@@ -1475,17 +1888,25 @@ where
 }
 
 pub async fn translate_chunk(
+    model: Option<&str>,
     reasoning: &str,
     target_language: &str,
     items: &[PreparedAiItem],
     cancelled: Arc<AtomicBool>,
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
+    let model = match model {
+        Some(model) => Some(clean_model_value(model).ok_or_else(|| {
+            ProviderFailure::Message("The selected Codex CLI model is invalid.".to_string())
+        })?),
+        None => None,
+    };
     let reasoning = ai::normalize_reasoning(reasoning)?;
     let target_language = target_language.to_string();
     let items = items.to_vec();
     let attempt_cancelled = Arc::clone(&cancelled);
     translate_chunk_with_recovery(cancelled, move |structural_error| {
         run_translation_attempt(
+            model.clone(),
             reasoning.clone(),
             target_language.clone(),
             items.clone(),
@@ -1501,12 +1922,19 @@ pub async fn translate_chunk(
 /// a failed or individually oversized repair retains the original suggestion.
 /// Cancellation remains authoritative.
 pub async fn repair_token_mismatches_once(
+    model: Option<&str>,
     reasoning: &str,
     target_language: &str,
     items: &[PreparedAiItem],
     translations: &[ProviderTranslation],
     cancelled: Arc<AtomicBool>,
 ) -> Result<TokenRepairOutcome, ProviderFailure> {
+    let model = match model {
+        Some(model) => Some(clean_model_value(model).ok_or_else(|| {
+            ProviderFailure::Message("The selected Codex CLI model is invalid.".to_string())
+        })?),
+        None => None,
+    };
     let reasoning = ai::normalize_reasoning(reasoning)?;
     let plans = build_token_repair_plans(target_language, items, translations)?;
     if plans.is_empty() {
@@ -1523,6 +1951,7 @@ pub async fn repair_token_mismatches_once(
         cancelled,
         move |prompt, expected| {
             run_prompt_once(
+                model.clone(),
                 reasoning.clone(),
                 prompt,
                 expected,
@@ -1585,6 +2014,7 @@ mod tests {
         let args = translation_args(
             Path::new(r"C:\Temp\empty"),
             Path::new(r"C:\Temp\schema.json"),
+            Some("gpt-5.6-sol"),
             "medium",
         );
         let args: Vec<String> = args
@@ -1608,8 +2038,50 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["--config", "features.shell_tool=false"]));
         assert!(!args.contains(&"--output-last-message".to_string()));
-        assert!(!args.contains(&"--model".to_string()));
+        assert!(args
+            .windows(2)
+            .any(|pair| pair == ["--model", "gpt-5.6-sol"]));
         assert_eq!(args.last().map(String::as_str), Some("-"));
+    }
+
+    #[test]
+    fn exec_arguments_leave_the_cli_default_untouched_without_a_model() {
+        let args = translation_args(
+            Path::new(r"C:\Temp\empty"),
+            Path::new(r"C:\Temp\schema.json"),
+            None,
+            "medium",
+        );
+        assert!(!args.iter().any(|arg| arg == "--model"));
+    }
+
+    #[test]
+    fn model_list_parser_accepts_the_documented_catalog_shape() {
+        let parsed = parse_model_list_response(
+            r#"{"id":2,"result":{"data":[{"model":"gpt-5.6-sol","displayName":"GPT-5.6-Sol","hidden":false,"isDefault":true,"defaultReasoningEffort":"low","supportedReasoningEfforts":[{"reasoningEffort":"low","description":"Fast"}]}],"nextCursor":null}}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.data.len(), 1);
+        assert_eq!(parsed.data[0].model, "gpt-5.6-sol");
+        assert!(parsed.data[0].is_default);
+        assert_eq!(
+            parsed.data[0].supported_reasoning_efforts[0].reasoning_effort,
+            "low"
+        );
+        assert!(parsed.next_cursor.is_none());
+    }
+
+    #[test]
+    fn model_list_parser_surfaces_a_bounded_server_error() {
+        let message = "x".repeat(300);
+        let body = serde_json::json!({
+            "id": 2,
+            "error": { "message": message }
+        })
+        .to_string();
+        let error = parse_model_list_response(&body).unwrap_err();
+        assert!(error.starts_with("Codex CLI could not list models: "));
+        assert!(error.chars().count() < 220);
     }
 
     #[test]
@@ -2108,6 +2580,7 @@ mod tests {
             expected_revision: 0,
         }];
         let translated = tauri::async_runtime::block_on(translate_chunk(
+            None,
             "low",
             "German",
             &items,
@@ -2117,5 +2590,15 @@ mod tests {
         assert_eq!(translated.len(), 1);
         assert_eq!(translated[0].id, "item-0000");
         assert!(!translated[0].text.trim().is_empty());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires an installed Codex CLI"]
+    fn live_codex_model_list_uses_only_cli_reported_models() {
+        let models = list_models_sync().unwrap();
+        assert!(!models.is_empty());
+        assert!(models.iter().all(|model| !model.model.trim().is_empty()));
+        assert!(models.iter().any(|model| model.is_default));
     }
 }

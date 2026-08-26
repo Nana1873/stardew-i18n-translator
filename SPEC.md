@@ -352,8 +352,10 @@ service's default Base URL, test the connection, and choose a reported model.
 
 The Codex CLI backend invokes an installed CLI and relies exclusively on that
 CLI's own authentication. The app does not inspect, import, copy, or persist
-Codex authentication files or tokens. It uses the CLI's own default model; the
-app does not maintain a separate Codex model catalogue.
+Codex authentication files or tokens. Settings discovers the models currently
+reported by the installed CLI and persists only the selected model id. The app
+does not maintain its own Codex model catalogue. If discovery is unavailable or
+no model has been selected, runs use the CLI's own default model.
 
 An AI request sends the source text, its section context, and matching glossary
 terms to the selected backend. Each run is bound to exactly one currently
