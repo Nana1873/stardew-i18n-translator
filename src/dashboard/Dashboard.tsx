@@ -106,6 +106,15 @@ export function Dashboard({
     .slice(0, 4);
   const continueMod = recent[0] ?? withKeys[0] ?? null;
   const targetLanguage = languageLine.split(" (")[0].trim() || "target";
+  const scanDeltaSummary = scan?.sourceDeltas
+    ? `${count(scan.sourceDeltas.sourcesChanged)} ${
+        scan.sourceDeltas.sourcesChanged === 1 ? "source" : "sources"
+      } changed · ${count(scan.sourceDeltas.stringsAdded)} ${
+        scan.sourceDeltas.stringsAdded === 1 ? "string" : "strings"
+      } added · ${count(scan.sourceDeltas.stringsRemoved)} ${
+        scan.sourceDeltas.stringsRemoved === 1 ? "string" : "strings"
+      } removed`
+    : "change, added, and removed deltas unavailable";
 
   useEffect(() => {
     const hideTooltip = () => setStatusTooltip(null);
@@ -264,7 +273,7 @@ export function Dashboard({
               {scan.skippedComponents == null
                 ? "skipped-component count unavailable"
                 : `${scan.skippedComponents.length} ${scan.skippedComponents.length === 1 ? "component" : "components"} skipped`}
-              {" · change, added, and removed deltas unavailable"}
+              {` · ${scanDeltaSummary}`}
             </span>
           </span>
           <span aria-hidden="true">→</span>

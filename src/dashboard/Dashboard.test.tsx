@@ -119,6 +119,38 @@ describe("Dashboard", () => {
     expect(scanDetails).toHaveBeenCalledOnce();
   });
 
+  it("shows real zero source deltas from the latest scan", () => {
+    const scan = sampleScan();
+    scan.sourceDeltas = {
+      sourcesChanged: 0,
+      stringsAdded: 0,
+      stringsRemoved: 0,
+      addedStrings: [],
+      changedSources: [],
+    };
+
+    render(
+      <Dashboard
+        scan={scan}
+        scanning={false}
+        lastScanAt={Date.now()}
+        languageLine="German (de)"
+        onScan={vi.fn()}
+        scanEnabled
+        onOpenMod={vi.fn()}
+        onBrowse={vi.fn()}
+        lastOpened={{}}
+        onShowScanDetails={vi.fn()}
+      />,
+    );
+
+    const latestScan = screen.getByRole("button", { name: /Latest scan:/ });
+    expect(latestScan).toHaveTextContent(
+      "0 sources changed · 0 strings added · 0 strings removed",
+    );
+    expect(latestScan).not.toHaveTextContent("deltas unavailable");
+  });
+
   it("uses portable recency only for navigation", () => {
     const openMod = vi.fn();
     render(
