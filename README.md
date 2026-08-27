@@ -154,7 +154,9 @@ live run accepts up to 4,096 strings or 8 MiB of selected source text. Recovery
 is limited to the affected batch: a transient failure is retried once, and a
 persistently invalid response is split until a failing string is isolated so
 unrelated work can continue. Repeated neighboring context is pooled inside each
-prompt without removing any context line.
+prompt without losing retained context. If one complete item prompt is still
+oversized, only its farthest neighboring context is trimmed first; the selected
+source is never trimmed.
 
 Codex translation uses a staged quality pass. Codex first creates an initial
 draft, then every draft receives a full AI review that corrects issues in
@@ -173,11 +175,12 @@ individually oversized repair input is kept for Review without another provider
 call.
 
 AI suggestions always enter the existing human Review queue. Suggestions from
-each fully completed adaptive chunk are saved together immediately, so
-cancelling a longer run keeps previously completed chunks in Review; the
-current in-flight chunk remains available for a later retry. Even a draft that
-passed AI review and terminology repair remains `review-needed`; suggestions
-are never treated as finished translations automatically.
+completed adaptive chunks are saved immediately as validation reaches them.
+Cancelling or a later error keeps already persisted suggestions in Review, and
+any selected items still in Open or Changed are naturally available for a later
+retry. Even a draft that passed AI review and terminology repair remains
+`review-needed`; suggestions are never treated as finished translations
+automatically.
 
 The compact progress dialog reports suggestions already saved to Review, the
 current quality phase and adaptive batch, elapsed time, bounded retries or
@@ -234,7 +237,7 @@ Codex CLI authentication remains entirely owned by the CLI; the app does not
 read or copy its authentication files or tokens. The app does not offer a
 provider marketplace or a custom cloud base URL.
 
-Live AI may send up to two preceding and two following unselected English source
+Live AI may send up to two preceding and two following neighboring English source
 strings from the same component, i18n file, section, and related key group as
 read-only context. Context-only strings cannot be returned as translations or
 saved by the run.

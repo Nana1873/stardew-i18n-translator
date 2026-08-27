@@ -520,7 +520,10 @@ body {
   #stardew-i18n-translator
     .translator-progress-row
     span[data-indeterminate="true"] {
+    width: 100%;
     animation: none;
+    opacity: 0.45;
+    transform: none;
   }
 }
 

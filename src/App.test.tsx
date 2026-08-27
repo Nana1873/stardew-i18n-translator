@@ -1417,7 +1417,7 @@ describe("App shell", () => {
       }),
     ).toHaveAttribute(
       "aria-valuetext",
-      "2 selected strings are being translated",
+      "2 selected strings are being prepared",
     );
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("translate_with_local_ai", {

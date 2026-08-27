@@ -3157,6 +3157,32 @@
   color: var(--translator-brand);
   font-size: 1.25em;
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+#stardew-i18n-translator .translator-ai-activity {
+  min-width: 0;
+  color: var(--translator-text);
+  font-size: 0.86em;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+#stardew-i18n-translator .translator-ai-meta {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 3px 9px;
+  color: var(--translator-muted);
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+}
+
+#stardew-i18n-translator .translator-ai-meta span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 /* Focused desktop readability and workflow pass. */

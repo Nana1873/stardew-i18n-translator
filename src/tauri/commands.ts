@@ -844,10 +844,35 @@ export interface AiRunResult {
   suggestions: AiSuggestion[];
 }
 
+export type AiRunPhase =
+  | "preparing"
+  | "translating"
+  | "reviewing"
+  | "terminologyRepair"
+  | "tokenRepair"
+  | "saving";
+
+export type AiRunRecovery = "transientRetry" | "structureRetry" | "split";
+
+export interface AiRunTokenUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+}
+
 export interface AiRunProgress {
   runId: string;
+  phase: AiRunPhase;
   completed: number;
   total: number;
+  batchIndex?: number;
+  batchTotal?: number;
+  batchSize?: number;
+  retries: number;
+  splits: number;
+  recovery?: AiRunRecovery;
+  usage?: AiRunTokenUsage;
 }
 
 /** Listen for persisted Review progress from the currently running AI command. */

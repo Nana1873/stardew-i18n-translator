@@ -141,6 +141,11 @@ describe("BatchTranslateDialog", () => {
     expect(
       screen.getByText(/Codex CLI .* completed suggestions enter Review/),
     ).toBeVisible();
+    expect(screen.getByText("Saved to Review")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Preparing selected strings",
+    );
+    expect(screen.getByText(/Codex CLI active · 00:00/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -200,6 +205,47 @@ describe("BatchTranslateDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("does not start a live backend run when Cancel wins the listener setup race", async () => {
+    let resolveListen: (unlisten: typeof unlistenProgress) => void = () => {};
+    eventApi.listen.mockReturnValueOnce(
+      new Promise<typeof unlistenProgress>((resolve) => {
+        resolveListen = resolve;
+      }),
+    );
+    const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
+    const onCancelLiveRun = vi.fn(async () => false);
+    const { onFinished, onClose } = renderDialog({
+      engine: CODEX_ENGINE,
+      onLiveRun,
+      onCancelLiveRun,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(onCancelLiveRun).toHaveBeenCalledOnce();
+    expect(onLiveRun).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("progressbar", { name: "AI translation progress" }),
+    ).toHaveAttribute(
+      "aria-valuetext",
+      "Cancelling the active AI batch; 0 of 2 suggestions saved to Review",
+    );
+
+    await act(async () => resolveListen(unlistenProgress));
+
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+    expect(onLiveRun).not.toHaveBeenCalled();
+    expect(onFinished).toHaveBeenCalledWith({
+      runId: expect.any(String),
+      done: 0,
+      total: 2,
+      outcome: "cancelled",
+      engine: "Codex CLI",
+      model: "gpt-5.6",
+      reasoning: "high",
+    });
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
   it("shows matching live backend progress and ignores progress from other runs", async () => {
     let resolveRun: (result: AiRunResult) => void = () => {};
     const onLiveRun = vi.fn(
@@ -226,7 +272,14 @@ describe("BatchTranslateDialog", () => {
 
     act(() =>
       receiveProgress({
-        payload: { runId: "another-run", completed: 99, total: 100 },
+        payload: {
+          runId: "another-run",
+          phase: "translating",
+          completed: 99,
+          total: 100,
+          retries: 0,
+          splits: 0,
+        },
       }),
     );
     expect(screen.getByText("0 / 2")).toBeVisible();
@@ -234,15 +287,46 @@ describe("BatchTranslateDialog", () => {
 
     act(() =>
       receiveProgress({
-        payload: { runId, completed: 320, total: 1_000 },
+        payload: {
+          runId,
+          phase: "reviewing",
+          completed: 320,
+          total: 1_000,
+          batchIndex: 4,
+          batchTotal: 11,
+          batchSize: 87,
+          retries: 1,
+          splits: 2,
+          recovery: "structureRetry",
+          usage: {
+            inputTokens: 45_200,
+            cachedInputTokens: 32_900,
+            outputTokens: 2_100,
+            reasoningOutputTokens: 900,
+          },
+        },
       }),
     );
     expect(screen.getByText("320 / 1000")).toBeVisible();
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Reviewing quality · Batch 4 of 11 · 87 strings",
+    );
+    expect(
+      screen.getByText(
+        /Codex CLI active · \d\d:\d\d · Retrying response structure · 1 retry · 2 splits/,
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "Codex reported · 45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
+      ),
+    ).toBeVisible();
     expect(progress).not.toHaveAttribute("data-indeterminate");
-    expect(progress).toHaveAttribute("aria-valuenow", "32");
+    expect(progress).toHaveAttribute("aria-valuemax", "1000");
+    expect(progress).toHaveAttribute("aria-valuenow", "320");
     expect(progress).toHaveAttribute(
       "aria-valuetext",
-      "320 of 1000 strings translated",
+      "320 of 1000 suggestions saved to Review; reviewing quality · batch 4 of 11 · 87 strings",
     );
 
     act(() => resolveRun(liveResult({ runId })));
@@ -260,6 +344,26 @@ describe("BatchTranslateDialog", () => {
     unmount();
 
     expect(unlistenProgress).toHaveBeenCalledOnce();
+  });
+
+  it("updates the elapsed timer for the serial local-AI fallback", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-27T10:00:00Z"));
+    try {
+      const onTranslate = vi.fn(() => new Promise<TranslationResult>(() => {}));
+      const { unmount } = renderDialog({
+        onTranslate,
+      });
+
+      expect(screen.getByText(/AI active · 00:00/)).toBeVisible();
+      act(() => {
+        vi.advanceTimersByTime(34_000);
+      });
+      expect(screen.getByText(/AI active · 00:34/)).toBeVisible();
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("translates the selected Open and Changed items serially and hands every result to Review persistence", async () => {
@@ -341,6 +445,26 @@ describe("BatchTranslateDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancelLiveRun).toHaveBeenCalledWith(runId);
     expect(screen.getByRole("heading", { name: "Cancelling…" })).toBeVisible();
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    act(() =>
+      receiveProgress({
+        payload: {
+          runId,
+          phase: "reviewing",
+          completed: 1,
+          total: 2,
+          batchIndex: 1,
+          batchTotal: 1,
+          batchSize: 2,
+          retries: 0,
+          splits: 0,
+        },
+      }),
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Cancelling active batch",
+    );
+    expect(screen.queryByText(/Reviewing quality/)).not.toBeInTheDocument();
 
     act(() =>
       resolveRun(

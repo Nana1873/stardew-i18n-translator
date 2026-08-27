@@ -401,11 +401,11 @@ context as the unpooled request. A single long source may occupy its own chunk.
 Each stage accepts only structurally valid output. A failed or oversized full
 review leaves the affected chunk incomplete so it can be retried. If the
 optional focused repair fails or returns unusable output, the fully reviewed
-text is retained. Suggestions from each fully completed adaptive chunk are
-saved together immediately as `review-needed`, including results that passed
-both AI quality stages. Cancellation or a later provider error retains
-previously completed chunks; the current in-flight chunk remains available for
-a later retry.
+text is retained. Suggestions from completed adaptive chunks are saved
+immediately as `review-needed` when validation reaches them, including results
+that passed both AI quality stages. Cancellation or a later provider error
+retains already persisted suggestions; selected items still in Open or Changed
+remain available for a later retry.
 
 After the language-quality stages, a protected-token mismatch gets one targeted
 Codex CLI repair attempt with the exact required and returned token counts when

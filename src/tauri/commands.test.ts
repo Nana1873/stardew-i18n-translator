@@ -38,8 +38,21 @@ describe("backend command bridges", () => {
   it("forwards typed AI progress events and returns the listener cleanup", async () => {
     const progress: AiRunProgress = {
       runId: "run-1",
+      phase: "reviewing",
       completed: 32,
       total: 100,
+      batchIndex: 2,
+      batchTotal: 4,
+      batchSize: 25,
+      retries: 1,
+      splits: 0,
+      recovery: "structureRetry",
+      usage: {
+        inputTokens: 45_200,
+        cachedInputTokens: 32_900,
+        outputTokens: 2_100,
+        reasoningOutputTokens: 900,
+      },
     };
     const handler = vi.fn();
     const unlisten = vi.fn();
