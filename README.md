@@ -145,8 +145,11 @@ English source, clear translations, start AI translation, or export an external
 LLM batch; the same actions are available from the right-click menu. The default
 AI engine is selected in Settings. **Translate selected with AI** immediately
 includes every selected **Open** or **Changed** string and sends no Done or
-Review text. An external batch may contain many selected Open or Changed strings
-but is bound to exactly one mod.
+Review text. Source values that the live backend cannot accept (empty, NUL, or
+larger than 64 KiB as UTF-8) remain selected but are clearly excluded from the
+AI-ready count. External LLM export keeps its existing file workflow and may
+still include those selected values. An external batch may contain many selected
+Open or Changed strings but is bound to exactly one mod.
 
 Each live AI run uses the currently selected target language; built-in and
 curated custom-language targets follow the same workflow. To preserve local
@@ -170,23 +173,26 @@ backend.
 Large Codex CLI selections are divided into adaptive batches of at most 100
 selected strings, with every complete serialized prompt bounded to 96 KiB; one
 live run accepts up to 4,096 strings or 8 MiB of selected source text. Recovery
-is limited to the affected batch: a transient failure is retried once, and a
-persistently invalid response is split until a failing string is isolated so
-unrelated work can continue. Repeated neighboring context is pooled inside each
-prompt without losing retained context. If one complete item prompt is still
-oversized, only its farthest neighboring context is trimmed first; the selected
-source is never trimmed.
+is limited to the affected batch: each CLI attempt may run for up to five
+minutes, a transient failure is retried once, and a persistently invalid
+response is split until a failing string is isolated so unrelated work can
+continue. Repeated neighboring context is pooled inside each prompt without
+losing retained context. If one complete item prompt is still oversized, only
+its farthest neighboring context is trimmed first; the selected source is never
+trimmed.
 
 Codex translation uses a staged quality pass. Codex first creates an initial
 draft, then every draft receives a full AI review that corrects issues in
 meaning, natural phrasing in the target language, terminology, grammar,
 register, speaker voice, and dialogue continuity. This review is not limited to
-token warnings or glossary matches. Only after that full review, reviewed
-results with a conservatively detected glossary or terminology candidate
-receive exactly one focused repair pass; correct inflections and compounds may
-remain unchanged. A failed full review does not mark its chunk complete, so it
-can be retried. If the optional focused repair fails, the fully reviewed text is
-kept.
+token warnings or glossary matches. The review still inspects every draft but
+returns only changed translations; omitted IDs retain their existing draft,
+which avoids writing every unchanged translation a second time. Only after that
+full review, reviewed results with a conservatively detected glossary or
+terminology candidate receive exactly one focused repair pass; correct
+inflections and compounds may remain unchanged. A failed full review does not
+mark its chunk complete, so it can be retried. If the optional focused repair
+fails, the fully reviewed text is kept.
 
 After the language-quality stages, a protected-token mismatch gets one targeted
 repair attempt and stays a blocking Review issue if it still differs. An
@@ -204,7 +210,12 @@ automatically.
 The compact progress dialog reports suggestions already saved to Review, the
 current quality phase and adaptive batch, elapsed time, bounded retries or
 splits, and token usage when Codex CLI reports it while retaining its Cancel
-action. It does not invent progress inside a provider call. A later run
+action. Safe CLI activity events such as starting, reasoning, and response
+completion appear as they arrive, together with the age of the latest event.
+After the first suggestions have actually been saved, an estimated remaining
+time is calculated from saved-string checkpoints and updated only when more
+work reaches Review. Codex does not provide token-by-token heartbeats, so the
+app does not invent progress inside a provider call. A later run
 naturally leaves only the remaining Open or Changed strings to process; there
 is no separate persistent AI job queue or checkpoint history. **Open review
 queue** returns to the affected component when it is known and to **All mods**
@@ -272,6 +283,10 @@ Portable data is stored under:
 - `data/logs/`
 
 Diagnostic logging can be disabled in **Settings > About**.
+AI diagnostics record only run, batch, phase, duration, retry/split, cancellation,
+fixed outcome categories, and reported token totals. Prompts, source and target
+text, glossary/context content, mod/string/file identities, CLI output, auth
+data, and temporary paths are never written to the AI diagnostic events.
 
 ## Help and Feedback
 
@@ -283,8 +298,9 @@ A rough report is fine.
 
 For bugs, the app version, the affected mod, the on-screen error, and a few
 reproduction steps are usually enough. Logs can be opened from the About page in
-Settings. They may contain local paths, so remove private information before
-attaching them.
+Settings. General scanner and file-operation entries may contain local paths,
+so remove private information before attaching them; the AI diagnostic events
+described above intentionally exclude them.
 
 Release history is in the [changelog](CHANGELOG.md).
 

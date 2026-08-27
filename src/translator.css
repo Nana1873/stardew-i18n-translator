@@ -2496,6 +2496,11 @@
   grid-template-rows: auto minmax(0, 1fr);
 }
 
+#stardew-i18n-translator .translator-result-head,
+#stardew-i18n-translator .translator-result-body {
+  min-width: 0;
+}
+
 #stardew-i18n-translator .translator-result-body {
   min-height: 0;
   overflow: auto;

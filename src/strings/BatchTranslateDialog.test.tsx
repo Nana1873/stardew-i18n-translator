@@ -298,6 +298,8 @@ describe("BatchTranslateDialog", () => {
           retries: 1,
           splits: 2,
           recovery: "structureRetry",
+          codexStage: "reasoning",
+          codexActivitySequence: 7,
           usage: {
             inputTokens: 45_200,
             cachedInputTokens: 32_900,
@@ -317,6 +319,9 @@ describe("BatchTranslateDialog", () => {
       ),
     ).toBeVisible();
     expect(
+      screen.getByText("Codex activity · Reasoning · just now"),
+    ).toBeVisible();
+    expect(
       screen.getByText(
         "Codex reported · 45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
       ),
@@ -331,6 +336,110 @@ describe("BatchTranslateDialog", () => {
 
     act(() => resolveRun(liveResult({ runId })));
     await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+  });
+
+  it("updates a stable ETA only when more suggestions have been saved", async () => {
+    const startedAt = Date.parse("2026-08-27T10:00:00Z");
+    const now = vi.spyOn(Date, "now").mockReturnValue(startedAt);
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onLiveRun = vi.fn(
+      (_runId: string) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const onCancelLiveRun = vi.fn(async () => true);
+    try {
+      const { onFinished } = renderDialog({
+        engine: CODEX_ENGINE,
+        onLiveRun,
+        onCancelLiveRun,
+      });
+      await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+      const runId = onLiveRun.mock.calls[0][0];
+      const receiveProgress = eventApi.listen.mock.calls[0][1];
+
+      expect(screen.queryByText(/Estimated remaining/)).not.toBeInTheDocument();
+
+      now.mockReturnValue(startedAt + 480_000);
+      act(() =>
+        receiveProgress({
+          payload: {
+            runId,
+            phase: "saving",
+            completed: 80,
+            total: 400,
+            batchIndex: 1,
+            batchTotal: 5,
+            batchSize: 80,
+            retries: 0,
+            splits: 0,
+          },
+        }),
+      );
+      expect(
+        screen.getByText("Estimated remaining · about 32 min"),
+      ).toBeVisible();
+
+      now.mockReturnValue(startedAt + 600_000);
+      act(() =>
+        receiveProgress({
+          payload: {
+            runId,
+            phase: "translating",
+            completed: 80,
+            total: 400,
+            batchIndex: 2,
+            batchTotal: 5,
+            batchSize: 80,
+            retries: 1,
+            splits: 0,
+            recovery: "transientRetry",
+          },
+        }),
+      );
+      expect(
+        screen.getByText("Estimated remaining · about 32 min"),
+      ).toBeVisible();
+
+      now.mockReturnValue(startedAt + 900_000);
+      act(() =>
+        receiveProgress({
+          payload: {
+            runId,
+            phase: "saving",
+            completed: 160,
+            total: 400,
+            batchIndex: 2,
+            batchTotal: 5,
+            batchSize: 80,
+            retries: 1,
+            splits: 0,
+          },
+        }),
+      );
+      expect(
+        screen.getByText("Estimated remaining · about 23 min"),
+      ).toBeVisible();
+
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(screen.queryByText(/Estimated remaining/)).not.toBeInTheDocument();
+      expect(onCancelLiveRun).toHaveBeenCalledWith(runId);
+
+      act(() =>
+        resolveRun(
+          liveResult({
+            runId,
+            requested: 400,
+            completed: 160,
+            outcome: "cancelled",
+          }),
+        ),
+      );
+      await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+    } finally {
+      now.mockRestore();
+    }
   });
 
   it("removes the live progress listener when the dialog unmounts", async () => {

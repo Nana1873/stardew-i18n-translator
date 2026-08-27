@@ -45,6 +45,17 @@ export interface EditorTranslationResult extends TranslationResult {
   /** Live backend runs persist the suggestion to Review before returning. */
   persisted?: boolean;
 }
+
+export interface EditorSuggestionProvenance {
+  /** Stable mod/file/key identity this metadata describes. */
+  identity: string;
+  engine: string;
+  model: string;
+  reasoning: string;
+  persisted: boolean;
+  /** Exact target value this metadata describes. */
+  value: string;
+}
 import { validate } from "./validation";
 import { describeToken, extractProtectedTokens } from "./protectedTokens";
 import { STATUS_META, statusTint } from "./status";
@@ -82,6 +93,8 @@ interface StringEditorProps {
   aiEngineLabel?: string;
   aiModel?: string;
   aiReasoning?: string;
+  /** Exact current-session metadata for an already persisted Review value. */
+  suggestionProvenance?: EditorSuggestionProvenance;
   /** Live AI may only replace Open or Changed rows. */
   translationAllowed?: boolean;
   translationUnavailableReason?: string;
@@ -199,6 +212,7 @@ export function StringEditor({
   aiEngineLabel = "AI",
   aiModel,
   aiReasoning,
+  suggestionProvenance,
   translationAllowed = true,
   translationUnavailableReason,
   reviewProgress,
@@ -211,6 +225,11 @@ export function StringEditor({
   onNotify,
   shortcuts = DEFAULT_SHORTCUTS,
 }: StringEditorProps) {
+  const suggestionIdentity = JSON.stringify([
+    row.modUniqueId,
+    row.file,
+    row.key,
+  ]);
   const [value, setValue] = useState(row.target);
   // A persisted review suggestion may be approved by saving it, or accepted
   // with edits. A fresh AI draft is tracked separately below because even an
@@ -233,13 +252,13 @@ export function StringEditor({
   const [translateMsgKind, setTranslateMsgKind] = useState<
     "note" | "ai-error" | "save-error"
   >("note");
-  const [aiProvenance, setAiProvenance] = useState<{
-    engine: string;
-    model: string;
-    reasoning: string;
-    persisted: boolean;
-    value: string;
-  } | null>(null);
+  const [aiProvenance, setAiProvenance] =
+    useState<EditorSuggestionProvenance | null>(
+      suggestionProvenance?.identity === suggestionIdentity &&
+        suggestionProvenance.value === row.target
+        ? suggestionProvenance
+        : null,
+    );
   const [discardOpen, setDiscardOpen] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "source" | "target">(
     "idle",
@@ -319,13 +338,30 @@ export function StringEditor({
     setDirty(false);
     setTranslateMsg(null);
     setTranslateMsgKind("note");
-    setAiProvenance((current) =>
-      current?.persisted && current.value === row.target ? current : null,
-    );
+    setAiProvenance((current) => {
+      if (
+        suggestionProvenance?.identity === suggestionIdentity &&
+        suggestionProvenance.value === row.target
+      ) {
+        return suggestionProvenance;
+      }
+      return current?.identity === suggestionIdentity &&
+        current.persisted &&
+        current.value === row.target
+        ? current
+        : null;
+    });
     setDiscardOpen(false);
     setCopyState("idle");
     textareaRef.current?.focus();
-  }, [rowIdentity, row.target, row.status, row.tokenMismatchAccepted]);
+  }, [
+    rowIdentity,
+    row.target,
+    row.status,
+    row.tokenMismatchAccepted,
+    suggestionProvenance,
+    suggestionIdentity,
+  ]);
 
   useEffect(
     () => () => {
@@ -399,6 +435,7 @@ export function StringEditor({
     setPendingSave(null);
     setPendingMove(null);
     setDirty(next !== row.target);
+    setAiProvenance(null);
   }
 
   async function handleTranslate() {
@@ -428,6 +465,7 @@ export function StringEditor({
       setPendingMove(null);
       setDirty(result.persisted ? false : result.text !== row.target);
       setAiProvenance({
+        identity: suggestionIdentity,
         engine: result.engine || aiEngineLabel,
         model: result.model || aiModel || "Model unavailable",
         reasoning: result.reasoning || aiReasoning || "Reasoning unavailable",
@@ -512,6 +550,7 @@ export function StringEditor({
     setPendingSave(null);
     setPendingMove(null);
     setDirty(row.target !== "");
+    setAiProvenance(null);
     textareaRef.current?.focus();
   }
 
@@ -552,6 +591,7 @@ export function StringEditor({
     setPendingSave(null);
     setPendingMove(null);
     setDirty(next !== row.target);
+    setAiProvenance(null);
     requestAnimationFrame(() => {
       const caret = start + raw.length;
       textarea?.focus();
@@ -934,24 +974,23 @@ export function StringEditor({
                 </span>
               </div>
             )}
-            {(row.status === "review-needed" || aiDraftPending) && (
-              <div className="translator-editor-support-row">
-                <span className="translator-editor-support-label">
-                  Suggestion source
-                </span>
-                <span className="translator-provenance-copy">
-                  <strong>{aiProvenance?.engine ?? "Unavailable"}</strong> ·{" "}
-                  {aiProvenance?.persisted
-                    ? "Saved to Review"
-                    : aiDraftPending
-                      ? "Draft in editor"
-                      : "Awaiting review"}{" "}
-                  · {aiProvenance?.model ?? "Model unavailable"} ·{" "}
-                  {aiProvenance?.reasoning ?? "Reasoning unavailable"} ·{" "}
-                  {aiProvenance ? "just now" : "Time unavailable"}
-                </span>
-              </div>
-            )}
+            {aiProvenance &&
+              (row.status === "review-needed" || aiDraftPending) && (
+                <div className="translator-editor-support-row">
+                  <span className="translator-editor-support-label">
+                    Suggestion source
+                  </span>
+                  <span className="translator-provenance-copy">
+                    <strong>{aiProvenance.engine}</strong> ·{" "}
+                    {aiProvenance.persisted
+                      ? "Saved to Review"
+                      : aiDraftPending
+                        ? "Draft in editor"
+                        : "Awaiting review"}{" "}
+                    · {aiProvenance.model} · {aiProvenance.reasoning}
+                  </span>
+                </div>
+              )}
           </div>
 
           <div className="editor__panes translator-editor-columns">

@@ -236,6 +236,73 @@ describe("StringTable workbench", () => {
     });
   });
 
+  it("does not continue a superseded multi-file load after its active request returns", async () => {
+    const oldMod: ScannedMod = {
+      ...MOD,
+      uniqueId: "old.mod",
+      name: "Old Mod",
+      i18nFiles: [
+        {
+          ...MOD.i18nFiles[0],
+          relativeDir: "old/first",
+          defaultPath: "old/first/default.json",
+          targetPath: "old/first/de.json",
+        },
+        {
+          ...MOD.i18nFiles[0],
+          relativeDir: "old/second",
+          defaultPath: "old/second/default.json",
+          targetPath: "old/second/de.json",
+        },
+      ],
+    };
+    let resolveOldFirst: (rows: readonly unknown[]) => void = () => {};
+    const oldFirst = new Promise<readonly unknown[]>((resolve) => {
+      resolveOldFirst = resolve;
+    });
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== "load_strings") return Promise.resolve(undefined);
+      const request = args as { modUniqueId: string; relativeDir: string };
+      if (
+        request.modUniqueId === "old.mod" &&
+        request.relativeDir === "old/first"
+      ) {
+        return oldFirst;
+      }
+      if (request.modUniqueId === "a.b") return Promise.resolve(ROWS["a.b"]);
+      return Promise.resolve([]);
+    });
+
+    const { rerender } = render(<StringTable mod={oldMod} />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_strings", {
+        modUniqueId: "old.mod",
+        relativeDir: "old/first",
+        defaultPath: "old/first/default.json",
+        targetPath: "old/first/de.json",
+      }),
+    );
+
+    rerender(<StringTable mod={MOD} />);
+    expect(await screen.findByText("greeting")).toBeVisible();
+    await act(async () => {
+      resolveOldFirst([]);
+      await oldFirst;
+      await Promise.resolve();
+    });
+
+    expect(
+      invokeMock.mock.calls.some(
+        ([cmd, args]) =>
+          cmd === "load_strings" &&
+          (args as { modUniqueId?: string; relativeDir?: string })
+            .modUniqueId === "old.mod" &&
+          (args as { modUniqueId?: string; relativeDir?: string })
+            .relativeDir === "old/second",
+      ),
+    ).toBe(false);
+  });
+
   it("uses the accepted direct grid geometry with a fixed action rail", async () => {
     const { container } = render(
       <StringTable mod={MOD} targetLanguageLabel="German (de)" />,
@@ -1519,6 +1586,133 @@ describe("StringTable workbench", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("skips backend-invalid source text only for live AI", async () => {
+    const exactLimitSource = "ä".repeat(32 * 1024);
+    const oversizedSource = "ä".repeat(32 * 1024 + 1);
+    installBackendRows({
+      "a.b": [
+        {
+          key: "empty",
+          source: "",
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "nul",
+          source: "Before\0after",
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "oversized",
+          source: oversizedSource,
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "boundary",
+          source: exactLimitSource,
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "valid",
+          source: "Translate me",
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    const onLlmBatchExportForMod = vi.fn().mockResolvedValue(undefined);
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    render(
+      <StringTable
+        mod={MOD}
+        liveAiEngines={[
+          {
+            id: "codex",
+            label: "Codex CLI",
+            ready: true,
+            model: "gpt-5.6-sol",
+            reasoning: "medium",
+            note: "Uses the signed-in Codex CLI.",
+          },
+        ]}
+        defaultAiEngine="codex"
+        onRunAi={onRunAi}
+        onLlmBatchExportForMod={onLlmBatchExportForMod}
+      />,
+    );
+    await screen.findByText("valid");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /5 selected/ }));
+    expect(
+      screen.getByText("5 Open/Changed exportable · 2 AI-ready"),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
+    );
+    await waitFor(() => expect(onLlmBatchExportForMod).toHaveBeenCalledOnce());
+    const exportedItems = onLlmBatchExportForMod.mock.calls[0][1] as Array<{
+      key: string;
+      source: string;
+    }>;
+    expect(exportedItems.map((item) => item.key)).toEqual([
+      "empty",
+      "nul",
+      "oversized",
+      "boundary",
+      "valid",
+    ]);
+    expect(exportedItems[0]?.source).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: /5 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
+    expect(request.identities).toEqual([
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "boundary" },
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "valid" },
+    ]);
+    act(() =>
+      resolveRun(
+        liveAiResult({
+          runId: request.runId,
+          requested: 2,
+          completed: 0,
+          outcome: "cancelled",
+          suggestions: [],
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "AI translation progress" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("translates only eligible selected rows and persists every AI result to Review", async () => {
     const onTranslate = vi.fn().mockResolvedValue({
       text: "KI-Text",
@@ -1723,6 +1917,19 @@ describe("StringTable workbench", () => {
     expect(rowFor("bye")).toHaveTextContent("Tschüss");
     expect(rowFor("token")).toHaveAttribute("data-status", "review-needed");
     expect(rowFor("token")).toHaveTextContent("Hallo {{name}}");
+
+    const translatedCell = rowFor("bye").querySelector<HTMLElement>(
+      ".translator-translation-col",
+    );
+    if (!translatedCell) throw new Error("Missing translated target cell");
+    fireEvent.doubleClick(translatedCell);
+    const editor = screen.getByRole("dialog", { name: "bye" });
+    expect(within(editor).getByText("Suggestion source")).toBeVisible();
+    expect(
+      within(editor).getByText("Codex CLI", { selector: "strong" }),
+    ).toBeVisible();
+    expect(within(editor).getByText(/gpt-5\.6/)).toBeVisible();
+    expect(within(editor).getByText(/High/)).toBeVisible();
   });
 
   it("reports cancellation with saved partial Review work without client undo", async () => {

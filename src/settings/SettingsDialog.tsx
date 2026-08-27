@@ -1246,7 +1246,10 @@ export function SettingsDialog({
                 <div className="translator-setting-line">
                   <span className="translator-setting-copy">
                     <strong>Local diagnostic logs</strong>
-                    <span>Rotating and never sent automatically</span>
+                    <span>
+                      Rotating · AI run metadata only, never translation text ·
+                      never sent automatically
+                    </span>
                   </span>
                   <label className="translator-switch">
                     <input

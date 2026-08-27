@@ -14,6 +14,7 @@ import type {
   AiRunProgress,
   AiRunRecovery,
   AiRunResult,
+  CodexActivityStage,
   TranslationResult,
 } from "../tauri/commands";
 import { listenAiRunProgress } from "../tauri/commands";
@@ -72,6 +73,15 @@ const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   split: "Splitting affected batch",
 };
 
+const CODEX_ACTIVITY_LABELS: Record<CodexActivityStage, string> = {
+  starting: "Starting process",
+  working: "Working",
+  reasoning: "Reasoning",
+  writingResponse: "Writing response",
+  completed: "Response received",
+  failed: "Error reported",
+};
+
 function formatElapsed(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3_600);
   const minutes = Math.floor((totalSeconds % 3_600) / 60);
@@ -85,6 +95,20 @@ function formatTokenCount(value: number): string {
   if (value < 1_000) return String(value);
   if (value < 1_000_000) return `${(value / 1_000).toFixed(1)}k`;
   return `${(value / 1_000_000).toFixed(1)}m`;
+}
+
+function formatActivityAge(totalSeconds: number): string {
+  return totalSeconds < 2 ? "just now" : `${formatElapsed(totalSeconds)} ago`;
+}
+
+function formatEstimatedRemaining(totalSeconds: number): string {
+  const minutes = Math.max(1, Math.ceil(totalSeconds / 60));
+  if (minutes < 60) return `about ${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0
+    ? `about ${hours} hr ${remainingMinutes} min`
+    : `about ${hours} hr`;
 }
 
 interface BatchTranslateDialogProps {
@@ -116,8 +140,16 @@ export function BatchTranslateDialog({
 }: BatchTranslateDialogProps) {
   const [done, setDone] = useState(0);
   const [liveProgress, setLiveProgress] = useState<AiRunProgress | null>(null);
+  const [lastCodexActivity, setLastCodexActivity] = useState<{
+    sequence: number;
+    stage: CodexActivityStage;
+    receivedAt: number;
+  } | null>(null);
   const [currentKey, setCurrentKey] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [estimatedRemainingSeconds, setEstimatedRemainingSeconds] = useState<
+    number | null
+  >(null);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
   const cancelRef = useRef(false);
@@ -125,7 +157,24 @@ export function BatchTranslateDialog({
   const liveRunPromiseRef = useRef<Promise<AiRunResult> | null>(null);
   const reportedRef = useRef(false);
   const startedAtRef = useRef(Date.now());
+  const completedCheckpointRef = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
+
+  function recordCompletionCheckpoint(completed: number, total: number) {
+    if (completed <= completedCheckpointRef.current) return;
+    const elapsedAtCheckpoint = Math.max(
+      1,
+      Math.floor((Date.now() - startedAtRef.current) / 1_000),
+    );
+    completedCheckpointRef.current = completed;
+    if (completed >= total) {
+      setEstimatedRemainingSeconds(null);
+      return;
+    }
+    setEstimatedRemainingSeconds(
+      Math.ceil((elapsedAtCheckpoint / completed) * (total - completed)),
+    );
+  }
 
   function finish(result: BatchFinishedResult) {
     if (reportedRef.current) return;
@@ -138,6 +187,7 @@ export function BatchTranslateDialog({
     if (cancelRef.current) return;
     cancelRef.current = true;
     setCancelRequested(true);
+    setEstimatedRemainingSeconds(null);
     if (onCancelLiveRun && onLiveRun) {
       void onCancelLiveRun(runIdRef.current).catch((cause) =>
         setCancelError(String(cause)),
@@ -177,8 +227,22 @@ export function BatchTranslateDialog({
         try {
           const unlisten = await listenAiRunProgress((event) => {
             if (!active || event.runId !== runId) return;
+            recordCompletionCheckpoint(event.completed, event.total);
             setDone(event.completed);
             setLiveProgress(event);
+            const stage = event.codexStage;
+            const sequence = event.codexActivitySequence;
+            if (stage && sequence !== undefined) {
+              setLastCodexActivity((current) =>
+                current?.sequence === sequence
+                  ? current
+                  : {
+                      sequence,
+                      stage,
+                      receivedAt: Date.now(),
+                    },
+              );
+            }
           });
           if (!active) {
             unlisten();
@@ -243,6 +307,7 @@ export function BatchTranslateDialog({
           await onResult(item, result.text);
           if (!active) return;
           completed += 1;
+          recordCompletionCheckpoint(completed, items.length);
           setDone(completed);
         } catch (cause) {
           failure = String(cause);
@@ -330,6 +395,12 @@ export function BatchTranslateDialog({
           : []),
       ].join(" · ")
     : null;
+  const activityAge = lastCodexActivity
+    ? Math.max(
+        0,
+        Math.floor((Date.now() - lastCodexActivity.receivedAt) / 1_000),
+      )
+    : null;
 
   return (
     <div className="translator-flow-overlay">
@@ -373,6 +444,19 @@ export function BatchTranslateDialog({
           </div>
           <div className="translator-ai-meta">
             <span>{metaParts.join(" · ")}</span>
+            {lastCodexActivity && activityAge !== null && (
+              <span>
+                Codex activity ·{" "}
+                {CODEX_ACTIVITY_LABELS[lastCodexActivity.stage]} ·{" "}
+                {formatActivityAge(activityAge)}
+              </span>
+            )}
+            {!cancelRequested && estimatedRemainingSeconds !== null && (
+              <span>
+                Estimated remaining ·{" "}
+                {formatEstimatedRemaining(estimatedRemainingSeconds)}
+              </span>
+            )}
             {usageText && <span>Codex reported · {usageText}</span>}
           </div>
           <div className="translator-progress-row">

@@ -164,7 +164,10 @@ rows unavailable.
 
 Live AI targets only exact selected Open or Changed strings. The backend resolves
 those identities from a fresh scan before sending any source text. Done and
-Review text is not silently replaced.
+Review text is not silently replaced. The UI excludes source values that the
+live backend rejects (empty, containing NUL, or larger than 64 KiB as UTF-8)
+from its AI-ready count and request identities without changing selection or the
+separate external LLM export contract.
 
 Saving work updates the portable translation state. Export remains an explicit
 user action.
@@ -394,16 +397,18 @@ selected strings, with every complete serialized prompt bounded to 96 KiB.
 Oversized neighboring context is removed farthest-first; the selected source is
 never trimmed.
 
-Codex CLI recovery is limited: one transient failure may be retried, while an
-invalid structured response gets one corrected attempt. If it remains invalid,
-only that Codex CLI batch is halved until the failing string is isolated, so
-unrelated strings can continue.
+Codex CLI recovery is limited: each CLI attempt has a five-minute ceiling, one
+transient failure may be retried, and an invalid structured response gets one
+corrected attempt. If it remains invalid, only that Codex CLI batch is halved
+until the failing string is isolated, so unrelated strings can continue.
 
 A Codex translation run first produces an initial draft. Every draft then
 receives a full AI review that corrects issues
 in source meaning, natural phrasing in the target language, terminology,
 grammar, register, speaker voice, and dialogue continuity; review is not
-restricted to strings with token or glossary warnings. Only after that full
+restricted to strings with token or glossary warnings. The review prompt still
+contains every scheduled draft, but its structured response returns only
+corrections; an omitted ID retains its existing draft. Only after that full
 review, reviewed results with a conservatively detected glossary or terminology
 candidate receive exactly one focused repair pass. The focused pass may retain
 contextually correct inflections or compounds unchanged. No terminology repair
@@ -435,11 +440,25 @@ one-time protected-token retry.
 The compact progress dialog receives persisted progress such as `320 / 1000`
 and retains its existing Cancel action. It also reports the current quality
 phase, adaptive outer batch, elapsed time, bounded retry/split activity, and
-Codex-reported token usage when available, without fabricating within-call
-completion percentages. A later run over the same scope naturally processes
-the remaining Open or Changed strings instead of maintaining a separate
-persistent AI job history, queue, or checkpoint store. Token validation and
-human review remain the final safety gates.
+Codex-reported token usage when available. Whitelisted Codex JSONL activity
+stages are forwarded while the subprocess is still running, and the dialog
+shows how long ago the latest stage arrived. Once at least one suggestion has
+been persisted, the dialog estimates remaining time from completed-string
+checkpoints and keeps that estimate stable until more work is saved. Raw CLI
+messages, reasoning text, commands, paths, IDs, and errors are never forwarded.
+Codex does not provide within-turn token deltas or heartbeats, so the app does
+not fabricate within-call completion percentages. A later run over the same
+scope naturally processes the remaining Open or Changed strings instead of
+maintaining a separate persistent AI job history, queue, or checkpoint store.
+Token validation and human review remain the final safety gates.
+
+When local diagnostic logging is enabled, AI runs emit bounded structured
+metadata for run and batch starts/finishes, phases, durations, retries, splits,
+cancellation, fixed outcome categories, and reported token totals. AI
+diagnostics never include prompts, sources, translations, context/glossary
+content, mod/string/file identities, target language, base URLs, authentication
+data, raw stdout/stderr, executable or temporary paths, or raw provider errors.
+Logging remains local, rotating, optional, and never creates telemetry.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

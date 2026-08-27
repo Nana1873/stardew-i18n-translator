@@ -51,7 +51,11 @@ import {
   saveString,
   saveStringGroupsWithUndo,
 } from "../tauri/commands";
-import { type EditorTranslationResult, StringEditor } from "./StringEditor";
+import {
+  type EditorSuggestionProvenance,
+  type EditorTranslationResult,
+  StringEditor,
+} from "./StringEditor";
 import {
   type BatchItem,
   BatchTranslateDialog,
@@ -93,6 +97,17 @@ interface Row extends StringRow {
   modName: string;
   packageId: string;
   file: string;
+}
+
+const MAX_LIVE_AI_SOURCE_BYTES = 64 * 1024;
+const utf8Encoder = new TextEncoder();
+
+function isLiveAiSourceEligible(source: string): boolean {
+  return (
+    source.length > 0 &&
+    !source.includes("\0") &&
+    utf8Encoder.encode(source).byteLength <= MAX_LIVE_AI_SOURCE_BYTES
+  );
 }
 
 type SortCol = "mod" | "file" | "status" | "key" | "source" | "target";
@@ -523,6 +538,9 @@ export function StringTable({
   const [statusTooltip, setStatusTooltip] = useState<StatusTooltipState | null>(
     null,
   );
+  const aiProvenanceByIdentity = useRef<
+    Map<string, EditorSuggestionProvenance>
+  >(new Map());
   const statusTooltipRef = useRef<HTMLDivElement>(null);
   const [columnWidths, setColumnWidths] = useState<StringTableColumnWidths>(
     () =>
@@ -548,6 +566,10 @@ export function StringTable({
   const searchRef = useRef<HTMLInputElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
   const previousLoadedIssueCount = useRef<number | null>(null);
+
+  useEffect(() => {
+    aiProvenanceByIdentity.current.clear();
+  }, [targetLanguageCode]);
   const rowFocusActive = useRef(false);
   const rowsRef = useRef<Row[] | null>(null);
   const contextMenuRef = useRef<HTMLUListElement>(null);
@@ -600,13 +622,16 @@ export function StringTable({
     (async () => {
       const loaded: Row[] = [];
       for (const candidate of plan) {
+        if (!active) return;
         for (const file of candidate.i18nFiles) {
+          if (!active) return;
           const fileRows = await loadStrings(
             candidate.uniqueId,
             file.relativeDir,
             file.defaultPath,
             file.targetPath,
           );
+          if (!active) return;
           for (const row of fileRows) {
             loaded.push({
               ...row,
@@ -826,6 +851,11 @@ export function StringTable({
   const batchEligibleRows = selectedRows.filter(
     (row) => row.status === "untranslated" || row.status === "outdated",
   );
+  const liveAiEligibleRows = batchEligibleRows.filter((row) =>
+    isLiveAiSourceEligible(row.source),
+  );
+  const liveAiExcludedCount =
+    batchEligibleRows.length - liveAiEligibleRows.length;
   const configuredLiveEngine = liveAiEngines?.find(
     (engine) => engine.id === defaultAiEngine,
   );
@@ -845,7 +875,7 @@ export function StringTable({
   const legacyLlmMatches =
     batchMod !== null && batchMod.uniqueId === mod?.uniqueId;
   const canRunAi =
-    batchEligibleRows.length > 0 &&
+    liveAiEligibleRows.length > 0 &&
     (onRunAi ? Boolean(activeLiveEngine) : Boolean(onTranslate));
   const llmExportHandlerAvailable = Boolean(
     onLlmBatchExportForMod || (legacyLlmMatches && onLlmBatchExport),
@@ -1274,6 +1304,7 @@ export function StringTable({
       row.source,
       tokenMismatchAccepted,
     );
+    aiProvenanceByIdentity.current.delete(identity);
     const next = data.map((candidate) =>
       identityOf(candidate) === identity
         ? {
@@ -1432,7 +1463,7 @@ export function StringTable({
   function startBatch() {
     if (!canRunAi) return;
     onEditorOpen?.();
-    const items: BatchItem[] = batchEligibleRows.map((row) => ({
+    const items: BatchItem[] = liveAiEligibleRows.map((row) => ({
       index: rowIndex.get(identityOf(row)) ?? -1,
       modUniqueId: row.modUniqueId,
       key: row.key,
@@ -1442,11 +1473,11 @@ export function StringTable({
       ...(row.section ? { section: row.section } : {}),
     }));
     const eligibleModIds = new Set(
-      batchEligibleRows.map((row) => row.modUniqueId),
+      liveAiEligibleRows.map((row) => row.modUniqueId),
     );
     setBatchModLabel(
       eligibleModIds.size === 1
-        ? (batchEligibleRows[0]?.modName ?? "Selected mod")
+        ? (liveAiEligibleRows[0]?.modName ?? "Selected mod")
         : String(eligibleModIds.size) + " mods",
     );
     setContextMenu(null);
@@ -1503,6 +1534,32 @@ export function StringTable({
       ]),
     );
     const changedMods = new Set<string>();
+    const engineLabel =
+      activeLiveEngine?.id === result.engine
+        ? activeLiveEngine.label
+        : result.engine === "codex"
+          ? "Codex CLI"
+          : "Local AI";
+    const reasoningLabel = result.reasoning
+      ? result.reasoning.charAt(0).toUpperCase() + result.reasoning.slice(1)
+      : "";
+    if (result.model && reasoningLabel) {
+      for (const suggestion of result.suggestions) {
+        const identity = JSON.stringify([
+          suggestion.identity.modUniqueId,
+          suggestion.identity.relativeDir,
+          suggestion.identity.key,
+        ]);
+        aiProvenanceByIdentity.current.set(identity, {
+          identity,
+          engine: engineLabel,
+          model: result.model,
+          reasoning: reasoningLabel,
+          persisted: true,
+          value: suggestion.text,
+        });
+      }
+    }
     const current = rowsRef.current ?? [];
     const next = current.map((row) => {
       const suggestion = suggestions.get(identityOf(row));
@@ -1864,7 +1921,9 @@ export function StringTable({
     editingIndex === undefined ? null : (data[editingIndex] ?? null);
   const editingAiAllowed = Boolean(
     editingRow &&
-    (editingRow.status === "untranslated" || editingRow.status === "outdated"),
+    (editingRow.status === "untranslated" ||
+      editingRow.status === "outdated") &&
+    isLiveAiSourceEligible(editingRow.source),
   );
   const editorTranslate = editingRow
     ? onRunAi
@@ -1873,14 +1932,20 @@ export function StringTable({
         : undefined
       : onTranslate
     : undefined;
-  const editorAiUnavailableReason = !editingAiAllowed
-    ? "AI can only translate Open or Changed strings. Done and Review text must be handled manually."
-    : onRunAi && !activeLiveEngine?.ready
-      ? (configuredLiveEngine?.unavailableReason ??
-        "The default translation engine is not ready. Check it in Settings.")
-      : !editorTranslate
-        ? "Configure a translation engine in Settings to use AI translation."
-        : undefined;
+  const editorAiUnavailableReason =
+    editingRow &&
+    (editingRow.status === "untranslated" ||
+      editingRow.status === "outdated") &&
+    !isLiveAiSourceEligible(editingRow.source)
+      ? "This source text cannot be sent to live AI because it is empty, contains an invalid NUL character, or exceeds 64 KiB."
+      : !editingAiAllowed
+        ? "AI can only translate Open or Changed strings. Done and Review text must be handled manually."
+        : onRunAi && !activeLiveEngine?.ready
+          ? (configuredLiveEngine?.unavailableReason ??
+            "The default translation engine is not ready. Check it in Settings.")
+          : !editorTranslate
+            ? "Configure a translation engine in Settings to use AI translation."
+            : undefined;
 
   const statusButtons: Array<{
     value: StringTableFilter;
@@ -1906,8 +1971,10 @@ export function StringTable({
     ? "Configure a translation engine in Settings."
     : onRunAi && !activeLiveEngine
       ? "No translation engine is currently available. Check Settings."
-      : batchEligibleRows.length === 0
-        ? "No open or changed strings are selected."
+      : liveAiEligibleRows.length === 0
+        ? batchEligibleRows.length > 0
+          ? "The selected Open or Changed strings have empty, invalid, or oversized source text."
+          : "No open or changed strings are selected."
         : null;
   const llmUnavailableReason =
     batchEligibleRows.length === 0
@@ -2176,7 +2243,12 @@ export function StringTable({
             >
               <span className="translator-popover-note" role="presentation">
                 <strong>{selection.size} selected</strong> ·{" "}
-                <span>{batchEligibleRows.length} Open/Changed exportable</span>
+                <span>
+                  {batchEligibleRows.length} Open/Changed exportable
+                  {liveAiExcludedCount > 0
+                    ? ` · ${liveAiEligibleRows.length} AI-ready`
+                    : ""}
+                </span>
               </span>
               <ActionButtons
                 canRunAi={canRunAi}
@@ -2450,6 +2522,9 @@ export function StringTable({
           aiEngineLabel={activeLiveEngine?.label ?? "Local AI"}
           aiModel={activeLiveEngine?.model ?? localAiModel}
           aiReasoning={activeLiveEngine?.reasoning}
+          suggestionProvenance={
+            aiProvenanceByIdentity.current.get(editingIdentity) ?? undefined
+          }
           translationAllowed={editingAiAllowed}
           translationUnavailableReason={editorAiUnavailableReason}
           reviewProgress={
@@ -2543,7 +2618,7 @@ export function StringTable({
               llmActionEnabled={llmActionEnabled}
               aiUnavailableReason={aiUnavailableReason}
               llmUnavailableReason={llmUnavailableReason}
-              localAiCount={batchEligibleRows.length}
+              localAiCount={liveAiEligibleRows.length}
               llmCount={batchEligibleRows.length}
               onCopySource={() => void copySelection("source")}
               onCopyTarget={() => void copySelection("target")}

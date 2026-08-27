@@ -44,10 +44,31 @@ describe("CSS custom properties", () => {
 
   it("keeps the production string workbench inside its pane", () => {
     expect(overrideStyles).toMatch(
+      /#stardew-i18n-translator \.translator-string-pane\s*{[^}]*grid-template-rows:\s*minmax\(0, 1fr\);/s,
+    );
+    expect(overrideStyles).toMatch(
       /#stardew-i18n-translator \.translator-string-workbench\s*{[^}]*width:\s*100%;[^}]*min-width:\s*0;/s,
     );
     expect(translatorStyles).toMatch(
       /#stardew-i18n-translator \.translator-table-wrap\s*{[^}]*min-width:\s*0;[^}]*overflow-x:\s*auto;/s,
+    );
+    expect(overrideStyles).toMatch(
+      /#stardew-i18n-translator \.translator-table-wrap\s*{[^}]*display:\s*flex;[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*auto;[^}]*overflow-y:\s*hidden;/s,
+    );
+    expect(overrideStyles).toMatch(
+      /#stardew-i18n-translator \.translator-string-table-body\s*{[^}]*flex:\s*1 1 auto;[^}]*overflow-x:\s*hidden;[^}]*overflow-y:\s*auto;/s,
+    );
+  });
+
+  it("keeps long result history labels inside the result tray", () => {
+    expect(translatorStyles).toMatch(
+      /#stardew-i18n-translator \.translator-result-head,\s*#stardew-i18n-translator \.translator-result-body\s*{[^}]*min-width:\s*0;/s,
+    );
+    expect(translatorStyles).toMatch(
+      /#stardew-i18n-translator \.translator-result-body\s*{[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/s,
+    );
+    expect(overrideStyles).toMatch(
+      /#stardew-i18n-translator \.translator-result-history > select\s*{[^}]*min-width:\s*0;[^}]*width:\s*100%;/s,
     );
   });
 

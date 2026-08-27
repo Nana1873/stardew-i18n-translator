@@ -31,12 +31,44 @@ body {
   box-shadow: none;
 }
 
+/* StringTable is the pane's single child. Keep it in one bounded track so the
+   virtualized table body, rather than the pane, owns vertical scrolling. */
+#stardew-i18n-translator .translator-string-pane {
+  grid-template-rows: minmax(0, 1fr);
+}
+
 /* React wraps the accepted header, toolbar, and scrollable table in the
    existing StringTable root. Let that grid item shrink with its pane so only
    the table owns horizontal overflow. */
 #stardew-i18n-translator .translator-string-workbench {
+  height: 100%;
+  min-height: 0;
   width: 100%;
   min-width: 0;
+  overflow: hidden;
+}
+
+#stardew-i18n-translator .translator-table-wrap {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#stardew-i18n-translator .translator-string-table {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex: 1 0 auto;
+  flex-direction: column;
+}
+
+#stardew-i18n-translator .translator-string-table-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 /* Keep the trailing translation handle fully inside the scrollable table. */

@@ -330,16 +330,36 @@ describe("StringEditor", () => {
     expect(screen.getByRole("button", { name: "Close editor" })).toBeEnabled();
   });
 
-  it("shows unavailable persisted provenance without inventing metadata", () => {
+  it("hides suggestion provenance when no real metadata is available", () => {
     renderEditor({ status: "review-needed" });
 
-    expect(
-      screen.getByText("Unavailable", { selector: "strong" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Awaiting review/)).toBeInTheDocument();
-    expect(screen.getByText(/Model unavailable/)).toBeInTheDocument();
-    expect(screen.getByText(/Reasoning unavailable/)).toBeInTheDocument();
-    expect(screen.getByText(/Time unavailable/)).toBeInTheDocument();
+    expect(screen.queryByText("Suggestion source")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Model unavailable/)).not.toBeInTheDocument();
+  });
+
+  it("hides cached provenance after the suggestion is no longer in Review", () => {
+    render(
+      <StringEditor
+        row={row({ target: "Hallo", status: "translated" })}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        suggestionProvenance={{
+          identity: JSON.stringify(["test.mod", "i18n", "greeting"]),
+          engine: "Codex CLI",
+          model: "gpt-5.6-sol",
+          reasoning: "Medium",
+          persisted: true,
+          value: "Hallo",
+        }}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Suggestion source")).not.toBeInTheDocument();
+    expect(screen.queryByText(/just now/i)).not.toBeInTheDocument();
   });
 
   it("resets editor-local state between mods with the same file and key", () => {
