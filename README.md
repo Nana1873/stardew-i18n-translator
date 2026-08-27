@@ -120,6 +120,18 @@ choice is retained, otherwise the CLI-reported default is selected. If model
 discovery is unavailable, runs still use the CLI's own default model. The app
 also configures the reasoning effort for Codex translation runs.
 
+If Codex CLI is unavailable, **Settings > Translation engines > Codex CLI**
+shows a short setup guide. It links to the
+[official Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli),
+then asks you to run `codex` in PowerShell and check the status again. Choose
+**Sign in with ChatGPT** for subscription access; Codex CLI also supports API-key
+sign-in for separately billed usage-based access. A paid ChatGPT subscription is
+not universally required: OpenAI currently includes Codex across ChatGPT plans,
+including Free, with plan-dependent usage limits. See the
+[official authentication guide](https://learn.chatgpt.com/docs/auth) and
+[current pricing page](https://learn.chatgpt.com/docs/pricing) for the latest
+availability and billing details.
+
 Use row checkboxes, Ctrl+click, Shift+click, or Ctrl+A to select the current
 filtered result. Batch actions can copy text, mark strings as Done, keep the
 English source, clear translations, start AI translation, or export an external

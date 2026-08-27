@@ -3142,6 +3142,23 @@
   display: block;
 }
 
+#stardew-i18n-translator .translator-codex-setup {
+  display: grid;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+#stardew-i18n-translator .translator-codex-setup ol {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-inline-start: 20px;
+}
+
+#stardew-i18n-translator .translator-codex-setup .translator-button {
+  justify-self: start;
+}
+
 #stardew-i18n-translator .translator-ai-count {
   display: flex;
   align-items: baseline;

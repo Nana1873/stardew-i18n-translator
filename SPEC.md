@@ -357,6 +357,16 @@ reported by the installed CLI and persists only the selected model id. The app
 does not maintain its own Codex model catalogue. If discovery is unavailable or
 no model has been selected, runs use the CLI's own default model.
 
+When Codex CLI is unavailable, Settings shows a compact setup guide that links
+to the official instructions, directs the user to run `codex`, and reuses the
+existing status check. It recommends **Sign in with ChatGPT** for
+subscription access while acknowledging the CLI-supported API-key route for
+separately billed usage-based access. It does not claim a fixed paid-plan
+requirement. Installation and authentication remain outside the app. For an
+installed but unavailable CLI, the guide distinguishes an explicit not-signed-in
+result from update, compatibility, and timeout failures instead of assuming
+that every unavailable state needs login.
+
 An AI request sends the source text, its section context, and matching glossary
 terms to the selected backend. Each run is bound to exactly one currently
 selected target language; built-in and curated custom-language targets use the

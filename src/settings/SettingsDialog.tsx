@@ -96,6 +96,7 @@ const DEFAULT_AI_SETTINGS = {
 };
 
 const CODEX_REASONING_OPTIONS = ["low", "medium", "high"] as const;
+const CODEX_SETUP_GUIDE_URL = "https://learn.chatgpt.com/docs/codex/cli";
 
 export function SettingsDialog({
   settings,
@@ -163,6 +164,11 @@ export function SettingsDialog({
   const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
   const codexAvailable = Boolean(
     codexStatus?.installed && codexStatus.authenticated,
+  );
+  const codexNeedsSignIn = Boolean(
+    codexStatus?.installed &&
+    !codexStatus.authenticated &&
+    codexStatus.error?.toLowerCase().includes("not signed in"),
   );
   const defaultEngine: AiEngine | null =
     preferredEngine === "codex" && codexStatus === null
@@ -1009,6 +1015,67 @@ export function SettingsDialog({
                     </span>
                   </div>
                 </div>
+                {!codexChecking && codexStatus && !codexAvailable && (
+                  <div
+                    className="translator-flow-callout translator-codex-setup"
+                    role="note"
+                    aria-label="Codex CLI setup guide"
+                  >
+                    <p>
+                      <strong>
+                        {codexNeedsSignIn
+                          ? "Finish Codex CLI setup"
+                          : codexStatus.installed
+                            ? "Check Codex CLI setup"
+                            : "Set up Codex CLI"}
+                      </strong>
+                    </p>
+                    <ol>
+                      {!codexNeedsSignIn && (
+                        <li>
+                          {codexStatus.installed ? (
+                            <>
+                              Run <code>codex</code> in PowerShell and confirm
+                              it responds. Update Codex CLI using the official
+                              setup guide if the installed version is
+                              incompatible.
+                            </>
+                          ) : (
+                            <>
+                              Install or update Codex CLI for Windows using the
+                              official setup guide, then make sure{" "}
+                              <code>codex</code> runs in PowerShell.
+                            </>
+                          )}
+                        </li>
+                      )}
+                      <li>
+                        {codexNeedsSignIn ? "Run" : "If prompted, run"}{" "}
+                        <code>codex</code> and choose
+                        <strong> Sign in with ChatGPT</strong> for subscription
+                        access, or use another sign-in method supported by Codex
+                        CLI.
+                      </li>
+                      <li>
+                        {codexStatus.installed
+                          ? "Return here and select Check status."
+                          : "Restart this app if it was open during installation, then return here and select Check status."}
+                      </li>
+                    </ol>
+                    <p>
+                      ChatGPT sign-in uses the account&apos;s current plan and
+                      its limits. API-key sign-in uses separate usage-based
+                      billing.
+                    </p>
+                    <button
+                      className="translator-button translator-button-quiet"
+                      type="button"
+                      onClick={() => void openUrl(CODEX_SETUP_GUIDE_URL)}
+                    >
+                      Open Codex setup guide
+                    </button>
+                  </div>
+                )}
                 <p className="translator-kicker">
                   Codex CLI uses its existing CLI sign-in, account limits, and
                   the selected model. Runs are ephemeral and read-only. The app

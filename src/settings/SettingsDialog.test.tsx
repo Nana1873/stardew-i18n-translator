@@ -1176,6 +1176,108 @@ describe("SettingsDialog", () => {
     );
   });
 
+  it("shows the official setup guide when Codex CLI is unavailable", async () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+
+    const guide = await screen.findByRole("note", {
+      name: "Codex CLI setup guide",
+    });
+    expect(guide).toHaveTextContent("Set up Codex CLI");
+    expect(guide).toHaveTextContent("Install or update Codex CLI for Windows");
+    expect(guide).toHaveTextContent("Sign in with ChatGPT");
+    expect(guide).toHaveTextContent(
+      "ChatGPT sign-in uses the account's current plan and its limits",
+    );
+    expect(guide).toHaveTextContent(
+      "API-key sign-in uses separate usage-based billing",
+    );
+    expect(guide).not.toHaveTextContent("A ChatGPT account is required");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Codex setup guide" }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("open_url", {
+      url: "https://learn.chatgpt.com/docs/codex/cli",
+    });
+  });
+
+  it("shows only the sign-in steps when Codex CLI is installed", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({
+          installed: true,
+          authenticated: false,
+          error: "Codex CLI is not signed in. Run `codex login` first.",
+        });
+      return Promise.resolve(null);
+    });
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+
+    const guide = await screen.findByRole("note", {
+      name: "Codex CLI setup guide",
+    });
+    expect(guide).toHaveTextContent("Finish Codex CLI setup");
+    expect(guide).toHaveTextContent("Sign in with ChatGPT");
+    expect(guide).not.toHaveTextContent("Install or update Codex CLI");
+  });
+
+  it.each([
+    "This Codex CLI version does not support the isolated translation mode required by the app. Update Codex CLI.",
+    "Codex CLI did not answer the login-status check in time.",
+  ])(
+    "shows recovery guidance for an installed unavailable CLI: %s",
+    async (error) => {
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "glossary_status") return Promise.resolve(null);
+        if (cmd === "codex_cli_status")
+          return Promise.resolve({
+            installed: true,
+            authenticated: false,
+            error,
+          });
+        return Promise.resolve(null);
+      });
+      render(
+        <SettingsDialog
+          settings={baseSettings}
+          initialPage="ai"
+          onSave={() => {}}
+          onClose={() => {}}
+          onReRunSetup={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+
+      const guide = await screen.findByRole("note", {
+        name: "Codex CLI setup guide",
+      });
+      expect(guide).toHaveTextContent("Check Codex CLI setup");
+      expect(guide).toHaveTextContent(
+        "Run codex in PowerShell and confirm it responds",
+      );
+      expect(guide).not.toHaveTextContent("Finish Codex CLI setup");
+    },
+  );
+
   it("includes the accepted Ctrl+F string-search shortcut", () => {
     render(
       <SettingsDialog
