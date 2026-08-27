@@ -120,6 +120,13 @@ choice is retained, otherwise the CLI-reported default is selected. If model
 discovery is unavailable, runs still use the CLI's own default model. The app
 also configures the reasoning effort for Codex translation runs.
 
+For ChatGPT-backed Codex sign-in, Settings also shows the remaining percentage
+and local reset time for each usage window reported by the installed CLI. The
+existing **Check status** action refreshes those values. Codex CLI versions that
+otherwise support translation but do not expose rate-limit data, and API-key
+billing, remain usable and show that ChatGPT limits were not reported. The app
+never estimates a quota or reads account or authentication files.
+
 If Codex CLI is unavailable, **Settings > Translation engines > Codex CLI**
 shows a short setup guide. It links to the
 [official Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli),
@@ -246,8 +253,10 @@ Local AI requests go only to the local endpoint you configure. External LLM
 batches leave your computer only when you upload them yourself.
 
 Codex CLI authentication remains entirely owned by the CLI; the app does not
-read or copy its authentication files or tokens. The app does not offer a
-provider marketplace or a custom cloud base URL.
+read or copy its authentication files or tokens. Its optional usage display is
+limited to sanitized rate-limit percentages, window lengths, and reset times
+reported by the CLI. The app does not offer a provider marketplace or a custom
+cloud base URL.
 
 Live AI may send up to two preceding and two following neighboring English source
 strings from the same component, i18n file, section, and related key group as

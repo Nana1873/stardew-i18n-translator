@@ -21,10 +21,13 @@ import {
   type AiEngine,
   type AppSettings,
   type CodexCliModel,
+  type CodexCliRateLimitWindow,
+  type CodexCliRateLimits,
   type CodexCliStatus,
   type GlossaryStatus,
   buildGlossary,
   codexCliModels,
+  codexCliRateLimits,
   codexCliStatus,
   glossaryStatus,
   llmModels,
@@ -98,6 +101,42 @@ const DEFAULT_AI_SETTINGS = {
 const CODEX_REASONING_OPTIONS = ["low", "medium", "high"] as const;
 const CODEX_SETUP_GUIDE_URL = "https://learn.chatgpt.com/docs/codex/cli";
 
+function formatCodexWindowDuration(minutes?: number): string | null {
+  if (!Number.isSafeInteger(minutes) || !minutes || minutes < 1) return null;
+  if (minutes % 1440 === 0) return `${minutes / 1440} d`;
+  if (minutes % 60 === 0) return `${minutes / 60} h`;
+  return `${minutes} min`;
+}
+
+function formatCodexReset(resetsAt?: number): string | null {
+  if (!Number.isSafeInteger(resetsAt) || resetsAt == null || resetsAt < 0)
+    return null;
+  const reset = new Date(resetsAt * 1000);
+  if (Number.isNaN(reset.getTime())) return null;
+  return new Intl.DateTimeFormat("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(reset);
+}
+
+function formatCodexRateLimitWindow(window: CodexCliRateLimitWindow): string {
+  const usedPercent = Math.min(100, Math.max(0, window.usedPercent));
+  const remainingPercent = Math.round(100 - usedPercent);
+  const duration = formatCodexWindowDuration(window.windowDurationMins);
+  const reset = formatCodexReset(window.resetsAt);
+  return `${duration ? `${duration}: ` : ""}${remainingPercent}% remaining${reset ? ` · resets ${reset}` : ""}`;
+}
+
+function formatCodexRateLimits(limits: CodexCliRateLimits): string {
+  return [limits.primary, limits.secondary]
+    .filter((window): window is CodexCliRateLimitWindow => Boolean(window))
+    .map(formatCodexRateLimitWindow)
+    .join(" · ");
+}
+
 export function SettingsDialog({
   settings,
   onSave,
@@ -153,6 +192,9 @@ export function SettingsDialog({
   const [codexModels, setCodexModels] = useState<CodexCliModel[] | null>(null);
   const [codexModelsLoading, setCodexModelsLoading] = useState(false);
   const [codexModelsError, setCodexModelsError] = useState<string | null>(null);
+  const [codexRateLimits, setCodexRateLimits] =
+    useState<CodexCliRateLimits | null>(null);
+  const [codexRateLimitsLoading, setCodexRateLimitsLoading] = useState(false);
   const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
   const [codexChecking, setCodexChecking] = useState(false);
   const llmDefaultBaseUrl =
@@ -228,25 +270,7 @@ export function SettingsDialog({
       .then(async (status) => {
         if (!active) return;
         setCodexStatus(status);
-        if (!status.installed || !status.authenticated) return;
-        setCodexModelsLoading(true);
-        setCodexModelsError(null);
-        try {
-          const models = await codexCliModels();
-          if (!active) return;
-          setCodexModels(models);
-          setCodexModel((current) =>
-            models.some((model) => model.model === current)
-              ? current
-              : (models.find((model) => model.isDefault)?.model ??
-                models[0]?.model ??
-                current),
-          );
-        } catch (cause) {
-          if (active) setCodexModelsError(String(cause));
-        } finally {
-          if (active) setCodexModelsLoading(false);
-        }
+        await loadCodexDetails(status, () => active);
       })
       .catch((cause) => {
         if (!active) return;
@@ -413,30 +437,64 @@ export function SettingsDialog({
     setPreferredEngine(panel);
   }
 
+  async function loadCodexDetails(
+    status: CodexCliStatus,
+    isActive: () => boolean = () => true,
+  ) {
+    if (!status.installed || !status.authenticated) {
+      if (isActive()) {
+        setCodexRateLimits(null);
+        setCodexRateLimitsLoading(false);
+      }
+      return;
+    }
+
+    setCodexModelsLoading(true);
+    setCodexModelsError(null);
+    const modelsRequest = codexCliModels()
+      .then((models) => {
+        if (!isActive()) return;
+        setCodexModels(models);
+        setCodexModel((current) =>
+          models.some((model) => model.model === current)
+            ? current
+            : (models.find((model) => model.isDefault)?.model ??
+              models[0]?.model ??
+              current),
+        );
+      })
+      .catch((cause) => {
+        if (isActive()) setCodexModelsError(String(cause));
+      })
+      .finally(() => {
+        if (isActive()) setCodexModelsLoading(false);
+      });
+
+    const canReadRateLimits = status.authentication !== "API key";
+    setCodexRateLimits(null);
+    setCodexRateLimitsLoading(canReadRateLimits);
+    const rateLimitsRequest = canReadRateLimits
+      ? codexCliRateLimits()
+          .then((limits) => {
+            if (isActive()) setCodexRateLimits(limits);
+          })
+          .catch(() => {
+            if (isActive()) setCodexRateLimits(null);
+          })
+          .finally(() => {
+            if (isActive()) setCodexRateLimitsLoading(false);
+          })
+      : Promise.resolve();
+
+    await Promise.all([modelsRequest, rateLimitsRequest]);
+  }
+
   async function checkCodexStatus() {
     setCodexChecking(true);
     try {
       const status = await codexCliStatus();
       setCodexStatus(status);
-      if (status.installed && status.authenticated) {
-        setCodexModelsLoading(true);
-        setCodexModelsError(null);
-        try {
-          const models = await codexCliModels();
-          setCodexModels(models);
-          setCodexModel((current) =>
-            models.some((model) => model.model === current)
-              ? current
-              : (models.find((model) => model.isDefault)?.model ??
-                models[0]?.model ??
-                current),
-          );
-        } catch (cause) {
-          setCodexModelsError(String(cause));
-        } finally {
-          setCodexModelsLoading(false);
-        }
-      }
+      await loadCodexDetails(status);
     } catch (cause) {
       setCodexStatus({
         installed: false,
@@ -1014,6 +1072,23 @@ export function SettingsDialog({
                         : "Unavailable"}
                     </span>
                   </div>
+                  {codexAvailable && (
+                    <div className="translator-setting-line">
+                      <span className="translator-setting-copy">
+                        <strong>Usage remaining</strong>
+                        <span aria-live="polite">
+                          {codexRateLimitsLoading
+                            ? "Reading ChatGPT limits from Codex CLI…"
+                            : codexRateLimits
+                              ? formatCodexRateLimits(codexRateLimits) ||
+                                "Not reported by this Codex CLI"
+                              : codexStatus?.authentication === "API key"
+                                ? "Not reported for API-key billing"
+                                : "Not reported by this Codex CLI"}
+                        </span>
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {!codexChecking && codexStatus && !codexAvailable && (
                   <div

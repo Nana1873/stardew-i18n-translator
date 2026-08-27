@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelAiRun,
   codexCliModels,
+  codexCliRateLimits,
   codexCliStatus,
   exportAllMods,
   exportLlmBatchToPath,
@@ -242,6 +243,16 @@ describe("backend command bridges", () => {
     ]);
     await codexCliModels();
     expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_models");
+
+    invokeMock.mockResolvedValueOnce({
+      primary: {
+        usedPercent: 25,
+        windowDurationMins: 300,
+        resetsAt: 1_730_947_200,
+      },
+    });
+    await codexCliRateLimits();
+    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_rate_limits");
 
     invokeMock.mockResolvedValueOnce({ outcome: "complete", suggestions: [] });
     await translateWithCodexCli(request);

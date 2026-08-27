@@ -902,6 +902,18 @@ export interface CodexCliModel {
   supportedReasoningEfforts: ("low" | "medium" | "high")[];
 }
 
+export interface CodexCliRateLimitWindow {
+  usedPercent: number;
+  windowDurationMins?: number;
+  /** Unix timestamp in seconds, as reported by Codex CLI. */
+  resetsAt?: number;
+}
+
+export interface CodexCliRateLimits {
+  primary?: CodexCliRateLimitWindow;
+  secondary?: CodexCliRateLimitWindow;
+}
+
 export function translateWithLocalAi(
   request: AiTranslationRequest,
 ): Promise<AiRunResult> {
@@ -914,6 +926,10 @@ export function codexCliStatus(): Promise<CodexCliStatus> {
 
 export function codexCliModels(): Promise<CodexCliModel[]> {
   return invoke<CodexCliModel[]>("codex_cli_models");
+}
+
+export function codexCliRateLimits(): Promise<CodexCliRateLimits | null> {
+  return invoke<CodexCliRateLimits | null>("codex_cli_rate_limits");
 }
 
 export function translateWithCodexCli(

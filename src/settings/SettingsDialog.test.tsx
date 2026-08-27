@@ -953,6 +953,19 @@ describe("SettingsDialog", () => {
             supportedReasoningEfforts: ["low", "medium", "high"],
           },
         ]);
+      if (cmd === "codex_cli_rate_limits")
+        return Promise.resolve({
+          primary: {
+            usedPercent: 25,
+            windowDurationMins: 300,
+            resetsAt: 1_730_947_200,
+          },
+          secondary: {
+            usedPercent: 43,
+            windowDurationMins: 10_080,
+            resetsAt: 1_731_552_000,
+          },
+        });
       return Promise.resolve(null);
     });
     const onSave = vi.fn();
@@ -995,6 +1008,10 @@ describe("SettingsDialog", () => {
     );
     expect(screen.getByLabelText("Codex reasoning")).toHaveValue("high");
     expect(screen.getByText("ChatGPT account")).toBeVisible();
+    expect(screen.getByText("Usage remaining")).toBeVisible();
+    expect(screen.getByText(/5 h: 75% remaining/)).toBeVisible();
+    expect(screen.getByText(/7 d: 57% remaining/)).toBeVisible();
+    expect(screen.getByText(/resets \d{1,2} Nov, \d{2}:\d{2}/)).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Check status" }));
     await waitFor(() =>
@@ -1005,6 +1022,13 @@ describe("SettingsDialog", () => {
     await waitFor(() =>
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_models"),
+      ).toHaveLength(2),
+    );
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "codex_cli_rate_limits",
+        ),
       ).toHaveLength(2),
     );
 
@@ -1023,6 +1047,130 @@ describe("SettingsDialog", () => {
         },
       }),
     );
+  });
+
+  it("shows rate-limit loading until Codex CLI reports usage", async () => {
+    const pendingLimits = deferred<{
+      primary: {
+        usedPercent: number;
+        windowDurationMins: number;
+        resetsAt: number;
+      };
+    } | null>();
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({
+          installed: true,
+          authenticated: true,
+          authentication: "ChatGPT account",
+        });
+      if (cmd === "codex_cli_models") return Promise.resolve([]);
+      if (cmd === "codex_cli_rate_limits") return pendingLimits.promise;
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "codex",
+            codexReasoning: "medium",
+          },
+        }}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    expect(
+      await screen.findByText("Reading ChatGPT limits from Codex CLI…"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
+
+    pendingLimits.resolve({
+      primary: {
+        usedPercent: 20,
+        windowDurationMins: 300,
+        resetsAt: 1_730_947_200,
+      },
+    });
+
+    expect(await screen.findByText(/5 h: 80% remaining/)).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Check status" }),
+    ).not.toBeDisabled();
+  });
+
+  it("shows only the rate-limit details reported by Codex CLI", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({
+          installed: true,
+          authenticated: true,
+          authentication: "ChatGPT",
+        });
+      if (cmd === "codex_cli_models") return Promise.resolve([]);
+      if (cmd === "codex_cli_rate_limits")
+        return Promise.resolve({ primary: { usedPercent: 12.4 } });
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+
+    const usage = (await screen.findByText("Usage remaining")).closest(
+      ".translator-setting-line",
+    )!;
+    await waitFor(() => expect(usage).toHaveTextContent("88% remaining"));
+    expect(usage).not.toHaveTextContent("resets");
+    expect(usage).not.toHaveTextContent("7 d");
+  });
+
+  it("does not request ChatGPT limits for API-key billing", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({
+          installed: true,
+          authenticated: true,
+          authentication: "API key",
+        });
+      if (cmd === "codex_cli_models") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+
+    expect(await screen.findByText("Usage remaining")).toBeVisible();
+    expect(screen.getByText("Not reported for API-key billing")).toBeVisible();
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "codex_cli_rate_limits"),
+    ).toBe(false);
   });
 
   it("keeps Codex ready with the CLI default when its model list is unavailable", async () => {
@@ -1059,6 +1207,8 @@ describe("SettingsDialog", () => {
     expect(screen.getByText("Codex CLI").closest("button")).toHaveTextContent(
       "Ready",
     );
+    expect(screen.getByText("Usage remaining")).toBeVisible();
+    expect(screen.getByText("Not reported by this Codex CLI")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
@@ -1201,6 +1351,7 @@ describe("SettingsDialog", () => {
       "API-key sign-in uses separate usage-based billing",
     );
     expect(guide).not.toHaveTextContent("A ChatGPT account is required");
+    expect(screen.queryByText("Usage remaining")).toBeNull();
 
     fireEvent.click(
       screen.getByRole("button", { name: "Open Codex setup guide" }),

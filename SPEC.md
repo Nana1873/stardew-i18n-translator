@@ -357,6 +357,13 @@ reported by the installed CLI and persists only the selected model id. The app
 does not maintain its own Codex model catalogue. If discovery is unavailable or
 no model has been selected, runs use the CLI's own default model.
 
+For a ChatGPT-backed CLI sign-in, Settings reads the current Codex rate-limit
+windows through the CLI and shows the real remaining percentage, window length,
+and local reset time. The same status check refreshes this best-effort value.
+Missing rate-limit support or data, and API-key billing, are shown as not
+reported and do not affect an otherwise available translation engine. The app
+neither estimates quota data nor reads account identity or credentials.
+
 When Codex CLI is unavailable, Settings shows a compact setup guide that links
 to the official instructions, directs the user to run `codex`, and reuses the
 existing status check. It recommends **Sign in with ChatGPT** for
