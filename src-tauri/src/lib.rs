@@ -30,6 +30,7 @@ use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use std::{fs::OpenOptions, io::Write};
 
 use tauri::{AppHandle, Emitter, State};
@@ -88,18 +89,20 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
     }
     let mut result = scanner::scan_mods(&mods_root, &target_lang, &config);
     if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
-        log::warn!("Could not update source-change scan baseline: {error}");
+        log::warn!(target: "app", "Could not update source-change scan baseline: {error}");
         result.warnings.push(format!(
             "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
         ));
     }
     if !result.warnings.is_empty() {
         log::warn!(
+            target: "app",
             "scan_mods({mods_path}): {} warning(s)",
             result.warnings.len()
         );
     }
     log::info!(
+        target: "app",
         "scan_mods({target_lang}): {} mods, {} i18n files",
         result.mod_count,
         result.file_count
@@ -295,7 +298,7 @@ fn remember_operation(
     operation: operation_history::CompletedOperation,
 ) {
     if let Err(error) = history.record(operation) {
-        log::warn!("Could not retain completed operation result: {error}");
+        log::warn!(target: "app", "Could not retain completed operation result: {error}");
     }
 }
 
@@ -313,6 +316,36 @@ fn compact_export_warnings(skipped: &[export::SkippedKey]) -> Vec<String> {
         ));
     }
     warnings
+}
+
+#[tauri::command]
+fn preview_export(
+    app: AppHandle,
+    mods: Vec<export::ExportModInput>,
+) -> Result<export::ExportPreflight, String> {
+    let config = config_dir(&app)?;
+    let settings = settings::load_checked(&config)?;
+    let mods_root = settings
+        .mods_path
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
+    let target_lang = settings
+        .target_lang
+        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
+    let target_lang = language::normalize_target_code(&target_lang)?;
+    let files = mods
+        .iter()
+        .flat_map(|request| request.files.iter().cloned())
+        .collect::<Vec<_>>();
+    export::validate_paths(&mods_root, &target_lang, &files)?;
+    export::preview_export(&translations::language_root(&config, &target_lang)?, &mods)
+        .inspect_err(|error| log::error!(target: "app", "preview_export failed: {error}"))
 }
 
 #[tauri::command]
@@ -339,8 +372,9 @@ fn export_mod(
         .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
     export::validate_paths(&mods_root, &target_lang, &files)?;
     let translation_config = translations::language_root(&config, &target_lang)?;
-    let result = export::export_mod(&translation_config, &mod_unique_id, &files)
-        .inspect_err(|error| log::error!("export_mod({mod_unique_id}) failed: {error}"))?;
+    let result = export::export_mod(&translation_config, &mod_unique_id, &files).inspect_err(
+        |error| log::error!(target: "app", "export_mod({mod_unique_id}) failed: {error}"),
+    )?;
     let changed_files = result
         .files
         .iter()
@@ -423,7 +457,7 @@ fn export_all_mods(
     export::validate_paths(&mods_root, &target_lang, &files)?;
     let translation_config = translations::language_root(&config, &target_lang)?;
     let result = export::export_all_mods(&translation_config, &mods)
-        .inspect_err(|error| log::error!("export_all_mods failed: {error}"))?;
+        .inspect_err(|error| log::error!(target: "app", "export_all_mods failed: {error}"))?;
     let skipped = result
         .mods
         .iter()
@@ -740,8 +774,9 @@ fn import_llm_batch(
     let source = picked
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
-    let summary = import_llm_batch_from_path(&app, &mod_unique_id, &files, &source)
-        .inspect_err(|error| log::error!("import_llm_batch({mod_unique_id}) failed: {error}"))?;
+    let summary = import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).inspect_err(
+        |error| log::error!(target: "app", "import_llm_batch({mod_unique_id}) failed: {error}"),
+    )?;
     remember_llm_batch_import(&history, &summary, &source, &mod_unique_id);
     Ok(Some(summary))
 }
@@ -824,7 +859,9 @@ fn preflight_llm_batch_path(
         &context.target_lang,
         &context.rows_by_dir,
     )
-    .inspect_err(|error| log::error!("preflight_llm_batch_path({mod_unique_id}) failed: {error}"))
+    .inspect_err(|error| {
+        log::error!(target: "app", "preflight_llm_batch_path({mod_unique_id}) failed: {error}")
+    })
 }
 
 fn import_llm_batch_from_path(
@@ -861,7 +898,7 @@ fn import_llm_batch_path(
     let source = Path::new(&path);
     let summary =
         import_llm_batch_from_path(&app, &mod_unique_id, &files, source).inspect_err(|error| {
-            log::error!("import_llm_batch_path({mod_unique_id}) failed: {error}")
+            log::error!(target: "app", "import_llm_batch_path({mod_unique_id}) failed: {error}")
         })?;
     remember_llm_batch_import(&history, &summary, source, &mod_unique_id);
     Ok(summary)
@@ -925,7 +962,9 @@ fn build_glossary(
             )),
         }
     }
-    .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
+    .inspect_err(
+        |error| log::error!(target: "app", "build_glossary({target_lang}) failed: {error}"),
+    )?;
     glossary::save(&config, &built)?;
     Ok(glossary::GlossaryInfo::of(&built))
 }
@@ -989,7 +1028,7 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
     llm::validate_base_url(&base_url)?;
     llm::list_models(&base_url)
         .await
-        .inspect_err(|error| log::error!("llm_models({base_url}) failed: {error}"))
+        .inspect_err(|error| log::error!(target: "app", "llm_models({base_url}) failed: {error}"))
 }
 
 /// Translate one source string via the configured local LLM.
@@ -1028,7 +1067,7 @@ async fn translate_string(
         temperature,
     )
     .await
-    .inspect_err(|error| log::error!("translate_string failed: {error}"))
+    .inspect_err(|error| log::error!(target: "app", "translate_string failed: {error}"))
 }
 
 fn prepare_ai_request(
@@ -1139,14 +1178,50 @@ struct AiRunProgress {
     #[serde(skip_serializing_if = "Option::is_none")]
     recovery: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    codex_stage: Option<&'static str>,
+    codex_activity_sequence: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
     usage: Option<AiRunTokenUsage>,
+}
+
+fn safe_ai_run_id_for_log(run_id: &str) -> &str {
+    if !run_id.is_empty()
+        && run_id.len() <= 128
+        && run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        run_id
+    } else {
+        "redacted"
+    }
+}
+
+fn codex_activity_stage(activity: codex_cli::CodexActivity) -> &'static str {
+    match activity {
+        codex_cli::CodexActivity::Starting => "starting",
+        codex_cli::CodexActivity::Working => "working",
+        codex_cli::CodexActivity::Reasoning => "reasoning",
+        codex_cli::CodexActivity::WritingResponse => "writingResponse",
+        codex_cli::CodexActivity::Completed => "completed",
+        codex_cli::CodexActivity::Failed => "failed",
+    }
+}
+
+fn provider_failure_category(failure: &ai::ProviderFailure) -> &'static str {
+    match failure {
+        ai::ProviderFailure::Cancelled => "cancelled",
+        ai::ProviderFailure::Transient(_) => "transient",
+        ai::ProviderFailure::InvalidResponse(_) => "invalidResponse",
+        ai::ProviderFailure::Message(_) => "provider",
+    }
 }
 
 fn emit_ai_progress(app: &AppHandle, progress: &AiRunProgress) {
     if let Err(error) = app.emit("ai-run-progress", progress.clone()) {
         // Progress is convenience state only. The final command result remains
         // authoritative if an event cannot be delivered to the webview.
-        log::warn!("Could not emit AI run progress: {error}");
+        log::warn!(target: "app", "Could not emit AI run progress: {error}");
     }
 }
 
@@ -1161,7 +1236,7 @@ fn update_ai_progress(
             progress.clone()
         }
         Err(_) => {
-            log::warn!("Could not update AI progress because its state is unavailable.");
+            log::warn!(target: "app", "Could not update AI progress because its state is unavailable.");
             return;
         }
     };
@@ -1330,6 +1405,19 @@ async fn translate_with_local_ai(
     if local.model.trim().is_empty() {
         return Err("Choose a Local AI model in Settings first.".to_string());
     }
+    let run_started_at = Instant::now();
+    let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_started",
+            "runId": log_run_id,
+            "engine": "local",
+            "total": prepared.len(),
+            "batches": prepared.len(),
+        })
+    );
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
@@ -1344,6 +1432,8 @@ async fn translate_with_local_ai(
         retries: 0,
         splits: 0,
         recovery: None,
+        codex_stage: None,
+        codex_activity_sequence: 0,
         usage: None,
     };
     emit_ai_progress(&app, &progress);
@@ -1356,6 +1446,18 @@ async fn translate_with_local_ai(
         progress.batch_index = Some(index + 1);
         progress.batch_size = Some(1);
         emit_ai_progress(&app, &progress);
+        log::info!(
+            target: "ai_run",
+            "{}",
+            serde_json::json!({
+                "event": "batch_started",
+                "runId": log_run_id,
+                "batchIndex": index + 1,
+                "batchTotal": prepared.len(),
+                "batchSize": 1,
+                "completed": suggestions.len(),
+            })
+        );
         let before_context = item
             .context
             .before
@@ -1402,18 +1504,59 @@ async fn translate_with_local_ai(
                     progress.completed = suggestions.len();
                     emit_ai_progress(&app, &progress);
                     if let Err(cause) = staged_result {
+                        log::info!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "batch_finished",
+                                "runId": log_run_id,
+                                "batchIndex": index + 1,
+                                "outcome": "savingError",
+                            })
+                        );
                         outcome = ai::AiRunOutcome::Error;
                         error = Some(cause);
                         break;
                     }
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "batch_finished",
+                            "runId": log_run_id,
+                            "batchIndex": index + 1,
+                            "outcome": "complete",
+                            "completed": suggestions.len(),
+                        })
+                    );
                 }
                 Err(cause) => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "batch_finished",
+                            "runId": log_run_id,
+                            "batchIndex": index + 1,
+                            "outcome": "invalidResponse",
+                        })
+                    );
                     outcome = ai::AiRunOutcome::Error;
                     error = Some(cause);
                     break;
                 }
             },
             Err(ai::ProviderFailure::Cancelled) => {
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchIndex": index + 1,
+                        "outcome": "cancelled",
+                    })
+                );
                 outcome = ai::AiRunOutcome::Cancelled;
                 break;
             }
@@ -1422,6 +1565,16 @@ async fn translate_with_local_ai(
                 | ai::ProviderFailure::Transient(cause)
                 | ai::ProviderFailure::InvalidResponse(cause),
             ) => {
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchIndex": index + 1,
+                        "outcome": "providerError",
+                    })
+                );
                 outcome = ai::AiRunOutcome::Error;
                 error = Some(cause);
                 break;
@@ -1438,10 +1591,17 @@ async fn translate_with_local_ai(
         error,
     );
     log::info!(
-        "Local AI run finished: {}/{} suggestions ({:?})",
-        result.completed,
-        result.requested,
-        result.outcome
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_finished",
+            "runId": log_run_id,
+            "engine": "local",
+            "completed": result.completed,
+            "total": result.requested,
+            "outcome": result.outcome,
+            "durationMs": u64::try_from(run_started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+        })
     );
     remember_ai_run(&history, &result);
     Ok(result)
@@ -1481,9 +1641,25 @@ async fn translate_with_codex_cli(
     let chunks = ai::chunks(&prepared)?;
     let mut pending = VecDeque::from(chunks);
     let mut handled_batches = 0usize;
+    let mut batch_attempt = 0usize;
     let mut batch_total = pending.len();
     let mut isolated_failures = 0usize;
     let mut last_isolated_failure = None;
+    let run_started_at = Instant::now();
+    let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_started",
+            "runId": log_run_id,
+            "engine": "codex",
+            "model": if codex_model.is_some() { "configured" } else { "default" },
+            "reasoning": reasoning,
+            "total": prepared.len(),
+            "batches": batch_total,
+        })
+    );
     let progress_state = Arc::new(Mutex::new(AiRunProgress {
         run_id: request.run_id.clone(),
         phase: "preparing",
@@ -1495,13 +1671,17 @@ async fn translate_with_codex_cli(
         retries: 0,
         splits: 0,
         recovery: None,
+        codex_stage: None,
+        codex_activity_sequence: 0,
         usage: None,
     }));
     update_ai_progress(&app, &progress_state, |_| {});
     let codex_progress: codex_cli::CodexProgressCallback = {
         let app = app.clone();
         let state = Arc::clone(&progress_state);
+        let log_run_id = log_run_id.clone();
         Arc::new(move |event| {
+            let log_event = event;
             update_ai_progress(&app, &state, |progress| match event {
                 codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
                     progress.phase = match phase {
@@ -1512,6 +1692,7 @@ async fn translate_with_codex_cli(
                     };
                     progress.batch_size = Some(item_count);
                     progress.recovery = None;
+                    progress.codex_stage = None;
                 }
                 codex_cli::CodexProgressEvent::TransientRetry => {
                     progress.retries = progress.retries.saturating_add(1);
@@ -1525,6 +1706,11 @@ async fn translate_with_codex_cli(
                     progress.splits = progress.splits.saturating_add(1);
                     progress.recovery = Some("split");
                 }
+                codex_cli::CodexProgressEvent::Activity(activity) => {
+                    progress.codex_stage = Some(codex_activity_stage(activity));
+                    progress.codex_activity_sequence =
+                        progress.codex_activity_sequence.saturating_add(1);
+                }
                 codex_cli::CodexProgressEvent::Usage(usage) => {
                     let total = progress.usage.get_or_insert_with(AiRunTokenUsage::default);
                     total.input_tokens = total.input_tokens.saturating_add(usage.input_tokens);
@@ -1537,6 +1723,92 @@ async fn translate_with_codex_cli(
                         .saturating_add(usage.reasoning_output_tokens);
                 }
             });
+            match log_event {
+                codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
+                    let phase = match phase {
+                        codex_cli::CodexProgressPhase::Translating => "translating",
+                        codex_cli::CodexProgressPhase::Reviewing => "reviewing",
+                        codex_cli::CodexProgressPhase::TerminologyRepair => "terminologyRepair",
+                        codex_cli::CodexProgressPhase::TokenRepair => "tokenRepair",
+                    };
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "phase",
+                            "runId": log_run_id,
+                            "phase": phase,
+                            "itemCount": item_count,
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::TransientRetry => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "recovery",
+                            "runId": log_run_id,
+                            "kind": "transientRetry",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::StructureRetry => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "recovery",
+                            "runId": log_run_id,
+                            "kind": "structureRetry",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Split => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "recovery",
+                            "runId": log_run_id,
+                            "kind": "split",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Activity(activity)
+                    if matches!(
+                        activity,
+                        codex_cli::CodexActivity::Starting
+                            | codex_cli::CodexActivity::Completed
+                            | codex_cli::CodexActivity::Failed
+                    ) =>
+                {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "cli_activity",
+                            "runId": log_run_id,
+                            "stage": codex_activity_stage(activity),
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Usage(usage) => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "usage",
+                            "runId": log_run_id,
+                            "inputTokens": usage.input_tokens,
+                            "cachedInputTokens": usage.cached_input_tokens,
+                            "outputTokens": usage.output_tokens,
+                            "reasoningOutputTokens": usage.reasoning_output_tokens,
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Activity(_) => {}
+            }
         })
     };
     while let Some(chunk) = pending.pop_front() {
@@ -1544,12 +1816,27 @@ async fn translate_with_codex_cli(
             outcome = ai::AiRunOutcome::Cancelled;
             break;
         }
+        batch_attempt = batch_attempt.saturating_add(1);
+        log::info!(
+            target: "ai_run",
+            "{}",
+            serde_json::json!({
+                "event": "batch_started",
+                "runId": log_run_id,
+                "batchAttempt": batch_attempt,
+                "batchIndex": handled_batches + 1,
+                "batchTotal": batch_total,
+                "batchSize": chunk.len(),
+                "completed": suggestions.len(),
+            })
+        );
         update_ai_progress(&app, &progress_state, |progress| {
             progress.phase = "preparing";
             progress.batch_index = Some(handled_batches + 1);
             progress.batch_total = Some(batch_total);
             progress.batch_size = Some(chunk.len());
             progress.recovery = None;
+            progress.codex_stage = None;
         });
         match codex_cli::translate_chunk(
             codex_model.as_deref(),
@@ -1585,15 +1872,19 @@ async fn translate_with_codex_cli(
                         cancel_after_staging = true;
                         translations
                     }
-                    Err(
-                        ai::ProviderFailure::Message(cause)
-                        | ai::ProviderFailure::Transient(cause)
-                        | ai::ProviderFailure::InvalidResponse(cause),
-                    ) => {
+                    Err(failure) => {
                         // Token repair is optional and gets exactly one attempt.
                         // Keep the structurally valid original so its blocking
                         // token validation reaches Review for a human decision.
-                        log::warn!("Codex token repair was not applied: {cause}");
+                        log::warn!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "token_repair_not_applied",
+                                "runId": log_run_id,
+                                "errorCategory": provider_failure_category(&failure),
+                            })
+                        );
                         translations
                     }
                 };
@@ -1603,6 +1894,7 @@ async fn translate_with_codex_cli(
                             progress.phase = "saving";
                             progress.batch_size = Some(chunk.len());
                             progress.recovery = None;
+                            progress.codex_stage = None;
                         });
                         let staged_result = stage_ai_suggestions(
                             &translation_root,
@@ -1615,16 +1907,59 @@ async fn translate_with_codex_cli(
                             progress.completed = suggestions.len();
                         });
                         if let Err(cause) = staged_result {
+                            log::info!(
+                                target: "ai_run",
+                                "{}",
+                                serde_json::json!({
+                                    "event": "batch_finished",
+                                    "runId": log_run_id,
+                                    "batchAttempt": batch_attempt,
+                                    "outcome": "savingError",
+                                    "completed": suggestions.len(),
+                                })
+                            );
                             outcome = ai::AiRunOutcome::Error;
                             error = Some(cause);
                             break;
                         }
                         if cancel_after_staging {
+                            log::info!(
+                                target: "ai_run",
+                                "{}",
+                                serde_json::json!({
+                                    "event": "batch_finished",
+                                    "runId": log_run_id,
+                                    "batchAttempt": batch_attempt,
+                                    "outcome": "cancelled",
+                                    "completed": suggestions.len(),
+                                })
+                            );
                             outcome = ai::AiRunOutcome::Cancelled;
                             break;
                         }
+                        log::info!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "batch_finished",
+                                "runId": log_run_id,
+                                "batchAttempt": batch_attempt,
+                                "outcome": "complete",
+                                "completed": suggestions.len(),
+                            })
+                        );
                     }
                     Err(cause) => {
+                        log::info!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "batch_finished",
+                                "runId": log_run_id,
+                                "batchAttempt": batch_attempt,
+                                "outcome": "invalidResponse",
+                            })
+                        );
                         outcome = ai::AiRunOutcome::Error;
                         error = Some(cause);
                         break;
@@ -1632,6 +1967,17 @@ async fn translate_with_codex_cli(
                 }
             }
             Err(ai::ProviderFailure::Cancelled) => {
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "cancelled",
+                        "completed": suggestions.len(),
+                    })
+                );
                 outcome = ai::AiRunOutcome::Cancelled;
                 break;
             }
@@ -1651,13 +1997,56 @@ async fn translate_with_codex_cli(
                     progress.splits = progress.splits.saturating_add(1);
                     progress.recovery = Some("split");
                 });
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "split",
+                        "nextBatchSize": left.len(),
+                        "batchTotal": batch_total,
+                    })
+                );
             }
             Err(ai::ProviderFailure::InvalidResponse(cause)) => {
                 isolated_failures += 1;
                 last_isolated_failure = Some(cause);
                 handled_batches = handled_batches.saturating_add(1);
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "isolatedInvalidResponse",
+                        "isolatedFailures": isolated_failures,
+                    })
+                );
             }
-            Err(ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause)) => {
+            Err(failure) => {
+                let error_category = provider_failure_category(&failure);
+                let cause = match failure {
+                    ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause) => {
+                        cause
+                    }
+                    ai::ProviderFailure::Cancelled | ai::ProviderFailure::InvalidResponse(_) => {
+                        unreachable!("cancelled and invalid-response failures are handled above")
+                    }
+                };
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "error",
+                        "errorCategory": error_category,
+                    })
+                );
                 outcome = ai::AiRunOutcome::Error;
                 error = Some(cause);
                 break;
@@ -1674,6 +2063,7 @@ async fn translate_with_codex_cli(
         ));
     }
     outcome = lease.finish(outcome)?;
+    let progress_snapshot = progress_state.lock().ok().map(|progress| progress.clone());
     let result = ai_run_result(
         &request,
         prepared.len(),
@@ -1687,10 +2077,21 @@ async fn translate_with_codex_cli(
         error,
     );
     log::info!(
-        "Codex CLI run finished: {}/{} suggestions ({:?})",
-        result.completed,
-        result.requested,
-        result.outcome
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_finished",
+            "runId": log_run_id,
+            "engine": "codex",
+            "completed": result.completed,
+            "total": result.requested,
+            "outcome": result.outcome,
+            "durationMs": u64::try_from(run_started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "retries": progress_snapshot.as_ref().map_or(0, |progress| progress.retries),
+            "splits": progress_snapshot.as_ref().map_or(0, |progress| progress.splits),
+            "usage": progress_snapshot.as_ref().and_then(|progress| progress.usage.as_ref()),
+            "errorCategory": result.error.as_ref().map(|_| "providerOrValidation"),
+        })
     );
     remember_ai_run(&history, &result);
     Ok(result)
@@ -1698,7 +2099,17 @@ async fn translate_with_codex_cli(
 
 #[tauri::command]
 fn cancel_ai_run(state: State<'_, ai::AiRuntimeState>, run_id: String) -> Result<bool, String> {
-    state.cancel_run(&run_id)
+    let accepted = state.cancel_run(&run_id)?;
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "cancel_requested",
+            "runId": safe_ai_run_id_for_log(&run_id),
+            "accepted": accepted,
+        })
+    );
+    Ok(accepted)
 }
 
 /// Open an external http(s) URL in the user's default browser (Nexus links).
@@ -1720,7 +2131,7 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
 /// Fire-and-forget — logging must never itself surface an error to the user.
 #[tauri::command]
 fn log_frontend_error(context: String, message: String) {
-    log::error!("[frontend] {context}: {message}");
+    log::error!(target: "app", "[frontend] {context}: {message}");
 }
 
 /// Open the portable `data/logs/` folder in the OS file manager so a
@@ -1892,11 +2303,12 @@ pub fn run() {
         .plugin(log_plugin())
         .setup(|app| {
             let data_dir = ensure_portable_data_dir().map_err(|error| {
-                log::error!("Portable data folder unusable: {error}");
+                log::error!(target: "app", "Portable data folder unusable: {error}");
                 std::io::Error::other(error)
             })?;
             apply_diagnostic_logging(settings::load(&data_dir).diagnostic_logging);
             log::info!(
+                target: "app",
                 "Stardew i18n Translator {} started",
                 app.package_info().version
             );
@@ -1919,6 +2331,7 @@ pub fn run() {
             undo_batch_edit,
             export_mod,
             export_all_mods,
+            preview_export,
             preview_translation_zip,
             pick_translation_zip_destination,
             build_translation_zip,
@@ -2141,6 +2554,13 @@ mod ai_run_contract_tests {
     use super::*;
 
     #[test]
+    fn diagnostic_run_ids_allow_only_short_correlation_tokens() {
+        assert_eq!(safe_ai_run_id_for_log("ai-123_test"), "ai-123_test");
+        assert_eq!(safe_ai_run_id_for_log("source text"), "redacted");
+        assert_eq!(safe_ai_run_id_for_log("line\nbreak"), "redacted");
+    }
+
+    #[test]
     fn progress_contract_exposes_saved_count_phase_batch_recovery_and_usage() {
         let progress = AiRunProgress {
             run_id: "run-progress".to_string(),
@@ -2153,6 +2573,8 @@ mod ai_run_contract_tests {
             retries: 1,
             splits: 2,
             recovery: Some("structureRetry"),
+            codex_stage: Some("reasoning"),
+            codex_activity_sequence: 7,
             usage: Some(AiRunTokenUsage {
                 input_tokens: 45_200,
                 cached_input_tokens: 32_900,
@@ -2166,6 +2588,8 @@ mod ai_run_contract_tests {
         assert_eq!(value["phase"], "reviewing");
         assert_eq!(value["batchIndex"], 4);
         assert_eq!(value["recovery"], "structureRetry");
+        assert_eq!(value["codexStage"], "reasoning");
+        assert_eq!(value["codexActivitySequence"], 7);
         assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
     }
 

@@ -209,6 +209,13 @@ revalidates the complete export or import scope before the first write.
 Untranslated strings do not block export. They are omitted so SMAPI can fall
 back to `default.json`.
 
+Before direct export confirmation, the backend performs a read-only preflight
+over the complete selected mod or all-mod scope. It reports the first real
+blocking key and the number of exact-source mismatch acceptances without
+creating target, backup, temporary, or operation-history entries. The export
+command independently repeats path authorization and complete validation
+immediately before writing; the preflight result is informational only.
+
 ## 11. External LLM Batch
 
 The app can export a self-contained JSON batch for a file-capable external LLM

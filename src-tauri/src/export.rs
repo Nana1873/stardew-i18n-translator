@@ -124,6 +124,23 @@ pub struct ExportAllResult {
     pub blocked: bool,
 }
 
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPreflightProblem {
+    pub mod_unique_id: String,
+    pub mod_name: String,
+    pub relative_dir: String,
+    pub key: String,
+    pub reason: String,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPreflight {
+    pub accepted_mismatches: usize,
+    pub blocking_problem: Option<ExportPreflightProblem>,
+}
+
 struct PreparedFile {
     result: ExportFileResult,
     target_path: PathBuf,
@@ -134,6 +151,7 @@ struct PreparedFile {
 struct PreparedMod {
     result: ExportResult,
     files: Vec<PreparedFile>,
+    accepted_mismatches: usize,
 }
 
 /// Validate IPC-supplied export paths against the configured Mods folder and
@@ -279,6 +297,42 @@ pub fn export_mod(
     Ok(prepared.result)
 }
 
+/// Read and validate the complete selected scope without changing any target,
+/// backup, temporary, or portable-state file. The real export repeats the same
+/// validation immediately before writing; this preview is informational only.
+pub fn preview_export(
+    config_dir: &Path,
+    mods: &[ExportModInput],
+) -> Result<ExportPreflight, String> {
+    let mut seen = HashSet::new();
+    let mut preview = ExportPreflight::default();
+    for request in mods {
+        if !seen.insert(request.mod_unique_id.to_lowercase()) {
+            return Err(format!(
+                "Refusing export preview: duplicate mod id {}.",
+                request.mod_unique_id
+            ));
+        }
+        let prepared = prepare_mod(config_dir, &request.mod_unique_id, &request.files)?;
+        preview.accepted_mismatches += prepared.accepted_mismatches;
+        if preview.blocking_problem.is_none() {
+            preview.blocking_problem =
+                prepared
+                    .result
+                    .skipped
+                    .first()
+                    .map(|problem| ExportPreflightProblem {
+                        mod_unique_id: request.mod_unique_id.clone(),
+                        mod_name: request.mod_name.clone(),
+                        relative_dir: problem.relative_dir.clone(),
+                        key: problem.key.clone(),
+                        reason: problem.reason.clone(),
+                    });
+        }
+    }
+    Ok(preview)
+}
+
 /// Export all requested mods as one transaction. Every mod is fully read and
 /// validated before the first target or backup is changed.
 pub fn export_all_mods(
@@ -316,6 +370,7 @@ fn prepare_mod(
     // empty state would write a near-empty <lang>.json over a good one.
     let state = translations::load(config_dir, unique_id)?;
     let mut result = ExportResult::default();
+    let mut accepted_mismatches = 0;
 
     let mut prepared_rows = Vec::new();
     // Validate the complete mod first. A token mismatch must not leave a
@@ -332,7 +387,11 @@ fn prepare_mod(
                 continue;
             }
             let differences = tokens::token_differences(&row.source, &row.target);
-            if differences.is_empty() || row.token_mismatch_accepted {
+            if differences.is_empty() {
+                continue;
+            }
+            if row.token_mismatch_accepted {
+                accepted_mismatches += 1;
                 continue;
             }
             let detail = differences
@@ -358,6 +417,7 @@ fn prepare_mod(
         return Ok(PreparedMod {
             result,
             files: Vec::new(),
+            accepted_mismatches,
         });
     }
 
@@ -408,6 +468,7 @@ fn prepare_mod(
     Ok(PreparedMod {
         result,
         files: prepared,
+        accepted_mismatches,
     })
 }
 
@@ -898,6 +959,103 @@ mod tests {
             default_path: i18n.join("default.json").display().to_string(),
             target_path: i18n.join("de.json").display().to_string(),
         }]
+    }
+
+    #[test]
+    fn export_preview_reports_blockers_and_exact_accepted_revisions_without_writes() {
+        let root = crate::test_support::temp_dir("export-preview");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello$8"}"#);
+        let state_key = translations::entry_key("i18n", "k");
+        translations::save_one(
+            &root,
+            "mod.id",
+            state_key.clone(),
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let mods = vec![ExportModInput {
+            mod_unique_id: "mod.id".into(),
+            mod_name: "Test Mod".into(),
+            files: input(&i18n),
+        }];
+
+        let blocked = preview_export(&root, &mods).unwrap();
+        assert_eq!(blocked.accepted_mismatches, 0);
+        assert_eq!(blocked.blocking_problem.as_ref().unwrap().key, "k");
+        assert!(!i18n.join("de.json").exists());
+        assert!(!i18n.join("de.json.bak").exists());
+
+        translations::save_one(
+            &root,
+            "mod.id",
+            state_key,
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let accepted = preview_export(&root, &mods).unwrap();
+        assert_eq!(accepted.accepted_mismatches, 1);
+        assert!(accepted.blocking_problem.is_none());
+
+        write(&i18n.join("default.json"), r#"{"k":"Updated$8"}"#);
+        let changed = preview_export(&root, &mods).unwrap();
+        assert_eq!(changed.accepted_mismatches, 0);
+        assert_eq!(changed.blocking_problem.as_ref().unwrap().key, "k");
+        assert!(!i18n.join("de.json").exists());
+        assert!(!i18n.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn all_mod_export_preview_identifies_the_real_component_and_stays_read_only() {
+        let root = crate::test_support::temp_dir("export-preview-all");
+        let clean = root.join("clean/i18n");
+        let blocked = root.join("blocked/i18n");
+        write(&clean.join("default.json"), r#"{"ok":"Hello"}"#);
+        write(&blocked.join("default.json"), r#"{"bad":"Bye {{name}}"}"#);
+        translations::save_one(
+            &root,
+            "blocked.mod",
+            translations::entry_key("i18n", "bad"),
+            translations::StoredString {
+                target: "Tschüss".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Bye {{name}}"),
+            },
+        )
+        .unwrap();
+        let mods = vec![
+            ExportModInput {
+                mod_unique_id: "clean.mod".into(),
+                mod_name: "Clean Mod".into(),
+                files: input(&clean),
+            },
+            ExportModInput {
+                mod_unique_id: "blocked.mod".into(),
+                mod_name: "Blocked Mod".into(),
+                files: input(&blocked),
+            },
+        ];
+
+        let preview = preview_export(&root, &mods).unwrap();
+        let problem = preview.blocking_problem.unwrap();
+        assert_eq!(problem.mod_unique_id, "blocked.mod");
+        assert_eq!(problem.mod_name, "Blocked Mod");
+        assert_eq!(problem.relative_dir, "i18n");
+        assert_eq!(problem.key, "bad");
+        assert!(!clean.join("de.json").exists());
+        assert!(!blocked.join("de.json").exists());
+
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

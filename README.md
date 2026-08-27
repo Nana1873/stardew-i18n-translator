@@ -224,7 +224,10 @@ for a multi-component run, so cross-mod results are not hidden.
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;
 an intentional per-string mismatch can be explicitly accepted with **Save
-anyway** during review.
+anyway** during review. The direct-export confirmation uses a read-only backend
+preflight over the exact selected scope, so a real blocking key can be opened
+before confirmation. Export repeats the same validation before writing, so the
+preview never acts as an authorization token.
 
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 

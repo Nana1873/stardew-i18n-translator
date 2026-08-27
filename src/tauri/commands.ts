@@ -406,6 +406,26 @@ export interface ExportModInput {
   files: ExportFileInput[];
 }
 
+export interface ExportPreflightProblem {
+  modUniqueId: string;
+  modName: string;
+  relativeDir: string;
+  key: string;
+  reason: string;
+}
+
+export interface ExportPreflight {
+  acceptedMismatches: number;
+  blockingProblem: ExportPreflightProblem | null;
+}
+
+/** Validate the exact selected export scope without changing any files. */
+export function previewExport(
+  mods: ExportModInput[],
+): Promise<ExportPreflight> {
+  return invoke<ExportPreflight>("preview_export", { mods });
+}
+
 export interface ExportModResult {
   modUniqueId: string;
   modName: string;
@@ -854,6 +874,14 @@ export type AiRunPhase =
 
 export type AiRunRecovery = "transientRetry" | "structureRetry" | "split";
 
+export type CodexActivityStage =
+  | "starting"
+  | "working"
+  | "reasoning"
+  | "writingResponse"
+  | "completed"
+  | "failed";
+
 export interface AiRunTokenUsage {
   inputTokens: number;
   cachedInputTokens: number;
@@ -872,6 +900,8 @@ export interface AiRunProgress {
   retries: number;
   splits: number;
   recovery?: AiRunRecovery;
+  codexStage?: CodexActivityStage;
+  codexActivitySequence?: number;
   usage?: AiRunTokenUsage;
 }
 
