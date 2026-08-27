@@ -85,20 +85,28 @@ You can translate in four ways:
 Manual translation and local-only workflows remain offline. When Codex CLI is
 selected, the source text, its section context, and matching glossary terms are
 sent through the installed CLI. Related strings are packed into adaptive batches
-of up to 100 entries, with an additional bound on the complete serialized
-prompt. Repeated neighboring context is pooled inside that prompt without
-removing any context line.
+of up to 100 entries, with every complete serialized prompt bounded to 96 KiB;
+one live run accepts up to 4,096 strings or 8 MiB of selected source text.
+Recovery is limited to the affected batch: each CLI attempt may run for up to
+five minutes, a transient failure is retried once, and a persistently invalid
+response is split until a failing string is isolated so unrelated work can
+continue. Repeated neighboring context is pooled inside each prompt without
+losing retained context. If one complete item prompt is still oversized, only
+its farthest neighboring context is trimmed first; the selected source is never
+trimmed.
 
 Codex translation uses a staged quality pass. Codex first creates an initial
 draft, then every draft receives a full AI review that corrects issues in
 meaning, natural phrasing in the target language, terminology, grammar,
 register, speaker voice, and dialogue continuity. This review is not limited to
-token warnings or glossary matches. Only after that full review, reviewed
-results with a conservatively detected glossary or terminology candidate
-receive exactly one focused repair pass; correct inflections and compounds may
-remain unchanged. A failed full review does not mark its chunk complete, so it
-can be retried. If the optional focused repair fails, the fully reviewed text is
-kept.
+token warnings or glossary matches. The review still inspects every draft but
+returns only changed translations; omitted IDs retain their existing draft,
+which avoids writing every unchanged translation a second time. Only after that
+full review, reviewed results with a conservatively detected glossary or
+terminology candidate receive exactly one focused repair pass; correct
+inflections and compounds may remain unchanged. A failed full review does not
+mark its chunk complete, so it can be retried. If the optional focused repair
+fails, the fully reviewed text is kept.
 
 AI suggestions always enter the existing human Review queue. Suggestions from
 each fully completed adaptive chunk are saved together immediately, so
@@ -109,13 +117,21 @@ are never treated as finished translations automatically.
 
 The compact progress dialog reports suggestions already saved to Review, the
 current quality phase and adaptive batch, elapsed time, bounded retries or
-splits, and token usage when Codex CLI reports it. It does not invent progress
-inside a provider call.
+splits, and token usage when Codex CLI reports it while retaining its Cancel
+action. Safe CLI activity events such as starting, reasoning, and response
+completion appear as they arrive, together with the age of the latest event.
+After the first suggestions have actually been saved, an estimated remaining
+time is calculated from saved-string checkpoints and updated only when more
+work reaches Review. Codex does not provide token-by-token heartbeats, so the
+app does not invent progress inside a provider call.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;
 an intentional per-string mismatch can be explicitly accepted with **Save
-anyway** during review.
+anyway** during review. The direct-export confirmation uses a read-only backend
+preflight over the exact selected scope, so a real blocking key can be opened
+before confirmation. Export repeats the same validation before writing, so the
+preview never acts as an authorization token.
 
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 
@@ -156,6 +172,11 @@ Portable data is stored under:
 - `data/logs/`
 
 Diagnostic logging can be disabled in **Settings > About**.
+AI diagnostics record only run, batch, phase, duration, retry/split,
+cancellation, fixed outcome categories, and reported token totals. Prompts,
+source and target text, glossary/context content, mod/string/file identities,
+CLI output, auth data, and temporary paths are never written to the AI
+diagnostic events.
 
 ## Help and Feedback
 
@@ -167,8 +188,9 @@ A rough report is fine.
 
 For bugs, the app version, the affected mod, the on-screen error, and a few
 reproduction steps are usually enough. Logs can be opened from the About page in
-Settings. They may contain local paths, so remove private information before
-attaching them.
+Settings. General scanner and file-operation entries may contain local paths,
+so remove private information before attaching them; the AI diagnostic events
+described above intentionally exclude them.
 
 Release history is in the [changelog](CHANGELOG.md).
 

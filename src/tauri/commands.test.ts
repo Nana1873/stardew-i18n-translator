@@ -8,6 +8,7 @@ import {
   listOperationHistory,
   pickLlmBatchDestination,
   pickLlmBatchFile,
+  previewExport,
   preflightLlmBatchPath,
   saveString,
   saveStringGroupsWithUndo,
@@ -45,6 +46,34 @@ describe("backend command bridges", () => {
     await exportAllMods(mods);
 
     expect(invokeMock).toHaveBeenCalledWith("export_all_mods", { mods });
+  });
+
+  it("previews the exact export scope without invoking a write command", async () => {
+    const mods: ExportModInput[] = [
+      {
+        modUniqueId: "example.mod",
+        modName: "Example Mod",
+        files: [
+          {
+            relativeDir: "i18n",
+            defaultPath: "C:\\Mods\\Example\\i18n\\default.json",
+            targetPath: "C:\\Mods\\Example\\i18n\\de.json",
+          },
+        ],
+      },
+    ];
+    invokeMock.mockResolvedValue({
+      acceptedMismatches: 0,
+      blockingProblem: null,
+    });
+
+    await previewExport(mods);
+
+    expect(invokeMock).toHaveBeenCalledWith("preview_export", { mods });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "export_all_mods",
+      expect.anything(),
+    );
   });
 
   it("uses the read-only JSON picker command without import arguments", async () => {

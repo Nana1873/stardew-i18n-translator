@@ -863,7 +863,23 @@ pub(crate) fn validate_provider_output(
     items: &[PreparedAiItem],
     translations: Vec<ProviderTranslation>,
 ) -> Result<Vec<ProviderTranslation>, String> {
-    if translations.len() != items.len() {
+    validate_provider_translations(items, translations, true)
+}
+
+pub(crate) fn validate_provider_output_subset(
+    items: &[PreparedAiItem],
+    translations: Vec<ProviderTranslation>,
+) -> Result<Vec<ProviderTranslation>, String> {
+    validate_provider_translations(items, translations, false)
+}
+
+fn validate_provider_translations(
+    items: &[PreparedAiItem],
+    translations: Vec<ProviderTranslation>,
+    require_every_item: bool,
+) -> Result<Vec<ProviderTranslation>, String> {
+    if (require_every_item && translations.len() != items.len()) || translations.len() > items.len()
+    {
         return Err(format!(
             "The AI provider returned {} translations for {} requested strings.",
             translations.len(),
@@ -900,12 +916,16 @@ pub(crate) fn validate_provider_output(
         }
         ordered[index] = Some(translation);
     }
-    ordered
-        .into_iter()
-        .map(|translation| {
-            translation.ok_or_else(|| "The AI provider omitted a requested string.".to_string())
-        })
-        .collect()
+    if require_every_item {
+        ordered
+            .into_iter()
+            .map(|translation| {
+                translation.ok_or_else(|| "The AI provider omitted a requested string.".to_string())
+            })
+            .collect()
+    } else {
+        Ok(ordered.into_iter().flatten().collect())
+    }
 }
 
 pub(crate) fn suggestions(
@@ -1438,6 +1458,56 @@ mod tests {
             },
         ];
         assert!(validate_provider_output(&prepared, duplicate).is_err());
+    }
+
+    #[test]
+    fn sparse_provider_output_accepts_unchanged_omissions_but_keeps_safety_checks() {
+        let rows = rows(
+            "mod.a",
+            &[("a", "Hello", "untranslated"), ("b", "Bye", "outdated")],
+        );
+        let prepared = prepare_items(&rows, |_| Vec::new()).unwrap();
+
+        assert!(validate_provider_output_subset(&prepared, Vec::new())
+            .unwrap()
+            .is_empty());
+        let one_change = validate_provider_output_subset(
+            &prepared,
+            vec![ProviderTranslation {
+                id: prepared[1].id.clone(),
+                text: "Tschüss".to_string(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(one_change.len(), 1);
+        assert_eq!(one_change[0].id, prepared[1].id);
+
+        for invalid in [
+            vec![
+                ProviderTranslation {
+                    id: prepared[0].id.clone(),
+                    text: "Hallo".to_string(),
+                },
+                ProviderTranslation {
+                    id: prepared[0].id.clone(),
+                    text: "Noch einmal".to_string(),
+                },
+            ],
+            vec![ProviderTranslation {
+                id: "unknown".to_string(),
+                text: "Hallo".to_string(),
+            }],
+            vec![ProviderTranslation {
+                id: prepared[0].id.clone(),
+                text: "  ".to_string(),
+            }],
+            vec![ProviderTranslation {
+                id: prepared[0].id.clone(),
+                text: "x".repeat(MAX_PROVIDER_TEXT_BYTES + 1),
+            }],
+        ] {
+            assert!(validate_provider_output_subset(&prepared, invalid).is_err());
+        }
     }
 
     #[test]

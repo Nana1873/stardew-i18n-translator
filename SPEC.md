@@ -168,6 +168,13 @@ as punctuation or newline differences, do not block export.
 Untranslated strings do not block export. They are omitted so SMAPI can fall
 back to `default.json`.
 
+Before direct export confirmation, the backend performs a read-only preflight
+over the complete selected mod or all-mod scope. It reports the first real
+blocking key and the number of exact-source mismatch acceptances without
+creating target, backup, temporary, or operation-history entries. The export
+command independently repeats path authorization and complete validation
+immediately before writing; the preflight result is informational only.
+
 ## 11. External LLM Batch
 
 The app can export a self-contained JSON batch for a file-capable external LLM
@@ -302,7 +309,9 @@ terms to the selected backend. A Codex translation run first produces an
 initial draft. Every draft then receives a full AI review that corrects issues
 in source meaning, natural phrasing in the target language, terminology,
 grammar, register, speaker voice, and dialogue continuity; review is not
-restricted to strings with token or glossary warnings. Only after that full
+restricted to strings with token or glossary warnings. The review prompt still
+contains every scheduled draft, but its structured response returns only
+corrections; an omitted ID retains its existing draft. Only after that full
 review, reviewed results with a conservatively detected glossary or terminology
 candidate receive exactly one focused repair pass. The focused pass may retain
 contextually correct inflections or compounds unchanged. No terminology repair
@@ -322,10 +331,28 @@ saved together immediately as `review-needed`, including results that passed
 both AI quality stages. Cancellation or a later provider error retains
 previously completed chunks; the current in-flight chunk remains available for
 a later retry. Token validation and human review remain the final safety gates.
+Each CLI attempt has a five-minute ceiling. One transient failure may be
+retried, and an invalid structured response gets one corrected attempt before
+only that batch is halved until a failing string is isolated.
+
 The running UI reports the real persisted-to-Review count, current quality
 phase, adaptive outer batch, elapsed time, bounded retry/split activity, and
-Codex-reported token usage when available. It must not fabricate within-call
-completion percentages.
+Codex-reported token usage when available. Whitelisted Codex JSONL activity
+stages are forwarded while the subprocess is still running, and the UI shows
+how long ago the latest stage arrived. Once at least one suggestion has been
+persisted, remaining time is estimated from completed-string checkpoints and
+kept stable until more work is saved. Raw CLI messages, reasoning text,
+commands, paths, IDs, and errors are never forwarded. The app must not fabricate
+within-call completion percentages.
+
+When local diagnostic logging is enabled, AI runs emit bounded structured
+metadata for run and batch starts/finishes, phases, durations, retries, splits,
+cancellation, fixed outcome categories, and reported token totals. AI
+diagnostics never include prompts, sources, translations, context/glossary
+content, mod/string/file identities, target language, base URLs,
+authentication data, raw stdout/stderr, executable or temporary paths, or raw
+provider errors. Logging remains local, rotating, optional, and never creates
+telemetry.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

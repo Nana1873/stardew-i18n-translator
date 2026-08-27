@@ -3,6 +3,7 @@
  * Keeping invoke calls in one place gives the rest of the UI a plain async API.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ShortcutSettings } from "../shortcuts";
 
 export interface DetectedInstall {
@@ -26,7 +27,8 @@ export type AiEngine = "local" | "codex";
 
 export interface AiSettings {
   defaultEngine: AiEngine;
-  /** Codex uses its own default model; only reasoning effort is configurable. */
+  /** Exact model reported by the installed Codex CLI; absent = CLI default. */
+  codexModel?: string | null;
   codexReasoning: "low" | "medium" | "high";
 }
 
@@ -402,6 +404,26 @@ export interface ExportModInput {
   /** Display metadata only; the backend authorizes paths and state by ID. */
   modName: string;
   files: ExportFileInput[];
+}
+
+export interface ExportPreflightProblem {
+  modUniqueId: string;
+  modName: string;
+  relativeDir: string;
+  key: string;
+  reason: string;
+}
+
+export interface ExportPreflight {
+  acceptedMismatches: number;
+  blockingProblem: ExportPreflightProblem | null;
+}
+
+/** Validate the exact selected export scope without changing any files. */
+export function previewExport(
+  mods: ExportModInput[],
+): Promise<ExportPreflight> {
+  return invoke<ExportPreflight>("preview_export", { mods });
 }
 
 export interface ExportModResult {
@@ -842,6 +864,56 @@ export interface AiRunResult {
   suggestions: AiSuggestion[];
 }
 
+export type AiRunPhase =
+  | "preparing"
+  | "translating"
+  | "reviewing"
+  | "terminologyRepair"
+  | "tokenRepair"
+  | "saving";
+
+export type AiRunRecovery = "transientRetry" | "structureRetry" | "split";
+
+export type CodexActivityStage =
+  | "starting"
+  | "working"
+  | "reasoning"
+  | "writingResponse"
+  | "completed"
+  | "failed";
+
+export interface AiRunTokenUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+}
+
+export interface AiRunProgress {
+  runId: string;
+  phase: AiRunPhase;
+  completed: number;
+  total: number;
+  batchIndex?: number;
+  batchTotal?: number;
+  batchSize?: number;
+  retries: number;
+  splits: number;
+  recovery?: AiRunRecovery;
+  codexStage?: CodexActivityStage;
+  codexActivitySequence?: number;
+  usage?: AiRunTokenUsage;
+}
+
+/** Listen for persisted Review progress from the currently running AI command. */
+export function listenAiRunProgress(
+  handler: (progress: AiRunProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<AiRunProgress>("ai-run-progress", (event) => {
+    handler(event.payload);
+  });
+}
+
 export interface CodexCliStatus {
   installed: boolean;
   authenticated: boolean;
@@ -849,6 +921,27 @@ export interface CodexCliStatus {
   /** Sanitized label only; the app never reads CLI auth files or tokens. */
   authentication?: string;
   error?: string;
+}
+
+export interface CodexCliModel {
+  /** Exact value passed to `codex exec --model`. */
+  model: string;
+  displayName: string;
+  isDefault: boolean;
+  defaultReasoningEffort?: "low" | "medium" | "high";
+  supportedReasoningEfforts: ("low" | "medium" | "high")[];
+}
+
+export interface CodexCliRateLimitWindow {
+  usedPercent: number;
+  windowDurationMins?: number;
+  /** Unix timestamp in seconds, as reported by Codex CLI. */
+  resetsAt?: number;
+}
+
+export interface CodexCliRateLimits {
+  primary?: CodexCliRateLimitWindow;
+  secondary?: CodexCliRateLimitWindow;
 }
 
 export function translateWithLocalAi(
@@ -859,6 +952,14 @@ export function translateWithLocalAi(
 
 export function codexCliStatus(): Promise<CodexCliStatus> {
   return invoke<CodexCliStatus>("codex_cli_status");
+}
+
+export function codexCliModels(): Promise<CodexCliModel[]> {
+  return invoke<CodexCliModel[]>("codex_cli_models");
+}
+
+export function codexCliRateLimits(): Promise<CodexCliRateLimits | null> {
+  return invoke<CodexCliRateLimits | null>("codex_cli_rate_limits");
 }
 
 export function translateWithCodexCli(
