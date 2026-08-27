@@ -1458,6 +1458,11 @@ async fn codex_cli_models() -> Result<Vec<codex_cli::CodexCliModel>, String> {
 }
 
 #[tauri::command]
+async fn codex_cli_rate_limits() -> Result<Option<codex_cli::CodexCliRateLimits>, String> {
+    codex_cli::rate_limits().await
+}
+
+#[tauri::command]
 async fn translate_with_codex_cli(
     app: AppHandle,
     state: State<'_, ai::AiRuntimeState>,
@@ -1932,6 +1937,7 @@ pub fn run() {
             translate_with_local_ai,
             codex_cli_status,
             codex_cli_models,
+            codex_cli_rate_limits,
             translate_with_codex_cli,
             cancel_ai_run,
             open_url,

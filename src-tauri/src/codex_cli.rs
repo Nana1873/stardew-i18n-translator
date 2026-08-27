@@ -4,7 +4,7 @@
 //! `codex exec` for bounded structured translation chunks. It never reads the
 //! CLI's auth/config files or receives an auth token.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ffi::{OsStr, OsString};
 use std::future::Future;
 use std::path::{Path, PathBuf};
@@ -20,7 +20,7 @@ use serde_json::{Map, Value};
 use crate::ai::{self, PreparedAiItem, ProviderFailure, ProviderTranslation};
 
 const STATUS_TIMEOUT: Duration = Duration::from_secs(10);
-const MODEL_LIST_TIMEOUT: Duration = Duration::from_secs(15);
+const APP_SERVER_REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const TRANSLATION_TIMEOUT: Duration = Duration::from_secs(180);
 const MAX_DIAGNOSTIC_OUTPUT_BYTES: u64 = 128 * 1024;
 const MAX_FINAL_OUTPUT_BYTES: u64 = 2 * 1024 * 1024;
@@ -109,6 +109,25 @@ pub struct CodexCliModel {
     pub supported_reasoning_efforts: Vec<String>,
 }
 
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexCliRateLimits {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub primary: Option<CodexCliRateLimitWindow>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secondary: Option<CodexCliRateLimitWindow>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexCliRateLimitWindow {
+    pub used_percent: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_duration_mins: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resets_at: Option<u64>,
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ModelListResponse {
@@ -147,6 +166,44 @@ struct ModelListEntry {
 #[serde(rename_all = "camelCase")]
 struct ModelReasoningEffort {
     reasoning_effort: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RateLimitsResponse {
+    result: Option<RateLimitsResult>,
+    error: Option<AppServerError>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RateLimitsResult {
+    rate_limits: Option<RateLimitSnapshot>,
+    #[serde(default)]
+    rate_limits_by_limit_id: Option<HashMap<String, RateLimitSnapshot>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RateLimitSnapshot {
+    #[serde(default)]
+    primary: Option<RateLimitWindow>,
+    #[serde(default)]
+    secondary: Option<RateLimitWindow>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RateLimitWindow {
+    used_percent: Option<f64>,
+    window_duration_mins: Option<i64>,
+    resets_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+struct AppServerError {
+    code: Option<i64>,
+    message: Option<String>,
 }
 
 struct TempRunDir {
@@ -244,12 +301,12 @@ fn run_app_server_request(
     {
         windows_process::run_jsonl_request(
             executable,
-            &model_list_app_server_args(),
+            &app_server_args(),
             initialize,
             request,
             request_id,
             working_dir,
-            MODEL_LIST_TIMEOUT,
+            APP_SERVER_REQUEST_TIMEOUT,
             STATUS_OUTPUT_LIMITS,
         )
     }
@@ -260,8 +317,8 @@ fn run_app_server_request(
     }
 }
 
-fn model_list_app_server_args() -> [OsString; 2] {
-    // Model discovery is read-only and must tolerate a newer Codex Desktop
+fn app_server_args() -> [OsString; 2] {
+    // These status reads are read-only and must tolerate a newer Codex Desktop
     // config than the installed CLI understands. Translation runs remain
     // strict and ignore user config entirely.
     [OsString::from("app-server"), OsString::from("--stdio")]
@@ -916,12 +973,12 @@ mod windows_process {
     ) -> Result<String, String> {
         loop {
             if started.elapsed() >= timeout {
-                return Err("Codex CLI did not return its model list in time.".to_string());
+                return Err("Codex CLI did not return the app-server response in time.".to_string());
             }
             if stdout_budget.overflowed.load(Ordering::Acquire)
                 || stderr_budget.overflowed.load(Ordering::Acquire)
             {
-                return Err("Codex CLI returned too much model-list output.".to_string());
+                return Err("Codex CLI returned too much app-server output.".to_string());
             }
             if io_failed.load(Ordering::Acquire) {
                 return Err("Could not capture Codex app-server output.".to_string());
@@ -937,7 +994,7 @@ mod windows_process {
                     };
                     if response.get("id").and_then(serde_json::Value::as_u64) == Some(response_id) {
                         return String::from_utf8(line).map_err(|_| {
-                            "Codex CLI returned non-UTF-8 model-list data.".to_string()
+                            "Codex CLI returned non-UTF-8 app-server data.".to_string()
                         });
                     }
                 }
@@ -945,13 +1002,14 @@ mod windows_process {
                 Err(mpsc::RecvTimeoutError::Timeout) => {
                     if let Some(code) = process.poll()? {
                         return Err(format!(
-                            "Codex app-server stopped before returning its model list (exit code {code})."
+                            "Codex app-server stopped before returning the requested response (exit code {code})."
                         ));
                     }
                 }
                 Err(mpsc::RecvTimeoutError::Disconnected) => {
                     return Err(
-                        "Codex app-server closed before returning its model list.".to_string()
+                        "Codex app-server closed before returning the requested response."
+                            .to_string(),
                     );
                 }
             }
@@ -1183,7 +1241,7 @@ mod windows_process {
         let overflowed = stdout_budget.overflowed.load(Ordering::Acquire)
             || stderr_budget.overflowed.load(Ordering::Acquire);
         if overflowed {
-            return Err("Codex CLI returned too much model-list output.".to_string());
+            return Err("Codex CLI returned too much app-server output.".to_string());
         }
         stderr?;
         exchange
@@ -1421,6 +1479,129 @@ pub async fn status() -> CodexCliStatus {
         })
 }
 
+fn app_server_initialize_request() -> String {
+    serde_json::json!({
+        "method": "initialize",
+        "id": 1,
+        "params": {
+            "clientInfo": {
+                "name": "stardew_i18n_translator",
+                "title": "Stardew i18n Translator",
+                "version": env!("CARGO_PKG_VERSION")
+            }
+        }
+    })
+    .to_string()
+}
+
+fn sanitize_rate_limit_window(window: &RateLimitWindow) -> Option<CodexCliRateLimitWindow> {
+    let used_percent = window.used_percent?;
+    if !used_percent.is_finite() || !(0.0..=100.0).contains(&used_percent) {
+        return None;
+    }
+    Some(CodexCliRateLimitWindow {
+        used_percent,
+        window_duration_mins: window
+            .window_duration_mins
+            .and_then(|minutes| u64::try_from(minutes).ok()),
+        resets_at: window
+            .resets_at
+            .and_then(|timestamp| u64::try_from(timestamp).ok()),
+    })
+}
+
+fn sanitize_rate_limit_snapshot(snapshot: &RateLimitSnapshot) -> Option<CodexCliRateLimits> {
+    let limits = CodexCliRateLimits {
+        primary: snapshot
+            .primary
+            .as_ref()
+            .and_then(sanitize_rate_limit_window),
+        secondary: snapshot
+            .secondary
+            .as_ref()
+            .and_then(sanitize_rate_limit_window),
+    };
+    (limits.primary.is_some() || limits.secondary.is_some()).then_some(limits)
+}
+
+fn rate_limits_unavailable(error: &AppServerError) -> bool {
+    if error.code == Some(-32601) {
+        return true;
+    }
+    let message = error
+        .message
+        .as_deref()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    [
+        "authentication required",
+        "not authenticated",
+        "not signed in",
+        "method not found",
+        "unknown method",
+    ]
+    .iter()
+    .any(|marker| message.contains(marker))
+}
+
+fn parse_rate_limits_response(body: &str) -> Result<Option<CodexCliRateLimits>, String> {
+    let response: RateLimitsResponse = serde_json::from_str(body)
+        .map_err(|_| "Codex CLI returned unreadable ChatGPT usage limits.".to_string())?;
+    if let Some(error) = response.error {
+        return if rate_limits_unavailable(&error) {
+            Ok(None)
+        } else {
+            Err("Codex CLI could not read ChatGPT usage limits.".to_string())
+        };
+    }
+    let result = response
+        .result
+        .ok_or_else(|| "Codex CLI returned no ChatGPT usage result.".to_string())?;
+    if let Some(limits) = result
+        .rate_limits_by_limit_id
+        .as_ref()
+        .and_then(|limits| limits.get("codex"))
+        .and_then(sanitize_rate_limit_snapshot)
+    {
+        return Ok(Some(limits));
+    }
+    Ok(result
+        .rate_limits
+        .as_ref()
+        .and_then(sanitize_rate_limit_snapshot))
+}
+
+fn rate_limits_request() -> String {
+    serde_json::json!({
+        "method": "account/rateLimits/read",
+        "id": 2
+    })
+    .to_string()
+}
+
+fn read_rate_limits_sync() -> Result<Option<CodexCliRateLimits>, String> {
+    let executable = resolve_codex_executable()
+        .map_err(|_| "Codex CLI could not read ChatGPT usage limits.".to_string())?;
+    let temp = TempRunDir::create("codex-rate-limits")
+        .map_err(|_| "Codex CLI could not read ChatGPT usage limits.".to_string())?;
+    let request = rate_limits_request();
+    let response = run_app_server_request(
+        &executable,
+        &app_server_initialize_request(),
+        &request,
+        2,
+        &temp.path,
+    )
+    .map_err(|_| "Codex CLI could not read ChatGPT usage limits.".to_string())?;
+    parse_rate_limits_response(&response)
+}
+
+pub async fn rate_limits() -> Result<Option<CodexCliRateLimits>, String> {
+    tauri::async_runtime::spawn_blocking(read_rate_limits_sync)
+        .await
+        .map_err(|_| "The Codex CLI usage worker stopped unexpectedly.".to_string())?
+}
+
 fn clean_model_value(value: &str) -> Option<String> {
     let value = value.trim();
     (!value.is_empty()
@@ -1464,18 +1645,7 @@ fn list_models_sync() -> Result<Vec<CodexCliModel>, String> {
 
     let executable = resolve_codex_executable()?;
     let temp = TempRunDir::create("codex-models")?;
-    let initialize = serde_json::json!({
-        "method": "initialize",
-        "id": 1,
-        "params": {
-            "clientInfo": {
-                "name": "stardew_i18n_translator",
-                "title": "Stardew i18n Translator",
-                "version": env!("CARGO_PKG_VERSION")
-            }
-        }
-    })
-    .to_string();
+    let initialize = app_server_initialize_request();
     let mut cursor: Option<String> = None;
     let mut seen_cursors = HashSet::new();
     let mut seen_models = HashSet::new();
@@ -2952,14 +3122,92 @@ mod tests {
     }
 
     #[test]
-    fn model_list_does_not_reject_newer_codex_config_fields() {
-        let args = model_list_app_server_args();
+    fn app_server_reads_do_not_reject_newer_codex_config_fields() {
+        let args = app_server_args();
         let args = args
             .iter()
             .map(|arg| arg.to_string_lossy().to_string())
             .collect::<Vec<_>>();
         assert_eq!(args, ["app-server", "--stdio"]);
         assert!(!args.contains(&"--strict-config".to_string()));
+    }
+
+    #[test]
+    fn rate_limits_request_uses_the_documented_parameterless_shape() {
+        let request: Value = serde_json::from_str(&rate_limits_request()).unwrap();
+        assert_eq!(request["method"], "account/rateLimits/read");
+        assert_eq!(request["id"], 2);
+        assert!(request.get("params").is_none());
+    }
+
+    #[test]
+    fn rate_limits_parser_prefers_the_current_codex_bucket() {
+        let parsed = parse_rate_limits_response(
+            r#"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":10,"windowDurationMins":15,"resetsAt":1730947200}},"rateLimitsByLimitId":{"codex":{"limitId":"codex","primary":{"usedPercent":25,"windowDurationMins":300,"resetsAt":1730947200},"secondary":{"usedPercent":42.5,"windowDurationMins":10080,"resetsAt":1731552000},"futureField":true},"codex_other":{"primary":{"usedPercent":99}}},"rateLimitResetCredits":{"availableCount":2}}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(parsed.primary.as_ref().unwrap().used_percent, 25.0);
+        assert_eq!(
+            parsed.primary.as_ref().unwrap().window_duration_mins,
+            Some(300)
+        );
+        assert_eq!(parsed.secondary.as_ref().unwrap().used_percent, 42.5);
+        assert_eq!(
+            parsed.secondary.as_ref().unwrap().window_duration_mins,
+            Some(10_080)
+        );
+    }
+
+    #[test]
+    fn rate_limits_parser_accepts_the_legacy_single_bucket_shape() {
+        let parsed = parse_rate_limits_response(
+            r#"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":6,"windowDurationMins":60,"resetsAt":1730947200}},"rateLimitsByLimitId":null}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert_eq!(parsed.primary.unwrap().used_percent, 6.0);
+        assert!(parsed.secondary.is_none());
+    }
+
+    #[test]
+    fn rate_limits_parser_tolerates_missing_windows_and_sanitizes_time() {
+        let missing = parse_rate_limits_response(
+            r#"{"id":2,"result":{"rateLimits":{"primary":null,"secondary":null}}}"#,
+        )
+        .unwrap();
+        assert!(missing.is_none());
+
+        let parsed = parse_rate_limits_response(
+            r#"{"id":2,"result":{"rateLimits":{"primary":{"usedPercent":101,"windowDurationMins":5,"resetsAt":10},"secondary":{"usedPercent":25,"windowDurationMins":-1,"resetsAt":-2}}}}"#,
+        )
+        .unwrap()
+        .unwrap();
+        assert!(parsed.primary.is_none());
+        let secondary = parsed.secondary.unwrap();
+        assert_eq!(secondary.used_percent, 25.0);
+        assert!(secondary.window_duration_mins.is_none());
+        assert!(secondary.resets_at.is_none());
+    }
+
+    #[test]
+    fn rate_limits_parser_treats_unsupported_auth_and_old_cli_as_unavailable() {
+        for response in [
+            r#"{"id":2,"error":{"code":-32600,"message":"codex account authentication required to read rate limits"}}"#,
+            r#"{"id":2,"error":{"code":-32601,"message":"future wording"}}"#,
+        ] {
+            assert!(parse_rate_limits_response(response).unwrap().is_none());
+        }
+    }
+
+    #[test]
+    fn rate_limits_parser_never_surfaces_raw_server_errors() {
+        let error = parse_rate_limits_response(
+            r#"{"id":2,"error":{"code":500,"message":"private account detail"}}"#,
+        )
+        .unwrap_err();
+        assert_eq!(error, "Codex CLI could not read ChatGPT usage limits.");
+        assert!(!error.contains("private"));
     }
 
     #[test]
