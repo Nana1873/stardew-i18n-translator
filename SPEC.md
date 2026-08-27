@@ -392,6 +392,12 @@ candidate receive exactly one focused repair pass. The focused pass may retain
 contextually correct inflections or compounds unchanged. No terminology repair
 pass runs without such a candidate.
 
+Codex groups contiguous selected strings into adaptive chunks of at most 100
+items and additionally bounds the complete serialized prompt. Read-only
+neighboring sources are pooled once per prompt and referenced in source order;
+this representation must preserve the same section, glossary, and before/after
+context as the unpooled request. A single long source may occupy its own chunk.
+
 Each stage accepts only structurally valid output. A failed or oversized full
 review leaves the affected chunk incomplete so it can be retried. If the
 optional focused repair fails or returns unusable output, the fully reviewed
@@ -410,10 +416,13 @@ validation issue. Local AI keeps its direct single-string request and existing
 one-time protected-token retry.
 
 The compact progress dialog receives persisted progress such as `320 / 1000`
-and retains its existing Cancel action. A later run over the same scope
-naturally processes the remaining Open or Changed strings instead of
-maintaining a separate persistent AI job history, queue, or checkpoint store.
-Token validation and human review remain the final safety gates.
+and retains its existing Cancel action. It also reports the current quality
+phase, adaptive outer batch, elapsed time, bounded retry/split activity, and
+Codex-reported token usage when available, without fabricating within-call
+completion percentages. A later run over the same scope naturally processes
+the remaining Open or Changed strings instead of maintaining a separate
+persistent AI job history, queue, or checkpoint store. Token validation and
+human review remain the final safety gates.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

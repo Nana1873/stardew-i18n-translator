@@ -153,7 +153,8 @@ selected strings, with every complete serialized prompt bounded to 96 KiB; one
 live run accepts up to 4,096 strings or 8 MiB of selected source text. Recovery
 is limited to the affected batch: a transient failure is retried once, and a
 persistently invalid response is split until a failing string is isolated so
-unrelated work can continue.
+unrelated work can continue. Repeated neighboring context is pooled inside each
+prompt without removing any context line.
 
 Codex translation uses a staged quality pass. Codex first creates an initial
 draft, then every draft receives a full AI review that corrects issues in
@@ -178,12 +179,14 @@ current in-flight chunk remains available for a later retry. Even a draft that
 passed AI review and terminology repair remains `review-needed`; suggestions
 are never treated as finished translations automatically.
 
-The compact progress dialog shows persisted progress such as `320 / 1000` and
-keeps its Cancel action. A later run naturally leaves only the remaining Open or
-Changed strings to process; there is no separate persistent AI job queue or
-checkpoint history. **Open review queue** returns to the affected component when
-it is known and to **All mods** for a multi-component run, so cross-mod results
-are not hidden.
+The compact progress dialog reports suggestions already saved to Review, the
+current quality phase and adaptive batch, elapsed time, bounded retries or
+splits, and token usage when Codex CLI reports it while retaining its Cancel
+action. It does not invent progress inside a provider call. A later run
+naturally leaves only the remaining Open or Changed strings to process; there
+is no separate persistent AI job queue or checkpoint history. **Open review
+queue** returns to the affected component when it is known and to **All mods**
+for a multi-component run, so cross-mod results are not hidden.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;

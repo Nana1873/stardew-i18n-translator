@@ -29,6 +29,7 @@ mod language_compatibility;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
 use std::{fs::OpenOptions, io::Write};
 
 use tauri::{AppHandle, Emitter, State};
@@ -1111,27 +1112,60 @@ fn prepare_ai_request(
     Ok((settings, target_language, translation_root, prepared))
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Debug, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-struct AiRunProgress<'a> {
-    run_id: &'a str,
-    completed: usize,
-    total: usize,
+struct AiRunTokenUsage {
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    output_tokens: u64,
+    reasoning_output_tokens: u64,
 }
 
-fn emit_ai_progress(app: &AppHandle, run_id: &str, completed: usize, total: usize) {
-    if let Err(error) = app.emit(
-        "ai-run-progress",
-        AiRunProgress {
-            run_id,
-            completed,
-            total,
-        },
-    ) {
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiRunProgress {
+    run_id: String,
+    phase: &'static str,
+    completed: usize,
+    total: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_size: Option<usize>,
+    retries: usize,
+    splits: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<AiRunTokenUsage>,
+}
+
+fn emit_ai_progress(app: &AppHandle, progress: &AiRunProgress) {
+    if let Err(error) = app.emit("ai-run-progress", progress.clone()) {
         // Progress is convenience state only. The final command result remains
         // authoritative if an event cannot be delivered to the webview.
         log::warn!("Could not emit AI run progress: {error}");
     }
+}
+
+fn update_ai_progress(
+    app: &AppHandle,
+    state: &Arc<Mutex<AiRunProgress>>,
+    update: impl FnOnce(&mut AiRunProgress),
+) {
+    let snapshot = match state.lock() {
+        Ok(mut progress) => {
+            update(&mut progress);
+            progress.clone()
+        }
+        Err(_) => {
+            log::warn!("Could not update AI progress because its state is unavailable.");
+            return;
+        }
+    };
+    emit_ai_progress(app, &snapshot);
 }
 
 fn ai_run_result(
@@ -1299,12 +1333,29 @@ async fn translate_with_local_ai(
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
-    emit_ai_progress(&app, &request.run_id, 0, prepared.len());
-    for item in &prepared {
+    let mut progress = AiRunProgress {
+        run_id: request.run_id.clone(),
+        phase: "preparing",
+        completed: 0,
+        total: prepared.len(),
+        batch_index: None,
+        batch_total: Some(prepared.len()),
+        batch_size: None,
+        retries: 0,
+        splits: 0,
+        recovery: None,
+        usage: None,
+    };
+    emit_ai_progress(&app, &progress);
+    for (index, item) in prepared.iter().enumerate() {
         if lease.cancelled.load(Ordering::Acquire) {
             outcome = ai::AiRunOutcome::Cancelled;
             break;
         }
+        progress.phase = "translating";
+        progress.batch_index = Some(index + 1);
+        progress.batch_size = Some(1);
+        emit_ai_progress(&app, &progress);
         let before_context = item
             .context
             .before
@@ -1340,13 +1391,16 @@ async fn translate_with_local_ai(
                 }],
             ) {
                 Ok(completed) => {
+                    progress.phase = "saving";
+                    emit_ai_progress(&app, &progress);
                     let staged_result = stage_ai_suggestions(
                         &translation_root,
                         std::slice::from_ref(item),
                         completed,
                         &mut suggestions,
                     );
-                    emit_ai_progress(&app, &request.run_id, suggestions.len(), prepared.len());
+                    progress.completed = suggestions.len();
+                    emit_ai_progress(&app, &progress);
                     if let Err(cause) = staged_result {
                         outcome = ai::AiRunOutcome::Error;
                         error = Some(cause);
@@ -1421,20 +1475,84 @@ async fn translate_with_codex_cli(
     let mut error = None;
     let chunks = ai::chunks(&prepared)?;
     let mut pending = VecDeque::from(chunks);
+    let mut handled_batches = 0usize;
+    let mut batch_total = pending.len();
     let mut isolated_failures = 0usize;
     let mut last_isolated_failure = None;
-    emit_ai_progress(&app, &request.run_id, 0, prepared.len());
+    let progress_state = Arc::new(Mutex::new(AiRunProgress {
+        run_id: request.run_id.clone(),
+        phase: "preparing",
+        completed: 0,
+        total: prepared.len(),
+        batch_index: None,
+        batch_total: Some(batch_total),
+        batch_size: None,
+        retries: 0,
+        splits: 0,
+        recovery: None,
+        usage: None,
+    }));
+    update_ai_progress(&app, &progress_state, |_| {});
+    let codex_progress: codex_cli::CodexProgressCallback = {
+        let app = app.clone();
+        let state = Arc::clone(&progress_state);
+        Arc::new(move |event| {
+            update_ai_progress(&app, &state, |progress| match event {
+                codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
+                    progress.phase = match phase {
+                        codex_cli::CodexProgressPhase::Translating => "translating",
+                        codex_cli::CodexProgressPhase::Reviewing => "reviewing",
+                        codex_cli::CodexProgressPhase::TerminologyRepair => "terminologyRepair",
+                        codex_cli::CodexProgressPhase::TokenRepair => "tokenRepair",
+                    };
+                    progress.batch_size = Some(item_count);
+                    progress.recovery = None;
+                }
+                codex_cli::CodexProgressEvent::TransientRetry => {
+                    progress.retries = progress.retries.saturating_add(1);
+                    progress.recovery = Some("transientRetry");
+                }
+                codex_cli::CodexProgressEvent::StructureRetry => {
+                    progress.retries = progress.retries.saturating_add(1);
+                    progress.recovery = Some("structureRetry");
+                }
+                codex_cli::CodexProgressEvent::Split => {
+                    progress.splits = progress.splits.saturating_add(1);
+                    progress.recovery = Some("split");
+                }
+                codex_cli::CodexProgressEvent::Usage(usage) => {
+                    let total = progress.usage.get_or_insert_with(AiRunTokenUsage::default);
+                    total.input_tokens = total.input_tokens.saturating_add(usage.input_tokens);
+                    total.cached_input_tokens = total
+                        .cached_input_tokens
+                        .saturating_add(usage.cached_input_tokens);
+                    total.output_tokens = total.output_tokens.saturating_add(usage.output_tokens);
+                    total.reasoning_output_tokens = total
+                        .reasoning_output_tokens
+                        .saturating_add(usage.reasoning_output_tokens);
+                }
+            });
+        })
+    };
     while let Some(chunk) = pending.pop_front() {
         if lease.cancelled.load(Ordering::Acquire) {
             outcome = ai::AiRunOutcome::Cancelled;
             break;
         }
+        update_ai_progress(&app, &progress_state, |progress| {
+            progress.phase = "preparing";
+            progress.batch_index = Some(handled_batches + 1);
+            progress.batch_total = Some(batch_total);
+            progress.batch_size = Some(chunk.len());
+            progress.recovery = None;
+        });
         match codex_cli::translate_chunk(
             codex_model.as_deref(),
             &reasoning,
             &target_language,
             chunk,
             lease.cancelled.clone(),
+            Arc::clone(&codex_progress),
         )
         .await
         {
@@ -1447,6 +1565,7 @@ async fn translate_with_codex_cli(
                     chunk,
                     &translations,
                     lease.cancelled.clone(),
+                    Arc::clone(&codex_progress),
                 )
                 .await
                 {
@@ -1475,13 +1594,21 @@ async fn translate_with_codex_cli(
                 };
                 match ai::suggestions(chunk, translations) {
                     Ok(completed) => {
+                        update_ai_progress(&app, &progress_state, |progress| {
+                            progress.phase = "saving";
+                            progress.batch_size = Some(chunk.len());
+                            progress.recovery = None;
+                        });
                         let staged_result = stage_ai_suggestions(
                             &translation_root,
                             chunk,
                             completed,
                             &mut suggestions,
                         );
-                        emit_ai_progress(&app, &request.run_id, suggestions.len(), prepared.len());
+                        handled_batches = handled_batches.saturating_add(1);
+                        update_ai_progress(&app, &progress_state, |progress| {
+                            progress.completed = suggestions.len();
+                        });
                         if let Err(cause) = staged_result {
                             outcome = ai::AiRunOutcome::Error;
                             error = Some(cause);
@@ -1511,10 +1638,19 @@ async fn translate_with_codex_cli(
                 // iterative and bounded.
                 pending.push_front(right);
                 pending.push_front(left);
+                batch_total = batch_total.saturating_add(1);
+                update_ai_progress(&app, &progress_state, |progress| {
+                    progress.phase = "preparing";
+                    progress.batch_total = Some(batch_total);
+                    progress.batch_size = Some(left.len());
+                    progress.splits = progress.splits.saturating_add(1);
+                    progress.recovery = Some("split");
+                });
             }
             Err(ai::ProviderFailure::InvalidResponse(cause)) => {
                 isolated_failures += 1;
                 last_isolated_failure = Some(cause);
+                handled_batches = handled_batches.saturating_add(1);
             }
             Err(ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause)) => {
                 outcome = ai::AiRunOutcome::Error;
@@ -1997,6 +2133,35 @@ mod json_output_limit_tests {
 #[cfg(test)]
 mod ai_run_contract_tests {
     use super::*;
+
+    #[test]
+    fn progress_contract_exposes_saved_count_phase_batch_recovery_and_usage() {
+        let progress = AiRunProgress {
+            run_id: "run-progress".to_string(),
+            phase: "reviewing",
+            completed: 320,
+            total: 1_000,
+            batch_index: Some(4),
+            batch_total: Some(11),
+            batch_size: Some(87),
+            retries: 1,
+            splits: 2,
+            recovery: Some("structureRetry"),
+            usage: Some(AiRunTokenUsage {
+                input_tokens: 45_200,
+                cached_input_tokens: 32_900,
+                output_tokens: 2_100,
+                reasoning_output_tokens: 900,
+            }),
+        };
+
+        let value = serde_json::to_value(progress).unwrap();
+        assert_eq!(value["completed"], 320);
+        assert_eq!(value["phase"], "reviewing");
+        assert_eq!(value["batchIndex"], 4);
+        assert_eq!(value["recovery"], "structureRetry");
+        assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
+    }
 
     #[test]
     fn failed_run_reports_resolved_count_and_keeps_completed_suggestions() {
