@@ -86,9 +86,23 @@ Manual translation and local-only workflows remain offline. When Codex CLI is
 selected, the source text, its section context, and matching glossary terms are
 sent through the installed CLI.
 
-AI suggestions always enter the review queue. Each completed suggestion is
-saved immediately, so cancelling a longer run keeps the completed Review work.
-Suggestions are never treated as finished translations automatically.
+Codex translation uses a staged quality pass. Codex first creates an initial
+draft, then every draft receives a full AI review that corrects issues in
+meaning, natural phrasing in the target language, terminology, grammar,
+register, speaker voice, and dialogue continuity. This review is not limited to
+token warnings or glossary matches. Only after that full review, reviewed
+results with a conservatively detected glossary or terminology candidate
+receive exactly one focused repair pass; correct inflections and compounds may
+remain unchanged. A failed full review does not mark its chunk complete, so it
+can be retried. If the optional focused repair fails, the fully reviewed text is
+kept.
+
+AI suggestions always enter the existing human Review queue. Suggestions from
+each fully completed adaptive chunk are saved together immediately, so
+cancelling a longer run keeps previously completed chunks in Review; the
+current in-flight chunk remains available for a later retry. Even a draft that
+passed AI review and terminology repair remains `review-needed`; suggestions
+are never treated as finished translations automatically.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;

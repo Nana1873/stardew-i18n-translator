@@ -148,7 +148,8 @@ The app uses four string states:
 - `untranslated`: no accepted target text;
 - `translated`: manually saved or explicitly accepted;
 - `outdated`: the source changed after the saved translation;
-- `review-needed`: imported AI output that still needs human review.
+- `review-needed`: imported or generated AI output, including the result of AI
+  review and terminology repair, that still needs human review.
 
 **Keep original** is an action, not a fifth status.
 
@@ -297,9 +298,24 @@ does not maintain its own Codex model catalogue. If discovery is unavailable or
 no model has been selected, runs use the CLI's own default model.
 
 An AI request sends the source text, its section context, and matching glossary
-terms to the selected backend. Every completed suggestion is saved immediately
-as `review-needed`; cancellation or a later provider error retains completed
-Review work. Token validation and human review remain the final safety gates.
+terms to the selected backend. A Codex translation run first produces an
+initial draft. Every draft then receives a full AI review that corrects issues
+in source meaning, natural phrasing in the target language, terminology,
+grammar, register, speaker voice, and dialogue continuity; review is not
+restricted to strings with token or glossary warnings. Only after that full
+review, reviewed results with a conservatively detected glossary or terminology
+candidate receive exactly one focused repair pass. The focused pass may retain
+contextually correct inflections or compounds unchanged. No terminology repair
+pass runs without such a candidate.
+
+Each stage accepts only structurally valid output. A failed or oversized full
+review leaves the affected chunk incomplete so it can be retried. If the
+optional focused repair fails or returns unusable output, the fully reviewed
+text is retained. Suggestions from each fully completed adaptive chunk are
+saved together immediately as `review-needed`, including results that passed
+both AI quality stages. Cancellation or a later provider error retains
+previously completed chunks; the current in-flight chunk remains available for
+a later retry. Token validation and human review remain the final safety gates.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

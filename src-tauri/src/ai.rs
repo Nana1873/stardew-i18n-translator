@@ -21,6 +21,9 @@ pub const MAX_RUN_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SOURCE_BYTES: usize = 64 * 1024;
 pub const MAX_CHUNK_ITEMS: usize = 100;
 pub const MAX_CHUNK_BYTES: usize = 96 * 1024;
+// Leave room for provider instructions, the input separator, and one bounded
+// structure-correction suffix. Only neighboring context may be trimmed to fit.
+const MAX_PROVIDER_INPUT_BYTES: usize = MAX_CHUNK_BYTES - 8 * 1024;
 const MAX_CONTEXT_NEIGHBORS: usize = 2;
 const MAX_PROVIDER_TEXT_BYTES: usize = 256 * 1024;
 
@@ -512,7 +515,7 @@ fn context_windows(
         .collect()
 }
 
-fn remove_farthest_context(context: &mut AiPromptContext) -> bool {
+pub(crate) fn remove_farthest_context(context: &mut AiPromptContext) -> bool {
     match (context.before.len(), context.after.len()) {
         (0, 0) => false,
         (before, after) if before > after => {
@@ -534,9 +537,13 @@ fn remove_farthest_context(context: &mut AiPromptContext) -> bool {
     }
 }
 
+pub(crate) fn same_context_group(left: &PreparedAiItem, right: &PreparedAiItem) -> bool {
+    left.context.group_index == right.context.group_index
+}
+
 fn fit_single_item_context(item: &mut PreparedAiItem) -> Result<(), String> {
     loop {
-        if provider_input(std::slice::from_ref(item))?.len() <= MAX_CHUNK_BYTES {
+        if provider_input(std::slice::from_ref(item))?.len() <= MAX_PROVIDER_INPUT_BYTES {
             return Ok(());
         }
         if !remove_farthest_context(&mut item.context) {
@@ -664,7 +671,7 @@ pub(crate) fn chunks(items: &[PreparedAiItem]) -> Result<Vec<&[PreparedAiItem]>,
                 .map_or(items.len(), |offset| end + offset);
             let whole_group = &items[start..group_end];
             if whole_group.len() <= MAX_CHUNK_ITEMS
-                && provider_input(whole_group)?.len() <= MAX_CHUNK_BYTES
+                && provider_input(whole_group)?.len() <= MAX_PROVIDER_INPUT_BYTES
             {
                 end = group_end;
                 continue;
@@ -682,7 +689,7 @@ pub(crate) fn chunks(items: &[PreparedAiItem]) -> Result<Vec<&[PreparedAiItem]>,
             let mut split_end = start;
             while split_end < group_end && split_end - start < MAX_CHUNK_ITEMS {
                 let candidate = &items[start..=split_end];
-                if provider_input(candidate)?.len() > MAX_CHUNK_BYTES {
+                if provider_input(candidate)?.len() > MAX_PROVIDER_INPUT_BYTES {
                     break;
                 }
                 split_end += 1;
@@ -1209,7 +1216,7 @@ mod tests {
 
     #[test]
     fn chunks_use_actual_serialized_input_bytes_and_preserve_order() {
-        let source = "x".repeat(MAX_CHUNK_BYTES / 3);
+        let source = "x".repeat(MAX_PROVIDER_INPUT_BYTES / 3);
         let rows = (0..5)
             .map(|index| AiScopeRow {
                 identity: identity("mod.a", "i18n", &format!("plain{index}")),
@@ -1230,7 +1237,7 @@ mod tests {
         assert!(chunks.iter().all(|chunk| chunk.len() <= MAX_CHUNK_ITEMS));
         assert!(chunks
             .iter()
-            .all(|chunk| provider_input(chunk).unwrap().len() <= MAX_CHUNK_BYTES));
+            .all(|chunk| provider_input(chunk).unwrap().len() <= MAX_PROVIDER_INPUT_BYTES));
         assert_eq!(
             chunks
                 .iter()
@@ -1268,7 +1275,7 @@ mod tests {
 
         assert_eq!(prepared[0].source, "Selected source");
         assert!(prepared[0].context.before.len() + prepared[0].context.after.len() < 4);
-        assert!(provider_input(&prepared).unwrap().len() <= MAX_CHUNK_BYTES);
+        assert!(provider_input(&prepared).unwrap().len() <= MAX_PROVIDER_INPUT_BYTES);
     }
 
     #[test]
