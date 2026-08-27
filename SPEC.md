@@ -308,6 +308,12 @@ candidate receive exactly one focused repair pass. The focused pass may retain
 contextually correct inflections or compounds unchanged. No terminology repair
 pass runs without such a candidate.
 
+Codex groups contiguous selected strings into adaptive chunks of at most 100
+items and additionally bounds the complete serialized prompt. Read-only
+neighboring sources are pooled once per prompt and referenced in source order;
+this representation must preserve the same section, glossary, and before/after
+context as the unpooled request. A single long source may occupy its own chunk.
+
 Each stage accepts only structurally valid output. A failed or oversized full
 review leaves the affected chunk incomplete so it can be retried. If the
 optional focused repair fails or returns unusable output, the fully reviewed
@@ -316,6 +322,10 @@ saved together immediately as `review-needed`, including results that passed
 both AI quality stages. Cancellation or a later provider error retains
 previously completed chunks; the current in-flight chunk remains available for
 a later retry. Token validation and human review remain the final safety gates.
+The running UI reports the real persisted-to-Review count, current quality
+phase, adaptive outer batch, elapsed time, bounded retry/split activity, and
+Codex-reported token usage when available. It must not fabricate within-call
+completion percentages.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

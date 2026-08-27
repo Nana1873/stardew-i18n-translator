@@ -84,7 +84,10 @@ You can translate in four ways:
 
 Manual translation and local-only workflows remain offline. When Codex CLI is
 selected, the source text, its section context, and matching glossary terms are
-sent through the installed CLI.
+sent through the installed CLI. Related strings are packed into adaptive batches
+of up to 100 entries, with an additional bound on the complete serialized
+prompt. Repeated neighboring context is pooled inside that prompt without
+removing any context line.
 
 Codex translation uses a staged quality pass. Codex first creates an initial
 draft, then every draft receives a full AI review that corrects issues in
@@ -103,6 +106,11 @@ cancelling a longer run keeps previously completed chunks in Review; the
 current in-flight chunk remains available for a later retry. Even a draft that
 passed AI review and terminology repair remains `review-needed`; suggestions
 are never treated as finished translations automatically.
+
+The compact progress dialog reports suggestions already saved to Review, the
+current quality phase and adaptive batch, elapsed time, bounded retries or
+splits, and token usage when Codex CLI reports it. It does not invent progress
+inside a provider call.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;
