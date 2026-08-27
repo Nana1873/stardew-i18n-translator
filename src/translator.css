@@ -1312,7 +1312,13 @@
 #stardew-i18n-translator .translator-result-actions {
   justify-content: flex-end;
   gap: 6px;
+  padding-inline-end: 24px;
   flex-wrap: wrap;
+}
+
+#stardew-i18n-translator .translator-result-action-break {
+  height: 0;
+  flex: 0 0 100%;
 }
 
 #stardew-i18n-translator .translator-result-details {

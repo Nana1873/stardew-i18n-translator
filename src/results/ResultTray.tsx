@@ -927,13 +927,19 @@ export function ResultTray({
               </button>
             )}
             {data.kind === "zip" && data.outcome && onReleaseNotes && (
-              <button
-                className="translator-button translator-button-quiet"
-                type="button"
-                onClick={onReleaseNotes}
-              >
-                Translation notes
-              </button>
+              <>
+                <span
+                  className="translator-result-action-break"
+                  aria-hidden="true"
+                />
+                <button
+                  className="translator-button translator-button-quiet"
+                  type="button"
+                  onClick={onReleaseNotes}
+                >
+                  Translation notes
+                </button>
+              </>
             )}
             {showRetry && (
               <button
