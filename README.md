@@ -115,8 +115,10 @@ You can translate in four ways:
 
 Settings automatically prefers an available engine. Local AI models come from
 the configured local service and its Base URL can be reset to the selected
-provider's default. Codex CLI uses its own default model; the app only configures
-the reasoning effort for its translation runs.
+provider's default. Codex CLI models come from the installed CLI; a valid saved
+choice is retained, otherwise the CLI-reported default is selected. If model
+discovery is unavailable, runs still use the CLI's own default model. The app
+also configures the reasoning effort for Codex translation runs.
 
 Use row checkboxes, Ctrl+click, Shift+click, or Ctrl+A to select the current
 filtered result. Batch actions can copy text, mark strings as Done, keep the
@@ -147,23 +149,41 @@ terms, and the bounded neighboring context described above to the selected
 backend.
 
 Large Codex CLI selections are divided into adaptive batches of at most 100
-selected strings and 96 KiB of serialized input; one live run accepts up to
-4,096 strings or 8 MiB of selected source text. Recovery is limited to the
-affected batch: a transient failure is retried once, and a persistently invalid
-response is split until a failing string is isolated so unrelated work can
-continue. A protected-token mismatch gets one targeted repair attempt and stays
-a blocking Review issue if it still differs. An individually oversized repair
-input is kept for Review without another provider call.
+selected strings, with every complete serialized prompt bounded to 96 KiB; one
+live run accepts up to 4,096 strings or 8 MiB of selected source text. Recovery
+is limited to the affected batch: a transient failure is retried once, and a
+persistently invalid response is split until a failing string is isolated so
+unrelated work can continue.
+
+Codex translation uses a staged quality pass. Codex first creates an initial
+draft, then every draft receives a full AI review that corrects issues in
+meaning, natural phrasing in the target language, terminology, grammar,
+register, speaker voice, and dialogue continuity. This review is not limited to
+token warnings or glossary matches. Only after that full review, reviewed
+results with a conservatively detected glossary or terminology candidate
+receive exactly one focused repair pass; correct inflections and compounds may
+remain unchanged. A failed full review does not mark its chunk complete, so it
+can be retried. If the optional focused repair fails, the fully reviewed text is
+kept.
+
+After the language-quality stages, a protected-token mismatch gets one targeted
+repair attempt and stays a blocking Review issue if it still differs. An
+individually oversized repair input is kept for Review without another provider
+call.
+
+AI suggestions always enter the existing human Review queue. Suggestions from
+each fully completed adaptive chunk are saved together immediately, so
+cancelling a longer run keeps previously completed chunks in Review; the
+current in-flight chunk remains available for a later retry. Even a draft that
+passed AI review and terminology repair remains `review-needed`; suggestions
+are never treated as finished translations automatically.
 
 The compact progress dialog shows persisted progress such as `320 / 1000` and
-keeps its Cancel action. AI suggestions always enter the review queue and each
-completed suggestion is saved immediately. Cancelling or restarting a longer
-run therefore keeps completed Review work and naturally leaves only the
-remaining Open or Changed strings to process; there is no separate persistent
-AI job queue or checkpoint history. Suggestions are never treated as finished
-translations automatically.
-**Open review queue** returns to the affected component when it is known and to
-**All mods** for a multi-component run, so cross-mod results are not hidden.
+keeps its Cancel action. A later run naturally leaves only the remaining Open or
+Changed strings to process; there is no separate persistent AI job queue or
+checkpoint history. **Open review queue** returns to the affected component when
+it is known and to **All mods** for a multi-component run, so cross-mod results
+are not hidden.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;

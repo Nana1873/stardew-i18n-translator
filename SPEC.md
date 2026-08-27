@@ -176,8 +176,8 @@ The app uses four string states:
 - **Open** (`untranslated`): no accepted target text;
 - **Done** (`translated`): manually saved or explicitly accepted;
 - **Changed** (`outdated`): the source changed after the saved translation;
-- **Review** (`review-needed`): imported or AI-generated output that still
-  needs human approval.
+- **Review** (`review-needed`): imported or AI-generated output, including the
+  result of AI review and terminology repair, that still needs human approval.
 
 **Keep original** is an action, not a fifth status.
 
@@ -373,27 +373,47 @@ so context-only strings cannot be returned as translations or written to state.
 
 Live runs accept at most 4,096 selected strings and 8 MiB of selected source
 text. Codex CLI selections are divided into adaptive batches of at most 100
-selected strings and 96 KiB of actual serialized input. Oversized neighboring
-context is removed farthest-first; the selected source is never trimmed.
+selected strings, with every complete serialized prompt bounded to 96 KiB.
+Oversized neighboring context is removed farthest-first; the selected source is
+never trimmed.
 
 Codex CLI recovery is limited: one transient failure may be retried, while an
 invalid structured response gets one corrected attempt. If it remains invalid,
 only that Codex CLI batch is halved until the failing string is isolated, so
-unrelated strings can continue. A protected-token mismatch gets one targeted
+unrelated strings can continue.
+
+A Codex translation run first produces an initial draft. Every draft then
+receives a full AI review that corrects issues
+in source meaning, natural phrasing in the target language, terminology,
+grammar, register, speaker voice, and dialogue continuity; review is not
+restricted to strings with token or glossary warnings. Only after that full
+review, reviewed results with a conservatively detected glossary or terminology
+candidate receive exactly one focused repair pass. The focused pass may retain
+contextually correct inflections or compounds unchanged. No terminology repair
+pass runs without such a candidate.
+
+Each stage accepts only structurally valid output. A failed or oversized full
+review leaves the affected chunk incomplete so it can be retried. If the
+optional focused repair fails or returns unusable output, the fully reviewed
+text is retained. Suggestions from each fully completed adaptive chunk are
+saved together immediately as `review-needed`, including results that passed
+both AI quality stages. Cancellation or a later provider error retains
+previously completed chunks; the current in-flight chunk remains available for
+a later retry.
+
+After the language-quality stages, a protected-token mismatch gets one targeted
 Codex CLI repair attempt with the exact required and returned token counts when
-that repair input fits the same 96 KiB bound. An individually oversized repair
-input skips the extra call. If repair fails or is skipped, the best structurally
-valid suggestion enters Review with the existing blocking validation issue.
-Local AI keeps its direct single-string request and existing one-time
-protected-token retry.
+that complete prompt fits the same 96 KiB bound. An individually oversized
+repair input skips the extra call. If repair fails or is skipped, the best
+structurally valid suggestion enters Review with the existing blocking
+validation issue. Local AI keeps its direct single-string request and existing
+one-time protected-token retry.
 
 The compact progress dialog receives persisted progress such as `320 / 1000`
-and retains its existing Cancel action. Every completed suggestion is saved
-immediately as `review-needed`; cancellation or a later provider error retains
-completed Review work. A later run over the same scope naturally processes the
-remaining Open or Changed strings instead of maintaining a separate persistent
-AI job history, queue, or checkpoint store. Human review remains the final
-safety gate.
+and retains its existing Cancel action. A later run over the same scope
+naturally processes the remaining Open or Changed strings instead of
+maintaining a separate persistent AI job history, queue, or checkpoint store.
+Token validation and human review remain the final safety gates.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.
