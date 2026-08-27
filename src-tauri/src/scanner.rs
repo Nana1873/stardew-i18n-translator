@@ -6,9 +6,11 @@
 //!
 //! Edge cases handled (SPEC §6): nested/multi-component mods (each manifest is
 //! its own mod; `i18n/` is associated with the nearest ancestor manifest),
-//! multiple `i18n/` folders per mod, malformed manifests (skipped with a
-//! warning), `Nexus:-1` sentinel IDs, BOM / `//` + `/* */` comments / trailing
-//! commas, missing `UniqueID` (folder-name fallback), and symlink cycles.
+//! multiple `i18n/` folders per mod, Content Patcher data under `assets/i18n`
+//! (ignored because it is not a SMAPI translation target), malformed manifests
+//! (reported as structured skips), `Nexus:-1` sentinel IDs, BOM / `//` + `/* */`
+//! comments / trailing commas, missing `UniqueID` (folder-name fallback), and
+//! symlink cycles.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -355,6 +357,9 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             continue;
         };
+        if is_content_patcher_assets_i18n(&owner, i18n_dir) {
+            continue;
+        }
         if let Some(scanned) = mods.get_mut(&owner) {
             let unique_id = scanned.unique_id.clone();
             if blocked_state_ids.contains(&unique_id.to_lowercase()) {
@@ -1099,6 +1104,18 @@ fn nearest_manifest_owner(i18n_dir: &Path, manifest_dirs: &HashSet<PathBuf>) -> 
         current = dir.parent();
     }
     None
+}
+
+fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
+    i18n_dir
+        .strip_prefix(mod_dir)
+        .ok()
+        .and_then(Path::to_str)
+        .is_some_and(|relative| {
+            relative
+                .replace('\\', "/")
+                .eq_ignore_ascii_case("assets/i18n")
+        })
 }
 
 fn build_i18n_file(
@@ -1846,7 +1863,7 @@ mod tests {
             r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
         );
         write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
-        write(&mod_dir.join("assets/i18n/default.json"), "{ broken");
+        write(&mod_dir.join("optional/i18n/default.json"), "{ broken");
 
         let result = scan_mods(&root, "de", &root);
         assert_eq!(result.mod_count, 1);
@@ -1857,8 +1874,80 @@ mod tests {
         assert_eq!(skipped.package_id.as_deref(), Some("Mod"));
         assert_eq!(skipped.component_unique_id.as_deref(), Some("Author.Mod"));
         assert_eq!(skipped.component_name.as_deref(), Some("Mod"));
-        assert_eq!(skipped.relative_location, "Mod/assets/i18n/default.json");
+        assert_eq!(skipped.relative_location, "Mod/optional/i18n/default.json");
         assert!(skipped.rest_of_package_loaded);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn ignores_content_patcher_assets_i18n_but_keeps_other_nested_i18n() {
+        let root = crate::test_support::temp_dir("scanner-ignore-cp-assets-i18n");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(
+            &mod_dir.join("optional/i18n/default.json"),
+            r#"{"extra":"Nested component"}"#,
+        );
+        write(
+            &mod_dir.join("Assets/I18N/default.json"),
+            r#"{ 0: "Content Patcher data" }"#,
+        );
+        write(
+            &mod_dir.join("Assets/I18N/fr.json"),
+            r#"{ 0: "Données Content Patcher" }"#,
+        );
+        write(
+            &mod_dir.join("Assets/I18N/pt.json"),
+            r#"{ 0: "Dados do Content Patcher" }"#,
+        );
+
+        let result = scan_mods(&root, "de", &root);
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.file_count, 2);
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert!(result.skipped_components.is_empty());
+        assert_eq!(
+            result.mods[0]
+                .i18n_files
+                .iter()
+                .map(|file| file.relative_dir.as_str())
+                .collect::<Vec<_>>(),
+            vec!["i18n", "optional/i18n"]
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn does_not_ignore_i18n_owned_by_an_assets_child_mod() {
+        let root = crate::test_support::temp_dir("scanner-assets-child-owner");
+        let package = root.join("Package");
+        write(
+            &package.join("manifest.json"),
+            r#"{"Name":"Parent","UniqueID":"Author.Parent"}"#,
+        );
+        write(&package.join("i18n/default.json"), r#"{"parent":"Parent"}"#);
+        write(
+            &package.join("assets/manifest.json"),
+            r#"{"Name":"Child","UniqueID":"Author.Child"}"#,
+        );
+        write(
+            &package.join("assets/i18n/default.json"),
+            r#"{"child":"Child"}"#,
+        );
+
+        let result = scan_mods(&root, "de", &root);
+        assert_eq!(result.mod_count, 2);
+        let child = result
+            .mods
+            .iter()
+            .find(|candidate| candidate.unique_id == "Author.Child")
+            .expect("assets child mod should remain translatable");
+        assert_eq!(child.i18n_files.len(), 1);
+        assert_eq!(child.i18n_files[0].relative_dir, "i18n");
         std::fs::remove_dir_all(root).ok();
     }
 

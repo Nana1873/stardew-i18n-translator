@@ -98,6 +98,8 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - imports the selected target-language file when present;
 - accepts the relaxed JSON commonly found in real mods;
 - requires source and existing target files to be flat string objects;
+- silently ignores Content Patcher data under `assets/i18n`, which is not a
+  standard SMAPI translation target;
 - preserves source key order for later export;
 - compares the decoded English source inventory with the preceding successful
   scan of the same Mods folder and reports changed, added, and removed strings;
