@@ -94,11 +94,12 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
             "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
         ));
     }
-    if !result.warnings.is_empty() {
+    if !result.warnings.is_empty() || !result.skipped_components.is_empty() {
         log::warn!(
             target: "app",
-            "scan_mods({mods_path}): {} warning(s)",
-            result.warnings.len()
+            "scan_mods({mods_path}): {} warning(s), {} skipped component(s)",
+            result.warnings.len(),
+            result.skipped_components.len()
         );
     }
     log::info!(

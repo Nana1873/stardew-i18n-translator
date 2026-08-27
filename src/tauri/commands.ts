@@ -138,6 +138,7 @@ export interface ScannedMod {
 
 export interface ScanResult {
   mods: ScannedMod[];
+  /** Scanner diagnostics that did not themselves omit a component. */
   warnings: string[];
   /** Exact scanner units that were omitted. Unlike warnings, this is safe to count. */
   skippedComponents?: SkippedComponent[];

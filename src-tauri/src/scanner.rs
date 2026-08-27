@@ -75,6 +75,9 @@ pub struct ScannedMod {
 #[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
+    /// Scanner diagnostics that do not themselves represent an omitted
+    /// component. Component-specific failures belong in `skipped_components`
+    /// so the UI does not have to deduplicate free-form messages.
     pub warnings: Vec<String>,
     /// Components that were deliberately omitted from this scan. Unlike
     /// `warnings`, every entry corresponds to an actual skipped unit and is
@@ -317,7 +320,6 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                 mods.insert(dir.to_path_buf(), scanned);
             }
             Err(reason) => {
-                warnings.push(format!("Skipped {}: {reason}", manifest.display()));
                 skipped_components.push(SkippedComponent {
                     package_id: package_id_for(dir, mods_path),
                     component_unique_id: None,
@@ -395,10 +397,6 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                             scanned.i18n_files.push(file);
                         }
                         Err(error) => {
-                            warnings.push(format!(
-                                "Skipped i18n component {}: {error}",
-                                i18n_dir.display()
-                            ));
                             skipped_components.push(skipped_i18n_component(
                                 scanned,
                                 i18n_dir,
@@ -409,10 +407,6 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     }
                 }
                 Err(error) => {
-                    warnings.push(format!(
-                        "Skipped i18n component {}: {error}",
-                        i18n_dir.display()
-                    ));
                     skipped_components.push(skipped_i18n_component(
                         scanned,
                         i18n_dir,
@@ -453,10 +447,6 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             retained_mods.push(scanned);
             continue;
         }
-        warnings.push(format!(
-            "Skipped \"{}\": detected as a community language pack, not a translation target.",
-            scanned.name
-        ));
         skipped_components.push(SkippedComponent {
             package_id: Some(scanned.package_id.clone()),
             component_unique_id: Some(scanned.unique_id.clone()),
@@ -1509,14 +1499,7 @@ mod tests {
         let result = scan_mods(&root, "th", &root);
         let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, vec!["Normal"], "only the ordinary mod is listed");
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|w| w.contains("language pack") && w.contains("Stardew Valley - THAI")),
-            "expected a language-pack exclusion warning, got: {:?}",
-            result.warnings
-        );
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
         assert_eq!(result.skipped_components.len(), 1);
         assert_eq!(
             result.skipped_components[0].component_unique_id.as_deref(),
@@ -1555,13 +1538,17 @@ mod tests {
             &pkg.join("[FTM] RSV").join("manifest.json"),
             "{ \"Name\": \"[FTM] RSV\", \"UniqueID\": \"id.ftm\" }",
         );
-        // A malformed manifest -> skipped with a warning.
+        // A malformed manifest -> reported as one structured skip.
         write(&root.join("Broken").join("manifest.json"), "{ not json");
 
         let result = scan_mods(&root, "de", &root);
 
         assert_eq!(result.mod_count, 3, "only components with i18n are listed");
-        assert!(result.warnings.iter().any(|w| w.contains("Broken")));
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert!(result
+            .skipped_components
+            .iter()
+            .any(|skipped| skipped.relative_location == "Broken/manifest.json"));
         assert!(result
             .mods
             .iter()
@@ -1717,10 +1704,11 @@ mod tests {
 
         let german = scan_mods(&root, "de", &base.join("data"));
         assert!(german.mods.is_empty());
-        assert!(german.warnings.iter().any(|warning| {
-            warning.contains("Skipped i18n component")
-                && warning.contains("target file resolves outside")
-        }));
+        assert!(german.warnings.is_empty(), "{:?}", german.warnings);
+        assert!(german
+            .skipped_components
+            .iter()
+            .any(|skipped| { skipped.reason.contains("target file resolves outside") }));
 
         std::fs::remove_file(&german_link).unwrap();
         let portuguese_link = i18n.join("pt-BR.json");
@@ -1735,10 +1723,11 @@ mod tests {
 
         let portuguese = scan_mods(&root, "pt", &base.join("data"));
         assert!(portuguese.mods.is_empty());
-        assert!(portuguese.warnings.iter().any(|warning| {
-            warning.contains("Skipped i18n component")
-                && warning.contains("target file resolves outside")
-        }));
+        assert!(portuguese.warnings.is_empty(), "{:?}", portuguese.warnings);
+        assert!(portuguese
+            .skipped_components
+            .iter()
+            .any(|skipped| { skipped.reason.contains("target file resolves outside") }));
 
         std::fs::remove_dir_all(base).ok();
     }
@@ -1862,10 +1851,7 @@ mod tests {
         let result = scan_mods(&root, "de", &root);
         assert_eq!(result.mod_count, 1);
         assert_eq!(result.file_count, 1);
-        assert!(result
-            .warnings
-            .iter()
-            .any(|warning| warning.contains("assets")));
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
         assert_eq!(result.skipped_components.len(), 1);
         let skipped = &result.skipped_components[0];
         assert_eq!(skipped.package_id.as_deref(), Some("Mod"));
