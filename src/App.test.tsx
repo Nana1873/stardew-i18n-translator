@@ -429,14 +429,14 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     const overview = await screen.findByRole("main", { name: "Overview" });
-    expect(overview).toHaveTextContent("Recently edited");
+    expect(overview).toHaveTextContent("Recently opened");
     expect(screen.queryByText(/no mod has been opened/i)).toBeNull();
     const recentRow = within(overview)
       .getByRole("button", { name: "Test Mod" })
       .closest("tr");
     expect(recentRow).not.toBeNull();
-    expect(within(recentRow!).getByText("Unavailable")).toBeInTheDocument();
-    expect(within(recentRow!).queryByText(/ago$/)).toBeNull();
+    expect(within(recentRow!).getByText("1 min ago")).toBeInTheDocument();
+    expect(within(recentRow!).queryByText("Unavailable")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Continue Test Mod" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("save_settings", {
@@ -485,7 +485,7 @@ describe("App shell", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     expect(screen.getByRole("main", { name: "Overview" })).toHaveTextContent(
-      "Recently edited",
+      "Recently opened",
     );
     expect(
       screen.getByRole("button", { name: "Continue Test Mod" }),
@@ -513,7 +513,9 @@ describe("App shell", () => {
     );
     expect(localStorage.getItem("sit:lastOpened")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-    expect(screen.getByText(/no mod has been opened/i)).toBeInTheDocument();
+    expect(
+      screen.getByText("No recently opened mods yet."),
+    ).toBeInTheDocument();
   });
 
   it("starts only one automatic scan under React StrictMode", async () => {
@@ -3834,7 +3836,7 @@ describe("App shell", () => {
     ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
-    expect(await screen.findByText("Recently edited")).toBeInTheDocument();
+    expect(await screen.findByText("Recently opened")).toBeInTheDocument();
     expect(screen.queryByText("Needs attention")).toBeNull();
   });
 

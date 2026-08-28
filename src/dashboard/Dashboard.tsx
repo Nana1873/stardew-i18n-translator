@@ -45,6 +45,11 @@ interface StatusTooltipState {
 }
 
 const numberFormat = new Intl.NumberFormat("en-US");
+const activityDateFormat = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  year: "numeric",
+});
 
 function count(value: number): string {
   return numberFormat.format(value);
@@ -59,6 +64,18 @@ function scanAgeLabel(epochMs: number): string {
     return `scanned ${hours} ${hours === 1 ? "hour" : "hours"} ago`;
   const days = Math.round(hours / 24);
   return `scanned ${days} ${days === 1 ? "day" : "days"} ago`;
+}
+
+function lastOpenedLabel(epochMs: number): string {
+  const minutes = Math.max(0, Math.floor((Date.now() - epochMs) / 60_000));
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
+  if (hours < 48) return "Yesterday";
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} days ago`;
+  return activityDateFormat.format(new Date(epochMs));
 }
 
 export function Dashboard({
@@ -89,7 +106,7 @@ export function Dashboard({
     totalKeys > 0 ? Math.round((withText / totalKeys) * 100) : 0;
   const openPct = totalKeys > 0 ? Math.round((open / totalKeys) * 100) : 0;
   const allStatusesKnown =
-    withKeys.length > 0 && withKeys.every((mod) => mod.statusCounts != null);
+    scan != null && withKeys.every((mod) => mod.statusCounts != null);
   const reviewedCurrent = allStatusesKnown
     ? withKeys.reduce(
         (sum, mod) => sum + (mod.statusCounts?.translated ?? 0),
@@ -97,11 +114,13 @@ export function Dashboard({
       )
     : null;
   const reviewedPct =
-    reviewedCurrent != null && totalKeys > 0
-      ? Math.round((reviewedCurrent / totalKeys) * 100)
-      : null;
+    reviewedCurrent == null
+      ? null
+      : totalKeys > 0
+        ? Math.round((reviewedCurrent / totalKeys) * 100)
+        : 0;
   const recent = withKeys
-    .filter((mod) => lastOpened[mod.uniqueId] != null)
+    .filter((mod) => Number.isFinite(lastOpened[mod.uniqueId]))
     .sort((a, b) => lastOpened[b.uniqueId] - lastOpened[a.uniqueId])
     .slice(0, 4);
   const continueMod = recent[0] ?? withKeys[0] ?? null;
@@ -227,17 +246,24 @@ export function Dashboard({
         <button
           className="translator-overview-stat"
           type="button"
-          onClick={() => openFilter("translated")}
+          onClick={() =>
+            reviewedCurrent == null ? onScan() : openFilter("translated")
+          }
+          disabled={reviewedCurrent == null && !scanEnabled}
         >
           <span>Reviewed &amp; current</span>
           <strong>
             {reviewedCurrent == null
-              ? "Unavailable"
+              ? scan
+                ? "Scan again"
+                : "Unavailable"
               : `${count(reviewedCurrent)} · ${reviewedPct}%`}
           </strong>
           <small>
             {reviewedCurrent == null
-              ? "All-mod status aggregation is not available yet"
+              ? scan
+                ? "Run a scan to calculate current status"
+                : "Scan the Mods folder to calculate current status"
               : "Done for the current English source"}
           </small>
         </button>
@@ -325,17 +351,15 @@ export function Dashboard({
 
       <section className="translator-section">
         <div className="translator-section-head">
-          <h2 className="translator-heading">Recently edited</h2>
-          <div className="translator-kicker">
-            Resume recently opened mods · edit time unavailable
-          </div>
+          <h2 className="translator-heading">Recently opened</h2>
+          <div className="translator-kicker">Resume where you left off</div>
         </div>
         <table className="translator-overview-table">
           <thead>
             <tr>
               <th>Mod</th>
               <th>Progress</th>
-              <th>Last activity</th>
+              <th>Last opened</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -346,6 +370,7 @@ export function Dashboard({
                   key={mod.uniqueId}
                   mod={mod}
                   targetLanguage={targetLanguage}
+                  lastOpenedAt={lastOpened[mod.uniqueId]}
                   onOpen={() => onOpenMod(mod.uniqueId)}
                   onShowStatusHelp={showStatusHelp}
                   onHideStatusHelp={() => setStatusTooltip(null)}
@@ -355,8 +380,7 @@ export function Dashboard({
               <tr>
                 <td colSpan={4}>
                   <span className="translator-kicker">
-                    Unavailable · no mod has been opened in this portable
-                    workspace yet.
+                    No recently opened mods yet.
                   </span>
                 </td>
               </tr>
@@ -382,12 +406,14 @@ export function Dashboard({
 function RecentRow({
   mod,
   targetLanguage,
+  lastOpenedAt,
   onOpen,
   onShowStatusHelp,
   onHideStatusHelp,
 }: {
   mod: ScannedMod;
   targetLanguage: string;
+  lastOpenedAt: number;
   onOpen: () => void;
   onShowStatusHelp: (target: HTMLElement, text: string) => void;
   onHideStatusHelp: () => void;
@@ -433,7 +459,14 @@ function RecentRow({
       <td>
         {count(mod.translatedKeys)} / {count(mod.totalKeys)}
       </td>
-      <td>Unavailable</td>
+      <td>
+        <time
+          dateTime={new Date(lastOpenedAt).toISOString()}
+          title={`Opened ${new Date(lastOpenedAt).toLocaleString("en-US")}`}
+        >
+          {lastOpenedLabel(lastOpenedAt)}
+        </time>
+      </td>
       <td>
         <span
           className={status.className}

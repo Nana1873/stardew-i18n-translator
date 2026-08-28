@@ -83,9 +83,10 @@ community-language-pack exclusions do not make a scan incomplete.
 
 The app opens on **Overview**. It summarizes the latest real scan, lets you
 resume recently opened mods, links into useful all-mod filters, and shows the
-latest successful export path from the current app session. When the backend
-does not provide a value, the UI says **Unavailable** instead of inventing a
-count, timestamp, change delta, or history entry.
+latest successful export path from the current app session. Current string
+status totals come from the scan, and each mod's last-opened time is kept in
+portable settings across sessions. Values that genuinely do not exist, such as
+a current-session export before the first export, are not invented.
 
 **Workspace** places the scanned mod and component list on the left and the
 virtualized string table beside it. You can work on one mod or search across all

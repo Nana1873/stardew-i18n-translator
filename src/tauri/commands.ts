@@ -130,9 +130,8 @@ export interface ScannedMod {
   /** 0–1. */
   progress: number;
   status: ModStatus;
-  /** Per-status string counts. Not part of the scan payload — filled
-   * client-side once the mod's rows are loaded; drives the needs-review
-   * header tail and the status-filter counts. */
+  /** Current per-status counts from the scan payload. Kept in sync
+   * client-side after rows change; optional only for incomplete legacy data. */
   statusCounts?: Record<StringStatus, number>;
 }
 

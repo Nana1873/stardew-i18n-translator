@@ -132,8 +132,11 @@ in the primary navigation.
 Overview uses only real scanner, portable-settings, and current-session result
 data. It shows scan totals and diagnostics, recently opened mods, useful all-mod
 filter shortcuts, and the latest successful export path when those values
-exist. Missing aggregate counts, timestamps, change deltas, or history are shown
-as **Unavailable**; the production UI never fills them with demo data.
+exist. The scanner supplies current per-status counts for every loaded mod, and
+portable settings retain each mod's last-opened timestamp across sessions.
+Genuinely absent data, such as an export from the current session or unavailable
+change deltas after an incomplete scan, is shown as unavailable; the production
+UI never fills it with demo data.
 
 Workspace is the two-panel translation view:
 
@@ -292,8 +295,8 @@ All application state is portable and stored beside the executable:
 - `data/language-state/<lang>/`
 - `data/logs/`
 
-Overview recency is part of the portable settings state; the app does not keep
-workflow state in browser-local storage.
+Overview's last-opened timestamps are part of the portable settings state; the
+app does not keep workflow state in browser-local storage.
 
 Workspace search values, This mod/All mods scope, status and Validation issues
 filters, sort order, selected mod, mod-pane width, and table-column widths are

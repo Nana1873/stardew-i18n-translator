@@ -156,8 +156,9 @@ describe("Dashboard", () => {
     expect(latestScan).not.toHaveTextContent("deltas unavailable");
   });
 
-  it("uses portable recency only for navigation", () => {
+  it("shows portable last-opened activity and uses it for navigation", () => {
     const openMod = vi.fn();
+    const lastOpenedAt = Date.now() - 12 * 60_000;
     render(
       <Dashboard
         scan={sampleScan()}
@@ -168,7 +169,7 @@ describe("Dashboard", () => {
         scanEnabled
         onOpenMod={openMod}
         onBrowse={vi.fn()}
-        lastOpened={{ "sample.mod": Date.now() }}
+        lastOpened={{ "sample.mod": lastOpenedAt }}
       />,
     );
 
@@ -177,8 +178,9 @@ describe("Dashboard", () => {
       within(recentTable).getByRole("button", { name: "Sample Mod" }),
     );
     expect(openMod).toHaveBeenCalledWith("sample.mod");
-    expect(within(recentTable).getByText("Unavailable")).toBeInTheDocument();
-    expect(within(recentTable).queryByText(/ago$/)).toBeNull();
+    expect(screen.getByText("Recently opened")).toBeInTheDocument();
+    expect(within(recentTable).getByText("12 min ago")).toBeInTheDocument();
+    expect(within(recentTable).queryByText("Unavailable")).toBeNull();
     const recentStatus = within(recentTable).getByText("1 changed");
     expect(recentStatus).toHaveAttribute(
       "aria-description",
@@ -193,9 +195,10 @@ describe("Dashboard", () => {
     expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
   });
 
-  it("does not invent all-mod status or result history", () => {
+  it("offers a rescan for incomplete legacy status data", () => {
     const withoutStatusCounts = sampleMod({ statusCounts: undefined });
     const scanWithoutStructuredSkips = sampleScan([withoutStatusCounts]);
+    const rescan = vi.fn();
     delete scanWithoutStructuredSkips.skippedComponents;
     render(
       <Dashboard
@@ -203,7 +206,7 @@ describe("Dashboard", () => {
         scanning={false}
         lastScanAt={null}
         languageLine="German (de)"
-        onScan={vi.fn()}
+        onScan={rescan}
         scanEnabled
         onOpenMod={vi.fn()}
         onBrowse={vi.fn()}
@@ -213,7 +216,12 @@ describe("Dashboard", () => {
 
     expect(
       screen.getByRole("button", { name: /Reviewed & current/ }),
-    ).toHaveTextContent("Unavailable");
+    ).toHaveTextContent("Scan again");
+    expect(
+      screen.getByText("Run a scan to calculate current status"),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Reviewed & current/ }));
+    expect(rescan).toHaveBeenCalledOnce();
     expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(
       screen.getByText(/Last export · Unavailable in this session/),
@@ -225,5 +233,8 @@ describe("Dashboard", () => {
       screen.getByRole("button", { name: "Show in folder" }),
     ).toBeDisabled();
     expect(screen.getByText(/scan time unavailable/)).toBeInTheDocument();
+    expect(
+      screen.getByText("No recently opened mods yet."),
+    ).toBeInTheDocument();
   });
 });
