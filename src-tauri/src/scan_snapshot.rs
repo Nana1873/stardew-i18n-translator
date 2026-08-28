@@ -1,7 +1,7 @@
 //! Portable English-source inventory used for previous-scan deltas.
 //!
 //! This is deliberately one small derived snapshot, not a scan-history or job
-//! system. It stores hashes only and is rebuilt after every successful scan.
+//! system. It stores hashes only and is rebuilt after every complete scan.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
@@ -27,12 +27,23 @@ struct SourceSnapshot {
 
 /// Compare the completed scan to the immediately preceding scan of the same
 /// Mods root, then replace the rebuildable hash snapshot. A first scan begins
-/// tracking with zero observed changes.
+/// tracking with zero observed changes. A scan that omitted a component needing
+/// attention is incomplete, so it must neither report deltas nor replace the
+/// last valid snapshot. Expected exclusions remain eligible to update it.
 pub(crate) fn apply(
     result: &mut ScanResult,
     mods_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
+    if result
+        .skipped_components
+        .iter()
+        .any(|component| component.requires_attention)
+    {
+        result.source_deltas = None;
+        return Ok(());
+    }
+
     let mutex = SNAPSHOT_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = mutex
         .lock()
@@ -255,6 +266,76 @@ mod tests {
         assert_eq!(deltas.strings_removed, 1);
         assert_eq!(deltas.changed_sources[0].key, "change");
         assert_eq!(deltas.added_strings[0].key, "add");
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn incomplete_scan_preserves_the_last_valid_snapshot() {
+        let root = crate::test_support::temp_dir("scan-snapshot-incomplete");
+        let data = root.join("data");
+        let mods = fixture(
+            &root,
+            "Example.Mod",
+            r#"{"keep":"Hello","change":"Before","remove":"Gone"}"#,
+            "{}",
+        );
+
+        scan_with_snapshot(&mods, &data, "de");
+        let baseline_path = snapshot_path(&data);
+        let baseline = std::fs::read(&baseline_path).unwrap();
+
+        write(&mods.join("Example/i18n/default.json"), r#"{"broken":"#);
+        let incomplete = scan_with_snapshot(&mods, &data, "de");
+        assert!(incomplete
+            .skipped_components
+            .iter()
+            .any(|component| component.requires_attention));
+        assert_eq!(incomplete.source_deltas, None);
+        assert_eq!(std::fs::read(&baseline_path).unwrap(), baseline);
+
+        write(
+            &mods.join("Example/i18n/default.json"),
+            r#"{"keep":"Hello","change":"After","add":"New"}"#,
+        );
+        let repaired = scan_with_snapshot(&mods, &data, "de");
+        let deltas = repaired.source_deltas.unwrap();
+        assert_eq!(deltas.sources_changed, 1);
+        assert_eq!(deltas.strings_added, 1);
+        assert_eq!(deltas.strings_removed, 1);
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn expected_exclusions_still_advance_the_snapshot() {
+        let root = crate::test_support::temp_dir("scan-snapshot-expected-exclusion");
+        let data = root.join("data");
+        let mods = fixture(&root, "Example.Mod", r#"{"greeting":"Before"}"#, "{}");
+
+        let expected_exclusion = crate::scanner::SkippedComponent {
+            package_id: Some("Example.LanguagePack".to_string()),
+            component_unique_id: Some("Example.LanguagePack".to_string()),
+            component_name: Some("Example Language Pack".to_string()),
+            relative_location: "Example Language Pack".to_string(),
+            reason: "Detected as a community language pack, not a translation target.".to_string(),
+            requires_attention: false,
+            rest_of_package_loaded: false,
+        };
+
+        let mut first = crate::scanner::scan_mods(&mods, "de", &data);
+        first.skipped_components.push(expected_exclusion.clone());
+        apply(&mut first, &mods, &data).unwrap();
+        assert_eq!(first.source_deltas, Some(ScanDeltas::default()));
+
+        write(
+            &mods.join("Example/i18n/default.json"),
+            r#"{"greeting":"After"}"#,
+        );
+        let mut second = crate::scanner::scan_mods(&mods, "de", &data);
+        second.skipped_components.push(expected_exclusion);
+        apply(&mut second, &mods, &data).unwrap();
+        assert_eq!(second.source_deltas.unwrap().sources_changed, 1);
 
         std::fs::remove_dir_all(root).ok();
     }

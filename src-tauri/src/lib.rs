@@ -417,10 +417,13 @@ fn export_mod(
             details: vec![
                 operation_detail("Component", &mod_unique_id),
                 operation_detail("Strings written", result.total_written_keys),
-                operation_detail("Untranslated", result.total_untranslated),
-                operation_detail("Changed source", result.total_outdated),
-                operation_detail("Needs review", result.total_review_needed),
-                operation_detail("Orphan keys removed", result.total_orphan_keys),
+                operation_detail("Open strings omitted", result.total_untranslated),
+                operation_detail("Changed strings included", result.total_outdated),
+                operation_detail("Review strings included", result.total_review_needed),
+                operation_detail(
+                    "Entries without English source omitted",
+                    result.total_orphan_keys,
+                ),
             ],
         },
     );
@@ -495,10 +498,13 @@ fn export_all_mods(
             details: vec![
                 operation_detail("Components changed", result.mods_changed),
                 operation_detail("Strings written", result.total_written_keys),
-                operation_detail("Untranslated", result.total_untranslated),
-                operation_detail("Changed source", result.total_outdated),
-                operation_detail("Needs review", result.total_review_needed),
-                operation_detail("Orphan keys removed", result.total_orphan_keys),
+                operation_detail("Open strings omitted", result.total_untranslated),
+                operation_detail("Changed strings included", result.total_outdated),
+                operation_detail("Review strings included", result.total_review_needed),
+                operation_detail(
+                    "Entries without English source omitted",
+                    result.total_orphan_keys,
+                ),
             ],
         },
     );
@@ -1026,10 +1032,25 @@ fn glossary_status(
 /// the "Test connection" probe: success means the server is reachable.
 #[tauri::command]
 async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
-    llm::validate_base_url(&base_url)?;
-    llm::list_models(&base_url)
-        .await
-        .inspect_err(|error| log::error!(target: "app", "llm_models({base_url}) failed: {error}"))
+    if let Err(error) = llm::validate_base_url(&base_url) {
+        log::warn!(
+            target: "ai_run",
+            "{}",
+            local_ai_model_probe_diagnostic("configuration")
+        );
+        return Err(error);
+    }
+    match llm::list_models(&base_url).await {
+        Ok(models) => Ok(models),
+        Err(error) => {
+            log::warn!(
+                target: "ai_run",
+                "{}",
+                local_ai_model_probe_diagnostic(local_ai_error_category(&error))
+            );
+            Err(error)
+        }
+    }
 }
 
 /// Translate one source string via the configured local LLM.
@@ -1218,6 +1239,130 @@ fn provider_failure_category(failure: &ai::ProviderFailure) -> &'static str {
     }
 }
 
+fn local_ai_error_category(error: &str) -> &'static str {
+    let normalized = error.to_ascii_lowercase();
+    if normalized.contains("timed out") || normalized.contains("timeout") {
+        "timeout"
+    } else if normalized.contains("too large") {
+        "responseTooLarge"
+    } else if normalized.contains("not valid utf-8")
+        || normalized.contains("could not read the server response")
+    {
+        "invalidResponse"
+    } else if normalized.starts_with("server returned ") {
+        "httpStatus"
+    } else if normalized.contains("could not reach ") {
+        "unreachable"
+    } else if normalized.contains("could not create http client") {
+        "clientSetup"
+    } else if normalized.contains("qwen3 thinking model supports only thinking mode") {
+        "configuration"
+    } else {
+        "provider"
+    }
+}
+
+fn local_ai_error_is_systemic(error_category: &str) -> bool {
+    matches!(
+        error_category,
+        "unreachable" | "httpStatus" | "clientSetup" | "configuration"
+    )
+}
+
+fn local_ai_model_probe_diagnostic(error_category: &'static str) -> serde_json::Value {
+    serde_json::json!({
+        "event": "model_probe_failed",
+        "engine": "local",
+        "errorCategory": error_category,
+    })
+}
+
+#[derive(Debug)]
+struct LocalAiItemFailure {
+    identity: ai::AiStringIdentity,
+    cause: String,
+}
+
+fn bounded_single_line(value: &str, max_chars: usize) -> String {
+    let mut bounded = String::new();
+    let mut char_count = 0;
+    let mut pending_space = false;
+    let mut truncated = false;
+    for character in value.chars() {
+        if character.is_whitespace() {
+            pending_space = char_count > 0;
+            continue;
+        }
+        if pending_space {
+            if char_count == max_chars {
+                truncated = true;
+                break;
+            }
+            bounded.push(' ');
+            char_count += 1;
+            pending_space = false;
+        }
+        if char_count == max_chars {
+            truncated = true;
+            break;
+        }
+        bounded.push(character);
+        char_count += 1;
+    }
+    if truncated {
+        bounded.push_str("...");
+    }
+    bounded
+}
+
+fn local_ai_failure_summary(failures: &[LocalAiItemFailure]) -> Option<String> {
+    const MAX_DETAILS: usize = 8;
+    if failures.is_empty() {
+        return None;
+    }
+    let detail_count = failures.len().min(MAX_DETAILS);
+    let details = failures
+        .iter()
+        .take(detail_count)
+        .map(|failure| {
+            let identity = format!(
+                "{} / {} / {}",
+                bounded_single_line(&failure.identity.mod_unique_id, 80),
+                bounded_single_line(&failure.identity.relative_dir, 80),
+                bounded_single_line(&failure.identity.key, 120)
+            );
+            format!("{}: {}", identity, bounded_single_line(&failure.cause, 320))
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let omitted = failures.len().saturating_sub(detail_count);
+    let omitted_note = if omitted == 0 {
+        String::new()
+    } else {
+        format!("; {omitted} additional failure(s) omitted from this summary")
+    };
+    let string_label = if failures.len() == 1 {
+        "string"
+    } else {
+        "strings"
+    };
+    Some(format!(
+        "{} selected {string_label} failed in Local AI. Any completed suggestions remain saved in Review. Failed strings: {details}{omitted_note}.",
+        failures.len(),
+    ))
+}
+
+fn combine_local_ai_errors(
+    terminal_error: Option<String>,
+    item_failures: &[LocalAiItemFailure],
+) -> Option<String> {
+    match (terminal_error, local_ai_failure_summary(item_failures)) {
+        (Some(terminal), Some(summary)) => Some(format!("{terminal} {summary}")),
+        (Some(terminal), None) => Some(terminal),
+        (None, summary) => summary,
+    }
+}
+
 fn emit_ai_progress(app: &AppHandle, progress: &AiRunProgress) {
     if let Err(error) = app.emit("ai-run-progress", progress.clone()) {
         // Progress is convenience state only. The final command result remains
@@ -1253,6 +1398,12 @@ fn ai_run_result(
     error: Option<String>,
 ) -> ai::AiRunResult {
     let (engine, model, reasoning) = provider;
+    let completed = suggestions.len();
+    let outcome = if outcome == ai::AiRunOutcome::Error && completed > 0 {
+        ai::AiRunOutcome::Complete
+    } else {
+        outcome
+    };
     ai::AiRunResult {
         run_id: request.run_id.clone(),
         engine: engine.to_string(),
@@ -1260,7 +1411,7 @@ fn ai_run_result(
         reasoning,
         scope: request.scope,
         requested,
-        completed: suggestions.len(),
+        completed,
         outcome,
         error,
         suggestions,
@@ -1301,7 +1452,7 @@ fn stage_ai_suggestions(
                     && (row.status == "untranslated" || row.status == "outdated")
             })
             .ok_or_else(|| {
-                "A string changed while AI translation was running. Already completed suggestions remain saved in Review."
+                "A string changed while AI translation was running. Any completed suggestions remain saved in Review."
                     .to_string()
             })?;
         let key = translations::entry_key(&item.identity.relative_dir, &item.identity.key);
@@ -1320,7 +1471,7 @@ fn stage_ai_suggestions(
         )? == translations::ConditionalSaveOutcome::Stale
         {
             return Err(
-                "A string changed while AI translation was running. Already completed suggestions remain saved in Review."
+                "A string changed while AI translation was running. Any completed suggestions remain saved in Review."
                     .to_string(),
             );
         }
@@ -1328,6 +1479,17 @@ fn stage_ai_suggestions(
         staged.push(suggestion);
     }
     Ok(())
+}
+
+fn ai_operation_outcome(result: &ai::AiRunResult) -> operation_history::OperationOutcome {
+    match result.outcome {
+        ai::AiRunOutcome::Complete if result.error.is_none() => {
+            operation_history::OperationOutcome::Success
+        }
+        ai::AiRunOutcome::Complete => operation_history::OperationOutcome::Warning,
+        ai::AiRunOutcome::Cancelled => operation_history::OperationOutcome::Cancelled,
+        ai::AiRunOutcome::Error => operation_history::OperationOutcome::Failed,
+    }
 }
 
 fn remember_ai_run(
@@ -1344,6 +1506,10 @@ fn remember_ai_run(
         ai::AiScope::Selected => "Selected strings",
     };
     let summary = match result.outcome {
+        ai::AiRunOutcome::Complete if result.error.is_some() => format!(
+            "{} of {} suggestions saved in Review.",
+            result.completed, result.requested
+        ),
         ai::AiRunOutcome::Complete => {
             format!("{} suggestions staged for review.", result.completed)
         }
@@ -1352,7 +1518,7 @@ fn remember_ai_run(
             result.completed, result.requested
         ),
         ai::AiRunOutcome::Error => format!(
-            "Stopped after {} of {} suggestions.",
+            "{} of {} suggestions saved in Review.",
             result.completed, result.requested
         ),
     };
@@ -1360,14 +1526,7 @@ fn remember_ai_run(
         history,
         operation_history::CompletedOperation {
             kind: operation_history::OperationKind::Ai,
-            outcome: match result.outcome {
-                ai::AiRunOutcome::Complete if result.error.is_none() => {
-                    operation_history::OperationOutcome::Success
-                }
-                ai::AiRunOutcome::Complete => operation_history::OperationOutcome::Warning,
-                ai::AiRunOutcome::Cancelled => operation_history::OperationOutcome::Cancelled,
-                ai::AiRunOutcome::Error => operation_history::OperationOutcome::Failed,
-            },
+            outcome: ai_operation_outcome(result),
             title: format!("{engine_label} translation run"),
             summary,
             item_count: result.completed,
@@ -1421,7 +1580,8 @@ async fn translate_with_local_ai(
     );
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
-    let mut error = None;
+    let mut terminal_error = None;
+    let mut item_failures = Vec::new();
     let mut progress = AiRunProgress {
         run_id: request.run_id.clone(),
         phase: "preparing",
@@ -1516,7 +1676,7 @@ async fn translate_with_local_ai(
                             })
                         );
                         outcome = ai::AiRunOutcome::Error;
-                        error = Some(cause);
+                        terminal_error = Some(cause);
                         break;
                     }
                     log::info!(
@@ -1540,11 +1700,13 @@ async fn translate_with_local_ai(
                             "runId": log_run_id,
                             "batchIndex": index + 1,
                             "outcome": "invalidResponse",
+                            "errorCategory": "invalidResponse",
                         })
                     );
-                    outcome = ai::AiRunOutcome::Error;
-                    error = Some(cause);
-                    break;
+                    item_failures.push(LocalAiItemFailure {
+                        identity: item.identity.clone(),
+                        cause,
+                    });
                 }
             },
             Err(ai::ProviderFailure::Cancelled) => {
@@ -1566,6 +1728,7 @@ async fn translate_with_local_ai(
                 | ai::ProviderFailure::Transient(cause)
                 | ai::ProviderFailure::InvalidResponse(cause),
             ) => {
+                let error_category = local_ai_error_category(&cause);
                 log::info!(
                     target: "ai_run",
                     "{}",
@@ -1574,15 +1737,25 @@ async fn translate_with_local_ai(
                         "runId": log_run_id,
                         "batchIndex": index + 1,
                         "outcome": "providerError",
+                        "errorCategory": error_category,
                     })
                 );
-                outcome = ai::AiRunOutcome::Error;
-                error = Some(cause);
-                break;
+                item_failures.push(LocalAiItemFailure {
+                    identity: item.identity.clone(),
+                    cause,
+                });
+                if local_ai_error_is_systemic(error_category) {
+                    outcome = ai::AiRunOutcome::Error;
+                    break;
+                }
             }
         }
     }
+    if outcome == ai::AiRunOutcome::Complete && !item_failures.is_empty() {
+        outcome = ai::AiRunOutcome::Error;
+    }
     outcome = lease.finish(outcome)?;
+    let error = combine_local_ai_errors(terminal_error, &item_failures);
     let result = ai_run_result(
         &request,
         prepared.len(),
@@ -1600,6 +1773,7 @@ async fn translate_with_local_ai(
             "engine": "local",
             "completed": result.completed,
             "total": result.requested,
+            "failed": item_failures.len(),
             "outcome": result.outcome,
             "durationMs": u64::try_from(run_started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
         })
@@ -2562,6 +2736,86 @@ mod ai_run_contract_tests {
     }
 
     #[test]
+    fn local_ai_probe_diagnostics_are_categorized_without_provider_details() {
+        let raw_error = "Could not reach http://localhost:11434/v1/models (private detail)";
+        let diagnostic =
+            local_ai_model_probe_diagnostic(local_ai_error_category(raw_error)).to_string();
+
+        assert!(diagnostic.contains(r#""event":"model_probe_failed""#));
+        assert!(diagnostic.contains(r#""errorCategory":"unreachable""#));
+        assert!(!diagnostic.contains("localhost"));
+        assert!(!diagnostic.contains("private detail"));
+        assert_eq!(
+            local_ai_error_category("The model timed out while waiting."),
+            "timeout"
+        );
+        assert_eq!(
+            local_ai_error_category("Server returned 503 for a local endpoint."),
+            "httpStatus"
+        );
+        assert_eq!(
+            local_ai_error_category("The server response is too large."),
+            "responseTooLarge"
+        );
+    }
+
+    #[test]
+    fn local_ai_stops_only_for_clearly_systemic_request_failures() {
+        for category in ["unreachable", "httpStatus", "clientSetup", "configuration"] {
+            assert!(local_ai_error_is_systemic(category), "{category}");
+        }
+        for category in ["invalidResponse", "responseTooLarge", "timeout", "provider"] {
+            assert!(!local_ai_error_is_systemic(category), "{category}");
+        }
+    }
+
+    #[test]
+    fn local_ai_failure_summary_collects_ids_and_errors_without_unbounded_output() {
+        let failures = vec![
+            LocalAiItemFailure {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "Example.Mod".to_string(),
+                    relative_dir: "i18n".to_string(),
+                    key: "dialogue.first".to_string(),
+                },
+                cause: "Permanent provider\nerror".to_string(),
+            },
+            LocalAiItemFailure {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "Example.Mod".to_string(),
+                    relative_dir: "assets/i18n".to_string(),
+                    key: "dialogue.second".to_string(),
+                },
+                cause: "Invalid response".to_string(),
+            },
+        ];
+
+        let summary = local_ai_failure_summary(&failures).unwrap();
+        assert!(summary.contains("2 selected strings failed"));
+        assert!(summary.contains("Any completed suggestions remain saved in Review"));
+        assert!(!summary.contains("Completed suggestions remain saved in Review"));
+        assert!(summary.contains("Example.Mod / i18n / dialogue.first"));
+        assert!(summary.contains("Permanent provider error"));
+        assert!(summary.contains("Example.Mod / assets/i18n / dialogue.second"));
+        assert!(summary.contains("Invalid response"));
+
+        let many_failures = (0..10)
+            .map(|index| LocalAiItemFailure {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "Example.Mod".to_string(),
+                    relative_dir: "i18n".to_string(),
+                    key: format!("key.{index}"),
+                },
+                cause: "failed".repeat(100),
+            })
+            .collect::<Vec<_>>();
+        let bounded = local_ai_failure_summary(&many_failures).unwrap();
+        assert!(bounded.contains("10 selected strings failed"));
+        assert!(bounded.contains("2 additional failure(s) omitted"));
+        assert!(bounded.len() < 4_000);
+    }
+
+    #[test]
     fn progress_contract_exposes_saved_count_phase_batch_recovery_and_usage() {
         let progress = AiRunProgress {
             run_id: "run-progress".to_string(),
@@ -2595,7 +2849,7 @@ mod ai_run_contract_tests {
     }
 
     #[test]
-    fn failed_run_reports_resolved_count_and_keeps_completed_suggestions() {
+    fn partial_failed_run_is_completed_with_issues_and_keeps_saved_suggestions() {
         let request = ai::AiTranslationRequest {
             run_id: "run-partial".to_string(),
             scope: ai::AiScope::Selected,
@@ -2631,10 +2885,29 @@ mod ai_run_contract_tests {
 
         assert_eq!(result.requested, 3);
         assert_eq!(result.completed, 1);
-        assert_eq!(result.outcome, ai::AiRunOutcome::Error);
+        assert_eq!(result.outcome, ai::AiRunOutcome::Complete);
         assert_eq!(result.suggestions[0].identity, identity);
         assert_eq!(result.suggestions[0].status, "review-needed");
         assert!(result.error.is_some());
+        assert_eq!(
+            ai_operation_outcome(&result),
+            operation_history::OperationOutcome::Warning
+        );
+
+        let failed = ai_run_result(
+            &request,
+            3,
+            ("codex", "Codex default".to_string(), "medium".to_string()),
+            Vec::new(),
+            ai::AiRunOutcome::Error,
+            Some("provider stopped before saving".to_string()),
+        );
+        assert_eq!(failed.completed, 0);
+        assert_eq!(failed.outcome, ai::AiRunOutcome::Error);
+        assert_eq!(
+            ai_operation_outcome(&failed),
+            operation_history::OperationOutcome::Failed
+        );
     }
 
     #[test]

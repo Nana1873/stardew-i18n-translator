@@ -86,10 +86,15 @@ pub struct ScanResult {
     /// safe to count and display in the scan result UI.
     pub skipped_components: Vec<SkippedComponent>,
     pub extra_keys: Vec<ExtraKeyDiagnostic>,
+    /// Distinct top-level packages with at least one loaded translatable
+    /// component.
     pub mod_count: usize,
+    /// Loaded translatable i18n files across every component.
     pub file_count: usize,
-    /// English-source changes observed since the preceding successful scan of
-    /// this Mods folder. `None` is reserved for a snapshot persistence error.
+    /// English-source changes observed since the preceding complete scan of
+    /// this Mods folder. `None` means comparison was unavailable because this
+    /// scan omitted a component needing attention or snapshot persistence
+    /// failed.
     pub source_deltas: Option<ScanDeltas>,
 }
 
@@ -122,6 +127,10 @@ pub struct SkippedComponent {
     /// personal path.
     pub relative_location: String,
     pub reason: String,
+    /// False for an intentional, expected exclusion such as an installed
+    /// community language pack. The UI keeps those informational and reserves
+    /// warning treatment for components that need attention.
+    pub requires_attention: bool,
     /// True when another real translation component from this package remains
     /// available in the final scan result.
     pub rest_of_package_loaded: bool,
@@ -328,6 +337,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     component_name: None,
                     relative_location: safe_relative_location(manifest, mods_path),
                     reason: safe_skip_reason(&reason, mods_path),
+                    requires_attention: true,
                     rest_of_package_loaded: false,
                 });
             }
@@ -458,6 +468,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             component_name: Some(scanned.name.clone()),
             relative_location: safe_relative_location(Path::new(&scanned.folder_path), mods_path),
             reason: "Detected as a community language pack, not a translation target.".to_string(),
+            requires_attention: false,
             rest_of_package_loaded: false,
         });
     }
@@ -474,9 +485,10 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             .is_some_and(|package_id| loaded_packages.contains(package_id));
     }
 
+    let mod_count = loaded_packages.len();
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
-        mod_count: result_mods.len(),
+        mod_count,
         file_count,
         mods: result_mods,
         warnings,
@@ -498,6 +510,7 @@ fn skipped_i18n_component(
         component_name: Some(scanned.name.clone()),
         relative_location: safe_relative_location(&i18n_dir.join("default.json"), mods_path),
         reason,
+        requires_attention: true,
         rest_of_package_loaded: false,
     }
 }
@@ -1486,7 +1499,8 @@ mod tests {
     fn excludes_community_language_packs_from_scan() {
         // A community language pack ships its own i18n (config strings in its
         // language). It must be excluded from the translatable list and
-        // surfaced as a warning, while ordinary mods still list normally.
+        // surfaced as expected information, while ordinary mods still list
+        // normally.
         let root = crate::test_support::temp_dir("scan-langpack");
         let normal = root.join("Normal");
         write(
@@ -1526,6 +1540,7 @@ mod tests {
             result.skipped_components[0].relative_location,
             "Stardew Valley - THAI"
         );
+        assert!(!result.skipped_components[0].requires_attention);
         assert!(!result.skipped_components[0].rest_of_package_loaded);
 
         std::fs::remove_dir_all(&root).ok();
@@ -1560,7 +1575,13 @@ mod tests {
 
         let result = scan_mods(&root, "de", &root);
 
-        assert_eq!(result.mod_count, 3, "only components with i18n are listed");
+        assert_eq!(result.mod_count, 1, "one top-level package is loaded");
+        assert_eq!(result.file_count, 3, "each component i18n file is counted");
+        assert_eq!(
+            result.mods.len(),
+            3,
+            "all translatable components are listed"
+        );
         assert!(result.warnings.is_empty(), "{:?}", result.warnings);
         assert!(result
             .skipped_components
@@ -1940,7 +1961,9 @@ mod tests {
         );
 
         let result = scan_mods(&root, "de", &root);
-        assert_eq!(result.mod_count, 2);
+        assert_eq!(result.mod_count, 1, "parent and child share one package");
+        assert_eq!(result.file_count, 2);
+        assert_eq!(result.mods.len(), 2, "both components remain available");
         let child = result
             .mods
             .iter()
