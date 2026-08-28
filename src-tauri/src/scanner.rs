@@ -46,6 +46,33 @@ pub struct ScannedI18nFile {
     pub(crate) source_hashes: Vec<SourceKeyHash>,
 }
 
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct StatusCounts {
+    pub untranslated: usize,
+    pub translated: usize,
+    pub outdated: usize,
+    #[serde(rename = "review-needed")]
+    pub review_needed: usize,
+}
+
+impl StatusCounts {
+    fn record(&mut self, status: &str) {
+        match status {
+            "translated" => self.translated += 1,
+            "outdated" => self.outdated += 1,
+            "review-needed" => self.review_needed += 1,
+            _ => self.untranslated += 1,
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.untranslated += other.untranslated;
+        self.translated += other.translated;
+        self.outdated += other.outdated;
+        self.review_needed += other.review_needed;
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct SourceKeyHash {
     pub key: String,
@@ -68,6 +95,8 @@ pub struct ScannedMod {
     pub translated_keys: usize,
     /// Unreviewed AI suggestions across all i18n files (dashboard queue).
     pub review_needed: usize,
+    /// Current per-status string counts across all i18n files.
+    pub status_counts: StatusCounts,
     pub progress: f64,
     /// "none" (no keys) | "untranslated" (some missing) | "translated" (all present).
     pub status: String,
@@ -398,7 +427,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                 }
             };
             match build_i18n_file(&owner, i18n_dir, mods_path, target_lang, state) {
-                Ok(file) => {
+                Ok((file, status_counts)) => {
                     let diagnostics = extra_target_keys(
                         &scanned.name,
                         &file.relative_dir,
@@ -409,6 +438,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     match diagnostics {
                         Ok(diagnostics) => {
                             extra_keys.extend(diagnostics);
+                            scanned.status_counts.merge(&status_counts);
                             scanned.i18n_files.push(file);
                         }
                         Err(error) => {
@@ -592,6 +622,7 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         total_keys: 0,
         translated_keys: 0,
         review_needed: 0,
+        status_counts: StatusCounts::default(),
         progress: 0.0,
         status: String::new(),
     })
@@ -977,7 +1008,9 @@ fn count_keys(
     relative_dir: &str,
 ) -> (usize, usize, usize) {
     inspect_keys_checked(default_path, target_path, None, state, relative_dir)
-        .map(|(total, translated, review_needed, _)| (total, translated, review_needed))
+        .map(|(total, translated, status_counts, _)| {
+            (total, translated, status_counts.review_needed)
+        })
         .unwrap_or((0, 0, 0))
 }
 
@@ -987,7 +1020,7 @@ fn inspect_keys_checked(
     allowed_root: Option<&Path>,
     state: &ModState,
     relative_dir: &str,
-) -> Result<(usize, usize, usize, Vec<SourceKeyHash>), String> {
+) -> Result<(usize, usize, StatusCounts, Vec<SourceKeyHash>), String> {
     let source = match allowed_root {
         Some(root) => read_object_within_root(default_path, root, "source")?,
         None => read_object_checked(default_path)?,
@@ -1018,20 +1051,18 @@ fn inspect_keys_checked(
             }
         })
         .count();
-    let review_needed = source
-        .iter()
-        .filter(|(key, _)| !is_ignored_i18n_key(key))
-        .filter(|(key, value)| {
-            resolve_string(
-                value.as_str().unwrap_or_default(),
-                target.get(key),
-                state,
-                relative_dir,
-                key,
-            )
-            .1 == "review-needed"
-        })
-        .count();
+    let mut status_counts = StatusCounts::default();
+    for (key, value) in source.iter().filter(|(key, _)| !is_ignored_i18n_key(key)) {
+        let status = resolve_string(
+            value.as_str().unwrap_or_default(),
+            target.get(key),
+            state,
+            relative_dir,
+            key,
+        )
+        .1;
+        status_counts.record(&status);
+    }
     let source_hashes = source
         .iter()
         .filter(|(key, _)| !is_ignored_i18n_key(key))
@@ -1040,7 +1071,7 @@ fn inspect_keys_checked(
             source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
         })
         .collect();
-    Ok((total, translated, review_needed, source_hashes))
+    Ok((total, translated, status_counts, source_hashes))
 }
 
 fn read_target_object_within_root(
@@ -1137,7 +1168,7 @@ fn build_i18n_file(
     mods_path: &Path,
     target_lang: &str,
     state: &ModState,
-) -> Result<ScannedI18nFile, String> {
+) -> Result<(ScannedI18nFile, StatusCounts), String> {
     let relative_dir = i18n_dir
         .strip_prefix(mod_dir)
         .map_err(|_| "i18n folder is outside its mod folder".to_string())?
@@ -1146,14 +1177,15 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys, review_needed, source_hashes) = inspect_keys_checked(
+    let (total_keys, translated_keys, status_counts, source_hashes) = inspect_keys_checked(
         &default_path,
         &target_path,
         Some(mods_path),
         state,
         &relative_dir,
     )?;
-    Ok(ScannedI18nFile {
+    let review_needed = status_counts.review_needed;
+    let file = ScannedI18nFile {
         target_exists: target_read_path(&target_path).is_file(),
         default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
@@ -1162,7 +1194,8 @@ fn build_i18n_file(
         translated_keys,
         review_needed,
         source_hashes,
-    })
+    };
+    Ok((file, status_counts))
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
@@ -2239,6 +2272,69 @@ mod tests {
             "i18n",
         );
         assert_eq!(counts, (2, 1, 0), "outdated AI text is not review-needed");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn scan_reports_current_status_counts_for_the_dashboard() {
+        let root = crate::test_support::temp_dir("scan-status-counts");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let mod_dir = mods.join("Status Mod");
+        let i18n = mod_dir.join("i18n");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"UniqueID":"status.mod","Name":"Status Mod"}"#,
+        );
+        write(
+            &i18n.join("default.json"),
+            r#"{"open":"Open","done":"Done","review":"Review","changed":"Changed"}"#,
+        );
+        write(&i18n.join("de.json"), r#"{"done":"Fertig"}"#);
+
+        let language_root = translations::language_root(&config, "de").unwrap();
+        translations::save_one(
+            &language_root,
+            "status.mod",
+            translations::entry_key("i18n", "review"),
+            translations::StoredString {
+                target: "Prüfen".into(),
+                status: "review-needed".into(),
+                source_hash: translations::source_hash("Review"),
+            },
+        )
+        .unwrap();
+        translations::save_one(
+            &language_root,
+            "status.mod",
+            translations::entry_key("i18n", "changed"),
+            translations::StoredString {
+                target: "Geändert".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Old source"),
+            },
+        )
+        .unwrap();
+
+        let result = scan_mods(&mods, "de", &config);
+        let scanned = &result.mods[0];
+        assert_eq!(scanned.total_keys, 4);
+        assert_eq!(scanned.translated_keys, 3);
+        assert_eq!(scanned.review_needed, 1);
+        assert_eq!(
+            scanned.status_counts,
+            StatusCounts {
+                untranslated: 1,
+                translated: 1,
+                outdated: 1,
+                review_needed: 1,
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&scanned.status_counts).unwrap()["review-needed"],
+            1
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }
