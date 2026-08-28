@@ -334,6 +334,10 @@ fn analyze_batch(
                 .iter()
                 .find(|row| row.key == *key)
                 .expect("snapshot validation proved this key binding");
+            if !row.target.trim().is_empty() {
+                preflight.preserved_local += 1;
+                continue;
+            }
             let differences = tokens::token_differences(&row.source, text);
             if !differences.is_empty() {
                 preflight.protected_token_issues.push(ImportTokenIssue {
@@ -348,10 +352,6 @@ fn analyze_batch(
                         })
                         .collect(),
                 });
-                continue;
-            }
-            if !row.target.trim().is_empty() {
-                preflight.preserved_local += 1;
                 continue;
             }
             if text.trim() == row.source.trim() {
@@ -751,5 +751,43 @@ mod tests {
         assert!(apply_batch(&broken, "Author.Mod", "de", &current)
             .unwrap_err()
             .contains("Protected tokens changed"));
+    }
+
+    #[test]
+    fn broken_tokens_in_a_preserved_local_translation_do_not_block_import() {
+        let current = HashMap::from([(
+            "i18n".to_string(),
+            vec![
+                row(
+                    "preserved",
+                    "Hello {{name}}",
+                    "Hallo {{name}}",
+                    "translated",
+                ),
+                row("open", "Bye {{name}}", "", "untranslated"),
+            ],
+        )]);
+        let mut batch = build_batch(
+            "Author.Mod",
+            "de",
+            &[
+                item("i18n", "preserved", "Hello {{name}}"),
+                item("i18n", "open", "Bye {{name}}"),
+            ],
+        );
+        batch["files"]["i18n"]["preserved"] = Value::String("Kaputt".into());
+        batch["files"]["i18n"]["open"] = Value::String("Tschüss {{name}}".into());
+
+        let report = preflight_batch(&batch, "Author.Mod", "de", &current).unwrap();
+        assert!(report.ready);
+        assert_eq!(report.preserved_local, 1);
+        assert_eq!(report.importable, 1);
+        assert!(report.protected_token_issues.is_empty());
+
+        let prepared = apply_batch(&batch, "Author.Mod", "de", &current).unwrap();
+        assert_eq!(prepared.summary.skipped_translated, 1);
+        assert_eq!(prepared.summary.imported, 1);
+        assert_eq!(prepared.entries.len(), 1);
+        assert_eq!(prepared.entries[0].1.target, "Tschüss {{name}}");
     }
 }

@@ -1300,6 +1300,34 @@ fn authentication_label(output: &str) -> String {
     }
 }
 
+fn installed_status_error(error: impl Into<String>) -> CodexCliStatus {
+    CodexCliStatus {
+        installed: true,
+        authenticated: false,
+        version: None,
+        authentication: None,
+        error: Some(error.into()),
+    }
+}
+
+fn version_from_status_probe(
+    result: Result<ProcessResult, String>,
+) -> Result<Option<String>, CodexCliStatus> {
+    match result {
+        Ok(ProcessResult::Finished {
+            success: true,
+            stdout,
+            ..
+        }) => Ok(one_line(&stdout, 100)),
+        Ok(ProcessResult::TimedOut) => Err(installed_status_error(
+            "Codex CLI did not answer the version check in time.",
+        )),
+        _ => Err(installed_status_error(
+            "Codex CLI was found but could not complete the version check.",
+        )),
+    }
+}
+
 fn resolve_codex_executable() -> Result<PathBuf, String> {
     #[cfg(windows)]
     {
@@ -1400,13 +1428,7 @@ fn check_status_sync() -> CodexCliStatus {
     let temp = match TempRunDir::create("codex-status") {
         Ok(temp) => temp,
         Err(error) => {
-            return CodexCliStatus {
-                installed: false,
-                authenticated: false,
-                version: None,
-                authentication: None,
-                error: Some(error),
-            };
+            return installed_status_error(error);
         }
     };
     let never_cancel = AtomicBool::new(false);
@@ -1422,30 +1444,9 @@ fn check_status_sync() -> CodexCliStatus {
             stdout_line: None,
         },
     );
-    let version = match version {
-        Ok(ProcessResult::Finished {
-            success: true,
-            stdout,
-            ..
-        }) => one_line(&stdout, 100),
-        Ok(ProcessResult::TimedOut) => {
-            return CodexCliStatus {
-                installed: false,
-                authenticated: false,
-                version: None,
-                authentication: None,
-                error: Some("Codex CLI did not answer the version check in time.".to_string()),
-            };
-        }
-        _ => {
-            return CodexCliStatus {
-                installed: false,
-                authenticated: false,
-                version: None,
-                authentication: None,
-                error: Some("Codex CLI was not found or could not be started.".to_string()),
-            };
-        }
+    let version = match version_from_status_probe(version) {
+        Ok(version) => version,
+        Err(status) => return status,
     };
 
     if let Err(error) = validate_required_capabilities(&executable, &temp.path, &never_cancel) {
@@ -3222,6 +3223,22 @@ mod tests {
         assert_eq!(authentication_label("Logged in using ChatGPT"), "ChatGPT");
         assert_eq!(authentication_label("logged in using API key"), "API key");
         assert_eq!(authentication_label("some future auth"), "CLI managed");
+    }
+
+    #[test]
+    fn failures_after_executable_resolution_still_report_codex_as_installed() {
+        let temp_dir_failure = installed_status_error("temporary directory failed");
+        let version_timeout = version_from_status_probe(Ok(ProcessResult::TimedOut)).unwrap_err();
+        let version_start_failure =
+            version_from_status_probe(Err("process start failed".to_string())).unwrap_err();
+
+        for status in [temp_dir_failure, version_timeout, version_start_failure] {
+            assert!(status.installed);
+            assert!(!status.authenticated);
+            assert_eq!(status.version, None);
+            assert_eq!(status.authentication, None);
+            assert!(status.error.is_some());
+        }
     }
 
     #[test]
