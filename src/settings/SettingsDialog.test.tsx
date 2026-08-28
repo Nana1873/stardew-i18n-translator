@@ -475,6 +475,41 @@ describe("SettingsDialog", () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it("locks every settings control while persistence is pending", async () => {
+    const pending = deferred<void>();
+    const onSave = vi.fn(() => pending.promise);
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+
+    const dialog = screen.getByRole("dialog", { name: "Settings" });
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    const controls = dialog.querySelectorAll<HTMLElement>(
+      "button, input, select, textarea",
+    );
+    expect(controls.length).toBeGreaterThan(0);
+    for (const control of controls) expect(control).toBeDisabled();
+
+    pending.resolve(undefined);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Save changes" }),
+      ).toBeEnabled(),
+    );
+    expect(screen.getByLabelText("Target language")).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Close settings" }),
+    ).toBeEnabled();
+  });
+
   it("ignores a connection result after the URL changes", async () => {
     const pending = deferred<string[]>();
     invokeMock.mockImplementation((cmd: string) => {
@@ -777,6 +812,68 @@ describe("SettingsDialog", () => {
     ).toBeInTheDocument();
   });
 
+  it("does not present an unavailable glossary as a ready state", async () => {
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+    const unavailable = await screen.findByText("Glossary unavailable");
+    expect(unavailable.closest(".translator-glossary-summary")).not.toHaveClass(
+      "is-ready",
+    );
+  });
+
+  it("formats glossary term counts for the English UI", async () => {
+    const localeSpy = vi
+      .spyOn(Number.prototype, "toLocaleString")
+      .mockReturnValue("1.185");
+    try {
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "glossary_status")
+          return Promise.resolve({
+            gameXnbPresent: true,
+            unpackedPresent: true,
+            sourceAvailable: true,
+            cached: {
+              targetLang: "de",
+              termCount: 1185,
+              source: "official",
+            },
+            outdatedCache: false,
+            packAvailable: false,
+            packXnbAvailable: false,
+          });
+        return Promise.resolve(null);
+      });
+
+      render(
+        <SettingsDialog
+          settings={baseSettings}
+          onSave={() => {}}
+          onClose={() => {}}
+          onReRunSetup={() => {}}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+      expect(await screen.findByText("1,185")).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          /1,185 terms · optional and not included in a release/,
+        ),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("1.185")).toBeNull();
+    } finally {
+      localeSpy.mockRestore();
+    }
+  });
+
   it("shows no glossary and no Build button for an unsupported language (Thai)", async () => {
     render(
       <SettingsDialog
@@ -1047,6 +1144,46 @@ describe("SettingsDialog", () => {
         },
       }),
     );
+  });
+
+  it("announces asynchronous Codex status updates and errors", async () => {
+    const pendingStatus = deferred<{
+      installed: boolean;
+      authenticated: boolean;
+      error?: string;
+    }>();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status") return pendingStatus.promise;
+      return Promise.resolve(null);
+    });
+
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="ai"
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+
+    const checking = screen.getByRole("status");
+    expect(checking).toHaveTextContent("Checking the installed Codex CLI…");
+    expect(checking).toHaveAttribute("aria-live", "polite");
+    expect(checking).toHaveAttribute("aria-atomic", "true");
+
+    pendingStatus.resolve({
+      installed: false,
+      authenticated: false,
+      error: "Codex CLI status failed.",
+    });
+
+    const error = await screen.findByRole("alert");
+    expect(error).toHaveTextContent("Codex CLI status failed.");
+    expect(error).toHaveAttribute("aria-live", "assertive");
+    expect(error).toHaveAttribute("aria-atomic", "true");
   });
 
   it("shows rate-limit loading until Codex CLI reports usage", async () => {

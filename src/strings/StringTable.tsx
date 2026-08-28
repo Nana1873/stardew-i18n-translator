@@ -610,6 +610,7 @@ export function StringTable({
 
   useEffect(() => {
     let active = true;
+    aiProvenanceByIdentity.current.clear();
     setRows(null);
     setError(null);
     setSelection(new Set());
@@ -884,7 +885,7 @@ export function StringTable({
     singleModSelection &&
     batchEligibleRows.length > 0 &&
     llmExportHandlerAvailable;
-  const llmActionEnabled = selectedRows.length > 0 && llmExportHandlerAvailable;
+  const llmActionEnabled = canExportLlm;
   const allVisibleSelected =
     visible.length > 0 &&
     visible.every((entry) => selection.has(entry.identity));
@@ -1392,6 +1393,9 @@ export function StringTable({
         })),
       );
       const completedMods = new Set(byMod.keys());
+      for (const identity of selectedIdentities) {
+        aiProvenanceByIdentity.current.delete(identity);
+      }
       const next = data.map((row) => {
         if (
           !selectedIdentities.has(identityOf(row)) ||
@@ -2084,9 +2088,9 @@ export function StringTable({
             <span>
               {effectiveSearch.trim()
                 ? identityFilterSet
-                  ? `Search preview: ${visible.length} matching rows · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                  : `Search preview: ${visible.length} matching rows · ${data.length} strings in ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                : `${visible.length} of ${data.length} strings · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
+                  ? `Search preview: ${visible.length} matching ${visible.length === 1 ? "row" : "rows"} · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`
+                  : `Search preview: ${visible.length} matching ${visible.length === 1 ? "row" : "rows"} · ${data.length} ${data.length === 1 ? "string" : "strings"} in ${effectiveScope === "all" ? "All mods" : "This mod"}`
+                : `${visible.length} of ${data.length} ${data.length === 1 ? "string" : "strings"} · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
             </span>
             {(effectiveSearch.trim() ||
               effectiveStatus !== "all" ||
@@ -2244,7 +2248,11 @@ export function StringTable({
               <span className="translator-popover-note" role="presentation">
                 <strong>{selection.size} selected</strong> ·{" "}
                 <span>
-                  {batchEligibleRows.length} Open/Changed exportable
+                  {batchEligibleRows.length} Open/Changed
+                  {batchEligibleRows.length > 0 &&
+                    (singleModSelection
+                      ? " exportable"
+                      : ` · ${batchEligibleModIds.size} mods`)}
                   {liveAiExcludedCount > 0
                     ? ` · ${liveAiEligibleRows.length} AI-ready`
                     : ""}
@@ -2255,6 +2263,11 @@ export function StringTable({
                 llmActionEnabled={llmActionEnabled}
                 aiUnavailableReason={aiUnavailableReason}
                 llmUnavailableReason={llmUnavailableReason}
+                llmCount={
+                  batchEligibleRows.length > 0 && !singleModSelection
+                    ? "select one mod"
+                    : undefined
+                }
                 onCopySource={() => void copySelection("source")}
                 onCopyTarget={() => void copySelection("target")}
                 onMarkDone={() =>
@@ -2619,7 +2632,11 @@ export function StringTable({
               aiUnavailableReason={aiUnavailableReason}
               llmUnavailableReason={llmUnavailableReason}
               localAiCount={liveAiEligibleRows.length}
-              llmCount={batchEligibleRows.length}
+              llmCount={
+                batchEligibleRows.length > 0 && !singleModSelection
+                  ? "select one mod"
+                  : batchEligibleRows.length
+              }
               onCopySource={() => void copySelection("source")}
               onCopyTarget={() => void copySelection("target")}
               onMarkDone={() =>
@@ -2742,10 +2759,13 @@ function ActionButtons({
         <span className="translator-menu-label">
           <FileJson aria-hidden="true" />{" "}
           {listItems ? "Export LLM batch" : "Export selection as LLM batch"}
-        </span>
-        {llmCount !== undefined && (
-          <span className="translator-context-shortcut">({llmCount})</span>
-        )}
+        </span>{" "}
+        {llmCount !== undefined &&
+          (typeof llmCount === "string" ? (
+            <span className="translator-context-shortcut">· {llmCount}</span>
+          ) : (
+            <span className="translator-context-shortcut">({llmCount})</span>
+          ))}
       </MenuAction>
     </>
   );

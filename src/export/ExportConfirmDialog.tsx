@@ -68,7 +68,7 @@ export function ExportConfirmDialog({
     <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="translator-flow-dialog"
+        className="translator-flow-dialog translator-export-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Confirm export overwrite"
@@ -178,17 +178,19 @@ export function ExportConfirmDialog({
               {attention == null ? (
                 <div className="translator-flow-callout">
                   Changed and review aggregates are unavailable before this
-                  export. Protected-token blocker preflight is also unavailable;
-                  the backend validates the complete selected scope before any
-                  file is written.
+                  export.{" "}
+                  {blockingValidationAvailable
+                    ? "No blocking protected-token issue was found in the complete selected scope."
+                    : "Protected-token blocker preflight is also unavailable; the backend validates the complete selected scope before any file is written."}
                 </div>
               ) : attention > 0 ? (
                 <div className="translator-flow-callout is-warning">
                   <AlertTriangle aria-hidden="true" /> {attention} included{" "}
                   {attention === 1 ? "string is" : "strings are"} not Done:{" "}
-                  {changedIncluded} Changed and {reviewIncluded} in Review.
-                  Protected-token blocker preflight is unavailable; the backend
-                  remains the final write guard.
+                  {changedIncluded} Changed and {reviewIncluded} in Review.{" "}
+                  {blockingValidationAvailable
+                    ? "No blocking protected-token issue was found."
+                    : "Protected-token blocker preflight is unavailable; the backend remains the final write guard."}
                 </div>
               ) : blockingValidationAvailable ? (
                 <div className="translator-flow-callout">
@@ -240,15 +242,28 @@ export function ExportConfirmDialog({
           )}
 
           {blockingProblem && (
-            <div
-              className="translator-flow-callout is-error"
-              id="translator-export-blocker"
-              role="alert"
-            >
-              <strong>Export blocked:</strong>{" "}
-              <code>{blockingProblem.key}</code> {blockingProblem.reason}. No
-              files will be changed.
-            </div>
+            <>
+              <div
+                className="translator-flow-callout is-error"
+                id="translator-export-blocker"
+                role="alert"
+              >
+                <strong>Export blocked:</strong>{" "}
+                <code>{blockingProblem.key}</code> {blockingProblem.reason}. No
+                files will be changed.
+              </div>
+              {acceptedMismatches != null && (
+                <div
+                  className="translator-preflight-metrics"
+                  aria-label="Export readiness"
+                >
+                  <Metric
+                    value={acceptedMismatches}
+                    label="accepted mismatches"
+                  />
+                </div>
+              )}
+            </>
           )}
         </div>
 

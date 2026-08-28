@@ -170,6 +170,8 @@ export interface SkippedComponent {
   /** Safe path relative to the configured Mods folder. */
   relativeLocation: string;
   reason: string;
+  /** False when the scanner intentionally ignored something that needs no user action. */
+  requiresAttention: boolean;
   restOfPackageLoaded: boolean;
 }
 

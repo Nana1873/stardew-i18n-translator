@@ -99,7 +99,7 @@ describe("ResultTray", () => {
 
     expect(
       screen.getByRole("complementary", {
-        name: "Latest operation result",
+        name: "Operation result",
       }),
     ).toHaveClass("translator-result");
     expect(container.querySelector(".translator-result-head")).not.toBeNull();
@@ -281,9 +281,59 @@ describe("ResultTray", () => {
   });
 
   it.each([
+    {
+      count: 1,
+      open: "1 Open string omitted; SMAPI will use default.json.",
+      included: "1 Changed string and 1 Review string included.",
+      withoutSource:
+        "1 translation entry without a matching English source was removed from output and retained in backups.",
+    },
+    {
+      count: 2,
+      open: "2 Open strings omitted; SMAPI will use default.json.",
+      included: "2 Changed strings and 2 Review strings included.",
+      withoutSource:
+        "2 translation entries without a matching English source were removed from output and retained in backups.",
+    },
+  ])(
+    "uses the visible status names in export notices for count $count",
+    ({ count, open, included, withoutSource }) => {
+      renderTray({
+        kind: "export",
+        title: "Test Mod",
+        collapsed: false,
+        pending: false,
+        error: null,
+        modsChanged: null,
+        retry: { kind: "selected", modUniqueId: "a.b" },
+        result: {
+          files: [],
+          skipped: [],
+          filesWritten: 0,
+          filesRemoved: 0,
+          totalWrittenKeys: 0,
+          totalUntranslated: count,
+          totalOutdated: count,
+          totalReviewNeeded: count,
+          totalOrphanKeys: count,
+          blocked: false,
+        },
+        problems: [],
+      });
+
+      expect(screen.getByText(open)).toBeVisible();
+      expect(screen.getByText(included)).toBeVisible();
+      expect(screen.getByText(withoutSource)).toBeVisible();
+      expect(
+        screen.queryByText(/untranslated|review-needed|orphan/i),
+      ).toBeNull();
+    },
+  );
+
+  it.each([
     ["complete", 5, null, "AI translation complete", null],
     ["cancelled", 2, null, "AI translation cancelled", "is-warning"],
-    ["error", 2, "Provider offline", "AI translation failed", "is-error"],
+    ["error", 0, "Provider offline", "AI translation failed", "is-error"],
   ] as const)(
     "shows the exact AI %s result with Review work and no frontend undo",
     (outcome, done, error, label, toneClass) => {
@@ -324,12 +374,55 @@ describe("ResultTray", () => {
         screen.queryByRole("button", { name: "Undo the latest batch edit" }),
       ).toBeNull();
       expect(undo).not.toHaveBeenCalled();
-      fireEvent.click(
-        screen.getByRole("button", { name: "Open review queue" }),
-      );
-      expect(openReview).toHaveBeenCalledOnce();
+      const openReviewButton = screen.queryByRole("button", {
+        name: "Open review queue",
+      });
+      if (done > 0) {
+        fireEvent.click(openReviewButton!);
+        expect(openReview).toHaveBeenCalledOnce();
+      } else {
+        expect(openReviewButton).toBeNull();
+        expect(openReview).not.toHaveBeenCalled();
+      }
     },
   );
+
+  it("shows saved AI work with later failures as completed with issues", () => {
+    renderTray({
+      kind: "ai-batch",
+      title: "Test Mod",
+      collapsed: false,
+      pending: false,
+      error: "One selected string failed; later strings were not started.",
+      problems: [],
+      outcome: "complete",
+      done: 2,
+      total: 5,
+      engine: "Local AI",
+      undoAvailable: false,
+    });
+
+    expect(
+      screen.getByText("AI translation completed with issues"),
+    ).toBeVisible();
+    expect(
+      screen.getByText("2 Local AI suggestions completed and saved in Review."),
+    ).toBeVisible();
+    expect(screen.getByText("2 saved · 3 remaining.")).toHaveClass(
+      "is-warning",
+    );
+    expect(
+      screen.getByText(
+        "One selected string failed; later strings were not started.",
+      ),
+    ).toHaveClass("is-warning");
+    expect(document.querySelector(".translator-result-status")).toHaveClass(
+      "is-warning",
+    );
+    expect(document.querySelector(".translator-result-status")).not.toHaveClass(
+      "is-error",
+    );
+  });
 
   it("renders canonical backend history, selects an entry, and copies its real details", async () => {
     const newest = historyEntry();

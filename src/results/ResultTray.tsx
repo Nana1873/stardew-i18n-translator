@@ -198,30 +198,40 @@ function presentationFor(
         notices.push({
           text:
             exportResult.totalUntranslated +
-            " untranslated " +
-            plural(exportResult.totalUntranslated, "value") +
+            " Open " +
+            plural(exportResult.totalUntranslated, "string") +
             " omitted; SMAPI will use default.json.",
         });
-      if (exportResult.totalOutdated > 0 || exportResult.totalReviewNeeded > 0)
+      if (
+        exportResult.totalOutdated > 0 ||
+        exportResult.totalReviewNeeded > 0
+      ) {
+        const includedStatuses: string[] = [];
+        if (exportResult.totalOutdated > 0)
+          includedStatuses.push(
+            `${exportResult.totalOutdated} Changed ${plural(exportResult.totalOutdated, "string")}`,
+          );
+        if (exportResult.totalReviewNeeded > 0)
+          includedStatuses.push(
+            `${exportResult.totalReviewNeeded} Review ${plural(exportResult.totalReviewNeeded, "string")}`,
+          );
         notices.push({
-          text:
-            exportResult.totalOutdated +
-            " changed and " +
-            exportResult.totalReviewNeeded +
-            " review-needed " +
-            plural(
-              exportResult.totalOutdated + exportResult.totalReviewNeeded,
-              "value",
-            ) +
-            " included.",
+          text: includedStatuses.join(" and ") + " included.",
           tone: "warning",
         });
+      }
       if (exportResult.totalOrphanKeys > 0)
         notices.push({
           text:
             exportResult.totalOrphanKeys +
-            " orphan " +
-            plural(exportResult.totalOrphanKeys, "key") +
+            " " +
+            plural(
+              exportResult.totalOrphanKeys,
+              "translation entry",
+              "translation entries",
+            ) +
+            " without a matching English source " +
+            (exportResult.totalOrphanKeys === 1 ? "was" : "were") +
             " removed from output and retained in backups.",
           tone: "warning",
         });
@@ -427,9 +437,13 @@ function presentationFor(
     };
   } else if (data.kind === "ai-batch") {
     const notStarted = Math.max(0, data.total - data.done);
+    const completedWithIssues = Boolean(
+      data.error && data.done > 0 && data.outcome !== "cancelled",
+    );
     result = {
-      label:
-        data.outcome === "complete"
+      label: completedWithIssues
+        ? "AI translation completed with issues"
+        : data.outcome === "complete"
           ? "AI translation complete"
           : data.outcome === "cancelled"
             ? "AI translation cancelled"
@@ -442,8 +456,9 @@ function presentationFor(
         " " +
         plural(data.done, "suggestion") +
         " completed and saved in Review.",
-      tone:
-        data.outcome === "complete"
+      tone: completedWithIssues
+        ? "warning"
+        : data.outcome === "complete"
           ? "success"
           : data.outcome === "cancelled"
             ? "warning"
@@ -451,11 +466,11 @@ function presentationFor(
       notices: [
         {
           text: data.done + " saved · " + notStarted + " remaining.",
-          ...(data.outcome === "complete"
+          ...(data.outcome === "complete" && !completedWithIssues
             ? {}
             : {
                 tone:
-                  data.outcome === "cancelled"
+                  data.outcome === "cancelled" || completedWithIssues
                     ? ("warning" as const)
                     : ("error" as const),
               }),
@@ -489,25 +504,33 @@ function presentationFor(
   }
 
   if (data.error) {
-    result.label =
-      data.kind === "import"
-        ? "LLM import rejected"
-        : data.kind === "batch-export"
-          ? "Batch export failed"
-          : data.kind === "zip"
-            ? "ZIP build failed"
-            : data.kind === "ai-batch"
-              ? data.outcome === "cancelled"
-                ? "AI translation cancelled"
-                : "AI translation failed"
-              : data.kind === "history"
-                ? "Operation failed"
-                : data.kind === "bulk"
-                  ? "Batch edit failed"
-                  : "Export failed";
-    result.tone = "error";
-    result.notices.unshift({ text: data.error, tone: "error" });
-    if (data.kind === "import") result.copy = "No changes were made.";
+    const completedWithIssues =
+      data.kind === "ai-batch" && data.done > 0 && data.outcome !== "cancelled";
+    if (completedWithIssues) {
+      result.label = "AI translation completed with issues";
+      result.tone = "warning";
+      result.notices.unshift({ text: data.error, tone: "warning" });
+    } else {
+      result.label =
+        data.kind === "import"
+          ? "LLM import rejected"
+          : data.kind === "batch-export"
+            ? "Batch export failed"
+            : data.kind === "zip"
+              ? "ZIP build failed"
+              : data.kind === "ai-batch"
+                ? data.outcome === "cancelled"
+                  ? "AI translation cancelled"
+                  : "AI translation failed"
+                : data.kind === "history"
+                  ? "Operation failed"
+                  : data.kind === "bulk"
+                    ? "Batch edit failed"
+                    : "Export failed";
+      result.tone = "error";
+      result.notices.unshift({ text: data.error, tone: "error" });
+      if (data.kind === "import") result.copy = "No changes were made.";
+    }
   }
 
   return result;
@@ -698,7 +721,7 @@ export function ResultTray({
     <aside
       className="translator-result"
       aria-live="polite"
-      aria-label="Latest operation result"
+      aria-label="Operation result"
     >
       <div className="translator-result-head">
         <span

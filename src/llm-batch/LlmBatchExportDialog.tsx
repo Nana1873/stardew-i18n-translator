@@ -79,7 +79,8 @@ export function LlmBatchExportDialog({
               Export selection as LLM batch
             </h2>
             <div className="translator-kicker">
-              {eligibleCount} eligible strings · {modName}
+              {eligibleCount} eligible{" "}
+              {eligibleCount === 1 ? "string" : "strings"} · {modName}
             </div>
           </div>
           <button

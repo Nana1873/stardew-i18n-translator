@@ -44,8 +44,36 @@ describe("ModList", () => {
       />,
     );
     expect(screen.getByText("Solo Mod")).toBeInTheDocument();
+    expect(
+      screen.getByRole("treeitem", { name: /Solo Mod/ }).getAttribute("title"),
+    ).toContain("0 of 10 strings translated");
     // No expand control for a single-component package.
     expect(screen.queryByRole("button", { name: "Collapse" })).toBeNull();
+  });
+
+  it("uses a singular string in a one-key mod tooltip", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "one",
+            name: "One String Mod",
+            packageId: "One",
+            totalKeys: 1,
+            translatedKeys: 1,
+            progress: 1,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(
+      screen
+        .getByRole("treeitem", { name: /One String Mod/ })
+        .getAttribute("title"),
+    ).toContain("1 of 1 string translated");
   });
 
   it("groups a multi-component package under an expandable parent", () => {

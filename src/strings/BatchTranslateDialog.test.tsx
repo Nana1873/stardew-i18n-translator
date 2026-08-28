@@ -174,6 +174,38 @@ describe("BatchTranslateDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("announces one selected string with singular grammar", async () => {
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onLiveRun = vi.fn(
+      (_runId: string) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const { onFinished } = renderDialog({
+      items: [ITEMS[0]],
+      engine: CODEX_ENGINE,
+      onLiveRun,
+    });
+
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    expect(
+      screen.getByRole("progressbar", { name: "AI translation progress" }),
+    ).toHaveAttribute("aria-valuetext", "1 selected string is being prepared");
+
+    const runId = onLiveRun.mock.calls[0][0];
+    act(() =>
+      resolveRun(
+        liveResult({
+          runId,
+          requested: 1,
+          completed: 1,
+        }),
+      ),
+    );
+    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+  });
+
   it("starts only one live backend run under React StrictMode", async () => {
     let resolveRun: (result: AiRunResult) => void = () => {};
     const onLiveRun = vi.fn(

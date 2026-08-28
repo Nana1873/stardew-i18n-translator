@@ -236,6 +236,24 @@ describe("StringTable workbench", () => {
     });
   });
 
+  it("uses singular row and string labels for a one-row result", async () => {
+    installBackendRows({ "a.b": [ROWS["a.b"][1]] });
+    render(<StringTable mod={MOD} />);
+
+    expect(
+      await screen.findByText(/1 of 1 string · All · This mod/),
+    ).toBeVisible();
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      {
+        target: { value: "bye" },
+      },
+    );
+    expect(
+      screen.getByText("Search preview: 1 matching row · 1 string in This mod"),
+    ).toBeVisible();
+  });
+
   it("does not continue a superseded multi-file load after its active request returns", async () => {
     const oldMod: ScannedMod = {
       ...MOD,
@@ -533,7 +551,7 @@ describe("StringTable workbench", () => {
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
     expect(
       screen.getByText(
-        "Search preview: 1 matching rows · 4 strings in All mods",
+        "Search preview: 1 matching row · 4 strings in All mods",
       ),
     ).toBeVisible();
     const modCell = rowFor("tomorrow").querySelector(
@@ -1441,7 +1459,7 @@ describe("StringTable workbench", () => {
     ).toHaveLength(1);
   });
 
-  it("starts selected Local AI work across mods while keeping LLM export single-mod", async () => {
+  it("starts selected Local AI work across mods while clearly explaining the single-mod LLM export", async () => {
     let releaseTranslation: (result: {
       text: string;
       missingTokens: string[];
@@ -1475,32 +1493,25 @@ describe("StringTable workbench", () => {
     );
     await screen.findByText("tomorrow");
     fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "Select tomorrow" }));
-    fireEvent.click(screen.getByRole("button", { name: /2 selected/ }));
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
 
     expect(
       screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
     ).toBeEnabled();
-    expect(
-      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
-    ).toHaveAttribute(
+    expect(screen.getByText("3 Open/Changed · 2 mods")).toBeVisible();
+    const llmAction = screen.getByRole("menuitem", {
+      name: /Export selection as LLM batch · select one mod/,
+    });
+    expect(llmAction).toBeDisabled();
+    expect(llmAction).toHaveAttribute(
       "title",
       "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
     );
 
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
-    );
-    expect(onNotify).toHaveBeenCalledWith(
-      "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
-      "info",
-    );
     expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
 
-    fireEvent.click(screen.getByRole("button", { name: /2 selected/ }));
     fireEvent.click(
       screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
     );
@@ -1535,33 +1546,23 @@ describe("StringTable workbench", () => {
     );
   });
 
-  it("explains why selected Done or Review strings are not LLM-exportable", async () => {
+  it("disables LLM export for selected Done or Review strings", async () => {
     const onLlmBatchExportForMod = vi.fn();
-    const onNotify = vi.fn();
     render(
-      <StringTable
-        mod={MOD}
-        onLlmBatchExportForMod={onLlmBatchExportForMod}
-        onNotify={onNotify}
-      />,
+      <StringTable mod={MOD} onLlmBatchExportForMod={onLlmBatchExportForMod} />,
     );
     await screen.findByText("greeting");
-    fireEvent.click(screen.getByRole("checkbox", { name: "Select greeting" }));
-    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "More actions for greeting" }),
+    );
 
     const action = screen.getByRole("menuitem", {
-      name: /Export selection as LLM batch/,
+      name: /Export LLM batch/,
     });
-    expect(action).toBeEnabled();
+    expect(action).toBeDisabled();
     expect(action).toHaveAttribute(
       "title",
       "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import.",
-    );
-    fireEvent.click(action);
-
-    expect(onNotify).toHaveBeenCalledWith(
-      "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import.",
-      "info",
     );
     expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
   });
@@ -1924,7 +1925,7 @@ describe("StringTable workbench", () => {
     if (!translatedCell) throw new Error("Missing translated target cell");
     fireEvent.doubleClick(translatedCell);
     const editor = screen.getByRole("dialog", { name: "bye" });
-    expect(within(editor).getByText("Suggestion source")).toBeVisible();
+    expect(within(editor).getByText("Generated by")).toBeVisible();
     expect(
       within(editor).getByText("Codex CLI", { selector: "strong" }),
     ).toBeVisible();
@@ -2095,11 +2096,11 @@ describe("StringTable workbench", () => {
       screen.getByRole("checkbox", { name: "Select all visible strings" }),
     );
     fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
-    fireEvent.click(
-      screen.getByRole("menuitem", {
-        name: /Export selection as LLM batch/,
-      }),
-    );
+    const exportAction = screen.getByRole("menuitem", {
+      name: /Export selection as LLM batch/,
+    });
+    expect(exportAction).toBeEnabled();
+    fireEvent.click(exportAction);
 
     await waitFor(() => expect(onLlmBatchExportForMod).toHaveBeenCalled());
     expect(onLlmBatchExportForMod).toHaveBeenCalledWith(MOD, [

@@ -48,6 +48,7 @@ function sampleScan(mods = [sampleMod()]): ScanResult {
         componentName: "Optional Component",
         relativeLocation: "Sample/Optional/manifest.json",
         reason: "invalid manifest JSON",
+        requiresAttention: true,
         restOfPackageLoaded: true,
       },
     ],
@@ -87,6 +88,7 @@ describe("Dashboard", () => {
     expect(
       screen.getByRole("heading", { name: "Overview" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/German \(de\) · 1 mod/)).toBeInTheDocument();
     const hasText = screen.getByRole("button", { name: /Has German text/ });
     expect(screen.getByText(/scanned 8 min ago/)).toBeInTheDocument();
     expect(hasText).toHaveTextContent("7 / 10 · 70%");
@@ -103,6 +105,9 @@ describe("Dashboard", () => {
       ),
     ).toBeInTheDocument();
     expect(screen.getByText(/1 scanner warning/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Latest scan:/ }),
+    ).toHaveTextContent("Latest scan: 1 mod · 1 i18n file");
     expect(
       screen.getByText("E:/Fixtures/Mods/Sample/i18n/de.json"),
     ).toBeInTheDocument();
@@ -146,7 +151,7 @@ describe("Dashboard", () => {
 
     const latestScan = screen.getByRole("button", { name: /Latest scan:/ });
     expect(latestScan).toHaveTextContent(
-      "0 sources changed · 0 strings added · 0 strings removed",
+      "0 English strings changed · 0 strings added · 0 strings removed",
     );
     expect(latestScan).not.toHaveTextContent("deltas unavailable");
   });

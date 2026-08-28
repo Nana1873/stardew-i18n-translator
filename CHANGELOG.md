@@ -8,8 +8,33 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Added
+
+- Added direct Codex CLI translation with discovered models, reasoning and usage
+  status, context-aware adaptive batches, staged language review and terminology
+  repair, live progress, cancellation, and Review-only results.
+- Added a compact result tray with the five newest session operations, a true
+  **Latest result** action, copyable details, relevant follow-up actions, and one
+  safe in-memory batch undo.
+
 ### Changed
 
+- Redesigned the Windows interface around Overview and the two-panel Workspace,
+  using real backend data throughout with multi-select, batch actions,
+  resizable sortable columns, context menus, dialogs, and portable view state.
+- Scan summaries now use clear English-string change counts, treat detected
+  community language packs as expected information, explain target entries
+  without a matching English source, and reserve skipped counts for components
+  that need attention. Incomplete scans preserve the last complete source
+  snapshot and show change deltas as unavailable.
+- Local AI now processes selected strings serially, continues after
+  item-specific response failures, saves successful suggestions immediately in
+  Review, and stops on endpoint-wide connection, HTTP, or client-setup errors,
+  cancellation, or stale/save failures. Partial runs with saved suggestions are
+  shown as completed with issues; only zero-save errors are shown as failed.
+- Hybrid Qwen3 models in LM Studio now use non-thinking response mode
+  automatically, while Instruct variants keep their native request shape and
+  thinking-only variants fail early with clear setup guidance.
 - CI now reports one stable aggregate gate that enforces documentation checks
   on every change and both frontend and Rust checks whenever code changes.
 - Removed obsolete implementation-planning notes from maintained source and

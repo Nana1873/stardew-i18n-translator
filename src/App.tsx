@@ -21,6 +21,7 @@ import {
   type AppSettings,
   type CodexCliStatus,
   type ExportAllResult,
+  type ExportPreflightProblem,
   type GlossaryEntry,
   type LlmBatchItem,
   type LlmExportOutcome,
@@ -51,6 +52,7 @@ import {
   pickLlmBatchDestination,
   pickLlmBatchFile,
   preflightLlmBatchPath,
+  previewExport,
   pickTranslationZipDestination,
   previewTranslationZip,
   saveSettings,
@@ -60,6 +62,7 @@ import {
   undoBatchEdit,
 } from "./tauri/commands";
 import {
+  AlertTriangle,
   Archive,
   CheckCircle2,
   CircleX,
@@ -121,6 +124,28 @@ function setupComplete(settings: AppSettings): boolean {
   return Boolean(
     settings.stardewPath && settings.modsPath && settings.targetLang,
   );
+}
+
+function countInProgressPackages(mods: ScannedMod[]): number {
+  const totals = new Map<
+    string,
+    { totalKeys: number; translatedKeys: number }
+  >();
+
+  for (const mod of mods) {
+    const current = totals.get(mod.packageId) ?? {
+      totalKeys: 0,
+      translatedKeys: 0,
+    };
+    current.totalKeys += mod.totalKeys;
+    current.translatedKeys += mod.translatedKeys;
+    totals.set(mod.packageId, current);
+  }
+
+  return Array.from(totals.values()).filter(
+    ({ totalKeys, translatedKeys }) =>
+      translatedKeys > 0 && translatedKeys < totalKeys,
+  ).length;
 }
 
 const LEGACY_LAST_OPENED_KEY = "sit:lastOpened";
@@ -266,7 +291,13 @@ export function App() {
   const [lastOpened, setLastOpened] = useState<Record<string, number>>({});
 
   const [exporting, setExporting] = useState(false);
+  const [checkingExportReadiness, setCheckingExportReadiness] = useState(false);
+  const exportPreflightRef = useRef<{
+    nextRequestId: number;
+    activeRequestId: number | null;
+  }>({ nextRequestId: 0, activeRequestId: null });
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
+  const latestResultRef = useRef<ResultTrayData | null>(null);
   const [operationHistory, setOperationHistory] = useState<
     OperationHistoryEntry[]
   >([]);
@@ -315,6 +346,8 @@ export function App() {
     openOmitted: number | null;
     changedIncluded: number | null;
     reviewIncluded: number | null;
+    acceptedMismatches: number;
+    blockingProblem: ExportPreflightProblem | null;
     existingTargetPaths: string[];
     newTargetPaths: string[];
   } | null>(null);
@@ -346,10 +379,11 @@ export function App() {
   const [toast, setToast] = useState<{
     id: number;
     message: string;
-    tone: "info" | "success" | "error";
+    tone: "info" | "success" | "warning" | "error";
   } | null>(null);
 
   function presentResult(data: ResultTrayData) {
+    latestResultRef.current = data;
     setSelectedHistoryId(data.operationId ?? null);
     setResultTray(data);
     setResultHidden(false);
@@ -384,10 +418,20 @@ export function App() {
     entry: OperationHistoryEntry,
   ) {
     const attached = { ...data, operationId: entry.id } as ResultTrayData;
+    latestResultRef.current = attached;
     setResultDetails((current) => ({ ...current, [entry.id]: attached }));
     setSelectedHistoryId(entry.id);
     setResultTray(attached);
     setResultHidden(false);
+  }
+
+  function rememberHiddenHistoryResult(entry: OperationHistoryEntry) {
+    const data = historyResult(entry);
+    latestResultRef.current = data;
+    setResultDetails((current) => ({ ...current, [entry.id]: data }));
+    setSelectedHistoryId(entry.id);
+    setResultTray(data);
+    setResultHidden(true);
   }
 
   async function refreshCompletedResult(
@@ -430,7 +474,7 @@ export function App() {
       return entries;
     } catch (error) {
       logFrontendError("listOperationHistory", String(error));
-      return [];
+      return null;
     }
   }
 
@@ -455,9 +499,30 @@ export function App() {
     setResultHidden(false);
   }
 
+  useEffect(() => {
+    const remembered = latestResultRef.current;
+    if (
+      resultTray &&
+      remembered &&
+      selectedHistoryId === (remembered.operationId ?? null)
+    ) {
+      latestResultRef.current = resultTray;
+    }
+  }, [resultTray, selectedHistoryId]);
+
+  function reopenLatestResult() {
+    const remembered = latestResultRef.current;
+    if (!remembered) return;
+    const latest = { ...remembered, collapsed: false } as ResultTrayData;
+    setSelectedHistoryId(latest.operationId ?? null);
+    setResultTray(latest);
+    setResultHidden(false);
+    window.requestAnimationFrame(() => resultToggleButtonRef.current?.focus());
+  }
+
   function notify(
     message: string,
-    tone: "info" | "success" | "error" = "info",
+    tone: "info" | "success" | "warning" | "error" = "info",
   ) {
     setToast({ id: Date.now(), message, tone });
   }
@@ -744,7 +809,10 @@ export function App() {
         setScanDialogOpen(
           showProgress ||
             result.warnings.length > 0 ||
-            (result.skippedComponents?.length ?? 0) > 0 ||
+            (result.skippedComponents?.some(
+              (component) => component.requiresAttention,
+            ) ??
+              false) ||
             (options.showExtraKeyDialog !== false &&
               (result.extraKeys?.length ?? 0) > 0),
         );
@@ -770,10 +838,10 @@ export function App() {
     scan?.mods.find((mod) => mod.uniqueId === selectedModId) ?? null;
   const selectedModRef = useRef<ScannedMod | null>(selectedMod);
   selectedModRef.current = selectedMod;
-  const inProgressMods =
-    scan?.mods.filter(
-      (mod) => mod.translatedKeys > 0 && mod.translatedKeys < mod.totalKeys,
-    ).length ?? 0;
+  const inProgressMods = scan ? countInProgressPackages(scan.mods) : 0;
+  const attentionSkippedCount = scan?.skippedComponents?.filter(
+    (component) => component.requiresAttention,
+  ).length;
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -884,7 +952,7 @@ export function App() {
       label:
         kind === "added"
           ? "New strings from latest scan"
-          : "Changed sources from latest scan",
+          : "Changed English strings from latest scan",
       identities,
     });
     setSearch("");
@@ -980,16 +1048,35 @@ export function App() {
     engine: AiEngine,
     request: AiTranslationRequest,
   ): Promise<AiRunResult> {
-    const result =
-      engine === "local"
-        ? await translateWithLocalAi(request)
-        : await translateWithCodexCli(request);
-    const entries = await refreshOperationHistory();
-    const entry = entries.find((candidate) => candidate.kind === "ai");
-    if (entry && request.scope !== "string") {
-      aiHistoryByRunIdRef.current.set(result.runId, entry);
+    const previousEntries =
+      request.scope === "string" ? await refreshOperationHistory() : null;
+    const previousIds = new Set(
+      (previousEntries ?? operationHistory).map((entry) => entry.id),
+    );
+    const startedAtEpochMs = Date.now();
+    let result: AiRunResult | undefined;
+    try {
+      result =
+        engine === "local"
+          ? await translateWithLocalAi(request)
+          : await translateWithCodexCli(request);
+      return result;
+    } finally {
+      const entries = await refreshOperationHistory();
+      const entry = entries?.find(
+        (candidate) =>
+          candidate.kind === "ai" &&
+          (request.scope !== "string" ||
+            (!previousIds.has(candidate.id) &&
+              (previousEntries !== null ||
+                candidate.completedAtEpochMs >= startedAtEpochMs))),
+      );
+      if (entry && request.scope === "string") {
+        rememberHiddenHistoryResult(entry);
+      } else if (entry && result) {
+        aiHistoryByRunIdRef.current.set(result.runId, entry);
+      }
     }
-    return result;
   }
 
   // External LLM batch export: needs a target language for the batch
@@ -1298,6 +1385,7 @@ export function App() {
     title: string,
     retry: { kind: "selected"; modUniqueId: string } | { kind: "all" },
   ) {
+    setCheckingExportReadiness(false);
     setExporting(true);
     presentResult({
       kind: "export",
@@ -1328,57 +1416,110 @@ export function App() {
     };
   }
 
-  function requestExport(mod = selectedMod) {
-    if (!mod) return;
+  async function requestExport(mod = selectedMod) {
+    if (!mod || exportPreflightRef.current.activeRequestId !== null) return;
+    const requestId = ++exportPreflightRef.current.nextRequestId;
+    exportPreflightRef.current.activeRequestId = requestId;
     const existingFiles = mod.i18nFiles.filter((file) => file.targetExists);
     const newFiles = mod.i18nFiles.filter((file) => !file.targetExists);
-    setExportConfirm({
-      kind: "selected",
-      modUniqueId: mod.uniqueId,
-      title: mod.name,
-      existingFiles: existingFiles.length,
-      newFiles: newFiles.length,
-      mods: null,
-      willWrite: mod.translatedKeys,
-      openOmitted: Math.max(0, mod.totalKeys - mod.translatedKeys),
-      changedIncluded: mod.statusCounts?.outdated ?? null,
-      reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
-      existingTargetPaths: existingFiles.map((file) => file.targetPath),
-      newTargetPaths: newFiles.map((file) => file.targetPath),
-    });
+    setCheckingExportReadiness(true);
+    setExporting(true);
+    try {
+      const preflight = await previewExport([
+        {
+          modUniqueId: mod.uniqueId,
+          modName: mod.name,
+          files: filesOf(mod),
+        },
+      ]);
+      if (exportPreflightRef.current.activeRequestId !== requestId) return;
+      setExportConfirm({
+        kind: "selected",
+        modUniqueId: mod.uniqueId,
+        title: mod.name,
+        existingFiles: existingFiles.length,
+        newFiles: newFiles.length,
+        mods: null,
+        willWrite: mod.translatedKeys,
+        openOmitted: Math.max(0, mod.totalKeys - mod.translatedKeys),
+        changedIncluded: mod.statusCounts?.outdated ?? null,
+        reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
+        acceptedMismatches: preflight.acceptedMismatches,
+        blockingProblem: preflight.blockingProblem,
+        existingTargetPaths: existingFiles.map((file) => file.targetPath),
+        newTargetPaths: newFiles.map((file) => file.targetPath),
+      });
+    } catch (error) {
+      if (exportPreflightRef.current.activeRequestId !== requestId) return;
+      logFrontendError("previewExport", String(error));
+      notify(`Could not check export readiness: ${String(error)}`, "error");
+    } finally {
+      if (exportPreflightRef.current.activeRequestId === requestId) {
+        exportPreflightRef.current.activeRequestId = null;
+        setCheckingExportReadiness(false);
+        setExporting(false);
+      }
+    }
   }
 
-  function requestExportAll() {
-    if (!scan) return;
+  async function requestExportAll() {
+    if (!scan || exportPreflightRef.current.activeRequestId !== null) return;
+    const requestId = ++exportPreflightRef.current.nextRequestId;
+    exportPreflightRef.current.activeRequestId = requestId;
     const affected = scan.mods.filter((mod) => mod.i18nFiles.length > 0);
     const targetFiles = affected.flatMap((mod) => mod.i18nFiles);
     const existingFiles = targetFiles.filter((file) => file.targetExists);
     const newFiles = targetFiles.filter((file) => !file.targetExists);
-    const statusCountsKnown = scan.mods.every(
-      (mod) => mod.statusCounts != null,
-    );
-    setExportConfirm({
-      kind: "all",
-      modUniqueId: null,
-      title: "All mods",
-      existingFiles: existingFiles.length,
-      newFiles: newFiles.length,
-      mods: affected.length,
-      willWrite: scan.mods.reduce((sum, mod) => sum + mod.translatedKeys, 0),
-      openOmitted: scan.mods.reduce(
-        (sum, mod) => sum + Math.max(0, mod.totalKeys - mod.translatedKeys),
-        0,
-      ),
-      changedIncluded: statusCountsKnown
-        ? scan.mods.reduce(
-            (sum, mod) => sum + (mod.statusCounts?.outdated ?? 0),
-            0,
-          )
-        : null,
-      reviewIncluded: scan.mods.reduce((sum, mod) => sum + mod.reviewNeeded, 0),
-      existingTargetPaths: existingFiles.map((file) => file.targetPath),
-      newTargetPaths: newFiles.map((file) => file.targetPath),
-    });
+    const statusCountsKnown = affected.every((mod) => mod.statusCounts != null);
+    setCheckingExportReadiness(true);
+    setExporting(true);
+    try {
+      const preflight = await previewExport(
+        affected.map((mod) => ({
+          modUniqueId: mod.uniqueId,
+          modName: mod.name,
+          files: filesOf(mod),
+        })),
+      );
+      if (exportPreflightRef.current.activeRequestId !== requestId) return;
+      setExportConfirm({
+        kind: "all",
+        modUniqueId: null,
+        title: "All mods",
+        existingFiles: existingFiles.length,
+        newFiles: newFiles.length,
+        mods: affected.length,
+        willWrite: affected.reduce((sum, mod) => sum + mod.translatedKeys, 0),
+        openOmitted: affected.reduce(
+          (sum, mod) => sum + Math.max(0, mod.totalKeys - mod.translatedKeys),
+          0,
+        ),
+        changedIncluded: statusCountsKnown
+          ? affected.reduce(
+              (sum, mod) => sum + (mod.statusCounts?.outdated ?? 0),
+              0,
+            )
+          : null,
+        reviewIncluded: affected.reduce(
+          (sum, mod) => sum + mod.reviewNeeded,
+          0,
+        ),
+        acceptedMismatches: preflight.acceptedMismatches,
+        blockingProblem: preflight.blockingProblem,
+        existingTargetPaths: existingFiles.map((file) => file.targetPath),
+        newTargetPaths: newFiles.map((file) => file.targetPath),
+      });
+    } catch (error) {
+      if (exportPreflightRef.current.activeRequestId !== requestId) return;
+      logFrontendError("previewExport", String(error));
+      notify(`Could not check export readiness: ${String(error)}`, "error");
+    } finally {
+      if (exportPreflightRef.current.activeRequestId === requestId) {
+        exportPreflightRef.current.activeRequestId = null;
+        setCheckingExportReadiness(false);
+        setExporting(false);
+      }
+    }
   }
 
   function markExportedTargets(modId: string, result: ExportResult) {
@@ -1618,12 +1759,15 @@ export function App() {
   }
 
   function handleAiBatchFinished(result: AiBatchFinishedResult) {
+    const completedWithIssues = Boolean(
+      result.error && result.done > 0 && result.outcome !== "cancelled",
+    );
     const data: ResultTrayData = {
       kind: "ai-batch",
       title: result.modName || selectedMod?.name || "Selected strings",
       collapsed: false,
       pending: false,
-      error: result.outcome === "error" ? (result.error ?? null) : null,
+      error: result.error ?? null,
       problems: [],
       outcome: result.outcome,
       done: result.done,
@@ -1654,7 +1798,12 @@ export function App() {
         });
       }
     }
-    if (result.outcome !== "complete") {
+    if (completedWithIssues) {
+      notify(
+        `AI translation completed with issues: ${result.done} of ${result.total} saved in Review.`,
+        "warning",
+      );
+    } else if (result.outcome !== "complete") {
       notify(
         `AI translation ${result.outcome === "cancelled" ? "cancelled" : "failed"} after ${result.done} of ${result.total}. Finished suggestions are in Review.`,
         result.outcome === "error" ? "error" : "info",
@@ -1704,7 +1853,7 @@ export function App() {
       const undone = await undoBatchEdit(operation.id);
       setReloadToken((token) => token + 1);
       const entries = await refreshOperationHistory();
-      if (!entries.some((entry) => entry.id === undone.id)) {
+      if (!entries?.some((entry) => entry.id === undone.id)) {
         setOperationHistory((current) => [undone, ...current].slice(0, 5));
       }
       presentCompletedResult(
@@ -1790,36 +1939,29 @@ export function App() {
             setView("home");
           }}
           onScan={handleScan}
-          scanEnabled={configured && !scanning}
+          scanEnabled={configured && !scanning && !exporting}
           scanning={scanning}
           onExport={requestExport}
           exportEnabled={Boolean(selectedMod) && !exporting}
           onExportAll={requestExportAll}
           exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
           exporting={exporting}
+          checkingExportReadiness={checkingExportReadiness}
           onBuildZip={() => void requestTranslationZip()}
-          buildZipEnabled={Boolean(selectedMod) && !zipBuilding}
+          buildZipEnabled={Boolean(selectedMod) && !zipBuilding && !exporting}
           onReleaseNotes={() => void requestReleaseNotes()}
-          releaseNotesEnabled={Boolean(selectedMod)}
+          releaseNotesEnabled={Boolean(selectedMod) && !exporting}
           onImportBatch={() => void handleImportBatch()}
-          importBatchEnabled={Boolean(selectedMod)}
+          importBatchEnabled={Boolean(selectedMod) && !exporting}
           onOpenSettings={() => {
             setSettingsPage("folders");
             if (settings) setSettingsOpen(true);
             else setWizardOpen(true);
           }}
-          settingsEnabled={loaded}
+          settingsEnabled={loaded && !exporting}
           latestResultAvailable={Boolean(resultTray && resultHidden)}
           latestResultButtonRef={latestResultButtonRef}
-          onReopenResult={() => {
-            setResultHidden(false);
-            setResultTray((current) =>
-              current ? { ...current, collapsed: false } : current,
-            );
-            window.requestAnimationFrame(() =>
-              resultToggleButtonRef.current?.focus(),
-            );
-          }}
+          onReopenResult={reopenLatestResult}
         />
         {view === "home" ? (
           <section
@@ -1832,7 +1974,7 @@ export function App() {
               lastScanAt={lastScanAt}
               languageLine={languageLine}
               onScan={handleScan}
-              scanEnabled={configured && !scanning}
+              scanEnabled={configured && !scanning && !exporting}
               onOpenMod={openMod}
               onBrowse={() => {
                 setView("work");
@@ -1902,19 +2044,19 @@ export function App() {
                           className="panel__header-tail translator-kicker-action"
                           type="button"
                           aria-label={
-                            scan?.skippedComponents == null
+                            attentionSkippedCount == null
                               ? "Skipped components unavailable; open scan diagnostics"
-                              : `${scan.skippedComponents.length} skipped ${scan.skippedComponents.length === 1 ? "component" : "components"}; open scan diagnostics`
+                              : `${attentionSkippedCount} skipped ${attentionSkippedCount === 1 ? "component" : "components"}; open scan diagnostics`
                           }
                           title="Open structured scan diagnostics"
                           onClick={() => openLatestScan(true)}
                         >
                           Skipped ·{" "}
-                          {scan?.skippedComponents == null ? (
+                          {attentionSkippedCount == null ? (
                             "Unavailable"
                           ) : (
                             <span className="translator-pane-count">
-                              {scan.skippedComponents.length}
+                              {attentionSkippedCount}
                             </span>
                           )}
                         </button>
@@ -2167,8 +2309,31 @@ export function App() {
             openOmitted={exportConfirm.openOmitted}
             changedIncluded={exportConfirm.changedIncluded}
             reviewIncluded={exportConfirm.reviewIncluded}
-            acceptedMismatches={null}
-            blockingValidationAvailable={false}
+            acceptedMismatches={exportConfirm.acceptedMismatches}
+            blockingValidationAvailable
+            blockingProblem={exportConfirm.blockingProblem}
+            onInspectProblem={
+              exportConfirm.blockingProblem
+                ? () => {
+                    const problem = exportConfirm.blockingProblem;
+                    if (!problem) return;
+                    setExportConfirm(null);
+                    inspectResultProblem({
+                      id: problemId(
+                        problem.modUniqueId,
+                        problem.relativeDir,
+                        problem.key,
+                      ),
+                      modUniqueId: problem.modUniqueId,
+                      modName: problem.modName,
+                      relativeDir: problem.relativeDir,
+                      key: problem.key,
+                      reason: problem.reason,
+                      resolved: false,
+                    });
+                  }
+                : undefined
+            }
             existingTargetPaths={exportConfirm.existingTargetPaths}
             newTargetPaths={exportConfirm.newTargetPaths}
             lastExportLabel={
@@ -2314,6 +2479,8 @@ export function App() {
           >
             {toast.tone === "success" ? (
               <CheckCircle2 aria-hidden />
+            ) : toast.tone === "warning" ? (
+              <AlertTriangle aria-hidden />
             ) : toast.tone === "error" ? (
               <CircleX aria-hidden />
             ) : (
@@ -2391,6 +2558,7 @@ function AppToolbar({
   onExportAll,
   exportAllEnabled,
   exporting,
+  checkingExportReadiness,
   onBuildZip,
   buildZipEnabled,
   onReleaseNotes,
@@ -2414,6 +2582,7 @@ function AppToolbar({
   onExportAll: () => void;
   exportAllEnabled: boolean;
   exporting: boolean;
+  checkingExportReadiness: boolean;
   onBuildZip: () => void;
   buildZipEnabled: boolean;
   onReleaseNotes: () => void;
@@ -2567,7 +2736,11 @@ function AppToolbar({
           >
             <Upload aria-hidden />
             <span className="translator-action-label-compact">
-              {exporting ? "Exporting…" : "Export …"}
+              {checkingExportReadiness
+                ? "Checking…"
+                : exporting
+                  ? "Exporting…"
+                  : "Export …"}
             </span>
           </button>
           {exportOpen && (

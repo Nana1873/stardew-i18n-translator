@@ -11,12 +11,13 @@ a searchable editor instead of editing large JSON files by hand.
 > This project was built with substantial help from AI coding agents. I guide the
 > project direction, review and test the results, and decide what ships.
 
-![Stardew i18n Translator dashboard](docs/assets/screenshots/dashboard.png)
+![Stardew i18n Translator Overview](docs/assets/screenshots/dashboard.png)
 
 ## What It Does
 
 - Scans a SMAPI Mods folder and finds standard `i18n` translation files.
-- Shows English-source changes, additions, and removals since the previous scan.
+- Shows English strings changed, added, and removed since the previous complete
+  scan.
 - Groups multi-part mods and imports existing translations.
 - Opens on a real-data Overview and keeps detailed translation work in a
   two-panel Workspace.
@@ -68,6 +69,16 @@ It is **not** a mod manager or a general Stardew file editor. It does not
 translate arbitrary `content.json`, game data files, dialogue databases, or XNB
 assets, and it does not download or update mods.
 
+Detected community language packs are reported as expected exclusions rather
+than skipped translation targets. A target-language entry without a matching
+English source is informational: SMAPI ignores it, it does not count toward
+progress or block export, and the next export omits it from the rewritten file
+while retaining the previous target file in its backup.
+
+If a scan skips a component that needs attention, source-change counts are
+unavailable and the last complete comparison baseline is preserved. Expected
+community-language-pack exclusions do not make a scan incomplete.
+
 ## Overview and Workspace
 
 The app opens on **Overview**. It summarizes the latest real scan, lets you
@@ -113,12 +124,26 @@ You can translate in four ways:
   snapshot to ensure the result still belongs to the selected mod, language,
   files, keys, and current English text before anything is saved.
 
-Settings automatically prefers an available engine. Local AI models come from
+Settings keeps the saved default engine when Local AI is configured or Codex CLI
+is ready; otherwise it selects a configured or ready engine. Local AI is shown
+as **Configured** after a Base URL and model are saved, and as **Ready** only
+after a successful connection test in the current Settings session. Codex CLI
+is ready only when it is installed and authenticated. Local AI models come from
 the configured local service and its Base URL can be reset to the selected
 provider's default. Codex CLI models come from the installed CLI; a valid saved
 choice is retained, otherwise the CLI-reported default is selected. If model
 discovery is unavailable, runs still use the CLI's own default model. The app
 also configures the reasoning effort for Codex translation runs.
+
+For Local AI, start LM Studio or Ollama with a model loaded, open
+**Settings > Translation engines**, choose the matching provider, and use its
+default loopback URL or reset the URL to that default. Select the detected model,
+test the connection, then save the settings.
+
+Hybrid Qwen3 models in LM Studio automatically use their non-thinking response
+mode so the translation is returned as ordinary response text instead of being
+consumed by the model's reasoning pass. Qwen3 Instruct models already use the
+plain response path; thinking-only variants are rejected with setup guidance.
 
 For ChatGPT-backed Codex sign-in, Settings also shows the remaining percentage
 and local reset time for each usage window reported by the installed CLI. The
@@ -132,9 +157,8 @@ shows a short setup guide. It links to the
 [official Codex CLI instructions](https://learn.chatgpt.com/docs/codex/cli),
 then asks you to run `codex` in PowerShell and check the status again. Choose
 **Sign in with ChatGPT** for subscription access; Codex CLI also supports API-key
-sign-in for separately billed usage-based access. A paid ChatGPT subscription is
-not universally required: OpenAI currently includes Codex across ChatGPT plans,
-including Free, with plan-dependent usage limits. See the
+sign-in for separately billed usage-based access. Availability and usage limits
+depend on the current ChatGPT plan. See the
 [official authentication guide](https://learn.chatgpt.com/docs/auth) and
 [current pricing page](https://learn.chatgpt.com/docs/pricing) for the latest
 availability and billing details.
@@ -169,6 +193,15 @@ Manual translation and local-only workflows remain offline. Live AI requests
 send the selected English source text, its section context, matching glossary
 terms, and the bounded neighboring context described above to the selected
 backend.
+
+Local AI processes selected strings one at a time. An invalid response or other
+item-specific failure is reported without preventing later selected strings
+from being attempted, and each successful suggestion is saved immediately in
+Review. A connection, HTTP-status, or local client-setup failure stops the
+remaining work, as do cancellation and stale-source or save failures.
+Suggestions already saved in Review are retained. If an error occurs after at
+least one save, the result is shown as completed with issues; a run with no
+saved suggestions is shown as failed.
 
 Large Codex CLI selections are divided into adaptive batches of at most 100
 selected strings, with every complete serialized prompt bounded to 96 KiB; one
@@ -229,7 +262,7 @@ preflight over the exact selected scope, so a real blocking key can be opened
 before confirmation. Export repeats the same validation before writing, so the
 preview never acts as an authorization token.
 
-![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
+![A protected-token mismatch requires explicit Save anyway confirmation](docs/assets/screenshots/token-check.png)
 
 ## Exporting and Sharing
 
@@ -248,8 +281,9 @@ package, language, coverage, installation guidance, and review state.
 
 The result tray shows real output paths and file names returned by export,
 import, external LLM batch, and ZIP operations. It can be collapsed or closed;
-**Latest result** opens it again, and **Copy details** copies the available
-summary, paths, warnings, and workflow information.
+**Latest result** always reopens the newest operation result, even after an older
+history entry was viewed, and **Copy details** copies the available summary,
+paths, warnings, and workflow information.
 
 The five latest completed backend operations, including exports, imports, LLM
 batches, AI runs, release ZIPs, and batch edits, remain available in the result
@@ -270,7 +304,9 @@ Codex CLI authentication remains entirely owned by the CLI; the app does not
 read or copy its authentication files or tokens. Its optional usage display is
 limited to sanitized rate-limit percentages, window lengths, and reset times
 reported by the CLI. The app does not offer a provider marketplace or a custom
-cloud base URL.
+cloud base URL. Codex CLI translation sends the selected English source,
+matching glossary terms, and the bounded read-only context described below
+through the CLI to its configured service.
 
 Live AI may send up to two preceding and two following neighboring English source
 strings from the same component, i18n file, section, and related key group as

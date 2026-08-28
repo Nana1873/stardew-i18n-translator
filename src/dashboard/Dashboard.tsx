@@ -107,14 +107,17 @@ export function Dashboard({
   const continueMod = recent[0] ?? withKeys[0] ?? null;
   const targetLanguage = languageLine.split(" (")[0].trim() || "target";
   const scanDeltaSummary = scan?.sourceDeltas
-    ? `${count(scan.sourceDeltas.sourcesChanged)} ${
-        scan.sourceDeltas.sourcesChanged === 1 ? "source" : "sources"
+    ? `${count(scan.sourceDeltas.sourcesChanged)} English ${
+        scan.sourceDeltas.sourcesChanged === 1 ? "string" : "strings"
       } changed · ${count(scan.sourceDeltas.stringsAdded)} ${
         scan.sourceDeltas.stringsAdded === 1 ? "string" : "strings"
       } added · ${count(scan.sourceDeltas.stringsRemoved)} ${
         scan.sourceDeltas.stringsRemoved === 1 ? "string" : "strings"
       } removed`
     : "change, added, and removed deltas unavailable";
+  const attentionSkippedCount = scan?.skippedComponents?.filter(
+    (component) => component.requiresAttention,
+  ).length;
 
   useEffect(() => {
     const hideTooltip = () => setStatusTooltip(null);
@@ -176,7 +179,9 @@ export function Dashboard({
           <h1 className="translator-heading">Overview</h1>
           <div className="translator-kicker">
             {languageLine}
-            {scan ? ` · ${scan.modCount} mods` : " · not scanned"}
+            {scan
+              ? ` · ${scan.modCount} ${scan.modCount === 1 ? "mod" : "mods"}`
+              : " · not scanned"}
             {scan
               ? lastScanAt == null
                 ? " · scan time unavailable"
@@ -264,15 +269,16 @@ export function Dashboard({
           <GitCompareArrows aria-hidden="true" />
           <span>
             <strong>
-              Latest scan: {count(scan.modCount)} mods · {count(scan.fileCount)}{" "}
-              i18n files
+              Latest scan: {count(scan.modCount)}{" "}
+              {scan.modCount === 1 ? "mod" : "mods"} · {count(scan.fileCount)}{" "}
+              {scan.fileCount === 1 ? "i18n file" : "i18n files"}
             </strong>
             <span>
               {scan.warnings.length} scanner{" "}
               {scan.warnings.length === 1 ? "warning" : "warnings"} ·{" "}
-              {scan.skippedComponents == null
+              {attentionSkippedCount == null
                 ? "skipped-component count unavailable"
-                : `${scan.skippedComponents.length} ${scan.skippedComponents.length === 1 ? "component" : "components"} skipped`}
+                : `${attentionSkippedCount} ${attentionSkippedCount === 1 ? "component" : "components"} skipped`}
               {` · ${scanDeltaSummary}`}
             </span>
           </span>

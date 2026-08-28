@@ -438,7 +438,7 @@ function PackageNode({
         type="button"
         role="treeitem"
         aria-expanded={expanded}
-        title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} strings translated, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
+        title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} translated, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
         onClick={() => setOpen((value) => !value)}
       >
         <strong>
@@ -514,7 +514,7 @@ function ModRow({
       data-mod-id={mod.uniqueId}
       data-mod-progress={`${mod.translatedKeys} / ${mod.totalKeys} · ${percent}%`}
       data-progress-state={progressState(mod.progress)}
-      title={`${mod.name} · ${mod.translatedKeys.toLocaleString()} of ${mod.totalKeys.toLocaleString()} strings translated · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
+      title={`${mod.name} · ${mod.translatedKeys.toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} translated · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
       onClick={() => onSelect(mod.uniqueId)}
       onContextMenu={(event) => onContextMenu(mod, event, event.currentTarget)}
     >

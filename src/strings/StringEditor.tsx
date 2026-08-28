@@ -464,14 +464,21 @@ export function StringEditor({
       setPendingSave(null);
       setPendingMove(null);
       setDirty(result.persisted ? false : result.text !== row.target);
-      setAiProvenance({
-        identity: suggestionIdentity,
-        engine: result.engine || aiEngineLabel,
-        model: result.model || aiModel || "Model unavailable",
-        reasoning: result.reasoning || aiReasoning || "Reasoning unavailable",
-        persisted: Boolean(result.persisted),
-        value: result.text,
-      });
+      const engine = result.engine || aiEngineLabel;
+      const model = result.model || aiModel;
+      const reasoning = result.reasoning || aiReasoning;
+      setAiProvenance(
+        engine && model && reasoning
+          ? {
+              identity: suggestionIdentity,
+              engine,
+              model,
+              reasoning,
+              persisted: Boolean(result.persisted),
+              value: result.text,
+            }
+          : null,
+      );
       const notes: string[] = [];
       if (result.missingTokens.length > 0) {
         notes.push(
@@ -761,6 +768,11 @@ export function StringEditor({
   };
   const atQueueEnd = index >= total - 1;
   const textEdited = value !== row.target;
+  const nestedConfirmationOpen =
+    discardOpen || pendingSave !== null || pendingMove !== null;
+  const nestedContentIsolation = nestedConfirmationOpen
+    ? { "aria-hidden": true as const, inert: true }
+    : {};
   let saveLabel = "Save";
   let saveNextLabel = atQueueEnd ? "Save & close" : "Save & next";
   if (row.status === "review-needed") {
@@ -794,7 +806,10 @@ export function StringEditor({
         aria-labelledby="translator-editor-title"
         aria-describedby="translator-editor-context-description"
       >
-        <header className="editor__meta translator-editor-head">
+        <header
+          className="editor__meta translator-editor-head"
+          {...nestedContentIsolation}
+        >
           <span className="editor__title translator-editor-title">
             <span className="translator-kicker">Edit string</span>
             <h2 className="translator-heading" id="translator-editor-title">
@@ -872,113 +887,109 @@ export function StringEditor({
           </span>
         </header>
 
-        <div className="translator-editor-body">
+        <div className="translator-editor-body" {...nestedContentIsolation}>
           {/* Reserved slots (SPEC §§5, 7 and 10): tokens + glossary rows exist on every
             string — empty-state text when N/A — so the panes and the action
             bar never move during a Save & next run. */}
           <div className="translator-editor-support">
-            {(sourceTokenCounts.size > 0 || addedTokenCounts.length > 0) && (
-              <div className="editor__slot translator-editor-support-row">
-                <span className="editor__slot-label translator-editor-support-label">
-                  Protected tokens
-                </span>
-                <span className="editor__slot-body translator-glossary-hints">
-                  {sourceTokenCounts.size > 0 || addedTokenCounts.length > 0 ? (
-                    <>
-                      {[...sourceTokenCounts].map(([token, required], i) => {
-                        const satisfied =
-                          (valueTokenCounts.get(token) ?? 0) >= required;
-                        const contents = (
-                          <>
-                            {describeToken(token)}
-                            {required > 1 ? ` ×${required}` : ""}
-                            {satisfied ? " ✓" : ""}
-                          </>
-                        );
-                        return satisfied ? (
-                          <span
-                            key={`source-${i}-${token}`}
-                            className="editor__token translator-token editor__token--done is-valid"
-                            title={`${token} — all present`}
-                            aria-label={`Token ${token} is present in full`}
-                          >
-                            {contents}
-                          </span>
-                        ) : (
-                          <button
-                            key={`source-${i}-${token}`}
-                            type="button"
-                            className={`editor__token translator-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`}
-                            title={
-                              acceptedTokenMismatch
-                                ? `${token} — mismatch explicitly accepted for this exact translation`
-                                : `Insert ${token} at the cursor`
-                            }
-                            aria-label={`Insert missing token ${token}`}
-                            onClick={() => insertToken(token)}
-                          >
-                            {contents}
-                          </button>
-                        );
-                      })}
-                      {addedTokenCounts.map(([token, found], i) => (
-                        <span
-                          key={`added-${i}-${token}`}
-                          className={`editor__token translator-token is-missing${acceptedTokenMismatch ? " is-accepted" : ""}`}
-                          aria-label={`Extra token ${token}`}
-                          title={`Extra token ${token}`}
-                        >
+            <div className="editor__slot translator-editor-support-row">
+              <span className="editor__slot-label translator-editor-support-label">
+                Protected tokens
+              </span>
+              <span className="editor__slot-body translator-glossary-hints">
+                {sourceTokenCounts.size > 0 || addedTokenCounts.length > 0 ? (
+                  <>
+                    {[...sourceTokenCounts].map(([token, required], i) => {
+                      const satisfied =
+                        (valueTokenCounts.get(token) ?? 0) >= required;
+                      const contents = (
+                        <>
                           {describeToken(token)}
-                          {found > 1 ? ` ×${found}` : ""}
+                          {required > 1 ? ` ×${required}` : ""}
+                          {satisfied ? " ✓" : ""}
+                        </>
+                      );
+                      return satisfied ? (
+                        <span
+                          key={`source-${i}-${token}`}
+                          className="editor__token translator-token editor__token--done is-valid"
+                          title={`${token} — all present`}
+                          aria-label={`Token ${token} is present in full`}
+                        >
+                          {contents}
                         </span>
-                      ))}
-                      {hasMissingTokens && (
-                        <span className="translator-kicker">
-                          Click a missing token to insert it
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <span className="editor__slot-empty translator-kicker">
-                      None
-                    </span>
-                  )}
-                </span>
-              </div>
-            )}
-
-            {glossaryMatches.length > 0 && (
-              <div className="editor__slot translator-editor-support-row">
-                <span className="editor__slot-label translator-editor-support-label">
-                  Glossary hints
-                </span>
-                <span className="editor__slot-body translator-glossary-hints">
-                  {glossaryMatches.length > 0 ? (
-                    glossaryMatches.map((match, i) => (
+                      ) : (
+                        <button
+                          key={`source-${i}-${token}`}
+                          type="button"
+                          className={`editor__token translator-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`}
+                          title={
+                            acceptedTokenMismatch
+                              ? `${token} — mismatch explicitly accepted for this exact translation`
+                              : `Insert ${token} at the cursor`
+                          }
+                          aria-label={`Insert missing token ${token}`}
+                          onClick={() => insertToken(token)}
+                        >
+                          {contents}
+                        </button>
+                      );
+                    })}
+                    {addedTokenCounts.map(([token, found], i) => (
                       <span
-                        key={i}
-                        className="editor__gloss translator-glossary-term"
-                        title={KIND_LABEL[match.kind]}
+                        key={`added-${i}-${token}`}
+                        className={`editor__token translator-token is-missing${acceptedTokenMismatch ? " is-accepted" : ""}`}
+                        aria-label={`Extra token ${token}`}
+                        title={`Extra token ${token}`}
                       >
-                        <span className="editor__gloss-kind" aria-hidden>
-                          {KIND_LABEL[match.kind]}
-                        </span>
-                        {match.source} → {match.target}
+                        {describeToken(token)}
+                        {found > 1 ? ` ×${found}` : ""}
                       </span>
-                    ))
-                  ) : (
-                    <span className="editor__slot-empty translator-kicker">
-                      No matching hints
+                    ))}
+                    {hasMissingTokens && (
+                      <span className="translator-kicker">
+                        Click a missing token to insert it
+                      </span>
+                    )}
+                  </>
+                ) : (
+                  <span className="editor__slot-empty translator-kicker">
+                    None
+                  </span>
+                )}
+              </span>
+            </div>
+
+            <div className="editor__slot translator-editor-support-row">
+              <span className="editor__slot-label translator-editor-support-label">
+                Glossary hints
+              </span>
+              <span className="editor__slot-body translator-glossary-hints">
+                {glossaryMatches.length > 0 ? (
+                  glossaryMatches.map((match, i) => (
+                    <span
+                      key={i}
+                      className="editor__gloss translator-glossary-term"
+                      title={KIND_LABEL[match.kind]}
+                    >
+                      <span className="editor__gloss-kind" aria-hidden>
+                        {KIND_LABEL[match.kind]}
+                      </span>
+                      {match.source} → {match.target}
                     </span>
-                  )}
-                </span>
-              </div>
-            )}
+                  ))
+                ) : (
+                  <span className="editor__slot-empty translator-kicker">
+                    No matching hints
+                  </span>
+                )}
+              </span>
+            </div>
             {aiProvenance &&
               (row.status === "review-needed" || aiDraftPending) && (
                 <div className="translator-editor-support-row">
                   <span className="translator-editor-support-label">
-                    Suggestion source
+                    Generated by
                   </span>
                   <span className="translator-provenance-copy">
                     <strong>{aiProvenance.engine}</strong> ·{" "}
@@ -1191,7 +1202,10 @@ export function StringEditor({
           </div>
         )}
 
-        <footer className="editor__footer translator-editor-actions">
+        <footer
+          className="editor__footer translator-editor-actions"
+          {...nestedContentIsolation}
+        >
           <div className="translator-command-actions">
             <button
               type="button"
@@ -1285,6 +1299,7 @@ export function StringEditor({
             className="translator-status-tooltip"
             role="tooltip"
             style={{ left: statusTooltip.left, top: statusTooltip.top }}
+            {...nestedContentIsolation}
           >
             {statusTooltip.text}
           </div>

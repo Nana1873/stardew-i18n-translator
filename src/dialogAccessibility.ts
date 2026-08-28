@@ -84,7 +84,7 @@ export function useDialogAccessibility({
     const dialog = dialogRef.current;
     if (!dialog) return;
     const preferred = dialog.querySelector<HTMLElement>(initialFocusSelector);
-    (preferred ?? focusableElements(dialog)[0])?.focus();
+    (preferred ?? focusableElements(dialog)[0] ?? dialog).focus();
   }, [dialogRef, initialFocusSelector]);
 
   useEffect(() => {

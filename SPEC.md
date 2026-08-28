@@ -100,8 +100,14 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - requires source and existing target files to be flat string objects;
 - silently ignores Content Patcher data under `assets/i18n`, which is not a
   standard SMAPI translation target;
+- excludes detected community language packs from translation targets as an
+  expected, informational result rather than a scanner warning;
+- reports target-language entries without a matching source key as non-blocking
+  information grouped by translation file; SMAPI ignores them, they do not
+  count toward progress or block export, and the next export omits them from
+  the rewritten file while preserving the prior target in its backup;
 - preserves source key order for later export;
-- compares the decoded English source inventory with the preceding successful
+- compares the decoded English source inventory with the preceding complete
   scan of the same Mods folder and reports changed, added, and removed strings;
 - does not traverse links that escape the selected Mods folder;
 - warns and skips only a malformed i18n component instead of inventing empty
@@ -113,7 +119,10 @@ values such as `Nexus:-1` are treated as no Nexus ID.
 Source comparison uses component UniqueID, relative i18n directory, and exact
 key as the stable identity. The first scan of a Mods folder creates the
 baseline and therefore reports zero observed changes. The snapshot contains
-hashes only; target-language changes do not affect it.
+hashes only; target-language changes do not affect it. A scan that skips any
+component needing attention leaves change counts unavailable and preserves the
+last complete baseline. Expected community-language-pack exclusions do not
+prevent a baseline update.
 
 ## 7. User Interface
 
@@ -140,9 +149,10 @@ Workspace is the two-panel translation view:
 - Settings contains folders, language, glossary, the direct Local AI and Codex
   CLI backends, shortcuts, logging, and app information;
 - completed operations appear in a compact result tray that can be collapsed,
-  closed, and reopened through **Latest result**. It exposes real paths and file
-  names, **Copy details**, relevant follow-up actions, and the five newest
-  backend history entries for the running session;
+  closed, and reopened through **Latest result**. Reopening always returns to
+  the newest operation result, even after an older history entry was viewed. It
+  exposes real paths and file names, **Copy details**, relevant follow-up
+  actions, and the five newest backend history entries for the running session;
 - one reversible batch edit has an in-memory undo snapshot until a newer
   completed operation replaces it, and stale undo must never overwrite later
   string edits.
@@ -282,7 +292,7 @@ All application state is portable and stored beside the executable:
 - `data/language-state/<lang>/`
 - `data/logs/`
 
-Dashboard recency is part of the portable settings state; the app does not keep
+Overview recency is part of the portable settings state; the app does not keep
 workflow state in browser-local storage.
 
 Workspace search values, This mod/All mods scope, status and Validation issues
@@ -399,6 +409,15 @@ related dialogue or menu-like entries together without inventing topic or
 reference metadata that SMAPI i18n files do not contain. Neighboring
 strings are read-only context. The output contract permits only selected IDs,
 so context-only strings cannot be returned as translations or written to state.
+
+Local AI processes selected strings serially. An invalid response or other
+item-specific failure is recorded for that string and does not prevent later
+selected strings from being attempted. Each successful suggestion is saved
+immediately as `review-needed`. A connection, HTTP-status, or client-setup
+failure stops the remaining work, as do cancellation, stale source or state,
+and save failures. Suggestions already saved in Review are retained. A
+non-cancelled run that saved at least one suggestion before an error is reported
+as completed with issues; an error before any save is reported as a failure.
 
 Live runs accept at most 4,096 selected strings and 8 MiB of selected source
 text. Codex CLI selections are divided into adaptive batches of at most 100

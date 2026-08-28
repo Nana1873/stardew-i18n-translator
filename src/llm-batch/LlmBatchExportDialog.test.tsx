@@ -37,6 +37,12 @@ describe("LlmBatchExportDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
+  it("uses the singular label for one eligible string", () => {
+    renderDialog({ eligibleCount: 1 });
+
+    expect(screen.getByText("1 eligible string · Test Mod")).toBeVisible();
+  });
+
   it("keeps the dialog open and restores Save after an export error", async () => {
     const onSave = vi.fn().mockRejectedValue(new Error("save failed"));
     const onClose = vi.fn();

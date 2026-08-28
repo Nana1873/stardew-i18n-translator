@@ -100,6 +100,7 @@ const DEFAULT_AI_SETTINGS = {
 
 const CODEX_REASONING_OPTIONS = ["low", "medium", "high"] as const;
 const CODEX_SETUP_GUIDE_URL = "https://learn.chatgpt.com/docs/codex/cli";
+const englishNumberFormat = new Intl.NumberFormat("en-US");
 
 function formatCodexWindowDuration(minutes?: number): string | null {
   if (!Number.isSafeInteger(minutes) || !minutes || minutes < 1) return null;
@@ -584,6 +585,7 @@ export function SettingsDialog({
         className="translator-settings-dialog"
         role="dialog"
         aria-modal="true"
+        aria-busy={saving}
         aria-labelledby="translator-settings-title"
         aria-describedby="translator-settings-description"
         onKeyDown={onDialogKeyDown}
@@ -611,7 +613,7 @@ export function SettingsDialog({
           </button>
         </div>
 
-        <div className="translator-settings-layout">
+        <fieldset className="translator-settings-layout" disabled={saving}>
           <nav
             className="translator-settings-nav"
             aria-label="Settings sections"
@@ -966,7 +968,11 @@ export function SettingsDialog({
                   <div className="translator-setting-line">
                     <span className="translator-setting-copy">
                       <strong>Codex CLI status</strong>
-                      <span>
+                      <span
+                        role={codexStatus?.error ? "alert" : "status"}
+                        aria-live={codexStatus?.error ? "assertive" : "polite"}
+                        aria-atomic="true"
+                      >
                         {codexChecking
                           ? "Checking the installed Codex CLI…"
                           : codexStatus
@@ -1284,7 +1290,7 @@ export function SettingsDialog({
               </p>
             </section>
           </div>
-        </div>
+        </fieldset>
 
         <div className="translator-settings-head">
           <span className="translator-kicker">
@@ -1355,6 +1361,12 @@ function GlossarySettings({
         : canBuild
           ? "Glossary can be built"
           : "Glossary unavailable";
+  const summaryTone =
+    cached && !glossary?.outdatedCache
+      ? " is-ready"
+      : glossary && (glossary.outdatedCache || canBuild)
+        ? " is-actionable"
+        : "";
   const source = !glossary
     ? "Checking local Stardew content"
     : community
@@ -1381,7 +1393,7 @@ function GlossarySettings({
         Optional official term hints from local Stardew strings. The glossary
         does not translate ordinary prose.
       </p>
-      <div className="translator-glossary-summary">
+      <div className={"translator-glossary-summary" + summaryTone}>
         <div className="translator-glossary-main">
           <strong>{state}</strong>
           <span>
@@ -1389,7 +1401,9 @@ function GlossarySettings({
           </span>
         </div>
         <div className="translator-glossary-number">
-          <strong>{cached ? cached.termCount.toLocaleString() : "—"}</strong>
+          <strong>
+            {cached ? englishNumberFormat.format(cached.termCount) : "—"}
+          </strong>
           <span>{cached ? "terms" : "terms unavailable"}</span>
         </div>
       </div>
@@ -1485,7 +1499,7 @@ function GlossarySettings({
               <strong>{language} cache</strong>
               <span>
                 {cached
-                  ? cached.termCount.toLocaleString() +
+                  ? englishNumberFormat.format(cached.termCount) +
                     " terms · optional and not included in a release"
                   : "Not built yet · optional and stored locally"}
               </span>

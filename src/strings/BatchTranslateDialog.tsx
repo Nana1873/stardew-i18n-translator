@@ -468,10 +468,10 @@ export function BatchTranslateDialog({
               aria-valuenow={indeterminate ? undefined : done}
               aria-valuetext={
                 cancelRequested
-                  ? `Cancelling the active AI batch; ${done} of ${total} suggestions saved to Review`
+                  ? `Cancelling the active AI batch; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
                   : indeterminate
-                    ? `${total} selected strings are being prepared`
-                    : `${done} of ${total} suggestions saved to Review; ${activityText.toLowerCase()}`
+                    ? `${total} selected ${total === 1 ? "string is" : "strings are"} being prepared`
+                    : `${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
               }
               data-indeterminate={indeterminate ? "true" : undefined}
               style={

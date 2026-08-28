@@ -16,6 +16,16 @@ describe("ExportConfirmDialog", () => {
     const dialog = screen.getByRole("dialog", {
       name: "Confirm export overwrite",
     });
+    expect(dialog).toHaveClass("translator-export-dialog");
+    expect(
+      dialog.querySelector(":scope > .translator-flow-head"),
+    ).not.toBeNull();
+    expect(
+      dialog.querySelector(":scope > .translator-flow-body"),
+    ).not.toBeNull();
+    expect(
+      dialog.querySelector(":scope > .translator-flow-foot"),
+    ).not.toBeNull();
     expect(dialog).toHaveTextContent("replaces 1 existing translation file");
     expect(dialog).toHaveTextContent(".json.bak");
   });
@@ -119,6 +129,26 @@ describe("ExportConfirmDialog", () => {
     expect(screen.queryByText("Unavailable before export")).toBeNull();
   });
 
+  it("reports a completed blocker preflight alongside non-Done counts", () => {
+    render(
+      <ExportConfirmDialog
+        modName="Test Mod"
+        existingFiles={1}
+        changedIncluded={1}
+        reviewIncluded={2}
+        acceptedMismatches={0}
+        blockingValidationAvailable
+        onConfirm={() => {}}
+        onCancel={() => {}}
+      />,
+    );
+
+    expect(
+      screen.getByText(/3 included strings are not Done/),
+    ).toHaveTextContent("No blocking protected-token issue was found.");
+    expect(screen.queryByText(/blocker preflight is unavailable/)).toBeNull();
+  });
+
   it("keeps unavailable current-scan aggregates explicit", () => {
     render(
       <ExportConfirmDialog
@@ -167,6 +197,7 @@ describe("ExportConfirmDialog", () => {
           key: "status.saved",
           reason: "is missing {{saveName}}",
         }}
+        acceptedMismatches={1}
         onInspectProblem={inspect}
         onConfirm={confirm}
         onCancel={() => {}}
@@ -176,6 +207,9 @@ describe("ExportConfirmDialog", () => {
     expect(
       screen.getByRole("button", { name: "Export and replace" }),
     ).toBeDisabled();
+    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
+      "1accepted mismatch",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
     expect(inspect).toHaveBeenCalledOnce();
     expect(confirm).not.toHaveBeenCalled();

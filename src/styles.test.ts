@@ -101,4 +101,22 @@ describe("CSS custom properties", () => {
       /\.translator-column-resizer--target::after\s*{[^}]*right:\s*0;[^}]*left:\s*auto;/s,
     );
   });
+
+  it("keeps transient status help behind modal dialogs", () => {
+    expect(translatorStyles).toMatch(
+      /\.translator-status-tooltip\s*{[^}]*z-index:\s*34;/s,
+    );
+    expect(translatorStyles).toMatch(
+      /\.translator-flow-overlay\s*{[^}]*z-index:\s*45;/s,
+    );
+  });
+
+  it("keeps scan and export actions visible while long bodies scroll", () => {
+    expect(translatorStyles).toMatch(
+      /\.translator-scan-dialog,\s*#stardew-i18n-translator \.translator-export-dialog\s*{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\) auto;[^}]*overflow:\s*hidden;/s,
+    );
+    expect(translatorStyles).toMatch(
+      /\.translator-scan-dialog > \.translator-flow-body,\s*#stardew-i18n-translator \.translator-export-dialog > \.translator-flow-body\s*{[^}]*min-height:\s*0;[^}]*overflow-y:\s*auto;/s,
+    );
+  });
 });
