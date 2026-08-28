@@ -2567,7 +2567,9 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     const keyButton = await screen.findByRole("button", { name: "greeting" });
-    fireEvent.contextMenu(keyButton);
+    const row = keyButton.closest<HTMLElement>(".stringrow--data");
+    expect(row).not.toBeNull();
+    fireEvent.contextMenu(row!, { clientX: 24, clientY: 24 });
     fireEvent.click(
       await screen.findByRole("menuitem", {
         name: /Export LLM batch/,
@@ -2645,7 +2647,9 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     const keyButton = await screen.findByRole("button", { name: "greeting" });
-    fireEvent.contextMenu(keyButton);
+    const row = keyButton.closest<HTMLElement>(".stringrow--data");
+    expect(row).not.toBeNull();
+    fireEvent.contextMenu(row!, { clientX: 24, clientY: 24 });
     fireEvent.click(
       await screen.findByRole("menuitem", {
         name: /Export LLM batch/,

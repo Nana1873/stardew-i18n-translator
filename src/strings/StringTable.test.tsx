@@ -2197,6 +2197,26 @@ describe("StringTable workbench", () => {
     });
   });
 
+  it("keeps a row context menu while its string remains visible", async () => {
+    const { rerender } = render(<StringTable mod={MOD} search="greeting" />);
+    await screen.findByText("greeting");
+
+    fireEvent.contextMenu(rowFor("greeting"));
+    expect(
+      await screen.findByRole("menu", { name: "String actions" }),
+    ).toBeVisible();
+
+    rerender(<StringTable mod={MOD} search="" />);
+    expect(screen.getByRole("menu", { name: "String actions" })).toBeVisible();
+
+    rerender(<StringTable mod={MOD} search="weather" />);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menu", { name: "String actions" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
   it("resizes status and content columns while action and issue controls stay fixed", async () => {
     const secondFile = {
       ...MOD.i18nFiles[0],

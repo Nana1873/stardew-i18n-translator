@@ -791,7 +791,9 @@ export function StringTable({
       );
       return next.size === current.size ? current : next;
     });
-    setContextMenu(null);
+    setContextMenu((current) =>
+      current && allowed.has(current.returnIdentity) ? current : null,
+    );
     setBulkMenuOpen(false);
     anchor.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
