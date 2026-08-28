@@ -107,6 +107,16 @@ struct ModelEntry {
     id: String,
 }
 
+/// Model servers often expose embedding and chat models through the same
+/// `/v1/models` endpoint. An embedding-only model cannot satisfy the app's
+/// chat-completion contract, so omit ids that identify that capability
+/// unambiguously while leaving every other server-reported model untouched.
+fn is_obvious_embedding_model_id(id: &str) -> bool {
+    id.to_ascii_lowercase()
+        .split(|character: char| !character.is_ascii_alphanumeric())
+        .any(|part| matches!(part, "embed" | "embedding" | "embeddings"))
+}
+
 /// Parse the model `id`s out of a `/v1/models` response body. Tolerant: a body
 /// that does not match the shape yields an empty list rather than an error, so a
 /// reachable-but-odd server still counts as "connected".
@@ -117,7 +127,7 @@ pub fn parse_model_ids(body: &str) -> Vec<String> {
                 .data
                 .into_iter()
                 .map(|entry| entry.id)
-                .filter(|id| !id.is_empty())
+                .filter(|id| !id.is_empty() && !is_obvious_embedding_model_id(id))
                 .collect()
         })
         .unwrap_or_default()
@@ -476,8 +486,15 @@ async fn chat(
     max_tokens: u32,
     stop: Option<Vec<String>>,
 ) -> Result<String, String> {
+    if is_obvious_embedding_model_id(model) {
+        return Err(
+            "This embedding model cannot translate text. Choose a chat or instruct model."
+                .to_string(),
+        );
+    }
     let url = endpoint_url(base_url, &["chat", "completions"])?;
     let client = http_client(Duration::from_secs(120))?;
+    let (messages, stop) = apply_model_compatibility(model, messages, stop)?;
 
     let response = client
         .post(url.as_str())
@@ -508,6 +525,35 @@ async fn chat(
 
     let body = read_limited_body(response).await?;
     parse_chat_response(&body)
+}
+
+/// Hybrid Qwen3 models enable a reasoning pass by default. In LM Studio that
+/// reasoning can begin with a newline, so the normal single-line stop sequence
+/// ends the request before the model emits any translation. Disable the optional
+/// mode at the end of the final prompt, where untrusted source text cannot
+/// override it, and omit the newline stop for hybrid Qwen3 models. Qwen3
+/// Instruct variants already run without thinking and keep the normal request
+/// shape. Thinking-only variants cannot fit this bounded plain-text contract.
+fn apply_model_compatibility(
+    model: &str,
+    mut messages: Vec<ChatMessage>,
+    stop: Option<Vec<String>>,
+) -> Result<(Vec<ChatMessage>, Option<Vec<String>>), String> {
+    let normalized = model.to_ascii_lowercase();
+    if !normalized.contains("qwen3") || normalized.contains("instruct") {
+        return Ok((messages, stop));
+    }
+    if normalized.contains("thinking") {
+        return Err(
+            "This Qwen3 Thinking model supports only thinking mode and is not compatible with Local AI translation. Choose a Qwen3 Instruct or hybrid Qwen3 model."
+                .to_string(),
+        );
+    }
+
+    if let Some(prompt) = messages.last_mut() {
+        prompt.content.push_str("\n/no_think");
+    }
+    Ok((messages, None))
 }
 
 /// Translate one source string. Validates protected tokens against the source;
@@ -618,6 +664,38 @@ mod tests {
     fn parses_openai_model_list() {
         let body = r#"{"object":"list","data":[{"id":"llama3.1:8b"},{"id":"qwen2.5"}]}"#;
         assert_eq!(parse_model_ids(body), vec!["llama3.1:8b", "qwen2.5"]);
+    }
+
+    #[test]
+    fn filters_obvious_embedding_models_from_model_list() {
+        let body = r#"{
+            "data": [
+                {"id":"qwen3-14b"},
+                {"id":"text-embedding-nomic-embed-text-v1.5"},
+                {"id":"Qwen3-Embedding-0.6B"},
+                {"id":"embedded-chat-model"},
+                {"id":"mxbai-embed-large"}
+            ]
+        }"#;
+
+        assert_eq!(
+            parse_model_ids(body),
+            vec!["qwen3-14b", "embedded-chat-model"]
+        );
+    }
+
+    #[test]
+    fn detects_only_explicit_embedding_model_tokens() {
+        for model in [
+            "text-embedding-nomic-embed-text-v1.5",
+            "Qwen3-Embedding-0.6B",
+            "mxbai-embed-large",
+        ] {
+            assert!(is_obvious_embedding_model_id(model), "accepted {model}");
+        }
+        for model in ["qwen3-14b", "embedded-chat-model", "llama3.1:8b"] {
+            assert!(!is_obvious_embedding_model_id(model), "rejected {model}");
+        }
     }
 
     #[test]
@@ -845,6 +923,81 @@ mod tests {
         );
         // Multi-line source → no stop (its newlines are legitimate).
         assert_eq!(stop_sequences("Hello#$b#World\nmore"), None);
+    }
+
+    #[test]
+    fn qwen3_uses_non_reasoning_mode_without_a_newline_stop() {
+        let messages = build_messages("Café weather", "German", None, &[], None);
+        let original_system = messages[0].content.clone();
+        let original_user = messages[1].content.clone();
+        let (messages, stop) =
+            apply_model_compatibility("qwen3-14b", messages, Some(vec!["\n".to_string()])).unwrap();
+
+        assert_eq!(messages[0].content, original_system);
+        assert_eq!(messages[1].content, original_user + "\n/no_think");
+        assert_eq!(stop, None);
+    }
+
+    #[test]
+    fn qwen3_switch_follows_an_untrusted_think_directive() {
+        let messages = build_messages("Show /think literally", "German", None, &[], None);
+        let (messages, _) = apply_model_compatibility("QWEN3", messages, None).unwrap();
+
+        assert!(messages
+            .last()
+            .unwrap()
+            .content
+            .contains("Show /think literally"));
+        assert!(messages.last().unwrap().content.ends_with("/no_think"));
+    }
+
+    #[test]
+    fn non_qwen3_models_keep_the_existing_request_shape() {
+        let messages = build_messages("Café weather", "German", None, &[], None);
+        let original_system = messages[0].content.clone();
+        let original_user = messages[1].content.clone();
+        let original_stop = Some(vec!["\n".to_string()]);
+        let (messages, stop) =
+            apply_model_compatibility("qwen2.5-14b-instruct", messages, original_stop.clone())
+                .unwrap();
+
+        assert_eq!(messages[0].content, original_system);
+        assert_eq!(messages[1].content, original_user);
+        assert_eq!(stop, original_stop);
+    }
+
+    #[test]
+    fn qwen3_instruct_keeps_the_plain_request_shape() {
+        let messages = build_messages("Café weather", "German", None, &[], None);
+        let original_system = messages[0].content.clone();
+        let original_user = messages[1].content.clone();
+        let original_stop = Some(vec!["\n".to_string()]);
+        let (messages, stop) = apply_model_compatibility(
+            "Qwen3-30B-A3B-Instruct-2507",
+            messages,
+            original_stop.clone(),
+        )
+        .unwrap();
+
+        assert_eq!(messages[0].content, original_system);
+        assert_eq!(messages[1].content, original_user);
+        assert_eq!(stop, original_stop);
+    }
+
+    #[test]
+    fn qwen3_thinking_only_is_rejected_before_the_request() {
+        let result = apply_model_compatibility(
+            "Qwen3-30B-A3B-Thinking-2507",
+            build_messages("Café weather", "German", None, &[], None),
+            Some(vec!["\n".to_string()]),
+        );
+        let error = match result {
+            Ok(_) => panic!("thinking-only Qwen3 should be rejected"),
+            Err(error) => error,
+        };
+
+        assert!(error.contains("supports only thinking mode"));
+        assert!(error.contains("Qwen3 Instruct or hybrid Qwen3"));
     }
 
     #[test]
