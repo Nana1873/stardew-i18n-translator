@@ -89,6 +89,10 @@ pub struct AiSettings {
     pub codex_model: Option<String>,
     #[serde(default = "default_ai_reasoning")]
     pub codex_reasoning: String,
+    /// Run the additional Codex language review, terminology repair, and
+    /// protected-token repair passes after the initial translation draft.
+    #[serde(default = "default_codex_quality_review")]
+    pub codex_quality_review: bool,
 }
 
 impl AiSettings {
@@ -103,6 +107,7 @@ impl Default for AiSettings {
             default_engine: default_ai_engine(),
             codex_model: None,
             codex_reasoning: default_ai_reasoning(),
+            codex_quality_review: default_codex_quality_review(),
         }
     }
 }
@@ -192,6 +197,10 @@ fn default_ai_engine() -> String {
 
 fn default_ai_reasoning() -> String {
     "medium".to_string()
+}
+
+fn default_codex_quality_review() -> bool {
+    true
 }
 
 fn default_string_scope() -> String {
@@ -472,6 +481,7 @@ mod tests {
                 default_engine: "codex".to_string(),
                 codex_model: Some("gpt-5.6-sol".to_string()),
                 codex_reasoning: "high".to_string(),
+                codex_quality_review: false,
             },
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
             last_opened: BTreeMap::from([(
@@ -509,6 +519,7 @@ mod tests {
         assert!(json["workspace"]["columnWidths"].get("modColumn").is_none());
         assert_eq!(json["ai"]["defaultEngine"], "codex");
         assert_eq!(json["ai"]["codexModel"], "gpt-5.6-sol");
+        assert_eq!(json["ai"]["codexQualityReview"], false);
         assert!(json["ai"].get("apiKey").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -525,6 +536,7 @@ mod tests {
         assert_eq!(loaded.ai.default_engine, "local");
         assert_eq!(loaded.ai.codex_model, None);
         assert_eq!(loaded.ai.codex_reasoning, "medium");
+        assert!(loaded.ai.codex_quality_review);
         std::fs::remove_dir_all(dir).ok();
     }
 
@@ -542,6 +554,7 @@ mod tests {
         assert_eq!(loaded.ai.default_engine, "local");
         assert_eq!(loaded.ai.codex_model.as_deref(), Some("legacy-codex-model"));
         assert_eq!(loaded.ai.codex_reasoning, "low");
+        assert!(loaded.ai.codex_quality_review);
 
         let serialized = serde_json::to_value(loaded).unwrap();
         let ai = serialized.get("ai").and_then(serde_json::Value::as_object);

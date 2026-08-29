@@ -1854,6 +1854,7 @@ async fn translate_with_codex_cli(
         prepare_ai_request(&app, &request)?;
     let codex_model = settings.ai.codex_model.clone();
     let reasoning = ai::normalize_reasoning(&settings.ai.codex_reasoning)?;
+    let codex_quality_review = settings.ai.codex_quality_review;
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
@@ -2061,6 +2062,7 @@ async fn translate_with_codex_cli(
             codex_model.as_deref(),
             &reasoning,
             &target_language,
+            codex_quality_review,
             chunk,
             lease.cancelled.clone(),
             Arc::clone(&codex_progress),
@@ -2073,6 +2075,7 @@ async fn translate_with_codex_cli(
                     codex_model.as_deref(),
                     &reasoning,
                     &target_language,
+                    codex_quality_review,
                     chunk,
                     &translations,
                     lease.cancelled.clone(),

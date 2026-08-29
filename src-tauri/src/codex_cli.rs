@@ -3026,10 +3026,94 @@ where
     translate_chunk_with_recovery_reporting(cancelled, attempt, |_| {}).await
 }
 
+#[allow(clippy::too_many_arguments)]
+async fn apply_quality_review(
+    enabled: bool,
+    model: Option<String>,
+    reasoning: String,
+    target_language: String,
+    items: Vec<PreparedAiItem>,
+    drafts: Vec<ProviderTranslation>,
+    cancelled: Arc<AtomicBool>,
+    progress: CodexProgressCallback,
+) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
+    if !enabled {
+        return Ok(drafts);
+    }
+
+    let review_plans = build_review_plans(&target_language, &items, &drafts)?;
+    let review_model = model.clone();
+    let review_reasoning = reasoning.clone();
+    let review_language = target_language.clone();
+    let review_cancelled = Arc::clone(&cancelled);
+    let review_attempt_progress = Arc::clone(&progress);
+    let reviewed = execute_review_plans(
+        &items,
+        &drafts,
+        review_plans,
+        Arc::clone(&cancelled),
+        Arc::clone(&progress),
+        move |review_items, review_drafts, structural_error| {
+            run_review_attempt(
+                review_model.clone(),
+                review_reasoning.clone(),
+                review_language.clone(),
+                review_items,
+                review_drafts,
+                structural_error,
+                Arc::clone(&review_cancelled),
+                Arc::clone(&review_attempt_progress),
+            )
+        },
+    )
+    .await?;
+
+    let terminology_plans = match build_terminology_repair_plans(
+        &target_language,
+        &items,
+        &reviewed,
+    ) {
+        Ok(plans) if plans.is_empty() => return Ok(reviewed),
+        Ok(plans) => plans,
+        Err(_) => {
+            log::warn!(
+                    "The focused Codex terminology-repair plan could not be prepared; the full-review translations are retained."
+                );
+            return Ok(reviewed);
+        }
+    };
+    let terminology_language = target_language;
+    let terminology_cancelled = Arc::clone(&cancelled);
+    let terminology_attempt_progress = Arc::clone(&progress);
+    let terminology = execute_terminology_repair_plans(
+        &items,
+        &reviewed,
+        terminology_plans,
+        Arc::clone(&cancelled),
+        Arc::clone(&progress),
+        move |repair_items, repair_translations, findings, structural_error| {
+            run_terminology_repair_attempt(
+                model.clone(),
+                reasoning.clone(),
+                terminology_language.clone(),
+                repair_items,
+                repair_translations,
+                findings,
+                structural_error,
+                Arc::clone(&terminology_cancelled),
+                Arc::clone(&terminology_attempt_progress),
+            )
+        },
+    )
+    .await?;
+    Ok(terminology)
+}
+
 pub async fn translate_chunk(
     model: Option<&str>,
     reasoning: &str,
     target_language: &str,
+    quality_review: bool,
     items: &[PreparedAiItem],
     cancelled: Arc<AtomicBool>,
     progress: CodexProgressCallback,
@@ -3070,88 +3154,41 @@ pub async fn translate_chunk(
         move |event| translation_progress(event),
     )
     .await?;
-
-    let review_plans = build_review_plans(&target_language, &items, &drafts)?;
-    let review_model = model.clone();
-    let review_reasoning = reasoning.clone();
-    let review_language = target_language.clone();
-    let review_cancelled = Arc::clone(&cancelled);
-    let review_attempt_progress = Arc::clone(&progress);
-    let reviewed = execute_review_plans(
-        &items,
-        &drafts,
-        review_plans,
-        Arc::clone(&cancelled),
-        Arc::clone(&progress),
-        move |review_items, review_drafts, structural_error| {
-            run_review_attempt(
-                review_model.clone(),
-                review_reasoning.clone(),
-                review_language.clone(),
-                review_items,
-                review_drafts,
-                structural_error,
-                Arc::clone(&review_cancelled),
-                Arc::clone(&review_attempt_progress),
-            )
-        },
+    apply_quality_review(
+        quality_review,
+        model,
+        reasoning,
+        target_language,
+        items,
+        drafts,
+        cancelled,
+        progress,
     )
-    .await?;
-
-    let terminology_plans = match build_terminology_repair_plans(
-        &target_language,
-        &items,
-        &reviewed,
-    ) {
-        Ok(plans) if plans.is_empty() => return Ok(reviewed),
-        Ok(plans) => plans,
-        Err(_) => {
-            log::warn!(
-                "The focused Codex terminology-repair plan could not be prepared; the full-review translations are retained."
-            );
-            return Ok(reviewed);
-        }
-    };
-    let terminology_language = target_language;
-    let terminology_cancelled = Arc::clone(&cancelled);
-    let terminology_attempt_progress = Arc::clone(&progress);
-    let terminology = execute_terminology_repair_plans(
-        &items,
-        &reviewed,
-        terminology_plans,
-        Arc::clone(&cancelled),
-        Arc::clone(&progress),
-        move |repair_items, repair_translations, findings, structural_error| {
-            run_terminology_repair_attempt(
-                model.clone(),
-                reasoning.clone(),
-                terminology_language.clone(),
-                repair_items,
-                repair_translations,
-                findings,
-                structural_error,
-                Arc::clone(&terminology_cancelled),
-                Arc::clone(&terminology_attempt_progress),
-            )
-        },
-    )
-    .await?;
-    Ok(terminology)
+    .await
 }
 
-/// Give every structurally valid translation with token-count differences one
-/// bounded repair attempt. Separate bounded sub-batches continue independently;
-/// a failed or individually oversized repair retains the original suggestion.
-/// Cancellation remains authoritative.
+/// When quality review is enabled, give every structurally valid translation
+/// with token-count differences one bounded repair attempt. Disabled mode
+/// returns the first drafts unchanged. Separate bounded sub-batches continue
+/// independently; a failed or individually oversized repair retains the
+/// original suggestion. Cancellation remains authoritative.
+#[allow(clippy::too_many_arguments)]
 pub async fn repair_token_mismatches_once(
     model: Option<&str>,
     reasoning: &str,
     target_language: &str,
+    quality_review: bool,
     items: &[PreparedAiItem],
     translations: &[ProviderTranslation],
     cancelled: Arc<AtomicBool>,
     progress: CodexProgressCallback,
 ) -> Result<TokenRepairOutcome, ProviderFailure> {
+    if !quality_review {
+        return Ok(TokenRepairOutcome {
+            translations: translations.to_vec(),
+            cancelled: cancelled.load(Ordering::Acquire),
+        });
+    }
     let model = match model {
         Some(model) => Some(clean_model_value(model).ok_or_else(|| {
             ProviderFailure::Message("The selected Codex CLI model is invalid.".to_string())
@@ -3216,6 +3253,59 @@ mod tests {
             id: id.to_string(),
             text: text.to_string(),
         }
+    }
+
+    #[test]
+    fn disabled_quality_review_returns_drafts_without_entering_review() {
+        let items = vec![prepared_item("item-0000", "Hello, farmer!")];
+        let drafts = vec![provider_translation("item-0000", "Hallo!")];
+        let cancelled = Arc::new(AtomicBool::new(true));
+
+        let disabled = tauri::async_runtime::block_on(apply_quality_review(
+            false,
+            None,
+            "medium".to_string(),
+            "German".to_string(),
+            items.clone(),
+            drafts.clone(),
+            Arc::clone(&cancelled),
+            no_progress_callback(),
+        ))
+        .unwrap();
+        assert_eq!(disabled, drafts);
+
+        let enabled = tauri::async_runtime::block_on(apply_quality_review(
+            true,
+            None,
+            "medium".to_string(),
+            "German".to_string(),
+            items,
+            drafts,
+            cancelled,
+            no_progress_callback(),
+        ));
+        assert!(matches!(enabled, Err(ProviderFailure::Cancelled)));
+    }
+
+    #[test]
+    fn disabled_quality_review_skips_final_token_repair() {
+        let items = vec![prepared_item("item-0000", "Hello, {{name}}!")];
+        let drafts = vec![provider_translation("item-0000", "Hallo!")];
+
+        let outcome = tauri::async_runtime::block_on(repair_token_mismatches_once(
+            Some("--invalid-model"),
+            "invalid-reasoning",
+            "German",
+            false,
+            &items,
+            &drafts,
+            Arc::new(AtomicBool::new(false)),
+            no_progress_callback(),
+        ))
+        .unwrap();
+
+        assert_eq!(outcome.translations, drafts);
+        assert!(!outcome.cancelled);
     }
 
     #[test]
@@ -4710,6 +4800,7 @@ mod tests {
             None,
             "low",
             "German",
+            true,
             &items,
             Arc::new(AtomicBool::new(false)),
             no_progress_callback(),
