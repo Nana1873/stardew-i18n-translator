@@ -817,7 +817,16 @@ struct LlmBatchContext {
 fn load_llm_batch_context(
     app: &AppHandle,
     mod_unique_id: &str,
-    files: &[export::ExportFileInput],
+    untrusted_files: &[export::ExportFileInput],
+    source: &Path,
+) -> Result<LlmBatchContext, String> {
+    load_llm_batch_context_from_config(&config_dir(app)?, mod_unique_id, untrusted_files, source)
+}
+
+fn load_llm_batch_context_from_config(
+    config: &Path,
+    mod_unique_id: &str,
+    _untrusted_files: &[export::ExportFileInput],
     source: &Path,
 ) -> Result<LlmBatchContext, String> {
     let body = input_limits::read_json_text(source)?;
@@ -825,11 +834,45 @@ fn load_llm_batch_context(
     let parsed = scanner::parse_json_lenient(&body)
         .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
 
-    let target_lang = active_target_lang(app)?;
-    let config = translations::language_root(&config_dir(app)?, &target_lang)?;
-    let state = translations::load(&config, mod_unique_id)?;
+    let saved_settings = settings::load_checked(config)?;
+    let target_lang = saved_settings
+        .target_lang
+        .as_deref()
+        .ok_or_else(|| "Choose a target language before importing an LLM batch.".to_string())?;
+    let target_lang = language::normalize_target_code(target_lang)?;
+    let mods_path = saved_settings
+        .mods_path
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| {
+            saved_settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Choose a Mods folder before importing an LLM batch.".to_string())?;
+    if !mods_path.is_dir() {
+        return Err("The configured Mods folder is unavailable.".to_string());
+    }
+
+    // The WebView's file list is display state, not an authorization boundary.
+    // Resolve the selected component and all source/target paths from a fresh
+    // backend scan so stale or substituted IPC paths cannot change the import.
+    let scan = scanner::scan_mods(&mods_path, &target_lang, config);
+    let scanned = scan
+        .mods
+        .into_iter()
+        .find(|candidate| candidate.unique_id == mod_unique_id)
+        .ok_or_else(|| {
+            format!(
+                "The selected mod component \"{mod_unique_id}\" is not available in a fresh scan of the configured Mods folder. Scan again and retry."
+            )
+        })?;
+
+    let translation_root = translations::language_root(config, &target_lang)?;
+    let state = translations::load(&translation_root, mod_unique_id)?;
     let mut rows_by_dir = std::collections::HashMap::new();
-    for file in files {
+    for file in scanned.i18n_files {
         rows_by_dir.insert(
             file.relative_dir.clone(),
             scanner::load_strings_checked(
@@ -844,14 +887,15 @@ fn load_llm_batch_context(
     Ok(LlmBatchContext {
         parsed,
         target_lang,
-        config,
+        config: translation_root,
         rows_by_dir,
     })
 }
 
 /// Analyze one selected LLM result without writing translation state. A file
 /// for another mod returns its binding metadata so the frontend can offer a
-/// deliberate switch and rerun this command with that component's real files.
+/// deliberate switch and rerun this command with that component's id; the
+/// backend resolves its current files again.
 #[tauri::command]
 fn preflight_llm_batch_path(
     app: AppHandle,
@@ -1810,6 +1854,7 @@ async fn translate_with_codex_cli(
         prepare_ai_request(&app, &request)?;
     let codex_model = settings.ai.codex_model.clone();
     let reasoning = ai::normalize_reasoning(&settings.ai.codex_reasoning)?;
+    let codex_quality_review = settings.ai.codex_quality_review;
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
@@ -2017,6 +2062,7 @@ async fn translate_with_codex_cli(
             codex_model.as_deref(),
             &reasoning,
             &target_language,
+            codex_quality_review,
             chunk,
             lease.cancelled.clone(),
             Arc::clone(&codex_progress),
@@ -2029,6 +2075,7 @@ async fn translate_with_codex_cli(
                     codex_model.as_deref(),
                     &reasoning,
                     &target_language,
+                    codex_quality_review,
                     chunk,
                     &translations,
                     lease.cancelled.clone(),
@@ -2685,6 +2732,115 @@ mod portable_tests {
     #[test]
     fn logs_dir_rejects_an_executable_without_parent() {
         assert!(portable_logs_dir_for(Path::new("translator.exe")).is_err());
+    }
+}
+
+#[cfg(test)]
+mod llm_batch_context_tests {
+    use super::*;
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    fn install_mod(mods: &Path, folder: &str, unique_id: &str, source: &str) -> PathBuf {
+        let root = mods.join(folder);
+        write(
+            &root.join("manifest.json"),
+            &format!(r#"{{ "Name": "{folder}", "UniqueID": "{unique_id}", "Version": "1.0.0" }}"#),
+        );
+        write(
+            &root.join("i18n").join("default.json"),
+            &format!(r#"{{ "hello": "{source}" }}"#),
+        );
+        root
+    }
+
+    #[test]
+    fn llm_batch_context_ignores_webview_paths_and_refreshes_the_selected_component() {
+        let root = test_support::temp_dir("llm-batch-context");
+        let config = root.join("data");
+        let mods = root.join("Mods");
+        let selected = install_mod(&mods, "Selected", "Author.Selected", "Hello {{name}}");
+        let other = install_mod(&mods, "Other", "Author.Other", "Wrong {{name}}");
+        settings::save(
+            &config,
+            &settings::AppSettings {
+                mods_path: Some(mods.to_string_lossy().to_string()),
+                target_lang: Some("de".to_string()),
+                ..settings::AppSettings::default()
+            },
+        )
+        .unwrap();
+
+        let items = [batch::BatchExportItem {
+            relative_dir: "i18n".to_string(),
+            key: "hello".to_string(),
+            source: "Hello {{name}}".to_string(),
+        }];
+        let mut translated = batch::build_batch("Author.Selected", "de", &items);
+        translated["files"]["i18n"]["hello"] =
+            serde_json::Value::String("Hallo {{name}}".to_string());
+        let batch_path = root.join("translated.json");
+        write(
+            &batch_path,
+            &serde_json::to_string_pretty(&translated).unwrap(),
+        );
+
+        // These paths belong to another component. They intentionally mirror a
+        // stale or substituted WebView selection and must never affect binding.
+        let untrusted_files = [export::ExportFileInput {
+            relative_dir: "i18n".to_string(),
+            default_path: other
+                .join("i18n")
+                .join("default.json")
+                .display()
+                .to_string(),
+            target_path: other.join("i18n").join("de.json").display().to_string(),
+        }];
+
+        let context = load_llm_batch_context_from_config(
+            &config,
+            "Author.Selected",
+            &untrusted_files,
+            &batch_path,
+        )
+        .unwrap();
+        assert_eq!(context.rows_by_dir["i18n"][0].source, "Hello {{name}}");
+        assert!(
+            batch::preflight_batch(
+                &context.parsed,
+                "Author.Selected",
+                &context.target_lang,
+                &context.rows_by_dir,
+            )
+            .unwrap()
+            .ready
+        );
+
+        write(
+            &selected.join("i18n").join("default.json"),
+            r#"{ "hello": "Changed {{name}}" }"#,
+        );
+        let refreshed = load_llm_batch_context_from_config(
+            &config,
+            "Author.Selected",
+            &untrusted_files,
+            &batch_path,
+        )
+        .unwrap();
+        let report = batch::preflight_batch(
+            &refreshed.parsed,
+            "Author.Selected",
+            &refreshed.target_lang,
+            &refreshed.rows_by_dir,
+        )
+        .unwrap();
+        assert_eq!(report.snapshot_result, batch::SnapshotResult::Mismatch);
+        assert!(!report.ready);
+
+        std::fs::remove_dir_all(root).ok();
     }
 }
 
