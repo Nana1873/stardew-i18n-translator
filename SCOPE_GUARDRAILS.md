@@ -25,10 +25,14 @@ request and the existing product behavior decide what work is appropriate.
   recovery to retries and splitting of the affected batch, and resume from
   string status instead of a persistent AI job history, queue, or checkpoint
   store.
-- Codex first creates a draft, then reviews every draft and corrects issues in
-  meaning, natural language, terminology, grammar, register, speaker voice, and
-  dialogue continuity. Only afterward do conservatively detected glossary or
-  terminology candidates receive exactly one focused repair pass.
+- Codex first creates a draft. Its default quality option then reviews every
+  draft and corrects issues in meaning, natural language, terminology, grammar,
+  register, speaker voice, and dialogue continuity. Only afterward do
+  conservatively detected glossary or terminology candidates receive exactly
+  one focused repair pass.
+- The user may disable that Codex-only quality option to reduce provider time
+  and token use. This skips additional Codex review and repair calls, not
+  validation or human Review, and must show a clear translation-quality warning.
 - A failed full review leaves its chunk incomplete for a later retry; a failed
   optional terminology repair keeps the fully reviewed text. Every completed
   result enters the existing human Review workflow as `review-needed`; the AI

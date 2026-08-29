@@ -15,6 +15,8 @@ It stores local data there:
 
 - settings.json: selected folders, language, shortcuts, non-secret AI settings,
   and Workspace search, filter, sort, pane, and column-width preferences
+- scan-source-snapshot.json: rebuildable source hashes from the latest complete
+  Mods-folder scan, used to report changed, added, and removed English strings
 - glossary/glossary-<lang>.json: optional per-language glossary caches
 - language-state/<lang>/: saved translation work and automatic state backups
 - logs/: optional rotating diagnostic logs
@@ -28,14 +30,22 @@ Manual translation and local-only workflows remain offline. The optional Codex
 CLI backend uses only the CLI's own login; the application never reads its
 authentication files or tokens.
 
-Optional Local AI translation sends source text, section context, and matching
-glossary terms only to the loopback service configured in Settings. The
+Optional Local AI translation sends selected source text, section context,
+matching glossary terms, and up to two preceding and two following English
+source strings from the same component, i18n file, section, and related key
+group only to the loopback service configured in Settings. Neighboring strings
+are read-only context: they cannot be returned as translations or saved. The
 service-reported model list and non-secret endpoint settings are stored locally;
 no API key or custom cloud endpoint is stored.
 
-When Codex CLI translation is selected, source text, section context, and
-matching glossary terms are sent through the installed CLI. Every AI result
-requires review before it becomes an accepted translation.
+When Codex CLI translation is selected, the same bounded translation context is
+sent through the installed CLI. Every AI result requires review before it
+becomes an accepted translation.
+
+Codex CLI runs use an additional language-quality and repair pass by default.
+Settings can disable those extra calls to reduce time and token use. The app
+shows a warning because first drafts may need more manual correction; validation
+still runs and every result still enters Review.
 
 Copy the complete application folder, including data, to move your work to
 another computer.

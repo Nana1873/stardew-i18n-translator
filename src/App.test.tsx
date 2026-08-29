@@ -82,9 +82,11 @@ import { App } from "./App";
 import type {
   AiRunResult,
   ExportPreflight,
+  Glossary,
   LlmImportPreflight,
   OperationHistoryEntry,
   OperationKind,
+  ScanResult,
 } from "./tauri/commands";
 
 const CONFIGURED = {
@@ -247,7 +249,7 @@ const EXPORT_RESULT = {
   blocked: false,
 };
 
-function exportScan(targetExists: boolean) {
+function exportScan(targetExists: boolean): ScanResult {
   return {
     mods: [
       {
@@ -294,6 +296,19 @@ function exportScan(targetExists: boolean) {
       changedSources: [],
     },
   };
+}
+
+function scanWithMod(uniqueId: string, name: string) {
+  const result = exportScan(false);
+  result.mods = [
+    {
+      ...result.mods[0],
+      uniqueId,
+      name,
+      packageId: name,
+    },
+  ];
+  return result;
 }
 
 function mockExportConfigured(
@@ -447,6 +462,57 @@ describe("App shell", () => {
     );
   });
 
+  it("refreshes Overview and Workspace relative times from one minute clock", async () => {
+    const start = Date.parse("2026-08-28T10:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    try {
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "load_settings")
+          return Promise.resolve({
+            ...CONFIGURED,
+            lastOpened: { "a.b": start - 30_000 },
+          });
+        if (cmd === "load_glossary") return Promise.resolve(null);
+        if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+        if (cmd === "load_strings") return Promise.resolve([]);
+        return Promise.resolve(null);
+      });
+
+      const { unmount } = render(<App />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const overview = screen.getByRole("main", { name: "Overview" });
+      expect(overview).toHaveTextContent("scanned less than a minute ago");
+      expect(overview).toHaveTextContent("Just now");
+
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(overview).toHaveTextContent("scanned 1 min ago");
+      expect(overview).toHaveTextContent("1 min ago");
+
+      openWorkspace();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const workspace = screen.getByRole("main", { name: "String table" });
+      expect(workspace).toHaveTextContent("scanned 1 min ago");
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(workspace).toHaveTextContent("scanned 2 min ago");
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("hydrates the last-export folder from backend operation history", async () => {
     backendHistory = [
       exportHistory({
@@ -459,7 +525,11 @@ describe("App shell", () => {
     render(<App />);
 
     const overview = await screen.findByRole("main", { name: "Overview" });
-    expect(overview).toHaveTextContent("Last export · Test Mod · this session");
+    await waitFor(() =>
+      expect(overview).toHaveTextContent(
+        "Last export · Test Mod · this session",
+      ),
+    );
     expect(overview).toHaveTextContent("C:/canonical/i18n/de.json");
     fireEvent.click(
       within(overview).getByRole("button", { name: "Show in folder" }),
@@ -535,6 +605,164 @@ describe("App shell", () => {
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
     ).toHaveLength(1);
+  });
+
+  it("keeps the newer Settings scan when the startup scan finishes last", async () => {
+    const startupScan = deferred<ReturnType<typeof exportScan>>();
+    const settingsScan = deferred<ReturnType<typeof exportScan>>();
+    const frenchScan = scanWithMod("french.mod", "French Mod");
+    const staleGermanScan = {
+      ...scanWithMod("german.mod", "German Mod"),
+      warnings: ["Stale startup warning"],
+    };
+
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "save_settings") return Promise.resolve(null);
+      if (cmd === "scan_mods") {
+        const targetLang = (args as { targetLang: string }).targetLang;
+        return targetLang === "fr" ? settingsScan.promise : startupScan.promise;
+      }
+      if (cmd === "load_strings") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "fr",
+      }),
+    );
+
+    await act(async () => {
+      settingsScan.resolve(frenchScan);
+      await settingsScan.promise;
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+    openWorkspace();
+    expect(
+      await screen.findByRole("treeitem", { name: /French Mod/ }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      startupScan.resolve(staleGermanScan);
+      await startupScan.promise;
+    });
+    expect(
+      screen.getByRole("treeitem", { name: /French Mod/ }),
+    ).toHaveAttribute("aria-current", "true");
+    expect(screen.queryByRole("treeitem", { name: /German Mod/ })).toBeNull();
+    expect(screen.queryByText("Stale startup warning")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.getByLabelText("Scan mods")).toBeEnabled();
+  });
+
+  it("keeps the newest language glossary when the previous language resolves last", async () => {
+    const germanGlossary = deferred<Glossary | null>();
+    const frenchGlossary = deferred<Glossary | null>();
+
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") {
+        const targetLang = (args as { targetLang: string }).targetLang;
+        return targetLang === "fr"
+          ? frenchGlossary.promise
+          : germanGlossary.promise;
+      }
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "save_settings") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "fruit",
+            source: "Apple",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_glossary", {
+        targetLang: "de",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_glossary", {
+        targetLang: "fr",
+      }),
+    );
+
+    await act(async () => {
+      frenchGlossary.resolve({
+        format: 2,
+        sourceLang: "default",
+        targetLang: "fr",
+        termCount: 1,
+        entries: [
+          {
+            source: "Apple",
+            target: "Pomme",
+            kind: "item",
+            asset: "Strings/Objects",
+            key: "Apple",
+          },
+        ],
+      });
+      await frenchGlossary.promise;
+    });
+    await act(async () => {
+      germanGlossary.resolve({
+        format: 2,
+        sourceLang: "default",
+        targetLang: "de",
+        termCount: 1,
+        entries: [
+          {
+            source: "Apple",
+            target: "Apfel",
+            kind: "item",
+            asset: "Strings/Objects",
+            key: "Apple",
+          },
+        ],
+      });
+      await germanGlossary.promise;
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+    openWorkspace();
+    const key = await screen.findByRole("button", { name: "fruit" });
+    const row = key.closest<HTMLElement>("[data-string-row]");
+    if (!row) throw new Error("String row was not rendered");
+    fireEvent.doubleClick(row);
+    const editor = await screen.findByRole("dialog", { name: "fruit" });
+    expect(editor).toHaveTextContent("Apple → Pomme");
+    expect(editor).not.toHaveTextContent("Apple → Apfel");
   });
 
   it("switches between Workspace and Overview", async () => {
@@ -1796,6 +2024,7 @@ describe("App shell", () => {
           ai: {
             defaultEngine: "codex",
             codexReasoning: "high",
+            codexQualityReview: true,
           },
         });
       if (cmd === "codex_cli_status")
@@ -3172,6 +3401,7 @@ describe("App shell", () => {
     const ai = {
       defaultEngine: "codex" as const,
       codexReasoning: "high" as const,
+      codexQualityReview: true,
     };
     const shortcuts = { "editor.save": "Ctrl+S" };
     const lastOpened = { "a.b": 1_234 };
@@ -3380,6 +3610,90 @@ describe("App shell", () => {
       "aria-pressed",
       "true",
     );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          lastOpened: { "a.b": expect.any(Number) },
+        }),
+      }),
+    );
+  });
+
+  it("persists last-opened when an import switches to its matching mod", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+      i18nFiles: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "y/i18n/default.json",
+          targetPath: "y/i18n/de.json",
+          targetExists: false,
+          totalKeys: 1,
+          translatedKeys: 0,
+          reviewNeeded: 0,
+        },
+      ],
+    });
+    scan.modCount = 2;
+    scan.fileCount = 2;
+    const mismatch: LlmImportPreflight = {
+      ...READY_IMPORT_PREFLIGHT,
+      batchModUniqueId: "second.mod",
+      selectedModUniqueId: "a.b",
+      modMatches: false,
+      ready: false,
+      blockingReason: "This batch targets another scanned mod.",
+    };
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "pick_llm_batch_file")
+        return Promise.resolve("C:/results/second.llm-result.json");
+      if (cmd === "preflight_llm_batch_path") return Promise.resolve(mismatch);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+    await screen.findByRole("treeitem", { name: /Test Mod/ });
+    fireEvent.click(screen.getByRole("button", { name: "Import LLM batch" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Choose file …" }),
+    );
+    fireEvent.click(
+      await within(dialog).findByRole("button", {
+        name: "Switch to matching mod",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          lastOpened: { "second.mod": expect.any(Number) },
+        }),
+      }),
+    );
+    const switchedDialog = screen.getByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(switchedDialog).toHaveTextContent("Target: Second Mod");
+    fireEvent.click(
+      within(switchedDialog).getByRole("button", { name: "Cancel import" }),
+    );
+    expect(
+      await screen.findByRole("treeitem", { name: /Second Mod/ }),
+    ).toHaveAttribute("aria-current", "true");
   });
 
   it("closes a rejected import before exposing Choose another file", async () => {

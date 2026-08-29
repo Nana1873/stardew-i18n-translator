@@ -588,7 +588,7 @@ describe("ResultTray", () => {
     );
   });
 
-  it("keeps ZIP follow-up actions in the accepted compact action style", () => {
+  it("keeps ZIP follow-up actions in the compact action style", () => {
     renderTray(
       {
         kind: "zip",

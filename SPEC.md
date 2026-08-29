@@ -433,8 +433,8 @@ transient failure may be retried, and an invalid structured response gets one
 corrected attempt. If it remains invalid, only that Codex CLI batch is halved
 until the failing string is isolated, so unrelated strings can continue.
 
-A Codex translation run first produces an initial draft. Every draft then
-receives a full AI review that corrects issues
+A Codex translation run first produces an initial draft. By default, every
+draft then receives a full AI review that corrects issues
 in source meaning, natural phrasing in the target language, terminology,
 grammar, register, speaker voice, and dialogue continuity; review is not
 restricted to strings with token or glossary warnings. The review prompt still
@@ -445,14 +445,23 @@ candidate receive exactly one focused repair pass. The focused pass may retain
 contextually correct inflections or compounds unchanged. No terminology repair
 pass runs without such a candidate.
 
+Settings persists one Codex-only quality-review preference, enabled by default
+for existing and new configurations. Disabling it skips the full language
+review, focused terminology repair, and targeted Codex token-repair provider
+calls so structurally valid initial drafts proceed directly to validation and
+human Review. The UI warns that this reduces provider time and token use but
+may reduce wording, terminology, grammar, register, speaker-voice, dialogue-
+continuity, and protected-token quality. It does not disable validation or
+change `review-needed` status.
+
 Codex groups contiguous selected strings into adaptive chunks of at most 100
 items and additionally bounds the complete serialized prompt. Read-only
 neighboring sources are pooled once per prompt and referenced in source order;
 this representation must preserve the same section, glossary, and before/after
 context as the unpooled request. A single long source may occupy its own chunk.
 
-Each stage accepts only structurally valid output. A failed or oversized full
-review leaves the affected chunk incomplete so it can be retried. If the
+Each enabled stage accepts only structurally valid output. A failed or oversized
+full review leaves the affected chunk incomplete so it can be retried. If the
 optional focused repair fails or returns unusable output, the fully reviewed
 text is retained. Suggestions from completed adaptive chunks are saved
 immediately as `review-needed` when validation reaches them, including results
@@ -460,10 +469,11 @@ that passed both AI quality stages. Cancellation or a later provider error
 retains already persisted suggestions; selected items still in Open or Changed
 remain available for a later retry.
 
-After the language-quality stages, a protected-token mismatch gets one targeted
-Codex CLI repair attempt with the exact required and returned token counts when
-that complete prompt fits the same 96 KiB bound. An individually oversized
-repair input skips the extra call. If repair fails or is skipped, the best
+When Codex quality review is enabled, a protected-token mismatch after the
+language-quality stages gets one targeted Codex CLI repair attempt with the
+exact required and returned token counts when that complete prompt fits the same
+96 KiB bound. An individually oversized repair input skips the extra call. If
+repair fails, is skipped, or Codex quality review is disabled, the best
 structurally valid suggestion enters Review with the existing blocking
 validation issue. Local AI keeps its direct single-string request and existing
 one-time protected-token retry.

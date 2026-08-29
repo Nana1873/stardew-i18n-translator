@@ -15,7 +15,6 @@ import type {
   AiRunRecovery,
   AiRunResult,
   CodexActivityStage,
-  TranslationResult,
 } from "../tauri/commands";
 import { listenAiRunProgress } from "../tauri/commands";
 
@@ -31,7 +30,6 @@ export interface LiveAiEngineOption {
 
 /** One selected string captured when a run starts. */
 export interface BatchItem {
-  index: number;
   modUniqueId?: string;
   key: string;
   file: string;
@@ -115,14 +113,8 @@ interface BatchTranslateDialogProps {
   items: BatchItem[];
   modName: string;
   engine?: LiveAiEngineOption;
-  onLiveRun?: (runId: string) => Promise<AiRunResult>;
+  onLiveRun: (runId: string) => Promise<AiRunResult>;
   onCancelLiveRun?: (runId: string) => Promise<boolean>;
-  onTranslate: (
-    source: string,
-    section?: string | null,
-  ) => Promise<TranslationResult>;
-  /** Legacy local-AI path: persist one finished result as Review. */
-  onResult: (item: BatchItem, text: string) => Promise<void>;
   onFinished: (result: BatchFinishedResult) => void;
   onClose: () => void;
 }
@@ -133,8 +125,6 @@ export function BatchTranslateDialog({
   engine,
   onLiveRun,
   onCancelLiveRun,
-  onTranslate,
-  onResult,
   onFinished,
   onClose,
 }: BatchTranslateDialogProps) {
@@ -145,7 +135,6 @@ export function BatchTranslateDialog({
     stage: CodexActivityStage;
     receivedAt: number;
   } | null>(null);
-  const [currentKey, setCurrentKey] = useState<string | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [estimatedRemainingSeconds, setEstimatedRemainingSeconds] = useState<
     number | null
@@ -188,7 +177,7 @@ export function BatchTranslateDialog({
     cancelRef.current = true;
     setCancelRequested(true);
     setEstimatedRemainingSeconds(null);
-    if (onCancelLiveRun && onLiveRun) {
+    if (onCancelLiveRun) {
       void onCancelLiveRun(runIdRef.current).catch((cause) =>
         setCancelError(String(cause)),
       );
@@ -223,111 +212,76 @@ export function BatchTranslateDialog({
     }
 
     (async () => {
-      if (onLiveRun) {
-        try {
-          const unlisten = await listenAiRunProgress((event) => {
-            if (!active || event.runId !== runId) return;
-            recordCompletionCheckpoint(event.completed, event.total);
-            setDone(event.completed);
-            setLiveProgress(event);
-            const stage = event.codexStage;
-            const sequence = event.codexActivitySequence;
-            if (stage && sequence !== undefined) {
-              setLastCodexActivity((current) =>
-                current?.sequence === sequence
-                  ? current
-                  : {
-                      sequence,
-                      stage,
-                      receivedAt: Date.now(),
-                    },
-              );
-            }
-          });
-          if (!active) {
-            unlisten();
-            return;
+      try {
+        const unlisten = await listenAiRunProgress((event) => {
+          if (!active || event.runId !== runId) return;
+          recordCompletionCheckpoint(event.completed, event.total);
+          setDone(event.completed);
+          setLiveProgress(event);
+          const stage = event.codexStage;
+          const sequence = event.codexActivitySequence;
+          if (stage && sequence !== undefined) {
+            setLastCodexActivity((current) =>
+              current?.sequence === sequence
+                ? current
+                : {
+                    sequence,
+                    stage,
+                    receivedAt: Date.now(),
+                  },
+            );
           }
-          unlistenProgress = unlisten;
-        } catch {
-          // The final command result remains authoritative when event delivery
-          // is unavailable (for example in a browser-only preview).
-        }
-        if (!active) return;
-        if (cancelRef.current) {
-          finish({
-            runId,
-            done: 0,
-            total: items.length,
-            outcome: "cancelled",
-            engine: engine?.label ?? "AI",
-            ...(engine?.model ? { model: engine.model } : {}),
-            ...(engine?.reasoning ? { reasoning: engine.reasoning } : {}),
-          });
+        });
+        if (!active) {
+          unlisten();
           return;
         }
-        try {
-          liveRunPromiseRef.current ??= onLiveRun(runId);
-          const result = await liveRunPromiseRef.current;
-          if (!active) return;
-          setDone(result.completed);
-          finish({
-            runId: result.runId,
-            done: result.completed,
-            total: result.requested,
-            outcome: result.outcome,
-            ...(result.error ? { error: result.error } : {}),
-            engine: engine?.label ?? result.engine,
-            model: result.model,
-            reasoning: result.reasoning,
-          });
-        } catch (cause) {
-          if (!active) return;
-          finish({
-            runId,
-            done: 0,
-            total: items.length,
-            outcome: "error",
-            error: String(cause),
-            engine: engine?.label ?? "AI",
-            ...(engine?.model ? { model: engine.model } : {}),
-            ...(engine?.reasoning ? { reasoning: engine.reasoning } : {}),
-          });
-        }
-        return;
-      }
-
-      let completed = 0;
-      let failure: string | null = null;
-      for (const item of items) {
-        if (!active || cancelRef.current) break;
-        setCurrentKey(item.key);
-        try {
-          const result = await onTranslate(item.source, item.section);
-          await onResult(item, result.text);
-          if (!active) return;
-          completed += 1;
-          recordCompletionCheckpoint(completed, items.length);
-          setDone(completed);
-        } catch (cause) {
-          failure = String(cause);
-          break;
-        }
+        unlistenProgress = unlisten;
+      } catch {
+        // The final command result remains authoritative when event delivery
+        // is unavailable (for example in a browser-only preview).
       }
       if (!active) return;
-      finish({
-        done: completed,
-        total: items.length,
-        outcome: failure
-          ? "error"
-          : completed === items.length
-            ? "complete"
-            : "cancelled",
-        ...(failure ? { error: failure } : {}),
-        engine: engine?.label ?? "Local AI",
-        ...(engine?.model ? { model: engine.model } : {}),
-        ...(engine?.reasoning ? { reasoning: engine.reasoning } : {}),
-      });
+      if (cancelRef.current) {
+        finish({
+          runId,
+          done: 0,
+          total: items.length,
+          outcome: "cancelled",
+          engine: engine?.label ?? "AI",
+          ...(engine?.model ? { model: engine.model } : {}),
+          ...(engine?.reasoning ? { reasoning: engine.reasoning } : {}),
+        });
+        return;
+      }
+      try {
+        liveRunPromiseRef.current ??= onLiveRun(runId);
+        const result = await liveRunPromiseRef.current;
+        if (!active) return;
+        setDone(result.completed);
+        finish({
+          runId: result.runId,
+          done: result.completed,
+          total: result.requested,
+          outcome: result.outcome,
+          ...(result.error ? { error: result.error } : {}),
+          engine: engine?.label ?? result.engine,
+          model: result.model,
+          reasoning: result.reasoning,
+        });
+      } catch (cause) {
+        if (!active) return;
+        finish({
+          runId,
+          done: 0,
+          total: items.length,
+          outcome: "error",
+          error: String(cause),
+          engine: engine?.label ?? "AI",
+          ...(engine?.model ? { model: engine.model } : {}),
+          ...(engine?.reasoning ? { reasoning: engine.reasoning } : {}),
+        });
+      }
     })();
 
     return () => {
@@ -340,14 +294,12 @@ export function BatchTranslateDialog({
 
   const total = liveProgress?.total ?? items.length;
   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
-  const indeterminate = Boolean(onLiveRun && !liveProgress);
+  const indeterminate = !liveProgress;
   const phaseLabel = cancelRequested
     ? "Cancelling active batch"
     : liveProgress
       ? PHASE_LABELS[liveProgress.phase]
-      : currentKey
-        ? `Translating ${currentKey}`
-        : "Preparing selected strings";
+      : "Preparing selected strings";
   const activityParts = [phaseLabel];
   if (
     !cancelRequested &&

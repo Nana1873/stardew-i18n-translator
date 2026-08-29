@@ -59,21 +59,23 @@ function sampleScan(mods = [sampleMod()]): ScanResult {
 }
 
 describe("Dashboard", () => {
-  it("renders the accepted Overview from real counts and explicit unavailable deltas", () => {
+  it("renders Overview from real counts and explicit unavailable deltas", () => {
     const filter = vi.fn();
     const scanDetails = vi.fn();
     const lastExport = vi.fn();
+    const now = Date.now();
     render(
       <Dashboard
         scan={sampleScan()}
         scanning={false}
-        lastScanAt={Date.now() - 8 * 60_000}
+        lastScanAt={now - 8 * 60_000}
+        now={now}
         languageLine="German (de)"
         onScan={vi.fn()}
         scanEnabled
         onOpenMod={vi.fn()}
         onBrowse={vi.fn()}
-        lastOpened={{ "sample.mod": Date.now() - 60_000 }}
+        lastOpened={{ "sample.mod": now - 60_000 }}
         onShowScanDetails={scanDetails}
         onOpenOverviewFilter={filter}
         lastExport={{
@@ -126,6 +128,7 @@ describe("Dashboard", () => {
 
   it("shows real zero source deltas from the latest scan", () => {
     const scan = sampleScan();
+    const now = Date.now();
     scan.sourceDeltas = {
       sourcesChanged: 0,
       stringsAdded: 0,
@@ -138,7 +141,8 @@ describe("Dashboard", () => {
       <Dashboard
         scan={scan}
         scanning={false}
-        lastScanAt={Date.now()}
+        lastScanAt={now}
+        now={now}
         languageLine="German (de)"
         onScan={vi.fn()}
         scanEnabled
@@ -158,12 +162,14 @@ describe("Dashboard", () => {
 
   it("shows portable last-opened activity and uses it for navigation", () => {
     const openMod = vi.fn();
-    const lastOpenedAt = Date.now() - 12 * 60_000;
+    const now = Date.now();
+    const lastOpenedAt = now - 12 * 60_000;
     render(
       <Dashboard
         scan={sampleScan()}
         scanning={false}
-        lastScanAt={Date.now()}
+        lastScanAt={now}
+        now={now}
         languageLine="German (de)"
         onScan={vi.fn()}
         scanEnabled
@@ -205,6 +211,7 @@ describe("Dashboard", () => {
         scan={scanWithoutStructuredSkips}
         scanning={false}
         lastScanAt={null}
+        now={Date.now()}
         languageLine="German (de)"
         onScan={rescan}
         scanEnabled

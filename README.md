@@ -215,8 +215,8 @@ losing retained context. If one complete item prompt is still oversized, only
 its farthest neighboring context is trimmed first; the selected source is never
 trimmed.
 
-Codex translation uses a staged quality pass. Codex first creates an initial
-draft, then every draft receives a full AI review that corrects issues in
+Codex translation uses a staged quality pass by default. Codex first creates an
+initial draft, then every draft receives a full AI review that corrects issues in
 meaning, natural phrasing in the target language, terminology, grammar,
 register, speaker voice, and dialogue continuity. This review is not limited to
 token warnings or glossary matches. The review still inspects every draft but
@@ -228,10 +228,17 @@ inflections and compounds may remain unchanged. A failed full review does not
 mark its chunk complete, so it can be retried. If the optional focused repair
 fails, the fully reviewed text is kept.
 
-After the language-quality stages, a protected-token mismatch gets one targeted
-repair attempt and stays a blocking Review issue if it still differs. An
-individually oversized repair input is kept for Review without another provider
-call.
+**Settings > Translation engines > Codex CLI** can disable these additional AI
+review and repair calls for a faster, lower-token first-draft workflow. The app
+shows a quality warning while this option is off: wording, terminology,
+grammar, register, speaker voice, dialogue continuity, and protected tokens may
+need more manual correction. Validation still runs and every draft still enters
+Review.
+
+With the quality option enabled, a protected-token mismatch after the
+language-quality stages gets one targeted repair attempt and stays a blocking
+Review issue if it still differs. An individually oversized repair input is
+kept for Review without another provider call.
 
 AI suggestions always enter the existing human Review queue. Suggestions from
 completed adaptive chunks are saved immediately as validation reaches them.

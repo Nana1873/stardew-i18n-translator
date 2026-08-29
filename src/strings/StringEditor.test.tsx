@@ -190,7 +190,7 @@ describe("StringEditor", () => {
     expect(onNavigate).toHaveBeenCalledWith(1);
   });
 
-  it("matches the demo action states for persisted Review rows", () => {
+  it("shows the correct action states for persisted Review rows", () => {
     renderEditor({ status: "review-needed" });
 
     expect(
@@ -216,7 +216,7 @@ describe("StringEditor", () => {
     ).toBeInTheDocument();
   });
 
-  it("matches the demo action states for Changed rows and queue ends", () => {
+  it("shows the correct action states for Changed rows and queue ends", () => {
     renderEditor({ status: "outdated" }, undefined, { index: 1, total: 2 });
 
     expect(
@@ -725,7 +725,7 @@ describe("StringEditor", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("uses the accepted language-specific translation field label", () => {
+  it("uses the language-specific translation field label", () => {
     render(
       <StringEditor
         row={row()}

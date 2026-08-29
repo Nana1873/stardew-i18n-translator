@@ -196,10 +196,6 @@ export interface StringTableProps {
   localAiModel?: string;
   glossary?: GlossaryEntry[] | null;
   onClearFilters?: () => void;
-  onTranslate?: (
-    source: string,
-    section?: string | null,
-  ) => Promise<EditorTranslationResult>;
   liveAiEngines?: LiveAiEngineOption[];
   defaultAiEngine?: AiEngine;
   onRunAi?: (
@@ -207,11 +203,7 @@ export interface StringTableProps {
     request: AiTranslationRequest,
   ) => Promise<AiRunResult>;
   onCancelAi?: (runId: string) => Promise<boolean>;
-  /** Legacy selected-mod handoff. */
-  onLlmBatchExport?: (
-    items: LlmBatchItem[],
-  ) => Promise<LlmExportOutcome | null>;
-  /** Scope-aware handoff used by the all-mod table. */
+  /** Scope-aware handoff for selected strings from one real mod. */
   onLlmBatchExportForMod?: (
     mod: ScannedMod,
     items: LlmBatchItem[],
@@ -492,12 +484,10 @@ export function StringTable({
   targetLanguageCode,
   localAiModel,
   glossary = null,
-  onTranslate,
   liveAiEngines,
   defaultAiEngine = "local",
   onRunAi,
   onCancelAi,
-  onLlmBatchExport,
   onLlmBatchExportForMod,
   onCountsChange,
   onModCountsChange,
@@ -875,14 +865,9 @@ export function StringTable({
         singleModSelection &&
         candidate.uniqueId === batchEligibleRows[0]?.modUniqueId,
     ) ?? null;
-  const legacyLlmMatches =
-    batchMod !== null && batchMod.uniqueId === mod?.uniqueId;
   const canRunAi =
-    liveAiEligibleRows.length > 0 &&
-    (onRunAi ? Boolean(activeLiveEngine) : Boolean(onTranslate));
-  const llmExportHandlerAvailable = Boolean(
-    onLlmBatchExportForMod || (legacyLlmMatches && onLlmBatchExport),
-  );
+    liveAiEligibleRows.length > 0 && Boolean(onRunAi && activeLiveEngine);
+  const llmExportHandlerAvailable = Boolean(onLlmBatchExportForMod);
   const canExportLlm =
     singleModSelection &&
     batchEligibleRows.length > 0 &&
@@ -1470,7 +1455,6 @@ export function StringTable({
     if (!canRunAi) return;
     onEditorOpen?.();
     const items: BatchItem[] = liveAiEligibleRows.map((row) => ({
-      index: rowIndex.get(identityOf(row)) ?? -1,
       modUniqueId: row.modUniqueId,
       key: row.key,
       file: row.file,
@@ -1488,43 +1472,7 @@ export function StringTable({
     );
     setContextMenu(null);
     setBulkMenuOpen(false);
-    setBatch(items.filter((item) => item.index >= 0));
-  }
-
-  async function applyBatchResult(item: BatchItem, text: string) {
-    const current = rowsRef.current;
-    const row = current?.[item.index];
-    if (!current || !row) return;
-    await saveString(
-      row.modUniqueId,
-      row.file,
-      row.key,
-      text,
-      "review-needed",
-      row.source,
-    );
-    const next = current.map((candidate, index) =>
-      index === item.index
-        ? {
-            ...candidate,
-            target: text,
-            status: "review-needed" as StringStatus,
-            tokenMismatchAccepted: false,
-          }
-        : candidate,
-    );
-    rowsRef.current = next;
-    setRows(next);
-    const saved = next[item.index];
-    onStringSaved?.({
-      modUniqueId: saved.modUniqueId,
-      relativeDir: saved.file,
-      key: saved.key,
-      source: saved.source,
-      target: saved.target,
-      targetPresent: saved.targetPresent,
-      tokenMismatchAccepted: false,
-    });
+    setBatch(items);
   }
 
   function applyLiveSuggestions(result: AiRunResult, showReview = true) {
@@ -1723,7 +1671,7 @@ export function StringTable({
   }
 
   async function startLlmBatchExport() {
-    if (!llmExportHandlerAvailable) return;
+    if (!onLlmBatchExportForMod) return;
     if (!canExportLlm || !batchMod) {
       setContextMenu(null);
       setBulkMenuOpen(false);
@@ -1742,11 +1690,7 @@ export function StringTable({
     setContextMenu(null);
     setBulkMenuOpen(false);
     try {
-      if (onLlmBatchExportForMod) {
-        await onLlmBatchExportForMod(batchMod, items);
-      } else {
-        await onLlmBatchExport?.(items);
-      }
+      await onLlmBatchExportForMod(batchMod, items);
     } catch {
       // The shell owns persistent operation reporting.
     }
@@ -1931,13 +1875,10 @@ export function StringTable({
       editingRow.status === "outdated") &&
     isLiveAiSourceEligible(editingRow.source),
   );
-  const editorTranslate = editingRow
-    ? onRunAi
-      ? activeLiveEngine?.ready
-        ? () => runSingleLiveAi(editingRow)
-        : undefined
-      : onTranslate
-    : undefined;
+  const editorTranslate =
+    editingRow && onRunAi && activeLiveEngine
+      ? () => runSingleLiveAi(editingRow)
+      : undefined;
   const editorAiUnavailableReason =
     editingRow &&
     (editingRow.status === "untranslated" ||
@@ -1973,9 +1914,9 @@ export function StringTable({
     { value: "translated", label: "Done", count: statusCounts.translated },
   ];
 
-  const aiUnavailableReason = !(onRunAi || onTranslate)
+  const aiUnavailableReason = !onRunAi
     ? "Configure a translation engine in Settings."
-    : onRunAi && !activeLiveEngine
+    : !activeLiveEngine
       ? "No translation engine is currently available. Check Settings."
       : liveAiEligibleRows.length === 0
         ? batchEligibleRows.length > 0
@@ -2666,13 +2607,8 @@ export function StringTable({
           items={batch}
           modName={batchModLabel}
           engine={activeLiveEngine}
-          onLiveRun={onRunAi ? runLiveBatch : undefined}
+          onLiveRun={runLiveBatch}
           onCancelLiveRun={onCancelAi}
-          onTranslate={
-            onTranslate ??
-            (() => Promise.reject(new Error("Local AI is not configured.")))
-          }
-          onResult={applyBatchResult}
           onFinished={finishBatch}
           onClose={closeBatch}
         />
@@ -2680,7 +2616,6 @@ export function StringTable({
     </div>
   );
 }
-
 function ActionButtons({
   listItems = false,
   canRunAi,
@@ -3263,46 +3198,5 @@ function RowView({
         </button>
       </span>
     </div>
-  );
-}
-
-/** Compact selected-mod summary retained for the shell heading. */
-export function StringTableHeader({
-  mod,
-  onShowReview,
-}: {
-  mod: ScannedMod;
-  onShowReview?: () => void;
-}) {
-  const summary = useMemo(
-    () =>
-      mod.totalKeys > 0
-        ? String(mod.translatedKeys) +
-          "/" +
-          String(mod.totalKeys) +
-          " · " +
-          String(Math.round(mod.progress * 100)) +
-          "%"
-        : "no strings",
-    [mod],
-  );
-  const reviewNeeded = mod.statusCounts?.["review-needed"] ?? 0;
-  return (
-    <span className="panel__muted">
-      {mod.name} · {summary}
-      {reviewNeeded > 0 && (
-        <>
-          {" · "}
-          <button
-            type="button"
-            className="panel__review"
-            title="Show only strings that need review"
-            onClick={onShowReview}
-          >
-            <span aria-hidden>⚑</span> {reviewNeeded} need review
-          </button>
-        </>
-      )}
-    </span>
   );
 }

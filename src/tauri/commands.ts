@@ -30,6 +30,8 @@ export interface AiSettings {
   /** Exact model reported by the installed Codex CLI; absent = CLI default. */
   codexModel?: string | null;
   codexReasoning: "low" | "medium" | "high";
+  /** Run the full Codex language-quality review and focused repair stages. */
+  codexQualityReview: boolean;
 }
 
 export type WorkspaceSortColumn =

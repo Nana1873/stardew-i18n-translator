@@ -51,7 +51,7 @@ describe("ScanDialog", () => {
       "aria-valuetext",
       "Scanning; exact progress is unavailable",
     );
-    // The accepted flow retains its action row but cannot close mid-scan.
+    // The dialog retains its action row but cannot close mid-scan.
     expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
   });
 

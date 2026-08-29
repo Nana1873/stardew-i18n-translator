@@ -1079,6 +1079,7 @@ describe("SettingsDialog", () => {
             defaultEngine: "codex",
             codexModel: "gpt-5.5",
             codexReasoning: "high",
+            codexQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1141,6 +1142,78 @@ describe("SettingsDialog", () => {
           defaultEngine: "codex",
           codexModel: "gpt-5.6-sol",
           codexReasoning: "high",
+          codexQualityReview: true,
+        },
+      }),
+    );
+  });
+
+  it("defaults Codex quality review on and warns before saving first-draft mode", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "codex_cli_models") return Promise.resolve([]);
+      if (cmd === "codex_cli_rate_limits") return Promise.resolve(null);
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "codex",
+            codexReasoning: "medium",
+          } as unknown as NonNullable<AppSettings["ai"]>,
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Check status" }),
+      ).toBeEnabled(),
+    );
+
+    const qualityReview = screen.getByRole("checkbox", {
+      name: "AI quality review and repairs",
+    });
+    expect(qualityReview).toBeChecked();
+    expect(
+      screen.getByText(/Reviews meaning, natural language, terminology/),
+    ).toHaveTextContent(
+      "Reviews meaning, natural language, terminology, grammar, register, speaker voice, and dialogue continuity, then applies focused terminology and protected-token repairs when needed.",
+    );
+    expect(
+      screen.queryByRole("note", { name: "First draft quality warning" }),
+    ).toBeNull();
+
+    fireEvent.click(qualityReview);
+    expect(qualityReview).not.toBeChecked();
+    const warning = screen.getByRole("note", {
+      name: "First draft quality warning",
+    });
+    expect(warning).toHaveTextContent("faster and uses fewer tokens");
+    expect(warning).toHaveTextContent(
+      "Drafts may contain wording, terminology, grammar, register, speaker voice, dialogue continuity, or protected-token errors",
+    );
+    expect(warning).toHaveTextContent(
+      "Validation still runs and every result still enters Review",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: {
+          defaultEngine: "codex",
+          codexModel: null,
+          codexReasoning: "medium",
+          codexQualityReview: false,
         },
       }),
     );
@@ -1215,6 +1288,7 @@ describe("SettingsDialog", () => {
           ai: {
             defaultEngine: "codex",
             codexReasoning: "medium",
+            codexQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1327,6 +1401,7 @@ describe("SettingsDialog", () => {
           ai: {
             defaultEngine: "codex",
             codexReasoning: "medium",
+            codexQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1354,6 +1429,7 @@ describe("SettingsDialog", () => {
           defaultEngine: "codex",
           codexModel: null,
           codexReasoning: "medium",
+          codexQualityReview: true,
         },
       }),
     );
@@ -1391,6 +1467,7 @@ describe("SettingsDialog", () => {
             defaultEngine: "local",
             codexModel: "retired-model",
             codexReasoning: "medium",
+            codexQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1458,6 +1535,7 @@ describe("SettingsDialog", () => {
           defaultEngine: "local",
           codexModel: null,
           codexReasoning: "medium",
+          codexQualityReview: true,
         },
       }),
     );
@@ -1566,7 +1644,7 @@ describe("SettingsDialog", () => {
     },
   );
 
-  it("includes the accepted Ctrl+F string-search shortcut", () => {
+  it("includes the Ctrl+F string-search shortcut", () => {
     render(
       <SettingsDialog
         settings={baseSettings}

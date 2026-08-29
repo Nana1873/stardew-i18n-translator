@@ -18,6 +18,8 @@ interface DashboardProps {
   scanning: boolean;
   /** Real completion time of the latest scan in this running session. */
   lastScanAt: number | null;
+  /** Shared application clock, refreshed once per minute. */
+  now: number;
   /** "German (de)" subtitle fragment. */
   languageLine: string;
   onScan: () => void;
@@ -28,7 +30,7 @@ interface DashboardProps {
   lastOpened: Record<string, number>;
   /** Opens the retained result of the latest real scan. */
   onShowScanDetails?: () => void;
-  /** Applies one of the accepted cross-mod Overview shortcuts. */
+  /** Applies one of the cross-mod Overview filter shortcuts. */
   onOpenOverviewFilter?: (filter: OverviewFilter) => void;
   /** Latest genuine successful export in this running app session. */
   lastExport?: DashboardLastExport | null;
@@ -55,8 +57,8 @@ function count(value: number): string {
   return numberFormat.format(value);
 }
 
-function scanAgeLabel(epochMs: number): string {
-  const minutes = Math.max(0, Math.round((Date.now() - epochMs) / 60_000));
+function scanAgeLabel(epochMs: number, now: number): string {
+  const minutes = Math.max(0, Math.round((now - epochMs) / 60_000));
   if (minutes < 1) return "scanned less than a minute ago";
   if (minutes < 60) return `scanned ${minutes} min ago`;
   const hours = Math.round(minutes / 60);
@@ -66,8 +68,8 @@ function scanAgeLabel(epochMs: number): string {
   return `scanned ${days} ${days === 1 ? "day" : "days"} ago`;
 }
 
-function lastOpenedLabel(epochMs: number): string {
-  const minutes = Math.max(0, Math.floor((Date.now() - epochMs) / 60_000));
+function lastOpenedLabel(epochMs: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - epochMs) / 60_000));
   if (minutes < 1) return "Just now";
   if (minutes < 60) return `${minutes} min ago`;
   const hours = Math.floor(minutes / 60);
@@ -82,6 +84,7 @@ export function Dashboard({
   scan,
   scanning,
   lastScanAt,
+  now,
   languageLine,
   onScan,
   scanEnabled,
@@ -204,7 +207,7 @@ export function Dashboard({
             {scan
               ? lastScanAt == null
                 ? " · scan time unavailable"
-                : ` · ${scanAgeLabel(lastScanAt)}`
+                : ` · ${scanAgeLabel(lastScanAt, now)}`
               : ""}
           </div>
         </div>
@@ -371,6 +374,7 @@ export function Dashboard({
                   mod={mod}
                   targetLanguage={targetLanguage}
                   lastOpenedAt={lastOpened[mod.uniqueId]}
+                  now={now}
                   onOpen={() => onOpenMod(mod.uniqueId)}
                   onShowStatusHelp={showStatusHelp}
                   onHideStatusHelp={() => setStatusTooltip(null)}
@@ -407,6 +411,7 @@ function RecentRow({
   mod,
   targetLanguage,
   lastOpenedAt,
+  now,
   onOpen,
   onShowStatusHelp,
   onHideStatusHelp,
@@ -414,6 +419,7 @@ function RecentRow({
   mod: ScannedMod;
   targetLanguage: string;
   lastOpenedAt: number;
+  now: number;
   onOpen: () => void;
   onShowStatusHelp: (target: HTMLElement, text: string) => void;
   onHideStatusHelp: () => void;
@@ -464,7 +470,7 @@ function RecentRow({
           dateTime={new Date(lastOpenedAt).toISOString()}
           title={`Opened ${new Date(lastOpenedAt).toLocaleString("en-US")}`}
         >
-          {lastOpenedLabel(lastOpenedAt)}
+          {lastOpenedLabel(lastOpenedAt, now)}
         </time>
       </td>
       <td>

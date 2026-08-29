@@ -37,9 +37,9 @@ body {
   grid-template-rows: minmax(0, 1fr);
 }
 
-/* React wraps the accepted header, toolbar, and scrollable table in the
-   existing StringTable root. Let that grid item shrink with its pane so only
-   the table owns horizontal overflow. */
+/* React wraps the header, toolbar, and scrollable table in the StringTable
+   root. Let that grid item shrink with its pane so only the table owns
+   horizontal overflow. */
 #stardew-i18n-translator .translator-string-workbench {
   height: 100%;
   min-height: 0;
@@ -405,8 +405,8 @@ body {
   background: var(--translator-title);
 }
 
-/* Native Tauri drag-enter uses the accepted compact file-choice state. It is
-   deliberately not a full-window legacy drop scrim. */
+/* Native Tauri drag-enter uses the compact file-choice state instead of a
+   full-window drop scrim. */
 #stardew-i18n-translator .translator-native-drop-state {
   position: absolute;
   top: 54px;
@@ -424,8 +424,8 @@ body {
   border-color: var(--translator-red);
 }
 
-/* The reference marks table cells; production rows use the same grid as
-   role-based cells so virtualization remains lightweight. */
+/* Search matches mark role-based table cells without adding extra elements to
+   the virtualized row grid. */
 #stardew-i18n-translator .translator-string-row [role="cell"].is-search-match {
   background: color-mix(in srgb, var(--translator-brand) 12%, transparent);
   box-shadow: inset 0 -2px 0

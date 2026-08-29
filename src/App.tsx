@@ -116,7 +116,7 @@ import {
   type FileDragDropEvent,
   listenForFileDrops,
 } from "./llm-batch/dragDrop";
-import { resolveShortcuts, type ResolvedShortcuts } from "./shortcuts";
+import { resolveShortcuts } from "./shortcuts";
 import { ImportBatchDialog } from "./llm-batch/ImportBatchDialog";
 import { LlmBatchExportDialog } from "./llm-batch/LlmBatchExportDialog";
 
@@ -154,6 +154,7 @@ const DEFAULT_AI_SETTINGS: AiSettings = {
   defaultEngine: "local",
   codexModel: null,
   codexReasoning: "medium",
+  codexQualityReview: true,
 };
 
 function fileNameOf(path: string): string {
@@ -266,6 +267,7 @@ export function App() {
     "folders" | "ai" | "glossary" | "shortcuts" | "about"
   >("folders");
   const [loaded, setLoaded] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
 
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -279,6 +281,7 @@ export function App() {
     identities: ScanStringIdentity[];
   } | null>(null);
   const scanDismissedRef = useRef(false);
+  const scanGenerationRef = useRef(0);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(340);
@@ -361,6 +364,10 @@ export function App() {
     Partial<StringTableColumnWidths>
   >({});
   const [glossary, setGlossaryTerms] = useState<GlossaryEntry[] | null>(null);
+  const glossaryRequestRef = useRef<{
+    generation: number;
+    language: string | null;
+  }>({ generation: 0, language: null });
   const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
 
   // External LLM batch import: persistent result tray + reload trigger.
@@ -535,23 +542,36 @@ export function App() {
   }, [toast]);
 
   useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
     void refreshOperationHistory();
     void refreshAiAvailability();
   }, []);
 
   function refreshGlossary(lang: string | null | undefined) {
+    const language = lang ?? null;
+    const generation = glossaryRequestRef.current.generation + 1;
+    glossaryRequestRef.current = { generation, language };
+    const isCurrentRequest = () =>
+      glossaryRequestRef.current.generation === generation &&
+      glossaryRequestRef.current.language === language;
     // The glossary is cached per target language; with none selected, or for a
     // game-unsupported language (no cache file), there are simply no hints.
-    if (!lang) {
+    if (!language) {
       setGlossaryTerms(null);
       return;
     }
-    loadGlossary(lang)
-      .then((g) =>
-        setGlossaryTerms(g && g.entries.length > 0 ? g.entries : null),
-      )
+    loadGlossary(language)
+      .then((g) => {
+        if (!isCurrentRequest()) return;
+        setGlossaryTerms(g && g.entries.length > 0 ? g.entries : null);
+      })
       .catch((error) => {
         logFrontendError("loadGlossary", String(error));
+        if (!isCurrentRequest()) return;
         setGlossaryTerms(null);
       });
   }
@@ -761,6 +781,9 @@ export function App() {
     } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
+    const generation = ++scanGenerationRef.current;
+    const isCurrentRequest = () =>
+      generation === scanGenerationRef.current && isActive();
     setScanning(true);
     scanDismissedRef.current = false;
     setScanDiagnosticsFocus(false);
@@ -784,9 +807,11 @@ export function App() {
         scanSettings.modsPath,
         scanSettings.targetLang,
       );
-      if (!isActive()) return;
+      if (!isCurrentRequest()) return;
       setScan(result);
-      setLastScanAt(Date.now());
+      const completedAt = Date.now();
+      setLastScanAt(completedAt);
+      setNow(completedAt);
       const requested = result.mods.find(
         (candidate) => candidate.uniqueId === selectionBeforeScan,
       );
@@ -799,8 +824,8 @@ export function App() {
         )[0];
       setSelectedModId(preferred?.uniqueId ?? null);
       setStringScope(preferred ? scopeBeforeScan : "all");
-      // The accepted desktop flow retains every manually requested completed
-      // scan until the user closes it. Silent scans still surface real
+      // Retain every manually requested completed scan until the user closes
+      // it. Silent scans still surface real
       // diagnostics without interrupting a clean startup or language switch.
       if (
         !scanDismissedRef.current &&
@@ -819,11 +844,11 @@ export function App() {
       }
     } catch (error) {
       logFrontendError("scanMods", String(error));
-      if (!isActive()) return;
+      if (!isCurrentRequest()) return;
       setScanError(String(error));
       if (!scanDismissedRef.current) setScanDialogOpen(true);
     } finally {
-      if (isActive()) setScanning(false);
+      if (isCurrentRequest()) setScanning(false);
     }
   }
 
@@ -1824,8 +1849,7 @@ export function App() {
     setStatusFilter("review-needed");
     setIssuesOnly(false);
     if (reviewModIds.length === 1) {
-      setSelectedModId(reviewModIds[0]);
-      setStringScope("mod");
+      openMod(reviewModIds[0]);
     } else {
       // Multiple or older history entries have no single safe component.
       // All mods guarantees the requested Review results are not hidden.
@@ -1972,6 +1996,7 @@ export function App() {
               scan={scan}
               scanning={scanning}
               lastScanAt={lastScanAt}
+              now={now}
               languageLine={languageLine}
               onScan={handleScan}
               scanEnabled={configured && !scanning && !exporting}
@@ -2171,7 +2196,7 @@ export function App() {
                   onCancelAi={cancelAiRun}
                   headerMeta={
                     lastScanAt
-                      ? `scanned ${Math.max(0, Math.round((Date.now() - lastScanAt) / 60_000))} min ago`
+                      ? `scanned ${Math.max(0, Math.round((now - lastScanAt) / 60_000))} min ago`
                       : "scan time unavailable"
                   }
                   glossary={glossary}
@@ -2443,9 +2468,7 @@ export function App() {
                       )
                     )
                       return;
-                    setSelectedModId(modUniqueId);
-                    setStringScope("mod");
-                    setView("work");
+                    openMod(modUniqueId);
                   }
                 : undefined
             }

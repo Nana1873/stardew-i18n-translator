@@ -28,7 +28,7 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-import { StringTable, StringTableHeader } from "./StringTable";
+import { StringTable } from "./StringTable";
 import type {
   AiEngine,
   AiRunResult,
@@ -169,6 +169,15 @@ function liveAiResult(overrides: Partial<AiRunResult> = {}): AiRunResult {
     ...overrides,
   };
 }
+
+const LOCAL_AI_ENGINE = {
+  id: "local" as const,
+  label: "Local AI",
+  ready: true,
+  model: "llama-local",
+  reasoning: "none",
+  note: "Local only.",
+};
 
 function installBackendRows(
   overrides?: Partial<Record<"a.b" | "c.d", readonly unknown[]>>,
@@ -321,7 +330,7 @@ describe("StringTable workbench", () => {
     ).toBe(false);
   });
 
-  it("uses the accepted direct grid geometry with a fixed action rail", async () => {
+  it("uses the direct grid geometry with a fixed action rail", async () => {
     const { container } = render(
       <StringTable mod={MOD} targetLanguageLabel="German (de)" />,
     );
@@ -772,7 +781,7 @@ describe("StringTable workbench", () => {
     expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
   });
 
-  it("sorts status in the accepted Open, Changed, Review, Done order", async () => {
+  it("sorts status in Open, Changed, Review, Done order", async () => {
     installBackendRows({
       "a.b": [
         ROWS["a.b"][0],
@@ -809,7 +818,7 @@ describe("StringTable workbench", () => {
     ]);
   });
 
-  it("opens the editor from the accepted inline validation and row-more actions", async () => {
+  it("opens the editor from inline validation and row-more actions", async () => {
     render(<StringTable mod={MOD} onLlmBatchExportForMod={vi.fn()} />);
     await screen.findByText("token");
 
@@ -1060,7 +1069,7 @@ describe("StringTable workbench", () => {
     expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
   });
 
-  it("uses the accepted Lucide sort icons for inactive and active directions", async () => {
+  it("uses Lucide sort icons for inactive and active directions", async () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");
     const keySort = screen.getByRole("button", { name: "Key" });
@@ -1191,7 +1200,7 @@ describe("StringTable workbench", () => {
     ).toBeVisible();
   });
 
-  it("shows every accepted bulk action and clears selection explicitly", async () => {
+  it("shows every bulk action and clears selection explicitly", async () => {
     const onNotify = vi.fn();
     render(<StringTable mod={MOD} onNotify={onNotify} />);
     await screen.findByText("greeting");
@@ -1460,19 +1469,11 @@ describe("StringTable workbench", () => {
   });
 
   it("starts selected Local AI work across mods while clearly explaining the single-mod LLM export", async () => {
-    let releaseTranslation: (result: {
-      text: string;
-      missingTokens: string[];
-      glossaryMisses: string[];
-    }) => void = () => {};
-    const onTranslate = vi.fn(
-      () =>
-        new Promise<{
-          text: string;
-          missingTokens: string[];
-          glossaryMisses: string[];
-        }>((resolve) => {
-          releaseTranslation = resolve;
+    let releaseRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          releaseRun = resolve;
         }),
     );
     const onLlmBatchExportForMod = vi.fn();
@@ -1484,7 +1485,9 @@ describe("StringTable workbench", () => {
         mod={MOD}
         mods={[MOD, OTHER_MOD]}
         scope="all"
-        onTranslate={onTranslate}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
         onLlmBatchExportForMod={onLlmBatchExportForMod}
         onEditorOpen={onEditorOpen}
         onNotify={onNotify}
@@ -1516,9 +1519,13 @@ describe("StringTable workbench", () => {
       screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
     );
     expect(onEditorOpen).toHaveBeenCalledOnce();
-    await waitFor(() =>
-      expect(onTranslate).toHaveBeenCalledWith("Bye", undefined),
-    );
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
+    expect(request.identities).toEqual([
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "bye" },
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
+      { modUniqueId: "c.d", relativeDir: "i18n/dialogue", key: "tomorrow" },
+    ]);
     expect(
       screen.getByRole("dialog", { name: "AI translation progress" }),
     ).toBeVisible();
@@ -1528,11 +1535,18 @@ describe("StringTable workbench", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     act(() =>
-      releaseTranslation({
-        text: "Tschüss",
-        missingTokens: [],
-        glossaryMisses: [],
-      }),
+      releaseRun(
+        liveAiResult({
+          runId: request.runId,
+          engine: "local",
+          model: "llama-local",
+          reasoning: "none",
+          requested: 3,
+          completed: 0,
+          outcome: "cancelled",
+          suggestions: [],
+        }),
+      ),
     );
     await waitFor(() =>
       expect(
@@ -1714,62 +1728,6 @@ describe("StringTable workbench", () => {
     );
   });
 
-  it("translates only eligible selected rows and persists every AI result to Review", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "KI-Text",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-    const onStatusFilterChange = vi.fn();
-    const onNotify = vi.fn();
-    const onAiBatchFinished = vi.fn();
-    render(
-      <StringTable
-        mod={MOD}
-        onTranslate={onTranslate}
-        onStatusFilterChange={onStatusFilterChange}
-        onNotify={onNotify}
-        onAiBatchFinished={onAiBatchFinished}
-      />,
-    );
-    await screen.findByText("greeting");
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: "Select all visible strings" }),
-    );
-    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
-    );
-
-    await waitFor(() => expect(onTranslate).toHaveBeenCalledTimes(2));
-    const saves = invokeMock.mock.calls.filter(
-      ([cmd]) => cmd === "save_string",
-    );
-    expect(saves).toHaveLength(2);
-    expect(
-      saves.every(([, args]) =>
-        Object.is((args as { status: string }).status, "review-needed"),
-      ),
-    ).toBe(true);
-    expect(onStatusFilterChange).toHaveBeenCalledWith("review-needed");
-    expect(onNotify).toHaveBeenCalledWith(
-      "2 AI suggestions saved to Review.",
-      "success",
-    );
-    expect(onAiBatchFinished).toHaveBeenCalledWith(
-      expect.objectContaining({
-        outcome: "complete",
-        done: 2,
-        total: 2,
-        engine: "Local AI",
-      }),
-    );
-    expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
-    expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
-    ).not.toBeInTheDocument();
-  });
-
   it("falls back to the first ready engine and immediately sends exact selected Open and Changed identities", async () => {
     let resolveRun: (result: AiRunResult) => void = () => {};
     const onRunAi = vi.fn(
@@ -1934,21 +1892,11 @@ describe("StringTable workbench", () => {
   });
 
   it("reports cancellation with saved partial Review work without client undo", async () => {
-    let release:
-      | ((result: {
-          text: string;
-          missingTokens: string[];
-          glossaryMisses: string[];
-        }) => void)
-      | null = null;
-    const onTranslate = vi.fn(
-      () =>
-        new Promise<{
-          text: string;
-          missingTokens: string[];
-          glossaryMisses: string[];
-        }>((resolve) => {
-          release = resolve;
+    let releaseRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          releaseRun = resolve;
         }),
     );
     const onNotify = vi.fn();
@@ -1958,7 +1906,9 @@ describe("StringTable workbench", () => {
     render(
       <StringTable
         mod={MOD}
-        onTranslate={onTranslate}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
         onNotify={onNotify}
         onStatusFilterChange={onStatusFilterChange}
         onBulkApplied={onBulkApplied}
@@ -1972,10 +1922,34 @@ describe("StringTable workbench", () => {
     fireEvent.click(
       screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
     );
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
     fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
-    if (!release) throw new Error("AI request did not start");
     act(() =>
-      release?.({ text: "Tschüss", missingTokens: [], glossaryMisses: [] }),
+      releaseRun(
+        liveAiResult({
+          runId: request.runId,
+          engine: "local",
+          model: "llama-local",
+          reasoning: "none",
+          requested: 2,
+          completed: 1,
+          outcome: "cancelled",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "bye",
+              },
+              text: "Tschüss",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }),
+      ),
     );
 
     await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
@@ -1999,14 +1973,33 @@ describe("StringTable workbench", () => {
   });
 
   it("reports an AI error after partial progress and keeps the remaining selection", async () => {
-    const onTranslate = vi
-      .fn()
-      .mockResolvedValueOnce({
-        text: "Tschüss",
-        missingTokens: [],
-        glossaryMisses: [],
-      })
-      .mockRejectedValueOnce(new Error("Local AI offline"));
+    const onRunAi = vi.fn((_engine: AiEngine, request: AiTranslationRequest) =>
+      Promise.resolve(
+        liveAiResult({
+          runId: request.runId,
+          engine: "local",
+          model: "llama-local",
+          reasoning: "none",
+          requested: 2,
+          completed: 1,
+          outcome: "error",
+          error: "Local AI offline",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "bye",
+              },
+              text: "Tschüss",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }),
+      ),
+    );
     const onNotify = vi.fn();
     const onStatusFilterChange = vi.fn();
     const onBulkApplied = vi.fn();
@@ -2014,7 +2007,9 @@ describe("StringTable workbench", () => {
     render(
       <StringTable
         mod={MOD}
-        onTranslate={onTranslate}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
         onNotify={onNotify}
         onStatusFilterChange={onStatusFilterChange}
         onBulkApplied={onBulkApplied}
@@ -2040,7 +2035,7 @@ describe("StringTable workbench", () => {
         outcome: "error",
         done: 1,
         total: 2,
-        error: "Error: Local AI offline",
+        error: "Local AI offline",
         engine: "Local AI",
         modName: "Test Mod",
       }),
@@ -2054,10 +2049,13 @@ describe("StringTable workbench", () => {
   it("reports a zero-progress AI failure without inventing an undo snapshot", async () => {
     const onAiBatchFinished = vi.fn();
     const onStatusFilterChange = vi.fn();
+    const onRunAi = vi.fn().mockRejectedValue(new Error("Local AI offline"));
     render(
       <StringTable
         mod={MOD}
-        onTranslate={vi.fn().mockRejectedValue(new Error("Local AI offline"))}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
         onAiBatchFinished={onAiBatchFinished}
         onStatusFilterChange={onStatusFilterChange}
       />,
@@ -2070,15 +2068,20 @@ describe("StringTable workbench", () => {
     );
 
     await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
-    expect(onAiBatchFinished).toHaveBeenCalledWith({
-      outcome: "error",
-      done: 0,
-      total: 1,
-      error: "Error: Local AI offline",
-      engine: "Local AI",
-      modName: "Test Mod",
-      modUniqueIds: ["a.b"],
-    });
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: expect.any(String),
+        outcome: "error",
+        done: 0,
+        total: 1,
+        error: "Error: Local AI offline",
+        engine: "Local AI",
+        model: "llama-local",
+        reasoning: "none",
+        modName: "Test Mod",
+        modUniqueIds: ["a.b"],
+      }),
+    );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
     expect(onStatusFilterChange).not.toHaveBeenCalled();
   });
@@ -2385,25 +2388,5 @@ describe("StringTable workbench", () => {
     expect(screen.getByTestId("stringtable-scroll-content")).toHaveStyle({
       height: "178px",
     });
-  });
-
-  it("shows a clickable real review count in the compact heading", () => {
-    const onShowReview = vi.fn();
-    render(
-      <StringTableHeader
-        mod={{
-          ...MOD,
-          statusCounts: {
-            untranslated: 1,
-            translated: 1,
-            outdated: 0,
-            "review-needed": 2,
-          },
-        }}
-        onShowReview={onShowReview}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: /2 need review/ }));
-    expect(onShowReview).toHaveBeenCalledOnce();
   });
 });

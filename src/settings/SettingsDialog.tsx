@@ -96,6 +96,7 @@ const DEFAULT_AI_SETTINGS = {
   defaultEngine: "local" as AiEngine,
   codexModel: null,
   codexReasoning: "medium" as const,
+  codexQualityReview: true,
 };
 
 const CODEX_REASONING_OPTIONS = ["low", "medium", "high"] as const;
@@ -189,6 +190,9 @@ export function SettingsDialog({
   const [codexReasoning, setCodexReasoning] = useState<
     "low" | "medium" | "high"
   >(savedAi.codexReasoning);
+  const [codexQualityReview, setCodexQualityReview] = useState(
+    savedAi.codexQualityReview ?? true,
+  );
   const [codexModel, setCodexModel] = useState(savedAi.codexModel ?? "");
   const [codexModels, setCodexModels] = useState<CodexCliModel[] | null>(null);
   const [codexModelsLoading, setCodexModelsLoading] = useState(false);
@@ -536,6 +540,7 @@ export function SettingsDialog({
           defaultEngine: defaultEngine ?? "local",
           codexModel: codexModel || null,
           codexReasoning,
+          codexQualityReview,
         },
         llm:
           url && llmModel
@@ -1057,6 +1062,28 @@ export function SettingsDialog({
                   </label>
                   <div className="translator-setting-line">
                     <span className="translator-setting-copy">
+                      <strong>AI quality review &amp; repairs</strong>
+                      <span>
+                        Reviews meaning, natural language, terminology, grammar,
+                        register, speaker voice, and dialogue continuity, then
+                        applies focused terminology and protected-token repairs
+                        when needed.
+                      </span>
+                    </span>
+                    <label className="translator-switch">
+                      <input
+                        type="checkbox"
+                        aria-label="AI quality review and repairs"
+                        checked={codexQualityReview}
+                        onChange={(event) =>
+                          setCodexQualityReview(event.target.checked)
+                        }
+                      />
+                      <span aria-hidden="true" />
+                    </label>
+                  </div>
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
                       <strong>Authentication</strong>
                       <span>
                         {codexStatus?.authenticated
@@ -1096,6 +1123,22 @@ export function SettingsDialog({
                     </div>
                   )}
                 </div>
+                {!codexQualityReview && (
+                  <div
+                    className="translator-flow-callout translator-codex-quality-warning is-warning"
+                    role="note"
+                    aria-label="First draft quality warning"
+                  >
+                    <p>
+                      <strong>First draft only.</strong> This is faster and uses
+                      fewer tokens, but translation quality can be worse. Drafts
+                      may contain wording, terminology, grammar, register,
+                      speaker voice, dialogue continuity, or protected-token
+                      errors. Validation still runs and every result still
+                      enters Review.
+                    </p>
+                  </div>
+                )}
                 {!codexChecking && codexStatus && !codexAvailable && (
                   <div
                     className="translator-flow-callout translator-codex-setup"
