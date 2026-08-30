@@ -214,20 +214,6 @@ impl OperationHistoryState {
         Ok(entry)
     }
 
-    pub fn apply_reversible_batch(
-        &self,
-        config_dir: &Path,
-        mod_unique_id: &str,
-        title: String,
-        entries: Vec<(String, StoredString)>,
-    ) -> Result<OperationHistoryEntry, String> {
-        self.apply_reversible_batch_groups(
-            config_dir,
-            title,
-            vec![(mod_unique_id.to_string(), entries)],
-        )
-    }
-
     pub fn apply_reversible_batch_groups(
         &self,
         config_dir: &Path,
@@ -406,7 +392,11 @@ mod tests {
             ("i18n\0b".to_string(), stored("B", "Added", "review-needed")),
         ];
         let batch = history
-            .apply_reversible_batch(&dir, "mod", "Marked for review".to_string(), changed)
+            .apply_reversible_batch_groups(
+                &dir,
+                "Marked for review".to_string(),
+                vec![("mod".to_string(), changed)],
+            )
             .unwrap();
         assert!(batch.can_undo);
 
@@ -417,11 +407,13 @@ mod tests {
         assert!(!restored.contains_key("i18n\0b"));
 
         let next = history
-            .apply_reversible_batch(
+            .apply_reversible_batch_groups(
                 &dir,
-                "mod",
                 "Changed again".to_string(),
-                vec![("i18n\0a".to_string(), stored("A", "Again", "translated"))],
+                vec![(
+                    "mod".to_string(),
+                    vec![("i18n\0a".to_string(), stored("A", "Again", "translated"))],
+                )],
             )
             .unwrap();
         history.record(operation(9)).unwrap();
@@ -444,11 +436,13 @@ mod tests {
         let history = OperationHistoryState::default();
         let expected = stored("A", "Batch", "translated");
         let batch = history
-            .apply_reversible_batch(
+            .apply_reversible_batch_groups(
                 &dir,
-                "mod",
                 "Batch edit".to_string(),
-                vec![("key".to_string(), expected.clone())],
+                vec![(
+                    "mod".to_string(),
+                    vec![("key".to_string(), expected.clone())],
+                )],
             )
             .unwrap();
         translations::save_one(

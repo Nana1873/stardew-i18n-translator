@@ -12,7 +12,6 @@ import {
   preflightLlmBatchPath,
   saveString,
   saveStringGroupsWithUndo,
-  saveStringsWithUndo,
   translateWithCodexCli,
   translateWithLocalAi,
   undoBatchEdit,
@@ -168,20 +167,11 @@ describe("backend command bridges", () => {
         source: "Hello",
       },
     ];
-    invokeMock.mockResolvedValueOnce({ id: "operation-1", canUndo: true });
-
-    await saveStringsWithUndo("example.mod", "Marked as done", entries);
-    expect(invokeMock).toHaveBeenLastCalledWith("save_strings_with_undo", {
-      modUniqueId: "example.mod",
-      title: "Marked as done",
-      entries,
-    });
-
     const groups = [
       { modUniqueId: "example.mod", entries },
       { modUniqueId: "example.content-pack", entries },
     ];
-    invokeMock.mockResolvedValueOnce({ id: "operation-2", canUndo: true });
+    invokeMock.mockResolvedValueOnce({ id: "operation-1", canUndo: true });
     await saveStringGroupsWithUndo("Marked as done", groups);
     expect(invokeMock).toHaveBeenLastCalledWith(
       "save_string_groups_with_undo",

@@ -619,30 +619,76 @@ pub(crate) enum ConditionalSaveOutcome {
     Stale,
 }
 
-/// Save one generated suggestion only while that exact string's persisted
-/// state still matches the snapshot used to start the provider request. Edits
-/// to unrelated strings remain allowed and are preserved.
-pub(crate) fn save_one_if_unchanged(
+#[derive(Clone, Debug)]
+pub(crate) struct ConditionalSaveEntry {
+    pub key: String,
+    pub expected: Option<StoredString>,
+    pub expected_revision: u64,
+    pub entry: StoredString,
+}
+
+/// Save one completed AI chunk as a single conditional transaction. Every
+/// requested entry is checked under the process-wide writer lock before any
+/// component state is staged or changed. Edits to unrelated strings remain
+/// allowed and are preserved.
+pub(crate) fn save_groups_if_unchanged(
     config_dir: &Path,
-    unique_id: &str,
-    key: &str,
-    expected: Option<&StoredString>,
-    expected_revision: u64,
-    entry: StoredString,
+    groups: Vec<(String, Vec<ConditionalSaveEntry>)>,
 ) -> Result<ConditionalSaveOutcome, String> {
+    if groups.is_empty() {
+        return Err("The completed AI chunk contains no component groups.".to_string());
+    }
     let mut session = write_guard()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    let path = state_path(config_dir, unique_id);
-    if session.entry_revision(&path, key) != expected_revision {
-        return Ok(ConditionalSaveOutcome::Stale);
+    let mut component_ids = HashSet::with_capacity(groups.len());
+    let mut writes = Vec::with_capacity(groups.len());
+
+    for (mod_unique_id, entries) in groups {
+        if entries.is_empty() {
+            return Err("A completed AI chunk contains an empty component group.".to_string());
+        }
+        if !component_ids.insert(mod_unique_id.to_lowercase()) {
+            return Err(
+                "A completed AI chunk contains the same component more than once.".to_string(),
+            );
+        }
+
+        let path = state_path(config_dir, &mod_unique_id);
+        let existed = path.is_file();
+        let before = load(config_dir, &mod_unique_id)?;
+        let mut keys = HashSet::with_capacity(entries.len());
+        for item in &entries {
+            if !keys.insert(item.key.clone()) {
+                return Err(
+                    "A completed AI chunk contains the same string more than once.".to_string(),
+                );
+            }
+            if session.entry_revision(&path, &item.key) != item.expected_revision
+                || before.get(&item.key) != item.expected.as_ref()
+            {
+                return Ok(ConditionalSaveOutcome::Stale);
+            }
+        }
+
+        let mut after = before.clone();
+        let touched_keys = entries
+            .iter()
+            .map(|item| item.key.clone())
+            .collect::<Vec<_>>();
+        for item in entries {
+            after.insert(item.key, item.entry);
+        }
+        writes.push(PreparedStateWrite {
+            path,
+            existed,
+            before,
+            after_body: serialize_state(&after)?,
+            touched_keys,
+        });
     }
-    let mut state = load(config_dir, unique_id)?;
-    if state.get(key) != expected {
-        return Ok(ConditionalSaveOutcome::Stale);
-    }
-    state.insert(key.to_string(), entry);
-    write_state(&path, &state, &mut session, &[key.to_string()])?;
+
+    commit_state_writes(&writes, &mut session)?;
     Ok(ConditionalSaveOutcome::Saved)
 }
 
@@ -716,6 +762,27 @@ mod tests {
             status: "translated".into(),
             source_hash: source_hash("Hello"),
         }
+    }
+
+    fn conditional_group(
+        key: &str,
+        expected: Option<StoredString>,
+        expected_revision: u64,
+        target: &str,
+    ) -> Vec<(String, Vec<ConditionalSaveEntry>)> {
+        vec![(
+            "mod".to_string(),
+            vec![ConditionalSaveEntry {
+                key: key.to_string(),
+                expected,
+                expected_revision,
+                entry: StoredString {
+                    target: target.to_string(),
+                    status: "review-needed".to_string(),
+                    source_hash: source_hash("Hello"),
+                },
+            }],
+        )]
     }
 
     #[test]
@@ -920,17 +987,9 @@ mod tests {
         save_one(&dir, "mod", "key".into(), entry("Newer")).unwrap();
 
         assert_eq!(
-            save_one_if_unchanged(
+            save_groups_if_unchanged(
                 &dir,
-                "mod",
-                "key",
-                Some(&original),
-                expected_revision,
-                StoredString {
-                    target: "AI".to_string(),
-                    status: "review-needed".to_string(),
-                    source_hash: source_hash("Hello"),
-                },
+                conditional_group("key", Some(original), expected_revision, "AI"),
             )
             .unwrap(),
             ConditionalSaveOutcome::Stale
@@ -949,13 +1008,9 @@ mod tests {
         save_one(&dir, "mod", "key".into(), original.clone()).unwrap();
 
         assert_eq!(
-            save_one_if_unchanged(
+            save_groups_if_unchanged(
                 &dir,
-                "mod",
-                "key",
-                Some(&original),
-                expected_revision,
-                entry("AI"),
+                conditional_group("key", Some(original), expected_revision, "AI"),
             )
             .unwrap(),
             ConditionalSaveOutcome::Stale
@@ -971,13 +1026,14 @@ mod tests {
         save_one(&dir, "mod", "other".into(), entry("Manual")).unwrap();
 
         assert_eq!(
-            save_one_if_unchanged(
+            save_groups_if_unchanged(
                 &dir,
-                "mod",
-                "requested",
-                None,
-                snapshot.entry_revision("requested"),
-                entry("AI"),
+                conditional_group(
+                    "requested",
+                    None,
+                    snapshot.entry_revision("requested"),
+                    "AI",
+                ),
             )
             .unwrap(),
             ConditionalSaveOutcome::Saved
@@ -985,6 +1041,117 @@ mod tests {
         let state = load(&dir, "mod").unwrap();
         assert_eq!(state["other"].target, "Manual");
         assert_eq!(state["requested"].target, "AI");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_chunk_is_atomic_when_a_later_entry_is_stale() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-chunk");
+        let snapshot = load_snapshot(&dir, "mod").unwrap();
+        save_one(&dir, "mod", "second".into(), entry("Manual")).unwrap();
+
+        let result = save_groups_if_unchanged(
+            &dir,
+            vec![(
+                "mod".to_string(),
+                vec![
+                    ConditionalSaveEntry {
+                        key: "first".to_string(),
+                        expected: None,
+                        expected_revision: snapshot.entry_revision("first"),
+                        entry: entry("AI first"),
+                    },
+                    ConditionalSaveEntry {
+                        key: "second".to_string(),
+                        expected: None,
+                        expected_revision: snapshot.entry_revision("second"),
+                        entry: entry("AI second"),
+                    },
+                ],
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(result, ConditionalSaveOutcome::Stale);
+        let state = load(&dir, "mod").unwrap();
+        assert!(!state.contains_key("first"));
+        assert_eq!(state["second"].target, "Manual");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_chunk_is_atomic_across_components() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-components");
+        let first = load_snapshot(&dir, "first.mod").unwrap();
+        let second = load_snapshot(&dir, "second.mod").unwrap();
+        save_one(&dir, "second.mod", "second".into(), entry("Manual")).unwrap();
+
+        let result = save_groups_if_unchanged(
+            &dir,
+            vec![
+                (
+                    "first.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "first".to_string(),
+                        expected: None,
+                        expected_revision: first.entry_revision("first"),
+                        entry: entry("AI first"),
+                    }],
+                ),
+                (
+                    "second.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "second".to_string(),
+                        expected: None,
+                        expected_revision: second.entry_revision("second"),
+                        entry: entry("AI second"),
+                    }],
+                ),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(result, ConditionalSaveOutcome::Stale);
+        assert!(load(&dir, "first.mod").unwrap().is_empty());
+        assert_eq!(load(&dir, "second.mod").unwrap()["second"].target, "Manual");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_chunk_writes_nothing_when_a_later_state_cannot_load() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-load-error");
+        let first = load_snapshot(&dir, "first.mod").unwrap();
+        let broken_path = state_path(&dir, "broken.mod");
+        std::fs::create_dir_all(broken_path.parent().unwrap()).unwrap();
+        std::fs::write(&broken_path, "not json").unwrap();
+
+        let error = save_groups_if_unchanged(
+            &dir,
+            vec![
+                (
+                    "first.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "first".to_string(),
+                        expected: None,
+                        expected_revision: first.entry_revision("first"),
+                        entry: entry("AI first"),
+                    }],
+                ),
+                (
+                    "broken.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "second".to_string(),
+                        expected: None,
+                        expected_revision: 0,
+                        entry: entry("AI second"),
+                    }],
+                ),
+            ],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("is corrupted"), "{error}");
+        assert!(load(&dir, "first.mod").unwrap().is_empty());
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -29,16 +29,18 @@ struct SourceSnapshot {
 /// Mods root, then replace the rebuildable hash snapshot. A first scan begins
 /// tracking with zero observed changes. A scan that omitted a component needing
 /// attention is incomplete, so it must neither report deltas nor replace the
-/// last valid snapshot. Expected exclusions remain eligible to update it.
+/// last valid snapshot. A bounded or failed directory traversal is incomplete
+/// for the same reason. Expected exclusions remain eligible to update it.
 pub(crate) fn apply(
     result: &mut ScanResult,
     mods_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
-    if result
-        .skipped_components
-        .iter()
-        .any(|component| component.requires_attention)
+    if !result.traversal_complete
+        || result
+            .skipped_components
+            .iter()
+            .any(|component| component.requires_attention)
     {
         result.source_deltas = None;
         return Ok(());
@@ -303,6 +305,41 @@ mod tests {
         assert_eq!(deltas.sources_changed, 1);
         assert_eq!(deltas.strings_added, 1);
         assert_eq!(deltas.strings_removed, 1);
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn traversal_limit_preserves_the_last_valid_snapshot() {
+        let root = crate::test_support::temp_dir("scan-snapshot-traversal-limit");
+        let data = root.join("data");
+        let mods = fixture(&root, "Example.Mod", r#"{"greeting":"Hello"}"#, "{}");
+
+        scan_with_snapshot(&mods, &data, "de");
+        let baseline_path = snapshot_path(&data);
+        let baseline = std::fs::read(&baseline_path).unwrap();
+
+        let mut deep_parent = mods.join("Deep");
+        for index in 0..=crate::scanner::MAX_DEPTH {
+            deep_parent = deep_parent.join(format!("level-{index}"));
+        }
+        std::fs::create_dir_all(&deep_parent).unwrap();
+        std::fs::rename(mods.join("Example"), deep_parent.join("Example")).unwrap();
+
+        let incomplete = scan_with_snapshot(&mods, &data, "de");
+        assert!(!incomplete.traversal_complete);
+        assert_eq!(incomplete.source_deltas, None);
+        assert!(incomplete
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("could not be scanned completely")));
+        assert_eq!(std::fs::read(&baseline_path).unwrap(), baseline);
+
+        std::fs::rename(deep_parent.join("Example"), mods.join("Example")).unwrap();
+        std::fs::remove_dir_all(mods.join("Deep")).unwrap();
+        let repaired = scan_with_snapshot(&mods, &data, "de");
+        assert!(repaired.traversal_complete);
+        assert_eq!(repaired.source_deltas, Some(ScanDeltas::default()));
 
         std::fs::remove_dir_all(root).ok();
     }

@@ -90,8 +90,8 @@ pub struct ExportResult {
     pub blocked: bool,
 }
 
-/// One mod/component included in an all-mod export. `mod_name` is display
-/// metadata only; paths and state are authorized independently by the backend.
+/// One mod/component included in an all-mod export. All WebView metadata is
+/// rebound to the current backend scan before preview or export.
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportModInput {
@@ -235,6 +235,109 @@ pub fn validate_paths(
         }
     }
     Ok(())
+}
+
+/// Resolve every requested component against a fresh backend scan. The
+/// WebView's display name and file list describe its earlier view only; they
+/// cannot select another component's state or export destination.
+pub fn resolve_scan_inputs(
+    mods_root: &Path,
+    target_lang: &str,
+    config_dir: &Path,
+    requests: &[ExportModInput],
+) -> Result<Vec<ExportModInput>, String> {
+    let scan = scanner::scan_mods(mods_root, target_lang, config_dir);
+    let mut requested_ids = HashSet::with_capacity(requests.len());
+    let mut resolved = Vec::with_capacity(requests.len());
+
+    for request in requests {
+        if !requested_ids.insert(request.mod_unique_id.to_lowercase()) {
+            return Err(format!(
+                "Refusing export: duplicate mod id {}.",
+                request.mod_unique_id
+            ));
+        }
+        let matches = scan
+            .mods
+            .iter()
+            .filter(|scanned| {
+                scanned
+                    .unique_id
+                    .eq_ignore_ascii_case(&request.mod_unique_id)
+            })
+            .collect::<Vec<_>>();
+        let scanned = match matches.as_slice() {
+            [scanned] => *scanned,
+            [] => {
+                return Err(format!(
+                    "Refusing export: component {} is stale or is not present in the latest scan.",
+                    request.mod_unique_id
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "Refusing export: component {} is ambiguous in the latest scan.",
+                    request.mod_unique_id
+                ));
+            }
+        };
+        let files = scanned
+            .i18n_files
+            .iter()
+            .map(|file| ExportFileInput {
+                relative_dir: file.relative_dir.clone(),
+                default_path: file.default_path.clone(),
+                target_path: file.target_path.clone(),
+            })
+            .collect::<Vec<_>>();
+        let requested_bindings = export_file_bindings(&request.files).ok_or_else(|| {
+            format!(
+                "Refusing export: component {} has stale or invalid file paths.",
+                request.mod_unique_id
+            )
+        })?;
+        let scanned_bindings = export_file_bindings(&files).ok_or_else(|| {
+            format!(
+                "Refusing export: component {} could not be resolved from the latest scan.",
+                request.mod_unique_id
+            )
+        })?;
+        if requested_bindings != scanned_bindings {
+            return Err(format!(
+                "Refusing export: component {} has changed since the displayed scan.",
+                request.mod_unique_id
+            ));
+        }
+        resolved.push(ExportModInput {
+            mod_unique_id: scanned.unique_id.clone(),
+            mod_name: scanned.name.clone(),
+            files,
+        });
+    }
+    Ok(resolved)
+}
+
+fn export_file_bindings(files: &[ExportFileInput]) -> Option<Vec<(String, String, String)>> {
+    let mut bindings = files
+        .iter()
+        .map(|file| {
+            let default = std::fs::canonicalize(&file.default_path).ok()?;
+            let target = Path::new(&file.target_path);
+            let target_parent = std::fs::canonicalize(target.parent()?).ok()?;
+            let target_name = target.file_name()?.to_string_lossy().to_lowercase();
+            Some((
+                file.relative_dir.replace('\\', "/"),
+                default.to_string_lossy().replace('\\', "/").to_lowercase(),
+                target_parent
+                    .join(target_name)
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase(),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    bindings.sort();
+    Some(bindings)
 }
 
 fn file_name_is(path: &Path, expected: &str) -> bool {
@@ -843,6 +946,78 @@ mod tests {
     fn write(path: &Path, body: &str) {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, body).unwrap();
+    }
+
+    fn install_export_component(mods: &Path, folder: &str, unique_id: &str) -> ExportModInput {
+        let component = mods.join(folder);
+        let i18n = component.join("i18n");
+        write(
+            &component.join("manifest.json"),
+            &format!(r#"{{"Name":"{folder}","UniqueID":"{unique_id}"}}"#),
+        );
+        write(&i18n.join("default.json"), r#"{"greeting":"Hello"}"#);
+        ExportModInput {
+            mod_unique_id: unique_id.to_string(),
+            mod_name: folder.to_string(),
+            files: vec![ExportFileInput {
+                relative_dir: "i18n".to_string(),
+                default_path: i18n.join("default.json").display().to_string(),
+                target_path: i18n.join("de.json").display().to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn fresh_export_binding_rejects_another_components_paths() {
+        let root = crate::test_support::temp_dir("export-binding-substitution");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let first = install_export_component(&mods, "First", "first.id");
+        let second = install_export_component(&mods, "Second", "second.id");
+        let substituted = ExportModInput {
+            mod_unique_id: first.mod_unique_id,
+            mod_name: "Untrusted name".to_string(),
+            files: second.files,
+        };
+
+        let error = resolve_scan_inputs(&mods, "de", &config, &[substituted]).unwrap_err();
+
+        assert!(
+            error.contains("changed since the displayed scan"),
+            "{error}"
+        );
+        assert!(!mods.join("First/i18n/de.json").exists());
+        assert!(!mods.join("Second/i18n/de.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn fresh_export_binding_rejects_paths_from_a_stale_scan() {
+        let root = crate::test_support::temp_dir("export-binding-stale-scan");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let request = install_export_component(&mods, "Before", "stable.id");
+        std::fs::rename(mods.join("Before"), mods.join("After")).unwrap();
+
+        let error = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap_err();
+
+        assert!(error.contains("stale or invalid file paths"), "{error}");
+        assert!(!mods.join("After/i18n/de.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn fresh_export_binding_uses_the_scanner_name() {
+        let root = crate::test_support::temp_dir("export-binding-name");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let mut request = install_export_component(&mods, "Real Name", "real.id");
+        request.mod_name = "Untrusted name".to_string();
+
+        let resolved = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap();
+
+        assert_eq!(resolved[0].mod_name, "Real Name");
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
