@@ -1,4 +1,11 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -6,8 +13,6 @@ vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
 }));
 
-// jsdom has no layout, so the real virtualizer renders nothing — render every
-// item so the rendering logic (rows + section dividers) is exercised.
 vi.mock("@tanstack/react-virtual", () => ({
   useVirtualizer: ({ count }: { count: number }) => ({
     getTotalSize: () => count * 30,
@@ -23,15 +28,21 @@ vi.mock("@tanstack/react-virtual", () => ({
   }),
 }));
 
-import { StringTable, StringTableHeader } from "./StringTable";
-import type { ScannedMod } from "../tauri/commands";
+import { StringTable } from "./StringTable";
+import type {
+  AiEngine,
+  AiRunResult,
+  AiTranslationRequest,
+  OperationHistoryEntry,
+  ScannedMod,
+} from "../tauri/commands";
 
 const MOD: ScannedMod = {
   uniqueId: "a.b",
   name: "Test Mod",
   version: "1.0",
   nexusId: null,
-  packageId: "Test Mod",
+  packageId: "Test Package",
   folderPath: "x",
   i18nFiles: [
     {
@@ -39,59 +50,201 @@ const MOD: ScannedMod = {
       defaultPath: "x/i18n/default.json",
       targetPath: "x/i18n/de.json",
       targetExists: true,
-      totalKeys: 2,
+      totalKeys: 3,
       translatedKeys: 1,
       reviewNeeded: 0,
     },
   ],
-  totalKeys: 2,
+  totalKeys: 3,
   translatedKeys: 1,
   reviewNeeded: 0,
-  progress: 0.5,
+  progress: 1 / 3,
   status: "untranslated",
 };
 
-function mockStrings(
-  rows: Array<{
-    key: string;
-    source: string;
-    target: string;
-    targetPresent?: boolean;
-    status?: string;
-    section?: string;
-  }>,
+const OTHER_MOD: ScannedMod = {
+  ...MOD,
+  uniqueId: "c.d",
+  name: "Other Mod",
+  packageId: "Other Package",
+  folderPath: "y",
+  i18nFiles: [
+    {
+      relativeDir: "i18n/dialogue",
+      defaultPath: "y/i18n/dialogue/default.json",
+      targetPath: "y/i18n/dialogue/de.json",
+      targetExists: true,
+      totalKeys: 1,
+      translatedKeys: 0,
+      reviewNeeded: 0,
+    },
+  ],
+  totalKeys: 1,
+  translatedKeys: 0,
+  progress: 0,
+};
+
+const ROWS = {
+  "a.b": [
+    {
+      key: "greeting",
+      source: "Hello",
+      target: "Hallo",
+      targetPresent: true,
+      status: "translated",
+      tokenMismatchAccepted: false,
+    },
+    {
+      key: "bye",
+      source: "Bye",
+      target: "",
+      targetPresent: false,
+      status: "untranslated",
+      tokenMismatchAccepted: false,
+    },
+    {
+      key: "token",
+      source: "Hi {{name}}",
+      target: "Hallo",
+      targetPresent: true,
+      status: "outdated",
+      tokenMismatchAccepted: false,
+      section: "Dialogue",
+    },
+  ],
+  "c.d": [
+    {
+      key: "tomorrow",
+      source: "See you tomorrow",
+      target: "",
+      targetPresent: false,
+      status: "untranslated",
+      tokenMismatchAccepted: false,
+    },
+  ],
+} as const;
+
+function batchHistoryEntry(
+  title: string,
+  itemCount: number,
+  componentCount = 1,
+): OperationHistoryEntry {
+  return {
+    id: "operation-1",
+    kind: "batch-edit",
+    outcome: "success",
+    title,
+    summary: `${itemCount} strings changed.`,
+    itemCount,
+    warnings: [],
+    details: [{ label: "Components", value: String(componentCount) }],
+    canUndo: true,
+    completedAtEpochMs: 1,
+  };
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function liveAiResult(overrides: Partial<AiRunResult> = {}): AiRunResult {
+  return {
+    runId: "run-1",
+    engine: "codex",
+    model: "gpt-5.6",
+    reasoning: "high",
+    scope: "selected",
+    requested: 1,
+    completed: 1,
+    outcome: "complete",
+    suggestions: [
+      {
+        identity: {
+          modUniqueId: "a.b",
+          relativeDir: "i18n",
+          key: "bye",
+        },
+        text: "Tschüss",
+        status: "review-needed",
+        tokenDifferences: [],
+        glossaryMisses: [],
+      },
+    ],
+    ...overrides,
+  };
+}
+
+const LOCAL_AI_ENGINE = {
+  id: "local" as const,
+  label: "Local AI",
+  ready: true,
+  model: "llama-local",
+  reasoning: "none",
+  note: "Local only.",
+};
+
+function installBackendRows(
+  overrides?: Partial<Record<"a.b" | "c.d", readonly unknown[]>>,
 ) {
-  invokeMock.mockImplementation((cmd: string) => {
+  invokeMock.mockImplementation((cmd: string, args?: unknown) => {
     if (cmd === "load_strings") {
+      const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+      return Promise.resolve(overrides?.[id] ?? ROWS[id]);
+    }
+    if (cmd === "save_string_groups_with_undo") {
+      const request = args as {
+        title: string;
+        groups: Array<{ entries: unknown[] }>;
+      };
+      const itemCount = request.groups.reduce(
+        (total, group) => total + group.entries.length,
+        0,
+      );
       return Promise.resolve(
-        rows.map((r) => ({
-          targetPresent: false,
-          status: r.target ? "translated" : "untranslated",
-          tokenMismatchAccepted: false,
-          ...r,
-        })),
+        batchHistoryEntry(request.title, itemCount, request.groups.length),
       );
     }
-    return Promise.resolve(undefined); // save_string
+    return Promise.resolve(undefined);
   });
+}
+
+function dataRows(): HTMLElement[] {
+  return Array.from(document.querySelectorAll<HTMLElement>(".stringrow--data"));
+}
+
+function rowFor(text: string): HTMLElement {
+  const node = screen.getByText(text);
+  const row = node.closest<HTMLElement>(".stringrow--data");
+  if (!row) throw new Error("No row for " + text);
+  return row;
 }
 
 beforeEach(() => {
   invokeMock.mockReset();
-  mockStrings([
-    { key: "greeting", source: "Hello", target: "Hallo", targetPresent: true },
-    { key: "bye", source: "Bye", target: "" },
-  ]);
+  installBackendRows();
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: vi.fn().mockResolvedValue(undefined) },
+  });
 });
 
-describe("StringTable", () => {
-  it("loads the mod's strings via load_strings and renders them", async () => {
+describe("StringTable workbench", () => {
+  it("loads only real selected-mod files and renders the workspace controls", async () => {
     render(<StringTable mod={MOD} />);
 
     expect(await screen.findByText("greeting")).toBeInTheDocument();
-    expect(screen.getByText("Hello")).toBeInTheDocument();
-    expect(screen.getByText("Hallo")).toBeInTheDocument();
-
+    expect(screen.getByRole("button", { name: "This mod" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "All mods" })).toBeEnabled();
+    expect(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    ).toBeInTheDocument();
     expect(invokeMock).toHaveBeenCalledWith("load_strings", {
       modUniqueId: "a.b",
       relativeDir: "i18n",
@@ -100,14 +253,2335 @@ describe("StringTable", () => {
     });
   });
 
-  it("persists an edit via save_string (status done) on Save", async () => {
+  it("uses singular row and string labels for a one-row result", async () => {
+    installBackendRows({ "a.b": [ROWS["a.b"][1]] });
     render(<StringTable mod={MOD} />);
-    fireEvent.doubleClick(await screen.findByText("greeting"));
 
-    fireEvent.change(screen.getByLabelText("Translation"), {
-      target: { value: "Hallo Welt" },
+    expect(
+      await screen.findByText(/1 of 1 string · All · This mod/),
+    ).toBeVisible();
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      {
+        target: { value: "bye" },
+      },
+    );
+    expect(
+      screen.getByText("Search preview: 1 matching row · 1 string in This mod"),
+    ).toBeVisible();
+  });
+
+  it("does not continue a superseded multi-file load after its active request returns", async () => {
+    const oldMod: ScannedMod = {
+      ...MOD,
+      uniqueId: "old.mod",
+      name: "Old Mod",
+      i18nFiles: [
+        {
+          ...MOD.i18nFiles[0],
+          relativeDir: "old/first",
+          defaultPath: "old/first/default.json",
+          targetPath: "old/first/de.json",
+        },
+        {
+          ...MOD.i18nFiles[0],
+          relativeDir: "old/second",
+          defaultPath: "old/second/default.json",
+          targetPath: "old/second/de.json",
+        },
+      ],
+    };
+    let resolveOldFirst: (rows: readonly unknown[]) => void = () => {};
+    const oldFirst = new Promise<readonly unknown[]>((resolve) => {
+      resolveOldFirst = resolve;
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== "load_strings") return Promise.resolve(undefined);
+      const request = args as { modUniqueId: string; relativeDir: string };
+      if (
+        request.modUniqueId === "old.mod" &&
+        request.relativeDir === "old/first"
+      ) {
+        return oldFirst;
+      }
+      if (request.modUniqueId === "a.b") return Promise.resolve(ROWS["a.b"]);
+      return Promise.resolve([]);
+    });
+
+    const { rerender } = render(<StringTable mod={oldMod} />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_strings", {
+        modUniqueId: "old.mod",
+        relativeDir: "old/first",
+        defaultPath: "old/first/default.json",
+        targetPath: "old/first/de.json",
+      }),
+    );
+
+    rerender(<StringTable mod={MOD} />);
+    expect(await screen.findByText("greeting")).toBeVisible();
+    await act(async () => {
+      resolveOldFirst([]);
+      await oldFirst;
+      await Promise.resolve();
+    });
+
+    expect(
+      invokeMock.mock.calls.some(
+        ([cmd, args]) =>
+          cmd === "load_strings" &&
+          (args as { modUniqueId?: string; relativeDir?: string })
+            .modUniqueId === "old.mod" &&
+          (args as { modUniqueId?: string; relativeDir?: string })
+            .relativeDir === "old/second",
+      ),
+    ).toBe(false);
+  });
+
+  it("uses the direct grid geometry with a fixed action rail", async () => {
+    const { container } = render(
+      <StringTable mod={MOD} targetLanguageLabel="German (de)" />,
+    );
+    await screen.findByText("greeting");
+
+    const header = container.querySelector<HTMLElement>(
+      ".translator-string-table-head",
+    );
+    expect(header).toHaveStyle({
+      gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
+      columnGap: "0",
+      padding: "0",
+    });
+    expect(dataRows()[0]).toHaveStyle({
+      gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
+    });
+    expect(
+      screen
+        .getByRole("button", { name: "Key" })
+        .closest("[role=columnheader]"),
+    ).toHaveStyle({
+      height: "27px",
+      display: "flex",
+      alignItems: "center",
+      padding: "0 8px",
+    });
+    expect(
+      screen.getByRole("columnheader", { name: /German translation/ }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("separator", { name: "Resize mod column" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("separator", { name: "Resize file column" }),
+    ).not.toBeInTheDocument();
+    for (const name of [
+      "Resize status column",
+      "Resize key column",
+      "Resize English source column",
+      "Resize German translation column",
+    ]) {
+      expect(screen.getByRole("separator", { name })).toBeVisible();
+    }
+    expect(
+      screen.queryByRole("separator", {
+        name: /Resize (?:action|issue)s? column/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("marks the compact toolbar while batch selection controls are visible", async () => {
+    const { container } = render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    const toolbar = container.querySelector(".translator-string-toolbar");
+    expect(toolbar).not.toHaveClass("is-selection-active");
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    expect(toolbar).toHaveClass("is-selection-active");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear selected strings" }),
+    );
+    expect(toolbar).not.toHaveClass("is-selection-active");
+  });
+
+  it("switches scope through a controlled prop callback", async () => {
+    const onScopeChange = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="mod"
+        onScopeChange={onScopeChange}
+      />,
+    );
+    await screen.findByText("greeting");
+
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    expect(onScopeChange).toHaveBeenCalledWith("all");
+  });
+
+  it("renders the complete heading from real package, language, and progress data", async () => {
+    render(
+      <StringTable
+        mod={MOD}
+        targetLanguageLabel="German (de)"
+        headerMeta="scanned just now"
+      />,
+    );
+    await screen.findByText("greeting");
+
+    expect(
+      screen.getByRole("heading", { name: /Test Package.*Test Mod/ }),
+    ).toBeVisible();
+    expect(screen.getByText("German (de)")).toBeVisible();
+    expect(screen.getByText("2 / 3 translated · 67%")).toBeVisible();
+    expect(screen.getByText("scanned just now")).toBeVisible();
+  });
+
+  it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
+    const onOpenMod = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        onOpenMod={onOpenMod}
+      />,
+    );
+
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: /Mod/ })).toBeVisible();
+    expect(
+      screen.queryByRole("columnheader", { name: /File/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Open Other Mod" }),
+    ).not.toBeInTheDocument();
+    const otherModCell = screen.getByText("Other Mod");
+    fireEvent.click(otherModCell);
+    expect(rowFor("tomorrow")).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(otherModCell, { ctrlKey: true });
+    expect(rowFor("tomorrow")).toHaveAttribute("aria-selected", "false");
+    expect(onOpenMod).not.toHaveBeenCalled();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "load_strings"),
+    ).toHaveLength(2);
+  });
+
+  it("shows only the exact transient string identities opened from a scan result", async () => {
+    const onClearFilters = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        identityFilter={[
+          {
+            modUniqueId: "c.d",
+            relativeDir: "i18n/dialogue",
+            key: "tomorrow",
+          },
+        ]}
+        identityFilterLabel="New strings from latest scan"
+        onClearFilters={onClearFilters}
+      />,
+    );
+
+    expect(await screen.findByText("tomorrow")).toBeVisible();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "1 of 4 strings · New strings from latest scan · All mods",
+      ),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onClearFilters).toHaveBeenCalledOnce();
+  });
+
+  it("filters by search, explicit statuses, and validation issues using real rows", async () => {
+    installBackendRows({
+      "a.b": [
+        ...ROWS["a.b"],
+        {
+          key: "review",
+          source: "Review me",
+          target: "Prüfen",
+          targetPresent: true,
+          status: "review-needed",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      {
+        target: { value: "bye" },
+      },
+    );
+    expect(screen.getByText("bye")).toBeVisible();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Changed/ }));
+    expect(screen.getByText("token")).toBeVisible();
+    expect(screen.queryByText("bye")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^Review/ }));
+    expect(screen.getByText("review")).toBeVisible();
+    expect(screen.queryByText("token")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /^All \d/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Validation issues/ }));
+    expect(screen.getByText("token")).toBeVisible();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("searches and marks real mod and file metadata only in All mods", async () => {
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        onOpenMod={() => {}}
+      />,
+    );
+    await screen.findByText("tomorrow");
+    const search = screen.getByRole("searchbox", { name: "Search strings" });
+
+    fireEvent.change(search, { target: { value: "Other Mod" } });
+
+    expect(screen.getByText("tomorrow")).toBeVisible();
+    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Search preview: 1 matching row · 4 strings in All mods",
+      ),
+    ).toBeVisible();
+    const modCell = rowFor("tomorrow").querySelector(
+      '.translator-global-mod-col[data-search-field="mod"]',
+    );
+    expect(modCell).toHaveClass("is-search-match");
+    expect(modCell).toHaveAttribute("aria-description", "Search match in Mod.");
+
+    expect(
+      screen.queryByRole("columnheader", { name: /File/ }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("searches and marks File metadata when all-mod scope has multi-component mods", async () => {
+    const secondFile = {
+      ...MOD.i18nFiles[0],
+      relativeDir: "assets/i18n",
+      defaultPath: "x/assets/i18n/default.json",
+      targetPath: "x/assets/i18n/de.json",
+      totalKeys: 1,
+      translatedKeys: 0,
+    };
+    const multiMod: ScannedMod = {
+      ...MOD,
+      i18nFiles: [MOD.i18nFiles[0], secondFile],
+      totalKeys: 4,
+    };
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== "load_strings") return Promise.resolve(undefined);
+      const relativeDir = (args as { relativeDir: string }).relativeDir;
+      return Promise.resolve(
+        relativeDir === "assets/i18n"
+          ? [
+              {
+                key: "asset-key",
+                source: "Asset source",
+                target: "",
+                targetPresent: false,
+                status: "untranslated",
+                tokenMismatchAccepted: false,
+              },
+            ]
+          : ROWS["a.b"],
+      );
+    });
+    render(<StringTable mod={multiMod} mods={[multiMod]} scope="all" />);
+    await screen.findByText("asset-key");
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "assets/i18n" } },
+    );
+
+    const fileCell = rowFor("asset-key").querySelector(
+      '.translator-file-col[data-search-field="file"]',
+    );
+    expect(fileCell).toHaveClass("is-search-match");
+    expect(fileCell).toHaveAttribute(
+      "aria-description",
+      "Search match in File.",
+    );
+  });
+
+  it("adds native titles only while real cell content is ellipsized", async () => {
+    const secondFile = {
+      ...MOD.i18nFiles[0],
+      relativeDir: "assets/i18n",
+      defaultPath: "x/assets/i18n/default.json",
+      targetPath: "x/assets/i18n/de.json",
+    };
+    const multiMod: ScannedMod = {
+      ...MOD,
+      i18nFiles: [MOD.i18nFiles[0], secondFile],
+    };
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== "load_strings") return Promise.resolve(undefined);
+      return Promise.resolve(
+        (args as { relativeDir: string }).relativeDir === "i18n"
+          ? ROWS["a.b"]
+          : [],
+      );
+    });
+    render(<StringTable mod={multiMod} mods={[multiMod]} scope="all" />);
+    await screen.findByText("greeting");
+    const row = rowFor("greeting");
+    const modText = row.querySelector<HTMLElement>(
+      ".translator-global-mod-text",
+    );
+    const fileText = row.querySelector<HTMLElement>(
+      ".translator-file-col .translator-cell-clip",
+    );
+    const keyText = screen.getByRole("button", { name: "greeting" });
+    const sourceText = row.querySelector<HTMLElement>(
+      ".translator-source-col .translator-cell-clip",
+    );
+    const targetText = row.querySelector<HTMLElement>(
+      ".translator-translation-col .translator-cell-clip",
+    );
+    if (!modText || !fileText || !sourceText || !targetText) {
+      throw new Error("Missing overflow test cell");
+    }
+    const dimensions = (
+      node: HTMLElement,
+      clientWidth: number,
+      scrollWidth: number,
+    ) => {
+      Object.defineProperty(node, "clientWidth", {
+        configurable: true,
+        value: clientWidth,
+      });
+      Object.defineProperty(node, "scrollWidth", {
+        configurable: true,
+        value: scrollWidth,
+      });
+    };
+    for (const node of [modText, fileText, keyText, sourceText]) {
+      dimensions(node, 40, 100);
+    }
+    dimensions(targetText, 100, 40);
+    fireEvent.resize(window);
+
+    await waitFor(() => expect(modText).toHaveAttribute("title", "Test Mod"));
+    expect(fileText).toHaveAttribute("title", "i18n");
+    expect(keyText).toHaveAttribute("title", "greeting");
+    expect(sourceText).toHaveAttribute("title", "Hello");
+    expect(targetText).not.toHaveAttribute("title");
+
+    dimensions(keyText, 100, 40);
+    fireEvent.resize(window);
+    await waitFor(() => expect(keyText).not.toHaveAttribute("title"));
+  });
+
+  it("uses the real target language in translation search descriptions", async () => {
+    render(<StringTable mod={MOD} targetLanguageLabel="French (fr)" />);
+    await screen.findByText("greeting");
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "Hallo" } },
+    );
+
+    const targetCell = rowFor("greeting").querySelector(
+      '[data-search-field="translation"]',
+    );
+    expect(targetCell).toHaveAttribute(
+      "aria-description",
+      "Search match in French translation.",
+    );
+  });
+
+  it("uses the target language's case rules when searching translations", async () => {
+    installBackendRows({
+      "a.b": [
+        {
+          key: "light",
+          source: "Light",
+          target: "IŞIK",
+          targetPresent: true,
+          status: "translated",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    render(
+      <StringTable
+        mod={MOD}
+        targetLanguageLabel="Turkish (tr)"
+        targetLanguageCode="tr"
+      />,
+    );
+    await screen.findByText("light");
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "ışık" } },
+    );
+
+    expect(screen.getByText("light")).toBeVisible();
+    expect(
+      rowFor("light").querySelector('[data-search-field="translation"]'),
+    ).toHaveClass("is-search-match");
+  });
+
+  it("clears selection when search, filters, scope, or sort changes", async () => {
+    render(<StringTable mod={MOD} mods={[MOD, OTHER_MOD]} />);
+    await screen.findByText("greeting");
+    const select = (key: string) => {
+      fireEvent.click(screen.getByRole("checkbox", { name: `Select ${key}` }));
+      expect(rowFor(key)).toHaveAttribute("aria-selected", "true");
+    };
+
+    select("greeting");
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "greeting" } },
+    );
+    expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
+
+    select("greeting");
+    fireEvent.click(screen.getByRole("button", { name: /^Done 1$/ }));
+    expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    select("token");
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Validation issues 1$/ }),
+    );
+    expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    select("greeting");
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    await screen.findByText("tomorrow");
+    expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
+
+    select("greeting");
+    fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
+    expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("sorts status in Open, Changed, Review, Done order", async () => {
+    installBackendRows({
+      "a.b": [
+        ROWS["a.b"][0],
+        ROWS["a.b"][1],
+        ROWS["a.b"][2],
+        {
+          key: "review",
+          source: "Review me",
+          target: "Prüfen",
+          targetPresent: true,
+          status: "review-needed",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("review");
+    const statusSort = screen.getByRole("button", { name: /^Status/ });
+
+    fireEvent.click(statusSort);
+    expect(dataRows().map((row) => row.dataset.status)).toEqual([
+      "untranslated",
+      "outdated",
+      "review-needed",
+      "translated",
+    ]);
+
+    fireEvent.click(statusSort);
+    expect(dataRows().map((row) => row.dataset.status)).toEqual([
+      "translated",
+      "review-needed",
+      "outdated",
+      "untranslated",
+    ]);
+  });
+
+  it("opens the editor from inline validation and row-more actions", async () => {
+    render(<StringTable mod={MOD} onLlmBatchExportForMod={vi.fn()} />);
+    await screen.findByText("token");
+
+    const validation = screen.getByRole("button", {
+      name: /Token count mismatch for.*\{\{name\}\}/i,
+    });
+    expect(validation).toHaveClass("translator-inline-validation");
+    fireEvent.click(validation);
+    expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Close editor" }));
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "More actions for token" }),
+    );
+    const menu = await screen.findByRole("menu", { name: "String actions" });
+    expect(
+      screen.getByRole("menuitem", { name: /^Edit string.*Enter/ }),
+    ).toBeVisible();
+    expect(menu.querySelector(".lucide-pencil")).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", {
+        name: /Translate selected with AI.*\(1\)/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", {
+        name: /Export LLM batch.*\(1\)/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("menuitem", { name: "Copy translation" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: "Clear translation" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("menuitem", { name: "Copy translations" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps checkbox and modifier selection gestures out of the editor", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const greetingRow = rowFor("greeting");
+    const checkbox = screen.getByRole("checkbox", { name: "Select greeting" });
+
+    fireEvent.doubleClick(checkbox);
+    expect(
+      screen.queryByRole("textbox", { name: "Translation" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "greeting" }), {
+      ctrlKey: true,
+    });
+    expect(greetingRow).toHaveAttribute("aria-selected", "true");
+    expect(
+      screen.queryByRole("textbox", { name: "Translation" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(greetingRow, { ctrlKey: true });
+    expect(
+      screen.queryByRole("textbox", { name: "Translation" }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.doubleClick(greetingRow);
+    expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
+  });
+
+  it("treats an accepted token mismatch as resolved in issues and visuals", async () => {
+    installBackendRows({
+      "a.b": [
+        ROWS["a.b"][0],
+        ROWS["a.b"][1],
+        {
+          ...ROWS["a.b"][2],
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
+      ],
+    });
+    const onBulkApplied = vi.fn();
+    render(<StringTable mod={MOD} onBulkApplied={onBulkApplied} />);
+    await screen.findByText("token");
+
+    expect(
+      screen.queryByRole("button", { name: /^Validation issues/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      rowFor("token").querySelector(".translator-inline-validation"),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: /1 selected/ }), {
+      key: "ArrowDown",
+    });
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+    expect(onBulkApplied).toHaveBeenCalledWith(
+      batchHistoryEntry("Kept original text", 1),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("save_string_groups_with_undo", {
+      title: "Kept original text",
+      groups: [
+        {
+          modUniqueId: "a.b",
+          entries: [
+            {
+              relativeDir: "i18n",
+              key: "token",
+              target: "Hi {{name}}",
+              status: "translated",
+              source: "Hi {{name}}",
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("shows status help on filter focus or status-badge pointer only", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    const changedFilter = screen.getByRole("button", { name: /^Changed/ });
+    fireEvent.focus(changedFilter);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "The English source changed",
+    );
+    fireEvent.resize(window);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.focus(changedFilter);
+    fireEvent.blur(changedFilter);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    fireEvent.focus(rowFor("token"));
+    expect(screen.queryByRole("tooltip")).toBeNull();
+
+    const changedState =
+      rowFor("token").querySelector<HTMLElement>(".translator-state");
+    if (!changedState) throw new Error("Missing row status");
+    fireEvent.pointerEnter(changedState);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "The English source changed",
+    );
+    fireEvent.pointerLeave(changedState);
+    expect(screen.queryByRole("tooltip")).toBeNull();
+  });
+
+  it("positions a measured long tooltip above a bottom-edge target", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const changedFilter = screen.getByRole("button", { name: /^Changed/ });
+    const originalInnerHeight = window.innerHeight;
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: 500,
+    });
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this === changedFilter) {
+          return {
+            x: 100,
+            y: 440,
+            left: 100,
+            right: 180,
+            top: 440,
+            bottom: 460,
+            width: 80,
+            height: 20,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        if (this.classList.contains("translator-status-tooltip")) {
+          return {
+            x: 0,
+            y: 0,
+            left: 0,
+            right: 290,
+            top: 0,
+            bottom: 140,
+            width: 290,
+            height: 140,
+            toJSON: () => ({}),
+          } as DOMRect;
+        }
+        return {
+          x: 0,
+          y: 0,
+          left: 0,
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: 0,
+          height: 0,
+          toJSON: () => ({}),
+        } as DOMRect;
+      });
+
+    fireEvent.focus(changedFilter);
+
+    await waitFor(() =>
+      expect(screen.getByRole("tooltip")).toHaveStyle({
+        left: "8px",
+        top: "293px",
+      }),
+    );
+    rectSpy.mockRestore();
+    Object.defineProperty(window, "innerHeight", {
+      configurable: true,
+      value: originalInnerHeight,
+    });
+  });
+
+  it("applies the hidden Overview has-value filter and exposes it in the query summary", async () => {
+    const onStatusFilterChange = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        statusFilter="has-value"
+        onStatusFilterChange={onStatusFilterChange}
+      />,
+    );
+
+    expect(await screen.findByText("greeting")).toBeVisible();
+    expect(screen.getByText("token")).toBeVisible();
+    expect(screen.queryByText("bye")).not.toBeInTheDocument();
+    expect(screen.getByText(/2 of 3 strings · Has target text/)).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Has target text/ }),
+    ).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(onStatusFilterChange).toHaveBeenCalledWith("all");
+  });
+
+  it("sorts naturally and clears the pre-sort selection", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select greeting" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
+
+    expect(dataRows()[0]).toHaveTextContent("bye");
+    expect(
+      screen.getByRole("checkbox", { name: "Select greeting" }),
+    ).not.toBeChecked();
+    expect(rowFor("greeting")).toHaveAttribute("aria-selected", "false");
+  });
+
+  it("uses Lucide sort icons for inactive and active directions", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const keySort = screen.getByRole("button", { name: "Key" });
+
+    expect(keySort.querySelector(".lucide-chevrons-up-down")).not.toBeNull();
+    fireEvent.click(keySort);
+    expect(keySort.querySelector(".lucide-arrow-up")).not.toBeNull();
+    fireEvent.click(keySort);
+    expect(keySort.querySelector(".lucide-arrow-down")).not.toBeNull();
+    fireEvent.click(keySort);
+    expect(keySort.querySelector(".lucide-chevrons-up-down")).not.toBeNull();
+  });
+
+  it("hides the complete table when no rows match and restores it after Clear", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      {
+        target: { value: "does-not-exist" },
+      },
+    );
+
+    expect(screen.getByText("No matching strings")).toBeVisible();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(await screen.findByRole("table")).toBeVisible();
+  });
+
+  it("renders the same section header again when a second i18n file begins", async () => {
+    const secondFile = {
+      ...MOD.i18nFiles[0],
+      relativeDir: "assets/i18n",
+      defaultPath: "x/assets/i18n/default.json",
+      targetPath: "x/assets/i18n/de.json",
+      totalKeys: 1,
+      translatedKeys: 0,
+    };
+    const multiFileMod: ScannedMod = {
+      ...MOD,
+      i18nFiles: [MOD.i18nFiles[0], secondFile],
+      totalKeys: 2,
+      translatedKeys: 0,
+    };
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd !== "load_strings") return Promise.resolve(undefined);
+      const relativeDir = (args as { relativeDir: string }).relativeDir;
+      return Promise.resolve([
+        {
+          key: relativeDir === "i18n" ? "first" : "second",
+          source: relativeDir,
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+          section: "Shared section",
+        },
+      ]);
+    });
+
+    render(<StringTable mod={multiFileMod} />);
+
+    expect(await screen.findAllByText(/Shared section/)).toHaveLength(2);
+  });
+
+  it("supports select-all, Ctrl toggles, and Shift ranges with a visible bulk bar", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
+
+    fireEvent.click(rowFor("greeting"));
+    fireEvent.click(rowFor("bye"), { ctrlKey: true });
+    expect(screen.getByRole("button", { name: /2 selected/ })).toBeVisible();
+
+    fireEvent.click(rowFor("greeting"));
+    fireEvent.click(rowFor("token"), { shiftKey: true });
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
+    expect(screen.getByText("Ctrl+click adds more")).toBeVisible();
+  });
+
+  it("handles Ctrl+A across the workspace while preserving native input selection", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    const search = screen.getByRole("searchbox", { name: "Search strings" });
+    const inputEvent = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(search, inputEvent);
+    expect(inputEvent.defaultPrevented).toBe(false);
+    expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
+
+    const workspaceEvent = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(screen.getByRole("button", { name: "This mod" }), workspaceEvent);
+    expect(workspaceEvent.defaultPrevented).toBe(true);
+    const batchTrigger = await screen.findByRole("button", {
+      name: /3 selected/,
+    });
+    expect(batchTrigger).toBeVisible();
+
+    fireEvent.click(batchTrigger);
+    const menuEvent = new KeyboardEvent("keydown", {
+      key: "a",
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(
+      screen.getByRole("menuitem", { name: /Copy source text/ }),
+      menuEvent,
+    );
+    expect(menuEvent.defaultPrevented).toBe(true);
+    expect(
+      await screen.findByRole("button", { name: /3 selected/ }),
+    ).toBeVisible();
+  });
+
+  it("shows every bulk action and clears selection explicitly", async () => {
+    const onNotify = vi.fn();
+    render(<StringTable mod={MOD} onNotify={onNotify} />);
+    await screen.findByText("greeting");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
+
+    expect(
+      screen.getByRole("menuitem", { name: /Copy source text/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: /Copy translations/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: /Mark as done/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: /Keep original/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: /Clear translations/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
+    ).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Clear selected strings" }),
+    );
+    expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
+    expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info");
+  });
+
+  it("opens Batch actions with ArrowDown and closes menus when focus leaves", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    const trigger = screen.getByRole("button", { name: /1 selected/ });
+
+    fireEvent.keyDown(trigger, { key: "ArrowDown" });
+    const menu = await screen.findByRole("menu", { name: "Batch actions" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: /Copy source text/ }),
+      ).toHaveFocus(),
+    );
+    const enabled = screen
+      .getAllByRole("menuitem")
+      .filter((item) => !(item as HTMLButtonElement).disabled);
+    expect(enabled[0]).toHaveAttribute("tabindex", "0");
+    for (const item of enabled.slice(1)) {
+      expect(item).toHaveAttribute("tabindex", "-1");
+    }
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(enabled.at(-1)).toHaveFocus();
+    expect(enabled.at(-1)).toHaveAttribute("tabindex", "0");
+    expect(enabled[0]).toHaveAttribute("tabindex", "-1");
+    fireEvent.keyDown(menu, { key: "Home" });
+    expect(enabled[0]).toHaveFocus();
+
+    const search = screen.getByRole("searchbox", { name: "Search strings" });
+    fireEvent.blur(menu, { relatedTarget: search });
+    expect(screen.queryByRole("menu", { name: "Batch actions" })).toBeNull();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "More actions for bye" }),
+    );
+    const context = await screen.findByRole("menu", {
+      name: "String actions",
+    });
+    fireEvent.blur(context, { relatedTarget: search });
+    expect(screen.queryByRole("menu", { name: "String actions" })).toBeNull();
+  });
+
+  it("treats Mark as done on an empty Open string as a no-op", async () => {
+    const onBulkApplied = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        onBulkApplied={onBulkApplied}
+        onNotify={onNotify}
+      />,
+    );
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Mark as done/ }));
+
+    expect(onNotify).toHaveBeenCalledWith(
+      "No selected strings needed a change.",
+      "info",
+    );
+    expect(onBulkApplied).not.toHaveBeenCalled();
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "save_string_groups_with_undo",
+      ),
+    ).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /1 selected/ })).toBeNull();
+    expect(
+      rowFor("bye").querySelector(".translator-inline-validation"),
+    ).toBeNull();
+  });
+
+  it("writes one atomic grouped batch and emits the backend history entry", async () => {
+    const onBulkApplied = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        onBulkApplied={onBulkApplied}
+      />,
+    );
+    await screen.findByText("tomorrow");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /4 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("save_string_groups_with_undo", {
+      title: "Kept original text",
+      groups: [
+        {
+          modUniqueId: "a.b",
+          entries: expect.arrayContaining([
+            expect.objectContaining({
+              relativeDir: "i18n",
+              key: "greeting",
+              target: "Hello",
+              status: "translated",
+            }),
+            expect.objectContaining({
+              relativeDir: "i18n",
+              key: "bye",
+              target: "Bye",
+              status: "translated",
+            }),
+            expect.objectContaining({
+              relativeDir: "i18n",
+              key: "token",
+              target: "Hi {{name}}",
+              status: "translated",
+            }),
+          ]),
+        },
+        {
+          modUniqueId: "c.d",
+          entries: [
+            expect.objectContaining({
+              relativeDir: "i18n/dialogue",
+              key: "tomorrow",
+              target: "See you tomorrow",
+              status: "translated",
+            }),
+          ],
+        },
+      ],
+    });
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "save_strings"),
+    ).toHaveLength(0);
+    expect(onBulkApplied).toHaveBeenCalledWith(
+      batchHistoryEntry("Kept original text", 4, 2),
+    );
+  });
+
+  it("does not restore stale rows when a deferred batch finishes after a mod change", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    const onBulkApplied = vi.fn();
+    const onModCountsChange = vi.fn();
+    const onStringSaved = vi.fn();
+    const props = {
+      onBulkApplied,
+      onModCountsChange,
+      onStringSaved,
+    };
+    const { rerender } = render(<StringTable mod={MOD} {...props} />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+
+    rerender(<StringTable mod={OTHER_MOD} {...props} />);
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+
+    expect(screen.getByText("tomorrow")).toBeInTheDocument();
+    expect(screen.queryByText("bye")).toBeNull();
+    expect(onStringSaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modUniqueId: "a.b",
+        key: "bye",
+        target: "Bye",
+      }),
+    );
+    expect(onModCountsChange).toHaveBeenCalledWith(
+      "a.b",
+      3,
+      expect.objectContaining({ translated: 2, outdated: 1 }),
+    );
+  });
+
+  it("merges a deferred batch into an overlapping row after switching to All mods", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    const onModCountsChange = vi.fn();
+    const props = {
+      mod: MOD,
+      mods: [MOD, OTHER_MOD],
+      onModCountsChange,
+    };
+    const { rerender } = render(<StringTable {...props} scope="mod" />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+
+    rerender(<StringTable {...props} scope="all" />);
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).not.toHaveTextContent("Bye");
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() =>
+      expect(
+        rowFor("bye").querySelector(".translator-translation-cell"),
+      ).toHaveTextContent("Bye"),
+    );
+
+    expect(screen.getByText("tomorrow")).toBeInTheDocument();
+    expect(onModCountsChange).toHaveBeenCalledWith(
+      "a.b",
+      3,
+      expect.objectContaining({ translated: 2, outdated: 1 }),
+    );
+  });
+
+  it("reloads an overlapping view when a deferred batch finishes during its load", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    const pendingStaleLoad = deferred<(typeof ROWS)["a.b"]>();
+    let loadCall = 0;
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        loadCall += 1;
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        if (loadCall === 2) return pendingStaleLoad.promise;
+        if (loadCall >= 3 && id === "a.b") {
+          return Promise.resolve(
+            ROWS["a.b"].map((row) =>
+              row.key === "bye"
+                ? {
+                    ...row,
+                    target: "Bye",
+                    targetPresent: true,
+                    status: "translated" as const,
+                  }
+                : row,
+            ),
+          );
+        }
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    const onBulkApplied = vi.fn();
+    const props = {
+      mod: MOD,
+      mods: [MOD, OTHER_MOD],
+      onBulkApplied,
+    };
+    const { rerender } = render(<StringTable {...props} scope="mod" />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+
+    rerender(<StringTable {...props} scope="all" />);
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "load_strings"),
+      ).toHaveLength(2),
+    );
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("Bye");
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "load_strings"),
+    ).toHaveLength(4);
+
+    await act(async () => {
+      pendingStaleLoad.resolve(ROWS["a.b"]);
+      await pendingStaleLoad.promise;
+    });
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("Bye");
+    expect(screen.getByText("tomorrow")).toBeInTheDocument();
+  });
+
+  it("blocks a second mutating batch action while the first save is pending", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    const keepOriginal = screen.getByRole("menuitem", {
+      name: /Keep original/,
+    });
+    const clearTranslation = screen.getByRole("menuitem", {
+      name: /Clear translation/,
+    });
+    fireEvent.click(keepOriginal);
+
+    await waitFor(() => expect(keepOriginal).toBeDisabled());
+    expect(clearTranslation).toBeDisabled();
+    fireEvent.click(clearTranslation);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "save_string_groups_with_undo",
+      ),
+    ).toHaveLength(1);
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() =>
+      expect(
+        rowFor("bye").querySelector(".translator-translation-cell"),
+      ).toHaveTextContent("Bye"),
+    );
+  });
+
+  it("keeps target-file presence unchanged when clearing a saved draft", async () => {
+    installBackendRows({
+      "a.b": [
+        {
+          key: "draft",
+          source: "Draft",
+          target: "Entwurf",
+          targetPresent: false,
+          status: "review-needed",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    const onStringSaved = vi.fn();
+    render(<StringTable mod={MOD} onStringSaved={onStringSaved} />);
+    await screen.findByText("draft");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select draft" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Clear translation/ }),
+    );
+
+    await waitFor(() => expect(onStringSaved).toHaveBeenCalledOnce());
+    expect(onStringSaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        key: "draft",
+        target: "",
+        targetPresent: false,
+      }),
+    );
+    expect(rowFor("draft")).toHaveAttribute("data-status", "untranslated");
+    expect(
+      rowFor("draft").querySelector(".translator-inline-validation"),
+    ).toBeNull();
+  });
+
+  it("keeps every selected component unchanged when the atomic batch fails", async () => {
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") {
+        return Promise.reject(new Error("atomic write rejected"));
+      }
+      return Promise.resolve(undefined);
+    });
+    const onBulkApplied = vi.fn();
+    const onNotify = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        onBulkApplied={onBulkApplied}
+        onNotify={onNotify}
+      />,
+    );
+    await screen.findByText("tomorrow");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select tomorrow" }));
+    fireEvent.click(screen.getByRole("button", { name: /2 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+
+    await waitFor(() =>
+      expect(onNotify).toHaveBeenCalledWith(
+        "The batch edit was not saved. Error: atomic write rejected",
+        "error",
+      ),
+    );
+    expect(onBulkApplied).not.toHaveBeenCalled();
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("—");
+    expect(
+      rowFor("tomorrow").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("—");
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "save_string_groups_with_undo",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("starts selected Local AI work across mods while clearly explaining the single-mod LLM export", async () => {
+    let releaseRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          releaseRun = resolve;
+        }),
+    );
+    const onLlmBatchExportForMod = vi.fn();
+    const onEditorOpen = vi.fn();
+    const onNotify = vi.fn();
+    const onAiBatchFinished = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
+        onLlmBatchExportForMod={onLlmBatchExportForMod}
+        onEditorOpen={onEditorOpen}
+        onNotify={onNotify}
+        onAiBatchFinished={onAiBatchFinished}
+      />,
+    );
+    await screen.findByText("tomorrow");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select tomorrow" }));
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
+
+    expect(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    ).toBeEnabled();
+    expect(screen.getByText("3 Open/Changed · 2 mods")).toBeVisible();
+    const llmAction = screen.getByRole("menuitem", {
+      name: /Export selection as LLM batch · select one mod/,
+    });
+    expect(llmAction).toBeDisabled();
+    expect(llmAction).toHaveAttribute(
+      "title",
+      "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
+    );
+
+    expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    expect(onEditorOpen).toHaveBeenCalledOnce();
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
+    expect(request.identities).toEqual([
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "bye" },
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
+      { modUniqueId: "c.d", relativeDir: "i18n/dialogue", key: "tomorrow" },
+    ]);
+    expect(
+      screen.getByRole("dialog", { name: "AI translation progress" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Start AI translation/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    act(() =>
+      releaseRun(
+        liveAiResult({
+          runId: request.runId,
+          engine: "local",
+          model: "llama-local",
+          reasoning: "none",
+          requested: 3,
+          completed: 0,
+          outcome: "cancelled",
+          suggestions: [],
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "AI translation progress" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modUniqueIds: ["a.b", "c.d"],
+      }),
+    );
+  });
+
+  it("disables LLM export for selected Done or Review strings", async () => {
+    const onLlmBatchExportForMod = vi.fn();
+    render(
+      <StringTable mod={MOD} onLlmBatchExportForMod={onLlmBatchExportForMod} />,
+    );
+    await screen.findByText("greeting");
+    fireEvent.click(
+      screen.getByRole("button", { name: "More actions for greeting" }),
+    );
+
+    const action = screen.getByRole("menuitem", {
+      name: /Export LLM batch/,
+    });
+    expect(action).toBeDisabled();
+    expect(action).toHaveAttribute(
+      "title",
+      "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import.",
+    );
+    expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
+  });
+
+  it("keeps the direct AI action unavailable until Settings provides an engine", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("bye");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+
+    const action = screen.getByRole("menuitem", {
+      name: /Translate selected with AI/,
+    });
+    expect(action).toBeDisabled();
+    expect(action).toHaveAttribute(
+      "title",
+      "Configure a translation engine in Settings.",
+    );
+    fireEvent.click(action);
+    expect(
+      screen.queryByRole("dialog", { name: "AI translation progress" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("skips backend-invalid source text only for live AI", async () => {
+    const exactLimitSource = "ä".repeat(32 * 1024);
+    const oversizedSource = "ä".repeat(32 * 1024 + 1);
+    installBackendRows({
+      "a.b": [
+        {
+          key: "empty",
+          source: "",
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "nul",
+          source: "Before\0after",
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "oversized",
+          source: oversizedSource,
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "boundary",
+          source: exactLimitSource,
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+        {
+          key: "valid",
+          source: "Translate me",
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+          tokenMismatchAccepted: false,
+        },
+      ],
+    });
+    const onLlmBatchExportForMod = vi.fn().mockResolvedValue(undefined);
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    render(
+      <StringTable
+        mod={MOD}
+        liveAiEngines={[
+          {
+            id: "codex",
+            label: "Codex CLI",
+            ready: true,
+            model: "gpt-5.6-sol",
+            reasoning: "medium",
+            note: "Uses the signed-in Codex CLI.",
+          },
+        ]}
+        defaultAiEngine="codex"
+        onRunAi={onRunAi}
+        onLlmBatchExportForMod={onLlmBatchExportForMod}
+      />,
+    );
+    await screen.findByText("valid");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /5 selected/ }));
+    expect(
+      screen.getByText("5 Open/Changed exportable · 2 AI-ready"),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
+    );
+    await waitFor(() => expect(onLlmBatchExportForMod).toHaveBeenCalledOnce());
+    const exportedItems = onLlmBatchExportForMod.mock.calls[0][1] as Array<{
+      key: string;
+      source: string;
+    }>;
+    expect(exportedItems.map((item) => item.key)).toEqual([
+      "empty",
+      "nul",
+      "oversized",
+      "boundary",
+      "valid",
+    ]);
+    expect(exportedItems[0]?.source).toBe("");
+
+    fireEvent.click(screen.getByRole("button", { name: /5 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
+    expect(request.identities).toEqual([
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "boundary" },
+      { modUniqueId: "a.b", relativeDir: "i18n", key: "valid" },
+    ]);
+    act(() =>
+      resolveRun(
+        liveAiResult({
+          runId: request.runId,
+          requested: 2,
+          completed: 0,
+          outcome: "cancelled",
+          suggestions: [],
+        }),
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "AI translation progress" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("falls back to the first ready engine and immediately sends exact selected Open and Changed identities", async () => {
+    let resolveRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          resolveRun = resolve;
+        }),
+    );
+    const onAiBatchFinished = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    const onStringSaved = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        liveAiEngines={[
+          {
+            id: "local",
+            label: "Local AI",
+            ready: false,
+            model: "llama-local",
+            reasoning: "none",
+            unavailableReason: "Local endpoint unavailable.",
+            note: "Local only.",
+          },
+          {
+            id: "codex",
+            label: "Codex CLI",
+            ready: true,
+            model: "gpt-5.6",
+            reasoning: "high",
+            note: "Uses the signed-in Codex CLI.",
+          },
+        ]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
+        onAiBatchFinished={onAiBatchFinished}
+        onStatusFilterChange={onStatusFilterChange}
+        onStringSaved={onStringSaved}
+      />,
+    );
+    await screen.findByText("bye");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
+    expect(onRunAi).toHaveBeenCalledWith("codex", {
+      runId: request.runId,
+      scope: "selected",
+      includeOpen: true,
+      includeChanged: true,
+      identities: [
+        { modUniqueId: "a.b", relativeDir: "i18n", key: "bye" },
+        { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
+      ],
+    });
+    const progressDialog = screen.getByRole("dialog", {
+      name: "AI translation progress",
+    });
+    expect(progressDialog).toBeVisible();
+    expect(
+      within(progressDialog).queryByRole("combobox"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(progressDialog).queryByRole("checkbox"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /Start AI translation/ }),
+    ).not.toBeInTheDocument();
+
+    act(() =>
+      resolveRun(
+        liveAiResult({
+          runId: request.runId,
+          engine: "codex",
+          scope: "selected",
+          requested: 2,
+          completed: 2,
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "bye",
+              },
+              text: "Tschüss",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "token",
+              },
+              text: "Hallo {{name}}",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "complete",
+        done: 2,
+        total: 2,
+        engine: "Codex CLI",
+        model: "gpt-5.6",
+        reasoning: "high",
+      }),
+    );
+    expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
+    expect(onStatusFilterChange).toHaveBeenCalledWith("review-needed");
+    expect(onStringSaved).toHaveBeenCalledTimes(2);
+    expect(onStringSaved).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        key: "bye",
+        target: "Tschüss",
+        targetPresent: false,
+      }),
+    );
+    expect(onStringSaved).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        key: "token",
+        target: "Hallo {{name}}",
+        targetPresent: true,
+      }),
+    );
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+    ).toHaveLength(0);
+    expect(rowFor("bye")).toHaveAttribute("data-status", "review-needed");
+    expect(rowFor("bye")).toHaveTextContent("Tschüss");
+    expect(rowFor("token")).toHaveAttribute("data-status", "review-needed");
+    expect(rowFor("token")).toHaveTextContent("Hallo {{name}}");
+
+    const translatedCell = rowFor("bye").querySelector<HTMLElement>(
+      ".translator-translation-col",
+    );
+    if (!translatedCell) throw new Error("Missing translated target cell");
+    fireEvent.doubleClick(translatedCell);
+    const editor = screen.getByRole("dialog", { name: "bye" });
+    expect(within(editor).getByText("Generated by")).toBeVisible();
+    expect(
+      within(editor).getByText("Codex CLI", { selector: "strong" }),
+    ).toBeVisible();
+    expect(within(editor).getByText(/gpt-5\.6/)).toBeVisible();
+    expect(within(editor).getByText(/High/)).toBeVisible();
+  });
+
+  it("reports cancellation with saved partial Review work without client undo", async () => {
+    let releaseRun: (result: AiRunResult) => void = () => {};
+    const onRunAi = vi.fn(
+      (_engine: AiEngine, _request: AiTranslationRequest) =>
+        new Promise<AiRunResult>((resolve) => {
+          releaseRun = resolve;
+        }),
+    );
+    const onNotify = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    const onBulkApplied = vi.fn();
+    const onAiBatchFinished = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
+        onNotify={onNotify}
+        onStatusFilterChange={onStatusFilterChange}
+        onBulkApplied={onBulkApplied}
+        onAiBatchFinished={onAiBatchFinished}
+      />,
+    );
+    await screen.findByText("bye");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
+    fireEvent.click(screen.getByRole("button", { name: /2 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const request = onRunAi.mock.calls[0][1];
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    act(() =>
+      releaseRun(
+        liveAiResult({
+          runId: request.runId,
+          engine: "local",
+          model: "llama-local",
+          reasoning: "none",
+          requested: 2,
+          completed: 1,
+          outcome: "cancelled",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "bye",
+              },
+              text: "Tschüss",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }),
+      ),
+    );
+
+    await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /2 selected/ })).toBeVisible();
+    expect(onNotify).not.toHaveBeenCalled();
+    expect(onBulkApplied).not.toHaveBeenCalled();
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "cancelled",
+        done: 1,
+        total: 2,
+        engine: "Local AI",
+        modName: "Test Mod",
+      }),
+    );
+    expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
+    expect(
+      screen.queryByRole("dialog", { name: "AI translation progress" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reports an AI error after partial progress and keeps the remaining selection", async () => {
+    const onRunAi = vi.fn((_engine: AiEngine, request: AiTranslationRequest) =>
+      Promise.resolve(
+        liveAiResult({
+          runId: request.runId,
+          engine: "local",
+          model: "llama-local",
+          reasoning: "none",
+          requested: 2,
+          completed: 1,
+          outcome: "error",
+          error: "Local AI offline",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "bye",
+              },
+              text: "Tschüss",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }),
+      ),
+    );
+    const onNotify = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    const onBulkApplied = vi.fn();
+    const onAiBatchFinished = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
+        onNotify={onNotify}
+        onStatusFilterChange={onStatusFilterChange}
+        onBulkApplied={onBulkApplied}
+        onAiBatchFinished={onAiBatchFinished}
+      />,
+    );
+    await screen.findByText("bye");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
+    expect(onNotify).not.toHaveBeenCalled();
+    expect(onBulkApplied).not.toHaveBeenCalled();
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "error",
+        done: 1,
+        total: 2,
+        error: "Local AI offline",
+        engine: "Local AI",
+        modName: "Test Mod",
+      }),
+    );
+    expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
+    expect(
+      screen.queryByRole("dialog", { name: "AI translation progress" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("reports a zero-progress AI failure without inventing an undo snapshot", async () => {
+    const onAiBatchFinished = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    const onRunAi = vi.fn().mockRejectedValue(new Error("Local AI offline"));
+    render(
+      <StringTable
+        mod={MOD}
+        liveAiEngines={[LOCAL_AI_ENGINE]}
+        defaultAiEngine="local"
+        onRunAi={onRunAi}
+        onAiBatchFinished={onAiBatchFinished}
+        onStatusFilterChange={onStatusFilterChange}
+      />,
+    );
+    await screen.findByText("bye");
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
+    expect(onAiBatchFinished).toHaveBeenCalledWith(
+      expect.objectContaining({
+        runId: expect.any(String),
+        outcome: "error",
+        done: 0,
+        total: 1,
+        error: "Error: Local AI offline",
+        engine: "Local AI",
+        model: "llama-local",
+        reasoning: "none",
+        modName: "Test Mod",
+        modUniqueIds: ["a.b"],
+      }),
+    );
+    expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
+  });
+
+  it("exports only open/changed rows for one real mod", async () => {
+    const onLlmBatchExportForMod = vi.fn().mockResolvedValue({
+      path: "C:/out/Test.llm-batch.json",
+      stringCount: 2,
+    });
+    render(
+      <StringTable mod={MOD} onLlmBatchExportForMod={onLlmBatchExportForMod} />,
+    );
+    await screen.findByText("greeting");
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all visible strings" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /3 selected/ }));
+    const exportAction = screen.getByRole("menuitem", {
+      name: /Export selection as LLM batch/,
+    });
+    expect(exportAction).toBeEnabled();
+    fireEvent.click(exportAction);
+
+    await waitFor(() => expect(onLlmBatchExportForMod).toHaveBeenCalled());
+    expect(onLlmBatchExportForMod).toHaveBeenCalledWith(MOD, [
+      { relativeDir: "i18n", key: "bye", source: "Bye" },
+      {
+        relativeDir: "i18n",
+        key: "token",
+        source: "Hi {{name}}",
+      },
+    ]);
+  });
+
+  it("focuses search with Ctrl+F and opens row actions with Shift+F10", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const first = dataRows()[0];
+    act(() => first.focus());
+
+    fireEvent.keyDown(window, { key: "f", ctrlKey: true });
+    const search = screen.getByRole("searchbox", { name: "Search strings" });
+    expect(search).toHaveFocus();
+    fireEvent.change(search, { target: { value: "greeting" } });
+    fireEvent.keyDown(search, { key: "Escape" });
+    expect(search).toHaveValue("");
+    expect(search).toHaveFocus();
+
+    act(() => first.focus());
+    fireEvent.keyDown(first, { key: "F10", shiftKey: true });
+    expect(
+      await screen.findByRole("menu", { name: "String actions" }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: /^Edit string/ }),
+      ).toHaveFocus(),
+    );
+    fireEvent.keyDown(screen.getByRole("menu", { name: "String actions" }), {
+      key: "ArrowDown",
+    });
+    expect(
+      screen.getByRole("menuitem", { name: /Copy source text/ }),
+    ).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("menu", { name: "String actions" }), {
+      key: "Escape",
+    });
+    await waitFor(() => expect(first).toHaveFocus());
+  });
+
+  it("returns row-more context focus to the exact trigger", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const more = screen.getByRole("button", {
+      name: "More actions for greeting",
+    });
+    act(() => more.focus());
+    fireEvent.click(more);
+    const menu = await screen.findByRole("menu", { name: "String actions" });
+    fireEvent.keyDown(menu, { key: "Escape" });
+    await waitFor(() => expect(more).toHaveFocus());
+  });
+
+  it("supports Home, End, Shift+Space ranges, and the ContextMenu key", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const [first, , last] = dataRows();
+    act(() => first.focus());
+
+    fireEvent.keyDown(first, { key: " " });
+    fireEvent.keyDown(first, { key: "End" });
+    await waitFor(() => expect(last).toHaveFocus());
+    fireEvent.keyDown(last, { key: " ", shiftKey: true });
+    expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
+
+    fireEvent.keyDown(last, { key: "Home" });
+    await waitFor(() => expect(first).toHaveFocus());
+    fireEvent.keyDown(first, { key: "ContextMenu" });
+    expect(
+      await screen.findByRole("menu", { name: "String actions" }),
+    ).toBeVisible();
+  });
+
+  it("clamps a row context menu to the app bounds", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+
+    fireEvent.contextMenu(rowFor("greeting"), {
+      clientX: 9_999,
+      clientY: 9_999,
+    });
+    const menu = await screen.findByRole("menu", { name: "String actions" });
+    await waitFor(() => {
+      expect(Number.parseFloat(menu.style.left)).toBeLessThan(9_999);
+      expect(Number.parseFloat(menu.style.top)).toBeLessThan(9_999);
+    });
+  });
+
+  it("keeps a row context menu while its string remains visible", async () => {
+    const { rerender } = render(<StringTable mod={MOD} search="greeting" />);
+    await screen.findByText("greeting");
+
+    fireEvent.contextMenu(rowFor("greeting"));
+    expect(
+      await screen.findByRole("menu", { name: "String actions" }),
+    ).toBeVisible();
+
+    rerender(<StringTable mod={MOD} search="" />);
+    expect(screen.getByRole("menu", { name: "String actions" })).toBeVisible();
+
+    rerender(<StringTable mod={MOD} search="weather" />);
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("menu", { name: "String actions" }),
+      ).not.toBeInTheDocument(),
+    );
+  });
+
+  it("resizes status and content columns while action and issue controls stay fixed", async () => {
+    const secondFile = {
+      ...MOD.i18nFiles[0],
+      relativeDir: "assets/i18n",
+      defaultPath: "x/assets/i18n/default.json",
+      targetPath: "x/assets/i18n/de.json",
+    };
+    const multiMod: ScannedMod = {
+      ...MOD,
+      i18nFiles: [MOD.i18nFiles[0], secondFile],
+    };
+    const { container } = render(
+      <StringTable
+        mod={multiMod}
+        mods={[multiMod]}
+        scope="all"
+        targetLanguageLabel="German (de)"
+      />,
+    );
+    await screen.findAllByText("greeting");
+
+    const resizers = [
+      ["Resize mod column", "146"],
+      ["Resize file column", "121"],
+      ["Resize status column", "118"],
+      ["Resize key column", "266"],
+      ["Resize English source column", "376"],
+      ["Resize German translation column", "196"],
+    ] as const;
+    for (const [name, expectedWidth] of resizers) {
+      const resizer = screen.getByRole("separator", { name });
+      fireEvent.keyDown(resizer, { key: "ArrowRight" });
+      expect(resizer).toHaveAttribute("aria-valuenow", expectedWidth);
+    }
+
+    const header = container.querySelector<HTMLElement>(
+      ".translator-string-table-head",
+    );
+    const actionHeader = screen.getByRole("columnheader", {
+      name: "Row actions",
+    });
+    expect(header).toHaveStyle({
+      gridTemplateColumns:
+        "34px 146px 121px 118px 266px 376px 196px minmax(0, 1fr) 58px",
+    });
+    expect(header?.lastElementChild).toBe(actionHeader);
+    expect(actionHeader).toHaveClass("translator-row-actions-col");
+    expect(actionHeader).toHaveStyle({ gridColumn: "-2 / -1" });
+
+    const issueControl = screen.getAllByRole("button", {
+      name: /Token count mismatch for.*\{\{name\}\}/i,
+    })[0];
+    const tokenRow = issueControl.closest<HTMLElement>(".stringrow--data");
+    if (!tokenRow) throw new Error("Missing row for validation control");
+    const translationCell = tokenRow.querySelector<HTMLElement>(
+      ".translator-translation-cell",
+    );
+    const actionCell = tokenRow.querySelector<HTMLElement>(
+      ".translator-row-actions-col",
+    );
+    if (!translationCell || !actionCell) {
+      throw new Error("Missing target or fixed row-actions cell");
+    }
+    const moreControl = actionCell.querySelector<HTMLElement>(
+      '[aria-label="More actions for token"]',
+    );
+    expect(tokenRow.lastElementChild).toBe(actionCell);
+    expect(actionCell.previousElementSibling).toBe(translationCell);
+    expect(actionCell).toHaveStyle({ gridColumn: "-2 / -1" });
+    expect(issueControl).toHaveClass("translator-inline-validation");
+    expect(actionCell).toContainElement(issueControl);
+    expect(moreControl).not.toBeNull();
+    expect(translationCell).not.toContainElement(issueControl);
+    expect(translationCell).not.toContainElement(moreControl);
+    expect(
+      screen.queryByRole("separator", {
+        name: /Resize (?:action|issue)s? column/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("table")).toHaveStyle({ minWidth: "1315px" });
+  });
+
+  it("drags a column boundary and removes the temporary window listeners", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const targetResizer = screen.getByRole("separator", {
+      name: "Resize translation column",
+    });
+    const targetHeader = targetResizer.parentElement;
+    if (!targetHeader) throw new Error("Missing target column header");
+    vi.spyOn(targetHeader, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      right: 340,
+      top: 0,
+      bottom: 30,
+      width: 340,
+      height: 30,
+      toJSON: () => ({}),
+    } as DOMRect);
+
+    fireEvent.pointerDown(targetResizer, {
+      button: 2,
+      clientX: 100,
+      pointerId: 6,
+    });
+    fireEvent.pointerMove(window, { clientX: 148, pointerId: 6 });
+    expect(targetResizer).not.toHaveClass("is-dragging");
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "180");
+
+    fireEvent.pointerDown(targetResizer, { clientX: 100, pointerId: 7 });
+    expect(targetResizer).toHaveClass("is-dragging");
+    fireEvent.pointerMove(window, { clientX: 52, pointerId: 7 });
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "292");
+    fireEvent.pointerMove(window, { clientX: 148, pointerId: 7 });
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "388");
+    fireEvent.pointerUp(window, { pointerId: 7 });
+    expect(targetResizer).not.toHaveClass("is-dragging");
+    fireEvent.pointerMove(window, { clientX: 196, pointerId: 7 });
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "388");
+  });
+
+  it("opens the existing editor and saves against the row's true mod/file identity", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const targetCell = rowFor("greeting").querySelector<HTMLElement>(
+      ".translator-translation-col",
+    );
+    if (!targetCell) throw new Error("Missing target cell");
+    fireEvent.doubleClick(targetCell);
+    const textarea = screen.getByRole("textbox", { name: "Translation" });
+    fireEvent.change(textarea, { target: { value: "Hallo Welt" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save / }));
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("save_string", {
@@ -121,634 +2595,26 @@ describe("StringTable", () => {
     );
   });
 
-  it("persists an accepted token mismatch as an export waiver", async () => {
-    mockStrings([
-      {
-        key: "portrait",
-        source: "What happened?$8",
-        target: "Was ist passiert?$7",
-        targetPresent: true,
-      },
-    ]);
+  it("preserves section dividers in natural mod order and hides them when sorted", async () => {
     render(<StringTable mod={MOD} />);
-    fireEvent.doubleClick(await screen.findByText("portrait"));
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "save_string",
-        expect.objectContaining({
-          key: "portrait",
-          status: "translated-token-mismatch-accepted",
-        }),
-      ),
-    );
-  });
-
-  it("opens the full editor when double-clicking the target text", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.doubleClick(await screen.findByText("Hallo"));
-
-    expect(await screen.findByLabelText("Translation")).toBeInTheDocument();
-  });
-
-  it("Reset clears the field and saves the string as untranslated", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.doubleClick(await screen.findByText("greeting"));
-
-    const textarea = screen.getByLabelText(
-      "Translation",
-    ) as HTMLTextAreaElement;
-    expect(textarea.value).toBe("Hallo");
-
-    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
-    expect(textarea.value).toBe("");
-
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "save_string",
-        expect.objectContaining({
-          key: "greeting",
-          target: "",
-          status: "untranslated",
-        }),
-      ),
-    );
-  });
-
-  it("shows glossary hints in the editor and inserts the term on click", async () => {
-    render(
-      <StringTable
-        mod={MOD}
-        glossary={[
-          {
-            source: "Bye",
-            target: "Tschüss",
-            kind: "item",
-            asset: "Objects",
-            key: "Bye",
-          },
-        ]}
-      />,
-    );
-    fireEvent.doubleClick(await screen.findByText("bye"));
-
-    const textarea = screen.getByLabelText(
-      "Translation",
-    ) as HTMLTextAreaElement;
-    expect(textarea.value).toBe("");
-
-    fireEvent.click(await screen.findByRole("button", { name: /Bye/ }));
-    expect(textarea.value).toBe("Tschüss");
-  });
-
-  it("shows a validation error icon when a source token is missing", async () => {
-    mockStrings([
-      {
-        key: "greet",
-        source: "Hi {{name}}",
-        target: "Hallo",
-        targetPresent: true,
-      },
-      { key: "ok", source: "Yes", target: "Ja", targetPresent: true },
-    ]);
-    render(<StringTable mod={MOD} />);
-
-    expect(
-      await screen.findByTitle(
-        "Token count mismatch for {{name}} (expected 1, found 0)",
-      ),
-    ).toBeInTheDocument();
-  });
-
-  it("inserts a protected token at the cursor when its chip is clicked", async () => {
-    mockStrings([
-      { key: "g", source: "Hi {{name}}", target: "" },
-      { key: "ok", source: "Yes", target: "" },
-    ]);
-    render(<StringTable mod={MOD} />);
-
-    fireEvent.doubleClick(await screen.findByText("g"));
-    const textarea = screen.getByLabelText(
-      "Translation",
-    ) as HTMLTextAreaElement;
-    expect(textarea.value).toBe("");
-
-    fireEvent.click(screen.getByRole("button", { name: "{{name}}" }));
-    expect(textarea.value).toBe("{{name}}");
-  });
-
-  it("sorts rows by a column when its header is clicked", async () => {
-    mockStrings([
-      { key: "zebra", source: "Z", target: "z", targetPresent: true },
-      { key: "alpha", source: "A", target: "a", targetPresent: true },
-    ]);
-    render(<StringTable mod={MOD} />);
-
-    // Default order: zebra then alpha (file order).
-    await screen.findByText("zebra");
-    const keysBefore = screen
-      .getAllByText(/zebra|alpha/)
-      .map((n) => n.textContent);
-    expect(keysBefore[0]).toBe("zebra");
-
-    // Click "Key" header → ascending → alpha first.
+    expect(await screen.findByText("// Dialogue")).toBeVisible();
+    expect(screen.queryByText(/Section ·/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
-    const keysAfter = screen
-      .getAllByText(/zebra|alpha/)
-      .map((n) => n.textContent);
-    expect(keysAfter[0]).toBe("alpha");
+    expect(screen.queryByText("// Dialogue")).not.toBeInTheDocument();
   });
 
-  it("filters rows by search text across key/original/target", async () => {
-    render(<StringTable mod={MOD} search="bye" statusFilter="all" />);
-
-    expect(await screen.findByText("bye")).toBeInTheDocument();
-    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
-  });
-
-  it("filters rows by status", async () => {
-    render(<StringTable mod={MOD} search="" statusFilter="untranslated" />);
-
-    // Only the untranslated row ("bye", empty target) remains.
-    expect(await screen.findByText("bye")).toBeInTheDocument();
-    expect(screen.queryByText("greeting")).not.toBeInTheDocument();
-  });
-
-  it("uses one roving row tab stop and supports arrows, Space, Enter, and Ctrl+A", async () => {
-    render(<StringTable mod={MOD} />);
-
-    const rows = await screen.findAllByRole("row");
-    expect(rows[0]).toHaveAttribute("tabindex", "0");
-    expect(rows[1]).toHaveAttribute("tabindex", "-1");
-
-    rows[0].focus();
-    fireEvent.keyDown(rows[0], { key: "ArrowDown" });
-    await waitFor(() => expect(rows[1]).toHaveFocus());
-    expect(rows[0]).toHaveAttribute("tabindex", "-1");
-    expect(rows[1]).toHaveAttribute("tabindex", "0");
-
-    fireEvent.keyDown(rows[1], { key: " " });
-    expect(rows[1]).toHaveAttribute("aria-selected", "true");
-
-    fireEvent.keyDown(rows[1], { key: "a", ctrlKey: true });
-    await waitFor(() =>
-      expect(
-        screen
-          .getAllByRole("row")
-          .every((row) => row.getAttribute("aria-selected") === "true"),
-      ).toBe(true),
-    );
-
-    fireEvent.keyDown(rows[1], { key: "Enter" });
-    expect(
-      await screen.findByRole("dialog", { name: "Edit string" }),
-    ).toBeVisible();
-  });
-
-  it("moves row focus to a visible row when filtering removes the active row", async () => {
-    const { rerender } = render(<StringTable mod={MOD} search="" />);
-    const rows = await screen.findAllByRole("row");
-    rows[0].focus();
-
-    rerender(<StringTable mod={MOD} search="bye" />);
-
-    const remaining = await screen.findByRole("row");
-    await waitFor(() => expect(remaining).toHaveFocus());
-    expect(remaining).toHaveAttribute("tabindex", "0");
-  });
-
-  it("shows the no-results state with a Clear-filters escape hatch", async () => {
-    const onClearFilters = vi.fn();
-    render(
-      <StringTable
-        mod={MOD}
-        search="zzz-no-match"
-        statusFilter="all"
-        onClearFilters={onClearFilters}
-      />,
-    );
-
-    expect(await screen.findByText(/No strings match/)).toBeInTheDocument();
-    expect(screen.getByText("zzz-no-match")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-    expect(onClearFilters).toHaveBeenCalled();
-  });
-
-  it("AI translate fills the field, flags needs-review, and Save confirms translated", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Tschüss!",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-    render(<StringTable mod={MOD} onTranslate={onTranslate} />);
-    fireEvent.doubleClick(await screen.findByText("bye"));
-
-    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
-    const textarea = screen.getByLabelText(
-      "Translation",
-    ) as HTMLTextAreaElement;
-    await waitFor(() => expect(textarea.value).toBe("Tschüss!"));
-    expect(onTranslate).toHaveBeenCalledWith("Bye", undefined);
-    // Badge shows the unreviewed status.
-    expect(screen.getByText(/Needs review/)).toBeInTheDocument();
-
-    // Explicit Save = the user reviewed it → persisted as translated.
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "save_string",
-        expect.objectContaining({
-          key: "bye",
-          target: "Tschüss!",
-          status: "translated",
-        }),
-      ),
-    );
-  });
-
-  it("navigating away from an AI suggestion auto-saves it as review-needed", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Hallo Welt",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-    render(<StringTable mod={MOD} onTranslate={onTranslate} />);
-    fireEvent.doubleClick(await screen.findByText("greeting"));
-
-    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
-    await waitFor(() =>
-      expect(
-        (screen.getByLabelText("Translation") as HTMLTextAreaElement).value,
-      ).toBe("Hallo Welt"),
-    );
-
-    // Next (auto-save without confirming) keeps the review-needed status.
-    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "save_string",
-        expect.objectContaining({ key: "greeting", status: "review-needed" }),
-      ),
-    );
-  });
-
-  it("keeps a stable review-session total while saved rows leave the filter", async () => {
-    mockStrings([
-      {
-        key: "first",
-        source: "First",
-        target: "Erste KI",
-        targetPresent: true,
-        status: "review-needed",
-      },
-      {
-        key: "second",
-        source: "Second",
-        target: "Zweite KI",
-        targetPresent: true,
-        status: "review-needed",
-      },
-    ]);
-    render(<StringTable mod={MOD} statusFilter="review-needed" />);
-
-    fireEvent.doubleClick(await screen.findByText("first"));
-    expect(screen.getByText("Reviewing 1 of 2")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
-
-    expect(await screen.findByText("Reviewing 2 of 2")).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByLabelText("Translation")).toHaveValue("Zweite KI"),
-    );
-  });
-
-  it("flags dropped tokens returned by the AI", async () => {
-    mockStrings([
-      { key: "g", source: "Hi {{name}}", target: "" },
-      { key: "ok", source: "Yes", target: "" },
-    ]);
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "Hallo",
-      missingTokens: ["{{name}}"],
-      glossaryMisses: [],
-    });
-    render(<StringTable mod={MOD} onTranslate={onTranslate} />);
-    fireEvent.doubleClick(await screen.findByText("g"));
-
-    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
-    expect(
-      await screen.findByText(/AI dropped token\(s\): \{\{name\}\}/),
-    ).toBeInTheDocument();
-  });
-
-  it("without an AI configured, Translate shows a configure hint", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.doubleClick(await screen.findByText("greeting"));
-
-    fireEvent.click(screen.getByRole("button", { name: "AI Translate" }));
-    expect(
-      await screen.findByText(/Configure a local AI in Settings/),
-    ).toBeInTheDocument();
-  });
-
-  it("right-click → Keep original copies the source as a translated value", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.contextMenu(await screen.findByText("bye"));
-
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Keep original text" }),
-    );
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "save_strings",
-        expect.objectContaining({
-          modUniqueId: "a.b",
-          entries: [
-            expect.objectContaining({
-              key: "bye",
-              target: "Bye",
-              status: "translated",
-            }),
-          ],
-        }),
-      ),
-    );
-  });
-
-  it("bulk action saves every selected row in ONE save_strings call", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.click(await screen.findByText("greeting"));
-    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
-    fireEvent.contextMenu(screen.getByText("bye"));
-
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Mark as translated" }),
-    );
-
-    await waitFor(() => {
-      const calls = invokeMock.mock.calls.filter(
-        ([cmd]) => cmd === "save_strings",
-      );
-      expect(calls).toHaveLength(1);
-      const args = calls[0][1] as { entries: Array<{ key: string }> };
-      expect(args.entries.map((e) => e.key).sort()).toEqual([
-        "bye",
-        "greeting",
-      ]);
-    });
-    // No racy per-string saves alongside the bulk call.
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      "save_string",
-      expect.anything(),
-    );
-  });
-
-  it("right-click → Mark as translated keeps an empty row untranslated", async () => {
-    // "bye" has an empty target. Marking it translated would show a green
-    // status with no text and skew the counts, so it must stay untranslated.
-    render(<StringTable mod={MOD} />);
-    fireEvent.contextMenu(await screen.findByText("bye"));
-
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Mark as translated" }),
-    );
-
-    await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith(
-        "save_strings",
-        expect.objectContaining({
-          modUniqueId: "a.b",
-          entries: [
-            expect.objectContaining({
-              key: "bye",
-              target: "",
-              status: "untranslated",
-            }),
-          ],
-        }),
-      ),
-    );
-  });
-
-  it("reports fresh translated counts after an edit and after a bulk action", async () => {
-    const onCountsChange = vi.fn();
-    render(<StringTable mod={MOD} onCountsChange={onCountsChange} />);
-
-    // Edit: translating "bye" brings the working count to 2 of 2.
-    fireEvent.doubleClick(await screen.findByText("bye"));
-    fireEvent.change(screen.getByLabelText("Translation"), {
-      target: { value: "Tschüss" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    await waitFor(() =>
-      expect(onCountsChange).toHaveBeenCalledWith(
-        2,
-        expect.objectContaining({ translated: 2, "review-needed": 0 }),
-      ),
-    );
-
-    // Bulk: clearing both translations drops the count to 0.
-    onCountsChange.mockClear();
-    fireEvent.click(screen.getByText("greeting"));
-    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
-    fireEvent.contextMenu(screen.getByText("bye"));
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: "Clear translation" }),
-    );
-    await waitFor(() =>
-      expect(onCountsChange).toHaveBeenCalledWith(
-        0,
-        expect.objectContaining({ untranslated: 2 }),
-      ),
-    );
-  });
-
-  it("batch-translates only untranslated/outdated rows in the selection as review-needed", async () => {
-    const onTranslate = vi.fn().mockResolvedValue({
-      text: "KI-Text",
-      missingTokens: [],
-      glossaryMisses: [],
-    });
-    const onCountsChange = vi.fn();
-    render(
-      <StringTable
-        mod={MOD}
-        onTranslate={onTranslate}
-        onCountsChange={onCountsChange}
-      />,
-    );
-
-    // Select both rows; only "bye" (untranslated) is eligible — "greeting" is
-    // already translated and must not be re-translated.
-    fireEvent.click(await screen.findByText("greeting"));
-    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
-    fireEvent.contextMenu(screen.getByText("bye"));
-    fireEvent.click(
-      screen.getByRole("menuitem", { name: /Translate missing with local AI/ }),
-    );
-
-    await screen.findByText("Batch translation complete");
-    expect(onTranslate).toHaveBeenCalledTimes(1);
-    expect(onTranslate).toHaveBeenCalledWith("Bye", undefined);
-    expect(invokeMock).toHaveBeenCalledWith(
-      "save_string",
-      expect.objectContaining({
-        key: "bye",
-        target: "KI-Text",
-        status: "review-needed",
-      }),
-    );
-
-    // Closing the dialog reports the fresh working count (both non-empty now,
-    // one of them an unreviewed AI suggestion).
-    fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(onCountsChange).toHaveBeenCalledWith(
-      2,
-      expect.objectContaining({ "review-needed": 1 }),
-    );
-  });
-
-  it("the batch menu item is disabled without an AI configured", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.contextMenu(await screen.findByText("bye"));
-
-    expect(
-      screen.getByRole("menuitem", { name: /Translate missing with local AI/ }),
-    ).toBeDisabled();
-  });
-
-  it("exports only eligible rows and leaves persistent reporting to the shell", async () => {
-    mockStrings([
-      { key: "greeting", source: "Hello", target: "Hallo" },
-      { key: "bye", source: "Bye", target: "", section: "NPC dialogue" },
-    ]);
-    const onLlmBatchExport = vi.fn().mockResolvedValue({
-      path: "C:/out/a.b.llm-batch.json",
-      stringCount: 1,
-    });
-    render(<StringTable mod={MOD} onLlmBatchExport={onLlmBatchExport} />);
-
-    // Select both rows; only "bye" (untranslated) is eligible.
-    fireEvent.click(await screen.findByText("greeting"));
-    fireEvent.click(screen.getByText("bye"), { ctrlKey: true });
-    fireEvent.contextMenu(screen.getByText("bye"));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
-
-    await waitFor(() => expect(onLlmBatchExport).toHaveBeenCalled());
-    expect(onLlmBatchExport).toHaveBeenCalledWith([
-      {
-        relativeDir: "i18n",
-        key: "bye",
-        source: "Bye",
-      },
-    ]);
-    expect(
-      screen.queryByRole("dialog", { name: "LLM batch export" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("a cancelled LLM batch export (null outcome) shows no dialog", async () => {
-    const onLlmBatchExport = vi.fn().mockResolvedValue(null);
-    render(<StringTable mod={MOD} onLlmBatchExport={onLlmBatchExport} />);
-
-    fireEvent.click(await screen.findByText("bye"));
-    fireEvent.contextMenu(screen.getByText("bye"));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
-
-    await waitFor(() => expect(onLlmBatchExport).toHaveBeenCalled());
-    expect(screen.queryByText("Batch exported")).not.toBeInTheDocument();
-  });
-
-  it("adds bottom scroll clearance for a visible result tray", async () => {
+  it("keeps virtualized bottom clearance for the floating result tray", async () => {
     const { rerender } = render(
       <StringTable mod={MOD} bottomClearance={260} />,
     );
-
-    await screen.findByText("bye");
+    await screen.findByText("greeting");
     expect(screen.getByTestId("stringtable-scroll-content")).toHaveStyle({
-      height: "320px",
+      height: "380px",
     });
 
     rerender(<StringTable mod={MOD} bottomClearance={58} />);
     expect(screen.getByTestId("stringtable-scroll-content")).toHaveStyle({
-      height: "118px",
+      height: "178px",
     });
-  });
-
-  it("the LLM batch export menu item is disabled without a target language", async () => {
-    render(<StringTable mod={MOD} />);
-    fireEvent.contextMenu(await screen.findByText("bye"));
-
-    expect(
-      screen.getByRole("menuitem", { name: /Export LLM batch/ }),
-    ).toBeDisabled();
-  });
-
-  it("the header shows a clickable needs-review tail so 100% never hides pending review", () => {
-    const counts = {
-      untranslated: 3,
-      translated: 0,
-      outdated: 0,
-      "review-needed": 277,
-    };
-    const onShowReview = vi.fn();
-    const { rerender } = render(
-      <StringTableHeader
-        mod={{ ...MOD, statusCounts: counts }}
-        onShowReview={onShowReview}
-      />,
-    );
-    // Clicking the tail filters the table down to the unreviewed strings.
-    fireEvent.click(screen.getByRole("button", { name: /277 need review/ }));
-    expect(onShowReview).toHaveBeenCalled();
-
-    // Without unreviewed suggestions there is no tail.
-    rerender(
-      <StringTableHeader
-        mod={{ ...MOD, statusCounts: { ...counts, "review-needed": 0 } }}
-        onShowReview={onShowReview}
-      />,
-    );
-    expect(screen.queryByText(/need review/)).not.toBeInTheDocument();
-  });
-
-  it("each row shows a named status chip", async () => {
-    render(<StringTable mod={MOD} />);
-
-    // greeting = translated, bye = untranslated — both named, not just tinted.
-    expect(await screen.findByText("Translated")).toBeInTheDocument();
-    expect(screen.getByText("Untranslated")).toBeInTheDocument();
-  });
-
-  it("renders section dividers from // comments with live counts", async () => {
-    mockStrings([
-      { key: "a", source: "A", target: "", section: "Tooltips" },
-      { key: "b", source: "B", target: "", section: "Tooltips" },
-      { key: "c", source: "C", target: "" },
-    ]);
-    render(<StringTable mod={MOD} />);
-
-    expect(await screen.findByText("// Tooltips")).toBeInTheDocument();
-    expect(screen.getByText("Section · 2")).toBeInTheDocument();
-    // The sectionless row renders without a divider of its own.
-    expect(screen.getByText("c")).toBeInTheDocument();
-    expect(screen.getAllByText(/Section ·/)).toHaveLength(1);
-  });
-
-  it("sorting hides the dividers (sections only make sense in file order)", async () => {
-    mockStrings([
-      { key: "a", source: "A", target: "", section: "Tooltips" },
-      { key: "b", source: "B", target: "" },
-    ]);
-    render(<StringTable mod={MOD} />);
-    expect(await screen.findByText("// Tooltips")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /^Key/ }));
-    expect(screen.queryByText("// Tooltips")).not.toBeInTheDocument();
   });
 });

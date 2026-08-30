@@ -15,12 +15,24 @@ request and the existing product behavior decide what work is appropriate.
   limited to a user-configured localhost OpenAI-compatible endpoint.
 - The optional Codex CLI backend relies exclusively on the CLI's own login. The
   app does not read, copy, or persist Codex authentication files or tokens.
-- AI requests send source text, section context, and matching glossary terms to
-  the selected service.
-- Codex first creates a draft, then reviews every draft and corrects issues in
-  meaning, natural language, terminology, grammar, register, speaker voice, and
-  dialogue continuity. Only afterward do conservatively detected glossary or
-  terminology candidates receive exactly one focused repair pass.
+- Each live AI run uses exactly one selected target language. Requests send the
+  selected source text, section context, and matching glossary terms to the
+  selected service and may add up to two preceding and following English source
+  strings from the same component, i18n file, and section as read-only context.
+  Only exact selected Open or Changed IDs may be returned or saved.
+- Keep large Codex CLI runs adaptively bounded by item count and request size.
+  Save fully completed adaptive chunks immediately to Review, limit Codex
+  recovery to retries and splitting of the affected batch, and resume from
+  string status instead of a persistent AI job history, queue, or checkpoint
+  store.
+- Codex first creates a draft. Its default quality option then reviews every
+  draft and corrects issues in meaning, natural language, terminology, grammar,
+  register, speaker voice, and dialogue continuity. Only afterward do
+  conservatively detected glossary or terminology candidates receive exactly
+  one focused repair pass.
+- The user may disable that Codex-only quality option to reduce provider time
+  and token use. This skips additional Codex review and repair calls, not
+  validation or human Review, and must show a clear translation-quality warning.
 - A failed full review leaves its chunk incomplete for a later retry; a failed
   optional terminology repair keeps the fully reviewed text. Every completed
   result enters the existing human Review workflow as `review-needed`; the AI

@@ -30,6 +30,8 @@ export interface AiSettings {
   /** Exact model reported by the installed Codex CLI; absent = CLI default. */
   codexModel?: string | null;
   codexReasoning: "low" | "medium" | "high";
+  /** Run the full Codex language-quality review and focused repair stages. */
+  codexQualityReview: boolean;
 }
 
 export type WorkspaceSortColumn =
@@ -130,9 +132,8 @@ export interface ScannedMod {
   /** 0–1. */
   progress: number;
   status: ModStatus;
-  /** Per-status string counts. Not part of the scan payload — filled
-   * client-side once the mod's rows are loaded; drives the needs-review
-   * header tail and the status-filter counts. */
+  /** Current per-status counts from the scan payload. Kept in sync
+   * client-side after rows change; optional only for incomplete legacy data. */
   statusCounts?: Record<StringStatus, number>;
 }
 
@@ -170,6 +171,8 @@ export interface SkippedComponent {
   /** Safe path relative to the configured Mods folder. */
   relativeLocation: string;
   reason: string;
+  /** False when the scanner intentionally ignored something that needs no user action. */
+  requiresAttention: boolean;
   restOfPackageLoaded: boolean;
 }
 

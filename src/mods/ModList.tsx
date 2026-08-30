@@ -1,109 +1,23 @@
-/**
- * Mod list tree (SPEC §7).
- *
- * Mods grouped by package (top-level Mods subfolder), SSE-AT style. A package
- * with one component renders as a single flat row; a package with several
- * (e.g. Ridgeside's [CP]/[CC]/SMAPI) renders as an expandable parent whose
- * children are the components. Status and progress come from the scanned i18n
- * files and portable translation state.
- */
 import {
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useRef,
   useState,
 } from "react";
-import {
-  type ModStatus,
-  type ScannedMod,
-  openModFolder,
-  openUrl,
-} from "../tauri/commands";
-
-type ContextMenuHandler = (mod: ScannedMod, event: ReactMouseEvent) => void;
+import { ExternalLink, FolderOpen, SearchX } from "lucide-react";
+import { type ScannedMod, openModFolder, openUrl } from "../tauri/commands";
 
 interface PackageGroup {
   packageId: string;
   mods: ScannedMod[];
-  fileCount: number;
   nexusId: number | null;
   totalKeys: number;
   translatedKeys: number;
+  reviewNeeded: number;
+  fileCount: number;
   progress: number;
-  status: ModStatus;
-}
-
-function deriveStatus(total: number, translated: number): ModStatus {
-  if (total === 0) return "none";
-  if (translated >= total) return "translated";
-  return "untranslated";
-}
-
-const byName = (a: string, b: string) =>
-  a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
-
-/** The label a group sorts/filters by (package name, or the lone mod's name). */
-function groupLabel(group: PackageGroup): string {
-  return group.mods.length === 1 ? group.mods[0].name : group.packageId;
-}
-
-function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
-  const order: string[] = [];
-  const byId = new Map<string, ScannedMod[]>();
-  for (const mod of mods) {
-    const existing = byId.get(mod.packageId);
-    if (existing) {
-      existing.push(mod);
-    } else {
-      byId.set(mod.packageId, [mod]);
-      order.push(mod.packageId);
-    }
-  }
-  const groups = order.map((packageId) => {
-    const group = byId.get(packageId)!;
-    group.sort((a, b) => byName(a.name, b.name)); // components A→Z within a package
-    const totalKeys = group.reduce((sum, mod) => sum + mod.totalKeys, 0);
-    const translatedKeys = group.reduce(
-      (sum, mod) => sum + mod.translatedKeys,
-      0,
-    );
-    return {
-      packageId,
-      mods: group,
-      fileCount: group.reduce((sum, mod) => sum + mod.i18nFiles.length, 0),
-      nexusId: group.find((mod) => mod.nexusId != null)?.nexusId ?? null,
-      totalKeys,
-      translatedKeys,
-      progress: totalKeys ? translatedKeys / totalKeys : 0,
-      status: deriveStatus(totalKeys, translatedKeys),
-    };
-  });
-  // Packages A→Z (no priority/load order — flat alphabetical, SPEC §7).
-  groups.sort((a, b) => byName(groupLabel(a), groupLabel(b)));
-  return groups;
-}
-
-function ProgressCell({
-  total,
-  progress,
-}: {
-  total: number;
-  progress: number;
-}) {
-  if (total === 0) {
-    return <span className="modrow__progress">—</span>;
-  }
-  const pct = Math.round(progress * 100);
-  return (
-    <span className="modrow__progress" title={`${pct}%`}>
-      <span className="modrow__bar">
-        <span
-          className={`modrow__bar-fill${pct >= 100 ? " modrow__bar-fill--full" : ""}`}
-          style={{ width: `${pct}%` }}
-        />
-      </span>
-      <span className="modrow__pct">{pct}%</span>
-    </span>
-  );
 }
 
 interface ModListProps {
@@ -112,6 +26,69 @@ interface ModListProps {
   onSelect: (uniqueId: string) => void;
   /** Filter packages/components by name (case-insensitive). */
   query?: string;
+  /** Clears the search field rendered by the owning mod pane. */
+  onClearQuery?: () => void;
+}
+
+interface ModMenuState {
+  x: number;
+  y: number;
+  mod: ScannedMod;
+  trigger: HTMLElement | null;
+}
+
+const byName = (a: string, b: string) =>
+  a.localeCompare(b, undefined, { sensitivity: "base", numeric: true });
+
+function groupLabel(group: PackageGroup): string {
+  return group.mods.length === 1 ? group.mods[0].name : group.packageId;
+}
+
+function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
+  const byId = new Map<string, ScannedMod[]>();
+  for (const mod of mods) {
+    const existing = byId.get(mod.packageId);
+    if (existing) existing.push(mod);
+    else byId.set(mod.packageId, [mod]);
+  }
+
+  return Array.from(byId, ([packageId, groupMods]) => {
+    const sortedMods = [...groupMods].sort((a, b) => byName(a.name, b.name));
+    const totalKeys = sortedMods.reduce((sum, mod) => sum + mod.totalKeys, 0);
+    const translatedKeys = sortedMods.reduce(
+      (sum, mod) => sum + mod.translatedKeys,
+      0,
+    );
+    const reviewNeeded = sortedMods.reduce(
+      (sum, mod) => sum + mod.reviewNeeded,
+      0,
+    );
+    const fileCount = sortedMods.reduce(
+      (sum, mod) => sum + mod.i18nFiles.length,
+      0,
+    );
+    return {
+      packageId,
+      mods: sortedMods,
+      nexusId: sortedMods.find((mod) => mod.nexusId != null)?.nexusId ?? null,
+      totalKeys,
+      translatedKeys,
+      reviewNeeded,
+      fileCount,
+      progress: totalKeys > 0 ? translatedKeys / totalKeys : 0,
+    };
+  }).sort((a, b) => byName(groupLabel(a), groupLabel(b)));
+}
+
+function progressStyle(progress: number): CSSProperties {
+  return {
+    "--translator-progress": `${Math.round(progress * 100)}%`,
+  } as CSSProperties;
+}
+
+function progressState(progress: number): string | undefined {
+  const percent = Math.round(progress * 100);
+  return percent > 0 && percent < 20 ? "warning" : undefined;
 }
 
 export function ModList({
@@ -119,134 +96,349 @@ export function ModList({
   selectedId,
   onSelect,
   query = "",
+  onClearQuery,
 }: ModListProps) {
   const groups = groupByPackage(mods);
-  const [menu, setMenu] = useState<{
-    x: number;
-    y: number;
-    mod: ScannedMod;
-  } | null>(null);
-  const q = query.trim().toLowerCase();
-  const visible = q
-    ? groups.filter(
-        (group) =>
-          group.packageId.toLowerCase().includes(q) ||
-          group.mods.some((mod) => mod.name.toLowerCase().includes(q)),
-      )
-    : groups;
-  const visibleIds = visible.flatMap((group) =>
-    group.mods.map((mod) => mod.uniqueId),
+  const [menu, setMenu] = useState<ModMenuState | null>(null);
+  const [collapsedPackages, setCollapsedPackages] = useState<Set<string>>(
+    new Set(),
   );
-  const selectedVisible =
-    selectedId !== null && visibleIds.includes(selectedId);
-  const firstVisibleId = visibleIds[0] ?? null;
+  const [activeTreeId, setActiveTreeId] = useState<string | null>(null);
+  const menuRef = useRef<HTMLUListElement>(null);
+  const q = query.trim().toLocaleLowerCase();
+  const visible = q
+    ? groups.flatMap((group) => {
+        const packageMatches = group.packageId.toLocaleLowerCase().includes(q);
+        const matchingMods = group.mods.filter(
+          (mod) =>
+            mod.name.toLocaleLowerCase().includes(q) ||
+            mod.uniqueId.toLocaleLowerCase().includes(q),
+        );
+        if (!packageMatches && matchingMods.length === 0) return [];
+        return [
+          {
+            group,
+            mods: packageMatches ? group.mods : matchingMods,
+          },
+        ];
+      })
+    : groups.map((group) => ({ group, mods: group.mods }));
+  const renderedTreeIds = visible.flatMap(({ group, mods: visibleMods }) => {
+    if (group.mods.length === 1) return [`mod:${group.mods[0].uniqueId}`];
+    const packageId = `package:${group.packageId}`;
+    if (!q && collapsedPackages.has(group.packageId)) return [packageId];
+    return [
+      packageId,
+      ...visibleMods.map((candidate) => `mod:${candidate.uniqueId}`),
+    ];
+  });
+  const selectedGroup = selectedId
+    ? visible.find(({ mods: visibleMods }) =>
+        visibleMods.some((candidate) => candidate.uniqueId === selectedId),
+      )
+    : undefined;
+  const selectedTreeId = selectedGroup
+    ? selectedGroup.group.mods.length === 1 ||
+      q ||
+      !collapsedPackages.has(selectedGroup.group.packageId)
+      ? `mod:${selectedId}`
+      : `package:${selectedGroup.group.packageId}`
+    : null;
+  const treeTabStopId =
+    activeTreeId && renderedTreeIds.includes(activeTreeId)
+      ? activeTreeId
+      : selectedTreeId && renderedTreeIds.includes(selectedTreeId)
+        ? selectedTreeId
+        : (renderedTreeIds[0] ?? null);
 
-  function openContextMenu(mod: ScannedMod, event: ReactMouseEvent) {
+  useEffect(() => {
+    if (selectedId) setActiveTreeId(`mod:${selectedId}`);
+  }, [selectedId]);
+
+  useEffect(() => {
+    if (!menu) return;
+    const items = Array.from(
+      menuRef.current?.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]',
+      ) ?? [],
+    );
+    items.forEach((item, index) => {
+      item.tabIndex = index === 0 ? 0 : -1;
+    });
+    items[0]?.focus();
+  }, [menu]);
+
+  function closeMenu(restoreFocus = false) {
+    const trigger = menu?.trigger;
+    setMenu(null);
+    if (restoreFocus) requestAnimationFrame(() => trigger?.focus());
+  }
+
+  function openContextMenu(
+    mod: ScannedMod,
+    event: Pick<ReactMouseEvent, "preventDefault" | "clientX" | "clientY">,
+    trigger: HTMLElement | null,
+  ) {
     event.preventDefault();
-    setMenu({ x: event.clientX, y: event.clientY, mod });
+    onSelect(mod.uniqueId);
+    const maxX = Math.max(8, window.innerWidth - 254);
+    const maxY = Math.max(8, window.innerHeight - 112);
+    setMenu({
+      x: Math.max(8, Math.min(event.clientX, maxX)),
+      y: Math.max(8, Math.min(event.clientY, maxY)),
+      mod,
+      trigger,
+    });
   }
 
   function onTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     const row = (event.target as HTMLElement).closest<HTMLElement>(
-      ".modrow--mod[role='treeitem']",
+      "[role='treeitem']",
     );
-    if (!row) return;
+    if (!row || event.target !== row) return;
+    if (
+      event.key === "ContextMenu" ||
+      (event.shiftKey && event.key === "F10")
+    ) {
+      event.preventDefault();
+      const mod = mods.find(
+        (candidate) => candidate.uniqueId === row.dataset.modId,
+      );
+      if (!mod) return;
+      const box = row.getBoundingClientRect();
+      openContextMenu(
+        mod,
+        {
+          preventDefault() {},
+          clientX: box.left + 24,
+          clientY: box.top + 20,
+        },
+        row,
+      );
+      return;
+    }
     if (event.key === "Enter" || event.key === " ") {
+      if (event.target !== row) return;
       event.preventDefault();
       row.click();
       return;
     }
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+    if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) return;
 
     event.preventDefault();
     const rows = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>(
-        ".modrow--mod[role='treeitem']",
-      ),
+      event.currentTarget.querySelectorAll<HTMLElement>("[role='treeitem']"),
     );
     const index = rows.indexOf(row);
-    const next = Math.max(
-      0,
-      Math.min(rows.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)),
+    const next =
+      event.key === "Home"
+        ? rows[0]
+        : event.key === "End"
+          ? rows.at(-1)
+          : rows[
+              Math.max(
+                0,
+                Math.min(
+                  rows.length - 1,
+                  index + (event.key === "ArrowDown" ? 1 : -1),
+                ),
+              )
+            ];
+    if (!next) return;
+    setActiveTreeId(next.dataset.treeId ?? null);
+    next.focus();
+  }
+
+  function onMenuKeyDown(event: ReactKeyboardEvent<HTMLUListElement>) {
+    const items = Array.from(
+      event.currentTarget.querySelectorAll<HTMLButtonElement>(
+        '[role="menuitem"]:not(:disabled)',
+      ),
     );
-    rows.forEach((candidate, candidateIndex) => {
-      candidate.tabIndex = candidateIndex === next ? 0 : -1;
-    });
-    rows[next]?.focus();
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
+      event.preventDefault();
+      const nextIndex =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+            ? items.length - 1
+            : event.key === "ArrowDown"
+              ? (index + 1 + items.length) % items.length
+              : (index - 1 + items.length) % items.length;
+      items.forEach((item, itemIndex) => {
+        item.tabIndex = itemIndex === nextIndex ? 0 : -1;
+      });
+      items[nextIndex]?.focus();
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      closeMenu(true);
+    }
   }
 
   return (
     <>
+      <div className="translator-mod-columns" aria-hidden="true">
+        <span>Mod</span>
+        <span>Ver.</span>
+        <span>Nexus</span>
+        <span>Progress</span>
+      </div>
       <div
-        className="modlist"
+        className="translator-mod-list"
         role="tree"
         aria-label="Mods"
         onKeyDown={onTreeKeyDown}
+        onFocus={(event) => {
+          const row = (event.target as HTMLElement).closest<HTMLElement>(
+            "[role='treeitem']",
+          );
+          if (row && event.currentTarget.contains(row)) {
+            setActiveTreeId(row.dataset.treeId ?? null);
+          }
+        }}
       >
-        <div className="modrow modrow--head">
-          <span>Mod</span>
-          <span>Ver</span>
-          <span>Nexus</span>
-          <span>Files</span>
-          <span>Progress</span>
-        </div>
-        {visible.length === 0 ? (
-          <div className="panel__empty">No mods match “{query}”.</div>
-        ) : (
-          visible.map((group) =>
-            group.mods.length === 1 ? (
-              <ModRow
-                key={group.mods[0].uniqueId}
-                mod={group.mods[0]}
-                depth={0}
-                selectedId={selectedId}
-                tabStop={
-                  group.mods[0].uniqueId === selectedId ||
-                  (!selectedVisible &&
-                    group.mods[0].uniqueId === firstVisibleId)
-                }
-                onSelect={onSelect}
-                onContextMenu={openContextMenu}
-              />
-            ) : (
-              <PackageNode
-                key={group.packageId}
-                group={group}
-                selectedId={selectedId}
-                firstVisibleId={firstVisibleId}
-                selectedVisible={selectedVisible}
-                onSelect={onSelect}
-                onContextMenu={openContextMenu}
-              />
-            ),
-          )
+        {visible.map(({ group, mods: visibleMods }) =>
+          group.mods.length === 1 ? (
+            <ModRow
+              key={group.mods[0].uniqueId}
+              mod={group.mods[0]}
+              selectedId={selectedId}
+              treeId={`mod:${group.mods[0].uniqueId}`}
+              tabStop={treeTabStopId === `mod:${group.mods[0].uniqueId}`}
+              onSelect={(uniqueId) => {
+                setActiveTreeId(`mod:${uniqueId}`);
+                onSelect(uniqueId);
+              }}
+              onContextMenu={openContextMenu}
+              menuOpen={menu?.mod.uniqueId === group.mods[0].uniqueId}
+            />
+          ) : (
+            <PackageNode
+              key={group.packageId}
+              group={group}
+              visibleMods={visibleMods}
+              expanded={Boolean(q) || !collapsedPackages.has(group.packageId)}
+              tabStop={treeTabStopId === `package:${group.packageId}`}
+              treeTabStopId={treeTabStopId}
+              selectedId={selectedId}
+              onToggle={() =>
+                setCollapsedPackages((current) => {
+                  const next = new Set(current);
+                  if (next.has(group.packageId)) next.delete(group.packageId);
+                  else next.add(group.packageId);
+                  return next;
+                })
+              }
+              onSelect={(uniqueId) => {
+                setActiveTreeId(`mod:${uniqueId}`);
+                onSelect(uniqueId);
+              }}
+              onContextMenu={openContextMenu}
+              menuOpenId={menu?.mod.uniqueId ?? null}
+            />
+          ),
         )}
       </div>
+
+      {visible.length === 0 && (
+        <div className="translator-empty-state" data-mod-empty>
+          <SearchX aria-hidden="true" />
+          <strong>
+            {query.trim() ? "No mods found" : "No translatable mods found"}
+          </strong>
+          <span>
+            {query.trim()
+              ? "Change or clear the search term."
+              : "The latest scan did not find a supported i18n component."}
+          </span>
+          {query.trim() && (
+            <button
+              className="translator-button translator-button-quiet"
+              type="button"
+              onClick={onClearQuery}
+              disabled={!onClearQuery}
+            >
+              Clear filter
+            </button>
+          )}
+        </div>
+      )}
+
       {menu && (
         <>
           <div
-            className="ctxmenu__scrim"
-            onMouseDown={() => setMenu(null)}
+            className="translator-context-scrim"
+            onMouseDown={() => closeMenu(false)}
             onContextMenu={(event) => {
               event.preventDefault();
-              setMenu(null);
+              closeMenu(false);
             }}
           />
           <ul
-            className="ctxmenu"
+            ref={menuRef}
+            className="translator-context-menu"
             style={{ left: menu.x, top: menu.y }}
             role="menu"
+            aria-label="Mod actions"
+            onKeyDown={onMenuKeyDown}
+            onBlur={(event) => {
+              const next = event.relatedTarget;
+              if (
+                !(next instanceof Node) ||
+                !event.currentTarget.contains(next)
+              ) {
+                closeMenu(false);
+              }
+            }}
           >
-            <li>
+            <li className="translator-context-count" role="presentation">
+              <span>{menu.mod.name}</span>
+            </li>
+            <li role="none">
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   void openModFolder(menu.mod.folderPath);
-                  setMenu(null);
+                  closeMenu(false);
                 }}
               >
-                Open Mods Folder
+                <span className="translator-menu-label">
+                  <FolderOpen aria-hidden="true" /> Open mod folder
+                </span>
+              </button>
+            </li>
+            <li role="none">
+              <button
+                type="button"
+                role="menuitem"
+                aria-label="Open on Nexus"
+                disabled={menu.mod.nexusId == null}
+                title={
+                  menu.mod.nexusId == null
+                    ? "No Nexus Mods link available"
+                    : undefined
+                }
+                onClick={() => {
+                  if (menu.mod.nexusId == null) return;
+                  void openUrl(
+                    `https://www.nexusmods.com/stardewvalley/mods/${menu.mod.nexusId}`,
+                  );
+                  closeMenu(false);
+                }}
+              >
+                <span className="translator-menu-label">
+                  <ExternalLink aria-hidden="true" /> Open on Nexus
+                </span>
+                {menu.mod.nexusId == null && (
+                  <span
+                    className="translator-context-shortcut"
+                    aria-hidden="true"
+                  >
+                    Unavailable
+                  </span>
+                )}
               </button>
             </li>
           </ul>
@@ -258,58 +450,74 @@ export function ModList({
 
 function PackageNode({
   group,
+  visibleMods,
+  expanded,
+  tabStop,
+  treeTabStopId,
   selectedId,
-  firstVisibleId,
-  selectedVisible,
+  onToggle,
   onSelect,
   onContextMenu,
+  menuOpenId,
 }: {
   group: PackageGroup;
+  visibleMods: ScannedMod[];
+  expanded: boolean;
+  tabStop: boolean;
+  treeTabStopId: string | null;
   selectedId: string | null;
-  firstVisibleId: string | null;
-  selectedVisible: boolean;
+  onToggle: () => void;
   onSelect: (uniqueId: string) => void;
-  onContextMenu: ContextMenuHandler;
+  onContextMenu: (
+    mod: ScannedMod,
+    event: Pick<ReactMouseEvent, "preventDefault" | "clientX" | "clientY">,
+    trigger: HTMLElement | null,
+  ) => void;
+  menuOpenId: string | null;
 }) {
-  const [open, setOpen] = useState(true);
+  const percent = Math.round(group.progress * 100);
   return (
     <>
-      <div
-        className="modrow modrow--package"
+      <button
+        className="translator-mod-group-row"
+        type="button"
         role="treeitem"
-        aria-expanded={open}
+        tabIndex={tabStop ? 0 : -1}
+        data-tree-id={`package:${group.packageId}`}
+        aria-expanded={expanded}
+        title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} translated, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
+        onClick={onToggle}
       >
-        <span className="modrow__name">
-          <button
-            type="button"
-            className="modrow__twisty"
-            onClick={() => setOpen((value) => !value)}
-            aria-label={open ? "Collapse" : "Expand"}
+        <strong>
+          <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
+          <span className="translator-mod-group-name">{group.packageId}</span>
+          <span
+            className="translator-mod-component-badge"
+            title={`${group.mods.length} translatable components`}
           >
-            {open ? "▾" : "▸"}
-          </button>
-          {group.packageId}
-        </span>
+            {group.mods.length} comps.
+          </span>
+        </strong>
         <span />
-        <NexusCell nexusId={group.nexusId} />
-        <span className="modrow__files">{group.fileCount}</span>
-        <ProgressCell total={group.totalKeys} progress={group.progress} />
-      </div>
-      {open &&
-        group.mods.map((mod, index) => (
+        <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
+        <span className="translator-mod-percent">{percent}%</span>
+        <span className="translator-mod-progress" aria-hidden="true">
+          <span style={progressStyle(group.progress)} />
+        </span>
+      </button>
+      {expanded &&
+        visibleMods.map((mod, index) => (
           <ModRow
             key={mod.uniqueId}
             mod={mod}
-            depth={1}
             child
-            lastChild={index === group.mods.length - 1}
+            lastChild={index === visibleMods.length - 1}
             selectedId={selectedId}
-            tabStop={
-              mod.uniqueId === selectedId ||
-              (!selectedVisible && mod.uniqueId === firstVisibleId)
-            }
+            treeId={`mod:${mod.uniqueId}`}
+            tabStop={treeTabStopId === `mod:${mod.uniqueId}`}
             onSelect={onSelect}
             onContextMenu={onContextMenu}
+            menuOpen={menuOpenId === mod.uniqueId}
           />
         ))}
     </>
@@ -318,77 +526,106 @@ function PackageNode({
 
 function ModRow({
   mod,
-  depth,
   child = false,
   lastChild = false,
   selectedId,
+  treeId,
   tabStop,
   onSelect,
   onContextMenu,
+  menuOpen,
 }: {
   mod: ScannedMod;
-  depth: number;
   child?: boolean;
   lastChild?: boolean;
   selectedId: string | null;
+  treeId: string;
   tabStop: boolean;
   onSelect: (uniqueId: string) => void;
-  onContextMenu: ContextMenuHandler;
+  onContextMenu: (
+    mod: ScannedMod,
+    event: Pick<ReactMouseEvent, "preventDefault" | "clientX" | "clientY">,
+    trigger: HTMLElement | null,
+  ) => void;
+  menuOpen: boolean;
 }) {
   const selected = mod.uniqueId === selectedId;
-  const className = [
-    "modrow modrow--mod",
-    child ? "modrow--child" : "",
-    lastChild ? "modrow--child-last" : "",
-    selected ? "modrow--selected" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
+  const percent = Math.round(mod.progress * 100);
+  const multipleSources = mod.i18nFiles.length > 1;
   return (
     <div
-      className={className}
+      className={`translator-mod-row${child ? " is-child" : ""}`}
       role="treeitem"
-      aria-selected={selected}
+      aria-current={selected ? "true" : undefined}
       tabIndex={tabStop ? 0 : -1}
+      data-tree-id={treeId}
+      data-mod-id={mod.uniqueId}
+      data-mod-progress={`${mod.translatedKeys} / ${mod.totalKeys} · ${percent}%`}
+      data-progress-state={progressState(mod.progress)}
+      title={`${mod.name} · ${mod.translatedKeys.toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} translated · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
       onClick={() => onSelect(mod.uniqueId)}
-      onContextMenu={(event) => onContextMenu(mod, event)}
+      onContextMenu={(event) => onContextMenu(mod, event, event.currentTarget)}
     >
       <span
-        className="modrow__name"
-        style={{ paddingLeft: child ? 6 + (depth - 1) * 14 : undefined }}
-        title={mod.name}
+        className={`translator-mod-name${multipleSources ? " has-files" : ""}`}
       >
         {child && (
-          <span className="modrow__tree" aria-hidden>
-            {lastChild ? "└─ " : "├─ "}
+          <span
+            className={`translator-tree-branch${lastChild ? " is-last" : ""}`}
+            aria-hidden="true"
+          />
+        )}
+        <span className="translator-mod-label">{mod.name}</span>
+        {multipleSources && (
+          <span
+            className="translator-mod-file-badge"
+            title={`${mod.i18nFiles.length} i18n source folders`}
+          >
+            {mod.i18nFiles.length} i18n sources
           </span>
         )}
-        {mod.name}
       </span>
-      <span className="modrow__version">{mod.version}</span>
-      <NexusCell nexusId={mod.nexusId} />
-      <span className="modrow__files">{mod.i18nFiles.length}</span>
-      <ProgressCell total={mod.totalKeys} progress={mod.progress} />
+      <span className="translator-mod-version">{mod.version || "—"}</span>
+      <span
+        className="translator-mod-nexus"
+        title={
+          mod.nexusId == null
+            ? "No Nexus Mods link available"
+            : "Open Nexus Mods from the context menu"
+        }
+      >
+        {mod.nexusId ?? "—"}
+      </span>
+      <span className="translator-mod-percent">
+        {mod.totalKeys > 0 ? `${percent}%` : "—"}
+      </span>
+      <span className="translator-mod-progress" aria-hidden="true">
+        <span style={progressStyle(mod.progress)} />
+      </span>
+      <button
+        type="button"
+        className="translator-row-more"
+        aria-label={`More actions for ${mod.name}`}
+        aria-haspopup="menu"
+        aria-expanded={menuOpen}
+        title="More actions"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const box = event.currentTarget.getBoundingClientRect();
+          onContextMenu(
+            mod,
+            {
+              preventDefault() {},
+              clientX: box.left,
+              clientY: box.bottom,
+            },
+            event.currentTarget,
+          );
+        }}
+      >
+        <span aria-hidden="true">⋯</span>
+      </button>
     </div>
-  );
-}
-
-function NexusCell({ nexusId }: { nexusId: number | null }) {
-  if (nexusId == null) {
-    return <span className="modrow__nexus modrow__nexus--none">—</span>;
-  }
-  const url = `https://www.nexusmods.com/stardewvalley/mods/${nexusId}`;
-  return (
-    <a
-      className="modrow__nexus"
-      href={url}
-      onClick={(event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void openUrl(url);
-      }}
-    >
-      {nexusId}
-    </a>
   );
 }

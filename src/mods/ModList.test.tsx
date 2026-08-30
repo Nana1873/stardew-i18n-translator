@@ -44,19 +44,61 @@ describe("ModList", () => {
       />,
     );
     expect(screen.getByText("Solo Mod")).toBeInTheDocument();
+    expect(
+      screen.getByRole("treeitem", { name: /Solo Mod/ }).getAttribute("title"),
+    ).toContain("0 of 10 strings translated");
     // No expand control for a single-component package.
     expect(screen.queryByRole("button", { name: "Collapse" })).toBeNull();
   });
 
+  it("uses a singular string in a one-key mod tooltip", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "one",
+            name: "One String Mod",
+            packageId: "One",
+            totalKeys: 1,
+            translatedKeys: 1,
+            progress: 1,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    expect(
+      screen
+        .getByRole("treeitem", { name: /One String Mod/ })
+        .getAttribute("title"),
+    ).toContain("1 of 1 string translated");
+  });
+
   it("groups a multi-component package under an expandable parent", () => {
+    const contentPatcher = mod({
+      uniqueId: "cp",
+      name: "[CP] RSV",
+      packageId: "Ridgeside",
+      nexusId: 7286,
+      reviewNeeded: 2,
+    });
+    contentPatcher.i18nFiles = [
+      ...contentPatcher.i18nFiles,
+      {
+        ...contentPatcher.i18nFiles[0],
+        relativeDir: "assets/i18n",
+      },
+    ];
     const mods = [
+      contentPatcher,
       mod({
-        uniqueId: "cp",
-        name: "[CP] RSV",
+        uniqueId: "cc",
+        name: "[CC] RSV",
         packageId: "Ridgeside",
-        nexusId: 7286,
+        reviewNeeded: 1,
       }),
-      mod({ uniqueId: "cc", name: "[CC] RSV", packageId: "Ridgeside" }),
     ];
     render(<ModList mods={mods} selectedId={null} onSelect={() => {}} />);
 
@@ -64,12 +106,14 @@ describe("ModList", () => {
     expect(screen.getByText("Ridgeside")).toBeInTheDocument();
     expect(screen.getByText("[CP] RSV")).toBeInTheDocument();
     expect(screen.getByText("[CC] RSV")).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Collapse" }),
-    ).toBeInTheDocument();
+    const packageRow = screen.getByRole("treeitem", { name: /Ridgeside/ });
+    expect(packageRow).toHaveAttribute("aria-expanded", "true");
+    expect(packageRow.getAttribute("title")).toContain(
+      "3 awaiting review, 3 i18n files",
+    );
     // The real Nexus id is surfaced both on the parent (rolled up) and on the
     // [CP] child that owns it (SPEC §7).
-    expect(screen.getAllByRole("link", { name: "7286" })).toHaveLength(2);
+    expect(screen.getAllByText("7286")).toHaveLength(2);
   });
 
   it("draws ├─/└─ tree connectors on the components of a package", () => {
@@ -79,9 +123,10 @@ describe("ModList", () => {
     ];
     render(<ModList mods={mods} selectedId={null} onSelect={() => {}} />);
 
-    // First child gets ├─, the last child gets └─.
-    expect(screen.getByText("├─")).toBeInTheDocument();
-    expect(screen.getByText("└─")).toBeInTheDocument();
+    const branches = document.querySelectorAll(".translator-tree-branch");
+    expect(branches).toHaveLength(2);
+    expect(branches[0]).not.toHaveClass("is-last");
+    expect(branches[1]).toHaveClass("is-last");
   });
 
   it("renders a progress bar whose fill width matches the percentage", () => {
@@ -102,10 +147,10 @@ describe("ModList", () => {
       />,
     );
     const fill = document.querySelector(
-      ".modrow__bar-fill",
+      ".translator-mod-progress span",
     ) as HTMLElement | null;
     expect(fill).not.toBeNull();
-    expect(fill!.style.width).toBe("50%");
+    expect(fill!.style.getPropertyValue("--translator-progress")).toBe("50%");
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
 
@@ -143,10 +188,92 @@ describe("ModList", () => {
     expect(screen.getByText("Alpha Mod")).toBeInTheDocument();
     expect(screen.queryByText("Zebra Mod")).toBeNull();
 
+    const clear = vi.fn();
     rerender(
-      <ModList mods={mods} selectedId={null} onSelect={() => {}} query="zzz" />,
+      <ModList
+        mods={mods}
+        selectedId={null}
+        onSelect={() => {}}
+        query="zzz"
+        onClearQuery={clear}
+      />,
     );
-    expect(screen.getByText(/No mods match/)).toBeInTheDocument();
+    expect(screen.getByText("No mods found")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Clear filter" }));
+    expect(clear).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a matching package parent but renders only matching children", () => {
+    const mods = [
+      mod({
+        uniqueId: "meadow.utilities",
+        name: "Meadow Utilities",
+        packageId: "Meadow Toolkit Bundle",
+      }),
+      mod({
+        uniqueId: "cozy.crafting",
+        name: "Cozy Crafting",
+        packageId: "Meadow Toolkit Bundle",
+      }),
+      mod({
+        uniqueId: "orchard.expansion",
+        name: "Orchard Expansion",
+        packageId: "Meadow Toolkit Bundle",
+      }),
+    ];
+    const { rerender } = render(
+      <ModList mods={mods} selectedId={null} onSelect={() => {}} />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("treeitem", { name: /Meadow Toolkit Bundle/ }),
+    );
+    expect(screen.queryByText("Cozy Crafting")).toBeNull();
+
+    rerender(
+      <ModList
+        mods={mods}
+        selectedId={null}
+        onSelect={() => {}}
+        query="cozy"
+      />,
+    );
+
+    const parent = screen.getByRole("treeitem", {
+      name: /Meadow Toolkit Bundle/,
+    });
+    expect(parent).toBeInTheDocument();
+    expect(parent).toHaveAttribute("aria-expanded", "true");
+    expect(parent).toHaveTextContent("3 comps.");
+    expect(screen.getByText("Cozy Crafting")).toBeInTheDocument();
+    expect(screen.queryByText("Meadow Utilities")).toBeNull();
+    expect(screen.queryByText("Orchard Expansion")).toBeNull();
+  });
+
+  it("renders every child when the package name itself matches", () => {
+    const mods = [
+      mod({
+        uniqueId: "meadow.utilities",
+        name: "Meadow Utilities",
+        packageId: "Meadow Toolkit Bundle",
+      }),
+      mod({
+        uniqueId: "cozy.crafting",
+        name: "Cozy Crafting",
+        packageId: "Meadow Toolkit Bundle",
+      }),
+    ];
+    render(
+      <ModList
+        mods={mods}
+        selectedId={null}
+        onSelect={() => {}}
+        query="toolkit"
+      />,
+    );
+
+    expect(screen.getByText("Meadow Utilities")).toBeInTheDocument();
+    expect(screen.getByText("Cozy Crafting")).toBeInTheDocument();
   });
 
   it("does not draw a connector on a single-component (flat) mod", () => {
@@ -157,8 +284,7 @@ describe("ModList", () => {
         onSelect={() => {}}
       />,
     );
-    expect(screen.queryByText("├─")).toBeNull();
-    expect(screen.queryByText("└─")).toBeNull();
+    expect(document.querySelector(".translator-tree-branch")).toBeNull();
   });
 
   it("opens the selected mod folder from the context menu", () => {
@@ -178,12 +304,119 @@ describe("ModList", () => {
     );
 
     fireEvent.contextMenu(screen.getByText("Solo Mod"));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Open Mods Folder" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open mod folder" }));
 
     expect(invoke).toHaveBeenCalledWith("open_mod_folder", {
       path: "C:\\Games\\Stardew Valley\\Mods\\Solo",
     });
     expect(screen.queryByRole("menu")).toBeNull();
+  });
+
+  it("opens a real Nexus link from the mod context menu", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "solo",
+            name: "Solo Mod",
+            packageId: "Solo",
+            nexusId: 1234,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText("Solo Mod"));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Open on Nexus" }));
+
+    expect(invoke).toHaveBeenCalledWith("open_url", {
+      url: "https://www.nexusmods.com/stardewvalley/mods/1234",
+    });
+  });
+
+  it("keeps Open on Nexus visible but unavailable without a real Nexus id", () => {
+    vi.mocked(invoke).mockClear();
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "solo",
+            name: "Solo Mod",
+            packageId: "Solo",
+            nexusId: null,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    fireEvent.contextMenu(screen.getByText("Solo Mod"));
+    const nexus = screen.getByRole("menuitem", { name: "Open on Nexus" });
+    expect(nexus).toBeVisible();
+    expect(nexus).toBeDisabled();
+    expect(nexus).toHaveTextContent("Unavailable");
+    fireEvent.click(nexus);
+    expect(invoke).not.toHaveBeenCalledWith("open_url", expect.anything());
+  });
+
+  it("uses roving menu focus and closes when focus leaves the mod menu", () => {
+    render(
+      <>
+        <button type="button">Outside</button>
+        <ModList
+          mods={[
+            mod({
+              uniqueId: "solo",
+              name: "Solo Mod",
+              packageId: "Solo",
+              nexusId: 1234,
+            }),
+          ]}
+          selectedId={null}
+          onSelect={() => {}}
+        />
+      </>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "More actions for Solo Mod" }),
+    );
+    const menu = screen.getByRole("menu", { name: "Mod actions" });
+    const folder = screen.getByRole("menuitem", { name: "Open mod folder" });
+    const nexus = screen.getByRole("menuitem", { name: "Open on Nexus" });
+    expect(folder).toHaveFocus();
+    expect(folder).toHaveAttribute("tabindex", "0");
+    expect(nexus).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(menu, { key: "End" });
+    expect(nexus).toHaveFocus();
+    expect(nexus).toHaveAttribute("tabindex", "0");
+
+    const outside = screen.getByRole("button", { name: "Outside" });
+    fireEvent.blur(nexus, { relatedTarget: outside });
+    expect(screen.queryByRole("menu", { name: "Mod actions" })).toBeNull();
+  });
+
+  it("marks components with multiple real i18n sources", () => {
+    const sample = mod({
+      uniqueId: "multi",
+      name: "Multi",
+      packageId: "Multi",
+    });
+    sample.i18nFiles.push({
+      relativeDir: "assets/i18n",
+      defaultPath: "d2",
+      targetPath: "t2",
+      targetExists: false,
+      totalKeys: 4,
+      translatedKeys: 0,
+      reviewNeeded: 0,
+    });
+    render(<ModList mods={[sample]} selectedId={null} onSelect={() => {}} />);
+    expect(screen.getByText("2 i18n sources")).toBeInTheDocument();
   });
 
   it("moves through mod rows with arrows and selects with Enter or Space", () => {
@@ -209,5 +442,48 @@ describe("ModList", () => {
     expect(onSelect).toHaveBeenLastCalledWith("b");
     fireEvent.keyDown(rows[1], { key: " " });
     expect(onSelect).toHaveBeenLastCalledWith("b");
+  });
+
+  it("includes package headers in the single roving tree tab stop", () => {
+    render(
+      <ModList
+        mods={[
+          mod({ uniqueId: "cp", name: "[CP] Bundle", packageId: "Bundle" }),
+          mod({ uniqueId: "cc", name: "[CC] Bundle", packageId: "Bundle" }),
+          mod({ uniqueId: "solo", name: "Solo", packageId: "Solo" }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    const packageRow = screen.getByRole("treeitem", { name: /^Bundle2 comps/ });
+    const initialRows = screen.getAllByRole("treeitem");
+    expect(packageRow).toHaveAttribute("tabindex", "0");
+    for (const row of initialRows.filter(
+      (candidate) => candidate !== packageRow,
+    )) {
+      expect(row).toHaveAttribute("tabindex", "-1");
+    }
+
+    packageRow.focus();
+    fireEvent.keyDown(packageRow, { key: "ArrowDown" });
+    expect(initialRows[1]).toHaveFocus();
+    expect(initialRows[1]).toHaveAttribute("tabindex", "0");
+    expect(packageRow).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(initialRows[1], { key: "End" });
+    expect(initialRows.at(-1)).toHaveFocus();
+    fireEvent.keyDown(initialRows.at(-1)!, { key: "Home" });
+    expect(packageRow).toHaveFocus();
+
+    fireEvent.keyDown(packageRow, { key: "Enter" });
+    expect(packageRow).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+    expect(packageRow).toHaveAttribute("tabindex", "0");
+
+    fireEvent.keyDown(packageRow, { key: "Enter" });
+    expect(packageRow).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(4);
   });
 });

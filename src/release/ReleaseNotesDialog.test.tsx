@@ -100,9 +100,7 @@ describe("ReleaseNotesDialog", () => {
     const copy = screen.getByRole("button", { name: "Copy to clipboard" });
     expect(copy).toBeDisabled();
     fireEvent.click(
-      screen.getByLabelText(
-        "I confirmed the advertised package version above.",
-      ),
+      screen.getByLabelText(/I confirmed the advertised package version 2\.1/),
     );
     expect(copy).toBeEnabled();
   });
@@ -130,7 +128,35 @@ describe("ReleaseNotesDialog", () => {
       (screen.getByLabelText("Generated release notes") as HTMLTextAreaElement)
         .value,
     ).toContain("Nicht veröffentlichungsbereit");
-    fireEvent.click(screen.getByRole("button", { name: /broken\.key/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
     expect(inspect).toHaveBeenCalledWith(problem);
+  });
+
+  it("requires an explicit close, traps Tab, and handles Escape", async () => {
+    const onClose = vi.fn();
+    const { container } = render(
+      <ReleaseNotesDialog
+        preview={PREVIEW}
+        error={null}
+        initialVersion="2.0"
+        archiveFileName={PREVIEW.defaultFileName}
+        onInspect={vi.fn()}
+        onClose={onClose}
+      />,
+    );
+
+    const first = screen.getByRole("button", {
+      name: "Close translation notes",
+    });
+    await waitFor(() => expect(first).toHaveFocus());
+    fireEvent.mouseDown(container.firstElementChild!);
+    expect(onClose).not.toHaveBeenCalled();
+
+    const last = screen.getByRole("button", { name: "Copy to clipboard" });
+    last.focus();
+    fireEvent.keyDown(last, { key: "Tab" });
+    expect(first).toHaveFocus();
+    fireEvent.keyDown(first, { key: "Escape" });
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

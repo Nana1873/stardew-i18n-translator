@@ -5,12 +5,17 @@
  */
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { StringEditor, type EditorRow } from "./StringEditor";
-import type { GlossaryEntry, TranslationResult } from "../tauri/commands";
+import {
+  StringEditor,
+  type EditorRow,
+  type EditorTranslationResult,
+} from "./StringEditor";
+import type { GlossaryEntry } from "../tauri/commands";
 import { resolveShortcuts } from "../shortcuts";
 
 function row(overrides: Partial<EditorRow> = {}): EditorRow {
   return {
+    modUniqueId: "test.mod",
     key: "greeting",
     source: "Hello",
     target: "Hallo",
@@ -27,7 +32,7 @@ function renderEditor(
   onTranslate?: (
     source: string,
     section?: string | null,
-  ) => Promise<TranslationResult>,
+  ) => Promise<EditorTranslationResult>,
   position: { index: number; total: number } = { index: 0, total: 2 },
   reviewProgress?: { current: number; total: number },
   glossary?: GlossaryEntry[] | null,
@@ -39,12 +44,15 @@ function renderEditor(
 ) {
   const onClose = vi.fn();
   const onNavigate = vi.fn();
-  render(
+  const rendered = render(
     <StringEditor
       row={row(overrides)}
       index={position.index}
       total={position.total}
       modName="Test Mod"
+      aiEngineLabel="Codex CLI"
+      aiModel="codex-test-model"
+      aiReasoning="High"
       reviewProgress={reviewProgress}
       glossary={glossary}
       onTranslate={onTranslate}
@@ -53,7 +61,12 @@ function renderEditor(
       onNavigate={onNavigate}
     />,
   );
-  return { onSave: onSave as ReturnType<typeof vi.fn>, onClose, onNavigate };
+  return {
+    ...rendered,
+    onSave: onSave as ReturnType<typeof vi.fn>,
+    onClose,
+    onNavigate,
+  };
 }
 
 function deferred<T>() {
@@ -94,22 +107,75 @@ describe("StringEditor", () => {
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
   });
 
-  it("Esc cancels without saving", () => {
+  it("Esc asks before discarding a dirty edit", () => {
     const { onSave, onClose } = renderEditor();
 
-    fireEvent.change(screen.getByLabelText("Translation"), {
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
       target: { value: "Geändert" },
     });
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
 
     expect(onSave).not.toHaveBeenCalled();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText("Discard changes?")).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close without saving" }),
+    );
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("Save confirms an unreviewed AI suggestion to translated and closes", async () => {
+  it("focuses nested confirmation and blocks editor shortcuts behind it", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "AI result",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
+    const { onSave, onNavigate } = renderEditor({}, onTranslate);
+    const field = screen.getByRole("textbox", { name: "Translation" });
+    fireEvent.change(field, { target: { value: "Unsaved edit" } });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+
+    const continueButton = screen.getByRole("button", {
+      name: "Continue editing",
+    });
+    const editor = continueButton.closest(".translator-editor")!;
+    const nestedDialog = continueButton.closest(".translator-flow-dialog")!;
+    for (const selector of [
+      ".translator-editor-head",
+      ".translator-editor-body",
+      ".translator-editor-actions",
+    ]) {
+      const underlying = editor.querySelector(selector)!;
+      expect(underlying).toHaveAttribute("aria-hidden", "true");
+      expect(underlying).toHaveAttribute("inert");
+    }
+    expect(nestedDialog).not.toHaveAttribute("aria-hidden");
+    expect(nestedDialog).not.toHaveAttribute("inert");
+    expect(
+      screen.queryByRole("textbox", { name: "Translation" }),
+    ).not.toBeInTheDocument();
+    await waitFor(() => expect(continueButton).toHaveFocus());
+    fireEvent.keyDown(window, { key: "F4" });
+    fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "F5", ctrlKey: true });
+
+    expect(field).toHaveValue("Unsaved edit");
+    expect(onSave).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onTranslate).not.toHaveBeenCalled();
+
+    fireEvent.click(continueButton);
+    await waitFor(() => expect(field).toHaveFocus());
+    expect(
+      screen.getByRole("textbox", { name: "Translation" }),
+    ).toBeInTheDocument();
+  });
+
+  it("Save approves a persisted review suggestion as translated and closes", async () => {
     const { onSave, onClose } = renderEditor({ status: "review-needed" });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: /Approve suggestion/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     await waitFor(() => expect(onClose).toHaveBeenCalled());
@@ -124,29 +190,274 @@ describe("StringEditor", () => {
     expect(onNavigate).toHaveBeenCalledWith(1);
   });
 
-  it("AI translate then navigate saves the suggestion as review-needed", async () => {
+  it("shows the correct action states for persisted Review rows", () => {
+    renderEditor({ status: "review-needed" });
+
+    expect(
+      screen.getByRole("button", { name: /Approve suggestion/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Approve & next/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Discard this review suggestion; save to return the string to Open",
+      }),
+    ).toHaveTextContent("Discard suggestion");
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Hallo!" },
+    });
+    expect(
+      screen.getByRole("button", { name: /Save edited suggestion/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Save edit & next/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the correct action states for Changed rows and queue ends", () => {
+    renderEditor({ status: "outdated" }, undefined, { index: 1, total: 2 });
+
+    expect(
+      screen.getByRole("button", { name: /Keep translation/ }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Keep & close/ }),
+    ).toBeInTheDocument();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Aktualisiert" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Save update" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Save update & close/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("navigation accepts an edited Changed translation as Done", async () => {
+    const { onSave, onNavigate } = renderEditor({ status: "outdated" });
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Aktualisiert" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Next string/ }));
+
+    expect(onSave).toHaveBeenCalledWith("Aktualisiert", "translated", false);
+    await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
+  });
+
+  it("shows a persisted live result in Review with the returned engine metadata", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Hallo Welt",
+      missingTokens: [],
+      glossaryMisses: [],
+      engine: "Codex CLI",
+      model: "Codex default",
+      reasoning: "Medium",
+      persisted: true,
+    });
+    const onSave = vi.fn();
+    const first = renderEditor(
+      { target: "", targetPresent: false, status: "untranslated" },
+      onTranslate,
+      undefined,
+      undefined,
+      undefined,
+      onSave,
+    );
+
+    expect(screen.queryByText("Generated by")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+
+    expect(
+      await screen.findByRole("textbox", { name: "Translation" }),
+    ).toHaveValue("Hallo Welt");
+    expect(onSave).not.toHaveBeenCalled();
+
+    first.rerender(
+      <StringEditor
+        row={row({
+          target: "Hallo Welt",
+          targetPresent: true,
+          status: "review-needed",
+        })}
+        index={0}
+        total={2}
+        modName="Test Mod"
+        aiEngineLabel="Codex CLI"
+        aiModel="codex-test-model"
+        aiReasoning="High"
+        onTranslate={onTranslate}
+        onSave={onSave}
+        onClose={first.onClose}
+        onNavigate={first.onNavigate}
+      />,
+    );
+
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /Approve suggestion/ }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Generated by")).toBeInTheDocument();
+    expect(
+      screen.getByText("Codex CLI", { selector: "strong" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Saved to Review/)).toBeInTheDocument();
+    expect(screen.getByText(/Codex default/)).toBeInTheDocument();
+    expect(screen.getByText(/Medium/)).toBeInTheDocument();
+  });
+
+  it("blocks close, navigation, saving, and editing while live translation is pending", async () => {
+    const pending = deferred<EditorTranslationResult>();
+    const onTranslate = vi.fn(() => pending.promise);
+    const { onSave, onClose, onNavigate } = renderEditor(
+      { target: "", targetPresent: false, status: "untranslated" },
+      onTranslate,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+
+    const field = screen.getByRole("textbox", { name: "Translation" });
+    expect(field).toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Close editor" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next string" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
+    fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
+    fireEvent.change(field, { target: { value: "Manual overwrite" } });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(onNavigate).not.toHaveBeenCalled();
+    expect(onSave).not.toHaveBeenCalled();
+    expect(field).toHaveValue("");
+
+    pending.resolve({
+      text: "Persisted result",
+      missingTokens: [],
+      glossaryMisses: [],
+      engine: "Codex CLI",
+      model: "codex-test-model",
+      reasoning: "High",
+      persisted: true,
+    });
+
+    await waitFor(() => expect(field).toHaveValue("Persisted result"));
+    expect(field).not.toHaveAttribute("readonly");
+    expect(screen.getByRole("button", { name: "Close editor" })).toBeEnabled();
+  });
+
+  it("hides suggestion provenance when no real metadata is available", () => {
+    renderEditor({ status: "review-needed" });
+
+    expect(screen.queryByText("Generated by")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Model unavailable/)).not.toBeInTheDocument();
+  });
+
+  it("does not invent provenance for a translation result without metadata", async () => {
     const onTranslate = vi.fn().mockResolvedValue({
       text: "Hallo Welt",
       missingTokens: [],
       glossaryMisses: [],
     });
-    const { onSave } = renderEditor(
-      { target: "", status: "untranslated" },
-      onTranslate,
+    render(
+      <StringEditor
+        row={row({
+          target: "",
+          targetPresent: false,
+          status: "untranslated",
+        })}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        onTranslate={onTranslate}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Translate/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+
     await waitFor(() =>
-      expect(
-        (screen.getByLabelText("Translation") as HTMLTextAreaElement).value,
-      ).toBe("Hallo Welt"),
+      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+        "Hallo Welt",
+      ),
     );
-
-    fireEvent.click(screen.getByRole("button", { name: /Next/ }));
-    expect(onSave).toHaveBeenCalledWith("Hallo Welt", "review-needed", false);
+    expect(screen.queryByText("Generated by")).not.toBeInTheDocument();
+    expect(screen.queryByText(/unavailable/i)).not.toBeInTheDocument();
   });
 
-  it("passes the row section to local AI translation", async () => {
+  it("hides cached provenance after the suggestion is no longer in Review", () => {
+    render(
+      <StringEditor
+        row={row({ target: "Hallo", status: "translated" })}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        suggestionProvenance={{
+          identity: JSON.stringify(["test.mod", "i18n", "greeting"]),
+          engine: "Codex CLI",
+          model: "gpt-5.6-sol",
+          reasoning: "Medium",
+          persisted: true,
+          value: "Hallo",
+        }}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByText("Generated by")).not.toBeInTheDocument();
+    expect(screen.queryByText(/just now/i)).not.toBeInTheDocument();
+  });
+
+  it("resets editor-local state between mods with the same file and key", () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    const onNavigate = vi.fn();
+    const first = row({ modUniqueId: "first.mod" });
+    const second = row({ modUniqueId: "second.mod" });
+    const { rerender } = render(
+      <StringEditor
+        row={first}
+        index={0}
+        total={2}
+        modName="First Mod"
+        onSave={onSave}
+        onClose={onClose}
+        onNavigate={onNavigate}
+      />,
+    );
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Unsaved first-mod edit" },
+    });
+    expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+      "Unsaved first-mod edit",
+    );
+
+    rerender(
+      <StringEditor
+        row={second}
+        index={1}
+        total={2}
+        modName="Second Mod"
+        onSave={onSave}
+        onClose={onClose}
+        onNavigate={onNavigate}
+      />,
+    );
+
+    expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+      "Hallo",
+    );
+  });
+
+  it("passes the row section to the configured AI translation callback", async () => {
     const onTranslate = vi.fn().mockResolvedValue({
       text: "Guten Morgen",
       missingTokens: [],
@@ -168,10 +479,10 @@ describe("StringEditor", () => {
     );
   });
 
-  it("Reset then navigate saves the cleared string as untranslated", () => {
+  it("Clear then navigate saves the cleared string as untranslated", () => {
     const { onSave } = renderEditor();
 
-    fireEvent.click(screen.getByRole("button", { name: /Reset/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
     expect(onSave).toHaveBeenCalledWith("", "untranslated", false);
@@ -182,7 +493,7 @@ describe("StringEditor", () => {
       status: "review-needed",
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Approve & next/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
@@ -198,13 +509,31 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
     expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
+    expect(screen.getByText(/broken in game/)).toBeInTheDocument();
+    const saveAnyway = screen.getByRole("button", { name: "Save anyway" });
+    const editor = saveAnyway.closest(".translator-editor")!;
+    const nestedDialog = saveAnyway.closest(".translator-flow-dialog")!;
+    for (const selector of [
+      ".translator-editor-head",
+      ".translator-editor-body",
+      ".translator-editor-actions",
+    ]) {
+      const underlying = editor.querySelector(selector)!;
+      expect(underlying).toHaveAttribute("aria-hidden", "true");
+      expect(underlying).toHaveAttribute("inert");
+    }
+    expect(nestedDialog).not.toHaveAttribute("aria-hidden");
+    expect(nestedDialog).not.toHaveAttribute("inert");
     expect(
-      screen.getByText("This translation has token errors"),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/break dialogue in-game/)).toBeInTheDocument();
+      screen.queryByRole("textbox", { name: "Translation" }),
+    ).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Go back" }));
+    fireEvent.click(screen.getByText("Return to editor"));
     expect(onSave).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("textbox", { name: "Translation" }),
+    ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
     fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
@@ -232,27 +561,210 @@ describe("StringEditor", () => {
       true,
     );
     expect(
-      screen.queryByText("This translation has token errors"),
+      screen.queryByText("Protected token mismatch"),
     ).not.toBeInTheDocument();
 
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Save" })).toBeEnabled(),
     );
-    const field = screen.getByLabelText("Translation");
+    const field = screen.getByRole("textbox", { name: "Translation" });
     fireEvent.change(field, { target: { value: "Was geschah?$7" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
+  });
+
+  it("uses the generic token-mismatch confirmation for an added-only token", () => {
+    const { onSave } = renderEditor({
+      source: "Hello",
+      target: "Hallo {{name}}",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
+    expect(screen.getAllByText(/expected 0, found 1/)).not.toHaveLength(0);
+  });
+
+  it("shows an accepted token mismatch as a non-blocking warning", () => {
+    renderEditor({
+      source: "Saved {{saveName}}",
+      target: "Gespeichert",
+      tokenMismatchAccepted: true,
+    });
+
+    const warning = screen.getByText(
+      /mismatch explicitly accepted for this exact translation/i,
+    );
+    expect(warning.closest(".translator-validation")).toHaveClass("is-warning");
+    expect(warning.closest(".translator-validation")).not.toHaveClass(
+      "is-error",
+    );
+    expect(screen.getByRole("button", { name: /saveName/i })).toHaveClass(
+      "is-accepted",
+    );
+  });
+
+  it("shows missing-token help and red chips for extra target tokens", () => {
+    renderEditor({
+      source: "Hello {{name}}",
+      target: "Hallo {{extra}} {{extra}}",
+    });
+
     expect(
-      screen.getByText("This translation has token errors"),
+      screen.getByRole("button", {
+        name: "Insert missing token {{name}}",
+      }),
+    ).toHaveClass("is-missing");
+    expect(
+      screen.getByText("Click a missing token to insert it"),
+    ).toBeVisible();
+    const extraToken = screen.getByLabelText("Extra token {{extra}}");
+    expect(extraToken).toHaveClass("is-missing");
+    expect(extraToken).toHaveTextContent("×2");
+  });
+
+  it("renders already satisfied protected tokens as passive chips", () => {
+    renderEditor({
+      source: "Hello {{name}}",
+      target: "Hallo {{name}}",
+    });
+    const field = screen.getByRole("textbox", { name: "Translation" });
+    const token = screen.getByLabelText("Token {{name}} is present in full");
+
+    expect(token.tagName).toBe("SPAN");
+    expect(
+      screen.queryByRole("button", {
+        name: "Token {{name}} is present in full",
+      }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(token);
+    expect(field).toHaveValue("Hallo {{name}}");
+  });
+
+  it("keeps an untouched changed source visibly Changed", () => {
+    renderEditor({ status: "outdated" });
+
+    expect(screen.getByText("Changed")).toBeInTheDocument();
+  });
+
+  it("keeps the persisted status badge stable until a save succeeds", () => {
+    const first = renderEditor({ target: "", status: "untranslated" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Draft" },
+    });
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.queryByText("Done")).not.toBeInTheDocument();
+    first.unmount();
+
+    renderEditor({ status: "review-needed" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Edited review" },
+    });
+    expect(screen.getByText("Review")).toBeInTheDocument();
+    expect(screen.queryByText("Done")).not.toBeInTheDocument();
+  });
+
+  it("keeps token and glossary support rows reachable in their empty states", () => {
+    renderEditor();
+
+    expect(screen.getByText("Protected tokens")).toBeVisible();
+    expect(screen.getByText("None")).toBeVisible();
+    expect(screen.getByText("Glossary hints")).toBeVisible();
+    expect(screen.getByText("No matching hints")).toBeVisible();
+  });
+
+  it("keeps unavailable AI actionable through Translation engines", () => {
+    const onOpenEngineSettings = vi.fn();
+    render(
+      <StringEditor
+        row={row()}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+        onOpenEngineSettings={onOpenEngineSettings}
+      />,
+    );
+    const translateButton = screen.getByRole("button", {
+      name: /Translate with AI/,
+    });
+    expect(translateButton).toBeEnabled();
+
+    fireEvent.click(translateButton);
+
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Configure a translation engine in Settings",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open Translation engines" }),
+    );
+    expect(onOpenEngineSettings).toHaveBeenCalledOnce();
+  });
+
+  it("renders successful AI validation notes without an engine-error recovery", async () => {
+    const onTranslate = vi.fn().mockResolvedValue({
+      text: "Hallo",
+      missingTokens: ["{{name}}"],
+      glossaryMisses: ["Pelican Town"],
+    });
+    render(
+      <StringEditor
+        row={row({
+          source: "Hello {{name}} in Pelican Town",
+          target: "",
+          status: "untranslated",
+        })}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        onTranslate={onTranslate}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+        onOpenEngineSettings={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+
+    const note = await screen.findByText(/AI dropped token/);
+    expect(note).toHaveClass("editor__ai-msg");
+    expect(note.closest(".translator-editor-ai-error")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Open Translation engines" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("uses the language-specific translation field label", () => {
+    render(
+      <StringEditor
+        row={row()}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        targetLanguageLabel="German (de)"
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("German translation")).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: "German translation" }),
     ).toBeInTheDocument();
   });
 
-  it("Save & next on the last string closes instead of navigating", async () => {
+  it("Save & close on the last string closes instead of navigating", async () => {
     const { onSave, onNavigate, onClose } = renderEditor({}, undefined, {
       index: 1,
       total: 2,
     });
 
-    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Save & close/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     expect(onNavigate).not.toHaveBeenCalled();
@@ -295,11 +807,13 @@ describe("StringEditor", () => {
       onSave,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Approve & next/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hallo", "translated", false);
     expect(onNavigate).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: /Save & next/ })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /Approve & next/ }),
+    ).toBeDisabled();
 
     pending.resolve();
     await waitFor(() => expect(onNavigate).toHaveBeenCalledWith(1));
@@ -315,10 +829,10 @@ describe("StringEditor", () => {
       undefined,
       onSave,
     );
-    const field = screen.getByLabelText("Translation");
+    const field = screen.getByRole("textbox", { name: "Translation" });
     field.focus();
 
-    fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Approve & next/ }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("disk full");
     expect(onNavigate).not.toHaveBeenCalled();
@@ -327,26 +841,63 @@ describe("StringEditor", () => {
     expect(field).toHaveFocus();
   });
 
-  it("ignores an AI response after manual input", async () => {
-    const pending = deferred<TranslationResult>();
-    renderEditor(
-      { target: "", status: "untranslated" },
-      vi.fn(() => pending.promise),
-    );
-
-    fireEvent.click(screen.getByRole("button", { name: /AI Translate/ }));
-    const field = screen.getByLabelText("Translation");
-    fireEvent.change(field, { target: { value: "Mein Text" } });
-    pending.resolve({
-      text: "Verspaetete KI-Antwort",
+  it("keeps a valid pending AI result across an unrelated parent rerender", async () => {
+    const pending = deferred<EditorTranslationResult>();
+    const firstTranslate = vi.fn(() => pending.promise);
+    const replacementTranslate = vi.fn().mockResolvedValue({
+      text: "Replacement",
       missingTokens: [],
       glossaryMisses: [],
     });
+    const editorRow = row({ target: "", status: "untranslated" });
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    const onNavigate = vi.fn();
+    const { rerender } = render(
+      <StringEditor
+        row={editorRow}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        onTranslate={firstTranslate}
+        onSave={onSave}
+        onClose={onClose}
+        onNavigate={onNavigate}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
 
-    await waitFor(() => expect(field).toHaveValue("Mein Text"));
+    rerender(
+      <StringEditor
+        row={editorRow}
+        index={0}
+        total={1}
+        modName="Test Mod"
+        onTranslate={replacementTranslate}
+        onSave={onSave}
+        onClose={onClose}
+        onNavigate={onNavigate}
+      />,
+    );
+    pending.resolve({
+      text: "Valid pending result",
+      missingTokens: [],
+      glossaryMisses: [],
+      engine: "Codex CLI",
+      model: "codex-test-model",
+      reasoning: "High",
+      persisted: true,
+    });
+
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+        "Valid pending result",
+      ),
+    );
+    expect(replacementTranslate).not.toHaveBeenCalled();
   });
 
-  it("shows typed glossary hints with a category chip and inserts the term on click", () => {
+  it("shows typed glossary hints as passive reference chips", () => {
     renderEditor(
       { source: "Visit Pelican Town in Spring", target: "" },
       undefined,
@@ -365,12 +916,14 @@ describe("StringEditor", () => {
     // Unmatched terms produce no hint.
     expect(screen.queryByText("Item")).not.toBeInTheDocument();
 
-    // Clicking a hint inserts its target translation.
-    const textarea = screen.getByLabelText(
-      "Translation",
-    ) as HTMLTextAreaElement;
-    fireEvent.click(screen.getByRole("button", { name: /Pelican Town/ }));
-    expect(textarea.value).toBe("Pelikanstadt");
+    const textarea = screen.getByRole("textbox", {
+      name: "Translation",
+    }) as HTMLTextAreaElement;
+    const placeHint = screen.getByTitle("Place");
+    expect(placeHint.tagName).toBe("SPAN");
+    expect(placeHint).toHaveTextContent("Pelican Town → Pelikanstadt");
+    fireEvent.click(placeHint);
+    expect(textarea.value).toBe("");
   });
 
   it("prefers the longer glossary term over an overlapping shorter one", () => {
@@ -382,11 +935,14 @@ describe("StringEditor", () => {
       [entry("Ore", "Erz", "item"), entry("Iridium Ore", "Iridiumerz", "item")],
     );
 
-    expect(
-      screen.getByRole("button", { name: /Iridium Ore/ }),
-    ).toBeInTheDocument();
+    const hints = Array.from(
+      document.querySelectorAll<HTMLElement>(".translator-glossary-term"),
+    ).map((hint) => hint.textContent ?? "");
+    expect(hints.some((hint) => hint.includes("Iridium Ore"))).toBe(true);
     // The bare "Ore" must not also appear — the longer term claimed the span.
-    expect(screen.queryByRole("button", { name: /^Ore →/ })).toBeNull();
+    expect(hints.some((hint) => hint.trim().startsWith("ItemOre →"))).toBe(
+      false,
+    );
   });
 
   it("checks later occurrences when the first glossary match is unavailable", () => {
@@ -398,13 +954,14 @@ describe("StringEditor", () => {
       [entry("Ore", "Erz", "item"), entry("Iridium Ore", "Iridiumerz", "item")],
     );
 
-    expect(
-      screen.getByRole("button", { name: /Iridium Ore/ }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /^Ore →/ })).toBeInTheDocument();
+    const hints = Array.from(
+      document.querySelectorAll<HTMLElement>(".translator-glossary-term"),
+    ).map((hint) => hint.textContent ?? "");
+    expect(hints.some((hint) => hint.includes("Iridium Ore"))).toBe(true);
+    expect(hints.some((hint) => hint.includes("Ore → Erz"))).toBe(true);
   });
 
-  it("shows the current review-session position and progress", () => {
+  it("shows review-session progress only in the compact header position", () => {
     renderEditor(
       {},
       undefined,
@@ -415,9 +972,24 @@ describe("StringEditor", () => {
       },
     );
 
-    expect(screen.getByText("Reviewing 3 of 5")).toBeInTheDocument();
-    expect(
-      screen.getByRole("progressbar", { name: "Review session progress" }),
-    ).toHaveAttribute("aria-valuenow", "3");
+    expect(screen.getByText("3 / 5")).toBeInTheDocument();
+    expect(screen.queryByText("Reviewing 3 of 5")).not.toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+
+  it("uses the exact changed-source heading and exposes status help", async () => {
+    renderEditor({ status: "outdated" });
+
+    expect(screen.getByText("English source update")).toBeInTheDocument();
+    const status = screen.getByText("Changed");
+    expect(status).toHaveAttribute(
+      "aria-description",
+      expect.stringContaining("English source changed"),
+    );
+
+    fireEvent.pointerEnter(status);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "The English source changed after this target translation was saved.",
+    );
   });
 });

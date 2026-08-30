@@ -26,9 +26,10 @@ The durable product loop is:
 1. Select or auto-detect the Stardew Valley and Mods folders.
 2. Select a target language.
 3. Scan mods and import available target-language files.
-4. Browse, search, filter, edit, and review strings.
-5. Validate protected Stardew and SMAPI tokens.
-6. Export target-language `i18n` files or a translation package ZIP.
+4. Review the real scan summary on Overview, then open Workspace.
+5. Browse, search, filter, select, edit, and review strings.
+6. Validate protected Stardew and SMAPI tokens.
+7. Export target-language `i18n` files or a translation package ZIP.
 
 Glossary and AI features are optional additions to this loop. They must never
 be required for ordinary translation and export. Manual translation and all
@@ -99,8 +100,14 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - requires source and existing target files to be flat string objects;
 - silently ignores Content Patcher data under `assets/i18n`, which is not a
   standard SMAPI translation target;
+- excludes detected community language packs from translation targets as an
+  expected, informational result rather than a scanner warning;
+- reports target-language entries without a matching source key as non-blocking
+  information grouped by translation file; SMAPI ignores them, they do not
+  count toward progress or block export, and the next export omits them from
+  the rewritten file while preserving the prior target in its backup;
 - preserves source key order for later export;
-- compares the decoded English source inventory with the preceding successful
+- compares the decoded English source inventory with the preceding complete
   scan of the same Mods folder and reports changed, added, and removed strings;
 - does not traverse links that escape the selected Mods folder;
 - warns and skips only a malformed i18n component instead of inventing empty
@@ -117,23 +124,46 @@ values such as `Nexus:-1` are treated as no Nexus ID.
 Source comparison uses component UniqueID, relative i18n directory, and exact
 key as the stable identity. The first scan of a Mods folder creates the
 baseline and therefore reports zero observed changes. The snapshot contains
-hashes only; target-language changes do not affect it.
+hashes only; target-language changes do not affect it. A scan that skips any
+component needing attention leaves change counts unavailable and preserves the
+last complete baseline. Expected community-language-pack exclusions do not
+prevent a baseline update.
 
 ## 7. User Interface
 
-The application has a dashboard home and a two-panel work view:
+The application opens on **Overview**, with **Workspace** immediately beside it
+in the primary navigation.
 
-- the left side lists scanned packages and component mods;
-- the right side shows the selected mod's strings;
-- search, status filters, review queues, bulk actions, and keyboard navigation
-  support large translation sets;
-- Settings contains folders, language, glossary, AI backends, shortcuts,
-  logging, and app information;
-- the five latest completed backend operations, including exports, imports,
-  LLM batches, AI runs, ZIP builds, and batch edits, remain available in a
-  compact in-session result tray;
-- the latest batch edit has one in-memory undo snapshot until a newer operation
-  replaces it, and stale undo must never overwrite later string edits.
+Overview uses only real scanner, portable-settings, and current-session result
+data. It shows scan totals and diagnostics, recently opened mods, useful all-mod
+filter shortcuts, and the latest successful export path when those values
+exist. The scanner supplies current per-status counts for every loaded mod, and
+portable settings retain each mod's last-opened timestamp across sessions.
+Genuinely absent data, such as an export from the current session or unavailable
+change deltas after an incomplete scan, is shown as unavailable; the production
+UI never fills it with demo data.
+
+Workspace is the two-panel translation view:
+
+- the resizable left pane lists scanned packages and every component mod;
+- the right pane contains one virtualized table for **This mod** and **All
+  mods** scopes;
+- search, status filters, the independent Validation issues filter, sortable
+  columns, multi-select, bulk actions, context menus, tooltips, and keyboard
+  navigation support large translation sets;
+- **Mod**, **File**, **Status**, **Key**, **English Source**, and **Target
+  Translation** are individually resizable when present; validation and row
+  actions remain in a fixed trailing lane;
+- Settings contains folders, language, glossary, the direct Local AI and Codex
+  CLI backends, shortcuts, logging, and app information;
+- completed operations appear in a compact result tray that can be collapsed,
+  closed, and reopened through **Latest result**. Reopening always returns to
+  the newest operation result, even after an older history entry was viewed. It
+  exposes real paths and file names, **Copy details**, relevant follow-up
+  actions, and the five newest backend history entries for the running session;
+- one reversible batch edit has an in-memory undo snapshot until a newer
+  completed operation replaces it, and stale undo must never overwrite later
+  string edits.
 
 The UI should remain a focused translation tool rather than a general workspace
 or project-management suite.
@@ -141,9 +171,23 @@ or project-management suite.
 ## 8. Editing Workflow
 
 Strings can be edited in the table workflow and the full string editor. The app
-supports manual translation, bulk actions, review navigation, and a
-**Keep original** action that intentionally stores the source text as the target
-text.
+supports manual translation, review navigation, and a **Keep original** action
+that intentionally stores the source text as the target text.
+
+Rows can be selected with checkboxes, Ctrl+click, Shift+click, keyboard
+selection, or Ctrl+A over the current filtered result. Batch actions can copy
+source or target text, mark strings as Done, keep the English source, clear
+translations, run AI translation, or export an external LLM batch. The batch
+trigger and each row's right-click menu expose the same actions. Selection is
+bound to exact mod/file/key identities and is pruned when scope or filters make
+rows unavailable.
+
+Live AI targets only exact selected Open or Changed strings. The backend resolves
+those identities from a fresh scan before sending any source text. Done and
+Review text is not silently replaced. The UI excludes source values that the
+live backend rejects (empty, containing NUL, or larger than 64 KiB as UTF-8)
+from its AI-ready count and request identities without changing selection or the
+separate external LLM export contract.
 
 Saving work updates the portable translation state. Export remains an explicit
 user action.
@@ -152,13 +196,19 @@ user action.
 
 The app uses four string states:
 
-- `untranslated`: no accepted target text;
-- `translated`: manually saved or explicitly accepted;
-- `outdated`: the source changed after the saved translation;
-- `review-needed`: imported or generated AI output, including the result of AI
-  review and terminology repair, that still needs human review.
+- **Open** (`untranslated`): no accepted target text;
+- **Done** (`translated`): manually saved or explicitly accepted;
+- **Changed** (`outdated`): the source changed after the saved translation;
+- **Review** (`review-needed`): imported or AI-generated output, including the
+  result of AI review and terminology repair, that still needs human approval.
 
 **Keep original** is an action, not a fifth status.
+
+**Validation issues** is also not a status. It is an independent filter over
+the current source and target values. Review answers “has a human accepted this
+suggestion?” while validation answers “does the current text trigger a safety
+rule or review warning?” A row can therefore be in Review without a validation
+finding, or have a validation finding while in another status.
 
 ## 10. Validation
 
@@ -171,6 +221,10 @@ accepted mismatch no longer blocks direct export or translation-package ZIPs.
 The acceptance applies only to that saved source revision; editing the target
 or a changed English source requires confirmation again. Review warnings, such
 as punctuation or newline differences, do not block export.
+
+The **Validation issues** filter includes both blocking errors and non-blocking
+warnings. The row indicator and editor explain the exact finding; the backend
+revalidates the complete export or import scope before the first write.
 
 Untranslated strings do not block export. They are omitted so SMAPI can fall
 back to `default.json`.
@@ -193,6 +247,14 @@ The desktop app does not contact that service. The user transfers the file
 manually. Imported values enter `review-needed`, validation runs immediately,
 and already accepted local translations are not silently overwritten.
 
+The export action accepts any number of selected Open or Changed strings from
+one mod. Import accepts one JSON file through the native picker or drag and drop
+and shows a read-only preflight before it can write. The preflight reports the
+batch and selected mod IDs, target language, source snapshot, supplied and
+matched strings, preserved local values, empty values, identical values,
+importable values, and structured protected-token issues. A wrong-mod batch may
+switch to that currently scanned mod and rerun the complete preflight.
+
 Batch format 2 contains only `format`, `version`, `metadata`, and `files`.
 Metadata binds the selected mod ID and target language to one SHA-256 snapshot
 over the sorted `[relative file path, key, English source]` list. It does not
@@ -212,6 +274,11 @@ For sharing completed work, the app can build an installable translation ZIP
 containing only generated target-language `i18n` files while preserving the
 package's component folder structure. It can also generate short localized
 publication notes from the same package data.
+
+Direct export is available for the current mod or all scanned mods. Export and
+ZIP results retain the real destination path and file name for result details
+and **Show in folder**. Existing target files receive visible backups, and the
+complete selected scope is validated before any multi-file transaction writes.
 
 ## 13. Supported Files
 
@@ -235,14 +302,20 @@ All application state is portable and stored beside the executable:
 - `data/language-state/<lang>/`
 - `data/logs/`
 
-Dashboard recency is part of the portable settings state; the app does not keep
-workflow state in browser-local storage.
+Overview's last-opened timestamps are part of the portable settings state; the
+app does not keep workflow state in browser-local storage.
+
+Workspace search values, This mod/All mods scope, status and Validation issues
+filters, sort order, selected mod, mod-pane width, and table-column widths are
+also stored in portable settings. Selection, open dialogs, result history, and
+undo snapshots remain session-only.
 
 Result-tray history is bounded to five completed backend operations for the
 running app session. Its single batch-undo snapshot is also memory-only; it is
-not a hidden project log and is never written to portable state. Any later
-successful edit to a touched component makes that snapshot permanently stale,
-even when the edited value is changed back to the batch-written value.
+not a hidden project log and is never written to portable state. A later
+completed operation replaces that snapshot. Any later successful edit to a
+touched component also makes it permanently stale, even when the edited value
+is changed back to the batch-written value.
 
 Codex CLI authentication remains owned by the CLI; the app does not read, copy,
 or persist its authentication files or tokens.
@@ -270,7 +343,9 @@ The maintained product includes:
 - recursive mod scanning and package grouping;
 - existing translation import;
 - a virtualized string table and editor;
-- search, filters, review queues, and bulk actions;
+- Overview and a two-panel Workspace;
+- search, status and validation filters, resizable sortable columns,
+  multi-select, review queues, context menus, and bulk actions;
 - protected-token validation;
 - optional typed glossary hints;
 - optional AI translation through a localhost endpoint or Codex CLI;
@@ -304,7 +379,8 @@ AI translation is optional. Manual translation and every local-only workflow
 remain offline and usable when an AI backend is unavailable.
 
 Local AI connects only to a user-configured localhost OpenAI-compatible
-endpoint, such as Ollama or LM Studio.
+endpoint, such as Ollama or LM Studio. Settings can restore the selected local
+service's default Base URL, test the connection, and choose a reported model.
 
 The Codex CLI backend invokes an installed CLI and relies exclusively on that
 CLI's own authentication. The app does not inspect, import, copy, or persist
@@ -313,9 +389,59 @@ reported by the installed CLI and persists only the selected model id. The app
 does not maintain its own Codex model catalogue. If discovery is unavailable or
 no model has been selected, runs use the CLI's own default model.
 
+For a ChatGPT-backed CLI sign-in, Settings reads the current Codex rate-limit
+windows through the CLI and shows the real remaining percentage, window length,
+and local reset time. The same status check refreshes this best-effort value.
+Missing rate-limit support or data, and API-key billing, are shown as not
+reported and do not affect an otherwise available translation engine. The app
+neither estimates quota data nor reads account identity or credentials.
+
+When Codex CLI is unavailable, Settings shows a compact setup guide that links
+to the official instructions, directs the user to run `codex`, and reuses the
+existing status check. It recommends **Sign in with ChatGPT** for
+subscription access while acknowledging the CLI-supported API-key route for
+separately billed usage-based access. It does not claim a fixed paid-plan
+requirement. Installation and authentication remain outside the app. For an
+installed but unavailable CLI, the guide distinguishes an explicit not-signed-in
+result from update, compatibility, and timeout failures instead of assuming
+that every unavailable state needs login.
+
 An AI request sends the source text, its section context, and matching glossary
-terms to the selected backend. A Codex translation run first produces an
-initial draft. Every draft then receives a full AI review that corrects issues
+terms to the selected backend. Each run is bound to exactly one currently
+selected target language; built-in and curated custom-language targets use the
+same workflow. Batch AI receives exact selected string identities and includes
+selected Open and Changed strings only.
+
+The backend preserves source order and may include up to two preceding and two
+following English source strings from the same component, relative i18n file,
+section, and meaningful contiguous key-prefix group. These boundaries keep
+related dialogue or menu-like entries together without inventing topic or
+reference metadata that SMAPI i18n files do not contain. Neighboring
+strings are read-only context. The output contract permits only selected IDs,
+so context-only strings cannot be returned as translations or written to state.
+
+Local AI processes selected strings serially. An invalid response or other
+item-specific failure is recorded for that string and does not prevent later
+selected strings from being attempted. Each successful suggestion is saved
+immediately as `review-needed`. A connection, HTTP-status, or client-setup
+failure stops the remaining work, as do cancellation, stale source or state,
+and save failures. Suggestions already saved in Review are retained. A
+non-cancelled run that saved at least one suggestion before an error is reported
+as completed with issues; an error before any save is reported as a failure.
+
+Live runs accept at most 4,096 selected strings and 8 MiB of selected source
+text. Codex CLI selections are divided into adaptive batches of at most 100
+selected strings, with every complete serialized prompt bounded to 96 KiB.
+Oversized neighboring context is removed farthest-first; the selected source is
+never trimmed.
+
+Codex CLI recovery is limited: each CLI attempt has a five-minute ceiling, one
+transient failure may be retried, and an invalid structured response gets one
+corrected attempt. If it remains invalid, only that Codex CLI batch is halved
+until the failing string is isolated, so unrelated strings can continue.
+
+A Codex translation run first produces an initial draft. By default, every
+draft then receives a full AI review that corrects issues
 in source meaning, natural phrasing in the target language, terminology,
 grammar, register, speaker voice, and dialogue continuity; review is not
 restricted to strings with token or glossary warnings. The review prompt still
@@ -326,42 +452,61 @@ candidate receive exactly one focused repair pass. The focused pass may retain
 contextually correct inflections or compounds unchanged. No terminology repair
 pass runs without such a candidate.
 
+Settings persists one Codex-only quality-review preference, enabled by default
+for existing and new configurations. Disabling it skips the full language
+review, focused terminology repair, and targeted Codex token-repair provider
+calls so structurally valid initial drafts proceed directly to validation and
+human Review. The UI warns that this reduces provider time and token use but
+may reduce wording, terminology, grammar, register, speaker-voice, dialogue-
+continuity, and protected-token quality. It does not disable validation or
+change `review-needed` status.
+
 Codex groups contiguous selected strings into adaptive chunks of at most 100
 items and additionally bounds the complete serialized prompt. Read-only
 neighboring sources are pooled once per prompt and referenced in source order;
 this representation must preserve the same section, glossary, and before/after
 context as the unpooled request. A single long source may occupy its own chunk.
 
-Each stage accepts only structurally valid output. A failed or oversized full
-review leaves the affected chunk incomplete so it can be retried. If the
+Each enabled stage accepts only structurally valid output. A failed or oversized
+full review leaves the affected chunk incomplete so it can be retried. If the
 optional focused repair fails or returns unusable output, the fully reviewed
-text is retained. Suggestions from each fully completed adaptive chunk are
-saved together immediately as `review-needed`, including results that passed
-both AI quality stages. Cancellation or a later provider error retains
-previously completed chunks; the current in-flight chunk remains available for
-a later retry. Token validation and human review remain the final safety gates.
-Each CLI attempt has a five-minute ceiling. One transient failure may be
-retried, and an invalid structured response gets one corrected attempt before
-only that batch is halved until a failing string is isolated.
+text is retained. Suggestions from completed adaptive chunks are saved
+immediately as `review-needed` when validation reaches them, including results
+that passed both AI quality stages. Cancellation or a later provider error
+retains already persisted suggestions; selected items still in Open or Changed
+remain available for a later retry.
 
-The running UI reports the real persisted-to-Review count, current quality
+When Codex quality review is enabled, a protected-token mismatch after the
+language-quality stages gets one targeted Codex CLI repair attempt with the
+exact required and returned token counts when that complete prompt fits the same
+96 KiB bound. An individually oversized repair input skips the extra call. If
+repair fails, is skipped, or Codex quality review is disabled, the best
+structurally valid suggestion enters Review with the existing blocking
+validation issue. Local AI keeps its direct single-string request and existing
+one-time protected-token retry.
+
+The compact progress dialog receives persisted progress such as `320 / 1000`
+and retains its existing Cancel action. It also reports the current quality
 phase, adaptive outer batch, elapsed time, bounded retry/split activity, and
 Codex-reported token usage when available. Whitelisted Codex JSONL activity
-stages are forwarded while the subprocess is still running, and the UI shows
-how long ago the latest stage arrived. Once at least one suggestion has been
-persisted, remaining time is estimated from completed-string checkpoints and
-kept stable until more work is saved. Raw CLI messages, reasoning text,
-commands, paths, IDs, and errors are never forwarded. The app must not fabricate
-within-call completion percentages.
+stages are forwarded while the subprocess is still running, and the dialog
+shows how long ago the latest stage arrived. Once at least one suggestion has
+been persisted, the dialog estimates remaining time from completed-string
+checkpoints and keeps that estimate stable until more work is saved. Raw CLI
+messages, reasoning text, commands, paths, IDs, and errors are never forwarded.
+Codex does not provide within-turn token deltas or heartbeats, so the app does
+not fabricate within-call completion percentages. A later run over the same
+scope naturally processes the remaining Open or Changed strings instead of
+maintaining a separate persistent AI job history, queue, or checkpoint store.
+Token validation and human review remain the final safety gates.
 
 When local diagnostic logging is enabled, AI runs emit bounded structured
 metadata for run and batch starts/finishes, phases, durations, retries, splits,
 cancellation, fixed outcome categories, and reported token totals. AI
 diagnostics never include prompts, sources, translations, context/glossary
-content, mod/string/file identities, target language, base URLs,
-authentication data, raw stdout/stderr, executable or temporary paths, or raw
-provider errors. Logging remains local, rotating, optional, and never creates
-telemetry.
+content, mod/string/file identities, target language, base URLs, authentication
+data, raw stdout/stderr, executable or temporary paths, or raw provider errors.
+Logging remains local, rotating, optional, and never creates telemetry.
 
 These are direct integrations. The product does not provide a provider
 marketplace, provider registry, or configurable custom cloud base URL.

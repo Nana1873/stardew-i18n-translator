@@ -19,5 +19,8 @@ export default defineConfig({
     environment: "jsdom",
     globals: true,
     setupFiles: ["src/test/setup.ts"],
+    // Keep nested Git worktrees and local package caches under target/ out of
+    // the app suite. Every maintained frontend test lives under src/.
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
   },
 });

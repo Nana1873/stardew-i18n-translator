@@ -18,28 +18,28 @@ export interface Language {
 export const SOURCE_LANGUAGE_LABEL = "English (default)";
 
 export const TARGET_LANGUAGES: Language[] = [
-  { code: "de", label: "German (Deutsch)", gameLocale: "de-DE" },
-  { code: "es", label: "Spanish (Español)", gameLocale: "es-ES" },
-  { code: "fr", label: "French (Français)", gameLocale: "fr-FR" },
-  { code: "hu", label: "Hungarian (Magyar)", gameLocale: "hu-HU" },
-  { code: "it", label: "Italian (Italiano)", gameLocale: "it-IT" },
-  { code: "ja", label: "Japanese (日本語)", gameLocale: "ja-JP" },
-  { code: "ko", label: "Korean (한국어)", gameLocale: "ko-KR" },
-  { code: "pt", label: "Portuguese (Português)", gameLocale: "pt-BR" },
-  { code: "ru", label: "Russian (Русский)", gameLocale: "ru-RU" },
-  { code: "tr", label: "Turkish (Türkçe)", gameLocale: "tr-TR" },
-  { code: "zh", label: "Chinese (中文)", gameLocale: "zh-CN" },
+  { code: "de", label: "German (de)", gameLocale: "de-DE" },
+  { code: "es", label: "Spanish (es)", gameLocale: "es-ES" },
+  { code: "fr", label: "French (fr)", gameLocale: "fr-FR" },
+  { code: "hu", label: "Hungarian (hu)", gameLocale: "hu-HU" },
+  { code: "it", label: "Italian (it)", gameLocale: "it-IT" },
+  { code: "ja", label: "Japanese (ja)", gameLocale: "ja-JP" },
+  { code: "ko", label: "Korean (ko)", gameLocale: "ko-KR" },
+  { code: "pt", label: "Portuguese (pt)", gameLocale: "pt-BR" },
+  { code: "ru", label: "Russian (ru)", gameLocale: "ru-RU" },
+  { code: "tr", label: "Turkish (tr)", gameLocale: "tr-TR" },
+  { code: "zh", label: "Chinese (zh)", gameLocale: "zh-CN" },
   // Curated community-language-pack targets (SV 1.6 `Data/AdditionalLanguages`).
   // Stardew ships no native content for these, so no `gameLocale` → no official
   // glossary unless a compatible installed language pack supplies terms.
-  { code: "vi", label: "Vietnamese (Tiếng Việt)" },
-  { code: "id", label: "Indonesian (Bahasa Indonesia)" },
-  { code: "uk", label: "Ukrainian (Українська)" },
-  { code: "pl", label: "Polish (Polski)" },
-  { code: "fi", label: "Finnish (Suomi)" },
-  { code: "nl", label: "Dutch (Nederlands)" },
-  { code: "cs", label: "Czech (Čeština)" },
-  { code: "th", label: "Thai (ไทย)" },
+  { code: "vi", label: "Vietnamese (vi)" },
+  { code: "id", label: "Indonesian (id)" },
+  { code: "uk", label: "Ukrainian (uk)" },
+  { code: "pl", label: "Polish (pl)" },
+  { code: "fi", label: "Finnish (fi)" },
+  { code: "nl", label: "Dutch (nl)" },
+  { code: "cs", label: "Czech (cs)" },
+  { code: "th", label: "Thai (th)" },
 ];
 
 /**

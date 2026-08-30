@@ -1,10 +1,14 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelAiRun,
+  codexCliModels,
+  codexCliRateLimits,
   codexCliStatus,
   exportAllMods,
   exportLlmBatchToPath,
+  listenAiRunProgress,
   listOperationHistory,
   pickLlmBatchDestination,
   pickLlmBatchFile,
@@ -16,15 +20,55 @@ import {
   translateWithLocalAi,
   undoBatchEdit,
   type AiTranslationRequest,
+  type AiRunProgress,
   type ExportModInput,
 } from "./commands";
 
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/event", () => ({ listen: vi.fn() }));
 
 const invokeMock = vi.mocked(invoke);
+const listenMock = vi.mocked(listen);
 
 describe("backend command bridges", () => {
-  beforeEach(() => invokeMock.mockReset());
+  beforeEach(() => {
+    invokeMock.mockReset();
+    listenMock.mockReset();
+  });
+
+  it("forwards typed AI progress events and returns the listener cleanup", async () => {
+    const progress: AiRunProgress = {
+      runId: "run-1",
+      phase: "reviewing",
+      completed: 32,
+      total: 100,
+      batchIndex: 2,
+      batchTotal: 4,
+      batchSize: 25,
+      retries: 1,
+      splits: 0,
+      recovery: "structureRetry",
+      usage: {
+        inputTokens: 45_200,
+        cachedInputTokens: 32_900,
+        outputTokens: 2_100,
+        reasoningOutputTokens: 900,
+      },
+    };
+    const handler = vi.fn();
+    const unlisten = vi.fn();
+    listenMock.mockResolvedValue(unlisten);
+
+    await expect(listenAiRunProgress(handler)).resolves.toBe(unlisten);
+    expect(listenMock).toHaveBeenCalledWith(
+      "ai-run-progress",
+      expect.any(Function),
+    );
+
+    const receiveProgress = listenMock.mock.calls[0][1];
+    receiveProgress({ event: "ai-run-progress", id: 1, payload: progress });
+    expect(handler).toHaveBeenCalledWith(progress);
+  });
 
   it("passes all export groups to the atomic aggregate command", async () => {
     const mods: ExportModInput[] = [
@@ -207,6 +251,28 @@ describe("backend command bridges", () => {
     await codexCliStatus();
     expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_status");
 
+    invokeMock.mockResolvedValueOnce([
+      {
+        model: "gpt-5.6-sol",
+        displayName: "GPT-5.6-Sol",
+        isDefault: true,
+        defaultReasoningEffort: "low",
+        supportedReasoningEfforts: ["low", "medium", "high"],
+      },
+    ]);
+    await codexCliModels();
+    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_models");
+
+    invokeMock.mockResolvedValueOnce({
+      primary: {
+        usedPercent: 25,
+        windowDurationMins: 300,
+        resetsAt: 1_730_947_200,
+      },
+    });
+    await codexCliRateLimits();
+    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_rate_limits");
+
     invokeMock.mockResolvedValueOnce({ outcome: "complete", suggestions: [] });
     await translateWithCodexCli(request);
     expect(invokeMock).toHaveBeenLastCalledWith("translate_with_codex_cli", {
@@ -220,7 +286,7 @@ describe("backend command bridges", () => {
     });
   });
 
-  it("sends selected identities and status filters without source row data", async () => {
+  it("sends only exact selected identities to Local AI", async () => {
     const request: AiTranslationRequest = {
       runId: "run-selected",
       scope: "selected",
@@ -240,6 +306,8 @@ describe("backend command bridges", () => {
     expect(invokeMock).toHaveBeenLastCalledWith("translate_with_local_ai", {
       request,
     });
+    expect(request.identities).toHaveLength(1);
+    expect(request).not.toHaveProperty("subjectModUniqueId");
     expect(request).not.toHaveProperty("targetLanguage");
     expect(request).not.toHaveProperty("items");
   });

@@ -13,6 +13,7 @@ describe("shortcuts", () => {
     const shortcuts = resolveShortcuts({ "editor.save": "Ctrl+S" });
     expect(shortcuts["editor.save"]).toBe("Ctrl+S");
     expect(shortcuts["editor.close"]).toBe(DEFAULT_SHORTCUTS["editor.close"]);
+    expect(shortcuts["table.search"]).toBe("Ctrl+F");
   });
 
   it("normalizes and matches keyboard events", () => {

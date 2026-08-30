@@ -10,6 +10,7 @@ import {
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
+let backendHistory: OperationHistoryEntry[] = [];
 let fileDropHandler:
   | ((
       event:
@@ -20,7 +21,34 @@ let fileDropHandler:
     ) => void)
   | null = null;
 vi.mock("@tauri-apps/api/core", () => ({
-  invoke: (cmd: string, args?: unknown) => invokeMock(cmd, args),
+  invoke: (cmd: string, args?: unknown) => {
+    const mocked = invokeMock(cmd, args);
+    if (cmd === "list_operation_history") {
+      return Promise.resolve(mocked).then((value) =>
+        Array.isArray(value) ? value : backendHistory,
+      );
+    }
+    if (cmd === "codex_cli_status") {
+      return Promise.resolve(mocked).then(
+        (value) =>
+          value ?? {
+            installed: false,
+            authenticated: false,
+            error: "Codex CLI is unavailable in this test.",
+          },
+      );
+    }
+    if (cmd === "preview_export") {
+      return Promise.resolve(mocked).then(
+        (value) =>
+          value ?? {
+            acceptedMismatches: 0,
+            blockingProblem: null,
+          },
+      );
+    }
+    return mocked;
+  },
 }));
 vi.mock("./llm-batch/dragDrop", () => ({
   listenForFileDrops: vi.fn(
@@ -51,6 +79,15 @@ vi.mock("@tanstack/react-virtual", () => ({
 }));
 
 import { App } from "./App";
+import type {
+  AiRunResult,
+  ExportPreflight,
+  Glossary,
+  LlmImportPreflight,
+  OperationHistoryEntry,
+  OperationKind,
+  ScanResult,
+} from "./tauri/commands";
 
 const CONFIGURED = {
   stardewPath: "E:/SDV",
@@ -60,8 +97,112 @@ const CONFIGURED = {
   diagnosticLogging: true,
 };
 
+function historyEntry(
+  kind: OperationKind,
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return {
+    id: `${kind}-operation`,
+    kind,
+    outcome: "success",
+    title: `${kind} completed`,
+    summary: `${kind} result from the backend`,
+    itemCount: 1,
+    warnings: [],
+    details: [],
+    canUndo: false,
+    completedAtEpochMs: 1_780_000_000_000,
+    ...overrides,
+  };
+}
+
+function exportHistory(
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return historyEntry("export", {
+    id: "export-1",
+    title: "Export completed",
+    summary: "1 target file written",
+    path: "x/i18n/de.json",
+    fileName: "de.json",
+    details: [{ label: "Component", value: "Test Mod" }],
+    ...overrides,
+  });
+}
+
+function importHistory(
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return historyEntry("import", {
+    id: "import-1",
+    title: "LLM batch imported",
+    summary: "1 value saved to Review",
+    path: "C:/results/test.llm-result.json",
+    fileName: "test.llm-result.json",
+    details: [{ label: "Component", value: "a.b" }],
+    ...overrides,
+  });
+}
+
+function aiHistory(
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return historyEntry("ai", {
+    id: "ai-1",
+    outcome: "cancelled",
+    title: "AI translation cancelled",
+    summary: "1 of 2 suggestions saved to Review",
+    ...overrides,
+  });
+}
+
+function batchEditHistory(
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return historyEntry("batch-edit", {
+    id: "batch-edit-1",
+    title: "Batch edit saved",
+    summary: "1 string updated",
+    canUndo: true,
+    ...overrides,
+  });
+}
+
+function batchExportHistory(
+  overrides: Partial<OperationHistoryEntry> = {},
+): OperationHistoryEntry {
+  return historyEntry("batch-export", {
+    id: "batch-export-1",
+    title: "LLM batch exported",
+    summary: "1 source string exported",
+    path: "C:/out/test.llm-batch.json",
+    fileName: "test.llm-batch.json",
+    ...overrides,
+  });
+}
+
+const READY_IMPORT_PREFLIGHT: LlmImportPreflight = {
+  batchModUniqueId: "a.b",
+  batchTargetLang: "de",
+  selectedModUniqueId: "a.b",
+  selectedTargetLang: "de",
+  modMatches: true,
+  languageMatches: true,
+  snapshotResult: "matched",
+  suppliedStrings: 1,
+  matchedStrings: 1,
+  preservedLocal: 0,
+  skippedEmpty: 0,
+  identicalToSource: 0,
+  importable: 1,
+  protectedTokenIssues: [],
+  ready: true,
+  blockingReason: null,
+};
+
 beforeEach(() => {
   invokeMock.mockReset();
+  backendHistory = [];
   fileDropHandler = null;
   localStorage.clear();
 });
@@ -70,8 +211,16 @@ const EMPTY_SCAN = {
   mods: [],
   warnings: [],
   extraKeys: [],
+  skippedComponents: [],
   modCount: 0,
   fileCount: 0,
+  sourceDeltas: {
+    sourcesChanged: 0,
+    stringsAdded: 0,
+    stringsRemoved: 0,
+    addedStrings: [],
+    changedSources: [],
+  },
 };
 
 const EXPORT_RESULT = {
@@ -100,7 +249,7 @@ const EXPORT_RESULT = {
   blocked: false,
 };
 
-function exportScan(targetExists: boolean) {
+function exportScan(targetExists: boolean): ScanResult {
   return {
     mods: [
       {
@@ -124,24 +273,61 @@ function exportScan(targetExists: boolean) {
         totalKeys: 1,
         translatedKeys: 1,
         reviewNeeded: 0,
+        statusCounts: {
+          untranslated: 0,
+          outdated: 0,
+          "review-needed": 0,
+          translated: 1,
+        },
         progress: 1,
         status: "translated",
       },
     ],
     warnings: [],
     extraKeys: [],
+    skippedComponents: [],
     modCount: 1,
     fileCount: 1,
+    sourceDeltas: {
+      sourcesChanged: 0,
+      stringsAdded: 0,
+      stringsRemoved: 0,
+      addedStrings: [],
+      changedSources: [],
+    },
   };
 }
 
-function mockExportConfigured(targetExists: boolean) {
+function scanWithMod(uniqueId: string, name: string) {
+  const result = exportScan(false);
+  result.mods = [
+    {
+      ...result.mods[0],
+      uniqueId,
+      name,
+      packageId: name,
+    },
+  ];
+  return result;
+}
+
+function mockExportConfigured(
+  targetExists: boolean,
+  preflight: ExportPreflight = {
+    acceptedMismatches: 0,
+    blockingProblem: null,
+  },
+) {
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
     if (cmd === "load_glossary") return Promise.resolve(null);
     if (cmd === "scan_mods") return Promise.resolve(exportScan(targetExists));
     if (cmd === "load_strings") return Promise.resolve([]);
-    if (cmd === "export_mod") return Promise.resolve(EXPORT_RESULT);
+    if (cmd === "preview_export") return Promise.resolve(preflight);
+    if (cmd === "export_mod") {
+      backendHistory = [exportHistory()];
+      return Promise.resolve(EXPORT_RESULT);
+    }
     return Promise.resolve(null);
   });
 }
@@ -151,35 +337,67 @@ function mockConfigured(scanResult: unknown = EMPTY_SCAN) {
     if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
     if (cmd === "scan_mods") return Promise.resolve(scanResult);
     if (cmd === "load_glossary") return Promise.resolve(null);
+    if (cmd === "load_strings") return Promise.resolve([]);
     return Promise.resolve(null);
   });
 }
 
-function chooseToolbarAction(
-  menuName: "Export..." | "Import...",
-  actionName: string,
-) {
+function chooseToolbarAction(menuName: "Export actions", actionName: string) {
   fireEvent.click(screen.getByRole("button", { name: menuName }));
   fireEvent.click(screen.getByRole("menuitem", { name: actionName }));
 }
 
+function openWorkspace() {
+  fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => {
+    resolve = next;
+  });
+  return { promise, resolve };
+}
+
 describe("App shell", () => {
-  it("renders the toolbar and the dashboard landing", async () => {
+  it("renders Overview first and opens the complete workspace on demand", async () => {
     mockConfigured();
     render(<App />);
 
-    // The nav toggle is labelled with its destination (work view from here).
+    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
     expect(
-      screen.getByRole("button", { name: /Mod list/ }),
+      await screen.findByRole("main", { name: "Overview" }),
     ).toBeInTheDocument();
-    // Landing screen is the dashboard (SPEC §7), not the panels.
-    expect(screen.getByRole("main", { name: "Dashboard" })).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Mod list" })).toBeNull();
-    expect(screen.queryByRole("searchbox")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    expect(
+      screen
+        .getByRole("region", { name: "Translation workspace" })
+        .querySelector(".translator-workbench"),
+    ).toHaveStyle({ "--translator-mod-pane-width": "340px" });
+    expect(
+      screen.getByRole("region", { name: "Mod list" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toBeInTheDocument();
+    const paneResizer = screen.getByRole("separator", {
+      name: "Resize mod list",
+    });
+    expect(paneResizer).toHaveAttribute("aria-valuenow", "340");
+    fireEvent.keyDown(paneResizer, { key: "ArrowRight" });
+    expect(paneResizer).toHaveAttribute("aria-valuenow", "356");
+    fireEvent.keyDown(paneResizer, { key: "ArrowLeft", shiftKey: true });
+    expect(paneResizer).toHaveAttribute("aria-valuenow", "340");
+    fireEvent.keyDown(paneResizer, { key: "End" });
+    expect(paneResizer).toHaveAttribute("aria-valuenow", "340");
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
     );
+    expect(screen.getByPlaceholderText("Filter mods …")).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Setup" }),
     ).not.toBeInTheDocument();
@@ -190,6 +408,24 @@ describe("App shell", () => {
       }),
     );
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("shows the current scan's real skipped-component count", async () => {
+    mockConfigured();
+    render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    const skipped = await screen.findByRole("button", {
+      name: "0 skipped components; open scan diagnostics",
+    });
+    expect(skipped).toHaveTextContent("Skipped · 0");
+    expect(within(skipped).getByText("0")).toHaveClass("translator-pane-count");
+    fireEvent.click(skipped);
+
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    expect(dialog).toHaveTextContent("Latest scan");
+    expect(dialog).toHaveTextContent("No scanner warnings were reported");
+    expect(dialog).not.toHaveTextContent("No components were skipped");
   });
 
   it("loads dashboard resume history from portable settings", async () => {
@@ -206,9 +442,17 @@ describe("App shell", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Resume →")).toBeInTheDocument();
-    expect(screen.queryByText(/Nothing opened yet/)).toBeNull();
-    fireEvent.click(screen.getByText("Resume →").closest("button")!);
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    const overview = await screen.findByRole("main", { name: "Overview" });
+    expect(overview).toHaveTextContent("Recently opened");
+    expect(screen.queryByText(/no mod has been opened/i)).toBeNull();
+    const recentRow = within(overview)
+      .getByRole("button", { name: "Test Mod" })
+      .closest("tr");
+    expect(recentRow).not.toBeNull();
+    expect(within(recentRow!).getByText("1 min ago")).toBeInTheDocument();
+    expect(within(recentRow!).queryByText("Unavailable")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Continue Test Mod" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("save_settings", {
         settings: expect.objectContaining({
@@ -216,6 +460,83 @@ describe("App shell", () => {
         }),
       }),
     );
+  });
+
+  it("refreshes Overview and Workspace relative times from one minute clock", async () => {
+    const start = Date.parse("2026-08-28T10:00:00Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(start);
+    try {
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "load_settings")
+          return Promise.resolve({
+            ...CONFIGURED,
+            lastOpened: { "a.b": start - 30_000 },
+          });
+        if (cmd === "load_glossary") return Promise.resolve(null);
+        if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+        if (cmd === "load_strings") return Promise.resolve([]);
+        return Promise.resolve(null);
+      });
+
+      const { unmount } = render(<App />);
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const overview = screen.getByRole("main", { name: "Overview" });
+      expect(overview).toHaveTextContent("scanned less than a minute ago");
+      expect(overview).toHaveTextContent("Just now");
+
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(overview).toHaveTextContent("scanned 1 min ago");
+      expect(overview).toHaveTextContent("1 min ago");
+
+      openWorkspace();
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      const workspace = screen.getByRole("main", { name: "String table" });
+      expect(workspace).toHaveTextContent("scanned 1 min ago");
+      await act(async () => {
+        vi.advanceTimersByTime(60_000);
+      });
+      expect(workspace).toHaveTextContent("scanned 2 min ago");
+      unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hydrates the last-export folder from backend operation history", async () => {
+    backendHistory = [
+      exportHistory({
+        path: "C:/canonical/i18n/de.json",
+        fileName: "de.json",
+      }),
+    ];
+    mockConfigured(exportScan(false));
+
+    render(<App />);
+
+    const overview = await screen.findByRole("main", { name: "Overview" });
+    await waitFor(() =>
+      expect(overview).toHaveTextContent(
+        "Last export · Test Mod · this session",
+      ),
+    );
+    expect(overview).toHaveTextContent("C:/canonical/i18n/de.json");
+    fireEvent.click(
+      within(overview).getByRole("button", { name: "Show in folder" }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("open_folder", {
+      path: "C:/canonical/i18n",
+    });
   });
 
   it("migrates legacy resume history into portable settings once", async () => {
@@ -232,7 +553,13 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(localStorage.getItem("sit:lastOpened")).toBeNull(),
     );
-    expect(screen.getByText("Resume →")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(screen.getByRole("main", { name: "Overview" })).toHaveTextContent(
+      "Recently opened",
+    );
+    expect(
+      screen.getByRole("button", { name: "Continue Test Mod" }),
+    ).toBeInTheDocument();
   });
 
   it("discards invalid legacy resume timestamps instead of migrating them", async () => {
@@ -255,7 +582,10 @@ describe("App shell", () => {
       expect.anything(),
     );
     expect(localStorage.getItem("sit:lastOpened")).toBeNull();
-    expect(screen.getByText(/Nothing opened yet/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(
+      screen.getByText("No recently opened mods yet."),
+    ).toBeInTheDocument();
   });
 
   it("starts only one automatic scan under React StrictMode", async () => {
@@ -277,49 +607,336 @@ describe("App shell", () => {
     ).toHaveLength(1);
   });
 
-  it("the nav toggle switches views and renames to its destination", async () => {
+  it("keeps the newer Settings scan when the startup scan finishes last", async () => {
+    const startupScan = deferred<ReturnType<typeof exportScan>>();
+    const settingsScan = deferred<ReturnType<typeof exportScan>>();
+    const frenchScan = scanWithMod("french.mod", "French Mod");
+    const staleGermanScan = {
+      ...scanWithMod("german.mod", "German Mod"),
+      warnings: ["Stale startup warning"],
+    };
+
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "save_settings") return Promise.resolve(null);
+      if (cmd === "scan_mods") {
+        const targetLang = (args as { targetLang: string }).targetLang;
+        return targetLang === "fr" ? settingsScan.promise : startupScan.promise;
+      }
+      if (cmd === "load_strings") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "fr",
+      }),
+    );
+
+    await act(async () => {
+      settingsScan.resolve(frenchScan);
+      await settingsScan.promise;
+    });
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+    openWorkspace();
+    expect(
+      await screen.findByRole("treeitem", { name: /French Mod/ }),
+    ).toBeInTheDocument();
+
+    await act(async () => {
+      startupScan.resolve(staleGermanScan);
+      await startupScan.promise;
+    });
+    expect(
+      screen.getByRole("treeitem", { name: /French Mod/ }),
+    ).toHaveAttribute("aria-current", "true");
+    expect(screen.queryByRole("treeitem", { name: /German Mod/ })).toBeNull();
+    expect(screen.queryByText("Stale startup warning")).toBeNull();
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.getByLabelText("Scan mods")).toBeEnabled();
+  });
+
+  it("keeps the newest language glossary when the previous language resolves last", async () => {
+    const germanGlossary = deferred<Glossary | null>();
+    const frenchGlossary = deferred<Glossary | null>();
+
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") {
+        const targetLang = (args as { targetLang: string }).targetLang;
+        return targetLang === "fr"
+          ? frenchGlossary.promise
+          : germanGlossary.promise;
+      }
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "save_settings") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "fruit",
+            source: "Apple",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_glossary", {
+        targetLang: "de",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_glossary", {
+        targetLang: "fr",
+      }),
+    );
+
+    await act(async () => {
+      frenchGlossary.resolve({
+        format: 2,
+        sourceLang: "default",
+        targetLang: "fr",
+        termCount: 1,
+        entries: [
+          {
+            source: "Apple",
+            target: "Pomme",
+            kind: "item",
+            asset: "Strings/Objects",
+            key: "Apple",
+          },
+        ],
+      });
+      await frenchGlossary.promise;
+    });
+    await act(async () => {
+      germanGlossary.resolve({
+        format: 2,
+        sourceLang: "default",
+        targetLang: "de",
+        termCount: 1,
+        entries: [
+          {
+            source: "Apple",
+            target: "Apfel",
+            kind: "item",
+            asset: "Strings/Objects",
+            key: "Apple",
+          },
+        ],
+      });
+      await germanGlossary.promise;
+    });
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+    openWorkspace();
+    const key = await screen.findByRole("button", { name: "fruit" });
+    const row = key.closest<HTMLElement>("[data-string-row]");
+    if (!row) throw new Error("String row was not rendered");
+    fireEvent.doubleClick(row);
+    const editor = await screen.findByRole("dialog", { name: "fruit" });
+    expect(editor).toHaveTextContent("Apple → Pomme");
+    expect(editor).not.toHaveTextContent("Apple → Apfel");
+  });
+
+  it("switches between Workspace and Overview", async () => {
     mockConfigured();
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Mod list/ }));
     expect(
-      await screen.findByRole("region", { name: "Mod list" }),
+      await screen.findByRole("main", { name: "Overview" }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Overview" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
 
-    // In the work view the same button now offers the way back.
-    fireEvent.click(screen.getByRole("button", { name: /Dashboard/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(
-      await screen.findByRole("main", { name: "Dashboard" }),
+      await screen.findByRole("region", { name: "Translation workspace" }),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(
+      await screen.findByRole("main", { name: "Overview" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hydrates and persists the portable workspace preferences", async () => {
+    const workspace = {
+      selectedModId: "a.b",
+      modSearch: "Test",
+      stringSearch: "Hallo",
+      stringScope: "mod" as const,
+      statusFilter: "review-needed" as const,
+      issuesOnly: true,
+      sort: { column: "target" as const, direction: "desc" as const },
+      modPaneWidth: 412,
+      columnWidths: {
+        mod: 150,
+        file: 120,
+        status: 110,
+        key: 170,
+        source: 250,
+        target: 280,
+      },
+    };
+    const settings = { ...CONFIGURED, workspace };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(settings);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(true));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "review-needed",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled(),
+    );
+    openWorkspace();
+
+    expect(await screen.findByText("greeting")).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Filter mods" })).toHaveValue(
+      "Test",
+    );
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("Hallo");
+    expect(screen.getByRole("button", { name: "This mod" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^Review\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      screen.getByRole("button", { name: /^Validation issues\b/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(
+      screen.getByRole("separator", { name: "Resize mod list" }),
+    ).toHaveAttribute("aria-valuenow", "412");
+    expect(
+      screen.getByRole("columnheader", { name: /German translation/ }),
+    ).toHaveAttribute("aria-sort", "descending");
+    expect(
+      screen.getByRole("separator", { name: "Resize status column" }),
+    ).toHaveAttribute("aria-valuenow", "110");
+    expect(
+      screen.getByRole("separator", { name: "Resize key column" }),
+    ).toHaveAttribute("aria-valuenow", "170");
+    expect(
+      screen.getByRole("separator", { name: "Resize English source column" }),
+    ).toHaveAttribute("aria-valuenow", "250");
+    expect(
+      screen.getByRole("separator", {
+        name: "Resize German translation column",
+      }),
+    ).toHaveAttribute("aria-valuenow", "280");
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter mods" }), {
+      target: { value: "Test Mod" },
+    });
+    await waitFor(
+      () =>
+        expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+          settings: {
+            ...settings,
+            workspace: { ...workspace, modSearch: "Test Mod" },
+          },
+        }),
+      { timeout: 2_500 },
+    );
   });
 
   it("shows the actionable no-mod card in the work view", async () => {
     mockConfigured();
     render(<App />);
 
-    fireEvent.click(screen.getByRole("button", { name: /Mod list/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(
-      await screen.findByText("Select a mod to start translating"),
+      await screen.findByText("No translatable strings"),
     ).toBeInTheDocument();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "open the review queue" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     expect(
-      await screen.findByRole("main", { name: "Dashboard" }),
+      await screen.findByRole("main", { name: "Overview" }),
     ).toBeInTheDocument();
   });
 
-  it("shows partially translated mods in the mod-panel header", async () => {
+  it("counts partially translated top-level packages in the mod-panel header", async () => {
     mockConfigured({
       mods: [
+        {
+          uniqueId: "bundle.complete",
+          name: "Complete Component",
+          version: "1.0",
+          nexusId: null,
+          packageId: "Bundle",
+          folderPath: "x",
+          i18nFiles: [],
+          totalKeys: 4,
+          translatedKeys: 4,
+          reviewNeeded: 0,
+          progress: 1,
+          status: "translated",
+        },
+        {
+          uniqueId: "bundle.open",
+          name: "Open Component",
+          version: "1.0",
+          nexusId: null,
+          packageId: "Bundle",
+          folderPath: "x/child",
+          i18nFiles: [],
+          totalKeys: 6,
+          translatedKeys: 0,
+          reviewNeeded: 0,
+          progress: 0,
+          status: "untranslated",
+        },
         {
           uniqueId: "partial.mod",
           name: "Partial Mod",
           version: "1.0",
           nexusId: null,
           packageId: "Partial Mod",
-          folderPath: "x",
+          folderPath: "y",
           i18nFiles: [],
           totalKeys: 10,
           translatedKeys: 4,
@@ -329,30 +946,54 @@ describe("App shell", () => {
         },
       ],
       warnings: [],
-      modCount: 1,
+      modCount: 2,
       fileCount: 0,
     });
     render(<App />);
+    openWorkspace();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
+    const heading = await screen.findByText(
+      (_content, node) =>
+        node?.classList.contains("translator-pane-heading") === true &&
+        node.textContent === "Mods · 2",
     );
-    expect(screen.getByText("1 in progress")).toBeInTheDocument();
+    expect(within(heading).getByText("2")).toHaveClass("translator-pane-count");
+    const inProgress = await screen.findByText(
+      (_content, node) =>
+        node?.classList.contains("panel__header-tail") === true &&
+        node.textContent === "2 in progress",
+    );
+    expect(within(inProgress).getByText("2")).toHaveClass(
+      "translator-pane-count",
+    );
   });
 
   it("asks before replacing an existing selected-mod translation", async () => {
     mockExportConfigured(true);
     render(<App />);
+    openWorkspace();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Export to mod folder");
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
 
     expect(
-      screen.getByRole("dialog", { name: "Confirm export overwrite" }),
+      await screen.findByRole("dialog", { name: "Confirm export overwrite" }),
     ).toHaveTextContent("1 existing translation file");
+    expect(invokeMock).toHaveBeenCalledWith("preview_export", {
+      mods: [
+        {
+          modUniqueId: "a.b",
+          modName: "Test Mod",
+          files: [
+            {
+              relativeDir: "i18n",
+              defaultPath: "x/i18n/default.json",
+              targetPath: "x/i18n/de.json",
+            },
+          ],
+        },
+      ],
+    });
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
     ).toHaveLength(0);
@@ -363,15 +1004,166 @@ describe("App shell", () => {
     ).toBeNull();
   });
 
+  it("keeps toolbar dialogs disabled while export preflight is pending", async () => {
+    const preflight = deferred<ExportPreflight>();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_export") return preflight.promise;
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
+      ).toHaveLength(1),
+    );
+
+    const exportActions = screen.getByRole("button", {
+      name: "Export actions",
+    });
+    expect(exportActions).toBeDisabled();
+    expect(exportActions).toHaveTextContent("Checking…");
+    expect(exportActions).not.toHaveTextContent("Exporting…");
+    expect(screen.getByRole("button", { name: "Scan mods" })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Import LLM batch" }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
+
+    const overview = screen.getByRole("button", { name: "Overview" });
+    const workspace = screen.getByRole("button", { name: "Workspace" });
+    expect(overview).toBeEnabled();
+    expect(workspace).toBeEnabled();
+    fireEvent.click(overview);
+    expect(await screen.findByRole("main", { name: "Overview" })).toBeVisible();
+    fireEvent.click(workspace);
+    expect(
+      await screen.findByRole("region", { name: "Translation workspace" }),
+    ).toBeVisible();
+
+    fireEvent.click(exportActions);
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
+    ).toHaveLength(1);
+
+    act(() => {
+      preflight.resolve({ acceptedMismatches: 0, blockingProblem: null });
+    });
+    expect(
+      await screen.findByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toBeVisible();
+    expect(exportActions).toHaveTextContent("Export …");
+  });
+
+  it("labels only the confirmed export write as exporting", async () => {
+    const exported = deferred<typeof EXPORT_RESULT>();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_export")
+        return Promise.resolve({
+          acceptedMismatches: 0,
+          blockingProblem: null,
+        });
+      if (cmd === "export_mod") return exported.promise;
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    const preflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    fireEvent.click(within(preflight).getByRole("button", { name: "Export" }));
+
+    const exportActions = screen.getByRole("button", {
+      name: "Export actions",
+    });
+    await waitFor(() => expect(exportActions).toHaveTextContent("Exporting…"));
+
+    act(() => {
+      exported.resolve(EXPORT_RESULT);
+    });
+    await waitFor(() => expect(exportActions).toHaveTextContent("Export …"));
+  });
+
+  it("separates existing and new component targets without narrowing export", async () => {
+    const base = exportScan(true);
+    const mod = base.mods[0];
+    const existingFile = mod.i18nFiles[0];
+    const newFile = {
+      ...existingFile,
+      relativeDir: "assets/i18n",
+      defaultPath: "x/assets/i18n/default.json",
+      targetPath: "x/assets/i18n/de.json",
+      targetExists: false,
+    };
+    const scan = {
+      ...base,
+      mods: [{ ...mod, i18nFiles: [existingFile, newFile] }],
+      fileCount: 2,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "export_mod") return Promise.resolve(EXPORT_RESULT);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+
+    const preflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    expect(preflight).toHaveTextContent(
+      "replaces 1 existing translation file and creates 1 new translation file",
+    );
+    expect(
+      within(preflight).getByText("Existing target · backed up as .json.bak"),
+    ).toBeInTheDocument();
+    expect(
+      within(preflight).getByText("New target · created by this export"),
+    ).toBeInTheDocument();
+
+    fireEvent.click(
+      within(preflight).getByRole("button", { name: "Export and replace" }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("export_mod", {
+        modUniqueId: "a.b",
+        files: [existingFile, newFile].map((file) => ({
+          relativeDir: file.relativeDir,
+          defaultPath: file.defaultPath,
+          targetPath: file.targetPath,
+        })),
+      }),
+    );
+  });
+
   it("continues an overwrite only after confirmation", async () => {
     mockExportConfigured(true);
     render(<App />);
+    openWorkspace();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Export to mod folder");
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
 
     await waitFor(() =>
@@ -387,39 +1179,318 @@ describe("App shell", () => {
       }),
     );
     expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("Export complete");
+      await screen.findByRole("complementary", {
+        name: "Operation result",
+      }),
+    ).toHaveTextContent("Export completed");
   });
 
-  it("exports a new target immediately, then confirms the next export", async () => {
-    mockExportConfigured(false);
+  it("shows the complete preflight for a new target and reopens the latest result", async () => {
+    mockExportConfigured(false, {
+      acceptedMismatches: 2,
+      blockingProblem: null,
+    });
     render(<App />);
+    openWorkspace();
 
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+
+    const preflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    expect(preflight).toHaveTextContent("creates 1 new translation file");
     expect(
-      within(
-        await screen.findByRole("group", {
-          name: "Translation workflow",
-        }),
-      ).getByRole("button", { name: "Mod list" }),
-    ).toBeInTheDocument();
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
+      within(preflight).getByLabelText("Export readiness"),
+    ).toHaveTextContent("1currently eligible");
+    expect(preflight).toHaveTextContent("0currently open");
+    expect(preflight).toHaveTextContent("2accepted mismatches");
+    expect(preflight).toHaveTextContent("Ready to export");
+    expect(preflight).toHaveTextContent("2 exact source revisions may");
+    expect(preflight).toHaveTextContent("x/i18n/de.json");
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "export_mod",
+      expect.anything(),
     );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Export to mod folder");
 
+    fireEvent.click(within(preflight).getByRole("button", { name: "Export" }));
     expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
+      await screen.findByRole("complementary", {
+        name: "Operation result",
+      }),
+    ).toHaveTextContent("x/i18n/de.json");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse result" }));
+    expect(screen.getByRole("button", { name: "Expand result" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
+    expect(
+      screen.queryByRole("complementary", { name: "Operation result" }),
+    ).toBeNull();
+    const latestResult = screen.getByRole("button", { name: "Latest result" });
+    await waitFor(() => expect(latestResult).toHaveFocus());
+    fireEvent.click(latestResult);
+    expect(
+      screen.getByRole("complementary", { name: "Operation result" }),
     ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Collapse result" }),
+      ).toHaveFocus(),
+    );
+  });
+
+  it("reopens the newest result after an older history item was selected", async () => {
+    const newer = exportHistory({
+      id: "export-newer",
+      title: "Newest export result",
+      completedAtEpochMs: 1_780_000_002_000,
+    });
+    const older = importHistory({
+      id: "import-older",
+      title: "Older import result",
+      completedAtEpochMs: 1_780_000_001_000,
+    });
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "export_mod") {
+        backendHistory = [newer, older];
+        return Promise.resolve(EXPORT_RESULT);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    const confirm = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Export" }));
+
+    let history = await screen.findByLabelText("Recent operation results");
+    await waitFor(() => expect(history).toHaveValue(newer.id));
+    fireEvent.change(history, { target: { value: older.id } });
+    expect(history).toHaveValue(older.id);
+    expect(
+      screen.getByRole("complementary", { name: "Operation result" }),
+    ).toHaveTextContent("Older import result");
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
+    fireEvent.click(screen.getByRole("button", { name: "Latest result" }));
+
+    history = await screen.findByLabelText("Recent operation results");
+    expect(history).toHaveValue(newer.id);
+    const reopened = screen.getByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(within(reopened).getByText("Export completed")).toBeVisible();
+    expect(within(reopened).getByText("Test Mod")).toBeVisible();
+  });
+
+  it("blocks export from the read-only preflight and opens the exact issue", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      if (cmd === "preview_export")
+        return Promise.resolve({
+          acceptedMismatches: 0,
+          blockingProblem: {
+            modUniqueId: "a.b",
+            modName: "Test Mod",
+            relativeDir: "i18n",
+            key: "greeting",
+            reason: "Missing protected token: {{name}}",
+          },
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    const preflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+
+    expect(preflight).toHaveTextContent("Export blocked");
+    expect(preflight).toHaveTextContent("greeting");
+    expect(preflight).toHaveTextContent("Missing protected token: {{name}}");
+    expect(
+      within(preflight).getByRole("button", { name: "Export" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(preflight).getByRole("button", { name: "Open issue" }),
+    );
+
     expect(
       screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
     ).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
-    chooseToolbarAction("Export...", "Export to mod folder");
     expect(
-      screen.getByRole("dialog", { name: "Confirm export overwrite" }),
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("greeting");
+    const editor = await screen.findByRole("dialog", { name: "greeting" });
+    fireEvent.click(
+      within(editor).getByRole("button", { name: "Close editor" }),
+    );
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
+    ).toHaveLength(0);
+  });
+
+  it("reports a failed export preflight without starting an export", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_export")
+        return Promise.reject(new Error("Preview unavailable"));
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not check export readiness: Error: Preview unavailable",
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+    ).toBeNull();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
+    ).toHaveLength(0);
+  });
+
+  it("retains the last successful export independently and opens its real folder", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "export_mod") {
+        backendHistory = [exportHistory()];
+        return Promise.resolve(EXPORT_RESULT);
+      }
+      if (cmd === "preflight_llm_batch_path")
+        return Promise.resolve(READY_IMPORT_PREFLIGHT);
+      if (cmd === "import_llm_batch_path") {
+        backendHistory = [importHistory(), exportHistory()];
+        return Promise.resolve({
+          imported: 1,
+          skippedTranslated: 0,
+          unmatched: 0,
+          identicalToSource: 0,
+          totalInFile: 1,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    let overview = await screen.findByRole("main", { name: "Overview" });
+    expect(overview).toHaveTextContent(
+      "Last export · Unavailable in this session",
+    );
+    expect(
+      within(overview).getByRole("button", { name: "Show in folder" }),
+    ).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    chooseToolbarAction("Export actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    expect(
+      await screen.findByRole("complementary", {
+        name: "Operation result",
+      }),
+    ).toHaveTextContent("Export completed");
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    overview = await screen.findByRole("main", { name: "Overview" });
+    expect(overview).toHaveTextContent("Last export · Test Mod · this session");
+    expect(overview).toHaveTextContent("x/i18n/de.json");
+    fireEvent.click(
+      within(overview).getByRole("button", { name: "Show in folder" }),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("open_folder", {
+      path: "x/i18n",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/results/test.llm-result.json"],
+      });
+    });
+    const importDialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(
+      await within(importDialog).findByText("Ready to import"),
+    ).toBeVisible();
+    fireEvent.click(
+      within(importDialog).getByRole("button", { name: "Import file" }),
+    );
+    expect(
+      await screen.findByRole("complementary", {
+        name: "Operation result",
+      }),
+    ).toHaveTextContent("LLM batch imported");
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    overview = await screen.findByRole("main", { name: "Overview" });
+    expect(overview).toHaveTextContent("Last export · Test Mod · this session");
+    expect(overview).toHaveTextContent("x/i18n/de.json");
+  });
+
+  it("keeps the result tray collapsed after a top-level dialog closes", async () => {
+    mockExportConfigured(false);
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
+    expect(
+      await screen.findByRole("button", { name: "Collapse result" }),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsDialog = await screen.findByRole("dialog", {
+      name: "Settings",
+    });
+    fireEvent.click(
+      within(settingsDialog).getByRole("button", { name: "Close settings" }),
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "Expand result" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Collapse result" }),
+    ).toBeNull();
   });
 
   it("does not confirm again after an export removes the target file", async () => {
@@ -448,76 +1519,1043 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Export to mod folder");
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
     await waitFor(() => expect(exports).toBe(1));
     expect(
       screen.getByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("Processed 1 target file. Wrote 0 strings");
+    ).toHaveTextContent("1 target file written or removed");
     expect(
       screen.getByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("1 empty target file removed");
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
+    ).toHaveTextContent("Removed");
+    fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
 
-    chooseToolbarAction("Export...", "Export to mod folder");
+    chooseToolbarAction("Export actions", "Export current mod");
+    const secondPreflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    expect(secondPreflight).toHaveTextContent("creates 1 new translation file");
+    fireEvent.click(
+      within(secondPreflight).getByRole("button", { name: "Export" }),
+    );
     await waitFor(() => expect(exports).toBe(2));
-    expect(
-      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
-    ).toBeNull();
   });
 
-  it("keeps Export All successes visible when a later mod fails", async () => {
+  it("exports all mods through one atomic backend command", async () => {
     const base = exportScan(false).mods[0];
     const scan = {
       ...exportScan(false),
       mods: [
-        { ...base, uniqueId: "a.first", name: "First Mod" },
-        { ...base, uniqueId: "b.second", name: "Second Mod" },
-        { ...base, uniqueId: "c.third", name: "Third Mod" },
+        {
+          ...base,
+          uniqueId: "a.first",
+          name: "First Mod",
+          i18nFiles: base.i18nFiles.map((file) => ({
+            ...file,
+            targetExists: true,
+          })),
+        },
+        {
+          ...base,
+          uniqueId: "b.second",
+          name: "Second Mod",
+          i18nFiles: base.i18nFiles.map((file) => ({
+            ...file,
+            defaultPath: "y/i18n/default.json",
+            targetPath: "y/i18n/de.json",
+          })),
+        },
+        {
+          ...base,
+          uniqueId: "c.third",
+          name: "Third Mod",
+          i18nFiles: base.i18nFiles.map((file) => ({
+            ...file,
+            defaultPath: "z/i18n/default.json",
+            targetPath: "z/i18n/de.json",
+          })),
+        },
       ],
       modCount: 3,
       fileCount: 3,
     };
-    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+    invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "scan_mods") return Promise.resolve(scan);
-      if (cmd === "export_mod") {
-        const id = (args as { modUniqueId: string }).modUniqueId;
-        return id === "a.first"
-          ? Promise.resolve(EXPORT_RESULT)
-          : Promise.reject(new Error("disk unavailable"));
+      if (cmd === "export_all_mods") {
+        backendHistory = [
+          exportHistory({
+            id: "export-all-1",
+            title: "All-mod export completed",
+            summary: "3 target files written",
+            itemCount: 3,
+            path: "x/i18n",
+            fileName: undefined,
+            details: [],
+          }),
+        ];
+        return Promise.resolve({
+          mods: scan.mods.map((mod) => ({
+            modUniqueId: mod.uniqueId,
+            modName: mod.name,
+            result: EXPORT_RESULT,
+          })),
+          modsChanged: 3,
+          filesWritten: 3,
+          filesRemoved: 0,
+          totalWrittenKeys: 3,
+          totalUntranslated: 0,
+          totalOutdated: 0,
+          totalReviewNeeded: 0,
+          totalOrphanKeys: 0,
+          blocked: false,
+        });
       }
       return Promise.resolve(null);
     });
     render(<App />);
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Export..." })).toBeEnabled(),
+      expect(
+        screen.getByRole("button", { name: "Export actions" }),
+      ).toBeEnabled(),
     );
-    chooseToolbarAction("Export...", "Export all mods to mod folders");
+    chooseToolbarAction("Export actions", "Export all mods …");
+    const preflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    expect(preflight).toHaveTextContent("Export all mods?");
+    expect(preflight).toHaveTextContent(
+      "replaces 1 existing translation file and creates 2 new translation files across 3 mods",
+    );
+    expect(preflight).toHaveTextContent(
+      "Existing target · backed up as .json.bak",
+    );
+    expect(preflight).toHaveTextContent("New targets · created by this export");
+    expect(preflight).toHaveTextContent("3currently eligible");
+    expect(invokeMock).toHaveBeenCalledWith("preview_export", {
+      mods: scan.mods.map((mod) => ({
+        modUniqueId: mod.uniqueId,
+        modName: mod.name,
+        files: mod.i18nFiles.map((file) => ({
+          relativeDir: file.relativeDir,
+          defaultPath: file.defaultPath,
+          targetPath: file.targetPath,
+        })),
+      })),
+    });
+    fireEvent.click(
+      within(preflight).getByRole("button", { name: "Export all mods" }),
+    );
 
     const tray = await screen.findByRole("complementary", {
       name: "Operation result",
     });
-    await waitFor(() => expect(tray).toHaveTextContent("Export failed"));
-    expect(tray).toHaveTextContent(
-      "Processed 1 target file in 1 mod. Wrote 1 strings",
+    await waitFor(() => expect(tray).toHaveTextContent("All mods exported"));
+    expect(tray).toHaveTextContent("3 target files written or removed");
+    expect(invokeMock).toHaveBeenCalledWith("export_all_mods", {
+      mods: scan.mods.map((mod) => ({
+        modUniqueId: mod.uniqueId,
+        modName: mod.name,
+        files: mod.i18nFiles.map((file) => ({
+          relativeDir: file.relativeDir,
+          defaultPath: file.defaultPath,
+          targetPath: file.targetPath,
+        })),
+      })),
+    });
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
+    ).toHaveLength(0);
+  });
+
+  it("offers one-session undo for a real bulk edit", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "save_string_groups_with_undo") {
+        const entry = batchEditHistory({ title: "Kept original text" });
+        backendHistory = [entry];
+        return Promise.resolve(entry);
+      }
+      if (cmd === "undo_batch_edit") {
+        const entry = historyEntry("batch-undo", {
+          id: "batch-undo-1",
+          title: "Batch edit undone",
+          summary: "1 string restored",
+        });
+        backendHistory = [entry];
+        return Promise.resolve(entry);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select greeting" }),
     );
-    expect(tray).toHaveTextContent("Failed at Second Mod");
-    expect(tray).toHaveTextContent("Not started: Third Mod");
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      "export_mod",
-      expect.objectContaining({ modUniqueId: "c.third" }),
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Keep original" }));
+
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("Kept original text");
+    expect(invokeMock).toHaveBeenCalledWith("save_string_groups_with_undo", {
+      title: "Kept original text",
+      groups: [
+        {
+          modUniqueId: "a.b",
+          entries: [
+            {
+              relativeDir: "i18n",
+              key: "greeting",
+              target: "Hello",
+              status: "translated",
+              source: "Hello",
+            },
+          ],
+        },
+      ],
+    });
+
+    fireEvent.click(
+      within(result).getByRole("button", {
+        name: "Undo the latest batch edit",
+      }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("undo_batch_edit", {
+        operationId: "batch-edit-1",
+      }),
+    );
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "save_strings"),
+    ).toHaveLength(0);
+    await waitFor(() =>
+      expect(
+        within(result).getAllByText("Batch edit undone").length,
+      ).toBeGreaterThan(0),
     );
   });
 
-  it("keeps export problems available while navigating and refreshes one saved string", async () => {
+  it("restores an accepted Review token mismatch during bulk undo", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "review-needed",
+            tokenMismatchAccepted: true,
+          },
+        ]);
+      if (cmd === "save_string_groups_with_undo") {
+        const entry = batchEditHistory({ title: "Updated status" });
+        backendHistory = [entry];
+        return Promise.resolve(entry);
+      }
+      if (cmd === "undo_batch_edit") {
+        const entry = historyEntry("batch-undo", {
+          id: "batch-undo-accepted-1",
+          title: "Batch edit undone",
+          summary: "Accepted token mismatch restored",
+        });
+        backendHistory = [entry];
+        return Promise.resolve(entry);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select greeting" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Mark as done" }));
+
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    fireEvent.click(
+      within(result).getByRole("button", {
+        name: "Undo the latest batch edit",
+      }),
+    );
+
+    expect(invokeMock).toHaveBeenCalledWith("save_string_groups_with_undo", {
+      title: "Updated status",
+      groups: [
+        {
+          modUniqueId: "a.b",
+          entries: [
+            {
+              relativeDir: "i18n",
+              key: "greeting",
+              target: "Hallo",
+              status: "translated-token-mismatch-accepted",
+              source: "Hello {{name}}",
+            },
+          ],
+        },
+      ],
+    });
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("undo_batch_edit", {
+        operationId: "batch-edit-1",
+      }),
+    );
+  });
+
+  it("keeps the first quick-editor AI result hidden and reopenable", async () => {
+    const completed = aiHistory({
+      id: "ai-quick-success",
+      outcome: "success",
+      title: "Local AI quick translation",
+      summary: "1 suggestion staged for review",
+      itemCount: 1,
+    });
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-test",
+            temperature: 0.2,
+          },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "translate_with_local_ai") {
+        const runId = (args as { request: { runId: string } }).request.runId;
+        backendHistory = [completed];
+        return Promise.resolve({
+          runId,
+          engine: "local",
+          model: "local-test",
+          reasoning: "default",
+          scope: "string",
+          requested: 1,
+          completed: 1,
+          outcome: "complete",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "greeting",
+              },
+              text: "Hallo",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        } satisfies AiRunResult);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    const key = await screen.findByRole("button", { name: "greeting" });
+    const row = key.closest<HTMLElement>("[data-string-row]");
+    if (!row) throw new Error("String row was not rendered");
+    fireEvent.doubleClick(row);
+    const editor = await screen.findByRole("dialog", { name: "greeting" });
+    fireEvent.click(
+      within(editor).getByRole("button", { name: /Translate with AI/ }),
+    );
+
+    await waitFor(() =>
+      expect(
+        within(editor).getByRole("textbox", { name: "German translation" }),
+      ).toHaveValue("Hallo"),
+    );
+    expect(
+      screen.queryByRole("complementary", { name: "Operation result" }),
+    ).toBeNull();
+    fireEvent.click(
+      within(editor).getByRole("button", { name: "Close editor" }),
+    );
+
+    const latest = await screen.findByRole("button", { name: "Latest result" });
+    expect(latest).toBeVisible();
+    fireEvent.click(latest);
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("Local AI quick translation");
+    expect(screen.getByLabelText("Recent operation results")).toHaveValue(
+      completed.id,
+    );
+  });
+
+  it("replaces an older latest result after a failed quick-editor AI run", async () => {
+    const older = exportHistory({
+      id: "export-before-quick-ai",
+      title: "Older export result",
+    });
+    const failed = aiHistory({
+      id: "ai-quick-failed",
+      outcome: "failed",
+      title: "Failed quick AI translation",
+      summary: "No suggestion was saved",
+      warnings: ["Local provider unavailable"],
+      itemCount: 0,
+    });
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-test",
+            temperature: 0.2,
+          },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "export_mod") {
+        backendHistory = [older];
+        return Promise.resolve(EXPORT_RESULT);
+      }
+      if (cmd === "translate_with_local_ai") {
+        backendHistory = [failed, older];
+        return Promise.reject(new Error("Local provider unavailable"));
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Export current mod");
+    const confirm = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    fireEvent.click(within(confirm).getByRole("button", { name: "Export" }));
+    const olderResult = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    fireEvent.click(
+      within(olderResult).getByRole("button", { name: "Hide result" }),
+    );
+
+    const key = await screen.findByRole("button", { name: "greeting" });
+    const row = key.closest<HTMLElement>("[data-string-row]");
+    if (!row) throw new Error("String row was not rendered");
+    fireEvent.doubleClick(row);
+    const editor = await screen.findByRole("dialog", { name: "greeting" });
+    fireEvent.click(
+      within(editor).getByRole("button", { name: /Translate with AI/ }),
+    );
+    expect(await within(editor).findByRole("alert")).toHaveTextContent(
+      "Local provider unavailable",
+    );
+    fireEvent.click(
+      within(editor).getByRole("button", { name: "Close editor" }),
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Latest result" }),
+    );
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("Failed quick AI translation");
+    expect(result).toHaveTextContent("No suggestion was saved");
+    expect(screen.getByLabelText("Recent operation results")).toHaveValue(
+      failed.id,
+    );
+  });
+
+  it("starts the selected strings immediately with the ready Settings engine", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          ai: {
+            defaultEngine: "codex",
+            codexReasoning: "high",
+            codexQualityReview: true,
+          },
+        });
+      if (cmd === "codex_cli_status")
+        return Promise.resolve({
+          installed: true,
+          authenticated: true,
+          version: "0.57.0",
+          authentication: "ChatGPT account",
+        });
+      if (cmd === "translate_with_codex_cli")
+        return new Promise<never>(() => undefined);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+
+    await waitFor(() => {
+      expect(
+        invokeMock.mock.calls.some(([cmd]) => cmd === "codex_cli_status"),
+      ).toBe(true);
+    });
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: "Select all visible strings",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "AI translation progress",
+    });
+    expect(within(dialog).queryByLabelText("Engine")).toBeNull();
+    expect(within(dialog).queryByLabelText("Scope")).toBeNull();
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("translate_with_codex_cli", {
+        request: {
+          runId: expect.any(String),
+          scope: "selected",
+          includeOpen: true,
+          includeChanged: true,
+          identities: [
+            {
+              modUniqueId: "a.b",
+              relativeDir: "i18n",
+              key: "greeting",
+            },
+          ],
+        },
+      }),
+    );
+  });
+
+  it("replaces a cancelled AI progress dialog with the exact partial result", async () => {
+    let releaseTranslation: ((result: AiRunResult) => void) | null = null;
+    let activeRunId = "";
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-test",
+            temperature: 0.2,
+          },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "first",
+            source: "First",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+          {
+            key: "second",
+            source: "Second",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "translate_with_local_ai") {
+        activeRunId = (args as { request: { runId: string } }).request.runId;
+        backendHistory = [aiHistory()];
+        return new Promise((resolve) => {
+          releaseTranslation = resolve;
+        });
+      }
+      if (cmd === "cancel_ai_run") return Promise.resolve(true);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: "Select all visible strings",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    const progressDialog = await screen.findByRole("dialog", {
+      name: "AI translation progress",
+    });
+    expect(within(progressDialog).queryByLabelText("Engine")).toBeNull();
+    expect(within(progressDialog).queryByLabelText("Scope")).toBeNull();
+    expect(
+      within(progressDialog).getByRole("progressbar", {
+        name: "AI translation progress",
+      }),
+    ).toHaveAttribute(
+      "aria-valuetext",
+      "2 selected strings are being prepared",
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("translate_with_local_ai", {
+        request: expect.objectContaining({
+          runId: expect.any(String),
+          scope: "selected",
+          includeOpen: true,
+          includeChanged: true,
+          identities: [
+            { modUniqueId: "a.b", relativeDir: "i18n", key: "first" },
+            { modUniqueId: "a.b", relativeDir: "i18n", key: "second" },
+          ],
+        }),
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    if (!releaseTranslation) throw new Error("AI request did not start");
+    expect(invokeMock).toHaveBeenCalledWith("cancel_ai_run", {
+      runId: activeRunId,
+    });
+    act(() => {
+      releaseTranslation?.({
+        runId: activeRunId,
+        engine: "local",
+        model: "local-test",
+        reasoning: "default",
+        scope: "selected",
+        requested: 2,
+        completed: 1,
+        outcome: "cancelled",
+        suggestions: [
+          {
+            identity: {
+              modUniqueId: "a.b",
+              relativeDir: "i18n",
+              key: "first",
+            },
+            text: "Erste",
+            status: "review-needed",
+            tokenDifferences: [],
+            glossaryMisses: [],
+          },
+        ],
+      });
+    });
+
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "AI translation progress" }),
+    ).toBeNull();
+    expect(result).toHaveTextContent("AI translation cancelled");
+    expect(result).toHaveTextContent("1 Local AI suggestion");
+    expect(result).toHaveTextContent("1 saved · 1 remaining");
+    expect(
+      within(result).getByRole("button", { name: "Open review queue" }),
+    ).toBeEnabled();
+    expect(
+      within(result).queryByRole("button", {
+        name: "Undo the latest batch edit",
+      }),
+    ).toBeNull();
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Open review queue" }),
+    );
+    expect(screen.getByRole("button", { name: "This mod" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("shows saved AI work with later failures as completed with issues", async () => {
+    let activeRunId = "";
+    const issue =
+      "1 selected string failed in Local AI. Completed suggestions remain saved in Review.";
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-test",
+            temperature: 0.2,
+          },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "first",
+            source: "First",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+          {
+            key: "second",
+            source: "Second",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "translate_with_local_ai") {
+        activeRunId = (args as { request: { runId: string } }).request.runId;
+        backendHistory = [
+          aiHistory({
+            outcome: "warning",
+            itemCount: 1,
+            title: "Local AI translation run",
+            summary: "1 of 2 suggestions saved in Review.",
+            warnings: [issue],
+          }),
+        ];
+        return Promise.resolve({
+          runId: activeRunId,
+          engine: "local",
+          model: "local-test",
+          reasoning: "default",
+          scope: "selected",
+          requested: 2,
+          completed: 1,
+          outcome: "complete",
+          error: issue,
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "first",
+              },
+              text: "Erste",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        } satisfies AiRunResult);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: "Select all visible strings",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("AI translation completed with issues");
+    expect(result).toHaveTextContent("1 Local AI suggestion");
+    expect(result).toHaveTextContent("1 saved · 1 remaining");
+    expect(result).toHaveTextContent(issue);
+    expect(result.querySelector(".translator-result-status")).toHaveClass(
+      "is-warning",
+    );
+    expect(
+      within(result).getByRole("option", {
+        name: /Latest · Local AI translation run/,
+      }),
+    ).toBeVisible();
+
+    const toast = await screen.findByRole("status");
+    expect(toast).toHaveTextContent(
+      "AI translation completed with issues: 1 of 2 saved in Review.",
+    );
+    expect(toast).toHaveClass("translator-toast", "is-warning");
+    expect(toast.querySelector(".lucide-triangle-alert")).not.toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("opens a multi-mod AI result without hiding Review rows in one component", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+      i18nFiles: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "y/i18n/default.json",
+          targetPath: "y/i18n/de.json",
+          targetExists: false,
+          totalKeys: 1,
+          translatedKeys: 0,
+          reviewNeeded: 0,
+        },
+      ],
+      totalKeys: 1,
+      translatedKeys: 0,
+      reviewNeeded: 0,
+      progress: 0,
+      status: "untranslated",
+    });
+    scan.modCount = 2;
+    scan.fileCount = 2;
+
+    let releaseTranslation: ((result: AiRunResult) => void) | null = null;
+    let activeRunId = "";
+    let completed = false;
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          llm: {
+            provider: "custom",
+            baseUrl: "http://127.0.0.1:1234/v1",
+            model: "local-test",
+            temperature: 0.2,
+          },
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") {
+        const modUniqueId = (args as { modUniqueId: string }).modUniqueId;
+        const first = modUniqueId === "a.b";
+        return Promise.resolve([
+          {
+            key: first ? "first" : "second",
+            source: first ? "First" : "Second",
+            target: completed ? (first ? "Erste" : "Zweite") : "",
+            targetPresent: completed,
+            status: completed ? "review-needed" : "untranslated",
+          },
+        ]);
+      }
+      if (cmd === "translate_with_local_ai") {
+        activeRunId = (args as { request: { runId: string } }).request.runId;
+        backendHistory = [
+          aiHistory({
+            outcome: "success",
+            itemCount: 2,
+            title: "Local AI translation run",
+            summary: "2 suggestions saved to Review",
+          }),
+        ];
+        return new Promise((resolve) => {
+          releaseTranslation = resolve;
+        });
+      }
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+    fireEvent.click(await screen.findByRole("button", { name: "All mods" }));
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select first" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select second" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "2 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("translate_with_local_ai", {
+        request: expect.objectContaining({
+          identities: [
+            { modUniqueId: "a.b", relativeDir: "i18n", key: "first" },
+            {
+              modUniqueId: "second.mod",
+              relativeDir: "i18n",
+              key: "second",
+            },
+          ],
+        }),
+      }),
+    );
+    if (!releaseTranslation) throw new Error("AI request did not start");
+    completed = true;
+    act(() => {
+      releaseTranslation?.({
+        runId: activeRunId,
+        engine: "local",
+        model: "local-test",
+        reasoning: "default",
+        scope: "selected",
+        requested: 2,
+        completed: 2,
+        outcome: "complete",
+        suggestions: [
+          {
+            identity: {
+              modUniqueId: "a.b",
+              relativeDir: "i18n",
+              key: "first",
+            },
+            text: "Erste",
+            status: "review-needed",
+            tokenDifferences: [],
+            glossaryMisses: [],
+          },
+          {
+            identity: {
+              modUniqueId: "second.mod",
+              relativeDir: "i18n",
+              key: "second",
+            },
+            text: "Zweite",
+            status: "review-needed",
+            tokenDifferences: [],
+            glossaryMisses: [],
+          },
+        ],
+      });
+    });
+
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Open review queue" }),
+    );
+    expect(screen.getByRole("button", { name: "All mods" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("keeps error toasts assertive and dismissible while success stays polite", async () => {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: undefined,
+    });
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select greeting" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy source text" }));
+
+    const errorToast = await screen.findByRole("alert");
+    expect(errorToast).toHaveClass("translator-toast", "is-error");
+    expect(errorToast).toHaveAttribute("aria-live", "assertive");
+    expect(errorToast.querySelector(".lucide-circle-x")).not.toBeNull();
+
+    vi.useFakeTimers();
+    act(() => vi.advanceTimersByTime(3_000));
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    vi.useRealTimers();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Dismiss notification" }),
+    );
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Copy source text" }));
+    const successToast = await screen.findByRole("status");
+    expect(successToast).toHaveClass("translator-toast", "is-success");
+    expect(successToast).toHaveAttribute("aria-live", "polite");
+    expect(successToast.querySelector(".lucide-circle-check")).not.toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Dismiss notification" }),
+    ).toBeNull();
+  });
+
+  it("resolves an export problem after its token mismatch is explicitly accepted", async () => {
     const blocked = {
       ...EXPORT_RESULT,
       files: [],
@@ -550,46 +2588,52 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Export to mod folder");
+    await screen.findByText("greeting");
+    chooseToolbarAction("Export actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    fireEvent.click(screen.getByRole("button", { name: "Export" }));
 
     const tray = await screen.findByRole("complementary", {
       name: "Operation result",
     });
-    expect(tray).toHaveTextContent("1 open, 0 resolved");
-    fireEvent.click(screen.getByRole("button", { name: /i18n \/ greeting/ }));
+    expect(tray).toHaveTextContent("Export blocked");
+    expect(tray).toHaveTextContent("greeting");
+    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
     ).toHaveValue("greeting");
-    expect(tray).toBeInTheDocument();
-
-    fireEvent.doubleClick(await screen.findByText("greeting"));
     expect(
-      screen.getByRole("button", { name: "Expand result" }),
-    ).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("Translation"), {
-      target: { value: "Hallo {{name}}" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    fireEvent.click(screen.getByRole("button", { name: "Expand result" }));
+      screen.queryByRole("complementary", { name: "Operation result" }),
+    ).toBeNull();
 
-    expect(await screen.findByText("0 open, 1 resolved")).toBeInTheDocument();
+    await screen.findByRole("dialog", { name: "greeting" });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "greeting" })).toBeNull(),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Latest result" }),
+    );
+
+    expect(await screen.findByText(/greeting · Resolved/)).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Export again" }),
     ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(
+      await screen.findByText("Last export · Unavailable in this session"),
+    ).toBeInTheDocument();
   });
 
-  it("replaces an older result and supports explicit dismissal", async () => {
+  it("replaces invalid native-drop details inside the import dialog", async () => {
     mockExportConfigured(false);
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
     act(() => {
@@ -598,24 +2642,32 @@ describe("App shell", () => {
         paths: ["C:/one.json", "C:/two.json"],
       });
     });
+    let importDialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(importDialog).toHaveTextContent(
+      "Choose only one JSON file. Nothing was imported.",
+    );
     expect(
-      await screen.findByText("Drop exactly one LLM batch/result JSON file."),
-    ).toBeInTheDocument();
+      within(importDialog).getByRole("button", { name: "Import file" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(importDialog).getByRole("button", { name: "Cancel import" }),
+    );
 
     act(() => {
       fileDropHandler?.({ type: "drop", paths: ["C:/result.txt"] });
     });
+    importDialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(importDialog).toHaveTextContent(
+      "Invalid file type. Exactly one JSON batch file is required.",
+    );
+    expect(importDialog).toHaveTextContent("C:/result.txt");
     expect(
-      await screen.findByText("Only JSON batch/result files can be imported."),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText("Drop exactly one LLM batch/result JSON file."),
-    ).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
-    expect(
-      screen.queryByRole("complementary", { name: "Operation result" }),
-    ).toBeNull();
+      within(importDialog).getByRole("button", { name: "Import file" }),
+    ).toBeDisabled();
   });
 
   it("previews and builds a translation-only package ZIP", async () => {
@@ -663,25 +2715,23 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Build release ZIP");
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Build translation ZIP");
 
     await screen.findByText("Test Mod/i18n/de.json");
     expect(
       screen.getByRole("dialog", { name: "Build translation ZIP" }),
     ).toHaveTextContent("Test Mod/i18n/de.json");
     const chooseLocation = screen.getByRole("button", {
-      name: "Choose location...",
+      name: "Choose save location …",
     });
     await waitFor(() => expect(chooseLocation).toBeEnabled());
     fireEvent.click(chooseLocation);
     const result = await screen.findByRole("complementary", {
       name: "Operation result",
     });
-    expect(result).toHaveTextContent("Translation ZIP created");
+    expect(result).toHaveTextContent("ZIP created");
     expect(invokeMock).toHaveBeenCalledWith(
       "build_translation_zip",
       expect.objectContaining({
@@ -694,19 +2744,30 @@ describe("App shell", () => {
       }),
     );
     fireEvent.click(
-      within(result).getByRole("button", { name: "Translation Notes" }),
+      within(result).getByRole("button", { name: "Translation notes" }),
     );
     await screen.findByLabelText("Generated release notes");
     expect(
-      screen.getByRole("button", { name: "Expand result" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("complementary", {
+        name: "Operation result",
+      }),
+    ).toBeNull();
     expect(
       (screen.getByLabelText("Generated release notes") as HTMLTextAreaElement)
         .value,
     ).toContain("Archiv: Test Mod.zip");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close translation notes" }),
+    );
+    expect(
+      await screen.findByRole("complementary", {
+        name: "Operation result",
+      }),
+    ).toBeInTheDocument();
   });
 
-  it("reports external LLM batch export in the persistent tray", async () => {
+  it("keeps the LLM dialog after native Save cancellation and reports a later export", async () => {
+    let exportAttempts = 0;
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
@@ -721,26 +2782,50 @@ describe("App shell", () => {
             status: "untranslated",
           },
         ]);
-      if (cmd === "export_llm_batch")
+      if (cmd === "export_llm_batch") {
+        exportAttempts += 1;
+        if (exportAttempts === 1) return Promise.resolve(null);
+        backendHistory = [batchExportHistory()];
         return Promise.resolve({
           path: "C:/out/test.llm-batch.json",
           stringCount: 1,
         });
+      }
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
+    const keyButton = await screen.findByRole("button", { name: "greeting" });
+    const row = keyButton.closest<HTMLElement>(".stringrow--data");
+    expect(row).not.toBeNull();
+    fireEvent.contextMenu(row!, { clientX: 24, clientY: 24 });
     fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
+      await screen.findByRole("menuitem", {
+        name: /Export LLM batch/,
+      }),
     );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(await screen.findByText("greeting"));
-    fireEvent.contextMenu(screen.getByText("greeting"));
-    fireEvent.click(screen.getByRole("menuitem", { name: /Export LLM batch/ }));
+
+    const saveDialog = screen.getByRole("dialog", { name: "Save LLM batch" });
+    expect(saveDialog).toHaveTextContent("1 eligible string");
+    expect(
+      within(saveDialog).getByRole("button", { name: "Change …" }),
+    ).toBeEnabled();
+    fireEvent.click(
+      within(saveDialog).getByRole("button", { name: "Save JSON batch" }),
+    );
+
+    await waitFor(() => expect(exportAttempts).toBe(1));
+    expect(
+      screen.getByRole("dialog", { name: "Save LLM batch" }),
+    ).toBeVisible();
+    fireEvent.click(
+      within(saveDialog).getByRole("button", { name: "Save JSON batch" }),
+    );
 
     const tray = await screen.findByRole("complementary", {
       name: "Operation result",
     });
-    expect(tray).toHaveTextContent("Batch exported");
+    expect(tray).toHaveTextContent("LLM batch exported");
     expect(tray).toHaveTextContent("C:/out/test.llm-batch.json");
     expect(invokeMock).toHaveBeenCalledWith("export_llm_batch", {
       modUniqueId: "a.b",
@@ -753,8 +2838,83 @@ describe("App shell", () => {
       ],
     });
     expect(
-      screen.queryByRole("dialog", { name: "LLM batch export" }),
+      screen.queryByRole("dialog", { name: "Save LLM batch" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("changes the LLM destination first and exports to that exact path", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+          },
+        ]);
+      if (cmd === "pick_llm_batch_destination")
+        return Promise.resolve("C:/chosen/custom.json");
+      if (cmd === "export_llm_batch_to_path") {
+        backendHistory = [
+          batchExportHistory({
+            path: "C:/chosen/custom.json",
+            fileName: "custom.json",
+          }),
+        ];
+        return Promise.resolve({
+          path: "C:/chosen/custom.json",
+          stringCount: 1,
+        });
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+    const keyButton = await screen.findByRole("button", { name: "greeting" });
+    const row = keyButton.closest<HTMLElement>(".stringrow--data");
+    expect(row).not.toBeNull();
+    fireEvent.contextMenu(row!, { clientX: 24, clientY: 24 });
+    fireEvent.click(
+      await screen.findByRole("menuitem", {
+        name: /Export LLM batch/,
+      }),
+    );
+    const saveDialog = screen.getByRole("dialog", { name: "Save LLM batch" });
+
+    fireEvent.click(
+      within(saveDialog).getByRole("button", { name: "Change …" }),
+    );
+    expect(await screen.findByText("C:/chosen/custom.json")).toBeVisible();
+    expect(
+      within(saveDialog).getByRole("textbox", { name: "File name" }),
+    ).toHaveValue("custom.json");
+    fireEvent.click(
+      within(saveDialog).getByRole("button", { name: "Save JSON batch" }),
+    );
+
+    const tray = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(tray).toHaveTextContent("C:/chosen/custom.json");
+    expect(invokeMock).toHaveBeenCalledWith("pick_llm_batch_destination", {
+      suggestedFileName: "a.b.llm-batch.json",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("export_llm_batch_to_path", {
+      modUniqueId: "a.b",
+      items: [
+        {
+          relativeDir: "i18n",
+          key: "greeting",
+          source: "Hello",
+        },
+      ],
+      path: "C:/chosen/custom.json",
+    });
   });
 
   it("generates release notes independently for the selected package", async () => {
@@ -792,14 +2952,12 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    fireEvent.click(screen.getByRole("button", { name: "Translation Notes" }));
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Translation notes");
     await screen.findByLabelText("Generated release notes");
     const dialog = screen.getByRole("dialog", {
-      name: "Translation release notes",
+      name: "Translation notes",
     });
     expect(
       within(dialog).getByLabelText("Generated release notes"),
@@ -848,11 +3006,9 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Build release ZIP");
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Build translation ZIP");
     await screen.findByLabelText("Package version");
     const zipDialog = screen.getByRole("dialog", {
       name: "Build translation ZIP",
@@ -861,10 +3017,10 @@ describe("App shell", () => {
       target: { value: "1.1/beta" },
     });
     fireEvent.click(
-      within(zipDialog).getByRole("button", { name: "Translation Notes" }),
+      within(zipDialog).getByRole("button", { name: "Translation notes" }),
     );
     const releaseDialog = await screen.findByRole("dialog", {
-      name: "Translation release notes",
+      name: "Translation notes",
     });
     const text = (
       within(releaseDialog).getByLabelText(
@@ -873,6 +3029,17 @@ describe("App shell", () => {
     ).value;
     expect(text).toContain("Test Mod 1.1/beta");
     expect(text).toContain("Test Mod - 1.1_beta - German (de).zip");
+    expect(
+      screen.queryByRole("dialog", { name: "Build translation ZIP" }),
+    ).toBeNull();
+    fireEvent.click(
+      within(releaseDialog).getByRole("button", {
+        name: "Close translation notes",
+      }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Build translation ZIP" }),
+    ).toBeNull();
   });
 
   it("closes the ZIP preview when opening a blocking problem", async () => {
@@ -909,12 +3076,16 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Build translation ZIP");
+    const problems = await screen.findByRole("list", {
+      name: "Blocking ZIP problems",
+    });
+    expect(problems).toHaveTextContent("broken.key");
     fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
+      within(problems).getByRole("button", { name: "Open issue" }),
     );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Build release ZIP");
-    fireEvent.click(await screen.findByRole("button", { name: /broken\.key/ }));
     expect(
       screen.queryByRole("dialog", { name: "Build translation ZIP" }),
     ).not.toBeInTheDocument();
@@ -973,14 +3144,12 @@ describe("App shell", () => {
       return Promise.resolve(null);
     });
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
-    chooseToolbarAction("Export...", "Build release ZIP");
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("Export actions", "Build translation ZIP");
     await screen.findByLabelText("Package version");
     const chooseLocation = await screen.findByRole("button", {
-      name: "Choose location...",
+      name: "Choose save location …",
     });
     await waitFor(() => expect(chooseLocation).toBeEnabled());
     fireEvent.click(chooseLocation);
@@ -998,61 +3167,89 @@ describe("App shell", () => {
     );
   });
 
-  it("groups export and import actions into keyboard-accessible menus", async () => {
+  it("exposes the complete keyboard-accessible command bar", async () => {
     mockExportConfigured(false);
     render(<App />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Export actions" }),
+      ).toBeEnabled(),
     );
-    fireEvent.click(await screen.findByText("Test Mod"));
 
-    const workflow = screen.getByRole("group", {
-      name: "Translation workflow",
+    const views = screen.getByRole("navigation", { name: "Main views" });
+    expect(
+      within(views)
+        .getAllByRole("button")
+        .map((button) => button.textContent?.trim()),
+    ).toEqual(["Overview", "Workspace"]);
+    expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "Import LLM batch" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+
+    const exportButton = screen.getByRole("button", { name: "Export actions" });
+    const stableLatestResult = document.querySelector<HTMLButtonElement>(
+      'button[title="Reopen the latest operation result"]',
+    );
+    expect(stableLatestResult).not.toBeNull();
+    expect(stableLatestResult).toHaveAttribute("hidden");
+    expect(stableLatestResult).toHaveAttribute("data-action", "reopen-result");
+    expect(stableLatestResult?.nextElementSibling).toBe(
+      screen.getByRole("button", { name: "Settings" }),
+    );
+    fireEvent.keyDown(exportButton, { key: "ArrowDown" });
+    const currentExport = screen.getByRole("menuitem", {
+      name: "Export current mod",
     });
-    const tools = screen.getByRole("group", { name: "Translation tools" });
+    await waitFor(() => expect(currentExport).toHaveFocus());
+    expect(currentExport).toBeEnabled();
     expect(
-      within(workflow).getByRole("button", { name: "Dashboard" }),
-    ).toBeInTheDocument();
-    expect(
-      within(workflow).getByRole("button", { name: "Scan" }),
-    ).toBeInTheDocument();
-    expect(
-      within(workflow).getByRole("button", { name: "Export..." }),
-    ).toBeInTheDocument();
-    expect(
-      within(workflow).getByRole("button", { name: "Import..." }),
-    ).toBeInTheDocument();
-    expect(
-      within(tools).getByRole("button", { name: "Translation Notes" }),
-    ).toBeInTheDocument();
-    expect(
-      within(tools).getByRole("button", { name: "Settings" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Export..." }));
-    expect(
-      screen.getByRole("menuitem", { name: "Export to mod folder" }),
+      screen.getByRole("menuitem", { name: "Export all mods …" }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("menuitem", {
-        name: "Export all mods to mod folders",
-      }),
+      screen.getByRole("menuitem", { name: "Build translation ZIP" }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("menuitem", { name: "Build release ZIP" }),
+      screen.getByRole("menuitem", { name: "Translation notes" }),
     ).toBeEnabled();
+    expect(screen.getByRole("menu", { name: "Export" })).toHaveTextContent(
+      "Advanced",
+    );
+
+    fireEvent.keyDown(currentExport, { key: "End" });
+    expect(
+      screen.getByRole("menuitem", { name: "Export all mods …" }),
+    ).toHaveFocus();
+    const allExport = screen.getByRole("menuitem", {
+      name: "Export all mods …",
+    });
+    const settingsButton = screen.getByRole("button", { name: "Settings" });
+    fireEvent.blur(allExport, { relatedTarget: settingsButton });
+    await waitFor(() =>
+      expect(screen.queryByRole("menu", { name: "Export" })).toBeNull(),
+    );
+
+    fireEvent.keyDown(exportButton, { key: "ArrowDown" });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: "Export current mod" }),
+      ).toHaveFocus(),
+    );
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("menu", { name: "Export" })).toBeNull();
+    expect(exportButton).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: "Import..." }));
+    fireEvent.click(screen.getByRole("button", { name: "Import LLM batch" }));
+    const importDialog = screen.getByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(importDialog).toHaveTextContent("No file selected");
     expect(
-      screen.getByRole("menuitem", {
-        name: "Import LLM batch translation",
-      }),
-    ).toBeInTheDocument();
-    fireEvent.pointerDown(document.body);
-    expect(screen.queryByRole("menu", { name: "Import" })).toBeNull();
+      within(importDialog).getByRole("button", { name: "Import file" }),
+    ).toBeDisabled();
   });
 
   it("rescans after a settings language change without opening extra-key cleanup", async () => {
@@ -1100,7 +3297,7 @@ describe("App shell", () => {
     fireEvent.change(screen.getByLabelText("Target language"), {
       target: { value: "fr" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
@@ -1110,6 +3307,51 @@ describe("App shell", () => {
     );
     expect(screen.queryByText("removed-after-switch")).toBeNull();
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("changes only the selected Mods folder and rescans the saved workspace", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "pick_folder") return Promise.resolve("E:/Other/Mods");
+      if (cmd === "save_settings") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(EMPTY_SCAN);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change Mods folder" }));
+
+    expect(await screen.findByText("E:/Other/Mods")).toBeInTheDocument();
+    expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("pick_folder", {
+      title: "Select your Mods folder",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          stardewPath: "E:/SDV",
+          modsPath: "E:/Other/Mods",
+          targetLang: "de",
+        }),
+      }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/Other/Mods",
+        targetLang: "de",
+      }),
+    );
   });
 
   it("does not apply or rescan a language when settings persistence fails", async () => {
@@ -1134,7 +3376,7 @@ describe("App shell", () => {
     fireEvent.change(screen.getByLabelText("Target language"), {
       target: { value: "fr" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "settings file is locked",
@@ -1147,6 +3389,98 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByLabelText("Target language")).toHaveValue("de");
+  });
+
+  it("preserves AI and portable workspace settings when setup is run again", async () => {
+    const llm = {
+      provider: "custom",
+      baseUrl: "http://127.0.0.1:1234/v1",
+      model: "local-test",
+      temperature: 0.15,
+    };
+    const ai = {
+      defaultEngine: "codex" as const,
+      codexReasoning: "high" as const,
+      codexQualityReview: true,
+    };
+    const shortcuts = { "editor.save": "Ctrl+S" };
+    const lastOpened = { "a.b": 1_234 };
+    const workspace = {
+      selectedModId: "a.b",
+      modSearch: "",
+      stringSearch: "",
+      stringScope: "mod" as const,
+      statusFilter: "all" as const,
+      issuesOnly: false,
+      sort: null,
+      modPaneWidth: 340,
+      columnWidths: {},
+    };
+    const settings = {
+      ...CONFIGURED,
+      llm,
+      ai,
+      shortcuts,
+      lastOpened,
+      workspace,
+      diagnosticLogging: false,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(settings);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          gameXnbPresent: false,
+          unpackedPresent: false,
+          sourceAvailable: false,
+          cached: null,
+          outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
+        });
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsDialog = await screen.findByRole("dialog", {
+      name: "Settings",
+    });
+    fireEvent.click(
+      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+    );
+
+    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
+    await within(setup).findByRole("region", { name: "Mods folder" });
+    fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
+    const targetLanguage =
+      await within(setup).findByLabelText("Target language");
+    fireEvent.change(targetLanguage, { target: { value: "fr" } });
+    fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
+    fireEvent.click(
+      await within(setup).findByRole("button", { name: "Finish" }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: {
+          ...CONFIGURED,
+          targetLang: "fr",
+          llm,
+          ai,
+          shortcuts,
+          lastOpened,
+          workspace,
+          diagnosticLogging: false,
+        },
+      }),
+    );
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
@@ -1182,27 +3516,66 @@ describe("App shell", () => {
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
       if (cmd === "load_strings") return Promise.resolve([]);
-      if (cmd === "import_llm_batch_path") return Promise.resolve(summary);
+      if (cmd === "preflight_llm_batch_path")
+        return Promise.resolve(READY_IMPORT_PREFLIGHT);
+      if (cmd === "import_llm_batch_path") {
+        backendHistory = [importHistory()];
+        return Promise.resolve(summary);
+      }
       return Promise.resolve(null);
     });
     render(<App />);
+    openWorkspace();
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
-    fileDropHandler?.({
-      type: "enter",
-      paths: ["C:/results/test.llm-result.json"],
+    act(() => {
+      fileDropHandler?.({
+        type: "enter",
+        paths: ["C:/results/test.llm-result.json"],
+      });
     });
     expect(await screen.findByText("Import into Test Mod")).toBeInTheDocument();
+    const dropState = document.querySelector(".translator-native-drop-state");
+    expect(dropState).toHaveClass(
+      "translator-file-choice",
+      "translator-drop-zone",
+      "is-dragging",
+    );
+    expect(document.querySelector(".batchdrop")).toBeNull();
 
-    fileDropHandler?.({
-      type: "drop",
-      paths: ["C:/results/test.llm-result.json"],
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/results/test.llm-result.json"],
+      });
     });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(dialog).toHaveTextContent("test.llm-result.json");
+    expect(dialog).toHaveTextContent("C:/results/test.llm-result.json");
+    expect(await within(dialog).findByText("Ready to import")).toBeVisible();
+    expect(dialog).toHaveTextContent("1 / 1");
+    expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
+      modUniqueId: "a.b",
+      files: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "x/i18n/default.json",
+          targetPath: "x/i18n/de.json",
+        },
+      ],
+      path: "C:/results/test.llm-result.json",
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "import_llm_batch_path",
+      expect.anything(),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Import file" }),
+    );
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
         modUniqueId: "a.b",
@@ -1216,28 +3589,185 @@ describe("App shell", () => {
         path: "C:/results/test.llm-result.json",
       }),
     );
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("1 of 1 value saved to the review queue");
+    expect(result).toHaveTextContent("test.llm-result.json");
+    expect(result).toHaveTextContent("C:/results/test.llm-result.json");
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Open review queue" }),
+    );
     expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("Imported 1 of 1 string");
+      screen.queryByRole("complementary", { name: "Operation result" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Latest result" })).toBeVisible();
+    expect(screen.getByRole("button", { name: /^Review/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "This mod" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          lastOpened: { "a.b": expect.any(Number) },
+        }),
+      }),
+    );
+  });
+
+  it("persists last-opened when an import switches to its matching mod", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+      i18nFiles: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "y/i18n/default.json",
+          targetPath: "y/i18n/de.json",
+          targetExists: false,
+          totalKeys: 1,
+          translatedKeys: 0,
+          reviewNeeded: 0,
+        },
+      ],
+    });
+    scan.modCount = 2;
+    scan.fileCount = 2;
+    const mismatch: LlmImportPreflight = {
+      ...READY_IMPORT_PREFLIGHT,
+      batchModUniqueId: "second.mod",
+      selectedModUniqueId: "a.b",
+      modMatches: false,
+      ready: false,
+      blockingReason: "This batch targets another scanned mod.",
+    };
+
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "pick_llm_batch_file")
+        return Promise.resolve("C:/results/second.llm-result.json");
+      if (cmd === "preflight_llm_batch_path") return Promise.resolve(mismatch);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+    await screen.findByRole("treeitem", { name: /Test Mod/ });
+    fireEvent.click(screen.getByRole("button", { name: "Import LLM batch" }));
+    const dialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Choose file …" }),
+    );
+    fireEvent.click(
+      await within(dialog).findByRole("button", {
+        name: "Switch to matching mod",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          lastOpened: { "second.mod": expect.any(Number) },
+        }),
+      }),
+    );
+    const switchedDialog = screen.getByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(switchedDialog).toHaveTextContent("Target: Second Mod");
+    fireEvent.click(
+      within(switchedDialog).getByRole("button", { name: "Cancel import" }),
+    );
+    expect(
+      await screen.findByRole("treeitem", { name: /Second Mod/ }),
+    ).toHaveAttribute("aria-current", "true");
+  });
+
+  it("closes a rejected import before exposing Choose another file", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preflight_llm_batch_path")
+        return Promise.resolve(READY_IMPORT_PREFLIGHT);
+      if (cmd === "import_llm_batch_path")
+        return Promise.reject(new Error("snapshot mismatch"));
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/results/mismatch.llm-result.json"],
+      });
+    });
+    const importDialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(
+      await within(importDialog).findByText("Ready to import"),
+    ).toBeVisible();
+    fireEvent.click(
+      within(importDialog).getByRole("button", { name: "Import file" }),
+    );
+
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Import LLM batch" }),
+    ).toBeNull();
+    expect(result).toHaveTextContent("LLM import rejected");
+    expect(result).toHaveTextContent("No changes were made");
+    fireEvent.click(
+      within(result).getByRole("button", { name: "Choose another file" }),
+    );
+    expect(
+      await screen.findByRole("dialog", { name: "Import LLM batch" }),
+    ).toBeInTheDocument();
   });
 
   it("rejects a dropped result when no mod is selected", async () => {
-    mockConfigured(exportScan(false));
+    mockConfigured(EMPTY_SCAN);
     render(<App />);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
-    fileDropHandler?.({
-      type: "enter",
-      paths: ["C:/results/test.json"],
+    act(() => {
+      fileDropHandler?.({
+        type: "enter",
+        paths: ["C:/results/test.json"],
+      });
     });
     expect(await screen.findByText("Select a mod first")).toBeInTheDocument();
-    fileDropHandler?.({
-      type: "drop",
-      paths: ["C:/results/test.json"],
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/results/test.json"],
+      });
     });
 
     expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
+      await screen.findByRole("complementary", {
+        name: "Operation result",
+      }),
     ).toHaveTextContent("Select a mod before dropping");
     expect(invokeMock).not.toHaveBeenCalledWith(
       "import_llm_batch_path",
@@ -1245,28 +3775,41 @@ describe("App shell", () => {
     );
   });
 
-  it("rejects multiple or non-JSON dropped files before invoking Rust", async () => {
+  it("shows multiple or non-JSON native drops as inline invalid import states", async () => {
     mockExportConfigured(false);
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
-    fireEvent.click(await screen.findByText("Test Mod"));
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     await waitFor(() => expect(fileDropHandler).not.toBeNull());
 
-    fileDropHandler?.({
-      type: "drop",
-      paths: ["C:/one.json", "C:/two.json"],
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/one.json", "C:/two.json"],
+      });
     });
+    let dialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(dialog).toHaveTextContent("Choose only one JSON file");
     expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("Drop exactly one");
-    fireEvent.click(screen.getByRole("button", { name: "Dismiss result" }));
+      within(dialog).getByRole("button", { name: "Import file" }),
+    ).toBeDisabled();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Cancel import" }),
+    );
 
-    fileDropHandler?.({ type: "drop", paths: ["C:/result.txt"] });
+    act(() => {
+      fileDropHandler?.({ type: "drop", paths: ["C:/result.txt"] });
+    });
+    dialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(dialog).toHaveTextContent("Invalid file type");
+    expect(dialog).toHaveTextContent("C:/result.txt");
     expect(
-      await screen.findByRole("complementary", { name: "Operation result" }),
-    ).toHaveTextContent("Only JSON");
+      within(dialog).getByRole("button", { name: "Import file" }),
+    ).toBeDisabled();
     expect(invokeMock).not.toHaveBeenCalledWith(
       "import_llm_batch_path",
       expect.anything(),
@@ -1307,22 +3850,21 @@ describe("App shell", () => {
     });
 
     render(<App />);
+    openWorkspace();
 
-    // The dashboard reflects the scan (queue + toolbar pill)…
-    expect(await screen.findByText(/1 mods scanned/)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /2 to review/ }),
-    ).toBeInTheDocument();
-
-    // …and Browse switches into the work view with the mod list.
-    fireEvent.click(screen.getByRole("button", { name: /Browse all mods/ }));
-    expect(await screen.findByText("Test Mod")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "7286" })).toBeInTheDocument();
+    // The workspace auto-selects the most recently used (or first
+    // real) scanned component once the user opens it from Overview.
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    expect(screen.getByRole("treeitem", { name: /7286/ })).toBeInTheDocument();
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
     ).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Test Mod"));
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    const overview = await screen.findByRole("main", { name: "Overview" });
+    expect(overview).toHaveTextContent("1 mod");
+    expect(overview).not.toHaveTextContent("Needs attention");
+    fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     expect(
       await screen.findByRole("searchbox", { name: "Search strings" }),
     ).toBeInTheDocument();
@@ -1375,18 +3917,20 @@ describe("App shell", () => {
     });
 
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    await screen.findByRole("searchbox", { name: "Search strings" });
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    await screen.findByRole("searchbox", { name: "Search strings" });
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search strings" }),
       { target: { value: "mittags" } },
     );
 
     expect(await screen.findByText("festival.answer")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Second Mod/ }));
+    fireEvent.click(screen.getByRole("treeitem", { name: /Second Mod/ }));
     expect(
-      await screen.findByRole("region", { name: "String table" }),
+      await screen.findByRole("main", { name: "String table" }),
     ).toHaveTextContent("festival.answer");
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
@@ -1440,35 +3984,29 @@ describe("App shell", () => {
     });
 
     render(<App />);
-    fireEvent.click(
-      await screen.findByRole("button", { name: /Browse all mods/ }),
-    );
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    await screen.findByRole("searchbox", { name: "Search strings" });
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    await screen.findByRole("searchbox", { name: "Search strings" });
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search strings" }),
       { target: { value: "mittags" } },
     );
 
-    // No escape hatch until a mod is selected — global search is the default.
-    expect(
-      screen.queryByRole("button", { name: /Search all mods/ }),
-    ).toBeNull();
-
-    // Open a result, then bounce back out to the cross-mod search.
-    fireEvent.click(await screen.findByRole("button", { name: /Second Mod/ }));
     fireEvent.click(
-      await screen.findByRole("button", { name: /Search all mods/ }),
+      await screen.findByRole("treeitem", { name: /Second Mod/ }),
     );
+    fireEvent.click(await screen.findByRole("button", { name: "All mods" }));
 
     // The global result is reachable again with the query intact.
-    expect(
-      await screen.findByRole("button", { name: /Second Mod/ }),
-    ).toBeInTheDocument();
+    expect(await screen.findByText("festival.answer")).toBeInTheDocument();
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
     ).toHaveValue("mittags");
   });
 
-  it("the dashboard review queue jumps into the mod filtered to review-needed", async () => {
+  it("keeps Review as an explicit workspace filter", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "scan_mods")
@@ -1517,14 +4055,152 @@ describe("App shell", () => {
     });
 
     render(<App />);
-
-    // The queue lists the mod; clicking it opens the work view on its
-    // review backlog (status filter pre-set to review-needed).
-    fireEvent.click(await screen.findByRole("button", { name: /Test Mod/ }));
+    openWorkspace();
+    const review = await screen.findByRole("button", { name: /^Review\b/ });
+    fireEvent.click(review);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Review\b/ })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
     expect(
-      await screen.findByRole("region", { name: "String table" }),
+      await screen.findByRole("main", { name: "String table" }),
     ).toBeInTheDocument();
     expect(await screen.findByText("Hallo KI")).toBeInTheDocument();
+  });
+
+  it("keeps Changed as an explicit workspace filter", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods")
+        return Promise.resolve({
+          mods: [
+            {
+              uniqueId: "a.b",
+              name: "Test Mod",
+              version: "1.0",
+              nexusId: null,
+              packageId: "Test Mod",
+              folderPath: "x",
+              i18nFiles: [
+                {
+                  relativeDir: "i18n",
+                  defaultPath: "x/i18n/default.json",
+                  targetPath: "x/i18n/de.json",
+                  targetExists: true,
+                  totalKeys: 2,
+                  translatedKeys: 2,
+                  reviewNeeded: 1,
+                },
+              ],
+              totalKeys: 2,
+              translatedKeys: 2,
+              reviewNeeded: 1,
+              progress: 1,
+              status: "translated",
+            },
+          ],
+          warnings: [],
+          modCount: 1,
+          fileCount: 1,
+        });
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "changed.key",
+            source: "New source",
+            target: "Old target",
+            targetPresent: true,
+            status: "outdated",
+          },
+          {
+            key: "review.key",
+            source: "Review source",
+            target: "AI target",
+            targetPresent: true,
+            status: "review-needed",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+    await screen.findByText("changed.key");
+    fireEvent.click(screen.getByRole("button", { name: /^Changed\b/ }));
+
+    expect(
+      await screen.findByRole("button", { name: /^Changed\b/ }),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("changed.key")).toBeInTheDocument();
+    expect(screen.queryByText("review.key")).toBeNull();
+  });
+
+  it("does not expose an aggregate Needs attention queue", async () => {
+    mockExportConfigured(false);
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention\b/ }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "All mods" }));
+    expect(
+      screen.queryByRole("button", { name: /^Needs attention\b/ }),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    expect(await screen.findByText("Recently opened")).toBeInTheDocument();
+    expect(screen.queryByText("Needs attention")).toBeNull();
+  });
+
+  it("keeps Validation issues separate and clears it through an Overview status shortcut", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "token.issue",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    openWorkspace();
+    await screen.findByText("token.issue");
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Validation issues\b/ }),
+    );
+
+    const issues = screen.getByRole("button", {
+      name: /^Validation issues\b/,
+    });
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+    expect(await screen.findByText("token.issue")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Overview" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Reviewed & current/ }),
+    );
+    const remountedIssues = await screen.findByRole("button", {
+      name: /^Validation issues\b/,
+    });
+    expect(remountedIssues).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: /^Done\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
   });
 
   it("opens the scan dialog when an automatic scan has warnings", async () => {
@@ -1537,6 +4213,53 @@ describe("App shell", () => {
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),
     ).toHaveTextContent("Skipped broken manifest");
+  });
+
+  it("opens the scan dialog when an automatic scan skips a component that needs attention", async () => {
+    mockConfigured({
+      ...EMPTY_SCAN,
+      warnings: [],
+      skippedComponents: [
+        {
+          packageId: "Example Pack",
+          componentUniqueId: "example.pack",
+          componentName: "Example Pack",
+          relativeLocation: "Example Pack/manifest.json",
+          reason: "invalid manifest JSON",
+          requiresAttention: true,
+          restOfPackageLoaded: false,
+        },
+      ],
+    });
+    render(<App />);
+
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    expect(dialog).toHaveTextContent("1 component skipped");
+    expect(dialog).toHaveTextContent("Example Pack");
+    expect(dialog).not.toHaveTextContent("1 scanner warning");
+  });
+
+  it("does not interrupt startup for an expected community language pack exclusion", async () => {
+    mockConfigured({
+      ...EMPTY_SCAN,
+      warnings: [],
+      skippedComponents: [
+        {
+          packageId: "Example Pack",
+          componentUniqueId: "example.pack",
+          componentName: "Example Pack",
+          relativeLocation: "Example Pack",
+          reason:
+            "Detected as a community language pack, not a translation target.",
+          requiresAttention: false,
+          restOfPackageLoaded: false,
+        },
+      ],
+    });
+    render(<App />);
+
+    await screen.findByRole("button", { name: /Latest scan:/ });
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 
   it("opens the scan dialog when an automatic scan finds extra target keys", async () => {
@@ -1567,12 +4290,22 @@ describe("App shell", () => {
     });
     render(<App />);
 
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    expect(dialog).toHaveTextContent("Mods folder not found");
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    openWorkspace();
+
+    const skipped = screen.getByRole("button", {
+      name: "Skipped components unavailable; open scan diagnostics",
+    });
+    expect(skipped).toHaveTextContent("Skipped · Unavailable");
+    fireEvent.click(skipped);
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),
     ).toHaveTextContent("Mods folder not found");
   });
 
-  it("keeps the progress dialog for a manual re-scan", async () => {
+  it("keeps a completed manual re-scan open until the user closes it", async () => {
     let finishScan: (result: typeof EMPTY_SCAN) => void = () => {};
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
@@ -1593,16 +4326,158 @@ describe("App shell", () => {
     );
     finishScan(EMPTY_SCAN);
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Scan" })).toBeEnabled(),
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Scan" }));
+    fireEvent.click(screen.getByLabelText("Scan mods"));
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),
     ).toHaveTextContent("Scanning mods");
     finishScan(EMPTY_SCAN);
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull(),
+      expect(screen.getByRole("dialog", { name: "Scan" })).toHaveTextContent(
+        "Scan completed",
+      ),
     );
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("opens the exact new-string subset from the completed scan", async () => {
+    const deltaScan = {
+      ...exportScan(false),
+      sourceDeltas: {
+        sourcesChanged: 0,
+        stringsAdded: 1,
+        stringsRemoved: 0,
+        addedStrings: [
+          { modUniqueId: "a.b", relativeDir: "i18n", key: "new.key" },
+        ],
+        changedSources: [],
+      },
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(deltaScan);
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "new.key",
+            source: "New source",
+            target: "",
+            targetPresent: false,
+            status: "untranslated",
+            tokenMismatchAccepted: false,
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Open new string · 1" }),
+    );
+
+    expect(await screen.findByText("new.key")).toBeVisible();
+    expect(
+      screen.getByText(
+        "1 of 1 string · New strings from latest scan · All mods",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("opens the exact changed-English-string subset from the completed scan", async () => {
+    const deltaScan = {
+      ...exportScan(false),
+      sourceDeltas: {
+        sourcesChanged: 1,
+        stringsAdded: 0,
+        stringsRemoved: 0,
+        addedStrings: [],
+        changedSources: [
+          { modUniqueId: "a.b", relativeDir: "i18n", key: "changed.key" },
+        ],
+      },
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(deltaScan);
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "changed.key",
+            source: "Updated source",
+            target: "Existing translation",
+            targetPresent: true,
+            status: "outdated",
+            tokenMismatchAccepted: false,
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Review changed string · 1",
+      }),
+    );
+
+    expect(await screen.findByText("changed.key")).toBeVisible();
+    expect(
+      screen.getByText(
+        "1 of 1 string · Changed English strings from latest scan · All mods",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("keeps a running scan open after Escape and completes it in place", async () => {
+    const scanResolvers: Array<(result: typeof EMPTY_SCAN) => void> = [];
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods")
+        return new Promise((resolve) => {
+          scanResolvers.push(resolve);
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() => expect(scanResolvers).toHaveLength(1));
+    scanResolvers.shift()!(EMPTY_SCAN);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
+    );
+
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    fireEvent.keyDown(dialog, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Scan" })).toBe(dialog);
+    expect(within(dialog).getByText("Scanning mods …")).toBeVisible();
+
+    scanResolvers.shift()!(EMPTY_SCAN);
+    await waitFor(() =>
+      expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
+    );
+    expect(within(dialog).getByText("Scan completed")).toBeVisible();
+    const close = within(dialog).getByRole("button", { name: "Close" });
+    expect(close).toBeEnabled();
+    fireEvent.click(close);
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 });
