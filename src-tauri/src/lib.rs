@@ -26,7 +26,7 @@ mod xnb;
 #[cfg(test)]
 mod language_compatibility;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -213,30 +213,6 @@ fn save_strings(
     translations::save_many(&translation_config_dir(&app)?, &mod_unique_id, entries)
 }
 
-/// Persist one real batch edit and retain its exact previous values in memory.
-/// The existing `save_strings` command stays available for compatibility;
-/// result-tray batch actions use this command when they want the single safe
-/// undo snapshot described by the product contract.
-#[tauri::command]
-fn save_strings_with_undo(
-    app: AppHandle,
-    history: State<'_, operation_history::OperationHistoryState>,
-    mod_unique_id: String,
-    title: String,
-    entries: Vec<SaveStringInput>,
-) -> Result<operation_history::OperationHistoryEntry, String> {
-    let title = title.trim();
-    if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control) {
-        return Err("The batch result title must contain 1 to 80 visible characters.".to_string());
-    }
-    history.apply_reversible_batch(
-        &translation_config_dir(&app)?,
-        &mod_unique_id,
-        title.to_string(),
-        stored_save_entries(entries),
-    )
-}
-
 /// Persist one real batch edit across one or more i18n components and retain
 /// one conditional undo snapshot for the complete action.
 #[tauri::command]
@@ -340,6 +316,7 @@ fn preview_export(
         .target_lang
         .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
     let target_lang = language::normalize_target_code(&target_lang)?;
+    let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
     let files = mods
         .iter()
         .flat_map(|request| request.files.iter().cloned())
@@ -371,11 +348,30 @@ fn export_mod(
     let target_lang = settings
         .target_lang
         .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
-    export::validate_paths(&mods_root, &target_lang, &files)?;
-    let translation_config = translations::language_root(&config, &target_lang)?;
-    let result = export::export_mod(&translation_config, &mod_unique_id, &files).inspect_err(
-        |error| log::error!(target: "app", "export_mod({mod_unique_id}) failed: {error}"),
+    let target_lang = language::normalize_target_code(&target_lang)?;
+    let mut resolved = export::resolve_scan_inputs(
+        &mods_root,
+        &target_lang,
+        &config,
+        &[export::ExportModInput {
+            mod_unique_id,
+            mod_name: String::new(),
+            files,
+        }],
     )?;
+    let resolved = resolved
+        .pop()
+        .ok_or_else(|| "Refusing export: no component was selected.".to_string())?;
+    export::validate_paths(&mods_root, &target_lang, &resolved.files)?;
+    let translation_config = translations::language_root(&config, &target_lang)?;
+    let result = export::export_mod(
+        &translation_config,
+        &resolved.mod_unique_id,
+        &resolved.files,
+    )
+    .inspect_err(|error| {
+        log::error!(target: "app", "export_mod({}) failed: {error}", resolved.mod_unique_id)
+    })?;
     let changed_files = result
         .files
         .iter()
@@ -415,7 +411,7 @@ fn export_mod(
             file_name,
             warnings: compact_export_warnings(&result.skipped),
             details: vec![
-                operation_detail("Component", &mod_unique_id),
+                operation_detail("Component", &resolved.mod_unique_id),
                 operation_detail("Strings written", result.total_written_keys),
                 operation_detail("Open strings omitted", result.total_untranslated),
                 operation_detail("Changed strings included", result.total_outdated),
@@ -452,6 +448,7 @@ fn export_all_mods(
         .target_lang
         .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
     let target_lang = language::normalize_target_code(&target_lang)?;
+    let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
     let files = mods
         .iter()
         .flat_map(|request| request.files.iter().cloned())
@@ -1177,9 +1174,35 @@ fn prepare_ai_request(
     // load rows only through the paths returned by that scan.
     let scan = scanner::scan_mods(&mods_path, &target_lang, &config);
     let translation_root = translations::language_root(&config, &target_lang)?;
+    let requested_components = request
+        .identities
+        .iter()
+        .map(|identity| identity.mod_unique_id.clone())
+        .collect::<HashSet<_>>();
+    let rows = load_ai_scope_rows(scan, &translation_root, &requested_components)?;
+    let resolved = ai::resolve_scope(request, &rows)?;
+    let glossary = load_active_glossary(&config, &target_lang);
+    let prepared = ai::prepare_items_with_context(&resolved, &rows, |source| {
+        glossary
+            .as_ref()
+            .map(|glossary| glossary::match_terms(source, glossary))
+            .unwrap_or_default()
+    })?;
+    Ok((settings, target_language, translation_root, prepared))
+}
+
+fn load_ai_scope_rows(
+    scan: scanner::ScanResult,
+    translation_root: &Path,
+    requested_components: &HashSet<String>,
+) -> Result<Vec<ai::AiScopeRow>, String> {
     let mut rows = Vec::new();
-    for scanned in scan.mods {
-        let state_snapshot = translations::load_snapshot(&translation_root, &scanned.unique_id)?;
+    for scanned in scan
+        .mods
+        .into_iter()
+        .filter(|scanned| requested_components.contains(&scanned.unique_id))
+    {
+        let state_snapshot = translations::load_snapshot(translation_root, &scanned.unique_id)?;
         let state = &state_snapshot.state;
         for file in scanned.i18n_files {
             let default_path = PathBuf::from(&file.default_path);
@@ -1206,15 +1229,7 @@ fn prepare_ai_request(
             }));
         }
     }
-    let resolved = ai::resolve_scope(request, &rows)?;
-    let glossary = load_active_glossary(&config, &target_lang);
-    let prepared = ai::prepare_items_with_context(&resolved, &rows, |source| {
-        glossary
-            .as_ref()
-            .map(|glossary| glossary::match_terms(source, glossary))
-            .unwrap_or_default()
-    })?;
-    Ok((settings, target_language, translation_root, prepared))
+    Ok(rows)
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -1471,6 +1486,8 @@ fn stage_ai_suggestions(
     if generated.len() != items.len() {
         return Err("The validated AI result no longer matches its source chunk.".to_string());
     }
+    let mut groups = Vec::<(String, Vec<translations::ConditionalSaveEntry>)>::new();
+    let mut completed = Vec::with_capacity(generated.len());
     for (item, mut suggestion) in items.iter().zip(generated) {
         if suggestion.identity != item.identity {
             return Err(
@@ -1478,9 +1495,9 @@ fn stage_ai_suggestions(
             );
         }
 
-        // Re-read the real source/target files and current portable state just
-        // before each write. The provider may have taken minutes; a newer user
-        // edit or source update must win instead of being overwritten.
+        // Re-read the real source/target files and current portable state before
+        // preparing the transaction. The provider may have taken minutes; a
+        // newer user edit or source update must win instead of being overwritten.
         let current_state = translations::load(translation_root, &item.identity.mod_unique_id)?;
         let current_rows = scanner::load_strings_checked(
             &item.default_path,
@@ -1505,23 +1522,32 @@ fn stage_ai_suggestions(
             status: "review-needed".to_string(),
             source_hash: translations::source_hash(&current.source),
         };
-        if translations::save_one_if_unchanged(
-            translation_root,
-            &item.identity.mod_unique_id,
-            &key,
-            item.expected_stored.as_ref(),
-            item.expected_revision,
+        let group = groups.iter_mut().find(|(mod_unique_id, _)| {
+            mod_unique_id.eq_ignore_ascii_case(&item.identity.mod_unique_id)
+        });
+        let conditional = translations::ConditionalSaveEntry {
+            key,
+            expected: item.expected_stored.clone(),
+            expected_revision: item.expected_revision,
             entry,
-        )? == translations::ConditionalSaveOutcome::Stale
-        {
-            return Err(
-                "A string changed while AI translation was running. Any completed suggestions remain saved in Review."
-                    .to_string(),
-            );
+        };
+        match group {
+            Some((_, entries)) => entries.push(conditional),
+            None => groups.push((item.identity.mod_unique_id.clone(), vec![conditional])),
         }
         suggestion.status = "review-needed".to_string();
-        staged.push(suggestion);
+        completed.push(suggestion);
     }
+
+    if translations::save_groups_if_unchanged(translation_root, groups)?
+        == translations::ConditionalSaveOutcome::Stale
+    {
+        return Err(
+            "A string changed while AI translation was running. Any earlier completed chunks remain saved in Review."
+                .to_string(),
+        );
+    }
+    staged.extend(completed);
     Ok(())
 }
 
@@ -2547,7 +2573,6 @@ pub fn run() {
             load_strings,
             save_string,
             save_strings,
-            save_strings_with_undo,
             save_string_groups_with_undo,
             list_operation_history,
             undo_batch_edit,
@@ -2884,6 +2909,18 @@ mod json_output_limit_tests {
 mod ai_run_contract_tests {
     use super::*;
 
+    fn install_ai_fixture(mods: &Path, folder: &str, unique_id: &str, source: &str) {
+        let component = mods.join(folder);
+        let i18n = component.join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        std::fs::write(
+            component.join("manifest.json"),
+            format!(r#"{{"Name":"{folder}","UniqueID":"{unique_id}"}}"#),
+        )
+        .unwrap();
+        std::fs::write(i18n.join("default.json"), source).unwrap();
+    }
+
     #[test]
     fn diagnostic_run_ids_allow_only_short_correlation_tokens() {
         assert_eq!(safe_ai_run_id_for_log("ai-123_test"), "ai-123_test");
@@ -2913,6 +2950,34 @@ mod ai_run_contract_tests {
             local_ai_error_category("The server response is too large."),
             "responseTooLarge"
         );
+    }
+
+    #[test]
+    fn ai_scope_rows_ignore_corrupt_state_from_unrequested_components() {
+        let root = test_support::temp_dir("ai-scope-requested-components");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        install_ai_fixture(&mods, "Good", "good.id", r#"{"one":"One","two":"Two"}"#);
+        install_ai_fixture(&mods, "Bad", "bad.id", r#"{"bad":"Bad"}"#);
+        let translation_root = translations::language_root(&config, "de").unwrap();
+        let state_dir = translation_root.join("translations");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(state_dir.join("bad.id.json"), "not json").unwrap();
+
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        assert_eq!(scan.mods.len(), 2);
+        let rows = load_ai_scope_rows(
+            scan,
+            &translation_root,
+            &HashSet::from(["good.id".to_string()]),
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows
+            .iter()
+            .all(|row| row.identity.mod_unique_id == "good.id"));
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
@@ -3135,6 +3200,66 @@ mod ai_run_contract_tests {
         .is_err());
         assert_eq!(
             translations::load(&translation_root, "example.mod").unwrap()[&key].target,
+            "Manual"
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn completed_ai_chunk_saves_nothing_when_a_later_string_is_stale() {
+        let root = test_support::temp_dir("ai-stage-atomic-chunk");
+        let i18n = root.join("fixture").join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        std::fs::write(&default_path, r#"{"first":"One","second":"Two"}"#).unwrap();
+        let translation_root = root.join("state");
+        let make_item = |key: &str, source: &str| ai::PreparedAiItem {
+            id: format!("item-{key}"),
+            identity: ai::AiStringIdentity {
+                mod_unique_id: "example.mod".to_string(),
+                relative_dir: "i18n".to_string(),
+                key: key.to_string(),
+            },
+            source: source.to_string(),
+            section: None,
+            glossary_pairs: Vec::new(),
+            context: ai::AiPromptContext::isolated(0),
+            default_path: default_path.clone(),
+            target_path: target_path.clone(),
+            expected_stored: None,
+            expected_revision: 0,
+        };
+        let items = vec![make_item("first", "One"), make_item("second", "Two")];
+        translations::save_one(
+            &translation_root,
+            "example.mod",
+            translations::entry_key("i18n", "second"),
+            translations::StoredString {
+                target: "Manual".to_string(),
+                status: "translated".to_string(),
+                source_hash: translations::source_hash("Two"),
+            },
+        )
+        .unwrap();
+        let generated = items
+            .iter()
+            .map(|item| ai::AiSuggestion {
+                identity: item.identity.clone(),
+                text: format!("AI {}", item.source),
+                status: "review-needed".to_string(),
+                token_differences: Vec::new(),
+                glossary_misses: Vec::new(),
+            })
+            .collect();
+
+        assert!(
+            stage_ai_suggestions(&translation_root, &items, generated, &mut Vec::new(),).is_err()
+        );
+        let state = translations::load(&translation_root, "example.mod").unwrap();
+        assert!(!state.contains_key(&translations::entry_key("i18n", "first")));
+        assert_eq!(
+            state[&translations::entry_key("i18n", "second")].target,
             "Manual"
         );
         std::fs::remove_dir_all(root).ok();

@@ -113,6 +113,11 @@ The scanner recursively finds mod manifests and nearby `i18n` folders. It:
 - warns and skips only a malformed i18n component instead of inventing empty
   rows or stopping the complete scan.
 
+A filesystem traversal error or reached traversal limit makes source-change
+comparison unavailable and leaves the preceding complete baseline untouched.
+Intentional exclusions such as outside-root links and Content Patcher
+`assets/i18n` data do not make an otherwise successful scan incomplete.
+
 A positive `Nexus:<id>` update key may be shown as an external link. Sentinel
 values such as `Nexus:-1` are treated as no Nexus ID.
 
@@ -228,8 +233,10 @@ Before direct export confirmation, the backend performs a read-only preflight
 over the complete selected mod or all-mod scope. It reports the first real
 blocking key and the number of exact-source mismatch acceptances without
 creating target, backup, temporary, or operation-history entries. The export
-command independently repeats path authorization and complete validation
-immediately before writing; the preflight result is informational only.
+command freshly resolves each component UniqueID and its current i18n files,
+then repeats path authorization and complete validation immediately before
+writing; WebView paths, display names, and the preflight result are not
+authorization tokens.
 
 ## 11. External LLM Batch
 

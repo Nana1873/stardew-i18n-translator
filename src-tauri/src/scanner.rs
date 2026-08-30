@@ -22,7 +22,7 @@ use crate::input_limits;
 use crate::lang_pack;
 use crate::translations::{self, ModState};
 
-const MAX_DEPTH: usize = 12;
+pub(crate) const MAX_DEPTH: usize = 12;
 const MAX_DIRS: usize = 200_000;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -123,8 +123,14 @@ pub struct ScanResult {
     /// English-source changes observed since the preceding complete scan of
     /// this Mods folder. `None` means comparison was unavailable because this
     /// scan omitted a component needing attention or snapshot persistence
-    /// failed.
+    /// failed. A bounded or otherwise incomplete directory traversal also
+    /// leaves this unavailable.
     pub source_deltas: Option<ScanDeltas>,
+    /// Internal completeness signal for derived scan data. This is deliberately
+    /// not part of the frontend contract; `source_deltas` is the user-visible
+    /// availability state.
+    #[serde(skip)]
+    pub(crate) traversal_complete: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -340,7 +346,13 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     };
     let mut manifest_files = Vec::new();
     let mut i18n_dirs = Vec::new();
-    collect(mods_path, &mut manifest_files, &mut i18n_dirs);
+    let traversal_complete = collect(mods_path, &mut manifest_files, &mut i18n_dirs);
+    if !traversal_complete {
+        warnings.push(
+            "The Mods folder could not be scanned completely. Source-change totals are unavailable, and the scan baseline was not updated."
+                .to_string(),
+        );
+    }
 
     // Build a mod per manifest, keyed by its folder.
     let mut mods: HashMap<PathBuf, ScannedMod> = HashMap::new();
@@ -525,6 +537,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         skipped_components,
         extra_keys,
         source_deltas: None,
+        traversal_complete,
     }
 }
 
@@ -1202,20 +1215,36 @@ fn build_i18n_file(
 /// `default.json`. Bounded by depth, the canonical root, and a
 /// visited-canonical-path set (cycles). Links that resolve outside `root` are
 /// never traversed.
+/// Returns `false` when filesystem errors or traversal limits may have omitted
+/// content. Intentional exclusions, including links outside `root`, remain a
+/// complete traversal.
 /// `pub(crate)` so `lang_pack` can reuse the same bounded walk for pack discovery.
-pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut Vec<PathBuf>) {
+pub(crate) fn collect(
+    root: &Path,
+    manifests: &mut Vec<PathBuf>,
+    i18n_dirs: &mut Vec<PathBuf>,
+) -> bool {
+    collect_bounded(root, manifests, i18n_dirs, MAX_DEPTH, MAX_DIRS)
+}
+
+fn collect_bounded(
+    root: &Path,
+    manifests: &mut Vec<PathBuf>,
+    i18n_dirs: &mut Vec<PathBuf>,
+    max_depth: usize,
+    max_dirs: usize,
+) -> bool {
     let Ok(canonical_root) = std::fs::canonicalize(root) else {
-        return;
+        return false;
     };
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
     let mut dirs_seen = 0usize;
+    let mut complete = true;
 
     while let Some((dir, depth)) = stack.pop() {
-        if depth > MAX_DEPTH || dirs_seen >= MAX_DIRS {
-            continue;
-        }
         let Ok(canonical) = std::fs::canonicalize(&dir) else {
+            complete = false;
             continue;
         };
         if !canonical.starts_with(&canonical_root) {
@@ -1224,43 +1253,107 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
         if !visited.insert(canonical) {
             continue; // cycle / already visited
         }
+        if depth > max_depth || dirs_seen >= max_dirs {
+            complete = false;
+            continue;
+        }
         dirs_seen += 1;
 
         let Ok(entries) = std::fs::read_dir(&dir) else {
+            complete = false;
             continue;
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-
-            if file_type.is_file() || file_type.is_symlink() {
-                let safe_manifest = path.file_name().is_some_and(|n| n == "manifest.json")
-                    && std::fs::canonicalize(&path).is_ok_and(|canonical| {
-                        canonical.is_file() && canonical.starts_with(&canonical_root)
-                    });
-                if safe_manifest {
-                    manifests.push(path.clone());
-                }
-                if file_type.is_file() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    complete = false;
                     continue;
                 }
+            };
+            let path = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => {
+                    complete = false;
+                    continue;
+                }
+            };
+            let symlink_target = if file_type.is_symlink() {
+                match std::fs::canonicalize(&path) {
+                    Ok(target) => Some(target),
+                    Err(_) => {
+                        complete = false;
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            let target_is_file = file_type.is_file()
+                || symlink_target
+                    .as_ref()
+                    .is_some_and(|target| target.is_file());
+            let target_is_dir = file_type.is_dir()
+                || symlink_target
+                    .as_ref()
+                    .is_some_and(|target| target.is_dir());
+
+            if target_is_file {
+                if path.file_name().is_some_and(|n| n == "manifest.json") {
+                    match symlink_target
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| std::fs::canonicalize(&path))
+                    {
+                        Ok(canonical)
+                            if canonical.is_file() && canonical.starts_with(&canonical_root) =>
+                        {
+                            manifests.push(path.clone());
+                        }
+                        Ok(_) => {}
+                        Err(_) => complete = false,
+                    }
+                }
+                continue;
             }
 
-            if file_type.is_dir() || file_type.is_symlink() {
+            if target_is_dir {
                 let is_i18n = path
                     .file_name()
                     .is_some_and(|n| n.eq_ignore_ascii_case("i18n"));
                 if is_i18n {
-                    let inside_root = std::fs::canonicalize(&path)
-                        .is_ok_and(|canonical| canonical.starts_with(&canonical_root));
+                    let canonical_i18n = match symlink_target.clone() {
+                        Some(canonical) => canonical,
+                        None => match std::fs::canonicalize(&path) {
+                            Ok(canonical) => canonical,
+                            Err(_) => {
+                                complete = false;
+                                continue;
+                            }
+                        },
+                    };
+                    if !canonical_i18n.starts_with(&canonical_root) {
+                        continue;
+                    }
                     let default_path = path.join("default.json");
-                    let safe_default =
-                        std::fs::canonicalize(&default_path).is_ok_and(|canonical| {
-                            canonical.is_file() && canonical.starts_with(&canonical_root)
-                        });
-                    if inside_root && safe_default {
+                    let safe_default = match std::fs::symlink_metadata(&default_path) {
+                        Ok(_) => match std::fs::canonicalize(&default_path) {
+                            Ok(canonical) => {
+                                canonical.is_file() && canonical.starts_with(&canonical_root)
+                            }
+                            Err(_) => {
+                                complete = false;
+                                false
+                            }
+                        },
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                        Err(_) => {
+                            complete = false;
+                            false
+                        }
+                    };
+                    if safe_default {
                         i18n_dirs.push(path);
                     }
                     continue; // no mods nested inside an i18n folder
@@ -1269,6 +1362,8 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
             }
         }
     }
+
+    complete
 }
 
 /// Strip `//` and `/* */` comments and trailing commas from JSON-ish text,
@@ -1683,6 +1778,53 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    #[test]
+    fn collect_marks_missing_root_and_depth_limit_as_incomplete() {
+        let base = crate::test_support::temp_dir("scan-incomplete-depth");
+        let missing = base.join("Missing");
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+        assert!(!collect(&missing, &mut manifests, &mut i18n_dirs));
+
+        let root = base.join("Mods");
+        write(
+            &root.join("Nested/manifest.json"),
+            r#"{"UniqueID":"nested.mod"}"#,
+        );
+        write(&root.join("Nested/i18n/default.json"), r#"{"k":"source"}"#);
+        assert!(!collect_bounded(
+            &root,
+            &mut manifests,
+            &mut i18n_dirs,
+            0,
+            MAX_DIRS,
+        ));
+        assert!(manifests.is_empty());
+        assert!(i18n_dirs.is_empty());
+
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[test]
+    fn collect_marks_directory_limit_as_incomplete() {
+        let root = crate::test_support::temp_dir("scan-incomplete-dir-limit");
+        write(&root.join("One/manifest.json"), r#"{"UniqueID":"one.mod"}"#);
+        write(&root.join("Two/manifest.json"), r#"{"UniqueID":"two.mod"}"#);
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+
+        assert!(!collect_bounded(
+            &root,
+            &mut manifests,
+            &mut i18n_dirs,
+            MAX_DEPTH,
+            1,
+        ));
+        assert!(manifests.is_empty());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[cfg(any(unix, windows))]
     #[test]
     fn collect_does_not_follow_directory_links_outside_the_root() {
@@ -1712,8 +1854,9 @@ mod tests {
 
         let mut manifests = Vec::new();
         let mut i18n_dirs = Vec::new();
-        collect(&root, &mut manifests, &mut i18n_dirs);
+        let complete = collect(&root, &mut manifests, &mut i18n_dirs);
 
+        assert!(complete);
         assert_eq!(manifests, vec![safe.join("manifest.json")]);
         assert_eq!(i18n_dirs, vec![safe.join("i18n")]);
 
@@ -1743,8 +1886,9 @@ mod tests {
 
         let mut manifests = Vec::new();
         let mut i18n_dirs = Vec::new();
-        collect(&root, &mut manifests, &mut i18n_dirs);
+        let complete = collect(&root, &mut manifests, &mut i18n_dirs);
 
+        assert!(complete);
         assert_eq!(manifests, vec![mod_dir.join("manifest.json")]);
         assert!(i18n_dirs.is_empty());
 
@@ -1960,6 +2104,7 @@ mod tests {
         );
 
         let result = scan_mods(&root, "de", &root);
+        assert!(result.traversal_complete);
         assert_eq!(result.mod_count, 1);
         assert_eq!(result.file_count, 2);
         assert!(result.warnings.is_empty(), "{:?}", result.warnings);

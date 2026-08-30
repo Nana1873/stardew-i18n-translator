@@ -309,19 +309,6 @@ export interface OperationHistoryEntry {
   completedAtEpochMs: number;
 }
 
-/** Save one component's batch edit and retain its single safe undo snapshot. */
-export function saveStringsWithUndo(
-  modUniqueId: string,
-  title: string,
-  entries: SaveStringEntry[],
-): Promise<OperationHistoryEntry> {
-  return invoke<OperationHistoryEntry>("save_strings_with_undo", {
-    modUniqueId,
-    title,
-    entries,
-  });
-}
-
 export interface SaveStringGroup {
   modUniqueId: string;
   entries: SaveStringEntry[];
@@ -405,7 +392,7 @@ export function exportMod(
 
 export interface ExportModInput {
   modUniqueId: string;
-  /** Display metadata only; the backend authorizes paths and state by ID. */
+  /** Display metadata only; Rust rebinds the request to a fresh scan. */
   modName: string;
   files: ExportFileInput[];
 }
