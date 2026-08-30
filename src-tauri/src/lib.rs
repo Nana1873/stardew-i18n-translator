@@ -4,7 +4,9 @@
 //! i18n import/export, glossary extraction, and local-LLM integration. Kept
 //! minimal per SCOPE_GUARDRAILS — no plugin/provider abstractions.
 
+mod ai;
 mod batch;
+mod codex_cli;
 mod detection;
 mod export;
 mod glossary;
@@ -12,7 +14,9 @@ mod input_limits;
 mod lang_pack;
 mod language;
 mod llm;
+mod operation_history;
 mod release_zip;
+mod scan_snapshot;
 mod scanner;
 mod settings;
 mod tokens;
@@ -22,10 +26,14 @@ mod xnb;
 #[cfg(test)]
 mod language_compatibility;
 
+use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 use std::{fs::OpenOptions, io::Write};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
@@ -72,14 +80,30 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
-    let result = scanner::scan_mods(Path::new(&mods_path), &target_lang, &config);
-    if !result.warnings.is_empty() {
+    let mods_root = PathBuf::from(mods_path.trim());
+    if !mods_root.is_dir() {
+        return Err(format!(
+            "The selected Mods folder {} is unavailable.",
+            mods_root.display()
+        ));
+    }
+    let mut result = scanner::scan_mods(&mods_root, &target_lang, &config);
+    if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
+        log::warn!(target: "app", "Could not update source-change scan baseline: {error}");
+        result.warnings.push(format!(
+            "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
+        ));
+    }
+    if !result.warnings.is_empty() || !result.skipped_components.is_empty() {
         log::warn!(
-            "scan_mods({mods_path}): {} warning(s)",
-            result.warnings.len()
+            target: "app",
+            "scan_mods({mods_path}): {} warning(s), {} skipped component(s)",
+            result.warnings.len(),
+            result.skipped_components.len()
         );
     }
     log::info!(
+        target: "app",
         "scan_mods({target_lang}): {} mods, {} i18n files",
         result.mod_count,
         result.file_count
@@ -150,16 +174,18 @@ struct SaveStringInput {
     source: String,
 }
 
-/// Save many strings of one mod in a single load-modify-write cycle. The bulk
-/// actions (context menu) must use this instead of N parallel `save_string`
-/// calls, which would race the per-mod state file and lose updates.
-#[tauri::command]
-fn save_strings(
-    app: AppHandle,
+/// One component group in a reversible batch that may span several scanned
+/// i18n components. The group boundary keeps each component's portable state
+/// file explicit while the backend commits the whole action as one operation.
+#[derive(serde::Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+struct SaveStringGroupInput {
     mod_unique_id: String,
     entries: Vec<SaveStringInput>,
-) -> Result<(), String> {
-    let entries = entries
+}
+
+fn stored_save_entries(entries: Vec<SaveStringInput>) -> Vec<(String, translations::StoredString)> {
+    entries
         .into_iter()
         .map(|input| {
             (
@@ -171,13 +197,139 @@ fn save_strings(
                 },
             )
         })
-        .collect();
+        .collect()
+}
+
+/// Save many strings of one mod in a single load-modify-write cycle. The bulk
+/// actions (context menu) must use this instead of N parallel `save_string`
+/// calls, which would race the per-mod state file and lose updates.
+#[tauri::command]
+fn save_strings(
+    app: AppHandle,
+    mod_unique_id: String,
+    entries: Vec<SaveStringInput>,
+) -> Result<(), String> {
+    let entries = stored_save_entries(entries);
     translations::save_many(&translation_config_dir(&app)?, &mod_unique_id, entries)
+}
+
+/// Persist one real batch edit across one or more i18n components and retain
+/// one conditional undo snapshot for the complete action.
+#[tauri::command]
+fn save_string_groups_with_undo(
+    app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
+    title: String,
+    groups: Vec<SaveStringGroupInput>,
+) -> Result<operation_history::OperationHistoryEntry, String> {
+    let title = title.trim();
+    if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control) {
+        return Err("The batch result title must contain 1 to 80 visible characters.".to_string());
+    }
+    history.apply_reversible_batch_groups(
+        &translation_config_dir(&app)?,
+        title.to_string(),
+        groups
+            .into_iter()
+            .map(|group| (group.mod_unique_id, stored_save_entries(group.entries)))
+            .collect(),
+    )
+}
+
+#[tauri::command]
+fn list_operation_history(
+    history: State<'_, operation_history::OperationHistoryState>,
+) -> Result<Vec<operation_history::OperationHistoryEntry>, String> {
+    history.list()
+}
+
+#[tauri::command]
+fn undo_batch_edit(
+    app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
+    operation_id: String,
+) -> Result<operation_history::OperationHistoryEntry, String> {
+    history.undo_reversible_batch(&translation_config_dir(&app)?, &operation_id)
+}
+
+fn operation_detail(label: &str, value: impl ToString) -> operation_history::OperationDetail {
+    operation_history::OperationDetail {
+        label: label.to_string(),
+        value: value.to_string(),
+    }
+}
+
+fn operation_file_location(path: &str) -> (Option<String>, Option<String>) {
+    let file_name = Path::new(path)
+        .file_name()
+        .and_then(|value| value.to_str())
+        .map(ToOwned::to_owned);
+    (Some(path.to_string()), file_name)
+}
+
+/// Result history is useful feedback, but it must never turn a successfully
+/// completed file operation into a reported failure. A poisoned in-memory
+/// history lock is therefore logged and the real backend result still wins.
+fn remember_operation(
+    history: &State<'_, operation_history::OperationHistoryState>,
+    operation: operation_history::CompletedOperation,
+) {
+    if let Err(error) = history.record(operation) {
+        log::warn!(target: "app", "Could not retain completed operation result: {error}");
+    }
+}
+
+fn compact_export_warnings(skipped: &[export::SkippedKey]) -> Vec<String> {
+    const LIMIT: usize = 4;
+    let mut warnings = skipped
+        .iter()
+        .take(LIMIT)
+        .map(|item| format!("{} / {}: {}", item.relative_dir, item.key, item.reason))
+        .collect::<Vec<_>>();
+    if skipped.len() > LIMIT {
+        warnings.push(format!(
+            "{} additional skipped strings.",
+            skipped.len() - LIMIT
+        ));
+    }
+    warnings
+}
+
+#[tauri::command]
+fn preview_export(
+    app: AppHandle,
+    mods: Vec<export::ExportModInput>,
+) -> Result<export::ExportPreflight, String> {
+    let config = config_dir(&app)?;
+    let settings = settings::load_checked(&config)?;
+    let mods_root = settings
+        .mods_path
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
+    let target_lang = settings
+        .target_lang
+        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
+    let target_lang = language::normalize_target_code(&target_lang)?;
+    let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
+    let files = mods
+        .iter()
+        .flat_map(|request| request.files.iter().cloned())
+        .collect::<Vec<_>>();
+    export::validate_paths(&mods_root, &target_lang, &files)?;
+    export::preview_export(&translations::language_root(&config, &target_lang)?, &mods)
+        .inspect_err(|error| log::error!(target: "app", "preview_export failed: {error}"))
 }
 
 #[tauri::command]
 fn export_mod(
     app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<export::ExportResult, String> {
@@ -196,10 +348,164 @@ fn export_mod(
     let target_lang = settings
         .target_lang
         .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
+    let target_lang = language::normalize_target_code(&target_lang)?;
+    let mut resolved = export::resolve_scan_inputs(
+        &mods_root,
+        &target_lang,
+        &config,
+        &[export::ExportModInput {
+            mod_unique_id,
+            mod_name: String::new(),
+            files,
+        }],
+    )?;
+    let resolved = resolved
+        .pop()
+        .ok_or_else(|| "Refusing export: no component was selected.".to_string())?;
+    export::validate_paths(&mods_root, &target_lang, &resolved.files)?;
+    let translation_config = translations::language_root(&config, &target_lang)?;
+    let result = export::export_mod(
+        &translation_config,
+        &resolved.mod_unique_id,
+        &resolved.files,
+    )
+    .inspect_err(|error| {
+        log::error!(target: "app", "export_mod({}) failed: {error}", resolved.mod_unique_id)
+    })?;
+    let changed_files = result
+        .files
+        .iter()
+        .filter(|file| file.written || file.removed)
+        .collect::<Vec<_>>();
+    let (path, file_name) = if changed_files.len() == 1 {
+        operation_file_location(&changed_files[0].target_path)
+    } else {
+        (Some(mods_root.display().to_string()), None)
+    };
+    remember_operation(
+        &history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Export,
+            outcome: if result.blocked {
+                operation_history::OperationOutcome::Blocked
+            } else if !result.skipped.is_empty()
+                || result.total_outdated > 0
+                || result.total_review_needed > 0
+                || result.total_orphan_keys > 0
+            {
+                operation_history::OperationOutcome::Warning
+            } else {
+                operation_history::OperationOutcome::Success
+            },
+            title: "Translation export completed".to_string(),
+            summary: if result.blocked {
+                "Export was blocked before any target file changed.".to_string()
+            } else {
+                format!(
+                    "{} target files written and {} removed.",
+                    result.files_written, result.files_removed
+                )
+            },
+            item_count: result.total_written_keys,
+            path,
+            file_name,
+            warnings: compact_export_warnings(&result.skipped),
+            details: vec![
+                operation_detail("Component", &resolved.mod_unique_id),
+                operation_detail("Strings written", result.total_written_keys),
+                operation_detail("Open strings omitted", result.total_untranslated),
+                operation_detail("Changed strings included", result.total_outdated),
+                operation_detail("Review strings included", result.total_review_needed),
+                operation_detail(
+                    "Entries without English source omitted",
+                    result.total_orphan_keys,
+                ),
+            ],
+        },
+    );
+    Ok(result)
+}
+
+#[tauri::command]
+fn export_all_mods(
+    app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
+    mods: Vec<export::ExportModInput>,
+) -> Result<export::ExportAllResult, String> {
+    let config = config_dir(&app)?;
+    let settings = settings::load_checked(&config)?;
+    let mods_root = settings
+        .mods_path
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
+    let target_lang = settings
+        .target_lang
+        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
+    let target_lang = language::normalize_target_code(&target_lang)?;
+    let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
+    let files = mods
+        .iter()
+        .flat_map(|request| request.files.iter().cloned())
+        .collect::<Vec<_>>();
+    // Validate in one pass so duplicate targets are rejected across mod groups,
+    // not only within each individual group.
     export::validate_paths(&mods_root, &target_lang, &files)?;
     let translation_config = translations::language_root(&config, &target_lang)?;
-    export::export_mod(&translation_config, &mod_unique_id, &files)
-        .inspect_err(|error| log::error!("export_mod({mod_unique_id}) failed: {error}"))
+    let result = export::export_all_mods(&translation_config, &mods)
+        .inspect_err(|error| log::error!(target: "app", "export_all_mods failed: {error}"))?;
+    let skipped = result
+        .mods
+        .iter()
+        .flat_map(|item| item.result.skipped.iter().cloned())
+        .collect::<Vec<_>>();
+    remember_operation(
+        &history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Export,
+            outcome: if result.blocked {
+                operation_history::OperationOutcome::Blocked
+            } else if !skipped.is_empty()
+                || result.total_outdated > 0
+                || result.total_review_needed > 0
+                || result.total_orphan_keys > 0
+            {
+                operation_history::OperationOutcome::Warning
+            } else {
+                operation_history::OperationOutcome::Success
+            },
+            title: "All-mod export completed".to_string(),
+            summary: if result.blocked {
+                "Export was blocked before any target file changed.".to_string()
+            } else {
+                format!(
+                    "{} components changed; {} target files written and {} removed.",
+                    result.mods_changed, result.files_written, result.files_removed
+                )
+            },
+            item_count: result.total_written_keys,
+            path: Some(mods_root.display().to_string()),
+            file_name: None,
+            warnings: compact_export_warnings(&skipped),
+            details: vec![
+                operation_detail("Components changed", result.mods_changed),
+                operation_detail("Strings written", result.total_written_keys),
+                operation_detail("Open strings omitted", result.total_untranslated),
+                operation_detail("Changed strings included", result.total_outdated),
+                operation_detail("Review strings included", result.total_review_needed),
+                operation_detail(
+                    "Entries without English source omitted",
+                    result.total_orphan_keys,
+                ),
+            ],
+        },
+    );
+    Ok(result)
 }
 
 #[tauri::command]
@@ -246,10 +552,33 @@ fn pick_translation_zip_destination(
 #[tauri::command]
 fn build_translation_zip(
     app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
     mut request: release_zip::ZipBuildRequest,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
     request.target_lang = language::normalize_target_code(&request.target_lang)?;
-    release_zip::build(&translation_config_dir(&app)?, &request)
+    let result = release_zip::build(&translation_config_dir(&app)?, &request)?;
+    remember_operation(
+        &history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Zip,
+            outcome: operation_history::OperationOutcome::Success,
+            title: "Translation ZIP created".to_string(),
+            summary: format!(
+                "{} strings packaged in {} archive entries.",
+                result.strings, result.entries
+            ),
+            item_count: result.strings,
+            path: Some(result.path.clone()),
+            file_name: Some(result.file_name.clone()),
+            warnings: Vec::new(),
+            details: vec![
+                operation_detail("Destination folder", &result.folder),
+                operation_detail("Archive entries", result.entries),
+                operation_detail("Strings", result.strings),
+            ],
+        },
+    );
+    Ok(result)
 }
 
 /// Outcome of an external LLM batch export: where the file landed and what
@@ -261,12 +590,58 @@ struct LlmExportOutcome {
     string_count: usize,
 }
 
+fn write_llm_batch(
+    destination: &Path,
+    mod_unique_id: &str,
+    target_lang: &str,
+    items: &[batch::BatchExportItem],
+) -> Result<LlmExportOutcome, String> {
+    let batch_json = batch::build_batch(mod_unique_id, target_lang, items);
+    let mut body = serde_json::to_string_pretty(&batch_json)
+        .map_err(|error| format!("Could not serialize the batch: {error}"))?;
+    body.push('\n');
+    ensure_llm_batch_json_size(body.len() as u64)?;
+    std::fs::write(destination, body.as_bytes())
+        .map_err(|error| format!("Could not write {}: {error}", destination.display()))?;
+
+    Ok(LlmExportOutcome {
+        path: destination.display().to_string(),
+        string_count: items.len(),
+    })
+}
+
+fn remember_llm_batch_export(
+    history: &State<'_, operation_history::OperationHistoryState>,
+    outcome: &LlmExportOutcome,
+    mod_unique_id: &str,
+) {
+    let (path, file_name) = operation_file_location(&outcome.path);
+    remember_operation(
+        history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::BatchExport,
+            outcome: operation_history::OperationOutcome::Success,
+            title: "LLM batch exported".to_string(),
+            summary: format!(
+                "{} strings written for external translation.",
+                outcome.string_count
+            ),
+            item_count: outcome.string_count,
+            path,
+            file_name,
+            warnings: Vec::new(),
+            details: vec![operation_detail("Component", mod_unique_id)],
+        },
+    );
+}
+
 /// Write the selected strings as an external LLM translation batch
 /// (SPEC §11). Opens a save dialog and writes the minimal format-2
 /// binding plus the selected source strings.
 #[tauri::command]
 fn export_llm_batch(
     app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
     items: Vec<batch::BatchExportItem>,
 ) -> Result<Option<LlmExportOutcome>, String> {
@@ -285,22 +660,100 @@ fn export_llm_batch(
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
 
-    let batch_json = batch::build_batch(&mod_unique_id, &target_lang, &items);
-    let mut body = serde_json::to_string_pretty(&batch_json)
-        .map_err(|error| format!("Could not serialize the batch: {error}"))?;
-    body.push('\n');
-    ensure_llm_batch_json_size(body.len() as u64)?;
-    std::fs::write(&dest, body.as_bytes())
-        .map_err(|error| format!("Could not write {}: {error}", dest.display()))?;
+    let outcome = write_llm_batch(&dest, &mod_unique_id, &target_lang, &items)?;
+    remember_llm_batch_export(&history, &outcome, &mod_unique_id);
+    Ok(Some(outcome))
+}
 
-    Ok(Some(LlmExportOutcome {
-        path: dest.display().to_string(),
-        string_count: items.len(),
-    }))
+/// Choose an LLM batch destination without writing anything. The caller can
+/// show or change this path before explicitly invoking
+/// `export_llm_batch_to_path`.
+#[tauri::command]
+fn pick_llm_batch_destination(
+    app: AppHandle,
+    suggested_file_name: String,
+) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Export LLM translation batch")
+        .set_file_name(suggested_file_name)
+        .add_filter("JSON", &["json"])
+        .blocking_save_file();
+    match picked {
+        Some(file) => file
+            .into_path()
+            .map(|path| Some(path.display().to_string()))
+            .map_err(|error| format!("Could not read the selected path: {error}")),
+        None => Ok(None),
+    }
+}
+
+/// Write the minimal format-2 LLM batch to a destination the user already
+/// selected with `pick_llm_batch_destination`.
+#[tauri::command]
+fn export_llm_batch_to_path(
+    app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
+    mod_unique_id: String,
+    items: Vec<batch::BatchExportItem>,
+    path: String,
+) -> Result<LlmExportOutcome, String> {
+    let target_lang = active_target_lang(&app)?;
+    let outcome = write_llm_batch(Path::new(&path), &mod_unique_id, &target_lang, &items)?;
+    remember_llm_batch_export(&history, &outcome, &mod_unique_id);
+    Ok(outcome)
 }
 
 fn ensure_llm_batch_json_size(byte_len: u64) -> Result<(), String> {
     input_limits::ensure_json_output_size(byte_len, "LLM batch JSON")
+}
+
+fn remember_llm_batch_import(
+    history: &State<'_, operation_history::OperationHistoryState>,
+    summary: &batch::ImportSummary,
+    source: &Path,
+    mod_unique_id: &str,
+) {
+    let source_display = source.display().to_string();
+    let (path, file_name) = operation_file_location(&source_display);
+    let mut warnings = Vec::new();
+    if summary.unmatched > 0 {
+        warnings.push(format!(
+            "{} values were skipped because no translation was supplied.",
+            summary.unmatched
+        ));
+    }
+    if summary.identical_to_source > 0 {
+        warnings.push(format!(
+            "{} imported values are identical to their source text.",
+            summary.identical_to_source
+        ));
+    }
+    remember_operation(
+        history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Import,
+            outcome: if warnings.is_empty() {
+                operation_history::OperationOutcome::Success
+            } else {
+                operation_history::OperationOutcome::Warning
+            },
+            title: "LLM batch imported".to_string(),
+            summary: format!("{} suggestions staged for review.", summary.imported),
+            item_count: summary.imported,
+            path,
+            file_name,
+            warnings,
+            details: vec![
+                operation_detail("Component", mod_unique_id),
+                operation_detail("Values in file", summary.total_in_file),
+                operation_detail("Local translations preserved", summary.skipped_translated),
+                operation_detail("Skipped empty values", summary.unmatched),
+                operation_detail("Identical to source", summary.identical_to_source),
+            ],
+        },
+    );
 }
 
 /// Import a translated LLM batch/result file for one mod. Opens
@@ -309,6 +762,7 @@ fn ensure_llm_batch_json_size(byte_len: u64) -> Result<(), String> {
 #[tauri::command]
 fn import_llm_batch(
     app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<Option<batch::ImportSummary>, String> {
@@ -324,27 +778,98 @@ fn import_llm_batch(
     let source = picked
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
-    import_llm_batch_from_path(&app, &mod_unique_id, &files, &source)
-        .inspect_err(|error| log::error!("import_llm_batch({mod_unique_id}) failed: {error}"))
-        .map(Some)
+    let summary = import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).inspect_err(
+        |error| log::error!(target: "app", "import_llm_batch({mod_unique_id}) failed: {error}"),
+    )?;
+    remember_llm_batch_import(&history, &summary, &source, &mod_unique_id);
+    Ok(Some(summary))
 }
 
-fn import_llm_batch_from_path(
+/// Pick an external LLM result without importing it. The caller can use the
+/// returned path with `import_llm_batch_path` after selecting the target mod.
+#[tauri::command]
+fn pick_llm_batch_file(app: AppHandle) -> Result<Option<String>, String> {
+    let picked = app
+        .dialog()
+        .file()
+        .set_title("Choose LLM translation result")
+        .add_filter("JSON", &["json"])
+        .blocking_pick_file();
+    match picked {
+        Some(file) => file
+            .into_path()
+            .map(|path| Some(path.display().to_string()))
+            .map_err(|error| format!("Could not read the selected path: {error}")),
+        None => Ok(None),
+    }
+}
+
+struct LlmBatchContext {
+    parsed: serde_json::Value,
+    target_lang: String,
+    config: PathBuf,
+    rows_by_dir: std::collections::HashMap<String, Vec<scanner::StringRow>>,
+}
+
+fn load_llm_batch_context(
     app: &AppHandle,
     mod_unique_id: &str,
-    files: &[export::ExportFileInput],
+    untrusted_files: &[export::ExportFileInput],
     source: &Path,
-) -> Result<batch::ImportSummary, String> {
+) -> Result<LlmBatchContext, String> {
+    load_llm_batch_context_from_config(&config_dir(app)?, mod_unique_id, untrusted_files, source)
+}
+
+fn load_llm_batch_context_from_config(
+    config: &Path,
+    mod_unique_id: &str,
+    _untrusted_files: &[export::ExportFileInput],
+    source: &Path,
+) -> Result<LlmBatchContext, String> {
     let body = input_limits::read_json_text(source)?;
     // Lenient parse: LLM output sometimes carries trailing commas or comments.
     let parsed = scanner::parse_json_lenient(&body)
         .map_err(|error| format!("Invalid JSON in {}: {error}", source.display()))?;
 
-    let target_lang = active_target_lang(app)?;
-    let config = translations::language_root(&config_dir(app)?, &target_lang)?;
-    let state = translations::load(&config, mod_unique_id)?;
+    let saved_settings = settings::load_checked(config)?;
+    let target_lang = saved_settings
+        .target_lang
+        .as_deref()
+        .ok_or_else(|| "Choose a target language before importing an LLM batch.".to_string())?;
+    let target_lang = language::normalize_target_code(target_lang)?;
+    let mods_path = saved_settings
+        .mods_path
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| {
+            saved_settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Choose a Mods folder before importing an LLM batch.".to_string())?;
+    if !mods_path.is_dir() {
+        return Err("The configured Mods folder is unavailable.".to_string());
+    }
+
+    // The WebView's file list is display state, not an authorization boundary.
+    // Resolve the selected component and all source/target paths from a fresh
+    // backend scan so stale or substituted IPC paths cannot change the import.
+    let scan = scanner::scan_mods(&mods_path, &target_lang, config);
+    let scanned = scan
+        .mods
+        .into_iter()
+        .find(|candidate| candidate.unique_id == mod_unique_id)
+        .ok_or_else(|| {
+            format!(
+                "The selected mod component \"{mod_unique_id}\" is not available in a fresh scan of the configured Mods folder. Scan again and retry."
+            )
+        })?;
+
+    let translation_root = translations::language_root(config, &target_lang)?;
+    let state = translations::load(&translation_root, mod_unique_id)?;
     let mut rows_by_dir = std::collections::HashMap::new();
-    for file in files {
+    for file in scanned.i18n_files {
         rows_by_dir.insert(
             file.relative_dir.clone(),
             scanner::load_strings_checked(
@@ -356,9 +881,54 @@ fn import_llm_batch_from_path(
         );
     }
 
-    let prepared = batch::apply_batch(&parsed, mod_unique_id, &target_lang, &rows_by_dir)?;
+    Ok(LlmBatchContext {
+        parsed,
+        target_lang,
+        config: translation_root,
+        rows_by_dir,
+    })
+}
+
+/// Analyze one selected LLM result without writing translation state. A file
+/// for another mod returns its binding metadata so the frontend can offer a
+/// deliberate switch and rerun this command with that component's id; the
+/// backend resolves its current files again.
+#[tauri::command]
+fn preflight_llm_batch_path(
+    app: AppHandle,
+    mod_unique_id: String,
+    files: Vec<export::ExportFileInput>,
+    path: String,
+) -> Result<batch::ImportPreflight, String> {
+    let context = load_llm_batch_context(&app, &mod_unique_id, &files, Path::new(&path))?;
+    batch::preflight_batch(
+        &context.parsed,
+        &mod_unique_id,
+        &context.target_lang,
+        &context.rows_by_dir,
+    )
+    .inspect_err(|error| {
+        log::error!(target: "app", "preflight_llm_batch_path({mod_unique_id}) failed: {error}")
+    })
+}
+
+fn import_llm_batch_from_path(
+    app: &AppHandle,
+    mod_unique_id: &str,
+    files: &[export::ExportFileInput],
+    source: &Path,
+) -> Result<batch::ImportSummary, String> {
+    // Import reruns the complete read-only analysis immediately before the
+    // first write, so a changed file or changed local/source state is refused.
+    let context = load_llm_batch_context(app, mod_unique_id, files, source)?;
+    let prepared = batch::apply_batch(
+        &context.parsed,
+        mod_unique_id,
+        &context.target_lang,
+        &context.rows_by_dir,
+    )?;
     if !prepared.entries.is_empty() {
-        translations::save_many(&config, mod_unique_id, prepared.entries)?;
+        translations::save_many(&context.config, mod_unique_id, prepared.entries)?;
     }
     Ok(prepared.summary)
 }
@@ -368,12 +938,18 @@ fn import_llm_batch_from_path(
 #[tauri::command]
 fn import_llm_batch_path(
     app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
     path: String,
 ) -> Result<batch::ImportSummary, String> {
-    import_llm_batch_from_path(&app, &mod_unique_id, &files, Path::new(&path))
-        .inspect_err(|error| log::error!("import_llm_batch_path({mod_unique_id}) failed: {error}"))
+    let source = Path::new(&path);
+    let summary =
+        import_llm_batch_from_path(&app, &mod_unique_id, &files, source).inspect_err(|error| {
+            log::error!(target: "app", "import_llm_batch_path({mod_unique_id}) failed: {error}")
+        })?;
+    remember_llm_batch_import(&history, &summary, source, &mod_unique_id);
+    Ok(summary)
 }
 
 /// The Mods folder to scan for community language packs: the user's configured
@@ -434,7 +1010,9 @@ fn build_glossary(
             )),
         }
     }
-    .inspect_err(|error| log::error!("build_glossary({target_lang}) failed: {error}"))?;
+    .inspect_err(
+        |error| log::error!(target: "app", "build_glossary({target_lang}) failed: {error}"),
+    )?;
     glossary::save(&config, &built)?;
     Ok(glossary::GlossaryInfo::of(&built))
 }
@@ -495,10 +1073,25 @@ fn glossary_status(
 /// the "Test connection" probe: success means the server is reachable.
 #[tauri::command]
 async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
-    llm::validate_base_url(&base_url)?;
-    llm::list_models(&base_url)
-        .await
-        .inspect_err(|error| log::error!("llm_models({base_url}) failed: {error}"))
+    if let Err(error) = llm::validate_base_url(&base_url) {
+        log::warn!(
+            target: "ai_run",
+            "{}",
+            local_ai_model_probe_diagnostic("configuration")
+        );
+        return Err(error);
+    }
+    match llm::list_models(&base_url).await {
+        Ok(models) => Ok(models),
+        Err(error) => {
+            log::warn!(
+                target: "ai_run",
+                "{}",
+                local_ai_model_probe_diagnostic(local_ai_error_category(&error))
+            );
+            Err(error)
+        }
+    }
 }
 
 /// Translate one source string via the configured local LLM.
@@ -537,7 +1130,1234 @@ async fn translate_string(
         temperature,
     )
     .await
-    .inspect_err(|error| log::error!("translate_string failed: {error}"))
+    .inspect_err(|error| log::error!(target: "app", "translate_string failed: {error}"))
+}
+
+fn prepare_ai_request(
+    app: &AppHandle,
+    request: &ai::AiTranslationRequest,
+) -> Result<
+    (
+        settings::AppSettings,
+        String,
+        PathBuf,
+        Vec<ai::PreparedAiItem>,
+    ),
+    String,
+> {
+    ai::validate_request_shape(request)?;
+    let config = config_dir(app)?;
+    let settings = settings::load_checked(&config)?;
+    let target_lang = settings
+        .target_lang
+        .as_deref()
+        .ok_or_else(|| "Choose a target language before using AI translation.".to_string())?;
+    let target_lang = language::normalize_target_code(target_lang)?;
+    let target_language = language::target_language_name(&target_lang)?.to_string();
+    let mods_path = settings
+        .mods_path
+        .as_deref()
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_deref()
+                .map(|path| detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or_else(|| "Choose a Mods folder before using AI translation.".to_string())?;
+    if !mods_path.is_dir() {
+        return Err("The configured Mods folder is unavailable.".to_string());
+    }
+
+    // Never trust source text, file paths, section labels, or scope membership
+    // from the webview. Resolve every requested identity from a fresh scan and
+    // load rows only through the paths returned by that scan.
+    let scan = scanner::scan_mods(&mods_path, &target_lang, &config);
+    let translation_root = translations::language_root(&config, &target_lang)?;
+    let requested_components = request
+        .identities
+        .iter()
+        .map(|identity| identity.mod_unique_id.clone())
+        .collect::<HashSet<_>>();
+    let rows = load_ai_scope_rows(scan, &translation_root, &requested_components)?;
+    let resolved = ai::resolve_scope(request, &rows)?;
+    let glossary = load_active_glossary(&config, &target_lang);
+    let prepared = ai::prepare_items_with_context(&resolved, &rows, |source| {
+        glossary
+            .as_ref()
+            .map(|glossary| glossary::match_terms(source, glossary))
+            .unwrap_or_default()
+    })?;
+    Ok((settings, target_language, translation_root, prepared))
+}
+
+fn load_ai_scope_rows(
+    scan: scanner::ScanResult,
+    translation_root: &Path,
+    requested_components: &HashSet<String>,
+) -> Result<Vec<ai::AiScopeRow>, String> {
+    let mut rows = Vec::new();
+    for scanned in scan
+        .mods
+        .into_iter()
+        .filter(|scanned| requested_components.contains(&scanned.unique_id))
+    {
+        let state_snapshot = translations::load_snapshot(translation_root, &scanned.unique_id)?;
+        let state = &state_snapshot.state;
+        for file in scanned.i18n_files {
+            let default_path = PathBuf::from(&file.default_path);
+            let target_path = PathBuf::from(&file.target_path);
+            let relative_dir = file.relative_dir;
+            let current =
+                scanner::load_strings_checked(&default_path, &target_path, state, &relative_dir)?;
+            rows.extend(current.into_iter().map(|row| {
+                let state_key = translations::entry_key(&relative_dir, &row.key);
+                ai::AiScopeRow {
+                    identity: ai::AiStringIdentity {
+                        mod_unique_id: scanned.unique_id.clone(),
+                        relative_dir: relative_dir.clone(),
+                        key: row.key,
+                    },
+                    source: row.source,
+                    section: row.section,
+                    status: row.status,
+                    default_path: default_path.clone(),
+                    target_path: target_path.clone(),
+                    expected_stored: state.get(&state_key).cloned(),
+                    expected_revision: state_snapshot.entry_revision(&state_key),
+                }
+            }));
+        }
+    }
+    Ok(rows)
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiRunTokenUsage {
+    input_tokens: u64,
+    cached_input_tokens: u64,
+    output_tokens: u64,
+    reasoning_output_tokens: u64,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AiRunProgress {
+    run_id: String,
+    phase: &'static str,
+    completed: usize,
+    total: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_index: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_total: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    batch_size: Option<usize>,
+    retries: usize,
+    splits: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codex_stage: Option<&'static str>,
+    codex_activity_sequence: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    usage: Option<AiRunTokenUsage>,
+}
+
+fn safe_ai_run_id_for_log(run_id: &str) -> &str {
+    if !run_id.is_empty()
+        && run_id.len() <= 128
+        && run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+    {
+        run_id
+    } else {
+        "redacted"
+    }
+}
+
+fn codex_activity_stage(activity: codex_cli::CodexActivity) -> &'static str {
+    match activity {
+        codex_cli::CodexActivity::Starting => "starting",
+        codex_cli::CodexActivity::Working => "working",
+        codex_cli::CodexActivity::Reasoning => "reasoning",
+        codex_cli::CodexActivity::WritingResponse => "writingResponse",
+        codex_cli::CodexActivity::Completed => "completed",
+        codex_cli::CodexActivity::Failed => "failed",
+    }
+}
+
+fn provider_failure_category(failure: &ai::ProviderFailure) -> &'static str {
+    match failure {
+        ai::ProviderFailure::Cancelled => "cancelled",
+        ai::ProviderFailure::Transient(_) => "transient",
+        ai::ProviderFailure::InvalidResponse(_) => "invalidResponse",
+        ai::ProviderFailure::Message(_) => "provider",
+    }
+}
+
+fn local_ai_error_category(error: &str) -> &'static str {
+    let normalized = error.to_ascii_lowercase();
+    if normalized.contains("timed out") || normalized.contains("timeout") {
+        "timeout"
+    } else if normalized.contains("too large") {
+        "responseTooLarge"
+    } else if normalized.contains("not valid utf-8")
+        || normalized.contains("could not read the server response")
+    {
+        "invalidResponse"
+    } else if normalized.starts_with("server returned ") {
+        "httpStatus"
+    } else if normalized.contains("could not reach ") {
+        "unreachable"
+    } else if normalized.contains("could not create http client") {
+        "clientSetup"
+    } else if normalized.contains("qwen3 thinking model supports only thinking mode") {
+        "configuration"
+    } else {
+        "provider"
+    }
+}
+
+fn local_ai_error_is_systemic(error_category: &str) -> bool {
+    matches!(
+        error_category,
+        "unreachable" | "httpStatus" | "clientSetup" | "configuration"
+    )
+}
+
+fn local_ai_model_probe_diagnostic(error_category: &'static str) -> serde_json::Value {
+    serde_json::json!({
+        "event": "model_probe_failed",
+        "engine": "local",
+        "errorCategory": error_category,
+    })
+}
+
+#[derive(Debug)]
+struct LocalAiItemFailure {
+    identity: ai::AiStringIdentity,
+    cause: String,
+}
+
+fn bounded_single_line(value: &str, max_chars: usize) -> String {
+    let mut bounded = String::new();
+    let mut char_count = 0;
+    let mut pending_space = false;
+    let mut truncated = false;
+    for character in value.chars() {
+        if character.is_whitespace() {
+            pending_space = char_count > 0;
+            continue;
+        }
+        if pending_space {
+            if char_count == max_chars {
+                truncated = true;
+                break;
+            }
+            bounded.push(' ');
+            char_count += 1;
+            pending_space = false;
+        }
+        if char_count == max_chars {
+            truncated = true;
+            break;
+        }
+        bounded.push(character);
+        char_count += 1;
+    }
+    if truncated {
+        bounded.push_str("...");
+    }
+    bounded
+}
+
+fn local_ai_failure_summary(failures: &[LocalAiItemFailure]) -> Option<String> {
+    const MAX_DETAILS: usize = 8;
+    if failures.is_empty() {
+        return None;
+    }
+    let detail_count = failures.len().min(MAX_DETAILS);
+    let details = failures
+        .iter()
+        .take(detail_count)
+        .map(|failure| {
+            let identity = format!(
+                "{} / {} / {}",
+                bounded_single_line(&failure.identity.mod_unique_id, 80),
+                bounded_single_line(&failure.identity.relative_dir, 80),
+                bounded_single_line(&failure.identity.key, 120)
+            );
+            format!("{}: {}", identity, bounded_single_line(&failure.cause, 320))
+        })
+        .collect::<Vec<_>>()
+        .join("; ");
+    let omitted = failures.len().saturating_sub(detail_count);
+    let omitted_note = if omitted == 0 {
+        String::new()
+    } else {
+        format!("; {omitted} additional failure(s) omitted from this summary")
+    };
+    let string_label = if failures.len() == 1 {
+        "string"
+    } else {
+        "strings"
+    };
+    Some(format!(
+        "{} selected {string_label} failed in Local AI. Any completed suggestions remain saved in Review. Failed strings: {details}{omitted_note}.",
+        failures.len(),
+    ))
+}
+
+fn combine_local_ai_errors(
+    terminal_error: Option<String>,
+    item_failures: &[LocalAiItemFailure],
+) -> Option<String> {
+    match (terminal_error, local_ai_failure_summary(item_failures)) {
+        (Some(terminal), Some(summary)) => Some(format!("{terminal} {summary}")),
+        (Some(terminal), None) => Some(terminal),
+        (None, summary) => summary,
+    }
+}
+
+fn emit_ai_progress(app: &AppHandle, progress: &AiRunProgress) {
+    if let Err(error) = app.emit("ai-run-progress", progress.clone()) {
+        // Progress is convenience state only. The final command result remains
+        // authoritative if an event cannot be delivered to the webview.
+        log::warn!(target: "app", "Could not emit AI run progress: {error}");
+    }
+}
+
+fn update_ai_progress(
+    app: &AppHandle,
+    state: &Arc<Mutex<AiRunProgress>>,
+    update: impl FnOnce(&mut AiRunProgress),
+) {
+    let snapshot = match state.lock() {
+        Ok(mut progress) => {
+            update(&mut progress);
+            progress.clone()
+        }
+        Err(_) => {
+            log::warn!(target: "app", "Could not update AI progress because its state is unavailable.");
+            return;
+        }
+    };
+    emit_ai_progress(app, &snapshot);
+}
+
+fn ai_run_result(
+    request: &ai::AiTranslationRequest,
+    requested: usize,
+    provider: (&str, String, String),
+    suggestions: Vec<ai::AiSuggestion>,
+    outcome: ai::AiRunOutcome,
+    error: Option<String>,
+) -> ai::AiRunResult {
+    let (engine, model, reasoning) = provider;
+    let completed = suggestions.len();
+    let outcome = if outcome == ai::AiRunOutcome::Error && completed > 0 {
+        ai::AiRunOutcome::Complete
+    } else {
+        outcome
+    };
+    ai::AiRunResult {
+        run_id: request.run_id.clone(),
+        engine: engine.to_string(),
+        model,
+        reasoning,
+        scope: request.scope,
+        requested,
+        completed,
+        outcome,
+        error,
+        suggestions,
+    }
+}
+
+fn stage_ai_suggestions(
+    translation_root: &Path,
+    items: &[ai::PreparedAiItem],
+    generated: Vec<ai::AiSuggestion>,
+    staged: &mut Vec<ai::AiSuggestion>,
+) -> Result<(), String> {
+    if generated.len() != items.len() {
+        return Err("The validated AI result no longer matches its source chunk.".to_string());
+    }
+    let mut groups = Vec::<(String, Vec<translations::ConditionalSaveEntry>)>::new();
+    let mut completed = Vec::with_capacity(generated.len());
+    for (item, mut suggestion) in items.iter().zip(generated) {
+        if suggestion.identity != item.identity {
+            return Err(
+                "The validated AI result no longer matches its string identity.".to_string(),
+            );
+        }
+
+        // Re-read the real source/target files and current portable state before
+        // preparing the transaction. The provider may have taken minutes; a
+        // newer user edit or source update must win instead of being overwritten.
+        let current_state = translations::load(translation_root, &item.identity.mod_unique_id)?;
+        let current_rows = scanner::load_strings_checked(
+            &item.default_path,
+            &item.target_path,
+            &current_state,
+            &item.identity.relative_dir,
+        )?;
+        let current = current_rows
+            .iter()
+            .find(|row| row.key == item.identity.key)
+            .filter(|row| {
+                row.source == item.source
+                    && (row.status == "untranslated" || row.status == "outdated")
+            })
+            .ok_or_else(|| {
+                "A string changed while AI translation was running. Any completed suggestions remain saved in Review."
+                    .to_string()
+            })?;
+        let key = translations::entry_key(&item.identity.relative_dir, &item.identity.key);
+        let entry = translations::StoredString {
+            target: suggestion.text.clone(),
+            status: "review-needed".to_string(),
+            source_hash: translations::source_hash(&current.source),
+        };
+        let group = groups.iter_mut().find(|(mod_unique_id, _)| {
+            mod_unique_id.eq_ignore_ascii_case(&item.identity.mod_unique_id)
+        });
+        let conditional = translations::ConditionalSaveEntry {
+            key,
+            expected: item.expected_stored.clone(),
+            expected_revision: item.expected_revision,
+            entry,
+        };
+        match group {
+            Some((_, entries)) => entries.push(conditional),
+            None => groups.push((item.identity.mod_unique_id.clone(), vec![conditional])),
+        }
+        suggestion.status = "review-needed".to_string();
+        completed.push(suggestion);
+    }
+
+    if translations::save_groups_if_unchanged(translation_root, groups)?
+        == translations::ConditionalSaveOutcome::Stale
+    {
+        return Err(
+            "A string changed while AI translation was running. Any earlier completed chunks remain saved in Review."
+                .to_string(),
+        );
+    }
+    staged.extend(completed);
+    Ok(())
+}
+
+fn ai_operation_outcome(result: &ai::AiRunResult) -> operation_history::OperationOutcome {
+    match result.outcome {
+        ai::AiRunOutcome::Complete if result.error.is_none() => {
+            operation_history::OperationOutcome::Success
+        }
+        ai::AiRunOutcome::Complete => operation_history::OperationOutcome::Warning,
+        ai::AiRunOutcome::Cancelled => operation_history::OperationOutcome::Cancelled,
+        ai::AiRunOutcome::Error => operation_history::OperationOutcome::Failed,
+    }
+}
+
+fn remember_ai_run(
+    history: &State<'_, operation_history::OperationHistoryState>,
+    result: &ai::AiRunResult,
+) {
+    let engine_label = match result.engine.as_str() {
+        "local" => "Local AI",
+        "codex" => "Codex CLI",
+        _ => "AI",
+    };
+    let scope = match result.scope {
+        ai::AiScope::OneString => "One string",
+        ai::AiScope::Selected => "Selected strings",
+    };
+    let summary = match result.outcome {
+        ai::AiRunOutcome::Complete if result.error.is_some() => format!(
+            "{} of {} suggestions saved in Review.",
+            result.completed, result.requested
+        ),
+        ai::AiRunOutcome::Complete => {
+            format!("{} suggestions staged for review.", result.completed)
+        }
+        ai::AiRunOutcome::Cancelled => format!(
+            "Cancelled after {} of {} suggestions.",
+            result.completed, result.requested
+        ),
+        ai::AiRunOutcome::Error => format!(
+            "{} of {} suggestions saved in Review.",
+            result.completed, result.requested
+        ),
+    };
+    remember_operation(
+        history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Ai,
+            outcome: ai_operation_outcome(result),
+            title: format!("{engine_label} translation run"),
+            summary,
+            item_count: result.completed,
+            path: None,
+            file_name: None,
+            warnings: result.error.iter().cloned().collect(),
+            details: vec![
+                operation_detail("Scope", scope),
+                operation_detail("Requested", result.requested),
+                operation_detail("Completed", result.completed),
+                operation_detail("Model", &result.model),
+                operation_detail("Reasoning", &result.reasoning),
+            ],
+        },
+    );
+}
+
+/// Real local-AI batch contract. The existing single-string command remains for
+/// backwards compatibility; the redesigned UI uses this bounded request/result
+/// shape for both live engines.
+#[tauri::command]
+async fn translate_with_local_ai(
+    app: AppHandle,
+    state: State<'_, ai::AiRuntimeState>,
+    history: State<'_, operation_history::OperationHistoryState>,
+    request: ai::AiTranslationRequest,
+) -> Result<ai::AiRunResult, String> {
+    ai::validate_request_shape(&request)?;
+    let lease = state.begin_run(&request.run_id)?;
+    let (settings, target_language, translation_root, prepared) =
+        prepare_ai_request(&app, &request)?;
+    let local = settings
+        .llm
+        .ok_or_else(|| "Configure and test Local AI in Settings first.".to_string())?;
+    llm::validate_base_url(&local.base_url)?;
+    if local.model.trim().is_empty() {
+        return Err("Choose a Local AI model in Settings first.".to_string());
+    }
+    let run_started_at = Instant::now();
+    let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_started",
+            "runId": log_run_id,
+            "engine": "local",
+            "total": prepared.len(),
+            "batches": prepared.len(),
+        })
+    );
+    let mut suggestions = Vec::with_capacity(prepared.len());
+    let mut outcome = ai::AiRunOutcome::Complete;
+    let mut terminal_error = None;
+    let mut item_failures = Vec::new();
+    let mut progress = AiRunProgress {
+        run_id: request.run_id.clone(),
+        phase: "preparing",
+        completed: 0,
+        total: prepared.len(),
+        batch_index: None,
+        batch_total: Some(prepared.len()),
+        batch_size: None,
+        retries: 0,
+        splits: 0,
+        recovery: None,
+        codex_stage: None,
+        codex_activity_sequence: 0,
+        usage: None,
+    };
+    emit_ai_progress(&app, &progress);
+    for (index, item) in prepared.iter().enumerate() {
+        if lease.cancelled.load(Ordering::Acquire) {
+            outcome = ai::AiRunOutcome::Cancelled;
+            break;
+        }
+        progress.phase = "translating";
+        progress.batch_index = Some(index + 1);
+        progress.batch_size = Some(1);
+        emit_ai_progress(&app, &progress);
+        log::info!(
+            target: "ai_run",
+            "{}",
+            serde_json::json!({
+                "event": "batch_started",
+                "runId": log_run_id,
+                "batchIndex": index + 1,
+                "batchTotal": prepared.len(),
+                "batchSize": 1,
+                "completed": suggestions.len(),
+            })
+        );
+        let before_context = item
+            .context
+            .before
+            .iter()
+            .map(|entry| entry.source.clone())
+            .collect::<Vec<_>>();
+        let after_context = item
+            .context
+            .after
+            .iter()
+            .map(|entry| entry.source.clone())
+            .collect::<Vec<_>>();
+        let translation = tokio::select! {
+            result = llm::translate_with_context(
+                &local.base_url,
+                &local.model,
+                &item.source,
+                &target_language,
+                item.section.as_deref(),
+                &item.glossary_pairs,
+                &before_context,
+                &after_context,
+                local.temperature,
+            ) => result.map_err(ai::ProviderFailure::Message),
+            () = ai::wait_for_cancel(lease.cancelled.clone()) => Err(ai::ProviderFailure::Cancelled),
+        };
+        match translation {
+            Ok(result) => match ai::suggestions(
+                std::slice::from_ref(item),
+                vec![ai::ProviderTranslation {
+                    id: item.id.clone(),
+                    text: result.text,
+                }],
+            ) {
+                Ok(completed) => {
+                    progress.phase = "saving";
+                    emit_ai_progress(&app, &progress);
+                    let staged_result = stage_ai_suggestions(
+                        &translation_root,
+                        std::slice::from_ref(item),
+                        completed,
+                        &mut suggestions,
+                    );
+                    progress.completed = suggestions.len();
+                    emit_ai_progress(&app, &progress);
+                    if let Err(cause) = staged_result {
+                        log::info!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "batch_finished",
+                                "runId": log_run_id,
+                                "batchIndex": index + 1,
+                                "outcome": "savingError",
+                            })
+                        );
+                        outcome = ai::AiRunOutcome::Error;
+                        terminal_error = Some(cause);
+                        break;
+                    }
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "batch_finished",
+                            "runId": log_run_id,
+                            "batchIndex": index + 1,
+                            "outcome": "complete",
+                            "completed": suggestions.len(),
+                        })
+                    );
+                }
+                Err(cause) => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "batch_finished",
+                            "runId": log_run_id,
+                            "batchIndex": index + 1,
+                            "outcome": "invalidResponse",
+                            "errorCategory": "invalidResponse",
+                        })
+                    );
+                    item_failures.push(LocalAiItemFailure {
+                        identity: item.identity.clone(),
+                        cause,
+                    });
+                }
+            },
+            Err(ai::ProviderFailure::Cancelled) => {
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchIndex": index + 1,
+                        "outcome": "cancelled",
+                    })
+                );
+                outcome = ai::AiRunOutcome::Cancelled;
+                break;
+            }
+            Err(
+                ai::ProviderFailure::Message(cause)
+                | ai::ProviderFailure::Transient(cause)
+                | ai::ProviderFailure::InvalidResponse(cause),
+            ) => {
+                let error_category = local_ai_error_category(&cause);
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchIndex": index + 1,
+                        "outcome": "providerError",
+                        "errorCategory": error_category,
+                    })
+                );
+                item_failures.push(LocalAiItemFailure {
+                    identity: item.identity.clone(),
+                    cause,
+                });
+                if local_ai_error_is_systemic(error_category) {
+                    outcome = ai::AiRunOutcome::Error;
+                    break;
+                }
+            }
+        }
+    }
+    if outcome == ai::AiRunOutcome::Complete && !item_failures.is_empty() {
+        outcome = ai::AiRunOutcome::Error;
+    }
+    outcome = lease.finish(outcome)?;
+    let error = combine_local_ai_errors(terminal_error, &item_failures);
+    let result = ai_run_result(
+        &request,
+        prepared.len(),
+        ("local", local.model, "default".to_string()),
+        suggestions,
+        outcome,
+        error,
+    );
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_finished",
+            "runId": log_run_id,
+            "engine": "local",
+            "completed": result.completed,
+            "total": result.requested,
+            "failed": item_failures.len(),
+            "outcome": result.outcome,
+            "durationMs": u64::try_from(run_started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+        })
+    );
+    remember_ai_run(&history, &result);
+    Ok(result)
+}
+
+#[tauri::command]
+async fn codex_cli_status() -> codex_cli::CodexCliStatus {
+    codex_cli::status().await
+}
+
+#[tauri::command]
+async fn codex_cli_models() -> Result<Vec<codex_cli::CodexCliModel>, String> {
+    codex_cli::models().await
+}
+
+#[tauri::command]
+async fn codex_cli_rate_limits() -> Result<Option<codex_cli::CodexCliRateLimits>, String> {
+    codex_cli::rate_limits().await
+}
+
+#[tauri::command]
+async fn translate_with_codex_cli(
+    app: AppHandle,
+    state: State<'_, ai::AiRuntimeState>,
+    history: State<'_, operation_history::OperationHistoryState>,
+    request: ai::AiTranslationRequest,
+) -> Result<ai::AiRunResult, String> {
+    ai::validate_request_shape(&request)?;
+    let lease = state.begin_run(&request.run_id)?;
+    let (settings, target_language, translation_root, prepared) =
+        prepare_ai_request(&app, &request)?;
+    let codex_model = settings.ai.codex_model.clone();
+    let reasoning = ai::normalize_reasoning(&settings.ai.codex_reasoning)?;
+    let codex_quality_review = settings.ai.codex_quality_review;
+    let mut suggestions = Vec::with_capacity(prepared.len());
+    let mut outcome = ai::AiRunOutcome::Complete;
+    let mut error = None;
+    let chunks = ai::chunks(&prepared)?;
+    let mut pending = VecDeque::from(chunks);
+    let mut handled_batches = 0usize;
+    let mut batch_attempt = 0usize;
+    let mut batch_total = pending.len();
+    let mut isolated_failures = 0usize;
+    let mut last_isolated_failure = None;
+    let run_started_at = Instant::now();
+    let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_started",
+            "runId": log_run_id,
+            "engine": "codex",
+            "model": if codex_model.is_some() { "configured" } else { "default" },
+            "reasoning": reasoning,
+            "total": prepared.len(),
+            "batches": batch_total,
+        })
+    );
+    let progress_state = Arc::new(Mutex::new(AiRunProgress {
+        run_id: request.run_id.clone(),
+        phase: "preparing",
+        completed: 0,
+        total: prepared.len(),
+        batch_index: None,
+        batch_total: Some(batch_total),
+        batch_size: None,
+        retries: 0,
+        splits: 0,
+        recovery: None,
+        codex_stage: None,
+        codex_activity_sequence: 0,
+        usage: None,
+    }));
+    update_ai_progress(&app, &progress_state, |_| {});
+    let codex_progress: codex_cli::CodexProgressCallback = {
+        let app = app.clone();
+        let state = Arc::clone(&progress_state);
+        let log_run_id = log_run_id.clone();
+        Arc::new(move |event| {
+            let log_event = event;
+            update_ai_progress(&app, &state, |progress| match event {
+                codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
+                    progress.phase = match phase {
+                        codex_cli::CodexProgressPhase::Translating => "translating",
+                        codex_cli::CodexProgressPhase::Reviewing => "reviewing",
+                        codex_cli::CodexProgressPhase::TerminologyRepair => "terminologyRepair",
+                        codex_cli::CodexProgressPhase::TokenRepair => "tokenRepair",
+                    };
+                    progress.batch_size = Some(item_count);
+                    progress.recovery = None;
+                    progress.codex_stage = None;
+                }
+                codex_cli::CodexProgressEvent::TransientRetry => {
+                    progress.retries = progress.retries.saturating_add(1);
+                    progress.recovery = Some("transientRetry");
+                }
+                codex_cli::CodexProgressEvent::StructureRetry => {
+                    progress.retries = progress.retries.saturating_add(1);
+                    progress.recovery = Some("structureRetry");
+                }
+                codex_cli::CodexProgressEvent::Split => {
+                    progress.splits = progress.splits.saturating_add(1);
+                    progress.recovery = Some("split");
+                }
+                codex_cli::CodexProgressEvent::Activity(activity) => {
+                    progress.codex_stage = Some(codex_activity_stage(activity));
+                    progress.codex_activity_sequence =
+                        progress.codex_activity_sequence.saturating_add(1);
+                }
+                codex_cli::CodexProgressEvent::Usage(usage) => {
+                    let total = progress.usage.get_or_insert_with(AiRunTokenUsage::default);
+                    total.input_tokens = total.input_tokens.saturating_add(usage.input_tokens);
+                    total.cached_input_tokens = total
+                        .cached_input_tokens
+                        .saturating_add(usage.cached_input_tokens);
+                    total.output_tokens = total.output_tokens.saturating_add(usage.output_tokens);
+                    total.reasoning_output_tokens = total
+                        .reasoning_output_tokens
+                        .saturating_add(usage.reasoning_output_tokens);
+                }
+            });
+            match log_event {
+                codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
+                    let phase = match phase {
+                        codex_cli::CodexProgressPhase::Translating => "translating",
+                        codex_cli::CodexProgressPhase::Reviewing => "reviewing",
+                        codex_cli::CodexProgressPhase::TerminologyRepair => "terminologyRepair",
+                        codex_cli::CodexProgressPhase::TokenRepair => "tokenRepair",
+                    };
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "phase",
+                            "runId": log_run_id,
+                            "phase": phase,
+                            "itemCount": item_count,
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::TransientRetry => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "recovery",
+                            "runId": log_run_id,
+                            "kind": "transientRetry",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::StructureRetry => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "recovery",
+                            "runId": log_run_id,
+                            "kind": "structureRetry",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Split => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "recovery",
+                            "runId": log_run_id,
+                            "kind": "split",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Activity(activity)
+                    if matches!(
+                        activity,
+                        codex_cli::CodexActivity::Starting
+                            | codex_cli::CodexActivity::Completed
+                            | codex_cli::CodexActivity::Failed
+                    ) =>
+                {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "cli_activity",
+                            "runId": log_run_id,
+                            "stage": codex_activity_stage(activity),
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Usage(usage) => {
+                    log::info!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "usage",
+                            "runId": log_run_id,
+                            "inputTokens": usage.input_tokens,
+                            "cachedInputTokens": usage.cached_input_tokens,
+                            "outputTokens": usage.output_tokens,
+                            "reasoningOutputTokens": usage.reasoning_output_tokens,
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::Activity(_) => {}
+            }
+        })
+    };
+    while let Some(chunk) = pending.pop_front() {
+        if lease.cancelled.load(Ordering::Acquire) {
+            outcome = ai::AiRunOutcome::Cancelled;
+            break;
+        }
+        batch_attempt = batch_attempt.saturating_add(1);
+        log::info!(
+            target: "ai_run",
+            "{}",
+            serde_json::json!({
+                "event": "batch_started",
+                "runId": log_run_id,
+                "batchAttempt": batch_attempt,
+                "batchIndex": handled_batches + 1,
+                "batchTotal": batch_total,
+                "batchSize": chunk.len(),
+                "completed": suggestions.len(),
+            })
+        );
+        update_ai_progress(&app, &progress_state, |progress| {
+            progress.phase = "preparing";
+            progress.batch_index = Some(handled_batches + 1);
+            progress.batch_total = Some(batch_total);
+            progress.batch_size = Some(chunk.len());
+            progress.recovery = None;
+            progress.codex_stage = None;
+        });
+        match codex_cli::translate_chunk(
+            codex_model.as_deref(),
+            &reasoning,
+            &target_language,
+            codex_quality_review,
+            chunk,
+            lease.cancelled.clone(),
+            Arc::clone(&codex_progress),
+        )
+        .await
+        {
+            Ok(translations) => {
+                let mut cancel_after_staging = false;
+                let translations = match codex_cli::repair_token_mismatches_once(
+                    codex_model.as_deref(),
+                    &reasoning,
+                    &target_language,
+                    codex_quality_review,
+                    chunk,
+                    &translations,
+                    lease.cancelled.clone(),
+                    Arc::clone(&codex_progress),
+                )
+                .await
+                {
+                    Ok(repair) => {
+                        cancel_after_staging = repair.cancelled;
+                        repair.translations
+                    }
+                    Err(ai::ProviderFailure::Cancelled) => {
+                        // The main translation is already structurally valid.
+                        // Persist it with its blocking token issue before
+                        // honoring cancellation of the optional repair pass.
+                        cancel_after_staging = true;
+                        translations
+                    }
+                    Err(failure) => {
+                        // Token repair is optional and gets exactly one attempt.
+                        // Keep the structurally valid original so its blocking
+                        // token validation reaches Review for a human decision.
+                        log::warn!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "token_repair_not_applied",
+                                "runId": log_run_id,
+                                "errorCategory": provider_failure_category(&failure),
+                            })
+                        );
+                        translations
+                    }
+                };
+                match ai::suggestions(chunk, translations) {
+                    Ok(completed) => {
+                        update_ai_progress(&app, &progress_state, |progress| {
+                            progress.phase = "saving";
+                            progress.batch_size = Some(chunk.len());
+                            progress.recovery = None;
+                            progress.codex_stage = None;
+                        });
+                        let staged_result = stage_ai_suggestions(
+                            &translation_root,
+                            chunk,
+                            completed,
+                            &mut suggestions,
+                        );
+                        handled_batches = handled_batches.saturating_add(1);
+                        update_ai_progress(&app, &progress_state, |progress| {
+                            progress.completed = suggestions.len();
+                        });
+                        if let Err(cause) = staged_result {
+                            log::info!(
+                                target: "ai_run",
+                                "{}",
+                                serde_json::json!({
+                                    "event": "batch_finished",
+                                    "runId": log_run_id,
+                                    "batchAttempt": batch_attempt,
+                                    "outcome": "savingError",
+                                    "completed": suggestions.len(),
+                                })
+                            );
+                            outcome = ai::AiRunOutcome::Error;
+                            error = Some(cause);
+                            break;
+                        }
+                        if cancel_after_staging {
+                            log::info!(
+                                target: "ai_run",
+                                "{}",
+                                serde_json::json!({
+                                    "event": "batch_finished",
+                                    "runId": log_run_id,
+                                    "batchAttempt": batch_attempt,
+                                    "outcome": "cancelled",
+                                    "completed": suggestions.len(),
+                                })
+                            );
+                            outcome = ai::AiRunOutcome::Cancelled;
+                            break;
+                        }
+                        log::info!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "batch_finished",
+                                "runId": log_run_id,
+                                "batchAttempt": batch_attempt,
+                                "outcome": "complete",
+                                "completed": suggestions.len(),
+                            })
+                        );
+                    }
+                    Err(cause) => {
+                        log::info!(
+                            target: "ai_run",
+                            "{}",
+                            serde_json::json!({
+                                "event": "batch_finished",
+                                "runId": log_run_id,
+                                "batchAttempt": batch_attempt,
+                                "outcome": "invalidResponse",
+                            })
+                        );
+                        outcome = ai::AiRunOutcome::Error;
+                        error = Some(cause);
+                        break;
+                    }
+                }
+            }
+            Err(ai::ProviderFailure::Cancelled) => {
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "cancelled",
+                        "completed": suggestions.len(),
+                    })
+                );
+                outcome = ai::AiRunOutcome::Cancelled;
+                break;
+            }
+            Err(ai::ProviderFailure::InvalidResponse(_cause)) if chunk.len() > 1 => {
+                let middle = ai::recovery_split_index(chunk)
+                    .expect("a multi-item recovery chunk always has a split point");
+                let (left, right) = chunk.split_at(middle);
+                // Process the left half first while keeping the whole operation
+                // iterative and bounded.
+                pending.push_front(right);
+                pending.push_front(left);
+                batch_total = batch_total.saturating_add(1);
+                update_ai_progress(&app, &progress_state, |progress| {
+                    progress.phase = "preparing";
+                    progress.batch_total = Some(batch_total);
+                    progress.batch_size = Some(left.len());
+                    progress.splits = progress.splits.saturating_add(1);
+                    progress.recovery = Some("split");
+                });
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "split",
+                        "nextBatchSize": left.len(),
+                        "batchTotal": batch_total,
+                    })
+                );
+            }
+            Err(ai::ProviderFailure::InvalidResponse(cause)) => {
+                isolated_failures += 1;
+                last_isolated_failure = Some(cause);
+                handled_batches = handled_batches.saturating_add(1);
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "isolatedInvalidResponse",
+                        "isolatedFailures": isolated_failures,
+                    })
+                );
+            }
+            Err(failure) => {
+                let error_category = provider_failure_category(&failure);
+                let cause = match failure {
+                    ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause) => {
+                        cause
+                    }
+                    ai::ProviderFailure::Cancelled | ai::ProviderFailure::InvalidResponse(_) => {
+                        unreachable!("cancelled and invalid-response failures are handled above")
+                    }
+                };
+                log::info!(
+                    target: "ai_run",
+                    "{}",
+                    serde_json::json!({
+                        "event": "batch_finished",
+                        "runId": log_run_id,
+                        "batchAttempt": batch_attempt,
+                        "outcome": "error",
+                        "errorCategory": error_category,
+                    })
+                );
+                outcome = ai::AiRunOutcome::Error;
+                error = Some(cause);
+                break;
+            }
+        }
+    }
+    if outcome == ai::AiRunOutcome::Complete && isolated_failures > 0 {
+        outcome = ai::AiRunOutcome::Error;
+        let cause = last_isolated_failure
+            .as_deref()
+            .unwrap_or("The AI provider returned invalid structured translation data.");
+        error = Some(format!(
+            "{isolated_failures} selected string(s) could not be translated after bounded response recovery. {cause}"
+        ));
+    }
+    outcome = lease.finish(outcome)?;
+    let progress_snapshot = progress_state.lock().ok().map(|progress| progress.clone());
+    let result = ai_run_result(
+        &request,
+        prepared.len(),
+        (
+            "codex",
+            codex_model.unwrap_or_else(|| "Codex default".to_string()),
+            reasoning,
+        ),
+        suggestions,
+        outcome,
+        error,
+    );
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "run_finished",
+            "runId": log_run_id,
+            "engine": "codex",
+            "completed": result.completed,
+            "total": result.requested,
+            "outcome": result.outcome,
+            "durationMs": u64::try_from(run_started_at.elapsed().as_millis()).unwrap_or(u64::MAX),
+            "retries": progress_snapshot.as_ref().map_or(0, |progress| progress.retries),
+            "splits": progress_snapshot.as_ref().map_or(0, |progress| progress.splits),
+            "usage": progress_snapshot.as_ref().and_then(|progress| progress.usage.as_ref()),
+            "errorCategory": result.error.as_ref().map(|_| "providerOrValidation"),
+        })
+    );
+    remember_ai_run(&history, &result);
+    Ok(result)
+}
+
+#[tauri::command]
+fn cancel_ai_run(state: State<'_, ai::AiRuntimeState>, run_id: String) -> Result<bool, String> {
+    let accepted = state.cancel_run(&run_id)?;
+    log::info!(
+        target: "ai_run",
+        "{}",
+        serde_json::json!({
+            "event": "cancel_requested",
+            "runId": safe_ai_run_id_for_log(&run_id),
+            "accepted": accepted,
+        })
+    );
+    Ok(accepted)
 }
 
 /// Open an external http(s) URL in the user's default browser (Nexus links).
@@ -559,7 +2379,7 @@ fn open_url(app: AppHandle, url: String) -> Result<(), String> {
 /// Fire-and-forget — logging must never itself surface an error to the user.
 #[tauri::command]
 fn log_frontend_error(context: String, message: String) {
-    log::error!("[frontend] {context}: {message}");
+    log::error!(target: "app", "[frontend] {context}: {message}");
 }
 
 /// Open the portable `data/logs/` folder in the OS file manager so a
@@ -726,14 +2546,17 @@ fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(ai::AiRuntimeState::default())
+        .manage(operation_history::OperationHistoryState::default())
         .plugin(log_plugin())
         .setup(|app| {
             let data_dir = ensure_portable_data_dir().map_err(|error| {
-                log::error!("Portable data folder unusable: {error}");
+                log::error!(target: "app", "Portable data folder unusable: {error}");
                 std::io::Error::other(error)
             })?;
             apply_diagnostic_logging(settings::load(&data_dir).diagnostic_logging);
             log::info!(
+                target: "app",
                 "Stardew i18n Translator {} started",
                 app.package_info().version
             );
@@ -750,18 +2573,33 @@ pub fn run() {
             load_strings,
             save_string,
             save_strings,
+            save_string_groups_with_undo,
+            list_operation_history,
+            undo_batch_edit,
             export_mod,
+            export_all_mods,
+            preview_export,
             preview_translation_zip,
             pick_translation_zip_destination,
             build_translation_zip,
             export_llm_batch,
+            pick_llm_batch_destination,
+            export_llm_batch_to_path,
             import_llm_batch,
+            pick_llm_batch_file,
+            preflight_llm_batch_path,
             import_llm_batch_path,
             build_glossary,
             glossary_status,
             load_glossary,
             llm_models,
             translate_string,
+            translate_with_local_ai,
+            codex_cli_status,
+            codex_cli_models,
+            codex_cli_rate_limits,
+            translate_with_codex_cli,
+            cancel_ai_run,
             open_url,
             log_frontend_error,
             open_logs_dir,
@@ -923,6 +2761,115 @@ mod portable_tests {
 }
 
 #[cfg(test)]
+mod llm_batch_context_tests {
+    use super::*;
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    fn install_mod(mods: &Path, folder: &str, unique_id: &str, source: &str) -> PathBuf {
+        let root = mods.join(folder);
+        write(
+            &root.join("manifest.json"),
+            &format!(r#"{{ "Name": "{folder}", "UniqueID": "{unique_id}", "Version": "1.0.0" }}"#),
+        );
+        write(
+            &root.join("i18n").join("default.json"),
+            &format!(r#"{{ "hello": "{source}" }}"#),
+        );
+        root
+    }
+
+    #[test]
+    fn llm_batch_context_ignores_webview_paths_and_refreshes_the_selected_component() {
+        let root = test_support::temp_dir("llm-batch-context");
+        let config = root.join("data");
+        let mods = root.join("Mods");
+        let selected = install_mod(&mods, "Selected", "Author.Selected", "Hello {{name}}");
+        let other = install_mod(&mods, "Other", "Author.Other", "Wrong {{name}}");
+        settings::save(
+            &config,
+            &settings::AppSettings {
+                mods_path: Some(mods.to_string_lossy().to_string()),
+                target_lang: Some("de".to_string()),
+                ..settings::AppSettings::default()
+            },
+        )
+        .unwrap();
+
+        let items = [batch::BatchExportItem {
+            relative_dir: "i18n".to_string(),
+            key: "hello".to_string(),
+            source: "Hello {{name}}".to_string(),
+        }];
+        let mut translated = batch::build_batch("Author.Selected", "de", &items);
+        translated["files"]["i18n"]["hello"] =
+            serde_json::Value::String("Hallo {{name}}".to_string());
+        let batch_path = root.join("translated.json");
+        write(
+            &batch_path,
+            &serde_json::to_string_pretty(&translated).unwrap(),
+        );
+
+        // These paths belong to another component. They intentionally mirror a
+        // stale or substituted WebView selection and must never affect binding.
+        let untrusted_files = [export::ExportFileInput {
+            relative_dir: "i18n".to_string(),
+            default_path: other
+                .join("i18n")
+                .join("default.json")
+                .display()
+                .to_string(),
+            target_path: other.join("i18n").join("de.json").display().to_string(),
+        }];
+
+        let context = load_llm_batch_context_from_config(
+            &config,
+            "Author.Selected",
+            &untrusted_files,
+            &batch_path,
+        )
+        .unwrap();
+        assert_eq!(context.rows_by_dir["i18n"][0].source, "Hello {{name}}");
+        assert!(
+            batch::preflight_batch(
+                &context.parsed,
+                "Author.Selected",
+                &context.target_lang,
+                &context.rows_by_dir,
+            )
+            .unwrap()
+            .ready
+        );
+
+        write(
+            &selected.join("i18n").join("default.json"),
+            r#"{ "hello": "Changed {{name}}" }"#,
+        );
+        let refreshed = load_llm_batch_context_from_config(
+            &config,
+            "Author.Selected",
+            &untrusted_files,
+            &batch_path,
+        )
+        .unwrap();
+        let report = batch::preflight_batch(
+            &refreshed.parsed,
+            "Author.Selected",
+            &refreshed.target_lang,
+            &refreshed.rows_by_dir,
+        )
+        .unwrap();
+        assert_eq!(report.snapshot_result, batch::SnapshotResult::Mismatch);
+        assert!(!report.ready);
+
+        std::fs::remove_dir_all(root).ok();
+    }
+}
+
+#[cfg(test)]
 mod json_output_limit_tests {
     use super::*;
 
@@ -932,5 +2879,389 @@ mod json_output_limit_tests {
         let error = ensure_llm_batch_json_size(input_limits::MAX_JSON_BYTES + 1).unwrap_err();
         assert!(error.contains("LLM batch JSON"));
         assert!(error.contains("64 MiB"));
+    }
+
+    #[test]
+    fn llm_batch_writer_uses_the_existing_format_at_the_selected_path() {
+        let root = test_support::temp_dir("llm-batch-write");
+        std::fs::create_dir_all(&root).unwrap();
+        let destination = root.join("selected.json");
+        let items = vec![batch::BatchExportItem {
+            relative_dir: "i18n".to_string(),
+            key: "hello".to_string(),
+            source: "Hello {{name}}".to_string(),
+        }];
+
+        let outcome = write_llm_batch(&destination, "Author.Mod", "de", &items).unwrap();
+
+        assert_eq!(outcome.path, destination.display().to_string());
+        assert_eq!(outcome.string_count, 1);
+        let body = std::fs::read_to_string(&destination).unwrap();
+        assert!(body.ends_with('\n'));
+        let written: serde_json::Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(written, batch::build_batch("Author.Mod", "de", &items));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+}
+
+#[cfg(test)]
+mod ai_run_contract_tests {
+    use super::*;
+
+    fn install_ai_fixture(mods: &Path, folder: &str, unique_id: &str, source: &str) {
+        let component = mods.join(folder);
+        let i18n = component.join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        std::fs::write(
+            component.join("manifest.json"),
+            format!(r#"{{"Name":"{folder}","UniqueID":"{unique_id}"}}"#),
+        )
+        .unwrap();
+        std::fs::write(i18n.join("default.json"), source).unwrap();
+    }
+
+    #[test]
+    fn diagnostic_run_ids_allow_only_short_correlation_tokens() {
+        assert_eq!(safe_ai_run_id_for_log("ai-123_test"), "ai-123_test");
+        assert_eq!(safe_ai_run_id_for_log("source text"), "redacted");
+        assert_eq!(safe_ai_run_id_for_log("line\nbreak"), "redacted");
+    }
+
+    #[test]
+    fn local_ai_probe_diagnostics_are_categorized_without_provider_details() {
+        let raw_error = "Could not reach http://localhost:11434/v1/models (private detail)";
+        let diagnostic =
+            local_ai_model_probe_diagnostic(local_ai_error_category(raw_error)).to_string();
+
+        assert!(diagnostic.contains(r#""event":"model_probe_failed""#));
+        assert!(diagnostic.contains(r#""errorCategory":"unreachable""#));
+        assert!(!diagnostic.contains("localhost"));
+        assert!(!diagnostic.contains("private detail"));
+        assert_eq!(
+            local_ai_error_category("The model timed out while waiting."),
+            "timeout"
+        );
+        assert_eq!(
+            local_ai_error_category("Server returned 503 for a local endpoint."),
+            "httpStatus"
+        );
+        assert_eq!(
+            local_ai_error_category("The server response is too large."),
+            "responseTooLarge"
+        );
+    }
+
+    #[test]
+    fn ai_scope_rows_ignore_corrupt_state_from_unrequested_components() {
+        let root = test_support::temp_dir("ai-scope-requested-components");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        install_ai_fixture(&mods, "Good", "good.id", r#"{"one":"One","two":"Two"}"#);
+        install_ai_fixture(&mods, "Bad", "bad.id", r#"{"bad":"Bad"}"#);
+        let translation_root = translations::language_root(&config, "de").unwrap();
+        let state_dir = translation_root.join("translations");
+        std::fs::create_dir_all(&state_dir).unwrap();
+        std::fs::write(state_dir.join("bad.id.json"), "not json").unwrap();
+
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        assert_eq!(scan.mods.len(), 2);
+        let rows = load_ai_scope_rows(
+            scan,
+            &translation_root,
+            &HashSet::from(["good.id".to_string()]),
+        )
+        .unwrap();
+
+        assert_eq!(rows.len(), 2);
+        assert!(rows
+            .iter()
+            .all(|row| row.identity.mod_unique_id == "good.id"));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn local_ai_stops_only_for_clearly_systemic_request_failures() {
+        for category in ["unreachable", "httpStatus", "clientSetup", "configuration"] {
+            assert!(local_ai_error_is_systemic(category), "{category}");
+        }
+        for category in ["invalidResponse", "responseTooLarge", "timeout", "provider"] {
+            assert!(!local_ai_error_is_systemic(category), "{category}");
+        }
+    }
+
+    #[test]
+    fn local_ai_failure_summary_collects_ids_and_errors_without_unbounded_output() {
+        let failures = vec![
+            LocalAiItemFailure {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "Example.Mod".to_string(),
+                    relative_dir: "i18n".to_string(),
+                    key: "dialogue.first".to_string(),
+                },
+                cause: "Permanent provider\nerror".to_string(),
+            },
+            LocalAiItemFailure {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "Example.Mod".to_string(),
+                    relative_dir: "assets/i18n".to_string(),
+                    key: "dialogue.second".to_string(),
+                },
+                cause: "Invalid response".to_string(),
+            },
+        ];
+
+        let summary = local_ai_failure_summary(&failures).unwrap();
+        assert!(summary.contains("2 selected strings failed"));
+        assert!(summary.contains("Any completed suggestions remain saved in Review"));
+        assert!(!summary.contains("Completed suggestions remain saved in Review"));
+        assert!(summary.contains("Example.Mod / i18n / dialogue.first"));
+        assert!(summary.contains("Permanent provider error"));
+        assert!(summary.contains("Example.Mod / assets/i18n / dialogue.second"));
+        assert!(summary.contains("Invalid response"));
+
+        let many_failures = (0..10)
+            .map(|index| LocalAiItemFailure {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "Example.Mod".to_string(),
+                    relative_dir: "i18n".to_string(),
+                    key: format!("key.{index}"),
+                },
+                cause: "failed".repeat(100),
+            })
+            .collect::<Vec<_>>();
+        let bounded = local_ai_failure_summary(&many_failures).unwrap();
+        assert!(bounded.contains("10 selected strings failed"));
+        assert!(bounded.contains("2 additional failure(s) omitted"));
+        assert!(bounded.len() < 4_000);
+    }
+
+    #[test]
+    fn progress_contract_exposes_saved_count_phase_batch_recovery_and_usage() {
+        let progress = AiRunProgress {
+            run_id: "run-progress".to_string(),
+            phase: "reviewing",
+            completed: 320,
+            total: 1_000,
+            batch_index: Some(4),
+            batch_total: Some(11),
+            batch_size: Some(87),
+            retries: 1,
+            splits: 2,
+            recovery: Some("structureRetry"),
+            codex_stage: Some("reasoning"),
+            codex_activity_sequence: 7,
+            usage: Some(AiRunTokenUsage {
+                input_tokens: 45_200,
+                cached_input_tokens: 32_900,
+                output_tokens: 2_100,
+                reasoning_output_tokens: 900,
+            }),
+        };
+
+        let value = serde_json::to_value(progress).unwrap();
+        assert_eq!(value["completed"], 320);
+        assert_eq!(value["phase"], "reviewing");
+        assert_eq!(value["batchIndex"], 4);
+        assert_eq!(value["recovery"], "structureRetry");
+        assert_eq!(value["codexStage"], "reasoning");
+        assert_eq!(value["codexActivitySequence"], 7);
+        assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
+    }
+
+    #[test]
+    fn partial_failed_run_is_completed_with_issues_and_keeps_saved_suggestions() {
+        let request = ai::AiTranslationRequest {
+            run_id: "run-partial".to_string(),
+            scope: ai::AiScope::Selected,
+            identities: vec![ai::AiStringIdentity {
+                mod_unique_id: "example.component".to_string(),
+                relative_dir: "i18n".to_string(),
+                key: "greeting".to_string(),
+            }],
+            include_open: true,
+            include_changed: true,
+        };
+        let identity = ai::AiStringIdentity {
+            mod_unique_id: "example.component".to_string(),
+            relative_dir: "i18n".to_string(),
+            key: "greeting".to_string(),
+        };
+        let suggestion = ai::AiSuggestion {
+            identity: identity.clone(),
+            text: "Hallo".to_string(),
+            status: "review-needed".to_string(),
+            token_differences: Vec::new(),
+            glossary_misses: Vec::new(),
+        };
+
+        let result = ai_run_result(
+            &request,
+            3,
+            ("codex", "Codex default".to_string(), "medium".to_string()),
+            vec![suggestion],
+            ai::AiRunOutcome::Error,
+            Some("provider stopped after one chunk".to_string()),
+        );
+
+        assert_eq!(result.requested, 3);
+        assert_eq!(result.completed, 1);
+        assert_eq!(result.outcome, ai::AiRunOutcome::Complete);
+        assert_eq!(result.suggestions[0].identity, identity);
+        assert_eq!(result.suggestions[0].status, "review-needed");
+        assert!(result.error.is_some());
+        assert_eq!(
+            ai_operation_outcome(&result),
+            operation_history::OperationOutcome::Warning
+        );
+
+        let failed = ai_run_result(
+            &request,
+            3,
+            ("codex", "Codex default".to_string(), "medium".to_string()),
+            Vec::new(),
+            ai::AiRunOutcome::Error,
+            Some("provider stopped before saving".to_string()),
+        );
+        assert_eq!(failed.completed, 0);
+        assert_eq!(failed.outcome, ai::AiRunOutcome::Error);
+        assert_eq!(
+            ai_operation_outcome(&failed),
+            operation_history::OperationOutcome::Failed
+        );
+    }
+
+    #[test]
+    fn completed_ai_suggestion_is_saved_as_review_and_never_overwrites_a_newer_edit() {
+        let root = test_support::temp_dir("ai-stage-review");
+        let i18n = root.join("fixture").join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        std::fs::write(&default_path, r#"{"greeting":"Hello"}"#).unwrap();
+        let translation_root = root.join("state");
+        let identity = ai::AiStringIdentity {
+            mod_unique_id: "example.mod".to_string(),
+            relative_dir: "i18n".to_string(),
+            key: "greeting".to_string(),
+        };
+        let item = ai::PreparedAiItem {
+            id: "item-0000".to_string(),
+            identity: identity.clone(),
+            source: "Hello".to_string(),
+            section: None,
+            glossary_pairs: Vec::new(),
+            context: ai::AiPromptContext::isolated(0),
+            default_path,
+            target_path,
+            expected_stored: None,
+            expected_revision: 0,
+        };
+        let generated = ai::AiSuggestion {
+            identity: identity.clone(),
+            text: "Hallo".to_string(),
+            // The staging boundary fixes this even if an internal caller ever
+            // hands it an incorrect status.
+            status: "translated".to_string(),
+            token_differences: Vec::new(),
+            glossary_misses: Vec::new(),
+        };
+        let mut staged = Vec::new();
+        stage_ai_suggestions(
+            &translation_root,
+            std::slice::from_ref(&item),
+            vec![generated.clone()],
+            &mut staged,
+        )
+        .unwrap();
+        let key = translations::entry_key("i18n", "greeting");
+        let saved = translations::load(&translation_root, "example.mod").unwrap();
+        assert_eq!(saved[&key].target, "Hallo");
+        assert_eq!(saved[&key].status, "review-needed");
+        assert_eq!(staged[0].status, "review-needed");
+
+        translations::save_one(
+            &translation_root,
+            "example.mod",
+            key.clone(),
+            translations::StoredString {
+                target: "Manual".to_string(),
+                status: "translated".to_string(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+        assert!(stage_ai_suggestions(
+            &translation_root,
+            std::slice::from_ref(&item),
+            vec![generated],
+            &mut Vec::new(),
+        )
+        .is_err());
+        assert_eq!(
+            translations::load(&translation_root, "example.mod").unwrap()[&key].target,
+            "Manual"
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn completed_ai_chunk_saves_nothing_when_a_later_string_is_stale() {
+        let root = test_support::temp_dir("ai-stage-atomic-chunk");
+        let i18n = root.join("fixture").join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        std::fs::write(&default_path, r#"{"first":"One","second":"Two"}"#).unwrap();
+        let translation_root = root.join("state");
+        let make_item = |key: &str, source: &str| ai::PreparedAiItem {
+            id: format!("item-{key}"),
+            identity: ai::AiStringIdentity {
+                mod_unique_id: "example.mod".to_string(),
+                relative_dir: "i18n".to_string(),
+                key: key.to_string(),
+            },
+            source: source.to_string(),
+            section: None,
+            glossary_pairs: Vec::new(),
+            context: ai::AiPromptContext::isolated(0),
+            default_path: default_path.clone(),
+            target_path: target_path.clone(),
+            expected_stored: None,
+            expected_revision: 0,
+        };
+        let items = vec![make_item("first", "One"), make_item("second", "Two")];
+        translations::save_one(
+            &translation_root,
+            "example.mod",
+            translations::entry_key("i18n", "second"),
+            translations::StoredString {
+                target: "Manual".to_string(),
+                status: "translated".to_string(),
+                source_hash: translations::source_hash("Two"),
+            },
+        )
+        .unwrap();
+        let generated = items
+            .iter()
+            .map(|item| ai::AiSuggestion {
+                identity: item.identity.clone(),
+                text: format!("AI {}", item.source),
+                status: "review-needed".to_string(),
+                token_differences: Vec::new(),
+                glossary_misses: Vec::new(),
+            })
+            .collect();
+
+        assert!(
+            stage_ai_suggestions(&translation_root, &items, generated, &mut Vec::new(),).is_err()
+        );
+        let state = translations::load(&translation_root, "example.mod").unwrap();
+        assert!(!state.contains_key(&translations::entry_key("i18n", "first")));
+        assert_eq!(
+            state[&translations::entry_key("i18n", "second")].target,
+            "Manual"
+        );
+        std::fs::remove_dir_all(root).ok();
     }
 }

@@ -3,6 +3,7 @@
  * Keeping invoke calls in one place gives the rest of the UI a plain async API.
  */
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ShortcutSettings } from "../shortcuts";
 
 export interface DetectedInstall {
@@ -22,6 +23,50 @@ export interface LlmSettings {
   temperature?: number | null;
 }
 
+export type AiEngine = "local" | "codex";
+
+export interface AiSettings {
+  defaultEngine: AiEngine;
+  /** Exact model reported by the installed Codex CLI; absent = CLI default. */
+  codexModel?: string | null;
+  codexReasoning: "low" | "medium" | "high";
+}
+
+export type WorkspaceSortColumn =
+  "mod" | "file" | "status" | "key" | "source" | "target";
+
+export interface WorkspaceSort {
+  column: WorkspaceSortColumn;
+  direction: "asc" | "desc";
+}
+
+export interface WorkspaceColumnWidths {
+  mod?: number;
+  file?: number;
+  status?: number;
+  key?: number;
+  source?: number;
+  target?: number;
+}
+
+export interface WorkspaceSettings {
+  selectedModId?: string | null;
+  modSearch: string;
+  stringSearch: string;
+  stringScope: "mod" | "all";
+  statusFilter:
+    | "all"
+    | "untranslated"
+    | "translated"
+    | "outdated"
+    | "review-needed"
+    | "has-value";
+  issuesOnly: boolean;
+  sort?: WorkspaceSort | null;
+  modPaneWidth?: number | null;
+  columnWidths: WorkspaceColumnWidths;
+}
+
 export interface AppSettings {
   stardewPath: string | null;
   modsPath: string | null;
@@ -29,10 +74,14 @@ export interface AppSettings {
   targetLang: string | null;
   /** Optional local-LLM connection; null until AI translation is set up. */
   llm?: LlmSettings | null;
+  /** Live-engine preferences only. API keys/readiness are never persisted. */
+  ai?: AiSettings;
   /** User overrides for the keyboard shortcut catalog. */
   shortcuts?: ShortcutSettings;
   /** Dashboard resume history stored in portable settings. */
   lastOpened?: Record<string, number>;
+  /** Stable, portable workspace preferences. Session selection/undo are excluded. */
+  workspace?: WorkspaceSettings;
   /** Whether rotating local diagnostic logs are written. Defaults to true. */
   diagnosticLogging?: boolean;
 }
@@ -89,10 +138,39 @@ export interface ScannedMod {
 
 export interface ScanResult {
   mods: ScannedMod[];
+  /** Scanner diagnostics that did not themselves omit a component. */
   warnings: string[];
+  /** Exact scanner units that were omitted. Unlike warnings, this is safe to count. */
+  skippedComponents?: SkippedComponent[];
   extraKeys?: ExtraKeyDiagnostic[];
   modCount: number;
   fileCount: number;
+  /** English-source changes observed since the previous scan of this Mods folder. */
+  sourceDeltas?: ScanDeltas | null;
+}
+
+export interface ScanDeltas {
+  sourcesChanged: number;
+  stringsAdded: number;
+  stringsRemoved: number;
+  addedStrings: ScanStringIdentity[];
+  changedSources: ScanStringIdentity[];
+}
+
+export interface ScanStringIdentity {
+  modUniqueId: string;
+  relativeDir: string;
+  key: string;
+}
+
+export interface SkippedComponent {
+  packageId: string | null;
+  componentUniqueId: string | null;
+  componentName: string | null;
+  /** Safe path relative to the configured Mods folder. */
+  relativeLocation: string;
+  reason: string;
+  restOfPackageLoaded: boolean;
 }
 
 export interface ExtraKeyDiagnostic {
@@ -160,7 +238,9 @@ export function saveString(
   const storedStatus =
     tokenMismatchAccepted && status === "translated"
       ? "translated-token-mismatch-accepted"
-      : status;
+      : tokenMismatchAccepted && status === "review-needed"
+        ? "review-needed-token-mismatch-accepted"
+        : status;
   return invoke<void>("save_string", {
     modUniqueId,
     relativeDir,
@@ -175,7 +255,10 @@ export interface SaveStringEntry {
   relativeDir: string;
   key: string;
   target: string;
-  status: StringStatus;
+  status:
+    | StringStatus
+    | "translated-token-mismatch-accepted"
+    | "review-needed-token-mismatch-accepted";
   source: string;
 }
 
@@ -188,6 +271,66 @@ export function saveStrings(
   entries: SaveStringEntry[],
 ): Promise<void> {
   return invoke<void>("save_strings", { modUniqueId, entries });
+}
+
+export type OperationKind =
+  | "import"
+  | "export"
+  | "zip"
+  | "batch-export"
+  | "batch-edit"
+  | "batch-undo"
+  | "ai";
+
+export type OperationOutcome =
+  "success" | "warning" | "cancelled" | "blocked" | "failed";
+
+export interface OperationDetail {
+  label: string;
+  value: string;
+}
+
+/** One real, completed backend result retained for this app session only. */
+export interface OperationHistoryEntry {
+  id: string;
+  kind: OperationKind;
+  outcome: OperationOutcome;
+  title: string;
+  summary: string;
+  itemCount: number;
+  path?: string;
+  fileName?: string;
+  warnings: string[];
+  details: OperationDetail[];
+  canUndo: boolean;
+  completedAtEpochMs: number;
+}
+
+export interface SaveStringGroup {
+  modUniqueId: string;
+  entries: SaveStringEntry[];
+}
+
+/** Save one multi-component action with one backend-owned safe undo snapshot. */
+export function saveStringGroupsWithUndo(
+  title: string,
+  groups: SaveStringGroup[],
+): Promise<OperationHistoryEntry> {
+  return invoke<OperationHistoryEntry>("save_string_groups_with_undo", {
+    title,
+    groups,
+  });
+}
+
+export function listOperationHistory(): Promise<OperationHistoryEntry[]> {
+  return invoke<OperationHistoryEntry[]>("list_operation_history");
+}
+
+/** Restore only while no touched component has been saved since the batch. */
+export function undoBatchEdit(
+  operationId: string,
+): Promise<OperationHistoryEntry> {
+  return invoke<OperationHistoryEntry>("undo_batch_edit", { operationId });
 }
 
 export interface ExportFileInput {
@@ -242,6 +385,59 @@ export function exportMod(
   files: ExportFileInput[],
 ): Promise<ExportResult> {
   return invoke<ExportResult>("export_mod", { modUniqueId, files });
+}
+
+export interface ExportModInput {
+  modUniqueId: string;
+  /** Display metadata only; Rust rebinds the request to a fresh scan. */
+  modName: string;
+  files: ExportFileInput[];
+}
+
+export interface ExportPreflightProblem {
+  modUniqueId: string;
+  modName: string;
+  relativeDir: string;
+  key: string;
+  reason: string;
+}
+
+export interface ExportPreflight {
+  acceptedMismatches: number;
+  blockingProblem: ExportPreflightProblem | null;
+}
+
+/** Validate the exact selected export scope without changing any files. */
+export function previewExport(
+  mods: ExportModInput[],
+): Promise<ExportPreflight> {
+  return invoke<ExportPreflight>("preview_export", { mods });
+}
+
+export interface ExportModResult {
+  modUniqueId: string;
+  modName: string;
+  result: ExportResult;
+}
+
+export interface ExportAllResult {
+  mods: ExportModResult[];
+  modsChanged: number;
+  filesWritten: number;
+  filesRemoved: number;
+  totalWrittenKeys: number;
+  totalUntranslated: number;
+  totalOutdated: number;
+  totalReviewNeeded: number;
+  totalOrphanKeys: number;
+  /** At least one mod blocked the complete transaction before any write. */
+  blocked: boolean;
+}
+
+export function exportAllMods(
+  mods: ExportModInput[],
+): Promise<ExportAllResult> {
+  return invoke<ExportAllResult>("export_all_mods", { mods });
 }
 
 export interface ZipComponentInput {
@@ -366,16 +562,69 @@ export function exportLlmBatch(
   });
 }
 
+/** Choose an LLM batch destination without writing the batch yet. */
+export function pickLlmBatchDestination(
+  suggestedFileName: string,
+): Promise<string | null> {
+  return invoke<string | null>("pick_llm_batch_destination", {
+    suggestedFileName,
+  });
+}
+
+/** Write an LLM batch to a destination chosen by the user beforehand. */
+export function exportLlmBatchToPath(
+  modUniqueId: string,
+  items: LlmBatchItem[],
+  path: string,
+): Promise<LlmExportOutcome> {
+  return invoke<LlmExportOutcome>("export_llm_batch_to_path", {
+    modUniqueId,
+    items,
+    path,
+  });
+}
+
 export interface LlmImportSummary {
   /** Staged as review-needed. */
   imported: number;
   /** Untouched — already translated locally. */
   skippedTranslated: number;
-  /** Unknown key/directory, non-string or empty value. */
+  /** Empty translation values intentionally skipped. */
   unmatched: number;
   /** Imported, but identical to the English source. */
   identicalToSource: number;
   totalInFile: number;
+}
+
+export interface LlmImportTokenDifference {
+  token: string;
+  sourceCount: number;
+  targetCount: number;
+}
+
+export interface LlmImportTokenIssue {
+  relativeDir: string;
+  key: string;
+  differences: LlmImportTokenDifference[];
+}
+
+export interface LlmImportPreflight {
+  batchModUniqueId: string;
+  batchTargetLang: string;
+  selectedModUniqueId: string;
+  selectedTargetLang: string;
+  modMatches: boolean;
+  languageMatches: boolean;
+  snapshotResult: "matched" | "mismatch" | "notChecked";
+  suppliedStrings: number;
+  matchedStrings: number;
+  preservedLocal: number;
+  skippedEmpty: number;
+  identicalToSource: number;
+  importable: number;
+  protectedTokenIssues: LlmImportTokenIssue[];
+  ready: boolean;
+  blockingReason: string | null;
 }
 
 /**
@@ -389,6 +638,24 @@ export function importLlmBatch(
   return invoke<LlmImportSummary | null>("import_llm_batch", {
     modUniqueId,
     files,
+  });
+}
+
+/** Pick a JSON result without importing it yet. Resolves null on cancel. */
+export function pickLlmBatchFile(): Promise<string | null> {
+  return invoke<string | null>("pick_llm_batch_file");
+}
+
+/** Analyze a selected batch against the current mod without writing state. */
+export function preflightLlmBatchPath(
+  modUniqueId: string,
+  files: ExportFileInput[],
+  path: string,
+): Promise<LlmImportPreflight> {
+  return invoke<LlmImportPreflight>("preflight_llm_batch_path", {
+    modUniqueId,
+    files,
+    path,
   });
 }
 
@@ -527,6 +794,170 @@ export function translateString(
     section: section ?? null,
     temperature: temperature ?? null,
   });
+}
+
+export type AiScope = "string" | "selected";
+
+export interface AiStringIdentity {
+  /** Exact scanner identities. Rust resolves current source/section data. */
+  modUniqueId: string;
+  relativeDir: string;
+  key: string;
+}
+
+interface AiTranslationRequestBase {
+  runId: string;
+  includeOpen: boolean;
+  includeChanged: boolean;
+}
+
+export type AiTranslationRequest =
+  | (AiTranslationRequestBase & {
+      scope: "string";
+      identities: [AiStringIdentity];
+    })
+  | (AiTranslationRequestBase & {
+      scope: "selected";
+      /** Explicit rows may span multiple scanned mods. */
+      identities: AiStringIdentity[];
+    });
+
+export interface AiTokenDifference {
+  token: string;
+  sourceCount: number;
+  targetCount: number;
+}
+
+export interface AiSuggestion {
+  /** Real scanner identity restored only after provider output validation. */
+  identity: AiStringIdentity;
+  text: string;
+  /** Fixed by Rust; live AI never returns Done. */
+  status: "review-needed";
+  tokenDifferences: AiTokenDifference[];
+  glossaryMisses: string[];
+}
+
+export interface AiRunResult {
+  runId: string;
+  engine: AiEngine;
+  model: string;
+  reasoning: string;
+  scope: AiScope;
+  requested: number;
+  completed: number;
+  outcome: "complete" | "cancelled" | "error";
+  error?: string;
+  /** Already persisted by Rust in Review; return values are for display/reload only. */
+  suggestions: AiSuggestion[];
+}
+
+export type AiRunPhase =
+  | "preparing"
+  | "translating"
+  | "reviewing"
+  | "terminologyRepair"
+  | "tokenRepair"
+  | "saving";
+
+export type AiRunRecovery = "transientRetry" | "structureRetry" | "split";
+
+export type CodexActivityStage =
+  | "starting"
+  | "working"
+  | "reasoning"
+  | "writingResponse"
+  | "completed"
+  | "failed";
+
+export interface AiRunTokenUsage {
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningOutputTokens: number;
+}
+
+export interface AiRunProgress {
+  runId: string;
+  phase: AiRunPhase;
+  completed: number;
+  total: number;
+  batchIndex?: number;
+  batchTotal?: number;
+  batchSize?: number;
+  retries: number;
+  splits: number;
+  recovery?: AiRunRecovery;
+  codexStage?: CodexActivityStage;
+  codexActivitySequence?: number;
+  usage?: AiRunTokenUsage;
+}
+
+/** Listen for persisted Review progress from the currently running AI command. */
+export function listenAiRunProgress(
+  handler: (progress: AiRunProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<AiRunProgress>("ai-run-progress", (event) => {
+    handler(event.payload);
+  });
+}
+
+export interface CodexCliStatus {
+  installed: boolean;
+  authenticated: boolean;
+  version?: string;
+  /** Sanitized label only; the app never reads CLI auth files or tokens. */
+  authentication?: string;
+  error?: string;
+}
+
+export interface CodexCliModel {
+  /** Exact value passed to `codex exec --model`. */
+  model: string;
+  displayName: string;
+  isDefault: boolean;
+  defaultReasoningEffort?: "low" | "medium" | "high";
+  supportedReasoningEfforts: ("low" | "medium" | "high")[];
+}
+
+export interface CodexCliRateLimitWindow {
+  usedPercent: number;
+  windowDurationMins?: number;
+  /** Unix timestamp in seconds, as reported by Codex CLI. */
+  resetsAt?: number;
+}
+
+export interface CodexCliRateLimits {
+  primary?: CodexCliRateLimitWindow;
+  secondary?: CodexCliRateLimitWindow;
+}
+
+export function translateWithLocalAi(
+  request: AiTranslationRequest,
+): Promise<AiRunResult> {
+  return invoke<AiRunResult>("translate_with_local_ai", { request });
+}
+
+export function codexCliStatus(): Promise<CodexCliStatus> {
+  return invoke<CodexCliStatus>("codex_cli_status");
+}
+
+export function codexCliModels(): Promise<CodexCliModel[]> {
+  return invoke<CodexCliModel[]>("codex_cli_models");
+}
+
+export function codexCliRateLimits(): Promise<CodexCliRateLimits | null> {
+  return invoke<CodexCliRateLimits | null>("codex_cli_rate_limits");
+}
+
+export function translateWithCodexCli(
+  request: AiTranslationRequest,
+): Promise<AiRunResult> {
+  return invoke<AiRunResult>("translate_with_codex_cli", { request });
+}
+
+export function cancelAiRun(runId: string): Promise<boolean> {
+  return invoke<boolean>("cancel_ai_run", { runId });
 }
 
 export function openUrl(url: string): Promise<void> {

@@ -16,11 +16,13 @@ a searchable editor instead of editing large JSON files by hand.
 ## What It Does
 
 - Scans a SMAPI Mods folder and finds standard `i18n` translation files.
+- Shows English-source changes, additions, and removals since the previous scan.
 - Groups multi-part mods and imports existing translations.
 - Provides search, filters, progress tracking, bulk actions, and review queues.
 - Warns about missing or changed Stardew, dialogue, mail, Content Patcher, and
   placeholder tokens before export.
-- Supports manual translation, optional local AI, and external LLM batches.
+- Supports manual translation, optional local AI, Codex CLI, and external LLM
+  batches.
 - Supports Stardew's built-in languages and curated custom-language targets.
 - Builds optional glossary hints from local Stardew strings or an installed
   community language pack.
@@ -65,23 +67,71 @@ assets, and it does not download or update mods.
 
 ## Translation Workflows
 
-You can translate in three ways:
+You can translate in four ways:
 
 - **Manual:** edit strings directly in the string editor.
 - **Local AI:** connect to a local OpenAI-compatible endpoint such as Ollama or
   LM Studio.
+- **Codex CLI:** use an installed Codex CLI through its own existing login. The
+  app never reads Codex authentication files or tokens. Settings lists the
+  models reported by the installed CLI and stores only the selected model id;
+  if that list is unavailable, translation remains available with the CLI's
+  own default model.
 - **External LLM batch:** export a self-contained JSON batch, translate it with a
   file-capable LLM, and import the result. Format 2 uses one compact source
   snapshot to ensure the result still belongs to the selected mod, language,
   files, keys, and current English text before anything is saved.
 
-AI suggestions always enter the review queue. They are never treated as finished
-translations automatically.
+Manual translation and local-only workflows remain offline. When Codex CLI is
+selected, the source text, its section context, and matching glossary terms are
+sent through the installed CLI. Related strings are packed into adaptive batches
+of up to 100 entries, with every complete serialized prompt bounded to 96 KiB;
+one live run accepts up to 4,096 strings or 8 MiB of selected source text.
+Recovery is limited to the affected batch: each CLI attempt may run for up to
+five minutes, a transient failure is retried once, and a persistently invalid
+response is split until a failing string is isolated so unrelated work can
+continue. Repeated neighboring context is pooled inside each prompt without
+losing retained context. If one complete item prompt is still oversized, only
+its farthest neighboring context is trimmed first; the selected source is never
+trimmed.
+
+Codex translation uses a staged quality pass. Codex first creates an initial
+draft, then every draft receives a full AI review that corrects issues in
+meaning, natural phrasing in the target language, terminology, grammar,
+register, speaker voice, and dialogue continuity. This review is not limited to
+token warnings or glossary matches. The review still inspects every draft but
+returns only changed translations; omitted IDs retain their existing draft,
+which avoids writing every unchanged translation a second time. Only after that
+full review, reviewed results with a conservatively detected glossary or
+terminology candidate receive exactly one focused repair pass; correct
+inflections and compounds may remain unchanged. A failed full review does not
+mark its chunk complete, so it can be retried. If the optional focused repair
+fails, the fully reviewed text is kept.
+
+AI suggestions always enter the existing human Review queue. Suggestions from
+each fully completed adaptive chunk are saved together immediately, so
+cancelling a longer run keeps previously completed chunks in Review; the
+current in-flight chunk remains available for a later retry. Even a draft that
+passed AI review and terminology repair remains `review-needed`; suggestions
+are never treated as finished translations automatically.
+
+The compact progress dialog reports suggestions already saved to Review, the
+current quality phase and adaptive batch, elapsed time, bounded retries or
+splits, and token usage when Codex CLI reports it while retaining its Cancel
+action. Safe CLI activity events such as starting, reasoning, and response
+completion appear as they arrive, together with the age of the latest event.
+After the first suggestions have actually been saved, an estimated remaining
+time is calculated from saved-string checkpoints and updated only when more
+work reaches Review. Codex does not provide token-by-token heartbeats, so the
+app does not invent progress inside a provider call.
 
 When exporting, untranslated entries are omitted so SMAPI can fall back to the
 English source. Blocking token mismatches are caught before files are written;
 an intentional per-string mismatch can be explicitly accepted with **Save
-anyway** during review.
+anyway** during review. The direct-export confirmation uses a read-only backend
+preflight over the exact selected scope, so a real blocking key can be opened
+before confirmation. Export repeats the same validation before writing, so the
+preview never acts as an authorization token.
 
 ![Token validation catches a missing placeholder before export](docs/assets/screenshots/token-check.png)
 
@@ -95,26 +145,38 @@ manifests, or backups.
 **Translation Notes** creates short copy-ready publication text using the current
 package, language, coverage, installation guidance, and review state.
 
-Completed exports, imports, LLM batches, and release ZIPs remain available in the
-result tray without blocking the translation workspace.
+The five latest completed backend operations, including exports, imports, LLM
+batches, AI runs, release ZIPs, and batch edits, remain available in the result
+tray for the current app session. The latest batch edit can be undone until a
+newer operation replaces its undo snapshot; undo refuses to overwrite a string
+that changed afterward, even if it was later changed back.
 
 ## Local Data and Privacy
 
-The desktop app has no accounts, analytics, telemetry, cloud API keys, or Nexus
-API access. Scanning, editing, validation, glossary generation, and export happen
-locally.
+The desktop app has no accounts, analytics, telemetry, or Nexus API access.
+Scanning, editing, validation, glossary generation, and export happen locally.
 
 Local AI requests go only to the local endpoint you configure. External LLM
 batches leave your computer only when you upload them yourself.
 
+Codex CLI authentication remains entirely owned by the CLI; the app does not
+read or copy its authentication files or tokens. The app does not offer a
+provider marketplace or a custom cloud base URL.
+
 Portable data is stored under:
 
 - `data/settings.json`
+- `data/scan-source-snapshot.json`
 - `data/language-state/<language>/`
 - `data/glossary/`
 - `data/logs/`
 
 Diagnostic logging can be disabled in **Settings > About**.
+AI diagnostics record only run, batch, phase, duration, retry/split,
+cancellation, fixed outcome categories, and reported token totals. Prompts,
+source and target text, glossary/context content, mod/string/file identities,
+CLI output, auth data, and temporary paths are never written to the AI
+diagnostic events.
 
 ## Help and Feedback
 
@@ -126,8 +188,9 @@ A rough report is fine.
 
 For bugs, the app version, the affected mod, the on-screen error, and a few
 reproduction steps are usually enough. Logs can be opened from the About page in
-Settings. They may contain local paths, so remove private information before
-attaching them.
+Settings. General scanner and file-operation entries may contain local paths,
+so remove private information before attaching them; the AI diagnostic events
+described above intentionally exclude them.
 
 Release history is in the [changelog](CHANGELOG.md).
 

@@ -6,9 +6,11 @@
 //!
 //! Edge cases handled (SPEC §6): nested/multi-component mods (each manifest is
 //! its own mod; `i18n/` is associated with the nearest ancestor manifest),
-//! multiple `i18n/` folders per mod, malformed manifests (skipped with a
-//! warning), `Nexus:-1` sentinel IDs, BOM / `//` + `/* */` comments / trailing
-//! commas, missing `UniqueID` (folder-name fallback), and symlink cycles.
+//! multiple `i18n/` folders per mod, Content Patcher data under `assets/i18n`
+//! (ignored because it is not a SMAPI translation target), malformed manifests
+//! (reported as structured skips), `Nexus:-1` sentinel IDs, BOM / `//` + `/* */`
+//! comments / trailing commas, missing `UniqueID` (folder-name fallback), and
+//! symlink cycles.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -20,7 +22,7 @@ use crate::input_limits;
 use crate::lang_pack;
 use crate::translations::{self, ModState};
 
-const MAX_DEPTH: usize = 12;
+pub(crate) const MAX_DEPTH: usize = 12;
 const MAX_DIRS: usize = 200_000;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -38,6 +40,43 @@ pub struct ScannedI18nFile {
     /// Source keys whose saved status is an unreviewed AI suggestion
     /// (`review-needed`) — feeds the dashboard review queue.
     pub review_needed: usize,
+    /// Semantic source hashes used only for the portable previous-scan
+    /// comparison. Source text itself is never persisted in the snapshot.
+    #[serde(skip)]
+    pub(crate) source_hashes: Vec<SourceKeyHash>,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+pub struct StatusCounts {
+    pub untranslated: usize,
+    pub translated: usize,
+    pub outdated: usize,
+    #[serde(rename = "review-needed")]
+    pub review_needed: usize,
+}
+
+impl StatusCounts {
+    fn record(&mut self, status: &str) {
+        match status {
+            "translated" => self.translated += 1,
+            "outdated" => self.outdated += 1,
+            "review-needed" => self.review_needed += 1,
+            _ => self.untranslated += 1,
+        }
+    }
+
+    fn merge(&mut self, other: &Self) {
+        self.untranslated += other.untranslated;
+        self.translated += other.translated;
+        self.outdated += other.outdated;
+        self.review_needed += other.review_needed;
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct SourceKeyHash {
+    pub key: String,
+    pub source_hash: String,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -56,6 +95,8 @@ pub struct ScannedMod {
     pub translated_keys: usize,
     /// Unreviewed AI suggestions across all i18n files (dashboard queue).
     pub review_needed: usize,
+    /// Current per-status string counts across all i18n files.
+    pub status_counts: StatusCounts,
     pub progress: f64,
     /// "none" (no keys) | "untranslated" (some missing) | "translated" (all present).
     pub status: String,
@@ -65,10 +106,69 @@ pub struct ScannedMod {
 #[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
+    /// Scanner diagnostics that do not themselves represent an omitted
+    /// component. Component-specific failures belong in `skipped_components`
+    /// so the UI does not have to deduplicate free-form messages.
     pub warnings: Vec<String>,
+    /// Components that were deliberately omitted from this scan. Unlike
+    /// `warnings`, every entry corresponds to an actual skipped unit and is
+    /// safe to count and display in the scan result UI.
+    pub skipped_components: Vec<SkippedComponent>,
     pub extra_keys: Vec<ExtraKeyDiagnostic>,
+    /// Distinct top-level packages with at least one loaded translatable
+    /// component.
     pub mod_count: usize,
+    /// Loaded translatable i18n files across every component.
     pub file_count: usize,
+    /// English-source changes observed since the preceding complete scan of
+    /// this Mods folder. `None` means comparison was unavailable because this
+    /// scan omitted a component needing attention or snapshot persistence
+    /// failed. A bounded or otherwise incomplete directory traversal also
+    /// leaves this unavailable.
+    pub source_deltas: Option<ScanDeltas>,
+    /// Internal completeness signal for derived scan data. This is deliberately
+    /// not part of the frontend contract; `source_deltas` is the user-visible
+    /// availability state.
+    #[serde(skip)]
+    pub(crate) traversal_complete: bool,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanDeltas {
+    pub sources_changed: usize,
+    pub strings_added: usize,
+    pub strings_removed: usize,
+    /// Exact current rows opened by the scan result actions.
+    pub added_strings: Vec<ScanStringIdentity>,
+    pub changed_sources: Vec<ScanStringIdentity>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct ScanStringIdentity {
+    pub mod_unique_id: String,
+    pub relative_dir: String,
+    pub key: String,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct SkippedComponent {
+    pub package_id: Option<String>,
+    pub component_unique_id: Option<String>,
+    pub component_name: Option<String>,
+    /// Location relative to the configured Mods folder; never an absolute
+    /// personal path.
+    pub relative_location: String,
+    pub reason: String,
+    /// False for an intentional, expected exclusion such as an installed
+    /// community language pack. The UI keeps those informational and reserves
+    /// warning treatment for components that need attention.
+    pub requires_attention: bool,
+    /// True when another real translation component from this package remains
+    /// available in the final scan result.
+    pub rest_of_package_loaded: bool,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -236,6 +336,7 @@ pub fn extract_nexus_id(update_keys: &[String]) -> Option<u64> {
 /// translation state from `config_dir` is merged into progress counts.
 pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> ScanResult {
     let mut warnings = Vec::new();
+    let mut skipped_components = Vec::new();
     let language_root = match translations::language_root(config_dir, target_lang) {
         Ok(root) => Some(root),
         Err(error) => {
@@ -245,7 +346,13 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     };
     let mut manifest_files = Vec::new();
     let mut i18n_dirs = Vec::new();
-    collect(mods_path, &mut manifest_files, &mut i18n_dirs);
+    let traversal_complete = collect(mods_path, &mut manifest_files, &mut i18n_dirs);
+    if !traversal_complete {
+        warnings.push(
+            "The Mods folder could not be scanned completely. Source-change totals are unavailable, and the scan baseline was not updated."
+                .to_string(),
+        );
+    }
 
     // Build a mod per manifest, keyed by its folder.
     let mut mods: HashMap<PathBuf, ScannedMod> = HashMap::new();
@@ -264,7 +371,17 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                 order.push(dir.to_path_buf());
                 mods.insert(dir.to_path_buf(), scanned);
             }
-            Err(reason) => warnings.push(format!("Skipped {}: {reason}", manifest.display())),
+            Err(reason) => {
+                skipped_components.push(SkippedComponent {
+                    package_id: package_id_for(dir, mods_path),
+                    component_unique_id: None,
+                    component_name: None,
+                    relative_location: safe_relative_location(manifest, mods_path),
+                    reason: safe_skip_reason(&reason, mods_path),
+                    requires_attention: true,
+                    rest_of_package_loaded: false,
+                });
+            }
         }
     }
 
@@ -291,9 +408,19 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             continue;
         };
+        if is_content_patcher_assets_i18n(&owner, i18n_dir) {
+            continue;
+        }
         if let Some(scanned) = mods.get_mut(&owner) {
             let unique_id = scanned.unique_id.clone();
             if blocked_state_ids.contains(&unique_id.to_lowercase()) {
+                skipped_components.push(skipped_i18n_component(
+                    scanned,
+                    i18n_dir,
+                    mods_path,
+                    "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely."
+                        .to_string(),
+                ));
                 continue;
             }
             let state = match state_cache.entry(unique_id.clone()) {
@@ -312,7 +439,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                 }
             };
             match build_i18n_file(&owner, i18n_dir, mods_path, target_lang, state) {
-                Ok(file) => {
+                Ok((file, status_counts)) => {
                     let diagnostics = extra_target_keys(
                         &scanned.name,
                         &file.relative_dir,
@@ -323,18 +450,27 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     match diagnostics {
                         Ok(diagnostics) => {
                             extra_keys.extend(diagnostics);
+                            scanned.status_counts.merge(&status_counts);
                             scanned.i18n_files.push(file);
                         }
-                        Err(error) => warnings.push(format!(
-                            "Skipped i18n component {}: {error}",
-                            i18n_dir.display()
-                        )),
+                        Err(error) => {
+                            skipped_components.push(skipped_i18n_component(
+                                scanned,
+                                i18n_dir,
+                                mods_path,
+                                safe_skip_reason(&error, mods_path),
+                            ));
+                        }
                     }
                 }
-                Err(error) => warnings.push(format!(
-                    "Skipped i18n component {}: {error}",
-                    i18n_dir.display()
-                )),
+                Err(error) => {
+                    skipped_components.push(skipped_i18n_component(
+                        scanned,
+                        i18n_dir,
+                        mods_path,
+                        safe_skip_reason(&error, mods_path),
+                    ));
+                }
             }
         }
     }
@@ -362,25 +498,88 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // the same signal the glossary source uses — it registers an in-game language
     // via `Data/AdditionalLanguages`. The content.json parse runs only for the
     // already-filtered mods that have i18n, so the cost stays bounded.
-    result_mods.retain(|scanned| {
+    let mut retained_mods = Vec::with_capacity(result_mods.len());
+    for scanned in result_mods {
         if lang_pack::registered_language_codes(Path::new(&scanned.folder_path)).is_empty() {
-            return true;
+            retained_mods.push(scanned);
+            continue;
         }
-        warnings.push(format!(
-            "Skipped \"{}\": detected as a community language pack, not a translation target.",
-            scanned.name
-        ));
-        false
-    });
+        skipped_components.push(SkippedComponent {
+            package_id: Some(scanned.package_id.clone()),
+            component_unique_id: Some(scanned.unique_id.clone()),
+            component_name: Some(scanned.name.clone()),
+            relative_location: safe_relative_location(Path::new(&scanned.folder_path), mods_path),
+            reason: "Detected as a community language pack, not a translation target.".to_string(),
+            requires_attention: false,
+            rest_of_package_loaded: false,
+        });
+    }
+    result_mods = retained_mods;
 
+    let loaded_packages: HashSet<&str> = result_mods
+        .iter()
+        .map(|scanned| scanned.package_id.as_str())
+        .collect();
+    for skipped in &mut skipped_components {
+        skipped.rest_of_package_loaded = skipped
+            .package_id
+            .as_deref()
+            .is_some_and(|package_id| loaded_packages.contains(package_id));
+    }
+
+    let mod_count = loaded_packages.len();
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
-        mod_count: result_mods.len(),
+        mod_count,
         file_count,
         mods: result_mods,
         warnings,
+        skipped_components,
         extra_keys,
+        source_deltas: None,
+        traversal_complete,
     }
+}
+
+fn skipped_i18n_component(
+    scanned: &ScannedMod,
+    i18n_dir: &Path,
+    mods_path: &Path,
+    reason: String,
+) -> SkippedComponent {
+    SkippedComponent {
+        package_id: Some(scanned.package_id.clone()),
+        component_unique_id: Some(scanned.unique_id.clone()),
+        component_name: Some(scanned.name.clone()),
+        relative_location: safe_relative_location(&i18n_dir.join("default.json"), mods_path),
+        reason,
+        requires_attention: true,
+        rest_of_package_loaded: false,
+    }
+}
+
+fn safe_relative_location(path: &Path, mods_path: &Path) -> String {
+    path.strip_prefix(mods_path)
+        .ok()
+        .map(|relative| relative.to_string_lossy().replace('\\', "/"))
+        .filter(|relative| !relative.is_empty())
+        .unwrap_or_else(|| "Unavailable".to_string())
+}
+
+fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
+    let mut safe = reason.to_string();
+    let mut roots = vec![mods_path.display().to_string()];
+    if let Ok(canonical) = std::fs::canonicalize(mods_path) {
+        roots.push(canonical.display().to_string());
+    }
+    for root in roots {
+        if root.is_empty() {
+            continue;
+        }
+        safe = safe.replace(&root, "Mods");
+        safe = safe.replace(&root.replace('\\', "/"), "Mods");
+    }
+    safe
 }
 
 fn extra_target_keys(
@@ -436,6 +635,7 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         total_keys: 0,
         translated_keys: 0,
         review_needed: 0,
+        status_counts: StatusCounts::default(),
         progress: 0.0,
         status: String::new(),
     })
@@ -510,8 +710,11 @@ pub fn load_strings_checked(
             let token_mismatch_accepted = state
                 .get(&translations::entry_key(relative_dir, key))
                 .is_some_and(|stored| {
-                    stored.status == translations::TOKEN_MISMATCH_ACCEPTED_STATUS
-                        && stored.source_hash == translations::source_hash(&source_text)
+                    matches!(
+                        stored.status.as_str(),
+                        translations::TOKEN_MISMATCH_ACCEPTED_STATUS
+                            | translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS
+                    ) && stored.source_hash == translations::source_hash(&source_text)
                 });
             StringRow {
                 key: key.clone(),
@@ -694,7 +897,9 @@ fn resolve_string(
 fn normalize_status(stored: &str) -> String {
     match stored {
         "untranslated" => "untranslated",
-        "review-needed" => "review-needed",
+        "review-needed" | translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS => {
+            "review-needed"
+        }
         _ => "translated", // done | imported | translated | outdated | not-translatable
     }
     .to_string()
@@ -815,16 +1020,20 @@ fn count_keys(
     state: &ModState,
     relative_dir: &str,
 ) -> (usize, usize, usize) {
-    count_keys_checked(default_path, target_path, None, state, relative_dir).unwrap_or((0, 0, 0))
+    inspect_keys_checked(default_path, target_path, None, state, relative_dir)
+        .map(|(total, translated, status_counts, _)| {
+            (total, translated, status_counts.review_needed)
+        })
+        .unwrap_or((0, 0, 0))
 }
 
-fn count_keys_checked(
+fn inspect_keys_checked(
     default_path: &Path,
     target_path: &Path,
     allowed_root: Option<&Path>,
     state: &ModState,
     relative_dir: &str,
-) -> Result<(usize, usize, usize), String> {
+) -> Result<(usize, usize, StatusCounts, Vec<SourceKeyHash>), String> {
     let source = match allowed_root {
         Some(root) => read_object_within_root(default_path, root, "source")?,
         None => read_object_checked(default_path)?,
@@ -855,21 +1064,27 @@ fn count_keys_checked(
             }
         })
         .count();
-    let review_needed = source
+    let mut status_counts = StatusCounts::default();
+    for (key, value) in source.iter().filter(|(key, _)| !is_ignored_i18n_key(key)) {
+        let status = resolve_string(
+            value.as_str().unwrap_or_default(),
+            target.get(key),
+            state,
+            relative_dir,
+            key,
+        )
+        .1;
+        status_counts.record(&status);
+    }
+    let source_hashes = source
         .iter()
         .filter(|(key, _)| !is_ignored_i18n_key(key))
-        .filter(|(key, value)| {
-            resolve_string(
-                value.as_str().unwrap_or_default(),
-                target.get(key),
-                state,
-                relative_dir,
-                key,
-            )
-            .1 == "review-needed"
+        .map(|(key, value)| SourceKeyHash {
+            key: key.clone(),
+            source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
         })
-        .count();
-    Ok((total, translated, review_needed))
+        .collect();
+    Ok((total, translated, status_counts, source_hashes))
 }
 
 fn read_target_object_within_root(
@@ -948,13 +1163,25 @@ fn nearest_manifest_owner(i18n_dir: &Path, manifest_dirs: &HashSet<PathBuf>) -> 
     None
 }
 
+fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
+    i18n_dir
+        .strip_prefix(mod_dir)
+        .ok()
+        .and_then(Path::to_str)
+        .is_some_and(|relative| {
+            relative
+                .replace('\\', "/")
+                .eq_ignore_ascii_case("assets/i18n")
+        })
+}
+
 fn build_i18n_file(
     mod_dir: &Path,
     i18n_dir: &Path,
     mods_path: &Path,
     target_lang: &str,
     state: &ModState,
-) -> Result<ScannedI18nFile, String> {
+) -> Result<(ScannedI18nFile, StatusCounts), String> {
     let relative_dir = i18n_dir
         .strip_prefix(mod_dir)
         .map_err(|_| "i18n folder is outside its mod folder".to_string())?
@@ -963,14 +1190,15 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys, review_needed) = count_keys_checked(
+    let (total_keys, translated_keys, status_counts, source_hashes) = inspect_keys_checked(
         &default_path,
         &target_path,
         Some(mods_path),
         state,
         &relative_dir,
     )?;
-    Ok(ScannedI18nFile {
+    let review_needed = status_counts.review_needed;
+    let file = ScannedI18nFile {
         target_exists: target_read_path(&target_path).is_file(),
         default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
@@ -978,27 +1206,45 @@ fn build_i18n_file(
         total_keys,
         translated_keys,
         review_needed,
-    })
+        source_hashes,
+    };
+    Ok((file, status_counts))
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
 /// `default.json`. Bounded by depth, the canonical root, and a
 /// visited-canonical-path set (cycles). Links that resolve outside `root` are
 /// never traversed.
+/// Returns `false` when filesystem errors or traversal limits may have omitted
+/// content. Intentional exclusions, including links outside `root`, remain a
+/// complete traversal.
 /// `pub(crate)` so `lang_pack` can reuse the same bounded walk for pack discovery.
-pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut Vec<PathBuf>) {
+pub(crate) fn collect(
+    root: &Path,
+    manifests: &mut Vec<PathBuf>,
+    i18n_dirs: &mut Vec<PathBuf>,
+) -> bool {
+    collect_bounded(root, manifests, i18n_dirs, MAX_DEPTH, MAX_DIRS)
+}
+
+fn collect_bounded(
+    root: &Path,
+    manifests: &mut Vec<PathBuf>,
+    i18n_dirs: &mut Vec<PathBuf>,
+    max_depth: usize,
+    max_dirs: usize,
+) -> bool {
     let Ok(canonical_root) = std::fs::canonicalize(root) else {
-        return;
+        return false;
     };
     let mut visited: HashSet<PathBuf> = HashSet::new();
     let mut stack: Vec<(PathBuf, usize)> = vec![(root.to_path_buf(), 0)];
     let mut dirs_seen = 0usize;
+    let mut complete = true;
 
     while let Some((dir, depth)) = stack.pop() {
-        if depth > MAX_DEPTH || dirs_seen >= MAX_DIRS {
-            continue;
-        }
         let Ok(canonical) = std::fs::canonicalize(&dir) else {
+            complete = false;
             continue;
         };
         if !canonical.starts_with(&canonical_root) {
@@ -1007,43 +1253,107 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
         if !visited.insert(canonical) {
             continue; // cycle / already visited
         }
+        if depth > max_depth || dirs_seen >= max_dirs {
+            complete = false;
+            continue;
+        }
         dirs_seen += 1;
 
         let Ok(entries) = std::fs::read_dir(&dir) else {
+            complete = false;
             continue;
         };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-
-            if file_type.is_file() || file_type.is_symlink() {
-                let safe_manifest = path.file_name().is_some_and(|n| n == "manifest.json")
-                    && std::fs::canonicalize(&path).is_ok_and(|canonical| {
-                        canonical.is_file() && canonical.starts_with(&canonical_root)
-                    });
-                if safe_manifest {
-                    manifests.push(path.clone());
-                }
-                if file_type.is_file() {
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(_) => {
+                    complete = false;
                     continue;
                 }
+            };
+            let path = entry.path();
+            let file_type = match entry.file_type() {
+                Ok(file_type) => file_type,
+                Err(_) => {
+                    complete = false;
+                    continue;
+                }
+            };
+            let symlink_target = if file_type.is_symlink() {
+                match std::fs::canonicalize(&path) {
+                    Ok(target) => Some(target),
+                    Err(_) => {
+                        complete = false;
+                        continue;
+                    }
+                }
+            } else {
+                None
+            };
+            let target_is_file = file_type.is_file()
+                || symlink_target
+                    .as_ref()
+                    .is_some_and(|target| target.is_file());
+            let target_is_dir = file_type.is_dir()
+                || symlink_target
+                    .as_ref()
+                    .is_some_and(|target| target.is_dir());
+
+            if target_is_file {
+                if path.file_name().is_some_and(|n| n == "manifest.json") {
+                    match symlink_target
+                        .clone()
+                        .map(Ok)
+                        .unwrap_or_else(|| std::fs::canonicalize(&path))
+                    {
+                        Ok(canonical)
+                            if canonical.is_file() && canonical.starts_with(&canonical_root) =>
+                        {
+                            manifests.push(path.clone());
+                        }
+                        Ok(_) => {}
+                        Err(_) => complete = false,
+                    }
+                }
+                continue;
             }
 
-            if file_type.is_dir() || file_type.is_symlink() {
+            if target_is_dir {
                 let is_i18n = path
                     .file_name()
                     .is_some_and(|n| n.eq_ignore_ascii_case("i18n"));
                 if is_i18n {
-                    let inside_root = std::fs::canonicalize(&path)
-                        .is_ok_and(|canonical| canonical.starts_with(&canonical_root));
+                    let canonical_i18n = match symlink_target.clone() {
+                        Some(canonical) => canonical,
+                        None => match std::fs::canonicalize(&path) {
+                            Ok(canonical) => canonical,
+                            Err(_) => {
+                                complete = false;
+                                continue;
+                            }
+                        },
+                    };
+                    if !canonical_i18n.starts_with(&canonical_root) {
+                        continue;
+                    }
                     let default_path = path.join("default.json");
-                    let safe_default =
-                        std::fs::canonicalize(&default_path).is_ok_and(|canonical| {
-                            canonical.is_file() && canonical.starts_with(&canonical_root)
-                        });
-                    if inside_root && safe_default {
+                    let safe_default = match std::fs::symlink_metadata(&default_path) {
+                        Ok(_) => match std::fs::canonicalize(&default_path) {
+                            Ok(canonical) => {
+                                canonical.is_file() && canonical.starts_with(&canonical_root)
+                            }
+                            Err(_) => {
+                                complete = false;
+                                false
+                            }
+                        },
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+                        Err(_) => {
+                            complete = false;
+                            false
+                        }
+                    };
+                    if safe_default {
                         i18n_dirs.push(path);
                     }
                     continue; // no mods nested inside an i18n folder
@@ -1052,6 +1362,8 @@ pub(crate) fn collect(root: &Path, manifests: &mut Vec<PathBuf>, i18n_dirs: &mut
             }
         }
     }
+
+    complete
 }
 
 /// Strip `//` and `/* */` comments and trailing commas from JSON-ish text,
@@ -1302,6 +1614,11 @@ mod tests {
             "expected a duplicate-UniqueID warning, got: {:?}",
             result.warnings
         );
+        assert_eq!(result.skipped_components.len(), 2);
+        assert!(result.skipped_components.iter().all(|skipped| {
+            skipped.component_unique_id.as_deref() == Some("same.id")
+                && !skipped.rest_of_package_loaded
+        }));
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1310,7 +1627,8 @@ mod tests {
     fn excludes_community_language_packs_from_scan() {
         // A community language pack ships its own i18n (config strings in its
         // language). It must be excluded from the translatable list and
-        // surfaced as a warning, while ordinary mods still list normally.
+        // surfaced as expected information, while ordinary mods still list
+        // normally.
         let root = crate::test_support::temp_dir("scan-langpack");
         let normal = root.join("Normal");
         write(
@@ -1340,14 +1658,18 @@ mod tests {
         let result = scan_mods(&root, "th", &root);
         let names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
         assert_eq!(names, vec!["Normal"], "only the ordinary mod is listed");
-        assert!(
-            result
-                .warnings
-                .iter()
-                .any(|w| w.contains("language pack") && w.contains("Stardew Valley - THAI")),
-            "expected a language-pack exclusion warning, got: {:?}",
-            result.warnings
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].component_unique_id.as_deref(),
+            Some("ell.thai")
         );
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Stardew Valley - THAI"
+        );
+        assert!(!result.skipped_components[0].requires_attention);
+        assert!(!result.skipped_components[0].rest_of_package_loaded);
 
         std::fs::remove_dir_all(&root).ok();
     }
@@ -1376,13 +1698,23 @@ mod tests {
             &pkg.join("[FTM] RSV").join("manifest.json"),
             "{ \"Name\": \"[FTM] RSV\", \"UniqueID\": \"id.ftm\" }",
         );
-        // A malformed manifest -> skipped with a warning.
+        // A malformed manifest -> reported as one structured skip.
         write(&root.join("Broken").join("manifest.json"), "{ not json");
 
         let result = scan_mods(&root, "de", &root);
 
-        assert_eq!(result.mod_count, 3, "only components with i18n are listed");
-        assert!(result.warnings.iter().any(|w| w.contains("Broken")));
+        assert_eq!(result.mod_count, 1, "one top-level package is loaded");
+        assert_eq!(result.file_count, 3, "each component i18n file is counted");
+        assert_eq!(
+            result.mods.len(),
+            3,
+            "all translatable components are listed"
+        );
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert!(result
+            .skipped_components
+            .iter()
+            .any(|skipped| skipped.relative_location == "Broken/manifest.json"));
         assert!(result
             .mods
             .iter()
@@ -1446,6 +1778,53 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    #[test]
+    fn collect_marks_missing_root_and_depth_limit_as_incomplete() {
+        let base = crate::test_support::temp_dir("scan-incomplete-depth");
+        let missing = base.join("Missing");
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+        assert!(!collect(&missing, &mut manifests, &mut i18n_dirs));
+
+        let root = base.join("Mods");
+        write(
+            &root.join("Nested/manifest.json"),
+            r#"{"UniqueID":"nested.mod"}"#,
+        );
+        write(&root.join("Nested/i18n/default.json"), r#"{"k":"source"}"#);
+        assert!(!collect_bounded(
+            &root,
+            &mut manifests,
+            &mut i18n_dirs,
+            0,
+            MAX_DIRS,
+        ));
+        assert!(manifests.is_empty());
+        assert!(i18n_dirs.is_empty());
+
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[test]
+    fn collect_marks_directory_limit_as_incomplete() {
+        let root = crate::test_support::temp_dir("scan-incomplete-dir-limit");
+        write(&root.join("One/manifest.json"), r#"{"UniqueID":"one.mod"}"#);
+        write(&root.join("Two/manifest.json"), r#"{"UniqueID":"two.mod"}"#);
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+
+        assert!(!collect_bounded(
+            &root,
+            &mut manifests,
+            &mut i18n_dirs,
+            MAX_DEPTH,
+            1,
+        ));
+        assert!(manifests.is_empty());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[cfg(any(unix, windows))]
     #[test]
     fn collect_does_not_follow_directory_links_outside_the_root() {
@@ -1475,8 +1854,9 @@ mod tests {
 
         let mut manifests = Vec::new();
         let mut i18n_dirs = Vec::new();
-        collect(&root, &mut manifests, &mut i18n_dirs);
+        let complete = collect(&root, &mut manifests, &mut i18n_dirs);
 
+        assert!(complete);
         assert_eq!(manifests, vec![safe.join("manifest.json")]);
         assert_eq!(i18n_dirs, vec![safe.join("i18n")]);
 
@@ -1506,8 +1886,9 @@ mod tests {
 
         let mut manifests = Vec::new();
         let mut i18n_dirs = Vec::new();
-        collect(&root, &mut manifests, &mut i18n_dirs);
+        let complete = collect(&root, &mut manifests, &mut i18n_dirs);
 
+        assert!(complete);
         assert_eq!(manifests, vec![mod_dir.join("manifest.json")]);
         assert!(i18n_dirs.is_empty());
 
@@ -1538,10 +1919,11 @@ mod tests {
 
         let german = scan_mods(&root, "de", &base.join("data"));
         assert!(german.mods.is_empty());
-        assert!(german.warnings.iter().any(|warning| {
-            warning.contains("Skipped i18n component")
-                && warning.contains("target file resolves outside")
-        }));
+        assert!(german.warnings.is_empty(), "{:?}", german.warnings);
+        assert!(german
+            .skipped_components
+            .iter()
+            .any(|skipped| { skipped.reason.contains("target file resolves outside") }));
 
         std::fs::remove_file(&german_link).unwrap();
         let portuguese_link = i18n.join("pt-BR.json");
@@ -1556,10 +1938,11 @@ mod tests {
 
         let portuguese = scan_mods(&root, "pt", &base.join("data"));
         assert!(portuguese.mods.is_empty());
-        assert!(portuguese.warnings.iter().any(|warning| {
-            warning.contains("Skipped i18n component")
-                && warning.contains("target file resolves outside")
-        }));
+        assert!(portuguese.warnings.is_empty(), "{:?}", portuguese.warnings);
+        assert!(portuguese
+            .skipped_components
+            .iter()
+            .any(|skipped| { skipped.reason.contains("target file resolves outside") }));
 
         std::fs::remove_dir_all(base).ok();
     }
@@ -1678,15 +2061,164 @@ mod tests {
             r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
         );
         write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
-        write(&mod_dir.join("assets/i18n/default.json"), "{ broken");
+        write(&mod_dir.join("optional/i18n/default.json"), "{ broken");
 
         let result = scan_mods(&root, "de", &root);
         assert_eq!(result.mod_count, 1);
         assert_eq!(result.file_count, 1);
-        assert!(result
-            .warnings
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert_eq!(result.skipped_components.len(), 1);
+        let skipped = &result.skipped_components[0];
+        assert_eq!(skipped.package_id.as_deref(), Some("Mod"));
+        assert_eq!(skipped.component_unique_id.as_deref(), Some("Author.Mod"));
+        assert_eq!(skipped.component_name.as_deref(), Some("Mod"));
+        assert_eq!(skipped.relative_location, "Mod/optional/i18n/default.json");
+        assert!(skipped.rest_of_package_loaded);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn ignores_content_patcher_assets_i18n_but_keeps_other_nested_i18n() {
+        let root = crate::test_support::temp_dir("scanner-ignore-cp-assets-i18n");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(
+            &mod_dir.join("optional/i18n/default.json"),
+            r#"{"extra":"Nested component"}"#,
+        );
+        write(
+            &mod_dir.join("Assets/I18N/default.json"),
+            r#"{ 0: "Content Patcher data" }"#,
+        );
+        write(
+            &mod_dir.join("Assets/I18N/fr.json"),
+            r#"{ 0: "Données Content Patcher" }"#,
+        );
+        write(
+            &mod_dir.join("Assets/I18N/pt.json"),
+            r#"{ 0: "Dados do Content Patcher" }"#,
+        );
+
+        let result = scan_mods(&root, "de", &root);
+        assert!(result.traversal_complete);
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.file_count, 2);
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert!(result.skipped_components.is_empty());
+        assert_eq!(
+            result.mods[0]
+                .i18n_files
+                .iter()
+                .map(|file| file.relative_dir.as_str())
+                .collect::<Vec<_>>(),
+            vec!["i18n", "optional/i18n"]
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn does_not_ignore_i18n_owned_by_an_assets_child_mod() {
+        let root = crate::test_support::temp_dir("scanner-assets-child-owner");
+        let package = root.join("Package");
+        write(
+            &package.join("manifest.json"),
+            r#"{"Name":"Parent","UniqueID":"Author.Parent"}"#,
+        );
+        write(&package.join("i18n/default.json"), r#"{"parent":"Parent"}"#);
+        write(
+            &package.join("assets/manifest.json"),
+            r#"{"Name":"Child","UniqueID":"Author.Child"}"#,
+        );
+        write(
+            &package.join("assets/i18n/default.json"),
+            r#"{"child":"Child"}"#,
+        );
+
+        let result = scan_mods(&root, "de", &root);
+        assert_eq!(result.mod_count, 1, "parent and child share one package");
+        assert_eq!(result.file_count, 2);
+        assert_eq!(result.mods.len(), 2, "both components remain available");
+        let child = result
+            .mods
             .iter()
-            .any(|warning| warning.contains("assets")));
+            .find(|candidate| candidate.unique_id == "Author.Child")
+            .expect("assets child mod should remain translatable");
+        assert_eq!(child.i18n_files.len(), 1);
+        assert_eq!(child.i18n_files[0].relative_dir, "i18n");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn structured_skip_for_the_only_broken_i18n_component_is_not_loaded() {
+        let root = crate::test_support::temp_dir("scanner-only-component-error");
+        let mod_dir = root.join("Solo");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Solo","UniqueID":"Author.Solo"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), "{ broken");
+
+        let result = scan_mods(&root, "de", &root);
+
+        assert_eq!(result.mod_count, 0);
+        assert_eq!(result.file_count, 0);
+        assert_eq!(result.skipped_components.len(), 1);
+        let skipped = &result.skipped_components[0];
+        assert_eq!(skipped.package_id.as_deref(), Some("Solo"));
+        assert_eq!(skipped.component_unique_id.as_deref(), Some("Author.Solo"));
+        assert_eq!(skipped.relative_location, "Solo/i18n/default.json");
+        assert!(!skipped.rest_of_package_loaded);
+        assert!(!skipped.reason.contains(&root.display().to_string()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn malformed_manifest_reports_its_package_and_loaded_sibling() {
+        let root = crate::test_support::temp_dir("scanner-manifest-component-error");
+        let package = root.join("Bundle");
+        write(
+            &package.join("Good/manifest.json"),
+            r#"{"Name":"Good","UniqueID":"Author.Good"}"#,
+        );
+        write(&package.join("Good/i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(&package.join("Broken/manifest.json"), "{ broken");
+
+        let result = scan_mods(&root, "de", &root);
+
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.skipped_components.len(), 1);
+        let skipped = &result.skipped_components[0];
+        assert_eq!(skipped.package_id.as_deref(), Some("Bundle"));
+        assert_eq!(skipped.component_unique_id, None);
+        assert_eq!(skipped.component_name, None);
+        assert_eq!(skipped.relative_location, "Bundle/Broken/manifest.json");
+        assert!(skipped.rest_of_package_loaded);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn state_load_warning_does_not_invent_a_skipped_component() {
+        let root = crate::test_support::temp_dir("scanner-state-warning");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
+        );
+        write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(
+            &root.join("language-state/de/translations/Author.Mod.json"),
+            "{ broken",
+        );
+
+        let result = scan_mods(&root, "de", &root);
+
+        assert_eq!(result.mod_count, 1);
+        assert!(!result.warnings.is_empty());
+        assert!(result.skipped_components.is_empty());
         std::fs::remove_dir_all(root).ok();
     }
 
@@ -1817,6 +2349,38 @@ mod tests {
     }
 
     #[test]
+    fn review_needed_token_mismatch_acceptance_survives_only_the_saved_source_revision() {
+        let root = crate::test_support::temp_dir("accepted-review-token-revision");
+        let i18n = root.join("i18n");
+        let default_path = i18n.join("default.json");
+        let target_path = i18n.join("de.json");
+        write(&default_path, r#"{"k":"Hello$8"}"#);
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let state = translations::load(&root, "mod.id").unwrap();
+
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "review-needed");
+        assert!(rows[0].token_mismatch_accepted);
+
+        write(&default_path, r#"{"k":"Hello again$8"}"#);
+        let rows = load_strings(&default_path, &target_path, &state, "i18n");
+        assert_eq!(rows[0].status, "outdated");
+        assert!(!rows[0].token_mismatch_accepted);
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
     fn count_keys_counts_unreviewed_ai_suggestions() {
         let root = crate::test_support::temp_dir("count-review");
         let i18n = root.join("i18n");
@@ -1853,6 +2417,69 @@ mod tests {
             "i18n",
         );
         assert_eq!(counts, (2, 1, 0), "outdated AI text is not review-needed");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn scan_reports_current_status_counts_for_the_dashboard() {
+        let root = crate::test_support::temp_dir("scan-status-counts");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let mod_dir = mods.join("Status Mod");
+        let i18n = mod_dir.join("i18n");
+        write(
+            &mod_dir.join("manifest.json"),
+            r#"{"UniqueID":"status.mod","Name":"Status Mod"}"#,
+        );
+        write(
+            &i18n.join("default.json"),
+            r#"{"open":"Open","done":"Done","review":"Review","changed":"Changed"}"#,
+        );
+        write(&i18n.join("de.json"), r#"{"done":"Fertig"}"#);
+
+        let language_root = translations::language_root(&config, "de").unwrap();
+        translations::save_one(
+            &language_root,
+            "status.mod",
+            translations::entry_key("i18n", "review"),
+            translations::StoredString {
+                target: "Prüfen".into(),
+                status: "review-needed".into(),
+                source_hash: translations::source_hash("Review"),
+            },
+        )
+        .unwrap();
+        translations::save_one(
+            &language_root,
+            "status.mod",
+            translations::entry_key("i18n", "changed"),
+            translations::StoredString {
+                target: "Geändert".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Old source"),
+            },
+        )
+        .unwrap();
+
+        let result = scan_mods(&mods, "de", &config);
+        let scanned = &result.mods[0];
+        assert_eq!(scanned.total_keys, 4);
+        assert_eq!(scanned.translated_keys, 3);
+        assert_eq!(scanned.review_needed, 1);
+        assert_eq!(
+            scanned.status_counts,
+            StatusCounts {
+                untranslated: 1,
+                translated: 1,
+                outdated: 1,
+                review_needed: 1,
+            }
+        );
+        assert_eq!(
+            serde_json::to_value(&scanned.status_counts).unwrap()["review-needed"],
+            1
+        );
 
         std::fs::remove_dir_all(&root).ok();
     }

@@ -13,10 +13,19 @@ https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 The application creates a data folder beside the executable on first launch.
 It stores local data there:
 
-- settings.json: selected folders, language, shortcuts, and local-AI settings
+- settings.json: selected folders, language, shortcuts, and non-secret AI
+  settings
 - glossary/glossary-<lang>.json: optional per-language glossary caches
 - language-state/<lang>/: saved translation work and automatic state backups
 - logs/: optional rotating diagnostic logs
+
+Manual translation and local-only workflows remain offline. The optional Codex
+CLI backend uses only the CLI's own login; the application never reads its
+authentication files or tokens.
+
+When Codex CLI translation is selected, source text, section context, and
+matching glossary terms are sent through the installed CLI. Every AI result
+requires review before it becomes an accepted translation.
 
 Copy the complete application folder, including data, to move your work to
 another computer.

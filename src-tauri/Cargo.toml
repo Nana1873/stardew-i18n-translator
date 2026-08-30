@@ -28,6 +28,8 @@ tauri-plugin-opener = "2"
 # build dependency on Windows.
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 futures-util = "0.3"
+# Tokio is used only for bounded cancellation of in-flight requests.
+tokio = { version = "1", features = ["macros", "time"] }
 # Diagnostic logging: rotating local log file in the portable data/logs
 # folder so users can attach a log to a GitHub bug report. Local only — no
 # network sink, consistent with the no-telemetry guarantee.
@@ -44,7 +46,11 @@ webview2-com-sys = "0.39"
 windows-core = "0.62"
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
+  "Win32_Security",
   "Win32_System_Com",
+  "Win32_System_JobObjects",
+  "Win32_System_Pipes",
+  "Win32_System_Threading",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }

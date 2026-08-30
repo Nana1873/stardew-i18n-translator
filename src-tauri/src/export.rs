@@ -90,11 +90,68 @@ pub struct ExportResult {
     pub blocked: bool,
 }
 
+/// One mod/component included in an all-mod export. All WebView metadata is
+/// rebound to the current backend scan before preview or export.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportModInput {
+    pub mod_unique_id: String,
+    pub mod_name: String,
+    pub files: Vec<ExportFileInput>,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportModResult {
+    pub mod_unique_id: String,
+    pub mod_name: String,
+    pub result: ExportResult,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportAllResult {
+    pub mods: Vec<ExportModResult>,
+    pub mods_changed: usize,
+    pub files_written: usize,
+    pub files_removed: usize,
+    pub total_written_keys: usize,
+    pub total_untranslated: usize,
+    pub total_outdated: usize,
+    pub total_review_needed: usize,
+    pub total_orphan_keys: usize,
+    /// At least one mod had an unaccepted token mismatch, so no mod was changed.
+    pub blocked: bool,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPreflightProblem {
+    pub mod_unique_id: String,
+    pub mod_name: String,
+    pub relative_dir: String,
+    pub key: String,
+    pub reason: String,
+}
+
+#[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPreflight {
+    pub accepted_mismatches: usize,
+    pub blocking_problem: Option<ExportPreflightProblem>,
+}
+
 struct PreparedFile {
     result: ExportFileResult,
     target_path: PathBuf,
     body: Option<String>,
     removals: Vec<PathBuf>,
+}
+
+struct PreparedMod {
+    result: ExportResult,
+    files: Vec<PreparedFile>,
+    accepted_mismatches: usize,
 }
 
 /// Validate IPC-supplied export paths against the configured Mods folder and
@@ -180,6 +237,109 @@ pub fn validate_paths(
     Ok(())
 }
 
+/// Resolve every requested component against a fresh backend scan. The
+/// WebView's display name and file list describe its earlier view only; they
+/// cannot select another component's state or export destination.
+pub fn resolve_scan_inputs(
+    mods_root: &Path,
+    target_lang: &str,
+    config_dir: &Path,
+    requests: &[ExportModInput],
+) -> Result<Vec<ExportModInput>, String> {
+    let scan = scanner::scan_mods(mods_root, target_lang, config_dir);
+    let mut requested_ids = HashSet::with_capacity(requests.len());
+    let mut resolved = Vec::with_capacity(requests.len());
+
+    for request in requests {
+        if !requested_ids.insert(request.mod_unique_id.to_lowercase()) {
+            return Err(format!(
+                "Refusing export: duplicate mod id {}.",
+                request.mod_unique_id
+            ));
+        }
+        let matches = scan
+            .mods
+            .iter()
+            .filter(|scanned| {
+                scanned
+                    .unique_id
+                    .eq_ignore_ascii_case(&request.mod_unique_id)
+            })
+            .collect::<Vec<_>>();
+        let scanned = match matches.as_slice() {
+            [scanned] => *scanned,
+            [] => {
+                return Err(format!(
+                    "Refusing export: component {} is stale or is not present in the latest scan.",
+                    request.mod_unique_id
+                ));
+            }
+            _ => {
+                return Err(format!(
+                    "Refusing export: component {} is ambiguous in the latest scan.",
+                    request.mod_unique_id
+                ));
+            }
+        };
+        let files = scanned
+            .i18n_files
+            .iter()
+            .map(|file| ExportFileInput {
+                relative_dir: file.relative_dir.clone(),
+                default_path: file.default_path.clone(),
+                target_path: file.target_path.clone(),
+            })
+            .collect::<Vec<_>>();
+        let requested_bindings = export_file_bindings(&request.files).ok_or_else(|| {
+            format!(
+                "Refusing export: component {} has stale or invalid file paths.",
+                request.mod_unique_id
+            )
+        })?;
+        let scanned_bindings = export_file_bindings(&files).ok_or_else(|| {
+            format!(
+                "Refusing export: component {} could not be resolved from the latest scan.",
+                request.mod_unique_id
+            )
+        })?;
+        if requested_bindings != scanned_bindings {
+            return Err(format!(
+                "Refusing export: component {} has changed since the displayed scan.",
+                request.mod_unique_id
+            ));
+        }
+        resolved.push(ExportModInput {
+            mod_unique_id: scanned.unique_id.clone(),
+            mod_name: scanned.name.clone(),
+            files,
+        });
+    }
+    Ok(resolved)
+}
+
+fn export_file_bindings(files: &[ExportFileInput]) -> Option<Vec<(String, String, String)>> {
+    let mut bindings = files
+        .iter()
+        .map(|file| {
+            let default = std::fs::canonicalize(&file.default_path).ok()?;
+            let target = Path::new(&file.target_path);
+            let target_parent = std::fs::canonicalize(target.parent()?).ok()?;
+            let target_name = target.file_name()?.to_string_lossy().to_lowercase();
+            Some((
+                file.relative_dir.replace('\\', "/"),
+                default.to_string_lossy().replace('\\', "/").to_lowercase(),
+                target_parent
+                    .join(target_name)
+                    .to_string_lossy()
+                    .replace('\\', "/")
+                    .to_lowercase(),
+            ))
+        })
+        .collect::<Option<Vec<_>>>()?;
+    bindings.sort();
+    Some(bindings)
+}
+
 fn file_name_is(path: &Path, expected: &str) -> bool {
     path.file_name()
         .and_then(|name| name.to_str())
@@ -233,10 +393,87 @@ pub fn export_mod(
     unique_id: &str,
     files: &[ExportFileInput],
 ) -> Result<ExportResult, String> {
+    let mut prepared = prepare_mod(config_dir, unique_id, files)?;
+    if !prepared.result.blocked {
+        execute_prepared(std::slice::from_mut(&mut prepared))?;
+    }
+    Ok(prepared.result)
+}
+
+/// Read and validate the complete selected scope without changing any target,
+/// backup, temporary, or portable-state file. The real export repeats the same
+/// validation immediately before writing; this preview is informational only.
+pub fn preview_export(
+    config_dir: &Path,
+    mods: &[ExportModInput],
+) -> Result<ExportPreflight, String> {
+    let mut seen = HashSet::new();
+    let mut preview = ExportPreflight::default();
+    for request in mods {
+        if !seen.insert(request.mod_unique_id.to_lowercase()) {
+            return Err(format!(
+                "Refusing export preview: duplicate mod id {}.",
+                request.mod_unique_id
+            ));
+        }
+        let prepared = prepare_mod(config_dir, &request.mod_unique_id, &request.files)?;
+        preview.accepted_mismatches += prepared.accepted_mismatches;
+        if preview.blocking_problem.is_none() {
+            preview.blocking_problem =
+                prepared
+                    .result
+                    .skipped
+                    .first()
+                    .map(|problem| ExportPreflightProblem {
+                        mod_unique_id: request.mod_unique_id.clone(),
+                        mod_name: request.mod_name.clone(),
+                        relative_dir: problem.relative_dir.clone(),
+                        key: problem.key.clone(),
+                        reason: problem.reason.clone(),
+                    });
+        }
+    }
+    Ok(preview)
+}
+
+/// Export all requested mods as one transaction. Every mod is fully read and
+/// validated before the first target or backup is changed.
+pub fn export_all_mods(
+    config_dir: &Path,
+    mods: &[ExportModInput],
+) -> Result<ExportAllResult, String> {
+    let mut seen = HashSet::new();
+    for request in mods {
+        if !seen.insert(request.mod_unique_id.to_lowercase()) {
+            return Err(format!(
+                "Refusing export: duplicate mod id {}.",
+                request.mod_unique_id
+            ));
+        }
+    }
+
+    let mut prepared = mods
+        .iter()
+        .map(|request| prepare_mod(config_dir, &request.mod_unique_id, &request.files))
+        .collect::<Result<Vec<_>, _>>()?;
+    let blocked = prepared.iter().any(|prepared| prepared.result.blocked);
+    if !blocked {
+        execute_prepared(&mut prepared)?;
+    }
+
+    Ok(summarize_all(mods, prepared))
+}
+
+fn prepare_mod(
+    config_dir: &Path,
+    unique_id: &str,
+    files: &[ExportFileInput],
+) -> Result<PreparedMod, String> {
     // A corrupted state file aborts the export — exporting with a silently
     // empty state would write a near-empty <lang>.json over a good one.
     let state = translations::load(config_dir, unique_id)?;
     let mut result = ExportResult::default();
+    let mut accepted_mismatches = 0;
 
     let mut prepared_rows = Vec::new();
     // Validate the complete mod first. A token mismatch must not leave a
@@ -253,7 +490,11 @@ pub fn export_mod(
                 continue;
             }
             let differences = tokens::token_differences(&row.source, &row.target);
-            if differences.is_empty() || row.token_mismatch_accepted {
+            if differences.is_empty() {
+                continue;
+            }
+            if row.token_mismatch_accepted {
+                accepted_mismatches += 1;
                 continue;
             }
             let detail = differences
@@ -276,7 +517,11 @@ pub fn export_mod(
     }
     if !result.skipped.is_empty() {
         result.blocked = true;
-        return Ok(result);
+        return Ok(PreparedMod {
+            result,
+            files: Vec::new(),
+            accepted_mismatches,
+        });
     }
 
     let mut prepared = Vec::new();
@@ -323,50 +568,62 @@ pub fn export_mod(
         });
     }
 
+    Ok(PreparedMod {
+        result,
+        files: prepared,
+        accepted_mismatches,
+    })
+}
+
+fn execute_prepared(mods: &mut [PreparedMod]) -> Result<(), String> {
     let mut mutation_paths = Vec::new();
-    for file in &prepared {
-        for target in target_variants(&file.target_path) {
-            mutation_paths.push(target.clone());
-            mutation_paths.push(sibling(&target, ".bak"));
+    for prepared in mods.iter() {
+        for file in &prepared.files {
+            for target in target_variants(&file.target_path) {
+                mutation_paths.push(target.clone());
+                mutation_paths.push(sibling(&target, ".bak"));
+            }
         }
     }
     let transaction = ExportTransaction::prepare(&mutation_paths)?;
 
     let mutation = (|| -> Result<(), (String, PathBuf)> {
-        for file in &mut prepared {
-            if let Some(body) = file.body.as_deref() {
-                file.result.backed_up = write_target(&file.target_path, body)
-                    .map_err(|error| (error, file.target_path.clone()))?;
-                for obsolete in file
-                    .removals
-                    .iter()
-                    .filter(|path| path.as_path() != file.target_path)
-                {
-                    file.result.backed_up |= remove_target(obsolete)
+        for prepared in mods {
+            for file in &mut prepared.files {
+                if let Some(body) = file.body.as_deref() {
+                    file.result.backed_up = write_target(&file.target_path, body)
                         .map_err(|error| (error, file.target_path.clone()))?;
+                    for obsolete in file
+                        .removals
+                        .iter()
+                        .filter(|path| path.as_path() != file.target_path)
+                    {
+                        file.result.backed_up |= remove_target(obsolete)
+                            .map_err(|error| (error, file.target_path.clone()))?;
+                    }
+                    file.result.written = true;
+                    prepared.result.files_written += 1;
+                } else {
+                    for existing in &file.removals {
+                        file.result.backed_up |= remove_target(existing)
+                            .map_err(|error| (error, file.target_path.clone()))?;
+                    }
+                    if !file.removals.is_empty() {
+                        // With every translation cleared, removing the stale target
+                        // makes SMAPI fall back to default.json. Portuguese may have
+                        // been imported from pt-BR.json, so remove the read variant.
+                        file.result.removed = true;
+                        prepared.result.files_removed += 1;
+                    }
                 }
-                file.result.written = true;
-                result.files_written += 1;
-            } else {
-                for existing in &file.removals {
-                    file.result.backed_up |= remove_target(existing)
-                        .map_err(|error| (error, file.target_path.clone()))?;
-                }
-                if !file.removals.is_empty() {
-                    // With every translation cleared, removing the stale target
-                    // makes SMAPI fall back to default.json. Portuguese may have
-                    // been imported from pt-BR.json, so remove the read variant.
-                    file.result.removed = true;
-                    result.files_removed += 1;
-                }
-            }
 
-            result.total_written_keys += file.result.written_keys;
-            result.total_untranslated += file.result.untranslated;
-            result.total_outdated += file.result.outdated;
-            result.total_review_needed += file.result.review_needed;
-            result.total_orphan_keys += file.result.orphan_keys.len();
-            result.files.push(file.result.clone());
+                prepared.result.total_written_keys += file.result.written_keys;
+                prepared.result.total_untranslated += file.result.untranslated;
+                prepared.result.total_outdated += file.result.outdated;
+                prepared.result.total_review_needed += file.result.review_needed;
+                prepared.result.total_orphan_keys += file.result.orphan_keys.len();
+                prepared.result.files.push(file.result.clone());
+            }
         }
         Ok(())
     })();
@@ -378,7 +635,35 @@ pub fn export_mod(
 
     transaction.commit();
 
-    Ok(result)
+    Ok(())
+}
+
+fn summarize_all(mods: &[ExportModInput], prepared: Vec<PreparedMod>) -> ExportAllResult {
+    let mut aggregate = ExportAllResult {
+        mods: mods
+            .iter()
+            .zip(prepared)
+            .map(|(request, prepared)| ExportModResult {
+                mod_unique_id: request.mod_unique_id.clone(),
+                mod_name: request.mod_name.clone(),
+                result: prepared.result,
+            })
+            .collect(),
+        ..Default::default()
+    };
+    for exported in &aggregate.mods {
+        let result = &exported.result;
+        aggregate.mods_changed += usize::from(result.files_written + result.files_removed > 0);
+        aggregate.files_written += result.files_written;
+        aggregate.files_removed += result.files_removed;
+        aggregate.total_written_keys += result.total_written_keys;
+        aggregate.total_untranslated += result.total_untranslated;
+        aggregate.total_outdated += result.total_outdated;
+        aggregate.total_review_needed += result.total_review_needed;
+        aggregate.total_orphan_keys += result.total_orphan_keys;
+        aggregate.blocked |= result.blocked;
+    }
+    aggregate
 }
 
 /// Keys in the existing target file that `default.json` does not contain
@@ -663,6 +948,78 @@ mod tests {
         std::fs::write(path, body).unwrap();
     }
 
+    fn install_export_component(mods: &Path, folder: &str, unique_id: &str) -> ExportModInput {
+        let component = mods.join(folder);
+        let i18n = component.join("i18n");
+        write(
+            &component.join("manifest.json"),
+            &format!(r#"{{"Name":"{folder}","UniqueID":"{unique_id}"}}"#),
+        );
+        write(&i18n.join("default.json"), r#"{"greeting":"Hello"}"#);
+        ExportModInput {
+            mod_unique_id: unique_id.to_string(),
+            mod_name: folder.to_string(),
+            files: vec![ExportFileInput {
+                relative_dir: "i18n".to_string(),
+                default_path: i18n.join("default.json").display().to_string(),
+                target_path: i18n.join("de.json").display().to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn fresh_export_binding_rejects_another_components_paths() {
+        let root = crate::test_support::temp_dir("export-binding-substitution");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let first = install_export_component(&mods, "First", "first.id");
+        let second = install_export_component(&mods, "Second", "second.id");
+        let substituted = ExportModInput {
+            mod_unique_id: first.mod_unique_id,
+            mod_name: "Untrusted name".to_string(),
+            files: second.files,
+        };
+
+        let error = resolve_scan_inputs(&mods, "de", &config, &[substituted]).unwrap_err();
+
+        assert!(
+            error.contains("changed since the displayed scan"),
+            "{error}"
+        );
+        assert!(!mods.join("First/i18n/de.json").exists());
+        assert!(!mods.join("Second/i18n/de.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn fresh_export_binding_rejects_paths_from_a_stale_scan() {
+        let root = crate::test_support::temp_dir("export-binding-stale-scan");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let request = install_export_component(&mods, "Before", "stable.id");
+        std::fs::rename(mods.join("Before"), mods.join("After")).unwrap();
+
+        let error = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap_err();
+
+        assert!(error.contains("stale or invalid file paths"), "{error}");
+        assert!(!mods.join("After/i18n/de.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn fresh_export_binding_uses_the_scanner_name() {
+        let root = crate::test_support::temp_dir("export-binding-name");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let mut request = install_export_component(&mods, "Real Name", "real.id");
+        request.mod_name = "Untrusted name".to_string();
+
+        let resolved = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap();
+
+        assert_eq!(resolved[0].mod_name, "Real Name");
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[test]
     fn removes_target_file_when_every_translation_is_cleared() {
         // An existing <lang>.json whose only key has been cleared must be
@@ -777,6 +1134,103 @@ mod tests {
             default_path: i18n.join("default.json").display().to_string(),
             target_path: i18n.join("de.json").display().to_string(),
         }]
+    }
+
+    #[test]
+    fn export_preview_reports_blockers_and_exact_accepted_revisions_without_writes() {
+        let root = crate::test_support::temp_dir("export-preview");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello$8"}"#);
+        let state_key = translations::entry_key("i18n", "k");
+        translations::save_one(
+            &root,
+            "mod.id",
+            state_key.clone(),
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let mods = vec![ExportModInput {
+            mod_unique_id: "mod.id".into(),
+            mod_name: "Test Mod".into(),
+            files: input(&i18n),
+        }];
+
+        let blocked = preview_export(&root, &mods).unwrap();
+        assert_eq!(blocked.accepted_mismatches, 0);
+        assert_eq!(blocked.blocking_problem.as_ref().unwrap().key, "k");
+        assert!(!i18n.join("de.json").exists());
+        assert!(!i18n.join("de.json.bak").exists());
+
+        translations::save_one(
+            &root,
+            "mod.id",
+            state_key,
+            translations::StoredString {
+                target: "Hallo$7".into(),
+                status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
+                source_hash: translations::source_hash("Hello$8"),
+            },
+        )
+        .unwrap();
+        let accepted = preview_export(&root, &mods).unwrap();
+        assert_eq!(accepted.accepted_mismatches, 1);
+        assert!(accepted.blocking_problem.is_none());
+
+        write(&i18n.join("default.json"), r#"{"k":"Updated$8"}"#);
+        let changed = preview_export(&root, &mods).unwrap();
+        assert_eq!(changed.accepted_mismatches, 0);
+        assert_eq!(changed.blocking_problem.as_ref().unwrap().key, "k");
+        assert!(!i18n.join("de.json").exists());
+        assert!(!i18n.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn all_mod_export_preview_identifies_the_real_component_and_stays_read_only() {
+        let root = crate::test_support::temp_dir("export-preview-all");
+        let clean = root.join("clean/i18n");
+        let blocked = root.join("blocked/i18n");
+        write(&clean.join("default.json"), r#"{"ok":"Hello"}"#);
+        write(&blocked.join("default.json"), r#"{"bad":"Bye {{name}}"}"#);
+        translations::save_one(
+            &root,
+            "blocked.mod",
+            translations::entry_key("i18n", "bad"),
+            translations::StoredString {
+                target: "Tschüss".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Bye {{name}}"),
+            },
+        )
+        .unwrap();
+        let mods = vec![
+            ExportModInput {
+                mod_unique_id: "clean.mod".into(),
+                mod_name: "Clean Mod".into(),
+                files: input(&clean),
+            },
+            ExportModInput {
+                mod_unique_id: "blocked.mod".into(),
+                mod_name: "Blocked Mod".into(),
+                files: input(&blocked),
+            },
+        ];
+
+        let preview = preview_export(&root, &mods).unwrap();
+        let problem = preview.blocking_problem.unwrap();
+        assert_eq!(problem.mod_unique_id, "blocked.mod");
+        assert_eq!(problem.mod_name, "Blocked Mod");
+        assert_eq!(problem.relative_dir, "i18n");
+        assert_eq!(problem.key, "bad");
+        assert!(!clean.join("de.json").exists());
+        assert!(!blocked.join("de.json").exists());
+
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
@@ -1219,6 +1673,182 @@ mod tests {
         std::fs::remove_dir_all(root).ok();
     }
 
+    fn all_mod_input(id: &str, name: &str, relative_dir: &str, i18n: &Path) -> ExportModInput {
+        ExportModInput {
+            mod_unique_id: id.to_string(),
+            mod_name: name.to_string(),
+            files: vec![ExportFileInput {
+                relative_dir: relative_dir.to_string(),
+                default_path: i18n.join("default.json").display().to_string(),
+                target_path: i18n.join("de.json").display().to_string(),
+            }],
+        }
+    }
+
+    #[test]
+    fn export_all_writes_every_mod_and_returns_real_aggregate_results() {
+        let root = crate::test_support::temp_dir("export-all-success");
+        let first = root.join("first/i18n");
+        let second = root.join("second/i18n");
+        write(&first.join("default.json"), r#"{"k":"First"}"#);
+        write(&second.join("default.json"), r#"{"k":"Second"}"#);
+        for (id, relative_dir, source, target) in [
+            ("first.id", "first/i18n", "First", "Erste"),
+            ("second.id", "second/i18n", "Second", "Zweite"),
+        ] {
+            translations::save_one(
+                &root,
+                id,
+                translations::entry_key(relative_dir, "k"),
+                translations::StoredString {
+                    target: target.into(),
+                    status: "translated".into(),
+                    source_hash: translations::source_hash(source),
+                },
+            )
+            .unwrap();
+        }
+        let mods = vec![
+            all_mod_input("first.id", "First", "first/i18n", &first),
+            all_mod_input("second.id", "Second", "second/i18n", &second),
+        ];
+
+        let result = export_all_mods(&root, &mods).unwrap();
+
+        assert!(!result.blocked);
+        assert_eq!(result.mods_changed, 2);
+        assert_eq!(result.files_written, 2);
+        assert_eq!(result.total_written_keys, 2);
+        assert_eq!(result.mods.len(), 2);
+        assert_eq!(result.mods[0].mod_name, "First");
+        assert_eq!(result.mods[0].result.files_written, 1);
+        assert!(read(&first.join("de.json")).contains("Erste"));
+        assert!(read(&second.join("de.json")).contains("Zweite"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn export_all_token_problem_blocks_every_mod_without_writes() {
+        let root = crate::test_support::temp_dir("export-all-blocked");
+        let first = root.join("first/i18n");
+        let second = root.join("second/i18n");
+        write(&first.join("default.json"), r#"{"k":"First"}"#);
+        write(&first.join("de.json"), r#"{"k":"First old"}"#);
+        write(&second.join("default.json"), r#"{"k":"Hi {{name}}"}"#);
+        write(&second.join("de.json"), r#"{"k":"Second old"}"#);
+        for (id, relative_dir, source, target) in [
+            ("first.id", "first/i18n", "First", "Erste"),
+            ("second.id", "second/i18n", "Hi {{name}}", "Hallo"),
+        ] {
+            translations::save_one(
+                &root,
+                id,
+                translations::entry_key(relative_dir, "k"),
+                translations::StoredString {
+                    target: target.into(),
+                    status: "translated".into(),
+                    source_hash: translations::source_hash(source),
+                },
+            )
+            .unwrap();
+        }
+        let mods = vec![
+            all_mod_input("first.id", "First", "first/i18n", &first),
+            all_mod_input("second.id", "Second", "second/i18n", &second),
+        ];
+
+        let result = export_all_mods(&root, &mods).unwrap();
+
+        assert!(result.blocked);
+        assert_eq!(result.mods_changed, 0);
+        assert!(!result.mods[0].result.blocked);
+        assert!(result.mods[1].result.blocked);
+        assert_eq!(read(&first.join("de.json")), r#"{"k":"First old"}"#);
+        assert_eq!(read(&second.join("de.json")), r#"{"k":"Second old"}"#);
+        assert!(!first.join("de.json.bak").exists());
+        assert!(!second.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn export_all_preflight_error_leaves_every_mod_untouched() {
+        let root = crate::test_support::temp_dir("export-all-preflight");
+        let first = root.join("first/i18n");
+        let second = root.join("second/i18n");
+        write(&first.join("default.json"), r#"{"k":"First"}"#);
+        write(&first.join("de.json"), r#"{"k":"First old"}"#);
+        write(&second.join("default.json"), "{ broken");
+        write(&second.join("de.json"), r#"{"k":"Second old"}"#);
+        translations::save_one(
+            &root,
+            "first.id",
+            translations::entry_key("first/i18n", "k"),
+            translations::StoredString {
+                target: "Erste".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("First"),
+            },
+        )
+        .unwrap();
+        let mods = vec![
+            all_mod_input("first.id", "First", "first/i18n", &first),
+            all_mod_input("second.id", "Second", "second/i18n", &second),
+        ];
+
+        assert!(export_all_mods(&root, &mods).is_err());
+        assert_eq!(read(&first.join("de.json")), r#"{"k":"First old"}"#);
+        assert_eq!(read(&second.join("de.json")), r#"{"k":"Second old"}"#);
+        assert!(!first.join("de.json.bak").exists());
+        assert!(!second.join("de.json.bak").exists());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn export_all_late_failure_rolls_back_targets_and_backups_across_mods() {
+        let root = crate::test_support::temp_dir("export-all-rollback");
+        let first = root.join("first/i18n");
+        let second = root.join("second/i18n");
+        write(&first.join("default.json"), r#"{"k":"First"}"#);
+        write(&first.join("de.json"), r#"{"k":"First old"}"#);
+        write(&first.join("de.json.bak"), r#"{"k":"First backup"}"#);
+        write(&second.join("default.json"), r#"{"k":"Second"}"#);
+        write(&second.join("de.json"), r#"{"k":"Second old"}"#);
+        std::fs::create_dir_all(second.join("de.json.bak")).unwrap();
+        for (id, relative_dir, source, target) in [
+            ("first.id", "first/i18n", "First", "Erste"),
+            ("second.id", "second/i18n", "Second", "Zweite"),
+        ] {
+            translations::save_one(
+                &root,
+                id,
+                translations::entry_key(relative_dir, "k"),
+                translations::StoredString {
+                    target: target.into(),
+                    status: "translated".into(),
+                    source_hash: translations::source_hash(source),
+                },
+            )
+            .unwrap();
+        }
+        let mods = vec![
+            all_mod_input("first.id", "First", "first/i18n", &first),
+            all_mod_input("second.id", "Second", "second/i18n", &second),
+        ];
+
+        let error = export_all_mods(&root, &mods).unwrap_err();
+
+        assert!(error.contains("rolled back"), "{error}");
+        assert_eq!(read(&first.join("de.json")), r#"{"k":"First old"}"#);
+        assert_eq!(read(&first.join("de.json.bak")), r#"{"k":"First backup"}"#);
+        assert_eq!(read(&second.join("de.json")), r#"{"k":"Second old"}"#);
+        assert!(second.join("de.json.bak").is_dir());
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[test]
     fn server_side_path_validation_rejects_targets_outside_mods_root() {
         let base = crate::test_support::temp_dir("export-path-root");
@@ -1258,6 +1888,23 @@ mod tests {
 
         let error = validate_paths(&root, "de", &files).unwrap_err();
         assert!(error.contains("active de target"));
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn server_side_path_validation_rejects_duplicate_targets_across_groups() {
+        let root = crate::test_support::temp_dir("export-path-duplicate");
+        let i18n = root.join("Mod/i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        let file = ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("de.json").display().to_string(),
+        };
+
+        let error = validate_paths(&root, "de", &[file.clone(), file]).unwrap_err();
+        assert!(error.contains("duplicate target path"));
 
         std::fs::remove_dir_all(root).ok();
     }

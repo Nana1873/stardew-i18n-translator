@@ -11,11 +11,26 @@ request and the existing product behavior decide what work is appropriate.
   dictionaries to build an optional glossary.
 - It is not a mod manager, download manager, Nexus client, Git client, or general
   Stardew content editor.
-- It does not store cloud credentials or call cloud AI services. Local AI is
+- Manual translation and local-only workflows remain offline. Local AI is
   limited to a user-configured localhost OpenAI-compatible endpoint.
+- The optional Codex CLI backend relies exclusively on the CLI's own login. The
+  app does not read, copy, or persist Codex authentication files or tokens.
+- AI requests send source text, section context, and matching glossary terms to
+  the selected service.
+- Codex first creates a draft, then reviews every draft and corrects issues in
+  meaning, natural language, terminology, grammar, register, speaker voice, and
+  dialogue continuity. Only afterward do conservatively detected glossary or
+  terminology candidates receive exactly one focused repair pass.
+- A failed full review leaves its chunk incomplete for a later retry; a failed
+  optional terminology repair keeps the fully reviewed text. Every completed
+  result enters the existing human Review workflow as `review-needed`; the AI
+  quality pass does not add another user-visible status or queue.
+- Keep the AI integrations fixed and direct. Do not add a provider marketplace,
+  provider registry, or configurable custom cloud base URL.
 - The glossary is optional. Missing glossary data must never block scanning,
   editing, validation, or export.
-- AI-generated translations always require review.
+- AI-generated translations always require human review, including those that
+  passed the AI review and focused terminology repair.
 
 ## Keep the Implementation Simple
 

@@ -37,6 +37,13 @@ pub struct StoredString {
 /// retaining the export waiver for the exact saved source text.
 pub const TOKEN_MISMATCH_ACCEPTED_STATUS: &str = "translated-token-mismatch-accepted";
 
+/// Stored status used when an unreviewed Local-AI suggestion has an explicitly
+/// accepted protected-token mismatch. It remains `review-needed` in the UI;
+/// the separate storage value preserves the waiver across reloads without
+/// promoting AI output to a confirmed translation.
+pub const REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS: &str =
+    "review-needed-token-mismatch-accepted";
+
 /// Per-mod state: entry key -> stored translation.
 pub type ModState = HashMap<String, StoredString>;
 
@@ -78,11 +85,44 @@ pub fn language_root(config_dir: &Path, target_lang: &str) -> Result<PathBuf, St
     Ok(root)
 }
 
-/// Process-wide write guard: serializes every load-modify-write cycle and
-/// remembers which state files were already backed up this session.
-fn write_guard() -> &'static Mutex<HashSet<PathBuf>> {
-    static GUARD: OnceLock<Mutex<HashSet<PathBuf>>> = OnceLock::new();
-    GUARD.get_or_init(|| Mutex::new(HashSet::new()))
+#[derive(Default)]
+struct WriteSession {
+    backed_up: HashSet<PathBuf>,
+    revisions: HashMap<PathBuf, u64>,
+    entry_revisions: HashMap<(PathBuf, String), u64>,
+}
+
+impl WriteSession {
+    fn record_mutation(&mut self, path: &Path, touched_keys: &[String]) {
+        let revision = self.revisions.entry(path.to_path_buf()).or_default();
+        *revision = revision.wrapping_add(1).max(1);
+        for key in touched_keys {
+            let revision = self
+                .entry_revisions
+                .entry((path.to_path_buf(), key.clone()))
+                .or_default();
+            *revision = revision.wrapping_add(1).max(1);
+        }
+    }
+
+    fn revision(&self, path: &Path) -> u64 {
+        self.revisions.get(path).copied().unwrap_or_default()
+    }
+
+    fn entry_revision(&self, path: &Path, key: &str) -> u64 {
+        self.entry_revisions
+            .get(&(path.to_path_buf(), key.to_string()))
+            .copied()
+            .unwrap_or_default()
+    }
+}
+
+/// Process-wide write guard: serializes every load-modify-write cycle,
+/// remembers backups, and advances each component's in-session revision after
+/// every successful state mutation so stale undo cannot revive after an edit.
+fn write_guard() -> &'static Mutex<WriteSession> {
+    static GUARD: OnceLock<Mutex<WriteSession>> = OnceLock::new();
+    GUARD.get_or_init(|| Mutex::new(WriteSession::default()))
 }
 
 fn state_path(config_dir: &Path, unique_id: &str) -> PathBuf {
@@ -262,37 +302,102 @@ pub fn load(config_dir: &Path, unique_id: &str) -> Result<ModState, String> {
     }
 }
 
-/// Serialize `state` and write it to `path` safely: verify the JSON, back up an
-/// existing file once per session, write a `.tmp` sibling, rename over the
-/// target. Callers must hold the write guard.
-fn write_state(
-    path: &Path,
-    state: &ModState,
-    backed_up: &mut HashSet<PathBuf>,
-) -> Result<(), String> {
+pub(crate) struct ModStateSnapshot {
+    pub state: ModState,
+    entry_revisions: HashMap<String, u64>,
+}
+
+impl ModStateSnapshot {
+    pub fn entry_revision(&self, key: &str) -> u64 {
+        self.entry_revisions.get(key).copied().unwrap_or_default()
+    }
+}
+
+/// Read one component's persisted values and per-string in-session revisions
+/// under the same writer lock. Live AI uses this as its stale-write snapshot.
+pub(crate) fn load_snapshot(
+    config_dir: &Path,
+    unique_id: &str,
+) -> Result<ModStateSnapshot, String> {
+    let session = write_guard()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let path = state_path(config_dir, unique_id);
+    let state = load(config_dir, unique_id)?;
+    let entry_revisions = session
+        .entry_revisions
+        .iter()
+        .filter(|((entry_path, _), _)| entry_path == &path)
+        .map(|((_, key), revision)| (key.clone(), *revision))
+        .collect();
+    Ok(ModStateSnapshot {
+        state,
+        entry_revisions,
+    })
+}
+
+/// Serialize and validate a state before any file in a multi-component batch
+/// is changed.
+fn serialize_state(state: &ModState) -> Result<String, String> {
     let body = serde_json::to_string_pretty(state)
         .map_err(|error| format!("Could not serialize translation state: {error}"))?;
     crate::input_limits::ensure_json_output_size(body.len() as u64, "Translation state")?;
     // Defensive: re-parse what we are about to write (mirrors export.rs).
     serde_json::from_str::<ModState>(&body)
         .map_err(|error| format!("Generated invalid translation state JSON: {error}"))?;
+    Ok(body)
+}
 
+fn write_serialized_state(
+    path: &Path,
+    body: &str,
+    session: &mut WriteSession,
+    touched_keys: &[String],
+) -> Result<(), String> {
+    stage_serialized_state(path, body)?;
+    if let Err(error) = finalize_staged_state(path, session, touched_keys) {
+        let _ = std::fs::remove_file(sibling(path, ".tmp"));
+        return Err(error);
+    }
+    Ok(())
+}
+
+fn stage_serialized_state(path: &Path, body: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|error| format!("Could not create translations dir: {error}"))?;
     }
 
-    if path.is_file() && !backed_up.contains(path) {
+    std::fs::write(sibling(path, ".tmp"), body.as_bytes())
+        .map_err(|error| format!("Could not write temp state file: {error}"))
+}
+
+fn finalize_staged_state(
+    path: &Path,
+    session: &mut WriteSession,
+    touched_keys: &[String],
+) -> Result<(), String> {
+    if path.is_file() && !session.backed_up.contains(path) {
         std::fs::copy(path, sibling(path, ".bak"))
             .map_err(|error| format!("Could not back up {}: {error}", path.display()))?;
-        backed_up.insert(path.to_path_buf());
+        session.backed_up.insert(path.to_path_buf());
     }
 
     let temp = sibling(path, ".tmp");
-    std::fs::write(&temp, body.as_bytes())
-        .map_err(|error| format!("Could not write temp state file: {error}"))?;
     std::fs::rename(&temp, path)
-        .map_err(|error| format!("Could not finalize {}: {error}", path.display()))
+        .map_err(|error| format!("Could not finalize {}: {error}", path.display()))?;
+    session.record_mutation(path, touched_keys);
+    Ok(())
+}
+
+fn write_state(
+    path: &Path,
+    state: &ModState,
+    session: &mut WriteSession,
+    touched_keys: &[String],
+) -> Result<(), String> {
+    let body = serialize_state(state)?;
+    write_serialized_state(path, &body, session, touched_keys)
 }
 
 /// Upsert a single string's saved state (one serialized load-modify-write).
@@ -313,14 +418,338 @@ pub fn save_many(
     unique_id: &str,
     entries: Vec<(String, StoredString)>,
 ) -> Result<(), String> {
-    let mut backed_up = write_guard()
+    let mut session = write_guard()
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
     let mut state = load(config_dir, unique_id)?;
+    let touched_keys = entries
+        .iter()
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
     for (key, entry) in entries {
         state.insert(key, entry);
     }
-    write_state(&state_path(config_dir, unique_id), &state, &mut backed_up)
+    write_state(
+        &state_path(config_dir, unique_id),
+        &state,
+        &mut session,
+        &touched_keys,
+    )
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ReversibleModEdit {
+    pub mod_unique_id: String,
+    pub expected_current: Vec<(String, StoredString)>,
+    pub previous: Vec<(String, Option<StoredString>)>,
+    expected_revision: u64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ReversibleBatch {
+    pub edits: Vec<ReversibleModEdit>,
+}
+
+struct PreparedStateWrite {
+    path: PathBuf,
+    existed: bool,
+    before: ModState,
+    after_body: String,
+    touched_keys: Vec<String>,
+}
+
+fn restore_exact_state(
+    write: &PreparedStateWrite,
+    session: &mut WriteSession,
+) -> Result<(), String> {
+    let _ = std::fs::remove_file(sibling(&write.path, ".tmp"));
+    if write.existed {
+        write_state(&write.path, &write.before, session, &write.touched_keys)
+    } else if write.path.exists() {
+        std::fs::remove_file(&write.path).map_err(|error| {
+            format!(
+                "Could not remove partial state {}: {error}",
+                write.path.display()
+            )
+        })?;
+        session.record_mutation(&write.path, &write.touched_keys);
+        Ok(())
+    } else {
+        Ok(())
+    }
+}
+
+fn commit_state_writes(
+    writes: &[PreparedStateWrite],
+    session: &mut WriteSession,
+) -> Result<(), String> {
+    for (index, write) in writes.iter().enumerate() {
+        if let Err(error) = stage_serialized_state(&write.path, &write.after_body) {
+            for staged in &writes[..=index] {
+                let _ = std::fs::remove_file(sibling(&staged.path, ".tmp"));
+            }
+            return Err(error);
+        }
+    }
+
+    for (index, write) in writes.iter().enumerate() {
+        let already_backed_up = session.backed_up.contains(&write.path);
+        if let Err(error) = finalize_staged_state(&write.path, session, &write.touched_keys) {
+            let mut rollback_errors = Vec::new();
+            for unfinished in &writes[index..] {
+                let temp = sibling(&unfinished.path, ".tmp");
+                if !temp.exists() {
+                    continue;
+                }
+                if let Err(cleanup) = std::fs::remove_file(&temp) {
+                    rollback_errors.push(format!(
+                        "Could not remove partial state {}: {cleanup}",
+                        temp.display()
+                    ));
+                }
+            }
+            if !already_backed_up && session.backed_up.contains(&write.path) {
+                let backup = sibling(&write.path, ".bak");
+                match std::fs::remove_file(&backup) {
+                    Ok(()) => {
+                        session.backed_up.remove(&write.path);
+                    }
+                    Err(cleanup) => rollback_errors.push(format!(
+                        "Could not remove partial backup {}: {cleanup}",
+                        backup.display()
+                    )),
+                }
+            }
+            // A failed atomic rename leaves the current target untouched; only
+            // writes that completed before it need their original contents
+            // restored.
+            for prior in writes[..index].iter().rev() {
+                if let Err(rollback) = restore_exact_state(prior, session) {
+                    rollback_errors.push(rollback);
+                }
+            }
+            if rollback_errors.is_empty() {
+                return Err(error);
+            }
+            return Err(format!(
+                "{error} The batch rollback was incomplete: {}",
+                rollback_errors.join(" ")
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_reversible_groups(
+    groups: &[(String, Vec<(String, StoredString)>)],
+) -> Result<(), String> {
+    if groups.is_empty() {
+        return Err("Choose at least one string for the batch edit.".to_string());
+    }
+    let mut mods = HashSet::with_capacity(groups.len());
+    for (mod_unique_id, entries) in groups {
+        if entries.is_empty() {
+            return Err("A batch edit group contains no strings.".to_string());
+        }
+        if mod_unique_id.trim().is_empty() {
+            return Err("A batch edit group has no component identity.".to_string());
+        }
+        if !mods.insert(mod_unique_id.to_lowercase()) {
+            return Err("The batch edit contains the same mod more than once.".to_string());
+        }
+        let mut keys = HashSet::with_capacity(entries.len());
+        if entries.iter().any(|(key, _)| !keys.insert(key)) {
+            return Err("The batch edit contains the same string more than once.".to_string());
+        }
+    }
+    Ok(())
+}
+
+/// Apply one multi-mod batch while holding the process-wide translation lock.
+/// Every state is loaded before the first write, and a later write failure
+/// restores earlier files to their exact pre-batch state before returning.
+pub(crate) fn save_groups_with_previous(
+    config_dir: &Path,
+    groups: Vec<(String, Vec<(String, StoredString)>)>,
+) -> Result<ReversibleBatch, String> {
+    validate_reversible_groups(&groups)?;
+    let mut session = write_guard()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut writes = Vec::with_capacity(groups.len());
+    let mut snapshots = Vec::with_capacity(groups.len());
+    for (mod_unique_id, entries) in groups {
+        let path = state_path(config_dir, &mod_unique_id);
+        let existed = path.is_file();
+        let before = load(config_dir, &mod_unique_id)?;
+        let previous = entries
+            .iter()
+            .map(|(key, _)| (key.clone(), before.get(key).cloned()))
+            .collect();
+        let mut after = before.clone();
+        for (key, entry) in &entries {
+            after.insert(key.clone(), entry.clone());
+        }
+        let after_body = serialize_state(&after)?;
+        let touched_keys = entries.iter().map(|(key, _)| key.clone()).collect();
+        writes.push(PreparedStateWrite {
+            path,
+            existed,
+            before,
+            after_body,
+            touched_keys,
+        });
+        snapshots.push(ReversibleModEdit {
+            mod_unique_id,
+            expected_current: entries,
+            previous,
+            expected_revision: 0,
+        });
+    }
+    commit_state_writes(&writes, &mut session)?;
+    for (snapshot, write) in snapshots.iter_mut().zip(&writes) {
+        snapshot.expected_revision = session.revision(&write.path);
+    }
+    Ok(ReversibleBatch { edits: snapshots })
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ConditionalSaveOutcome {
+    Saved,
+    Stale,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct ConditionalSaveEntry {
+    pub key: String,
+    pub expected: Option<StoredString>,
+    pub expected_revision: u64,
+    pub entry: StoredString,
+}
+
+/// Save one completed AI chunk as a single conditional transaction. Every
+/// requested entry is checked under the process-wide writer lock before any
+/// component state is staged or changed. Edits to unrelated strings remain
+/// allowed and are preserved.
+pub(crate) fn save_groups_if_unchanged(
+    config_dir: &Path,
+    groups: Vec<(String, Vec<ConditionalSaveEntry>)>,
+) -> Result<ConditionalSaveOutcome, String> {
+    if groups.is_empty() {
+        return Err("The completed AI chunk contains no component groups.".to_string());
+    }
+    let mut session = write_guard()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut component_ids = HashSet::with_capacity(groups.len());
+    let mut writes = Vec::with_capacity(groups.len());
+
+    for (mod_unique_id, entries) in groups {
+        if entries.is_empty() {
+            return Err("A completed AI chunk contains an empty component group.".to_string());
+        }
+        if !component_ids.insert(mod_unique_id.to_lowercase()) {
+            return Err(
+                "A completed AI chunk contains the same component more than once.".to_string(),
+            );
+        }
+
+        let path = state_path(config_dir, &mod_unique_id);
+        let existed = path.is_file();
+        let before = load(config_dir, &mod_unique_id)?;
+        let mut keys = HashSet::with_capacity(entries.len());
+        for item in &entries {
+            if !keys.insert(item.key.clone()) {
+                return Err(
+                    "A completed AI chunk contains the same string more than once.".to_string(),
+                );
+            }
+            if session.entry_revision(&path, &item.key) != item.expected_revision
+                || before.get(&item.key) != item.expected.as_ref()
+            {
+                return Ok(ConditionalSaveOutcome::Stale);
+            }
+        }
+
+        let mut after = before.clone();
+        let touched_keys = entries
+            .iter()
+            .map(|item| item.key.clone())
+            .collect::<Vec<_>>();
+        for item in entries {
+            after.insert(item.key, item.entry);
+        }
+        writes.push(PreparedStateWrite {
+            path,
+            existed,
+            before,
+            after_body: serialize_state(&after)?,
+            touched_keys,
+        });
+    }
+
+    commit_state_writes(&writes, &mut session)?;
+    Ok(ConditionalSaveOutcome::Saved)
+}
+
+/// Restore a prior bulk snapshot only while every touched entry still equals
+/// the value written by that batch. A later single-string or batch edit makes
+/// the undo stale instead of silently overwriting newer user work.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum RestoreManyOutcome {
+    Restored,
+    Stale,
+}
+
+pub(crate) fn restore_groups_if_unchanged(
+    config_dir: &Path,
+    batch: &ReversibleBatch,
+) -> Result<RestoreManyOutcome, String> {
+    let mut session = write_guard()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut writes = Vec::with_capacity(batch.edits.len());
+    for snapshot in &batch.edits {
+        let path = state_path(config_dir, &snapshot.mod_unique_id);
+        if session.revision(&path) != snapshot.expected_revision {
+            return Ok(RestoreManyOutcome::Stale);
+        }
+        let existed = path.is_file();
+        let before = load(config_dir, &snapshot.mod_unique_id)?;
+        if snapshot
+            .expected_current
+            .iter()
+            .any(|(key, expected)| before.get(key) != Some(expected))
+        {
+            return Ok(RestoreManyOutcome::Stale);
+        }
+        let mut after = before.clone();
+        for (key, entry) in &snapshot.previous {
+            match entry {
+                Some(entry) => {
+                    after.insert(key.clone(), entry.clone());
+                }
+                None => {
+                    after.remove(key);
+                }
+            }
+        }
+        let after_body = serialize_state(&after)?;
+        let touched_keys = snapshot
+            .expected_current
+            .iter()
+            .map(|(key, _)| key.clone())
+            .collect();
+        writes.push(PreparedStateWrite {
+            path,
+            existed,
+            before,
+            after_body,
+            touched_keys,
+        });
+    }
+    commit_state_writes(&writes, &mut session)?;
+    Ok(RestoreManyOutcome::Restored)
 }
 
 #[cfg(test)]
@@ -333,6 +762,27 @@ mod tests {
             status: "translated".into(),
             source_hash: source_hash("Hello"),
         }
+    }
+
+    fn conditional_group(
+        key: &str,
+        expected: Option<StoredString>,
+        expected_revision: u64,
+        target: &str,
+    ) -> Vec<(String, Vec<ConditionalSaveEntry>)> {
+        vec![(
+            "mod".to_string(),
+            vec![ConditionalSaveEntry {
+                key: key.to_string(),
+                expected,
+                expected_revision,
+                entry: StoredString {
+                    target: target.to_string(),
+                    status: "review-needed".to_string(),
+                    source_hash: source_hash("Hello"),
+                },
+            }],
+        )]
     }
 
     #[test]
@@ -362,6 +812,347 @@ mod tests {
         // No temp file is left behind.
         assert!(!sibling(&state_path(&dir, "Some.Mod"), ".tmp").exists());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn reversible_bulk_save_restores_existing_and_absent_entries() {
+        let dir = crate::test_support::temp_dir("translations-bulk-undo");
+        save_one(&dir, "mod", "existing".into(), entry("Before")).unwrap();
+        let changed = vec![
+            ("existing".to_string(), entry("After")),
+            ("new".to_string(), entry("Added")),
+        ];
+
+        let snapshots =
+            save_groups_with_previous(&dir, vec![("mod".to_string(), changed.clone())]).unwrap();
+        assert_eq!(load(&dir, "mod").unwrap()["existing"].target, "After");
+        assert!(load(&dir, "mod").unwrap().contains_key("new"));
+
+        assert_eq!(
+            restore_groups_if_unchanged(&dir, &snapshots).unwrap(),
+            RestoreManyOutcome::Restored
+        );
+        let restored = load(&dir, "mod").unwrap();
+        assert_eq!(restored["existing"].target, "Before");
+        assert!(!restored.contains_key("new"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reversible_bulk_save_refuses_to_overwrite_a_later_edit() {
+        let dir = crate::test_support::temp_dir("translations-stale-bulk-undo");
+        let changed = vec![("key".to_string(), entry("Batch"))];
+        let snapshots =
+            save_groups_with_previous(&dir, vec![("mod".to_string(), changed)]).unwrap();
+        save_one(&dir, "mod", "key".into(), entry("Newer")).unwrap();
+
+        assert_eq!(
+            restore_groups_if_unchanged(&dir, &snapshots).unwrap(),
+            RestoreManyOutcome::Stale
+        );
+        assert_eq!(load(&dir, "mod").unwrap()["key"].target, "Newer");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn multi_mod_restore_stays_stale_after_edit_is_reverted() {
+        let dir = crate::test_support::temp_dir("translations-multi-mod-restore");
+        save_one(&dir, "mod-a", "a".into(), entry("Old A")).unwrap();
+        save_one(&dir, "mod-b", "b".into(), entry("Old B")).unwrap();
+
+        let first = vec![
+            ("a".to_string(), entry("Batch A")),
+            ("added".to_string(), entry("Added")),
+        ];
+        let second = vec![("b".to_string(), entry("Batch B"))];
+        let snapshots = save_groups_with_previous(
+            &dir,
+            vec![
+                ("mod-a".to_string(), first),
+                ("mod-b".to_string(), second.clone()),
+            ],
+        )
+        .unwrap();
+
+        save_one(&dir, "mod-b", "b".into(), entry("Later B")).unwrap();
+        assert_eq!(
+            restore_groups_if_unchanged(&dir, &snapshots).unwrap(),
+            RestoreManyOutcome::Stale
+        );
+        assert_eq!(load(&dir, "mod-a").unwrap()["a"].target, "Batch A");
+        assert_eq!(load(&dir, "mod-b").unwrap()["b"].target, "Later B");
+
+        save_many(&dir, "mod-b", second).unwrap();
+        assert_eq!(
+            restore_groups_if_unchanged(&dir, &snapshots).unwrap(),
+            RestoreManyOutcome::Stale
+        );
+        let unchanged_a = load(&dir, "mod-a").unwrap();
+        let unchanged_b = load(&dir, "mod-b").unwrap();
+        assert_eq!(unchanged_a["a"].target, "Batch A");
+        assert!(unchanged_a.contains_key("added"));
+        assert_eq!(unchanged_b["b"].target, "Batch B");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn later_oversized_group_fails_before_any_component_is_written() {
+        let dir = crate::test_support::temp_dir("translations-preflight-all-groups");
+        save_one(&dir, "mod-a", "a".into(), entry("Old A")).unwrap();
+        save_one(&dir, "mod-b", "b".into(), entry("Old B")).unwrap();
+        let path_a = state_path(&dir, "mod-a");
+        let before_a = std::fs::read(&path_a).unwrap();
+        let oversized = StoredString {
+            target: "x".repeat(crate::input_limits::MAX_JSON_BYTES as usize),
+            status: "translated".to_string(),
+            source_hash: source_hash("Large source"),
+        };
+
+        let error = save_groups_with_previous(
+            &dir,
+            vec![
+                ("mod-a".to_string(), vec![("a".to_string(), entry("New A"))]),
+                ("mod-b".to_string(), vec![("b".to_string(), oversized)]),
+            ],
+        )
+        .unwrap_err();
+        assert!(error.contains("64 MiB"), "unexpected error: {error}");
+        assert_eq!(std::fs::read(&path_a).unwrap(), before_a);
+        assert_eq!(load(&dir, "mod-b").unwrap()["b"].target, "Old B");
+        assert!(!sibling(&path_a, ".bak").exists());
+        assert!(!sibling(&path_a, ".tmp").exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn later_temp_failure_cleans_staged_files_before_any_target_is_changed() {
+        let dir = crate::test_support::temp_dir("translations-stage-all-groups");
+        save_one(&dir, "mod-a", "a".into(), entry("Old A")).unwrap();
+        save_one(&dir, "mod-b", "b".into(), entry("Old B")).unwrap();
+        let path_a = state_path(&dir, "mod-a");
+        let path_b = state_path(&dir, "mod-b");
+        let before_a = std::fs::read(&path_a).unwrap();
+        let before_b = std::fs::read(&path_b).unwrap();
+        std::fs::create_dir(sibling(&path_b, ".tmp")).unwrap();
+
+        assert!(save_groups_with_previous(
+            &dir,
+            vec![
+                ("mod-a".to_string(), vec![("a".to_string(), entry("New A"))],),
+                ("mod-b".to_string(), vec![("b".to_string(), entry("New B"))],),
+            ],
+        )
+        .is_err());
+        assert_eq!(std::fs::read(&path_a).unwrap(), before_a);
+        assert_eq!(std::fs::read(&path_b).unwrap(), before_b);
+        assert!(!sibling(&path_a, ".tmp").exists());
+        assert!(!sibling(&path_a, ".bak").exists());
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn reversible_groups_reject_duplicate_components_and_keys() {
+        let dir = crate::test_support::temp_dir("translations-group-validation");
+        let duplicate_mod = save_groups_with_previous(
+            &dir,
+            vec![
+                ("Möd".to_string(), vec![("a".to_string(), entry("A"))]),
+                ("MÖD".to_string(), vec![("b".to_string(), entry("B"))]),
+            ],
+        )
+        .unwrap_err();
+        assert!(duplicate_mod.contains("same mod"));
+
+        let duplicate_key = save_groups_with_previous(
+            &dir,
+            vec![(
+                "mod".to_string(),
+                vec![
+                    ("same".to_string(), entry("A")),
+                    ("same".to_string(), entry("B")),
+                ],
+            )],
+        )
+        .unwrap_err();
+        assert!(duplicate_key.contains("same string"));
+        assert!(!dir.exists());
+    }
+
+    #[test]
+    fn conditional_ai_save_preserves_a_newer_edit() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai");
+        let original = entry("Before");
+        save_one(&dir, "mod", "key".into(), original.clone()).unwrap();
+        let expected_revision = load_snapshot(&dir, "mod").unwrap().entry_revision("key");
+        save_one(&dir, "mod", "key".into(), entry("Newer")).unwrap();
+
+        assert_eq!(
+            save_groups_if_unchanged(
+                &dir,
+                conditional_group("key", Some(original), expected_revision, "AI"),
+            )
+            .unwrap(),
+            ConditionalSaveOutcome::Stale
+        );
+        assert_eq!(load(&dir, "mod").unwrap()["key"].target, "Newer");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_save_stays_stale_after_edit_is_reverted() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-aba");
+        let original = entry("Before");
+        save_one(&dir, "mod", "key".into(), original.clone()).unwrap();
+        let expected_revision = load_snapshot(&dir, "mod").unwrap().entry_revision("key");
+        save_one(&dir, "mod", "key".into(), entry("Newer")).unwrap();
+        save_one(&dir, "mod", "key".into(), original.clone()).unwrap();
+
+        assert_eq!(
+            save_groups_if_unchanged(
+                &dir,
+                conditional_group("key", Some(original), expected_revision, "AI"),
+            )
+            .unwrap(),
+            ConditionalSaveOutcome::Stale
+        );
+        assert_eq!(load(&dir, "mod").unwrap()["key"].target, "Before");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_save_allows_an_unrelated_string_edit() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-unrelated");
+        let snapshot = load_snapshot(&dir, "mod").unwrap();
+        save_one(&dir, "mod", "other".into(), entry("Manual")).unwrap();
+
+        assert_eq!(
+            save_groups_if_unchanged(
+                &dir,
+                conditional_group(
+                    "requested",
+                    None,
+                    snapshot.entry_revision("requested"),
+                    "AI",
+                ),
+            )
+            .unwrap(),
+            ConditionalSaveOutcome::Saved
+        );
+        let state = load(&dir, "mod").unwrap();
+        assert_eq!(state["other"].target, "Manual");
+        assert_eq!(state["requested"].target, "AI");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_chunk_is_atomic_when_a_later_entry_is_stale() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-chunk");
+        let snapshot = load_snapshot(&dir, "mod").unwrap();
+        save_one(&dir, "mod", "second".into(), entry("Manual")).unwrap();
+
+        let result = save_groups_if_unchanged(
+            &dir,
+            vec![(
+                "mod".to_string(),
+                vec![
+                    ConditionalSaveEntry {
+                        key: "first".to_string(),
+                        expected: None,
+                        expected_revision: snapshot.entry_revision("first"),
+                        entry: entry("AI first"),
+                    },
+                    ConditionalSaveEntry {
+                        key: "second".to_string(),
+                        expected: None,
+                        expected_revision: snapshot.entry_revision("second"),
+                        entry: entry("AI second"),
+                    },
+                ],
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(result, ConditionalSaveOutcome::Stale);
+        let state = load(&dir, "mod").unwrap();
+        assert!(!state.contains_key("first"));
+        assert_eq!(state["second"].target, "Manual");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_chunk_is_atomic_across_components() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-components");
+        let first = load_snapshot(&dir, "first.mod").unwrap();
+        let second = load_snapshot(&dir, "second.mod").unwrap();
+        save_one(&dir, "second.mod", "second".into(), entry("Manual")).unwrap();
+
+        let result = save_groups_if_unchanged(
+            &dir,
+            vec![
+                (
+                    "first.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "first".to_string(),
+                        expected: None,
+                        expected_revision: first.entry_revision("first"),
+                        entry: entry("AI first"),
+                    }],
+                ),
+                (
+                    "second.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "second".to_string(),
+                        expected: None,
+                        expected_revision: second.entry_revision("second"),
+                        entry: entry("AI second"),
+                    }],
+                ),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(result, ConditionalSaveOutcome::Stale);
+        assert!(load(&dir, "first.mod").unwrap().is_empty());
+        assert_eq!(load(&dir, "second.mod").unwrap()["second"].target, "Manual");
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn conditional_ai_chunk_writes_nothing_when_a_later_state_cannot_load() {
+        let dir = crate::test_support::temp_dir("translations-conditional-ai-load-error");
+        let first = load_snapshot(&dir, "first.mod").unwrap();
+        let broken_path = state_path(&dir, "broken.mod");
+        std::fs::create_dir_all(broken_path.parent().unwrap()).unwrap();
+        std::fs::write(&broken_path, "not json").unwrap();
+
+        let error = save_groups_if_unchanged(
+            &dir,
+            vec![
+                (
+                    "first.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "first".to_string(),
+                        expected: None,
+                        expected_revision: first.entry_revision("first"),
+                        entry: entry("AI first"),
+                    }],
+                ),
+                (
+                    "broken.mod".to_string(),
+                    vec![ConditionalSaveEntry {
+                        key: "second".to_string(),
+                        expected: None,
+                        expected_revision: 0,
+                        entry: entry("AI second"),
+                    }],
+                ),
+            ],
+        )
+        .unwrap_err();
+
+        assert!(error.contains("is corrupted"), "{error}");
+        assert!(load(&dir, "first.mod").unwrap().is_empty());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
