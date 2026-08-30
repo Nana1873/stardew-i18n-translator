@@ -100,6 +100,10 @@ export function ModList({
 }: ModListProps) {
   const groups = groupByPackage(mods);
   const [menu, setMenu] = useState<ModMenuState | null>(null);
+  const [collapsedPackages, setCollapsedPackages] = useState<Set<string>>(
+    new Set(),
+  );
+  const [activeTreeId, setActiveTreeId] = useState<string | null>(null);
   const menuRef = useRef<HTMLUListElement>(null);
   const q = query.trim().toLocaleLowerCase();
   const visible = q
@@ -119,12 +123,37 @@ export function ModList({
         ];
       })
     : groups.map((group) => ({ group, mods: group.mods }));
-  const visibleIds = visible.flatMap(({ mods: visibleMods }) =>
-    visibleMods.map((mod) => mod.uniqueId),
-  );
-  const selectedVisible =
-    selectedId !== null && visibleIds.includes(selectedId);
-  const firstVisibleId = visibleIds[0] ?? null;
+  const renderedTreeIds = visible.flatMap(({ group, mods: visibleMods }) => {
+    if (group.mods.length === 1) return [`mod:${group.mods[0].uniqueId}`];
+    const packageId = `package:${group.packageId}`;
+    if (!q && collapsedPackages.has(group.packageId)) return [packageId];
+    return [
+      packageId,
+      ...visibleMods.map((candidate) => `mod:${candidate.uniqueId}`),
+    ];
+  });
+  const selectedGroup = selectedId
+    ? visible.find(({ mods: visibleMods }) =>
+        visibleMods.some((candidate) => candidate.uniqueId === selectedId),
+      )
+    : undefined;
+  const selectedTreeId = selectedGroup
+    ? selectedGroup.group.mods.length === 1 ||
+      q ||
+      !collapsedPackages.has(selectedGroup.group.packageId)
+      ? `mod:${selectedId}`
+      : `package:${selectedGroup.group.packageId}`
+    : null;
+  const treeTabStopId =
+    activeTreeId && renderedTreeIds.includes(activeTreeId)
+      ? activeTreeId
+      : selectedTreeId && renderedTreeIds.includes(selectedTreeId)
+        ? selectedTreeId
+        : (renderedTreeIds[0] ?? null);
+
+  useEffect(() => {
+    if (selectedId) setActiveTreeId(`mod:${selectedId}`);
+  }, [selectedId]);
 
   useEffect(() => {
     if (!menu) return;
@@ -164,9 +193,9 @@ export function ModList({
 
   function onTreeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     const row = (event.target as HTMLElement).closest<HTMLElement>(
-      ".translator-mod-row[role='treeitem']",
+      "[role='treeitem']",
     );
-    if (!row) return;
+    if (!row || event.target !== row) return;
     if (
       event.key === "ContextMenu" ||
       (event.shiftKey && event.key === "F10")
@@ -198,9 +227,7 @@ export function ModList({
 
     event.preventDefault();
     const rows = Array.from(
-      event.currentTarget.querySelectorAll<HTMLElement>(
-        ".translator-mod-row[role='treeitem']",
-      ),
+      event.currentTarget.querySelectorAll<HTMLElement>("[role='treeitem']"),
     );
     const index = rows.indexOf(row);
     const next =
@@ -218,9 +245,7 @@ export function ModList({
               )
             ];
     if (!next) return;
-    rows.forEach((candidate) => {
-      candidate.tabIndex = candidate === next ? 0 : -1;
-    });
+    setActiveTreeId(next.dataset.treeId ?? null);
     next.focus();
   }
 
@@ -264,6 +289,14 @@ export function ModList({
         role="tree"
         aria-label="Mods"
         onKeyDown={onTreeKeyDown}
+        onFocus={(event) => {
+          const row = (event.target as HTMLElement).closest<HTMLElement>(
+            "[role='treeitem']",
+          );
+          if (row && event.currentTarget.contains(row)) {
+            setActiveTreeId(row.dataset.treeId ?? null);
+          }
+        }}
       >
         {visible.map(({ group, mods: visibleMods }) =>
           group.mods.length === 1 ? (
@@ -271,11 +304,12 @@ export function ModList({
               key={group.mods[0].uniqueId}
               mod={group.mods[0]}
               selectedId={selectedId}
-              tabStop={
-                group.mods[0].uniqueId === selectedId ||
-                (!selectedVisible && group.mods[0].uniqueId === firstVisibleId)
-              }
-              onSelect={onSelect}
+              treeId={`mod:${group.mods[0].uniqueId}`}
+              tabStop={treeTabStopId === `mod:${group.mods[0].uniqueId}`}
+              onSelect={(uniqueId) => {
+                setActiveTreeId(`mod:${uniqueId}`);
+                onSelect(uniqueId);
+              }}
               onContextMenu={openContextMenu}
               menuOpen={menu?.mod.uniqueId === group.mods[0].uniqueId}
             />
@@ -284,11 +318,22 @@ export function ModList({
               key={group.packageId}
               group={group}
               visibleMods={visibleMods}
-              searching={Boolean(q)}
+              expanded={Boolean(q) || !collapsedPackages.has(group.packageId)}
+              tabStop={treeTabStopId === `package:${group.packageId}`}
+              treeTabStopId={treeTabStopId}
               selectedId={selectedId}
-              firstVisibleId={firstVisibleId}
-              selectedVisible={selectedVisible}
-              onSelect={onSelect}
+              onToggle={() =>
+                setCollapsedPackages((current) => {
+                  const next = new Set(current);
+                  if (next.has(group.packageId)) next.delete(group.packageId);
+                  else next.add(group.packageId);
+                  return next;
+                })
+              }
+              onSelect={(uniqueId) => {
+                setActiveTreeId(`mod:${uniqueId}`);
+                onSelect(uniqueId);
+              }}
               onContextMenu={openContextMenu}
               menuOpenId={menu?.mod.uniqueId ?? null}
             />
@@ -406,20 +451,22 @@ export function ModList({
 function PackageNode({
   group,
   visibleMods,
-  searching,
+  expanded,
+  tabStop,
+  treeTabStopId,
   selectedId,
-  firstVisibleId,
-  selectedVisible,
+  onToggle,
   onSelect,
   onContextMenu,
   menuOpenId,
 }: {
   group: PackageGroup;
   visibleMods: ScannedMod[];
-  searching: boolean;
+  expanded: boolean;
+  tabStop: boolean;
+  treeTabStopId: string | null;
   selectedId: string | null;
-  firstVisibleId: string | null;
-  selectedVisible: boolean;
+  onToggle: () => void;
   onSelect: (uniqueId: string) => void;
   onContextMenu: (
     mod: ScannedMod,
@@ -428,18 +475,18 @@ function PackageNode({
   ) => void;
   menuOpenId: string | null;
 }) {
-  const [open, setOpen] = useState(true);
   const percent = Math.round(group.progress * 100);
-  const expanded = searching || open;
   return (
     <>
       <button
         className="translator-mod-group-row"
         type="button"
         role="treeitem"
+        tabIndex={tabStop ? 0 : -1}
+        data-tree-id={`package:${group.packageId}`}
         aria-expanded={expanded}
         title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} translated, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
-        onClick={() => setOpen((value) => !value)}
+        onClick={onToggle}
       >
         <strong>
           <span aria-hidden="true">{expanded ? "▾" : "▸"}</span>
@@ -466,10 +513,8 @@ function PackageNode({
             child
             lastChild={index === visibleMods.length - 1}
             selectedId={selectedId}
-            tabStop={
-              mod.uniqueId === selectedId ||
-              (!selectedVisible && mod.uniqueId === firstVisibleId)
-            }
+            treeId={`mod:${mod.uniqueId}`}
+            tabStop={treeTabStopId === `mod:${mod.uniqueId}`}
             onSelect={onSelect}
             onContextMenu={onContextMenu}
             menuOpen={menuOpenId === mod.uniqueId}
@@ -484,6 +529,7 @@ function ModRow({
   child = false,
   lastChild = false,
   selectedId,
+  treeId,
   tabStop,
   onSelect,
   onContextMenu,
@@ -493,6 +539,7 @@ function ModRow({
   child?: boolean;
   lastChild?: boolean;
   selectedId: string | null;
+  treeId: string;
   tabStop: boolean;
   onSelect: (uniqueId: string) => void;
   onContextMenu: (
@@ -511,6 +558,7 @@ function ModRow({
       role="treeitem"
       aria-current={selected ? "true" : undefined}
       tabIndex={tabStop ? 0 : -1}
+      data-tree-id={treeId}
       data-mod-id={mod.uniqueId}
       data-mod-progress={`${mod.translatedKeys} / ${mod.totalKeys} · ${percent}%`}
       data-progress-state={progressState(mod.progress)}

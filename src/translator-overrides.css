@@ -132,14 +132,6 @@ body {
   border-color: color-mix(in srgb, var(--translator-green) 40%, transparent);
 }
 
-#stardew-i18n-translator .translator-editor .editor__review {
-  margin: 0;
-}
-
-#stardew-i18n-translator .translator-editor .editor__review-track {
-  min-width: 120px;
-}
-
 #stardew-i18n-translator .translator-editor .editor__validation {
   align-items: flex-start;
   flex-wrap: wrap;

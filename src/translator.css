@@ -2796,16 +2796,6 @@
   font-size: 1.05em;
 }
 
-#stardew-i18n-translator .translator-filter.is-issue {
-  color: var(--translator-red);
-}
-
-#stardew-i18n-translator .translator-filter.is-issue[aria-pressed="true"] {
-  color: var(--translator-red);
-  background: var(--translator-red-soft);
-  border-color: var(--translator-red);
-}
-
 #stardew-i18n-translator .translator-overview-stat small {
   display: block;
   margin-top: 3px;

@@ -443,4 +443,47 @@ describe("ModList", () => {
     fireEvent.keyDown(rows[1], { key: " " });
     expect(onSelect).toHaveBeenLastCalledWith("b");
   });
+
+  it("includes package headers in the single roving tree tab stop", () => {
+    render(
+      <ModList
+        mods={[
+          mod({ uniqueId: "cp", name: "[CP] Bundle", packageId: "Bundle" }),
+          mod({ uniqueId: "cc", name: "[CC] Bundle", packageId: "Bundle" }),
+          mod({ uniqueId: "solo", name: "Solo", packageId: "Solo" }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+
+    const packageRow = screen.getByRole("treeitem", { name: /^Bundle2 comps/ });
+    const initialRows = screen.getAllByRole("treeitem");
+    expect(packageRow).toHaveAttribute("tabindex", "0");
+    for (const row of initialRows.filter(
+      (candidate) => candidate !== packageRow,
+    )) {
+      expect(row).toHaveAttribute("tabindex", "-1");
+    }
+
+    packageRow.focus();
+    fireEvent.keyDown(packageRow, { key: "ArrowDown" });
+    expect(initialRows[1]).toHaveFocus();
+    expect(initialRows[1]).toHaveAttribute("tabindex", "0");
+    expect(packageRow).toHaveAttribute("tabindex", "-1");
+
+    fireEvent.keyDown(initialRows[1], { key: "End" });
+    expect(initialRows.at(-1)).toHaveFocus();
+    fireEvent.keyDown(initialRows.at(-1)!, { key: "Home" });
+    expect(packageRow).toHaveFocus();
+
+    fireEvent.keyDown(packageRow, { key: "Enter" });
+    expect(packageRow).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(2);
+    expect(packageRow).toHaveAttribute("tabindex", "0");
+
+    fireEvent.keyDown(packageRow, { key: "Enter" });
+    expect(packageRow).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getAllByRole("treeitem")).toHaveLength(4);
+  });
 });

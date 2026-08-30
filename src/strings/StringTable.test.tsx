@@ -143,6 +143,14 @@ function batchHistoryEntry(
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 function liveAiResult(overrides: Partial<AiRunResult> = {}): AiRunResult {
   return {
     runId: "run-1",
@@ -1379,6 +1387,226 @@ describe("StringTable workbench", () => {
     ).toHaveLength(0);
     expect(onBulkApplied).toHaveBeenCalledWith(
       batchHistoryEntry("Kept original text", 4, 2),
+    );
+  });
+
+  it("does not restore stale rows when a deferred batch finishes after a mod change", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    const onBulkApplied = vi.fn();
+    const onModCountsChange = vi.fn();
+    const onStringSaved = vi.fn();
+    const props = {
+      onBulkApplied,
+      onModCountsChange,
+      onStringSaved,
+    };
+    const { rerender } = render(<StringTable mod={MOD} {...props} />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+
+    rerender(<StringTable mod={OTHER_MOD} {...props} />);
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+
+    expect(screen.getByText("tomorrow")).toBeInTheDocument();
+    expect(screen.queryByText("bye")).toBeNull();
+    expect(onStringSaved).toHaveBeenCalledWith(
+      expect.objectContaining({
+        modUniqueId: "a.b",
+        key: "bye",
+        target: "Bye",
+      }),
+    );
+    expect(onModCountsChange).toHaveBeenCalledWith(
+      "a.b",
+      3,
+      expect.objectContaining({ translated: 2, outdated: 1 }),
+    );
+  });
+
+  it("merges a deferred batch into an overlapping row after switching to All mods", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    const onModCountsChange = vi.fn();
+    const props = {
+      mod: MOD,
+      mods: [MOD, OTHER_MOD],
+      onModCountsChange,
+    };
+    const { rerender } = render(<StringTable {...props} scope="mod" />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+
+    rerender(<StringTable {...props} scope="all" />);
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).not.toHaveTextContent("Bye");
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() =>
+      expect(
+        rowFor("bye").querySelector(".translator-translation-cell"),
+      ).toHaveTextContent("Bye"),
+    );
+
+    expect(screen.getByText("tomorrow")).toBeInTheDocument();
+    expect(onModCountsChange).toHaveBeenCalledWith(
+      "a.b",
+      3,
+      expect.objectContaining({ translated: 2, outdated: 1 }),
+    );
+  });
+
+  it("reloads an overlapping view when a deferred batch finishes during its load", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    const pendingStaleLoad = deferred<(typeof ROWS)["a.b"]>();
+    let loadCall = 0;
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        loadCall += 1;
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        if (loadCall === 2) return pendingStaleLoad.promise;
+        if (loadCall >= 3 && id === "a.b") {
+          return Promise.resolve(
+            ROWS["a.b"].map((row) =>
+              row.key === "bye"
+                ? {
+                    ...row,
+                    target: "Bye",
+                    targetPresent: true,
+                    status: "translated" as const,
+                  }
+                : row,
+            ),
+          );
+        }
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    const onBulkApplied = vi.fn();
+    const props = {
+      mod: MOD,
+      mods: [MOD, OTHER_MOD],
+      onBulkApplied,
+    };
+    const { rerender } = render(<StringTable {...props} scope="mod" />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(
+          ([cmd]) => cmd === "save_string_groups_with_undo",
+        ),
+      ).toHaveLength(1),
+    );
+
+    rerender(<StringTable {...props} scope="all" />);
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "load_strings"),
+      ).toHaveLength(2),
+    );
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+    expect(await screen.findByText("tomorrow")).toBeInTheDocument();
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("Bye");
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "load_strings"),
+    ).toHaveLength(4);
+
+    await act(async () => {
+      pendingStaleLoad.resolve(ROWS["a.b"]);
+      await pendingStaleLoad.promise;
+    });
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("Bye");
+    expect(screen.getByText("tomorrow")).toBeInTheDocument();
+  });
+
+  it("blocks a second mutating batch action while the first save is pending", async () => {
+    const pendingSave = deferred<OperationHistoryEntry>();
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+        return Promise.resolve(ROWS[id]);
+      }
+      if (cmd === "save_string_groups_with_undo") return pendingSave.promise;
+      return Promise.resolve(undefined);
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("bye");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select bye" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    const keepOriginal = screen.getByRole("menuitem", {
+      name: /Keep original/,
+    });
+    const clearTranslation = screen.getByRole("menuitem", {
+      name: /Clear translation/,
+    });
+    fireEvent.click(keepOriginal);
+
+    await waitFor(() => expect(keepOriginal).toBeDisabled());
+    expect(clearTranslation).toBeDisabled();
+    fireEvent.click(clearTranslation);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "save_string_groups_with_undo",
+      ),
+    ).toHaveLength(1);
+
+    act(() => pendingSave.resolve(batchHistoryEntry("Kept original text", 1)));
+    await waitFor(() =>
+      expect(
+        rowFor("bye").querySelector(".translator-translation-cell"),
+      ).toHaveTextContent("Bye"),
     );
   });
 

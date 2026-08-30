@@ -522,6 +522,8 @@ export function StringTable({
   const [activeIdentity, setActiveIdentity] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [bulkMenuOpen, setBulkMenuOpen] = useState(false);
+  const [bulkSaving, setBulkSaving] = useState(false);
+  const [postSaveReloadToken, setPostSaveReloadToken] = useState(0);
   const [sort, setSort] = useState<StringTableSort | null>(initialSort);
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const [batchModLabel, setBatchModLabel] = useState("");
@@ -562,6 +564,7 @@ export function StringTable({
   }, [targetLanguageCode]);
   const rowFocusActive = useRef(false);
   const rowsRef = useRef<Row[] | null>(null);
+  const bulkSavingRef = useRef(false);
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
   const bulkTriggerRef = useRef<HTMLButtonElement>(null);
@@ -601,6 +604,7 @@ export function StringTable({
   useEffect(() => {
     let active = true;
     aiProvenanceByIdentity.current.clear();
+    rowsRef.current = null;
     setRows(null);
     setError(null);
     setSelection(new Set());
@@ -650,7 +654,7 @@ export function StringTable({
     };
     // planSignature is the complete immutable load contract.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planSignature, reloadToken]);
+  }, [planSignature, reloadToken, postSaveReloadToken]);
 
   const data = rows ?? [];
   const rowIndex = useMemo(() => {
@@ -1322,6 +1326,8 @@ export function StringTable({
     write: "keep" | "clear" | "source",
     label: string,
   ) {
+    if (bulkSavingRef.current) return;
+
     const planned = selectedRows
       .map((row) => {
         const target =
@@ -1354,6 +1360,7 @@ export function StringTable({
     const plannedByIdentity = new Map(
       planned.map((change) => [identityOf(change.row), change]),
     );
+    const operationRows = rowsRef.current ?? data;
 
     const byMod = new Map<string, SaveStringEntry[]>();
     for (const { row, target, status, tokenMismatchAccepted } of planned) {
@@ -1371,6 +1378,9 @@ export function StringTable({
       byMod.set(row.modUniqueId, entries);
     }
 
+    bulkSavingRef.current = true;
+    setBulkSaving(true);
+
     try {
       const historyEntry = await saveStringGroupsWithUndo(
         label,
@@ -1383,7 +1393,7 @@ export function StringTable({
       for (const identity of selectedIdentities) {
         aiProvenanceByIdentity.current.delete(identity);
       }
-      const next = data.map((row) => {
+      const completedRows = operationRows.map((row) => {
         if (
           !selectedIdentities.has(identityOf(row)) ||
           !completedMods.has(row.modUniqueId)
@@ -1399,25 +1409,54 @@ export function StringTable({
           tokenMismatchAccepted: change.tokenMismatchAccepted,
         };
       });
-      rowsRef.current = next;
-      setRows(next);
-      reportCounts(next, completedMods);
-      onBulkApplied?.(historyEntry);
-      for (const row of next) {
-        if (
-          !selectedIdentities.has(identityOf(row)) ||
-          !completedMods.has(row.modUniqueId)
-        ) {
-          continue;
+      const currentRows = rowsRef.current;
+      if (currentRows) {
+        const presentCompletedMods = new Set<string>();
+        const next = currentRows.map((row) => {
+          if (
+            !selectedIdentities.has(identityOf(row)) ||
+            !completedMods.has(row.modUniqueId)
+          ) {
+            return row;
+          }
+          const change = plannedByIdentity.get(identityOf(row));
+          if (!change) return row;
+          presentCompletedMods.add(row.modUniqueId);
+          return {
+            ...row,
+            target: change.target,
+            status: change.status,
+            tokenMismatchAccepted: change.tokenMismatchAccepted,
+          };
+        });
+        if (presentCompletedMods.size > 0) {
+          rowsRef.current = next;
+          setRows(next);
+          reportCounts(next, presentCompletedMods);
         }
+        const missingCompletedMods = new Set(
+          [...completedMods].filter(
+            (modUniqueId) => !presentCompletedMods.has(modUniqueId),
+          ),
+        );
+        if (missingCompletedMods.size > 0) {
+          reportCounts(completedRows, missingCompletedMods);
+        }
+      } else {
+        reportCounts(completedRows, completedMods);
+        setPostSaveReloadToken((current) => current + 1);
+      }
+      onBulkApplied?.(historyEntry);
+      for (const { row, target, tokenMismatchAccepted } of planned) {
+        if (!completedMods.has(row.modUniqueId)) continue;
         onStringSaved?.({
           modUniqueId: row.modUniqueId,
           relativeDir: row.file,
           key: row.key,
           source: row.source,
-          target: row.target,
+          target,
           targetPresent: row.targetPresent,
-          tokenMismatchAccepted: row.tokenMismatchAccepted,
+          tokenMismatchAccepted,
         });
       }
       onNotify?.(
@@ -1428,9 +1467,15 @@ export function StringTable({
     } catch (cause) {
       onNotify?.(`The batch edit was not saved. ${String(cause)}`, "error");
     } finally {
+      bulkSavingRef.current = false;
+      setBulkSaving(false);
       setContextMenu(null);
       setBulkMenuOpen(false);
-      setSelection(new Set());
+      setSelection((current) => {
+        const next = new Set(current);
+        for (const identity of selectedIdentities) next.delete(identity);
+        return next;
+      });
     }
   }
 
@@ -1452,7 +1497,7 @@ export function StringTable({
   }
 
   function startBatch() {
-    if (!canRunAi) return;
+    if (bulkSavingRef.current || !canRunAi) return;
     onEditorOpen?.();
     const items: BatchItem[] = liveAiEligibleRows.map((row) => ({
       modUniqueId: row.modUniqueId,
@@ -1671,6 +1716,7 @@ export function StringTable({
   }
 
   async function startLlmBatchExport() {
+    if (bulkSavingRef.current) return;
     if (!onLlmBatchExportForMod) return;
     if (!canExportLlm || !batchMod) {
       setContextMenu(null);
@@ -2202,6 +2248,7 @@ export function StringTable({
                 </span>
               </span>
               <ActionButtons
+                mutationPending={bulkSaving}
                 canRunAi={canRunAi}
                 llmActionEnabled={llmActionEnabled}
                 aiUnavailableReason={aiUnavailableReason}
@@ -2570,6 +2617,7 @@ export function StringTable({
             </li>
             <ActionButtons
               listItems
+              mutationPending={bulkSaving}
               canRunAi={canRunAi}
               llmActionEnabled={llmActionEnabled}
               aiUnavailableReason={aiUnavailableReason}
@@ -2618,6 +2666,7 @@ export function StringTable({
 }
 function ActionButtons({
   listItems = false,
+  mutationPending,
   canRunAi,
   llmActionEnabled,
   aiUnavailableReason,
@@ -2633,6 +2682,7 @@ function ActionButtons({
   onLlmExport,
 }: {
   listItems?: boolean;
+  mutationPending: boolean;
   canRunAi: boolean;
   llmActionEnabled: boolean;
   aiUnavailableReason: string | null;
@@ -2657,24 +2707,41 @@ function ActionButtons({
         {listItems ? "Copy translation" : "Copy translations"}
       </MenuAction>
       <MenuSeparator listItem={listItems} />
-      <MenuAction listItem={listItems} onClick={onMarkDone}>
+      <MenuAction
+        listItem={listItems}
+        disabled={mutationPending}
+        title={mutationPending ? "A batch edit is being saved." : undefined}
+        onClick={onMarkDone}
+      >
         <CircleCheck aria-hidden="true" /> Mark as done
       </MenuAction>
-      <MenuAction listItem={listItems} onClick={onKeepOriginal}>
+      <MenuAction
+        listItem={listItems}
+        disabled={mutationPending}
+        title={mutationPending ? "A batch edit is being saved." : undefined}
+        onClick={onKeepOriginal}
+      >
         <Equal aria-hidden="true" /> Keep original
       </MenuAction>
-      <MenuAction listItem={listItems} onClick={onClear}>
+      <MenuAction
+        listItem={listItems}
+        disabled={mutationPending}
+        title={mutationPending ? "A batch edit is being saved." : undefined}
+        onClick={onClear}
+      >
         <Eraser aria-hidden="true" />{" "}
         {listItems ? "Clear translation" : "Clear translations"}
       </MenuAction>
       <MenuSeparator listItem={listItems} />
       <MenuAction
         listItem={listItems}
-        disabled={!canRunAi}
+        disabled={mutationPending || !canRunAi}
         title={
-          canRunAi
-            ? "AI output is saved to Review."
-            : (aiUnavailableReason ?? "Configure AI in Settings.")
+          mutationPending
+            ? "A batch edit is being saved."
+            : canRunAi
+              ? "AI output is saved to Review."
+              : (aiUnavailableReason ?? "Configure AI in Settings.")
         }
         onClick={onAi}
       >
@@ -2687,9 +2754,12 @@ function ActionButtons({
       </MenuAction>
       <MenuAction
         listItem={listItems}
-        disabled={!llmActionEnabled}
+        disabled={mutationPending || !llmActionEnabled}
         title={
-          llmUnavailableReason ?? "Export selected Open or Changed strings."
+          mutationPending
+            ? "A batch edit is being saved."
+            : (llmUnavailableReason ??
+              "Export selected Open or Changed strings.")
         }
         onClick={onLlmExport}
       >

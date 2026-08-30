@@ -1022,7 +1022,7 @@ export function App() {
     });
   }
 
-  // Human-readable target language ("German") for local-AI prompts.
+  // Human-readable target language ("German") for live-AI prompts.
   const languageLabel =
     TARGET_LANGUAGES.find(
       (l) => l.code === settings?.targetLang,
@@ -1030,8 +1030,8 @@ export function App() {
     settings?.targetLang ??
     "the target language";
 
-  // A local-AI translate callback, only when a model is configured. Passed
-  // to the editor; absent → the editor shows a "configure AI" hint on Ctrl+F5.
+  // Each direct live-AI backend exposes its real readiness to the workbench;
+  // translation is enabled only for the selected ready engine.
   const llm = settings?.llm;
   const aiSettings = settings?.ai ?? DEFAULT_AI_SETTINGS;
   const localAiReady = Boolean(llm?.baseUrl.trim() && llm.model.trim());

@@ -509,7 +509,7 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Protected token missing")).toBeInTheDocument();
+    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
     expect(screen.getByText(/broken in game/)).toBeInTheDocument();
     const saveAnyway = screen.getByRole("button", { name: "Save anyway" });
     const editor = saveAnyway.closest(".translator-editor")!;
@@ -561,7 +561,7 @@ describe("StringEditor", () => {
       true,
     );
     expect(
-      screen.queryByText("Protected token missing"),
+      screen.queryByText("Protected token mismatch"),
     ).not.toBeInTheDocument();
 
     await waitFor(() =>
@@ -570,7 +570,20 @@ describe("StringEditor", () => {
     const field = screen.getByRole("textbox", { name: "Translation" });
     fireEvent.change(field, { target: { value: "Was geschah?$7" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(screen.getByText("Protected token missing")).toBeInTheDocument();
+    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
+  });
+
+  it("uses the generic token-mismatch confirmation for an added-only token", () => {
+    const { onSave } = renderEditor({
+      source: "Hello",
+      target: "Hallo {{name}}",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
+    expect(screen.getAllByText(/expected 0, found 1/)).not.toHaveLength(0);
   });
 
   it("shows an accepted token mismatch as a non-blocking warning", () => {

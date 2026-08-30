@@ -10,7 +10,7 @@
  * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
  * fast path) · Esc cancel · Alt+←/→ prev/next · F2/F3 keep original (copies
  * the source — an explicit identical translation, SPEC §9) · F4 reset (clears
- * the field) · Ctrl+F5 translate with the configured local AI.
+ * the field) · Ctrl+F5 translate with the configured live AI engine.
  */
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -1143,7 +1143,7 @@ export function StringEditor({
                     className="translator-heading"
                     id="translator-save-anyway-title"
                   >
-                    Protected token missing
+                    Protected token mismatch
                   </h2>
                   <div
                     className="translator-kicker"
