@@ -59,6 +59,16 @@ fn default_mods_path(stardew_path: String) -> String {
         .to_string()
 }
 
+fn scan_warning_counts(result: &ScanResult) -> Option<(usize, usize)> {
+    let skipped_count = result
+        .skipped_components
+        .iter()
+        .filter(|component| component.requires_attention)
+        .count();
+    (!result.warnings.is_empty() || skipped_count > 0)
+        .then_some((result.warnings.len(), skipped_count))
+}
+
 #[tauri::command]
 fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, String> {
     let picked = app
@@ -94,12 +104,10 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
             "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
         ));
     }
-    if !result.warnings.is_empty() || !result.skipped_components.is_empty() {
+    if let Some((warning_count, skipped_count)) = scan_warning_counts(&result) {
         log::warn!(
             target: "app",
-            "scan_mods({mods_path}): {} warning(s), {} skipped component(s)",
-            result.warnings.len(),
-            result.skipped_components.len()
+            "scan_mods({target_lang}): {warning_count} warning(s), {skipped_count} skipped component(s)"
         );
     }
     log::info!(
@@ -109,6 +117,54 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
         result.file_count
     );
     Ok(result)
+}
+
+#[cfg(test)]
+mod scan_logging_tests {
+    use super::*;
+
+    fn skipped_component(requires_attention: bool) -> scanner::SkippedComponent {
+        scanner::SkippedComponent {
+            package_id: None,
+            component_unique_id: None,
+            component_name: None,
+            relative_location: "fixture/manifest.json".to_string(),
+            reason: "Fixture diagnostic".to_string(),
+            requires_attention,
+            rest_of_package_loaded: false,
+        }
+    }
+
+    #[test]
+    fn expected_exclusion_alone_emits_no_warning_summary() {
+        let result = ScanResult {
+            skipped_components: vec![skipped_component(false)],
+            ..ScanResult::default()
+        };
+
+        assert_eq!(scan_warning_counts(&result), None);
+    }
+
+    #[test]
+    fn attention_required_skip_is_counted() {
+        let result = ScanResult {
+            skipped_components: vec![skipped_component(true)],
+            ..ScanResult::default()
+        };
+
+        assert_eq!(scan_warning_counts(&result), Some((0, 1)));
+    }
+
+    #[test]
+    fn scanner_warning_stays_visible_with_an_expected_exclusion() {
+        let result = ScanResult {
+            warnings: vec!["Fixture warning".to_string()],
+            skipped_components: vec![skipped_component(false)],
+            ..ScanResult::default()
+        };
+
+        assert_eq!(scan_warning_counts(&result), Some((1, 0)));
+    }
 }
 
 #[tauri::command]
