@@ -8,49 +8,47 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-08-30
+
 ### Added
 
-- Added direct Codex CLI translation with discovered models, reasoning and usage
-  status, context-aware adaptive batches, staged language review and terminology
-  repair, live progress, cancellation, and Review-only results.
-- Added a compact result tray with the five newest session operations, a true
-  **Latest result** action, copyable details, relevant follow-up actions, and one
-  safe in-memory batch undo.
+- Added direct Codex CLI translation through the installed CLI and its existing
+  sign-in, with model discovery and usage status when available, a configurable
+  reasoning level, context-aware adaptive batches, live progress, cancellation,
+  and Review-only results.
+- Added optional Codex quality review and repair stages for meaning, natural
+  language, terminology, grammar, register, speaker voice, dialogue continuity,
+  and protected tokens. They can be disabled for a faster, lower-token first
+  draft.
+- Added scan-to-scan English source change counts and a compact five-result
+  session history with **Latest result**, copyable details, follow-up actions,
+  and one safe batch undo.
 
 ### Changed
 
 - Redesigned the Windows interface around Overview and the two-panel Workspace,
   using real backend data throughout with multi-select, batch actions,
   resizable sortable columns, context menus, dialogs, and portable view state.
-- Scan summaries now use clear English-string change counts, treat detected
-  community language packs as expected information, explain target entries
-  without a matching English source, and reserve skipped counts for components
-  that need attention. Incomplete scans preserve the last complete source
-  snapshot and show change deltas as unavailable.
-- Local AI now processes selected strings serially, continues after
-  item-specific response failures, saves successful suggestions immediately in
-  Review, and stops on endpoint-wide connection, HTTP, or client-setup errors,
-  cancellation, or stale/save failures. Partial runs with saved suggestions are
-  shown as completed with issues; only zero-save errors are shown as failed.
+- Scan summaries now distinguish expected community-language-pack exclusions,
+  unused target keys, and components that genuinely need attention. Incomplete
+  scans preserve the last complete source baseline.
+- Local AI now saves successful suggestions immediately in Review, continues
+  after item-specific failures, and reports partial success clearly.
 - Hybrid Qwen3 models in LM Studio now use non-thinking response mode
-  automatically, while Instruct variants keep their native request shape and
-  thinking-only variants fail early with clear setup guidance.
-- CI now reports one stable aggregate gate that enforces documentation checks
-  on every change and both frontend and Rust checks whenever code changes.
-- Removed obsolete implementation-planning notes from maintained source and
-  aligned the synthetic language smoke fixture with batch format 2, including
-  Thai.
+  automatically.
+- External LLM import now preserves existing work and rejects stale or
+  mismatched batches before applying suggestions.
+- Direct export now uses read-only preflight data, revalidates the exact current
+  scope before writing, and rolls back incomplete multi-file writes.
 
 ### Fixed
 
-- Kept scans, JSON imports, and exports within bounded filesystem and input
-  limits, moved long-running scan work off the UI thread, and made multi-file
-  exports restore earlier targets when a later write fails.
-- Corrected Portuguese fallback detection, glossary matching and cache
-  isolation, portable recent-mod state, and target-existence updates after
-  exports remove a translation file.
-- Removed unreachable successful-import token-error fields so the frontend and
-  backend expose the same fail-fast batch contract.
+- Bounded scanner, JSON, AI, import, and export inputs; moved long scans off the
+  UI thread; and restored earlier target files when a later export write fails.
+- Corrected Portuguese fallback handling, glossary matching and isolation,
+  portable recent-mod activity, and target-file status after export.
+
+See [docs/release/v2.0.0.md](docs/release/v2.0.0.md) for the release summary.
 
 ## [1.4.3] - 2026-08-03
 
@@ -326,7 +324,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.3...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.3...v2.0.0
 [1.4.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.1...v1.4.2
 [1.4.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.0...v1.4.1
