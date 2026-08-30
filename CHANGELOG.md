@@ -47,6 +47,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   UI thread; and restored earlier target files when a later export write fails.
 - Corrected Portuguese fallback handling, glossary matching and isolation,
   portable recent-mod activity, and target-file status after export.
+- Stopped expected community-language-pack exclusions from producing
+  warning-level skipped-component diagnostics.
 
 See [docs/release/v2.0.0.md](docs/release/v2.0.0.md) for the release summary.
 
