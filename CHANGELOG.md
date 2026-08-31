@@ -8,6 +8,16 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.0.1] - 2026-09-01
+
+### Fixed
+
+- Bracketed translation text such as `[Right]`, `[LEFT]`, and status messages
+  is no longer mistaken for a protected token, while real Stardew token forms
+  remain protected.
+- Gender-switch branch text inside `${...}$` can now be translated while its
+  delimiter structure and nested runtime tokens remain validated.
+
 ## [2.0.0] - 2026-08-30
 
 ### Added
@@ -326,7 +336,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.1...HEAD
+[2.0.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.3...v2.0.0
 [1.4.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.2...v1.4.3
 [1.4.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.1...v1.4.2

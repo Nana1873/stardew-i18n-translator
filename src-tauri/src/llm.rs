@@ -283,9 +283,17 @@ pub(crate) fn translation_instructions(target_language: &str) -> String {
          Translate the supplied text from English into {target_language}.\n\
          Rules:\n\
          - Output only the requested translation data. No explanations or notes.\n\
-         - Preserve every placeholder/token EXACTLY as written and untranslated, \
-           e.g. {{{{Token}}}}, {{0}}, $b, ${{a^b}}$, [item], %item ... %%, @, ^, #$b#. \
-           Do not add, remove, reorder, or alter them.\n\
+         - Preserve every non-translatable placeholder/runtime token EXACTLY as written, \
+           e.g. {{{{Token}}}}, {{0}}, $b, [FarmName], %item ... %%, @, #$b#, and ^ outside \
+           gender-switch blocks. Do not add, remove, reorder, translate, or alter those tokens.\n\
+         - Gender-switch blocks `${{...}}$` contain translatable branch prose. Translate the \
+           prose inside every branch. Preserve only the structural opener `${{`, closer `}}$`, \
+           the source's chosen separator (`^` or `¦`) and its exact count, the branch order, \
+           and every nested runtime token. Do not leave branch prose in English merely because \
+           it is inside a gender-switch block.\n\
+         - Ordinary bracketed labels or status messages that aren't token expressions, such as \
+           [Right] or [Reached global max speed], are translatable prose, not protected tokens. \
+           Translate their words and keep the surrounding square brackets.\n\
          - Preserve every existing quote character EXACTLY. Never replace straight \
            quotes/apostrophes with typographic quotes or another quote style: \
            'test' must stay enclosed by ' characters, never become „test“, “test”, \
@@ -444,11 +452,32 @@ fn build_messages_inner(
 
     if let Some(missing) = retry_missing {
         if !missing.is_empty() {
-            system.push_str(&format!(
-                "\nIMPORTANT: your previous attempt dropped these required tokens: {}. \
-                 You MUST include every one of them verbatim in the translation.",
-                missing.join(", ")
-            ));
+            let literal_tokens = missing
+                .iter()
+                .filter(|token| !tokens::is_gender_switch_shape(token))
+                .cloned()
+                .collect::<Vec<_>>();
+            let switch_shapes = missing
+                .iter()
+                .filter(|token| tokens::is_gender_switch_shape(token))
+                .cloned()
+                .collect::<Vec<_>>();
+            if !literal_tokens.is_empty() {
+                system.push_str(&format!(
+                    "\nIMPORTANT: your previous attempt dropped these required tokens: {}. \
+                     You MUST include every one of them verbatim in the translation.",
+                    literal_tokens.join(", ")
+                ));
+            }
+            if !switch_shapes.is_empty() {
+                system.push_str(&format!(
+                    "\nIMPORTANT: your previous attempt damaged gender-switch structure. \
+                     These shape descriptors show the required separator and branch count: {}. \
+                     Restore the corresponding complete blocks from the source with translated \
+                     branch prose; do not insert these empty shape templates literally.",
+                    switch_shapes.join(", ")
+                ));
+            }
         }
     }
 
@@ -802,7 +831,33 @@ mod tests {
         assert!(messages[0].content.contains("into German"));
         assert!(messages[0]
             .content
-            .contains("Preserve every placeholder/token"));
+            .contains("Preserve every non-translatable placeholder/runtime token"));
+        assert!(messages[0]
+            .content
+            .contains("Gender-switch blocks `${...}$` contain translatable branch prose"));
+        assert!(messages[0]
+            .content
+            .contains("Translate the prose inside every branch"));
+        for syntax in ["`${`", "`^`", "`¦`", "`}$`"] {
+            assert!(
+                messages[0].content.contains(syntax),
+                "missing gender-switch syntax rule for {syntax}"
+            );
+        }
+        assert!(messages[0]
+            .content
+            .contains("chosen separator (`^` or `¦`) and its exact count"));
+        assert!(messages[0].content.contains("every nested runtime token"));
+        assert!(messages[0]
+            .content
+            .contains("Do not leave branch prose in English"));
+        assert!(messages[0]
+            .content
+            .contains("[Right] or [Reached global max speed]"));
+        assert!(messages[0]
+            .content
+            .contains("are translatable prose, not protected tokens"));
+        assert!(!messages[0].content.contains("${a^b}$"));
         assert!(messages[0]
             .content
             .contains("Preserve every existing quote character EXACTLY"));
@@ -1047,6 +1102,17 @@ mod tests {
             .contains("dropped these required tokens"));
         assert!(messages[0].content.contains("{{name}}"));
         assert!(messages[0].content.contains("$b"));
+    }
+
+    #[test]
+    fn retry_reminder_treats_switch_shapes_as_descriptors() {
+        let missing = vec!["${^^}$".to_string()];
+        let messages = build_messages("${one^two^three}$", "German", None, &[], Some(&missing));
+        assert!(messages[0].content.contains("shape descriptors"));
+        assert!(messages[0].content.contains("${^^}$"));
+        assert!(messages[0]
+            .content
+            .contains("do not insert these empty shape templates literally"));
     }
 
     #[test]

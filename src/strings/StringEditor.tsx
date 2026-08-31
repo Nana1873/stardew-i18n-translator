@@ -57,7 +57,11 @@ export interface EditorSuggestionProvenance {
   value: string;
 }
 import { validate } from "./validation";
-import { describeToken, extractProtectedTokens } from "./protectedTokens";
+import {
+  describeToken,
+  extractProtectedTokens,
+  isInsertableProtectedToken,
+} from "./protectedTokens";
 import { STATUS_META, statusTint } from "./status";
 import {
   DEFAULT_SHORTCUTS,
@@ -482,7 +486,9 @@ export function StringEditor({
       const notes: string[] = [];
       if (result.missingTokens.length > 0) {
         notes.push(
-          `AI dropped token(s): ${result.missingTokens.join(", ")} — fix before saving.`,
+          `AI damaged protected structure/token(s): ${result.missingTokens
+            .map(describeToken)
+            .join(", ")} — fix before saving.`,
         );
       }
       if (result.glossaryMisses.length > 0) {
@@ -722,8 +728,10 @@ export function StringEditor({
   const addedTokenCounts = [...valueTokenCounts].filter(
     ([token, found]) => found > (sourceTokenCounts.get(token) ?? 0),
   );
-  const hasMissingTokens = [...sourceTokenCounts].some(
-    ([token, required]) => (valueTokenCounts.get(token) ?? 0) < required,
+  const hasInsertableMissingTokens = [...sourceTokenCounts].some(
+    ([token, required]) =>
+      isInsertableProtectedToken(token) &&
+      (valueTokenCounts.get(token) ?? 0) < required,
   );
   const issues = validate(row.source, value, row.targetPresent);
   const blockingTokenIssues = issues.filter(
@@ -902,6 +910,7 @@ export function StringEditor({
                     {[...sourceTokenCounts].map(([token, required], i) => {
                       const satisfied =
                         (valueTokenCounts.get(token) ?? 0) >= required;
+                      const insertable = isInsertableProtectedToken(token);
                       const contents = (
                         <>
                           {describeToken(token)}
@@ -909,12 +918,24 @@ export function StringEditor({
                           {satisfied ? " ✓" : ""}
                         </>
                       );
-                      return satisfied ? (
+                      return satisfied || !insertable ? (
                         <span
                           key={`source-${i}-${token}`}
-                          className="editor__token translator-token editor__token--done is-valid"
-                          title={`${token} — all present`}
-                          aria-label={`Token ${token} is present in full`}
+                          className={
+                            satisfied
+                              ? "editor__token translator-token editor__token--done is-valid"
+                              : `editor__token translator-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`
+                          }
+                          title={
+                            satisfied
+                              ? `${token} — all present`
+                              : `${token} — restore this structure in the translation`
+                          }
+                          aria-label={
+                            satisfied
+                              ? `Token ${token} is present in full`
+                              : `Missing token ${token}`
+                          }
                         >
                           {contents}
                         </span>
@@ -946,7 +967,7 @@ export function StringEditor({
                         {found > 1 ? ` ×${found}` : ""}
                       </span>
                     ))}
-                    {hasMissingTokens && (
+                    {hasInsertableMissingTokens && (
                       <span className="translator-kicker">
                         Click a missing token to insert it
                       </span>
