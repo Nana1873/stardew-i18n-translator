@@ -1,3 +1,4 @@
+import { extractProtectedTokens } from "./protectedTokens";
 import { validate, worstSeverity } from "./validation";
 
 describe("validate", () => {
@@ -22,6 +23,79 @@ describe("validate", () => {
   it("passes when the token sets match (order-independent)", () => {
     expect(validate("{{a}} and {{b}}", "{{b}} und {{a}}", false)).toEqual([]);
     expect(worstSeverity([])).toBeNull();
+  });
+
+  it("allows gender-switch branch prose to be translated", () => {
+    const source =
+      "Y'know ${@ with you, I stopped wandering.#$b#You've got this warmth.$7^your love makes new paths.#$b#I didn't know love like this.$7^Your love feels like home.}$";
+    const target =
+      "Weißt du, ${mit dir, @, hörte ich auf umherzuirren.#$b#Du strahlst Wärme aus.$7^deine Liebe schafft neue Wege.#$b#So eine Liebe kannte ich nicht.$7^Deine Liebe fühlt sich wie ein Zuhause an.}$";
+
+    expect(extractProtectedTokens(source)).toEqual([
+      "${^^}$",
+      "@",
+      "#$b#",
+      "$7",
+      "#$b#",
+      "$7",
+    ]);
+    expect(
+      extractProtectedTokens(source).some((token) =>
+        token.includes("stopped wandering"),
+      ),
+    ).toBe(false);
+    expect(validate(source, target, false)).toEqual([]);
+  });
+
+  it("still blocks a translation that drops gender-switch structure", () => {
+    const source = "${Hello @.$7^Welcome @.$7^Goodbye @.}$";
+    const target = "Hallo @.$7 Willkommen @.$7 Auf Wiedersehen @.";
+    const issues = validate(source, target, false);
+
+    expect(issues.filter((issue) => issue.severity === "error")).toEqual([
+      {
+        ruleId: "token-missing",
+        severity: "error",
+        message:
+          "Token count mismatch for gender switch (3 branches, ^ separator) (expected 1, found 0)",
+      },
+    ]);
+  });
+
+  it("does not let switch separators cancel out across separate blocks", () => {
+    const issues = validate("${a^b}$ ${c^d}$", "${x^y^z}$ ${w}$", false);
+
+    expect(issues.some((issue) => issue.severity === "error")).toBe(true);
+    expect(issues.map((issue) => issue.message)).toContain(
+      "Token count mismatch for gender switch (2 branches, ^ separator) (expected 2, found 0)",
+    );
+  });
+
+  it("treats bracketed UI labels and status prose as translatable text", () => {
+    expect(validate("[LEFT]", "[LINKS]", true)).toEqual([]);
+    expect(validate("[Right]", "[Rechts]", true)).toEqual([]);
+    expect(
+      validate(
+        "[Reached global max Power Grid speed]",
+        "[Globale Höchstgeschwindigkeit des Stromnetzes erreicht]",
+        true,
+      ),
+    ).toEqual([]);
+  });
+
+  it("keeps documented opaque bracket tokens protected", () => {
+    expect(
+      validate(
+        "Welcome to [FarmName]. Take [128] and [(O)163].",
+        "Willkommen auf [FarmName]. Nimm [128] und [(O)163].",
+        false,
+      ),
+    ).toEqual([]);
+    expect(
+      validate("Welcome to [FarmName].", "Willkommen auf dem Hof.", false).map(
+        (issue) => issue.ruleId,
+      ),
+    ).toEqual(["token-missing"]);
   });
 
   it("flags an empty but present target as a warning", () => {
@@ -93,7 +167,7 @@ describe("validate", () => {
       .sort();
     expect(errors).toEqual([
       "Token count mismatch for # (dialogue/mail separator) (expected 1, found 0)",
-      "Token count mismatch for ^ (line break) (expected 2, found 1)",
+      "Token count mismatch for ^ (switch separator / line break) (expected 2, found 1)",
     ]);
     expect(issues.map((issue) => issue.ruleId)).toContain("quote-mismatch");
     expect(
@@ -154,6 +228,12 @@ describe("validate", () => {
       severity: "warning",
       message: "Translation is identical to the original",
     });
+  });
+
+  it("still warns when a bracketed UI label is left untranslated", () => {
+    expect(
+      validate("[LEFT]", "[LEFT]", true).map((issue) => issue.ruleId),
+    ).toEqual(["identical-to-source"]);
   });
 
   it("warns when literal escape sequences differ", () => {

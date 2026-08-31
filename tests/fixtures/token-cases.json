@@ -15,7 +15,27 @@
     },
     {
       "value": "${he^she}$ got [#] and %item 388 5 %%",
-      "tokens": ["${he^she}$", "[#]", "%item 388 5 %%"]
+      "tokens": ["${^}$", "[#]", "%item 388 5 %%"]
+    },
+    {
+      "value": "${@ with you#$b#I stayed.$7^your love made paths.$7^I follow @.}$",
+      "tokens": ["${^^}$", "@", "#$b#", "$7", "$7", "@"]
+    },
+    {
+      "value": "Nested ${one ${inner^innen}$^two}$ and ${he¦she}$",
+      "tokens": ["${^}$", "${^}$", "${¦}$"]
+    },
+    {
+      "value": "${{{Lookup:one^two}}^second}$",
+      "tokens": ["${^}$", "{{Lookup:one^two}}"]
+    },
+    {
+      "value": "${a^b}$ ${c^d}$ ${x^y^z}$ ${w}$",
+      "tokens": ["${^}$", "${^}$", "${^^}$", "${", "}$"]
+    },
+    {
+      "value": "Malformed ${plain}$ and orphan }$ then ${open",
+      "tokens": ["${", "}$", "}$", "${"]
     },
     {
       "value": "%action warp 10 12 %% then done",
@@ -30,8 +50,48 @@
       "tokens": ["$b", "$s", "$1"]
     },
     {
-      "value": "Take this! [128] [buff 5]",
-      "tokens": ["[128]", "[buff 5]"]
+      "value": "Take this! [128][(O)163] [(O)198 (O)202 (O)727 (O)MossSoup] [128 388] [buff 5]",
+      "tokens": [
+        "[128]",
+        "[(O)163]",
+        "[(O)198 (O)202 (O)727 (O)MossSoup]",
+        "[128 388]"
+      ]
+    },
+    {
+      "value": "[LEFT] [Right] [Left Right] [Reached global max Power Grid speed] [buff 5] [MossSoup SeafoamPudding] [(O)198 prose] [.Right] [Right.] [Right..Thing]",
+      "tokens": []
+    },
+    {
+      "value": "[FarmName] [EscapedText] [LocalizedText Strings\\UI:ItemHover_Name] [Example.Mod_Token]",
+      "tokens": [
+        "[FarmName]",
+        "[EscapedText]",
+        "[LocalizedText Strings\\UI:ItemHover_Name]",
+        "[Example.Mod_Token]"
+      ]
+    },
+    {
+      "value": "[ArticleFor [SuggestedItem]]",
+      "tokens": ["[ArticleFor [SuggestedItem]]"]
+    },
+    {
+      "value": "[SuggestedItem] [SuggestedItem day Shop] [ItemName (O)128] [LocalizedText [EscapedText Strings\\BundleNames:Quality Fish]]",
+      "tokens": [
+        "[SuggestedItem]",
+        "[SuggestedItem day Shop]",
+        "[ItemName (O)128]",
+        "[LocalizedText [EscapedText Strings\\BundleNames:Quality Fish]]"
+      ]
+    },
+    {
+      "value": "[ 128 ] [GenderedText he¦she] [ItemName 128 fallback] [LocalizedText key value] [Example.Mod_Token arg]",
+      "tokens": [
+        "[GenderedText he¦she]",
+        "[ItemName 128 fallback]",
+        "[LocalizedText key value]",
+        "[Example.Mod_Token arg]"
+      ]
     },
     {
       "value": "line one\nline two",

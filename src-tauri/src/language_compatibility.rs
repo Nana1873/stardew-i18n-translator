@@ -374,7 +374,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
         assert_eq!(messages[1].content, "Café {{PlayerName}}");
         assert!(messages[0]
             .content
-            .contains("Preserve every placeholder/token"));
+            .contains("Preserve every non-translatable placeholder/runtime token"));
         assert_eq!(
             messages[0].content.contains("Do not introduce em dashes"),
             language.code == "de",

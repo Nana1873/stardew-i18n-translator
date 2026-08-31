@@ -624,6 +624,25 @@ describe("StringEditor", () => {
     expect(extraToken).toHaveTextContent("×2");
   });
 
+  it("shows a missing gender-switch shape as a passive structure warning", () => {
+    renderEditor({
+      source: "${Hello^Goodbye}$",
+      target: "Hallo und auf Wiedersehen",
+    });
+
+    const shape = screen.getByLabelText("Missing token ${^}$");
+    expect(shape.tagName).toBe("SPAN");
+    expect(shape).toHaveTextContent("gender switch (2 branches, ^ separator)");
+    expect(
+      screen.queryByRole("button", {
+        name: "Insert missing token ${^}$",
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Click a missing token to insert it"),
+    ).not.toBeInTheDocument();
+  });
+
   it("renders already satisfied protected tokens as passive chips", () => {
     renderEditor({
       source: "Hello {{name}}",
@@ -640,6 +659,18 @@ describe("StringEditor", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(token);
     expect(field).toHaveValue("Hallo {{name}}");
+  });
+
+  it("does not present bracketed UI labels as protected tokens", () => {
+    renderEditor({
+      source: "[Right]",
+      target: "[Rechts]",
+    });
+
+    expect(screen.getByText("None")).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Insert missing token/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps an untouched changed source visibly Changed", () => {
@@ -730,7 +761,9 @@ describe("StringEditor", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
 
-    const note = await screen.findByText(/AI dropped token/);
+    const note = await screen.findByText(
+      /AI damaged protected structure\/token/,
+    );
     expect(note).toHaveClass("editor__ai-msg");
     expect(note.closest(".translator-editor-ai-error")).toBeNull();
     expect(

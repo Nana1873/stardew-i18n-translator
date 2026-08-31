@@ -4,7 +4,8 @@
  * Eight rules, focused on preventing broken mods and surfacing review risks.
  * "Token" here means any Stardew/SMAPI protected token (Content Patcher
  * `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
- * `[...]`, ...) — see protectedTokens.ts. Tokens are compared as multisets, so
+ * and recognized bracket forms like `[FarmName]`) — see protectedTokens.ts.
+ * Tokens are compared as multisets, so
  * a dropped second `$b` is caught too.
  *  - token-missing    (error)   a source token is absent (or under-represented)
  *  - token-added      (error)   the target has more of a token than the source

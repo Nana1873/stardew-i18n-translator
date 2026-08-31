@@ -1,10 +1,12 @@
 //! Protected-token extraction (SPEC §10).
 //!
-//! A faithful Rust port of the frontend `protectedTokens.ts`. These are the
-//! tokens a translation MUST preserve or the mod breaks at runtime (Content
-//! Patcher `{{...}}`, gender switch `${...}$`, mail commands, dialogue breaks,
-//! brackets, positional `{0}`, dialogue commands `$b`, structural `#` / paired
-//! `'` quote delimiters, and single-char `@`/`^`).
+//! A faithful Rust port of the frontend `protectedTokens.ts`. Most results are
+//! literal tokens a translation MUST preserve; well-formed gender switches use
+//! a canonical per-block shape such as `${^}$` so separate blocks can't mask
+//! each other's structural damage. The remaining forms cover Content Patcher
+//! `{{...}}`, mail commands, dialogue breaks, recognized bracket tokens,
+//! positional `{0}`, dialogue commands `$b`, structural `#` / paired `'`
+//! quote delimiters, and single-char `@`/`^`.
 //!
 //! Export and batch import use [`token_differences`] for their blocking
 //! `token-missing` rule. Tokens are compared as multisets, so a dropped second
@@ -13,21 +15,45 @@
 
 use std::collections::HashMap;
 
-/// Extract every protected token from `value`, in order, as raw substrings.
+/// Extract every protected token or switch-shape identity from `value`.
 pub fn extract(value: &str) -> Vec<String> {
     let chars: Vec<char> = value.chars().collect();
+    extract_chars(&chars)
+}
+
+fn extract_chars(chars: &[char]) -> Vec<String> {
     let mut tokens = Vec::new();
     let mut offset = 0;
 
     while offset < chars.len() {
-        let end = read_content_patcher(&chars, offset)
-            .or_else(|| read_gender_switch(&chars, offset))
-            .or_else(|| read_mail_command(&chars, offset))
-            .or_else(|| read_dialogue_break(&chars, offset))
-            .or_else(|| read_bracket(&chars, offset))
-            .or_else(|| read_positional(&chars, offset))
-            .or_else(|| read_simple_dialogue(&chars, offset))
-            .or_else(|| read_single_char(&chars, offset));
+        if starts_with(chars, offset, "${") {
+            if let Some((end, switch_tokens)) = read_gender_switch(chars, offset) {
+                tokens.extend(switch_tokens);
+                offset = end;
+            } else {
+                // Keep a damaged opener visible to the multiset comparison.
+                // Scanning resumes inside it so any remaining runtime tokens
+                // and an eventual orphan closer are still extracted.
+                tokens.push("${".to_string());
+                offset += 2;
+            }
+            continue;
+        }
+        if starts_with(chars, offset, "}$") {
+            // A valid switch consumes its closer above. Reaching one here
+            // means it is orphaned or belongs to a malformed switch.
+            tokens.push("}$".to_string());
+            offset += 2;
+            continue;
+        }
+
+        let end = read_content_patcher(chars, offset)
+            .or_else(|| read_mail_command(chars, offset))
+            .or_else(|| read_dialogue_break(chars, offset))
+            .or_else(|| read_bracket(chars, offset))
+            .or_else(|| read_positional(chars, offset))
+            .or_else(|| read_simple_dialogue(chars, offset))
+            .or_else(|| read_single_char(chars, offset));
 
         match end {
             Some(end) => {
@@ -185,11 +211,119 @@ fn read_content_patcher(chars: &[char], offset: usize) -> Option<usize> {
     None
 }
 
-fn read_gender_switch(chars: &[char], offset: usize) -> Option<usize> {
+/// Read one well-formed 1.6 gender-switch block. Branch prose is deliberately
+/// not protected: only the raw opener, top-level delimiter(s), closer, and any
+/// real tokens nested inside each branch are returned. `\u{00a6}` takes
+/// precedence over `^`, since the alternate delimiter exists specifically so
+/// carets inside branch text retain their later dialogue/mail meaning.
+fn read_gender_switch(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
     if !starts_with(chars, offset, "${") {
         return None;
     }
-    find_sub(chars, offset + 2, "}$").map(|i| i + 2)
+
+    let close = find_switch_close(chars, offset)?;
+    let content_start = offset + 2;
+    let (delimiter, delimiters) = top_level_gender_delimiters(chars, content_start, close)?;
+
+    let mut tokens = vec![gender_switch_shape(delimiter, delimiters.len())];
+    let mut branch_start = content_start;
+    for delimiter_offset in delimiters {
+        tokens.extend(extract_chars(&chars[branch_start..delimiter_offset]));
+        branch_start = delimiter_offset + 1;
+    }
+    tokens.extend(extract_chars(&chars[branch_start..close]));
+
+    Some((close + 2, tokens))
+}
+
+fn gender_switch_shape(delimiter: char, delimiter_count: usize) -> String {
+    format!("${{{}}}$", delimiter.to_string().repeat(delimiter_count))
+}
+
+pub fn is_gender_switch_shape(token: &str) -> bool {
+    matches!(token, "${^}$" | "${^^}$" | "${¦}$" | "${¦¦}$")
+}
+
+/// Find the closer paired with the switch at `offset`, ignoring switch-like
+/// text inside a balanced Content Patcher token and respecting nested blocks.
+fn find_switch_close(chars: &[char], offset: usize) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut index = offset + 2;
+
+    while index < chars.len() {
+        if starts_with(chars, index, "{{") {
+            if let Some(end) = read_content_patcher(chars, index) {
+                index = end;
+                continue;
+            }
+        }
+        if starts_with(chars, index, "${") {
+            depth += 1;
+            index += 2;
+            continue;
+        }
+        if starts_with(chars, index, "}$") {
+            depth -= 1;
+            if depth == 0 {
+                return Some(index);
+            }
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+
+    None
+}
+
+/// Return the chosen delimiter and its top-level positions. Stardew 1.6
+/// supports exactly two or three gender branches. When `\u{00a6}` occurs at
+/// the top level it is the delimiter, and top-level carets remain branch text.
+fn top_level_gender_delimiters(
+    chars: &[char],
+    start: usize,
+    end: usize,
+) -> Option<(char, Vec<usize>)> {
+    let mut carets = Vec::new();
+    let mut broken_bars = Vec::new();
+    let mut depth = 0usize;
+    let mut index = start;
+
+    while index < end {
+        if starts_with(chars, index, "{{") {
+            if let Some(token_end) = read_content_patcher(chars, index) {
+                index = token_end;
+                continue;
+            }
+        }
+        if starts_with(chars, index, "${") {
+            depth += 1;
+            index += 2;
+            continue;
+        }
+        if starts_with(chars, index, "}$") && depth > 0 {
+            depth -= 1;
+            index += 2;
+            continue;
+        }
+        if depth == 0 {
+            match chars[index] {
+                '^' => carets.push(index),
+                '\u{00a6}' => broken_bars.push(index),
+                _ => {}
+            }
+        }
+        index += 1;
+    }
+
+    let (delimiter, positions) = if broken_bars.is_empty() {
+        ('^', carets)
+    } else {
+        ('\u{00a6}', broken_bars)
+    };
+    (1..=2)
+        .contains(&positions.len())
+        .then_some((delimiter, positions))
 }
 
 fn read_mail_command(chars: &[char], offset: usize) -> Option<usize> {
@@ -213,7 +347,184 @@ fn read_bracket(chars: &[char], offset: usize) -> Option<usize> {
     if chars.get(offset) != Some(&'[') {
         return None;
     }
-    find_char(chars, offset + 1, ']').map(|i| i + 1)
+    let end = find_balanced_bracket_end(chars, offset)?;
+    let body: String = chars[offset + 1..end - 1].iter().collect();
+    is_protected_bracket_body(&body).then_some(end)
+}
+
+fn find_balanced_bracket_end(chars: &[char], offset: usize) -> Option<usize> {
+    let mut depth = 0usize;
+    for (index, ch) in chars.iter().enumerate().skip(offset) {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    return Some(index + 1);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn is_protected_bracket_body(body: &str) -> bool {
+    if body == "#" || is_ascii_digits(body) || is_qualified_item_id(body) || is_item_id_pool(body) {
+        return true;
+    }
+
+    let (name, arguments) = split_bracket_name(body);
+    if name.is_empty() {
+        return false;
+    }
+    let lower = name.to_ascii_lowercase();
+
+    match lower.as_str() {
+        // Built-in Stardew 1.6 values with no arguments.
+        "dayofmonth" | "farmeruniqueid" | "farmname" | "season" | "positiveadjective" => {
+            arguments.is_empty()
+        }
+
+        // Built-in ID/key/control-value forms whose arguments aren't visible
+        // prose. Keep the accepted arities intentionally narrow.
+        "farmerstat"
+        | "achievementname"
+        | "charactername"
+        | "locationname"
+        | "moviename"
+        | "specialordername"
+        | "numberwithseparators" => has_atomic_argument_count(arguments, 1, 1),
+        "articlefor" => {
+            has_atomic_argument_count(arguments, 1, 1)
+                || is_single_protected_bracket_argument(arguments)
+        }
+        "suggesteditem" => has_atomic_argument_count(arguments, 0, 2),
+        "itemnamewithflavor" => has_atomic_argument_count(arguments, 2, 2),
+        "toolname" => has_atomic_argument_count(arguments, 1, 2),
+
+        // A fallback may be visible text, but this is still genuine runtime
+        // syntax. Keep the existing whole-raw safety behavior until arguments
+        // have a typed representation.
+        "itemname" => arguments
+            .split_whitespace()
+            .next()
+            .map(is_item_id)
+            .unwrap_or(false),
+
+        // These genuine 1.6 forms may contain visible text. Preserve the
+        // complete expression for runtime safety rather than dropping the
+        // token name and brackets from validation.
+        "localizedtext"
+        | "genderedtext"
+        | "spousefarmertext"
+        | "spousegenderedtext"
+        | "capitalizefirstletter" => !arguments.is_empty(),
+        "escapedtext" => true,
+
+        // C# mods are expected to namespace custom token names. Their argument
+        // semantics are unknown, so retain the existing whole-raw protection.
+        _ => is_namespaced_custom_token(name),
+    }
+}
+
+fn split_bracket_name(body: &str) -> (&str, &str) {
+    let name_end = body.find(char::is_whitespace).unwrap_or(body.len());
+    (&body[..name_end], body[name_end..].trim())
+}
+
+fn atomic_arguments(arguments: &str) -> Vec<&str> {
+    if arguments.contains('[') || arguments.contains(']') {
+        return Vec::new();
+    }
+    arguments.split_whitespace().collect()
+}
+
+fn has_atomic_argument_count(arguments: &str, min: usize, max: usize) -> bool {
+    if arguments.is_empty() {
+        return min == 0;
+    }
+    if arguments.contains('[') || arguments.contains(']') {
+        return false;
+    }
+    let args = atomic_arguments(arguments);
+    (min..=max).contains(&args.len())
+}
+
+fn is_single_protected_bracket_argument(arguments: &str) -> bool {
+    let chars: Vec<char> = arguments.chars().collect();
+    if chars.first() != Some(&'[') || find_balanced_bracket_end(&chars, 0) != Some(chars.len()) {
+        return false;
+    }
+    let inner: String = chars[1..chars.len() - 1].iter().collect();
+    is_protected_bracket_body(inner.trim())
+}
+
+fn is_ascii_digits(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_item_id(value: &str) -> bool {
+    is_ascii_id_segment(value) || is_qualified_item_id(value)
+}
+
+fn is_item_id_pool(value: &str) -> bool {
+    if value.trim() != value {
+        return false;
+    }
+    let item_ids: Vec<&str> = value.split_whitespace().collect();
+    if item_ids.len() < 2 {
+        return false;
+    }
+
+    // Bare string item IDs are indistinguishable from bracketed UI prose
+    // without the game's item registry. Accept only numeric or qualified IDs
+    // here so `[buff 5]`, `[(O)198 prose]`, and status labels stay translatable.
+    item_ids
+        .into_iter()
+        .all(|item_id| is_ascii_digits(item_id) || is_qualified_item_id(item_id))
+}
+
+fn is_qualified_item_id(value: &str) -> bool {
+    let Some(close) = value.find(')') else {
+        return false;
+    };
+    value.starts_with('(')
+        && close > 1
+        && is_ascii_id_segment(&value[1..close])
+        && is_ascii_id_segment(&value[close + 1..])
+}
+
+fn is_ascii_id_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.'))
+}
+
+fn is_namespaced_custom_token(name: &str) -> bool {
+    let mut segments = name.split('.');
+    let Some(first) = segments.next() else {
+        return false;
+    };
+    let mut has_namespace = false;
+    if !is_ascii_token_name_segment(first) {
+        return false;
+    }
+    for segment in segments {
+        has_namespace = true;
+        if !is_ascii_token_name_segment(segment) {
+            return false;
+        }
+    }
+    has_namespace
+}
+
+fn is_ascii_token_name_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
 }
 
 fn read_positional(chars: &[char], offset: usize) -> Option<usize> {
@@ -295,9 +606,93 @@ mod tests {
     }
 
     #[test]
-    fn extracts_gender_switch_and_mail_and_bracket() {
+    fn extracts_gender_switch_structure_and_mail_tokens() {
         let tokens = extract("${he^she}$ got [#] and %item 388 5 %%");
-        assert_eq!(tokens, vec!["${he^she}$", "[#]", "%item 388 5 %%"]);
+        assert_eq!(tokens, vec!["${^}$", "[#]", "%item 388 5 %%"]);
+    }
+
+    #[test]
+    fn gender_switch_branch_prose_is_translatable_but_nested_tokens_are_not() {
+        let source = "${@ with you #$b# $7^Your love @}$";
+        let target = "${Mit dir @ #$b# $7^Deine Liebe @}$";
+
+        assert_eq!(extract(source), vec!["${^}$", "@", "#$b#", "$7", "@"]);
+        assert!(token_differences(source, target).is_empty());
+    }
+
+    #[test]
+    fn gender_switch_supports_three_branches_and_broken_bar_delimiters() {
+        assert_eq!(
+            extract("${first^line @¦second #$b#¦third $7}$"),
+            vec!["${¦¦}$", "^", "@", "#$b#", "$7"]
+        );
+    }
+
+    #[test]
+    fn gender_switch_matching_is_depth_aware_and_lexical() {
+        assert_eq!(
+            extract("${Hello ${lad^lass}$ @¦Goodbye #$b# $7}$"),
+            vec!["${¦}$", "${^}$", "@", "#$b#", "$7"]
+        );
+    }
+
+    #[test]
+    fn gender_switch_shapes_do_not_cancel_out_across_blocks() {
+        let source = "${a^b}$ ${c^d}$";
+        let target = "${x^y^z}$ ${w}$";
+        assert_eq!(extract(source), vec!["${^}$", "${^}$"]);
+        assert_eq!(extract(target), vec!["${^^}$", "${", "}$"]);
+        assert!(!token_differences(source, target).is_empty());
+    }
+
+    #[test]
+    fn malformed_gender_switch_fragments_remain_protected() {
+        assert_eq!(extract("${he^she}"), vec!["${", "^"]);
+        assert_eq!(extract("{he^she}$"), vec!["^", "}$"]);
+        assert_eq!(extract("${only}$"), vec!["${", "}$"]);
+        assert!(!token_differences("${he^she}$", "${he^she}").is_empty());
+    }
+
+    #[test]
+    fn bracket_reader_accepts_documented_runtime_shapes() {
+        let value = r#"[#] [128] [(O)163] [FarmName] [FARMERSTAT stepsTaken] [SuggestedItem] [SuggestedItem day Shop] [ArticleFor [SuggestedItem]] [ItemName (O)128] [ItemName 128 fallback] [ItemNameWithFlavor SmokedFish (O)128] [LocalizedText Strings\UI:Key] [LocalizedText Strings/UI:Key value] [LocalizedText [EscapedText Strings\BundleNames:Quality Fish]] [GenderedText he¦she] [SpouseFarmerText a b] [SpouseGenderedText a b] [CapitalizeFirstLetter hello] [EscapedText visible] [ToolName (T)IridiumAxe 4] [Example.Mod.Token] [Example.Mod.Token arg]"#;
+        assert_eq!(
+            extract(value),
+            vec![
+                "[#]",
+                "[128]",
+                "[(O)163]",
+                "[FarmName]",
+                "[FARMERSTAT stepsTaken]",
+                "[SuggestedItem]",
+                "[SuggestedItem day Shop]",
+                "[ArticleFor [SuggestedItem]]",
+                "[ItemName (O)128]",
+                "[ItemName 128 fallback]",
+                "[ItemNameWithFlavor SmokedFish (O)128]",
+                "[LocalizedText Strings\\UI:Key]",
+                "[LocalizedText Strings/UI:Key value]",
+                "[LocalizedText [EscapedText Strings\\BundleNames:Quality Fish]]",
+                "[GenderedText he¦she]",
+                "[SpouseFarmerText a b]",
+                "[SpouseGenderedText a b]",
+                "[CapitalizeFirstLetter hello]",
+                "[EscapedText visible]",
+                "[ToolName (T)IridiumAxe 4]",
+                "[Example.Mod.Token]",
+                "[Example.Mod.Token arg]",
+            ]
+        );
+    }
+
+    #[test]
+    fn bracket_reader_rejects_ui_labels_status_prose_and_unknown_shapes() {
+        let value = "[LEFT] [Right] [Reached global max Power Grid speed] [buff 5] [ 128 ] \
+            [InputArgument name] \
+            [SuggestedItem [EscapedText day]]";
+        // The invalid outer SuggestedItem form is ignored, but its genuine
+        // nested EscapedText token must still remain protected.
+        assert_eq!(extract(value), vec!["[EscapedText day]"]);
     }
 
     #[test]
