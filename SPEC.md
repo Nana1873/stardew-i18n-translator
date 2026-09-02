@@ -216,11 +216,16 @@ Validation protects runtime-sensitive SMAPI, Content Patcher, dialogue, mail,
 placeholder, and formatting tokens.
 
 Token errors identify missing or added protected values and block export by
-default. When a translator explicitly chooses **Save anyway** for a string, the
-accepted mismatch no longer blocks direct export or translation-package ZIPs.
-The acceptance applies only to that saved source revision; editing the target
-or a changed English source requires confirmation again. Review warnings, such
-as punctuation or newline differences, do not block export.
+default. When the source contains no gender switch, well-formed switches may be
+added for target-language grammar without the switch shape itself counting as
+an added token. Protected tokens inside its branches remain subject to the
+normal count checks; source switch shapes and counts otherwise remain required.
+When a translator explicitly chooses **Save anyway** for a string, the accepted
+mismatch no longer blocks direct export or translation-package ZIPs. The
+acceptance applies only to that saved source revision; editing the target or a
+changed English source requires confirmation again. Review warnings, such as
+newline or literal-escape differences, do not block export. Ordinary quote
+punctuation differences are ignored.
 
 The **Validation issues** filter includes both blocking errors and non-blocking
 warnings. The row indicator and editor explain the exact finding; the backend

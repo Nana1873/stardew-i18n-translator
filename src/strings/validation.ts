@@ -1,7 +1,7 @@
 /**
  * String validation rules (SPEC §10).
  *
- * Eight rules, focused on preventing broken mods and surfacing review risks.
+ * Seven rules, focused on preventing broken mods and surfacing review risks.
  * "Token" here means any Stardew/SMAPI protected token (Content Patcher
  * `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
  * and recognized bracket forms like `[FarmName]`) — see protectedTokens.ts.
@@ -14,17 +14,17 @@
  *                                runs longer than English), so `\n` is exempt
  *                                from the token error rules and never blocks
  *                                export
- *  - quote-mismatch   (warning) the paired `'` quote-delimiter count differs —
- *                                punctuation, not runtime syntax in SMAPI i18n,
- *                                so `'` is exempt from the token error rules and
- *                                never blocks export (SPEC §10)
  *  - empty-target     (warning) the key is present in the target file but empty
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
  *  - identical-to-source (warning) target is unchanged from the source
  *  - escape-suspicious   (warning) literal JSON-style escapes differ
  */
-import { describeToken, extractProtectedTokens } from "./protectedTokens";
+import {
+  describeToken,
+  extractProtectedTokens,
+  isGenderSwitchShape,
+} from "./protectedTokens";
 
 export type Severity = "error" | "warning";
 
@@ -33,7 +33,6 @@ export interface ValidationIssue {
     | "token-missing"
     | "token-added"
     | "newline-mismatch"
-    | "quote-mismatch"
     | "empty-target"
     | "json-invalid"
     | "identical-to-source"
@@ -42,12 +41,10 @@ export interface ValidationIssue {
   message: string;
 }
 
-/** Soft tokens: extracted (shown as chips) but kept out of the token error
- * multisets. A count difference is reported via a softer warning instead, never
- * the blocking token-missing/token-added error.
+/** Non-blocking markers kept out of the token error multisets.
  *  - `\n` is layout, not syntax (a translation rewraps freely).
  *  - `'` paired quote delimiters are punctuation, not runtime syntax in SMAPI
- *    i18n, so adding/removing/restyling quotes never breaks a mod (SPEC §10). */
+ *    i18n, so adding/removing/restyling quotes is ignored (SPEC §10). */
 const NEWLINE = "\n";
 const QUOTE = "'";
 
@@ -63,15 +60,6 @@ function tokenCounts(text: string): Map<string, number> {
 function newlineCount(text: string): number {
   let count = 0;
   for (const char of text) if (char === NEWLINE) count += 1;
-  return count;
-}
-
-/** Count of paired `'` quote delimiters (word-internal apostrophes excluded —
- * the extractor only emits `'` when it forms a balanced pair). */
-function quoteDelimiterCount(text: string): number {
-  let count = 0;
-  for (const token of extractProtectedTokens(text))
-    if (token === QUOTE) count += 1;
   return count;
 }
 
@@ -116,6 +104,9 @@ export function validate(
   if (target.length > 0) {
     const sourceTokens = tokenCounts(source);
     const targetTokens = tokenCounts(target);
+    const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
+      isGenderSwitchShape,
+    );
     for (const [token, count] of sourceTokens) {
       if ((targetTokens.get(token) ?? 0) < count) {
         const found = targetTokens.get(token) ?? 0;
@@ -127,6 +118,10 @@ export function validate(
       }
     }
     for (const [token, count] of targetTokens) {
+      // A translation may introduce gender grammar when the source has no
+      // switch at all. Once source switches exist, keep exact shape counts so
+      // a changed source block cannot be masked by an extra target block.
+      if (!sourceHasGenderSwitch && isGenderSwitchShape(token)) continue;
       if ((sourceTokens.get(token) ?? 0) < count) {
         const expected = sourceTokens.get(token) ?? 0;
         issues.push({
@@ -143,15 +138,6 @@ export function validate(
         ruleId: "newline-mismatch",
         severity: "warning",
         message: `Line breaks differ (original ${sourceNewlines}, translation ${targetNewlines}) — fine if the text rewraps`,
-      });
-    }
-    const sourceQuotes = quoteDelimiterCount(source);
-    const targetQuotes = quoteDelimiterCount(target);
-    if (sourceQuotes !== targetQuotes) {
-      issues.push({
-        ruleId: "quote-mismatch",
-        severity: "warning",
-        message: `Quote delimiters differ (original ${sourceQuotes}, translation ${targetQuotes}) — fine if the punctuation legitimately changed`,
       });
     }
     if (hasLoneSurrogate(target)) {

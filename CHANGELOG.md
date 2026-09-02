@@ -8,6 +8,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Malformed `#$b$...` dialogue sequences no longer turn following prose into
+  protected tokens, and a valid target-language-only gender-switch shape no
+  longer triggers an added-token error by itself.
+- Removed the noisy quote-delimiter count warning; localized quote punctuation
+  is now ignored.
+
 ## [2.0.2] - 2026-09-02
 
 ### Fixed

@@ -62,6 +62,31 @@ describe("validate", () => {
     ]);
   });
 
+  it("allows a well-formed gender switch added for the target language", () => {
+    const source = "Dear @.";
+    const target = "${Lieber^Liebe}$ @.";
+
+    expect(extractProtectedTokens(target)).toEqual(["${^}$", "@"]);
+    expect(validate(source, target, false)).toEqual([]);
+  });
+
+  it("does not let an added switch mask a changed source switch shape", () => {
+    const issues = validate("${a^b}$", "${x^y^z}$ ${neu^neu}$", false);
+
+    expect(issues.map((issue) => issue.ruleId)).toEqual(["token-added"]);
+    expect(issues[0].message).toContain("gender switch (3 branches");
+  });
+
+  it("still blocks a malformed target-only gender switch", () => {
+    const issues = validate("Dear @.", "${Lieber}$ @.", false);
+
+    expect(issues.every((issue) => issue.severity === "error")).toBe(true);
+    expect(issues.map((issue) => issue.ruleId)).toEqual([
+      "token-added",
+      "token-added",
+    ]);
+  });
+
   it("does not let switch separators cancel out across separate blocks", () => {
     const issues = validate("${a^b}$ ${c^d}$", "${x^y^z}$ ${w}$", false);
 
@@ -153,14 +178,28 @@ describe("validate", () => {
     ]);
   });
 
-  it("protects standalone # and repeated ^ markers (quotes are soft)", () => {
+  it("does not absorb prose after a dollar-terminated dialogue marker", () => {
+    const source = "First.$0#$b$Second line.$3#$e#Last.$0";
+    const target = "Erste.$0#$b$Zweite Zeile.$3#$e#Letzte.$0";
+
+    expect(extractProtectedTokens(source)).toEqual([
+      "$0",
+      "#$b$",
+      "$3",
+      "#$e#",
+      "$0",
+    ]);
+    expect(validate(source, target, false)).toEqual([]);
+  });
+
+  it("protects standalone # and repeated ^ markers (quotes are ignored)", () => {
     const issues = validate(
       "'Hello' # first^^second",
       "„Hallo“ first^second",
       false,
     );
     // `#` and `^` are runtime syntax -> blocking errors. The `'` -> „" change
-    // is punctuation -> a soft quote-mismatch warning, never token-missing.
+    // is ordinary localized punctuation and produces no issue.
     const errors = issues
       .filter((issue) => issue.severity === "error")
       .map((issue) => issue.message)
@@ -169,7 +208,7 @@ describe("validate", () => {
       "Token count mismatch for # (dialogue/mail separator) (expected 1, found 0)",
       "Token count mismatch for ^ (switch separator / line break) (expected 2, found 1)",
     ]);
-    expect(issues.map((issue) => issue.ruleId)).toContain("quote-mismatch");
+    expect(issues.every((issue) => issue.severity === "error")).toBe(true);
     expect(
       issues.some(
         (issue) =>
@@ -179,19 +218,16 @@ describe("validate", () => {
     ).toBe(false);
   });
 
-  it("a different quote-delimiter count is a warning, never a blocking error", () => {
-    // Source uses backticks (no `'`); the translation adds a paired `'…'`.
-    const added = validate(
-      "Use `Default` to modify the settings.",
-      "'Standard' verwenden, um die Einstellungen anzupassen.",
-      false,
-    );
-    expect(added.map((i) => i.ruleId)).toEqual(["quote-mismatch"]);
-    expect(worstSeverity(added)).toBe("warning");
-    expect(added[0].message).toContain("Quote delimiters differ");
-    // A dropped quote pair is the same soft warning (not token-missing).
-    const dropped = validate("'test'", "test", false);
-    expect(dropped.map((i) => i.ruleId)).toEqual(["quote-mismatch"]);
+  it("ignores quote punctuation differences", () => {
+    expect(
+      validate(
+        "Use `Default` to modify the settings.",
+        "'Standard' verwenden, um die Einstellungen anzupassen.",
+        false,
+      ),
+    ).toEqual([]);
+    expect(validate("'test'", "test", false)).toEqual([]);
+    expect(worstSeverity([])).toBeNull();
   });
 
   it("does not treat apostrophes inside words as protected tokens", () => {
