@@ -57,7 +57,8 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
 
         match end {
             Some(end) => {
-                tokens.push(chars[offset..end].iter().collect());
+                let raw: String = chars[offset..end].iter().collect();
+                tokens.push(normalize_protected_token(&raw));
                 offset = end;
             }
             None => offset += 1,
@@ -65,6 +66,21 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
     }
 
     tokens
+}
+
+/// Canonicalize only syntax differences which the game parser ignores.
+/// Dialogue responses are split on ASCII spaces with empty entries removed,
+/// so only spacing is normalized; every argument and response key remains exact.
+fn normalize_protected_token(raw: &str) -> String {
+    if raw.starts_with("#$r ") && raw.ends_with('#') {
+        let command = raw[1..raw.len() - 1]
+            .split(' ')
+            .filter(|part| !part.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!("#{command}#");
+    }
+    raw.to_owned()
 }
 
 /// Tokens that are still *extracted* (the editor shows them as chips) but are
@@ -351,11 +367,18 @@ fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
         return None;
     }
 
-    // Some real mods contain a malformed `#$b$Text` sequence instead of the
-    // documented `#$b#Text`. Stop at that second `$`; otherwise the generic
-    // next-`#` reader would turn all following prose into one opaque token.
+    // Some real mods omit the closing `#` from the argumentless `#$b#` marker
+    // and put prose directly after a `$` or `*`, e.g. `#$b$Text` or `#$b*Text`.
+    // Keep that malformed prefix literal but stop before the prose; otherwise
+    // the generic next-`#` reader would turn all following prose into one token.
     if let Some(command_end) = read_simple_dialogue(chars, offset + 1) {
         if chars.get(command_end) == Some(&'$') {
+            return Some(command_end + 1);
+        }
+        if starts_with(chars, offset + 1, "$b")
+            && command_end == offset + 3
+            && chars.get(command_end) == Some(&'*')
+        {
             return Some(command_end + 1);
         }
     }
@@ -617,6 +640,47 @@ mod tests {
 
         assert_eq!(extract(source), vec!["$0", "#$b$", "$3", "#$e#", "$0"]);
         assert!(token_differences(source, target).is_empty());
+    }
+
+    #[test]
+    fn asterisk_prefixed_malformed_break_does_not_absorb_following_prose() {
+        let source = "First.#$b*Visible prose.$7#$b#Last.$2";
+        let target = "Erste.#$b*Sichtbarer Text.$7#$b#Letzte.$2";
+
+        assert_eq!(extract(source), vec!["#$b*", "$7", "#$b#", "$2"]);
+        assert!(token_differences(source, target).is_empty());
+    }
+
+    #[test]
+    fn dialogue_response_ignores_extra_ascii_spaces() {
+        let source = "Question.#$r -1 0 event_key#Answer.";
+        let target = "Frage.#$r  -1  0 event_key #Antwort.";
+
+        assert_eq!(extract(target), vec!["#$r -1 0 event_key#"]);
+        assert!(token_differences(source, target).is_empty());
+        assert!(!token_differences(source, "Frage.#$r -1 0 Ereignis#Antwort.").is_empty());
+        assert!(!token_differences(source, "Frage.#$r\t-1 0 event_key#Antwort.").is_empty());
+    }
+
+    #[test]
+    fn translatable_text_exceptions_do_not_relax_runtime_payloads() {
+        assert!(
+            token_differences("Question.#$r -1 -1 Yes#Yes.", "Frage.#$r -1 -1 Yes#Ja.").is_empty()
+        );
+        assert!(
+            !token_differences("Question.#$r -1 -1 Yes#Yes.", "Frage.#$r -1 -1 Ja#Ja.").is_empty()
+        );
+        assert!(!token_differences("Dinner [196 649].", "Abendessen [196 650].").is_empty());
+        assert!(!token_differences(
+            "Prize%item money 2500 2501 %%",
+            "Preis%item Geld 2500 2501 %%"
+        )
+        .is_empty());
+        assert!(!token_differences(
+            "Request%item quest 120 %%",
+            "Anfrage%Gegenstandsquest 120%%"
+        )
+        .is_empty());
     }
 
     #[test]

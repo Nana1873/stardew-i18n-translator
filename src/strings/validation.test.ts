@@ -192,6 +192,62 @@ describe("validate", () => {
     expect(validate(source, target, false)).toEqual([]);
   });
 
+  it("does not absorb prose after an asterisk-prefixed malformed break", () => {
+    const source = "First.#$b*Visible prose.$7#$b#Last.$2";
+    const target = "Erste.#$b*Sichtbarer Text.$7#$b#Letzte.$2";
+
+    expect(extractProtectedTokens(source)).toEqual([
+      "#$b*",
+      "$7",
+      "#$b#",
+      "$2",
+    ]);
+    expect(validate(source, target, false)).toEqual([]);
+  });
+
+  it("ignores extra ASCII spaces in a dialogue response command", () => {
+    const source = "Question.#$r -1 0 event_key#Answer.";
+    const target = "Frage.#$r  -1  0 event_key #Antwort.";
+
+    expect(extractProtectedTokens(target)).toEqual(["#$r -1 0 event_key#"]);
+    expect(validate(source, target, false)).toEqual([]);
+    expect(
+      validate(source, "Frage.#$r\t-1 0 event_key#Antwort.", false),
+    ).not.toEqual([]);
+  });
+
+  it("keeps response keys, item pools, and mail commands strict", () => {
+    expect(
+      validate("Question.#$r -1 -1 Yes#Yes.", "Frage.#$r -1 -1 Yes#Ja.", false),
+    ).toEqual([]);
+    expect(
+      validate(
+        "Question.#$r -1 -1 Yes#Yes.",
+        "Frage.#$r -1 -1 Ja#Ja.",
+        false,
+      ).map((issue) => issue.ruleId),
+    ).toEqual(["token-missing", "token-added"]);
+    expect(
+      validate("Dinner [196 649].", "Abendessen [196 650].", false).map(
+        (issue) => issue.ruleId,
+      ),
+    ).toEqual(["token-missing", "token-added"]);
+    expect(
+      validate(
+        "Prize%item money 2500 2501 %%",
+        "Preis%item Geld 2500 2501 %%",
+        false,
+      ).map((issue) => issue.ruleId),
+    ).toEqual(["token-missing", "token-added"]);
+    expect(
+      validate(
+        "Request%item quest 120 %%",
+        "Anfrage%Gegenstandsquest 120%%",
+        false,
+      ).map((issue) => issue.ruleId),
+    ).toEqual(["token-missing"]);
+  });
+
   it("protects standalone # and repeated ^ markers (quotes are ignored)", () => {
     const issues = validate(
       "'Hello' # first^^second",
@@ -240,21 +296,15 @@ describe("validate", () => {
     ).toEqual([]);
   });
 
-  it("a different newline count is a warning, never a blocking error", () => {
-    // German rewraps: 3 source line breaks, 2 in the translation — layout only.
-    const issues = validate(
-      "Note: line one\nline two\nline three\nline four",
-      "Hinweis: Zeile eins\nZeile zwei\nZeile drei",
-      false,
-    );
-    expect(issues.map((i) => i.ruleId)).toEqual(["newline-mismatch"]);
-    expect(worstSeverity(issues)).toBe("warning");
-    // Extra newlines in the target are the same soft warning (not token-added).
-    const extra = validate("one line", "eine\nZeile", false);
-    expect(extra.map((i) => i.ruleId)).toEqual(["newline-mismatch"]);
-  });
-
-  it("matching newline counts produce no issue", () => {
+  it("ignores physical newline count differences", () => {
+    expect(
+      validate(
+        "Note: line one\nline two\nline three\nline four",
+        "Hinweis: Zeile eins\nZeile zwei\nZeile drei",
+        false,
+      ),
+    ).toEqual([]);
+    expect(validate("one line", "eine\nZeile", false)).toEqual([]);
     expect(validate("a\nb", "x\ny", false)).toEqual([]);
   });
 

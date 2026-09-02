@@ -1,7 +1,7 @@
 /**
  * String validation rules (SPEC §10).
  *
- * Six rules, focused on preventing broken mods and surfacing review risks.
+ * Five rules, focused on preventing broken mods and surfacing review risks.
  * "Token" here means any Stardew/SMAPI protected token (Content Patcher
  * `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
  * and recognized bracket forms like `[FarmName]`) — see protectedTokens.ts.
@@ -9,11 +9,6 @@
  * a dropped second `$b` is caught too.
  *  - token-missing    (error)   a source token is absent (or under-represented)
  *  - token-added      (error)   the target has more of a token than the source
- *  - newline-mismatch (warning) the line-break count differs — layout, not
- *                                syntax: a translation rewraps freely (German
- *                                runs longer than English), so `\n` is exempt
- *                                from the token error rules and never blocks
- *                                export
  *  - empty-target     (warning) the key is present in the target file but empty
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
@@ -31,7 +26,6 @@ export interface ValidationIssue {
   ruleId:
     | "token-missing"
     | "token-added"
-    | "newline-mismatch"
     | "empty-target"
     | "json-invalid"
     | "escape-suspicious";
@@ -53,12 +47,6 @@ function tokenCounts(text: string): Map<string, number> {
     counts.set(token, (counts.get(token) ?? 0) + 1);
   }
   return counts;
-}
-
-function newlineCount(text: string): number {
-  let count = 0;
-  for (const char of text) if (char === NEWLINE) count += 1;
-  return count;
 }
 
 function escapeCounts(text: string): Map<string, number> {
@@ -128,15 +116,6 @@ export function validate(
           message: `Token count mismatch for ${describeToken(token)} (expected ${expected}, found ${count})`,
         });
       }
-    }
-    const sourceNewlines = newlineCount(source);
-    const targetNewlines = newlineCount(target);
-    if (sourceNewlines !== targetNewlines) {
-      issues.push({
-        ruleId: "newline-mismatch",
-        severity: "warning",
-        message: `Line breaks differ (original ${sourceNewlines}, translation ${targetNewlines}) — fine if the text rewraps`,
-      });
     }
     if (hasLoneSurrogate(target)) {
       issues.push({
