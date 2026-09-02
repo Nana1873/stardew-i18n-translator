@@ -15,6 +15,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   longer triggers an added-token error by itself.
 - Removed the noisy quote-delimiter count warning; localized quote punctuation
   is now ignored.
+- Source-identical translations no longer produce a validation warning, matching
+  the intentional **Keep original** workflow.
 
 ## [2.0.2] - 2026-09-02
 

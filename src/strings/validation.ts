@@ -1,7 +1,7 @@
 /**
  * String validation rules (SPEC §10).
  *
- * Seven rules, focused on preventing broken mods and surfacing review risks.
+ * Six rules, focused on preventing broken mods and surfacing review risks.
  * "Token" here means any Stardew/SMAPI protected token (Content Patcher
  * `{{...}}`, dialogue commands `$b`/`@`/`^`, `#$b#`, `%item ... %%`,
  * and recognized bracket forms like `[FarmName]`) — see protectedTokens.ts.
@@ -17,7 +17,6 @@
  *  - empty-target     (warning) the key is present in the target file but empty
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
- *  - identical-to-source (warning) target is unchanged from the source
  *  - escape-suspicious   (warning) literal JSON-style escapes differ
  */
 import {
@@ -35,7 +34,6 @@ export interface ValidationIssue {
     | "newline-mismatch"
     | "empty-target"
     | "json-invalid"
-    | "identical-to-source"
     | "escape-suspicious";
   severity: Severity;
   message: string;
@@ -145,13 +143,6 @@ export function validate(
         ruleId: "json-invalid",
         severity: "error",
         message: "Contains characters that cannot be serialized to valid JSON",
-      });
-    }
-    if (source === target) {
-      issues.push({
-        ruleId: "identical-to-source",
-        severity: "warning",
-        message: "Translation is identical to the original",
       });
     }
     if (escapeSummary(source) !== escapeSummary(target)) {

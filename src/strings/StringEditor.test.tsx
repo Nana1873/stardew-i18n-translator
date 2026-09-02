@@ -101,6 +101,9 @@ describe("StringEditor", () => {
     const { onSave, onNavigate } = renderEditor();
 
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "F2" });
+    expect(
+      screen.queryByText("Translation is identical to the original"),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /Next/ }));
 
     expect(onSave).toHaveBeenCalledWith("Hello", "translated", false);

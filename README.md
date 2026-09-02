@@ -101,7 +101,7 @@ mods, then filter by **Open**, **Changed**, **Review**, or **Done**:
 **Validation issues** is a separate content-check filter, not another status or
 a combined review queue. It includes blocking protected-token or text
 serialization errors as well as non-blocking warnings such as changed line
-breaks or identical text.
+breaks or literal escape sequences.
 
 The mod-list divider and the sortable **Mod**, **File**, **Status**, **Key**,
 **English Source**, and **Target Translation** columns can be resized. Search,

@@ -225,7 +225,9 @@ mismatch no longer blocks direct export or translation-package ZIPs. The
 acceptance applies only to that saved source revision; editing the target or a
 changed English source requires confirmation again. Review warnings, such as
 newline or literal-escape differences, do not block export. Ordinary quote
-punctuation differences are ignored.
+punctuation differences are ignored. Non-empty target text that exactly matches
+the source, including text saved with **Keep original**, is valid and does not
+create a validation issue.
 
 The **Validation issues** filter includes both blocking errors and non-blocking
 warnings. The row indicator and editor explain the exact finding; the backend
