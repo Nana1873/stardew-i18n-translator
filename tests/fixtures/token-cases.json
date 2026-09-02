@@ -14,6 +14,14 @@
       "tokens": ["$0", "#$b$", "$3", "#$e#", "$0"]
     },
     {
+      "value": "First.#$b*Visible prose.$7#$b#Last.$2",
+      "tokens": ["#$b*", "$7", "#$b#", "$2"]
+    },
+    {
+      "value": "Question.#$r  -1  0 event_key #Answer.",
+      "tokens": ["#$r -1 0 event_key#"]
+    },
+    {
       "value": "{{Lookup:{{Other}}}}",
       "tokens": ["{{Lookup:{{Other}}}}"]
     },

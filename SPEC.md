@@ -223,11 +223,13 @@ normal count checks; source switch shapes and counts otherwise remain required.
 When a translator explicitly chooses **Save anyway** for a string, the accepted
 mismatch no longer blocks direct export or translation-package ZIPs. The
 acceptance applies only to that saved source revision; editing the target or a
-changed English source requires confirmation again. Review warnings, such as
-newline or literal-escape differences, do not block export. Ordinary quote
+changed English source requires confirmation again. Literal-escape differences
+are non-blocking review warnings. Physical newline-count and ordinary quote
 punctuation differences are ignored. Non-empty target text that exactly matches
 the source, including text saved with **Keep original**, is valid and does not
-create a validation issue.
+create a validation issue. Parser-insignificant extra ASCII spaces within `$r`
+command headers are ignored, and recovery from malformed `#$b*` prefixes is
+bounded so following prose remains translatable.
 
 The **Validation issues** filter includes both blocking errors and non-blocking
 warnings. The row indicator and editor explain the exact finding; the backend

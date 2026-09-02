@@ -22,9 +22,8 @@
  * The order of the readers matters — more specific shapes are tried first.
  *
  * Note: `\n` is extracted (the editor shows it as a chip) but it is **layout,
- * not syntax** — validation reports a count difference as the soft
- * `newline-mismatch` warning, never as the blocking `token-missing` error
- * (translations rewrap freely; see validation.ts / the Rust tokens.rs).
+ * not syntax** and is ignored by validation because translations rewrap
+ * freely. Runtime line breaks such as `^` remain protected.
  */
 const positionalPlaceholderPattern = /^\{\d+\}/;
 const simpleDialogueCommandPattern = /^\$(?:[a-zA-Z]+|\d+)/;
@@ -282,16 +281,30 @@ function readMailCommand(value: string, offset: number): Token | null {
 function readDialogueBreak(value: string, offset: number): Token | null {
   if (!value.startsWith("#$", offset)) return null;
 
-  // Some real mods contain a malformed `#$b$Text` sequence instead of the
-  // documented `#$b#Text`. Stop at that second `$`; otherwise the generic
-  // next-`#` reader would turn all following prose into one opaque token.
+  // Some real mods omit the closing `#` from the argumentless `#$b#` marker
+  // and put prose directly after a `$` or `*`, e.g. `#$b$Text` or `#$b*Text`.
+  // Keep that malformed prefix literal but stop before the prose; otherwise
+  // the generic next-`#` reader would turn all following prose into one token.
   const command = readSimpleDialogueCommand(value, offset + 1);
   if (command && value[command.end] === "$") {
     return token(value, offset, command.end + 1);
   }
+  if (command?.raw === "$b" && value[command.end] === "*") {
+    return token(value, offset, command.end + 1);
+  }
 
   const end = value.indexOf("#", offset + 2);
-  return end >= 0 ? token(value, offset, end + 1) : null;
+  if (end < 0) return null;
+
+  const raw = value.slice(offset, end + 1);
+  return {
+    // Dialogue responses are split on ASCII spaces with empty entries removed.
+    // Canonicalize spacing only; every argument and response key stays exact.
+    raw: raw.startsWith("#$r ")
+      ? `#${raw.slice(1, -1).split(" ").filter(Boolean).join(" ")}#`
+      : raw,
+    end: end + 1,
+  };
 }
 
 function readBracketToken(value: string, offset: number): Token | null {
