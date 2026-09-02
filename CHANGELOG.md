@@ -8,6 +8,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Codex CLI installations created by the official Windows installer are now
+  detected even when the app process has not inherited the updated `PATH`.
+
 ## [2.0.1] - 2026-09-01
 
 ### Fixed

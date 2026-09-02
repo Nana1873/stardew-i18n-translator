@@ -595,6 +595,21 @@ mod windows_process {
         directories
     }
 
+    fn official_install_directory(local_app_data: Option<&OsStr>) -> Option<PathBuf> {
+        let local_app_data = local_app_data.filter(|value| !value.is_empty())?;
+        let local_app_data = Path::new(local_app_data);
+        if !local_app_data.is_absolute() {
+            return None;
+        }
+        Some(
+            local_app_data
+                .join("Programs")
+                .join("OpenAI")
+                .join("Codex")
+                .join("bin"),
+        )
+    }
+
     fn npm_native_candidates(shim_directory: &Path) -> Vec<PathBuf> {
         let (target, platform_package) = match std::env::consts::ARCH {
             "x86_64" => ("x86_64-pc-windows-msvc", "codex-win32-x64"),
@@ -624,7 +639,11 @@ mod windows_process {
             .collect()
     }
 
-    pub(super) fn resolve_native_executable(requested: &OsStr) -> Result<PathBuf, String> {
+    fn resolve_native_executable_from(
+        requested: &OsStr,
+        directories: &[PathBuf],
+        official_directory: Option<&Path>,
+    ) -> Result<PathBuf, String> {
         let requested = Path::new(requested);
         let bare_name = requested.components().count() == 1;
         let extension = requested.extension();
@@ -647,8 +666,7 @@ mod windows_process {
             });
         }
 
-        let directories = executable_search_dirs();
-        for directory in &directories {
+        for directory in directories {
             if let Some(executable) = canonical_exe(&directory.join(&executable_name)) {
                 return Ok(executable);
             }
@@ -673,6 +691,14 @@ mod windows_process {
                 }
             }
         }
+        // The official standalone Windows installer defaults here. Check it
+        // only after PATH-based native and npm installations so this remains a
+        // fallback for apps launched before Explorer inherited the new PATH.
+        if let Some(directory) = official_directory {
+            if let Some(executable) = canonical_exe(&directory.join(&executable_name)) {
+                return Ok(executable);
+            }
+        }
         let shim_found = !shim_directories.is_empty();
         if shim_found {
             Err(
@@ -681,10 +707,17 @@ mod windows_process {
             )
         } else {
             Err(
-                "Codex CLI was not found. Install it and make its native codex.exe available on PATH."
+                "Codex CLI was not found. Install it in the default Windows location or make its native codex.exe available on PATH."
                     .to_string(),
             )
         }
+    }
+
+    pub(super) fn resolve_native_executable(requested: &OsStr) -> Result<PathBuf, String> {
+        let directories = executable_search_dirs();
+        let local_app_data = std::env::var_os("LOCALAPPDATA");
+        let official_directory = official_install_directory(local_app_data.as_deref());
+        resolve_native_executable_from(requested, &directories, official_directory.as_deref())
     }
 
     struct SuspendedProcess {
@@ -1272,6 +1305,121 @@ mod windows_process {
         }
         stderr?;
         exchange
+    }
+
+    #[cfg(test)]
+    mod executable_resolution_tests {
+        use super::super::TempRunDir;
+        use super::*;
+
+        fn create_test_executable(path: &Path) -> PathBuf {
+            std::fs::create_dir_all(path.parent().expect("test executable should have a parent"))
+                .expect("test executable parent should be created");
+            std::fs::File::create(path).expect("test executable should be created");
+            path.canonicalize()
+                .expect("test executable should canonicalize")
+        }
+
+        #[test]
+        fn official_install_directory_uses_the_windows_default() {
+            assert_eq!(
+                official_install_directory(Some(OsStr::new(r"C:\Users\Test\AppData\Local"))),
+                Some(PathBuf::from(
+                    r"C:\Users\Test\AppData\Local\Programs\OpenAI\Codex\bin"
+                ))
+            );
+        }
+
+        #[test]
+        fn invalid_local_app_data_does_not_add_a_relative_fallback() {
+            assert_eq!(official_install_directory(None), None);
+            assert_eq!(official_install_directory(Some(OsStr::new(""))), None);
+            assert_eq!(
+                official_install_directory(Some(OsStr::new(r"relative\local"))),
+                None
+            );
+            assert_eq!(
+                official_install_directory(Some(OsStr::new(r"C:drive-relative"))),
+                None
+            );
+        }
+
+        #[test]
+        fn path_native_executable_wins_over_official_fallback() {
+            let temp = TempRunDir::create("codex-path-precedence")
+                .expect("test directory should be created");
+            let path_directory = temp.path.join("path");
+            let official_directory = temp.path.join("official");
+            let expected = create_test_executable(&path_directory.join("codex.exe"));
+            create_test_executable(&official_directory.join("codex.exe"));
+
+            let resolved = resolve_native_executable_from(
+                OsStr::new("codex"),
+                &[path_directory],
+                Some(&official_directory),
+            )
+            .expect("PATH executable should resolve");
+
+            assert_eq!(resolved, expected);
+        }
+
+        #[test]
+        fn npm_native_executable_wins_over_official_fallback() {
+            let temp = TempRunDir::create("codex-npm-precedence")
+                .expect("test directory should be created");
+            let shim_directory = temp.path.join("npm");
+            let official_directory = temp.path.join("official");
+            std::fs::create_dir_all(&shim_directory).expect("shim directory should be created");
+            std::fs::File::create(shim_directory.join("codex.cmd"))
+                .expect("test shim should be created");
+            let npm_candidate = npm_native_candidates(&shim_directory)
+                .into_iter()
+                .next()
+                .expect("Windows architecture should be supported");
+            let expected = create_test_executable(&npm_candidate);
+            create_test_executable(&official_directory.join("codex.exe"));
+
+            let resolved = resolve_native_executable_from(
+                OsStr::new("codex"),
+                &[shim_directory],
+                Some(&official_directory),
+            )
+            .expect("npm native executable should resolve");
+
+            assert_eq!(resolved, expected);
+        }
+
+        #[test]
+        fn official_fallback_resolves_after_stale_search_directories() {
+            let temp = TempRunDir::create("codex-official-fallback")
+                .expect("test directory should be created");
+            let stale_directory = temp.path.join("stale-path");
+            let official_directory = temp.path.join("official");
+            std::fs::create_dir_all(&stale_directory)
+                .expect("stale PATH directory should be created");
+            let expected = create_test_executable(&official_directory.join("codex.exe"));
+
+            let resolved = resolve_native_executable_from(
+                OsStr::new("codex"),
+                &[stale_directory],
+                Some(&official_directory),
+            )
+            .expect("official fallback should resolve");
+
+            assert_eq!(resolved, expected);
+        }
+
+        #[test]
+        fn command_shim_request_remains_rejected_with_official_fallback() {
+            let error = resolve_native_executable_from(
+                OsStr::new("codex.cmd"),
+                &[],
+                Some(Path::new(r"C:\Users\Test\AppData\Local")),
+            )
+            .expect_err("command shim should be rejected");
+
+            assert!(error.contains("command shims are not executed"));
+        }
     }
 }
 
