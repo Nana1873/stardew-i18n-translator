@@ -68,9 +68,8 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
 }
 
 /// Tokens that are still *extracted* (the editor shows them as chips) but are
-/// **exempt from the blocking token error**: a count difference surfaces as a
-/// frontend **warning**, never skips the string on export or triggers a
-/// pointless AI retry (SPEC §10).
+/// **exempt from the blocking token error**: they never skip the string on
+/// export or trigger a pointless AI retry (SPEC §10).
 ///  - `\n` is **layout, not syntax**: a translation often needs a different
 ///    number of line breaks (German runs ~25% longer than English), and a
 ///    changed `\n` count never breaks the mod at runtime.
@@ -83,8 +82,7 @@ fn is_soft_token(token: &str) -> bool {
 }
 
 /// True if `target` is missing (or under-represents) any protected token that
-/// appears in `source`. Soft tokens (newlines, quote delimiters) are exempt;
-/// they surface as a warning, never an error.
+/// appears in `source`. Soft tokens (newlines, quote delimiters) are exempt.
 #[cfg(test)]
 pub fn missing_tokens(source: &str, target: &str) -> bool {
     token_differences(source, target)
@@ -104,6 +102,9 @@ pub struct TokenDifference {
 pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     let source_counts = counts(source);
     let target_counts = counts(target);
+    let source_has_gender_switch = source_counts
+        .keys()
+        .any(|token| is_gender_switch_shape(token));
     let mut tokens: Vec<String> = source_counts
         .keys()
         .chain(target_counts.keys())
@@ -117,6 +118,15 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
         .filter_map(|token| {
             let source_count = source_counts.get(&token).copied().unwrap_or(0);
             let target_count = target_counts.get(&token).copied().unwrap_or(0);
+            // A translation may introduce gender grammar when the source has
+            // no switch at all. Once source switches exist, keep exact shape
+            // counts so a changed block cannot be masked by an extra block.
+            if !source_has_gender_switch
+                && target_count > source_count
+                && is_gender_switch_shape(&token)
+            {
+                return None;
+            }
             (source_count != target_count).then_some(TokenDifference {
                 token,
                 source_count,
@@ -340,6 +350,16 @@ fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
     if !starts_with(chars, offset, "#$") {
         return None;
     }
+
+    // Some real mods contain a malformed `#$b$Text` sequence instead of the
+    // documented `#$b#Text`. Stop at that second `$`; otherwise the generic
+    // next-`#` reader would turn all following prose into one opaque token.
+    if let Some(command_end) = read_simple_dialogue(chars, offset + 1) {
+        if chars.get(command_end) == Some(&'$') {
+            return Some(command_end + 1);
+        }
+    }
+
     find_char(chars, offset + 2, '#').map(|i| i + 1)
 }
 
@@ -591,6 +611,15 @@ mod tests {
     }
 
     #[test]
+    fn dollar_terminated_dialogue_marker_does_not_absorb_following_prose() {
+        let source = "First.$0#$b$Second line.$3#$e#Last.$0";
+        let target = "Erste.$0#$b$Zweite Zeile.$3#$e#Letzte.$0";
+
+        assert_eq!(extract(source), vec!["$0", "#$b$", "$3", "#$e#", "$0"]);
+        assert!(token_differences(source, target).is_empty());
+    }
+
+    #[test]
     fn extracts_structural_hash_quotes_and_repeated_carets() {
         assert_eq!(
             extract("'test' # next^^line"),
@@ -642,6 +671,24 @@ mod tests {
         let target = "${x^y^z}$ ${w}$";
         assert_eq!(extract(source), vec!["${^}$", "${^}$"]);
         assert_eq!(extract(target), vec!["${^^}$", "${", "}$"]);
+        assert!(!token_differences(source, target).is_empty());
+    }
+
+    #[test]
+    fn target_language_may_add_a_well_formed_gender_switch() {
+        assert!(token_differences("Dear @.", "${Lieber^Liebe}$ @.").is_empty());
+
+        // A source switch is still required, and malformed target-only switch
+        // fragments are still reported as added runtime tokens.
+        assert!(!token_differences("${Dear^Dear}$ @.", "Hallo @.").is_empty());
+        assert!(!token_differences("Dear @.", "${Lieber}$ @.").is_empty());
+    }
+
+    #[test]
+    fn target_switch_addition_cannot_mask_a_changed_source_switch_shape() {
+        let source = "${a^b}$";
+        let target = "${x^y^z}$ ${neu^neu}$";
+
         assert!(!token_differences(source, target).is_empty());
     }
 

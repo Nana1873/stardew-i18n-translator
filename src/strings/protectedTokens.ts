@@ -9,12 +9,14 @@
  *  - gender-switch shapes: `${^}$`, `${^^}$`, `${¦}$`, `${¦¦}$`
  *    (branch prose is translatable; nested runtime tokens are extracted)
  *  - mail commands: `[#]`, `%item ... %%`, `%action ... %%`
- *  - dialogue page break: `#$b#` (and `#$...#` variants)
+ *  - dialogue page break: `#$b#` (and `#$...#` variants), with bounded
+ *    recovery for malformed dollar-terminated markers like `#$b$`
  *  - documented bracket tokens such as `[FarmName]`, `[128]`, `[(O)163]`,
  *    and item pools like `[(O)198 (O)202 (O)727 (O)MossSoup]`
  *  - positional placeholders: `{0}`
  *  - dialogue commands: `$b`, `$s`, `$e`, `$1` ...
- *  - structural characters: `#`, paired `'` quote delimiters
+ *  - structural characters: `#`, paired `'` quote delimiters (quotes are
+ *    classified but ignored by validation and editor token counts)
  *  - single-character tokens: `@` (player name), `^` / `\n` (line break)
  *
  * The order of the readers matters — more specific shapes are tried first.
@@ -117,7 +119,12 @@ export function describeToken(token: string): string {
 /** Shape identities compare each well-formed switch as one block. They aren't
  * literal source substrings and must not be inserted at the editor cursor. */
 export function isInsertableProtectedToken(token: string): boolean {
-  return parseGenderSwitchShape(token) === null;
+  return !isGenderSwitchShape(token);
+}
+
+/** True for a canonical well-formed gender-switch shape identity. */
+export function isGenderSwitchShape(token: string): boolean {
+  return parseGenderSwitchShape(token) !== null;
 }
 
 function genderSwitchShape(separator: "^" | "¦", branchCount: number): string {
@@ -274,6 +281,15 @@ function readMailCommand(value: string, offset: number): Token | null {
 
 function readDialogueBreak(value: string, offset: number): Token | null {
   if (!value.startsWith("#$", offset)) return null;
+
+  // Some real mods contain a malformed `#$b$Text` sequence instead of the
+  // documented `#$b#Text`. Stop at that second `$`; otherwise the generic
+  // next-`#` reader would turn all following prose into one opaque token.
+  const command = readSimpleDialogueCommand(value, offset + 1);
+  if (command && value[command.end] === "$") {
+    return token(value, offset, command.end + 1);
+  }
+
   const end = value.indexOf("#", offset + 2);
   return end >= 0 ? token(value, offset, end + 1) : null;
 }

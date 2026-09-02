@@ -643,6 +643,35 @@ describe("StringEditor", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("does not mark a target-language-only gender switch as extra", () => {
+    const { onSave } = renderEditor({
+      source: "Dear @.",
+      target: "${Lieber^Liebe}$ @.",
+    });
+
+    expect(
+      screen.queryByLabelText("Extra token ${^}$"),
+    ).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(
+      screen.queryByText("Protected token mismatch"),
+    ).not.toBeInTheDocument();
+    expect(onSave).toHaveBeenCalledWith(
+      "${Lieber^Liebe}$ @.",
+      "translated",
+      false,
+    );
+  });
+
+  it("still marks a changed source switch shape as extra", () => {
+    renderEditor({
+      source: "${a^b}$",
+      target: "${x^y^z}$ ${neu^neu}$",
+    });
+
+    expect(screen.getByLabelText("Extra token ${^^}$")).toBeInTheDocument();
+  });
+
   it("renders already satisfied protected tokens as passive chips", () => {
     renderEditor({
       source: "Hello {{name}}",

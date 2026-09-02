@@ -60,6 +60,7 @@ import { validate } from "./validation";
 import {
   describeToken,
   extractProtectedTokens,
+  isGenderSwitchShape,
   isInsertableProtectedToken,
 } from "./protectedTokens";
 import { STATUS_META, statusTint } from "./status";
@@ -725,8 +726,13 @@ export function StringEditor({
 
   const sourceTokenCounts = countTokens(row.source);
   const valueTokenCounts = countTokens(value);
+  const sourceHasGenderSwitch = [...sourceTokenCounts.keys()].some(
+    isGenderSwitchShape,
+  );
   const addedTokenCounts = [...valueTokenCounts].filter(
-    ([token, found]) => found > (sourceTokenCounts.get(token) ?? 0),
+    ([token, found]) =>
+      (sourceHasGenderSwitch || !isGenderSwitchShape(token)) &&
+      found > (sourceTokenCounts.get(token) ?? 0),
   );
   const hasInsertableMissingTokens = [...sourceTokenCounts].some(
     ([token, required]) =>
