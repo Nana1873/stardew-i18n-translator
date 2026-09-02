@@ -258,18 +258,12 @@ describe("validate", () => {
     expect(validate("a\nb", "x\ny", false)).toEqual([]);
   });
 
-  it("always warns when the translation is identical to the source", () => {
-    expect(validate("Parsnip", "Parsnip", true)).toContainEqual({
-      ruleId: "identical-to-source",
-      severity: "warning",
-      message: "Translation is identical to the original",
-    });
+  it("accepts an intentionally unchanged translation", () => {
+    expect(validate("Parsnip", "Parsnip", true)).toEqual([]);
   });
 
-  it("still warns when a bracketed UI label is left untranslated", () => {
-    expect(
-      validate("[LEFT]", "[LEFT]", true).map((issue) => issue.ruleId),
-    ).toEqual(["identical-to-source"]);
+  it("accepts an intentionally unchanged bracketed UI label", () => {
+    expect(validate("[LEFT]", "[LEFT]", true)).toEqual([]);
   });
 
   it("warns when literal escape sequences differ", () => {
