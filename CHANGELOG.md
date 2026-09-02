@@ -8,6 +8,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.0.3] - 2026-09-03
+
 ### Fixed
 
 - Malformed `#$b$...` dialogue sequences no longer turn following prose into
@@ -357,7 +359,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.2...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.3...HEAD
+[2.0.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.0...v2.0.1
 [2.0.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v1.4.3...v2.0.0
