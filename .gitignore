@@ -32,6 +32,7 @@ pnpm-debug.log*
 
 # === Build and Dependency Folders (Generic Placeholder) ===
 node_modules/
+/.pnpm-store/
 bower_components/
 dist/
 build/
