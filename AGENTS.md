@@ -7,6 +7,13 @@ proportional to that goal.
 
 - The user's request or the current GitHub issue defines the task. An issue,
   milestone, or formal implementation plan is optional.
+- Continue already-authorized steps without asking again. If new scope or a new
+  target needs approval, or a tool or policy blocks progress, explain the
+  concrete reason and respect that boundary.
+- Retain concrete user ideas deferred from the current task in GitHub Issues.
+  Check for duplicates and update a matching issue when possible; include brief
+  context and a source reference, then link it in the reply. Do not create a
+  second roadmap or automatically implement the deferred idea.
 - Read the relevant code before editing. Use [README.md](README.md) for the user
   workflow and [SPEC.md](SPEC.md) for durable product behavior.
 - Prefer a direct change over a new abstraction. Do not add provider systems,
