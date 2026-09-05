@@ -620,27 +620,6 @@
   border-radius: inherit;
 }
 
-#stardew-i18n-translator
-  .translator-mod-row[data-mod-progress$="100%"]
-  .translator-mod-progress
-  span {
-  background: var(--translator-green);
-}
-
-#stardew-i18n-translator
-  .translator-mod-row[data-progress-state="warning"]
-  .translator-mod-progress
-  span {
-  background: var(--translator-orange);
-}
-
-#stardew-i18n-translator
-  .translator-mod-row[data-progress-state="error"]
-  .translator-mod-progress
-  span {
-  background: var(--translator-red);
-}
-
 #stardew-i18n-translator .translator-string-pane {
   min-width: 0;
   background: var(--translator-canvas);
@@ -700,6 +679,13 @@
   height: 100%;
   background: var(--translator-brand);
   border-radius: inherit;
+}
+
+#stardew-i18n-translator .translator-mod-progress[data-complete="true"] > span,
+#stardew-i18n-translator
+  .translator-progress-inline[data-complete="true"]
+  > span {
+  background: var(--translator-green);
 }
 
 #stardew-i18n-translator .translator-string-toolbar {

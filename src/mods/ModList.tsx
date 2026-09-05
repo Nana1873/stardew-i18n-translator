@@ -96,11 +96,6 @@ function progressStyle(percent: number): CSSProperties {
   } as CSSProperties;
 }
 
-function progressState(progress: number): string | undefined {
-  const percent = Math.round(progress * 100);
-  return percent > 0 && percent < 20 ? "warning" : undefined;
-}
-
 export function ModList({
   mods,
   selectedId,
@@ -511,7 +506,13 @@ function PackageNode({
         <span />
         <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
         <span className="translator-mod-percent">{percent}%</span>
-        <span className="translator-mod-progress" aria-hidden="true">
+        <span
+          className="translator-mod-progress"
+          data-complete={
+            group.totalKeys > 0 && workingCoveredKeys(group) >= group.totalKeys
+          }
+          aria-hidden="true"
+        >
           <span style={progressStyle(percent)} />
         </span>
       </button>
@@ -571,7 +572,6 @@ function ModRow({
       data-tree-id={treeId}
       data-mod-id={mod.uniqueId}
       data-mod-progress={`${workingCoveredKeys(mod)} / ${mod.totalKeys} · ${percent}%`}
-      data-progress-state={progressState(mod.progress)}
       title={`${mod.name} · ${workingCoveredKeys(mod).toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} ${mod.noTranslationNeededKeys ? "covered" : "translated"}${mod.noTranslationNeededKeys ? ` (${mod.noTranslationNeededKeys} need no translation text)` : ""} · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
       onClick={() => onSelect(mod.uniqueId)}
       onContextMenu={(event) => onContextMenu(mod, event, event.currentTarget)}
@@ -609,7 +609,13 @@ function ModRow({
       <span className="translator-mod-percent">
         {mod.totalKeys > 0 ? `${percent}%` : "—"}
       </span>
-      <span className="translator-mod-progress" aria-hidden="true">
+      <span
+        className="translator-mod-progress"
+        data-complete={
+          mod.totalKeys > 0 && workingCoveredKeys(mod) >= mod.totalKeys
+        }
+        aria-hidden="true"
+      >
         <span style={progressStyle(percent)} />
       </span>
       <button

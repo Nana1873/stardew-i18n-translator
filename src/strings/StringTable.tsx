@@ -2026,7 +2026,13 @@ export function StringTable({
               <span key={String(index) + "-" + item}>{item}</span>
             ))}
             {data.length > 0 && (
-              <span className="translator-progress-inline" aria-hidden="true">
+              <span
+                className="translator-progress-inline"
+                data-complete={
+                  data.length > 0 && workingTranslated >= data.length
+                }
+                aria-hidden="true"
+              >
                 <span style={{ width: String(workingProgress) + "%" }} />
               </span>
             )}

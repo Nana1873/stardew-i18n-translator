@@ -2663,6 +2663,10 @@ it("derives blank source status and reopens it after a source update, retaining 
   expect(rowFor("blank")).toHaveAttribute("data-status", "translated");
   expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
   expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
+    "data-complete",
+    "true",
+  );
   expect(screen.getByText("1 need no translation text")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(
     "a.b",
@@ -2692,6 +2696,10 @@ it("derives blank source status and reopens it after a source update, retaining 
     1,
     expect.objectContaining({ untranslated: 1, "review-needed": 1 }),
     0,
+  );
+  expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
+    "data-complete",
+    "false",
   );
   expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
 });
