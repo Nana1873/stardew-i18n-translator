@@ -6,6 +6,7 @@ vi.mock("../tauri/commands", () => ({
   nexusFindTranslations: (...args: unknown[]) => search(...args),
 }));
 import { useNexusSearch } from "./useNexusSearch";
+import { nexusSourceDiskCoverage } from "./resolveTranslation";
 const mod = (id: number | null, name = "Mod") =>
   ({ nexusId: id, name }) as ScannedMod;
 const result = (modId: number): NexusSearchResult => ({
@@ -27,6 +28,7 @@ it("does not search until requested and searches all distinct positive IDs", asy
     hook.result.current.start(
       [mod(1, "A"), mod(1, "B"), mod(2), mod(null), mod(-3)],
       "de",
+      { traversalComplete: true },
     ),
   );
   expect(search.mock.calls).toEqual([
@@ -155,6 +157,7 @@ it("skips fully covered Nexus groups using disk counts independently of Review a
         },
       ],
       "de",
+      { traversalComplete: true },
     ),
   );
   expect(search).not.toHaveBeenCalled();
@@ -186,6 +189,7 @@ it("still searches mixed components with the same Nexus ID and keeps both names"
         },
       ],
       "de",
+      { traversalComplete: true },
     ),
   );
   expect(search).toHaveBeenCalledTimes(1);
@@ -219,6 +223,7 @@ it("does not use rounded progress or call zero-key/unknown-count groups fully co
         mod(3),
       ],
       "de",
+      { traversalComplete: true },
     ),
   );
   expect(search).toHaveBeenCalledTimes(3);
@@ -282,6 +287,7 @@ it("ignores a zero-key support component when the package has real fully covered
         },
       ],
       "de",
+      { traversalComplete: true },
     ),
   );
   expect(search).not.toHaveBeenCalled();
@@ -303,6 +309,7 @@ it("resets skipped coverage on folder/language change and explicit rescan", asyn
         },
       ],
       "de",
+      { traversalComplete: true },
     ),
   );
   expect(hook.result.current.skippedComplete).toBe(1);
@@ -334,7 +341,11 @@ it("searches Review-only coverage and forwards explicit cache refresh and collec
     diskTranslatedKeys: 0,
   };
   const complete = { ...reviewed, nexusId: 2, diskTranslatedKeys: 10 };
-  await act(() => hook.result.current.start([reviewed, complete], "de"));
+  await act(() =>
+    hook.result.current.start([reviewed, complete], "de", {
+      traversalComplete: true,
+    }),
+  );
   expect(search.mock.calls).toEqual([[1, "de", false]]);
   search.mockClear();
   await act(() =>
@@ -350,6 +361,35 @@ it("searches Review-only coverage and forwards explicit cache refresh and collec
   );
   expect(search.mock.calls).toEqual([[2, "de", false]]);
 });
+
+it.each([false, undefined])(
+  "searches surviving fully translated components when traversal completeness is %s",
+  async (traversalComplete) => {
+    search.mockResolvedValue(result(1));
+    const hook = renderHook(() => useNexusSearch("mods|de"));
+    const surviving = {
+      ...mod(1),
+      packageId: "sample",
+      uniqueId: "sample.mod",
+      totalKeys: 1,
+      diskTranslatedKeys: 1,
+    };
+    await act(() =>
+      hook.result.current.start([surviving], "de", {
+        skippedComponents: [],
+        traversalComplete,
+      }),
+    );
+    expect(search).toHaveBeenCalledWith(1, "de", false);
+    expect(hook.result.current.skippedComplete).toBe(0);
+    expect(
+      nexusSourceDiskCoverage([surviving], 1, [], traversalComplete),
+    ).toBeNull();
+    expect(nexusSourceDiskCoverage([surviving], 1, [], true)?.complete).toBe(
+      true,
+    );
+  },
+);
 
 it.each([
   ["same package", "sample", null, true, true],
@@ -377,6 +417,7 @@ it.each([
     };
     await act(() =>
       hook.result.current.start([complete], "de", {
+        traversalComplete: true,
         skippedComponents: [
           {
             packageId: packageId as string | null,

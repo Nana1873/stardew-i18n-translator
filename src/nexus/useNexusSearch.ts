@@ -41,6 +41,7 @@ export function nexusSearchTargets(
   includeComplete = false,
   retainIds: number[] = [],
   skippedComponents: SkippedComponent[] = [],
+  traversalComplete = false,
 ) {
   const targets = new Map<number, string[]>();
   let noId = 0;
@@ -63,7 +64,8 @@ export function nexusSearchTargets(
     if (
       !includeComplete &&
       !retainIds.includes(id) &&
-      nexusSourceDiskCoverage(mods, id, skippedComponents)?.complete
+      nexusSourceDiskCoverage(mods, id, skippedComponents, traversalComplete)
+        ?.complete
     ) {
       targets.delete(id);
       skippedComplete++;
@@ -105,6 +107,7 @@ export function useNexusSearch(workspaceKey: string) {
       forceRefresh?: boolean;
       retainIds?: number[];
       skippedComponents?: SkippedComponent[];
+      traversalComplete?: boolean;
     } = {},
   ) {
     const run = ++generation.current;
@@ -115,6 +118,7 @@ export function useNexusSearch(workspaceKey: string) {
       options.includeComplete,
       options.retainIds,
       options.skippedComponents,
+      options.traversalComplete,
     );
     setState({
       ...emptyState(),

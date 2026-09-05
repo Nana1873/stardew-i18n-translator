@@ -133,10 +133,9 @@ pub struct ScanResult {
     /// failed. A bounded or otherwise incomplete directory traversal also
     /// leaves this unavailable.
     pub source_deltas: Option<ScanDeltas>,
-    /// Internal completeness signal for derived scan data. This is deliberately
-    /// not part of the frontend contract; `source_deltas` is the user-visible
-    /// availability state.
-    #[serde(skip)]
+    /// False when folder access errors or traversal limits may have hidden
+    /// additional components. Consumers must not infer complete disk coverage
+    /// from the components that happened to load.
     pub(crate) traversal_complete: bool,
 }
 
@@ -1841,6 +1840,38 @@ mod tests {
         assert_eq!(result.mods[0].translated_keys, 1);
 
         std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn serialized_scan_marks_hidden_components_as_incomplete() {
+        let base = crate::test_support::temp_dir("scan-hidden-components");
+        let root = base.join("Mods");
+        write(
+            &root.join("Package/manifest.json"),
+            r#"{"UniqueID":"fixture.package","UpdateKeys":["Nexus:123"]}"#,
+        );
+        write(&root.join("Package/i18n/default.json"), r#"{"k":"Hello"}"#);
+        write(&root.join("Package/i18n/de.json"), r#"{"k":"Hallo"}"#);
+        let complete = scan_mods(&root, "de", &base.join("data"));
+        assert_eq!(
+            serde_json::to_value(&complete).unwrap()["traversalComplete"],
+            true
+        );
+
+        let mut hidden = root.join("Package");
+        for _ in 0..=MAX_DEPTH {
+            hidden = hidden.join("x");
+        }
+        write(&hidden.join("i18n/default.json"), r#"{"missing":"Unseen"}"#);
+        let incomplete = scan_mods(&root, "de", &base.join("data"));
+        assert_eq!(incomplete.mods.len(), 1);
+        assert_eq!(incomplete.mods[0].disk_translated_keys, 1);
+        assert!(incomplete.skipped_components.is_empty());
+        assert_eq!(
+            serde_json::to_value(&incomplete).unwrap()["traversalComplete"],
+            false
+        );
+        std::fs::remove_dir_all(base).ok();
     }
 
     #[test]

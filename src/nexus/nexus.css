@@ -47,7 +47,7 @@
   overflow: auto;
   overflow-x: hidden;
   min-height: 0;
-  padding: 12px 20px 20px;
+  padding: 10px 20px 16px;
 }
 .nexus-actions {
   display: flex;
@@ -59,11 +59,13 @@
   width: 100%;
   table-layout: fixed;
   border-collapse: collapse;
-  margin: 12px 0;
+  margin: 8px 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 .nexus-table th,
 .nexus-table td {
-  padding: 9px 8px;
+  padding: 7px 8px;
   text-align: left;
   vertical-align: top;
   border-bottom: 1px solid var(--translator-border);
@@ -77,10 +79,10 @@
   width: 24%;
 }
 .nexus-table th:nth-child(3) {
-  width: 49%;
+  width: 44%;
 }
 .nexus-table th:nth-child(4) {
-  width: 23%;
+  width: 28%;
 }
 .nexus-table select {
   width: 100%;
@@ -88,7 +90,7 @@
 }
 .nexus-table small {
   display: block;
-  margin-top: 4px;
+  margin-top: 3px;
   color: var(--translator-muted);
 }
 .nexus-table button {
@@ -143,7 +145,7 @@
 
 .nexus-selected-title {
   display: block;
-  margin-top: 4px;
+  margin: 0;
 }
 .nexus-muted {
   color: var(--translator-muted);
@@ -177,4 +179,28 @@
   border: 1px solid var(--translator-border);
   border-radius: 4px;
   padding: 5px;
+}
+
+.nexus-table-scroll {
+  overflow-x: auto;
+}
+.nexus-table p {
+  margin: 0;
+}
+.nexus-table details {
+  margin: 5px 0 0;
+}
+.nexus-import-receipt {
+  font-size: 0.75rem;
+}
+.nexus-file-name {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .nexus-table {
+    min-width: 640px;
+  }
+  .nexus-refresh {
+    margin-left: 0;
+  }
 }

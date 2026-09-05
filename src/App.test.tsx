@@ -513,6 +513,7 @@ describe("App shell", () => {
 
   it("rechecks deployed files locally while retaining Nexus receipt and saved Review coverage", async () => {
     let scanned = exportScan(false);
+    scanned.traversalComplete = true;
     Object.assign(scanned.mods[0], {
       nexusId: 10,
       diskTranslatedKeys: 0,

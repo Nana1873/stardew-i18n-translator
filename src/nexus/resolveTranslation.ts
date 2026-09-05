@@ -206,9 +206,11 @@ export function nexusSourceDiskCoverage(
   mods: ScannedMod[],
   sourceNexusId: number,
   skipped: SkippedComponent[] = [],
+  traversalComplete = false,
 ) {
   const components = nexusSourceComponents(mods, sourceNexusId);
   if (
+    !traversalComplete ||
     !components.length ||
     skipped.some(
       (item) =>

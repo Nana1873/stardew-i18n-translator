@@ -109,6 +109,7 @@ function mount(
   vortexExecutable: string | null = "C:/Tools/Vortex/Vortex.exe",
 ) {
   let skipped: SkippedComponent[] = [];
+  let traversalComplete: boolean | undefined = true;
   const onOpenReview = vi.fn();
   const onSearch = vi.fn();
   const onCheckInstalled = vi.fn().mockResolvedValue(undefined);
@@ -118,6 +119,7 @@ function mount(
       search={data}
       mods={scanned}
       skippedComponents={skipped}
+      traversalComplete={traversalComplete}
       targetLang="de"
       onSearch={onSearch}
       vortexExecutable={vortexExecutable}
@@ -132,6 +134,10 @@ function mount(
   const rendered = render(view(true));
   return {
     onImported,
+    setTraversal: (next: boolean | undefined) => {
+      traversalComplete = next;
+      rendered.rerender(view(true));
+    },
     setSkipped: (next: SkippedComponent[]) => {
       skipped = next;
       rendered.rerender(view(true));
@@ -709,3 +715,71 @@ it("freezes selected candidate IDs and destination throughout a Review batch", a
     invoke.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
   ).toBe(false);
 });
+
+it("shows one readable single-candidate title and concise dates while leaving details collapsed", () => {
+  mount();
+  const row = translationRow();
+  expect(row.getAllByText(candidate.name, { exact: true })).toHaveLength(1);
+  expect(row.getByText("v1.2 \u00b7 1 Jan 2026")).toBeInTheDocument();
+  expect(row.queryByRole("combobox")).not.toBeInTheDocument();
+  expect(
+    row.getByText("Details & personal import").closest("details"),
+  ).not.toHaveAttribute("open");
+  expect(
+    row.queryByText("Latest suitable archive resolved when sending"),
+  ).not.toBeInTheDocument();
+});
+it("exposes alternatives directly with a full title and preserves candidate selection", async () => {
+  const alternate = {
+    ...candidate,
+    modId: 30343,
+    name: "German translation for the expanded edition",
+  };
+  mount(undefined, mods, {
+    ...search,
+    entries: [
+      {
+        ...search.entries[1],
+        result: {
+          ...search.entries[1].result,
+          candidates: [candidate, alternate],
+        },
+      },
+    ],
+  });
+  const row = translationRow();
+  const choice = row.getByRole("combobox", {
+    name: "Translation for Canonical title",
+  });
+  expect(choice.closest("details")).toBeNull();
+  expect(choice).toHaveAttribute("title", candidate.name);
+  fireEvent.change(choice, { target: { value: "30343" } });
+  expect(choice).toHaveAttribute("title", alternate.name);
+  expect(choice).toHaveValue("30343");
+  sendAll();
+  await waitFor(() =>
+    expect(invoke).toHaveBeenCalledWith("nexus_handoff_to_vortex", {
+      modId: 30343,
+      fileId: 7,
+    }),
+  );
+});
+it.each([false, undefined])(
+  "does not claim disk coverage after recheck without confirmed traversal (%s)",
+  async (complete) => {
+    const app = mount();
+    sendAll();
+    await screen.findByText(/Handoff requested.*deployment not checked/);
+    app.setTraversal(complete);
+    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check installed files" }),
+    );
+    await screen.findByText(/Handoff requested.*files rechecked/);
+    expect(
+      translationRow().getByText("Disk coverage unavailable"),
+    ).toBeInTheDocument();
+    expect(translationRow().queryByText(/On disk:/)).not.toBeInTheDocument();
+    expect(app.onSearch).not.toHaveBeenCalled();
+  },
+);

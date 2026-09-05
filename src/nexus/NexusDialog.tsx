@@ -24,6 +24,19 @@ import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
 
 const quiet = "translator-button translator-button-quiet";
 const primary = "translator-button translator-button-primary";
+function metadataLine(version?: string, date?: string) {
+  const parsed = date ? new Date(date) : null;
+  const readableDate =
+    parsed && Number.isFinite(parsed.getTime())
+      ? parsed.toLocaleDateString("en-GB", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+          timeZone: "UTC",
+        })
+      : "Date unavailable";
+  return `${version ? `v${version.replace(/^v(?=\d)/i, "")}` : "Version unavailable"} · ${readableDate}`;
+}
 type MappingChoice = ReturnType<
   typeof resolveArchiveTranslations
 >["choices"][number];
@@ -121,6 +134,7 @@ export function NexusDialog({
   vortexExecutable,
   onCheckInstalled,
   skippedComponents = [],
+  traversalComplete = false,
 }: {
   open?: boolean;
   vortexExecutable?: string | null;
@@ -128,6 +142,7 @@ export function NexusDialog({
   search: NexusSearchState;
   mods: ScannedMod[];
   skippedComponents?: SkippedComponent[];
+  traversalComplete?: boolean;
   targetLang: string;
   onSearch: (options?: {
     includeComplete?: boolean;
@@ -417,7 +432,12 @@ export function NexusDialog({
       patch(key, {
         handoff: {
           at: Date.now(),
-          before: nexusSourceDiskCoverage(mods, sourceId, skippedComponents),
+          before: nexusSourceDiskCoverage(
+            mods,
+            sourceId,
+            skippedComponents,
+            traversalComplete,
+          ),
         },
         selectedArchive: selection.file,
         fileName: selection.file.fileName,
@@ -496,8 +516,12 @@ export function NexusDialog({
       entry.result?.candidates.length &&
       (includeComplete ||
         handedOffIds.includes(entry.modId) ||
-        !nexusSourceDiskCoverage(mods, entry.modId, skippedComponents)
-          ?.complete),
+        !nexusSourceDiskCoverage(
+          mods,
+          entry.modId,
+          skippedComponents,
+          traversalComplete,
+        )?.complete),
   );
   const other = search.entries.filter(
     (entry) => !entry.result?.candidates.length,
@@ -590,7 +614,12 @@ export function NexusDialog({
     const awaiting = Boolean(row.files?.length || row.choices?.length);
     const sourceName =
       entry.result?.originalName ?? entry.localNames.join(", ");
-    const disk = nexusSourceDiskCoverage(mods, sourceId, skippedComponents);
+    const disk = nexusSourceDiskCoverage(
+      mods,
+      sourceId,
+      skippedComponents,
+      traversalComplete,
+    );
     const baseline = row.handoff?.before;
     const rechecked = Boolean(
       row.handoff && checkedAt && checkedAt >= row.handoff.at,
@@ -598,6 +627,11 @@ export function NexusDialog({
     const chosenFile = row.files?.find(
       (file) => String(file.fileId) === row.selectedFile,
     );
+    const displayedVersion =
+      chosenFile?.version ?? row.fileVersion ?? candidate.version;
+    const displayedDate =
+      chosenFile?.uploadedAt ?? row.fileDate ?? candidate.updatedAt;
+    const displayedFileName = chosenFile?.fileName ?? row.fileName;
     const originalVersion = mods.find(
       (mod) => mod.nexusId === sourceId,
     )?.version;
@@ -620,11 +654,16 @@ export function NexusDialog({
           </td>
           <td>
             <strong>{sourceName}</strong>
-            {originalVersion && <small>Installed mod v{originalVersion}</small>}
+            {originalVersion && (
+              <small>
+                Installed v{originalVersion.replace(/^v(?=\d)/i, "")}
+              </small>
+            )}
           </td>
           <td>
-            {candidates.length > 1 && (
+            {candidates.length > 1 ? (
               <select
+                title={candidate.name}
                 aria-label={`Translation for ${sourceName}`}
                 disabled={locked}
                 value={
@@ -639,19 +678,16 @@ export function NexusDialog({
               >
                 {candidates.map((item) => (
                   <option key={item.modId} value={item.modId}>
-                    {item.name} · {item.version}
+                    {item.name}
                   </option>
                 ))}
                 <option value="original">Original mod files</option>
               </select>
+            ) : (
+              <strong className="nexus-selected-title">{candidate.name}</strong>
             )}
-            <strong className="nexus-selected-title">{candidate.name}</strong>
             <small>
-              Translation{" "}
-              {candidate.version
-                ? `v${candidate.version}`
-                : "version unavailable"}{" "}
-              · {candidate.updatedAt || "Date unavailable"}
+              {metadataLine(displayedVersion, displayedDate)}
               {candidate.relationshipTier ===
               "possible-addon-or-other-translation"
                 ? " · possible add-on"
@@ -670,16 +706,10 @@ export function NexusDialog({
                   <option value="">Choose archive variant…</option>
                   {row.files.map((file) => (
                     <option key={file.fileId} value={file.fileId}>
-                      {file.name} · {file.version} · {file.fileName}
+                      {file.name} · {file.version}
                     </option>
                   ))}
                 </select>
-                {chosenFile && (
-                  <small>
-                    File v{chosenFile.version} ·{" "}
-                    {chosenFile.uploadedAt || "Date unavailable"}
-                  </small>
-                )}
                 {row.intent === "review" && (
                   <button
                     type="button"
@@ -693,32 +723,32 @@ export function NexusDialog({
                   </button>
                 )}
               </>
-            ) : (
-              <small>
-                {row.fileName ??
-                  "Latest suitable archive resolved when sending"}
-                {row.fileVersion ? ` · file v${row.fileVersion}` : ""}
-                {row.fileDate ? ` · ${row.fileDate}` : ""}
-              </small>
+            ) : null}
+            {displayedFileName && (
+              <small className="nexus-file-name">{displayedFileName}</small>
             )}
           </td>
           <td>
-            <div className="nexus-row-status" aria-live="polite">
-              <p role="status">
-                {row.status ??
-                  (row.handoff
-                    ? rechecked
-                      ? "Handoff requested · files rechecked"
-                      : "Handoff requested · deployment not checked"
-                    : awaiting
-                      ? "Choose matching file/text"
-                      : row.error
-                        ? "Action failed"
-                        : "Ready")}
-              </p>
-            </div>
+            {(row.status ||
+              row.handoff ||
+              (!row.completed && row.imported === 0)) && (
+              <div className="nexus-row-status" aria-live="polite">
+                <p role="status">
+                  {row.status ??
+                    (row.handoff
+                      ? rechecked
+                        ? "Handoff requested · files rechecked"
+                        : "Handoff requested · deployment not checked"
+                      : awaiting
+                        ? "Choose matching file/text"
+                        : row.error
+                          ? "Action failed"
+                          : "Ready")}
+                </p>
+              </div>
+            )}
             {(row.completed || row.imported > 0) && (
-              <p role="status">
+              <p role="status" className="nexus-import-receipt">
                 {row.imported > 0
                   ? `${row.imported} imported to Review this session`
                   : "No new strings added"}{" "}
@@ -749,6 +779,18 @@ export function NexusDialog({
                 </p>
               )}
               {candidate.summary && <p>{candidate.summary}</p>}
+              {(row.fileName || chosenFile) && (
+                <p>
+                  Translation page:{" "}
+                  {metadataLine(candidate.version, candidate.updatedAt)}
+                </p>
+              )}
+              {!displayedFileName && (
+                <p>
+                  A suitable archive is selected when the action starts.
+                  Ambiguous variants require your choice.
+                </p>
+              )}
               {entry.localNames.some((name) => name !== sourceName) && (
                 <p>Local components: {entry.localNames.join(", ")}</p>
               )}
@@ -1007,7 +1049,12 @@ export function NexusDialog({
     entry.result?.fetchedAt ? [entry.result.fetchedAt] : [],
   );
   const latestSearch = fetchedTimes.length
-    ? new Date(Math.min(...fetchedTimes)).toLocaleString("en-GB")
+    ? new Date(Math.min(...fetchedTimes)).toLocaleString("en-GB", {
+        day: "numeric",
+        month: "short",
+        hour: "2-digit",
+        minute: "2-digit",
+      })
     : null;
   if (!open) return null;
   return (
@@ -1147,10 +1194,12 @@ export function NexusDialog({
           </small>
         </div>
         {search.stoppedReason && <p role="alert">{search.stoppedReason}</p>}
-        <table className="nexus-table" aria-label="Translation candidates">
-          {tableHead}
-          <tbody>{found.map(renderRow)}</tbody>
-        </table>
+        <div className="nexus-table-scroll">
+          <table className="nexus-table" aria-label="Translation candidates">
+            {tableHead}
+            <tbody>{found.map(renderRow)}</tbody>
+          </table>
+        </div>
         {!found.length && !search.running && (
           <p>No translation candidates found by this limited search.</p>
         )}
@@ -1159,12 +1208,14 @@ export function NexusDialog({
             <summary>
               {other.length} mods without candidates / search errors
             </summary>
-            <table
-              className="nexus-table"
-              aria-label="Mods without translation candidates"
-            >
-              <tbody>{other.map(renderRow)}</tbody>
-            </table>
+            <div className="nexus-table-scroll">
+              <table
+                className="nexus-table"
+                aria-label="Mods without translation candidates"
+              >
+                <tbody>{other.map(renderRow)}</tbody>
+              </table>
+            </div>
           </details>
         )}
         <details>

@@ -284,6 +284,7 @@ export function App() {
   const [nexusScanJob, setNexusScanJob] = useState<{
     mods: ScannedMod[];
     skippedComponents: ScanResult["skippedComponents"];
+    traversalComplete: boolean;
     targetLang: string;
     workspaceKey: string;
   } | null>(null);
@@ -293,6 +294,7 @@ export function App() {
     if (nexusScanJob.workspaceKey === nexusWorkspaceKey)
       void nexus.start(nexusScanJob.mods, nexusScanJob.targetLang, {
         skippedComponents: nexusScanJob.skippedComponents,
+        traversalComplete: nexusScanJob.traversalComplete,
       });
   }, [nexusScanJob, nexusWorkspaceKey]);
   useEffect(() => {
@@ -848,6 +850,7 @@ export function App() {
         setNexusScanJob({
           mods: result.mods,
           skippedComponents: result.skippedComponents,
+          traversalComplete: result.traversalComplete === true,
           targetLang: scanSettings.targetLang,
           workspaceKey: `${scanSettings.modsPath}|${scanSettings.targetLang}`,
         });
@@ -2020,6 +2023,7 @@ export function App() {
             )
               void nexus.start(scan.mods, settings.targetLang, {
                 skippedComponents: scan.skippedComponents,
+                traversalComplete: scan.traversalComplete === true,
               });
           }}
           nexusEnabled={Boolean(scan) && !scanning && !exporting}
@@ -2314,6 +2318,7 @@ export function App() {
             mods={scan.mods}
             targetLang={settings.targetLang}
             skippedComponents={scan.skippedComponents}
+            traversalComplete={scan.traversalComplete === true}
             vortexExecutable={settings.vortexExecutable}
             onCheckInstalled={async () => {
               const result = await runScan(settings, false, () => true, {
@@ -2329,6 +2334,7 @@ export function App() {
               void nexus.start(scan.mods, settings.targetLang!, {
                 ...options,
                 skippedComponents: scan.skippedComponents,
+                traversalComplete: scan.traversalComplete === true,
               })
             }
             onCancel={nexus.cancel}

@@ -254,6 +254,8 @@ export interface ScannedMod {
 
 export interface ScanResult {
   mods: ScannedMod[];
+  /** Only true proves traversal completed; absent/false means unknown coverage. */
+  traversalComplete?: boolean;
   /** Scanner diagnostics that did not themselves omit a component. */
   warnings: string[];
   /** Exact scanner units that were omitted. Unlike warnings, this is safe to count. */
