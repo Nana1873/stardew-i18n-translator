@@ -1,4 +1,4 @@
-//! Persisted translation state (SPEC §14).
+//! Persisted translation state. See SPEC.md, Portable Data.
 //!
 //! Work-in-progress translations are stored **separately** from the mod's own
 //! files: one JSON per mod (keyed by UniqueID) and target language in the

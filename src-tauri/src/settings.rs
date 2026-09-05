@@ -1,4 +1,4 @@
-//! Persisted application settings (SPEC §14).
+//! Persisted application settings. See SPEC.md, Portable Data.
 //!
 //! Stored as `data/settings.json` beside the portable executable. This file
 //! holds the user's whole configuration (folders, target language, the local-AI

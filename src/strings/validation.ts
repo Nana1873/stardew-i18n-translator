@@ -1,5 +1,5 @@
 /**
- * String validation rules (SPEC §10).
+ * String validation rules. See SPEC.md, Validation and Export.
  *
  * Five rules, focused on preventing broken mods and surfacing review risks.
  * "Token" here means any Stardew/SMAPI protected token (Content Patcher
@@ -36,7 +36,7 @@ export interface ValidationIssue {
 /** Non-blocking markers kept out of the token error multisets.
  *  - `\n` is layout, not syntax (a translation rewraps freely).
  *  - `'` paired quote delimiters are punctuation, not runtime syntax in SMAPI
- *    i18n, so adding/removing/restyling quotes is ignored (SPEC §10). */
+ *    i18n, so adding/removing/restyling quotes is ignored. */
 const NEWLINE = "\n";
 const QUOTE = "'";
 

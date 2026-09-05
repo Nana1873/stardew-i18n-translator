@@ -24,6 +24,41 @@ if ([System.IO.Path]::GetFileName($resolvedZip) -ne $expectedName) {
     throw "Expected release archive named $expectedName, got $resolvedZip"
 }
 
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedZip)
+$temporaryExe = $null
+try {
+    $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace("/", "\") })
+    $expectedEntries = @(
+        "Stardew i18n Translator\README.txt",
+        "Stardew i18n Translator\stardew-i18n-translator.exe"
+    )
+    $actualLayout = ($entries | Sort-Object) -join "`n"
+    $expectedLayout = ($expectedEntries | Sort-Object) -join "`n"
+    if ($actualLayout -ne $expectedLayout) {
+        throw "Portable archive must contain exactly README.txt and stardew-i18n-translator.exe."
+    }
+
+    $executableEntry = $archive.Entries | Where-Object {
+        $_.FullName.Replace("/", "\") -eq "Stardew i18n Translator\stardew-i18n-translator.exe"
+    }
+    $temporaryExe = [System.IO.Path]::GetTempFileName()
+    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($executableEntry, $temporaryExe, $true)
+    $executableVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($temporaryExe).ProductVersion
+    if ([string]::IsNullOrWhiteSpace($executableVersion)) {
+        throw "The archived executable has no embedded product version. Rebuild and package the application."
+    }
+    if ($executableVersion -ne $version) {
+        throw "Expected archived executable product version $version, found $executableVersion. Rebuild and package the application."
+    }
+}
+finally {
+    $archive.Dispose()
+    if ($temporaryExe -and (Test-Path -LiteralPath $temporaryExe)) {
+        Remove-Item -LiteralPath $temporaryExe -Force
+    }
+}
+
 Push-Location $repoRoot
 try {
     if (git status --porcelain) {
@@ -62,24 +97,6 @@ try {
     cargo audit --file (Join-Path $repoRoot "src-tauri\Cargo.lock")
     if ($LASTEXITCODE -ne 0) {
         throw "Rust dependency audit failed."
-    }
-
-    Add-Type -AssemblyName System.IO.Compression.FileSystem
-    $archive = [System.IO.Compression.ZipFile]::OpenRead($resolvedZip)
-    try {
-        $entries = @($archive.Entries | ForEach-Object { $_.FullName.Replace("/", "\") })
-        $expectedEntries = @(
-            "Stardew i18n Translator\README.txt",
-            "Stardew i18n Translator\stardew-i18n-translator.exe"
-        )
-        $actualLayout = ($entries | Sort-Object) -join "`n"
-        $expectedLayout = ($expectedEntries | Sort-Object) -join "`n"
-        if ($actualLayout -ne $expectedLayout) {
-            throw "Portable archive must contain exactly README.txt and stardew-i18n-translator.exe."
-        }
-    }
-    finally {
-        $archive.Dispose()
     }
 
     $existingTag = git tag --list $tag

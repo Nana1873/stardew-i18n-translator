@@ -1,7 +1,7 @@
 import type { StringStatus } from "../tauri/commands";
 
 /**
- * Labels, glyphs and colors for the current string statuses (SPEC §§7 and 9).
+ * Labels, glyphs and colors for the current string statuses.
  *
  * Design rule: a status is always shown as hue + glyph (+ 3px row edge in the
  * table) — any one signal alone is sufficient. Gold is reserved for

@@ -112,7 +112,7 @@ describe("ModList", () => {
       "3 awaiting review, 3 i18n files",
     );
     // The real Nexus id is surfaced both on the parent (rolled up) and on the
-    // [CP] child that owns it (SPEC §7).
+    // [CP] child that owns it.
     expect(screen.getAllByText("7286")).toHaveLength(2);
   });
 

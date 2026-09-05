@@ -190,7 +190,7 @@ export function scanMods(
   return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
 }
 
-/** Current status model (SPEC §9). Legacy `not-translatable` values migrate
+/** Current status model. Legacy `not-translatable` values migrate
  * away because keeping a string in English is now an explicit identical translation
  * ("Keep original"), so outdated detection covers those strings too. The
  * backend migrates legacy stored values on load. */
@@ -211,7 +211,7 @@ export interface StringRow {
   /** The translator explicitly accepted this exact protected-token mismatch. */
   tokenMismatchAccepted: boolean;
   /** Section this key belongs to — the nearest standalone `//` comment line
-   * above it in default.json (SPEC §7); null/absent = no section. */
+   * above it in default.json; null/absent = no section. */
   section?: string | null;
 }
 
@@ -552,8 +552,8 @@ export interface LlmExportOutcome {
 }
 
 /**
- * Write the selected strings as an external LLM translation batch
- * (SPEC §11). The backend opens a save dialog; resolves null on cancel.
+ * Write the selected strings as an external LLM translation batch.
+ * The backend opens a save dialog; resolves null on cancel.
  */
 export function exportLlmBatch(
   modUniqueId: string,

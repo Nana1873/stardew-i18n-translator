@@ -284,8 +284,8 @@ kbd,
   color: #6f6757;
 }
 
-/* Section divider above a run of rows sharing a `// comment` section
-   (SPEC §7). Non-selectable — purely orientation. */
+/* Section divider above a run of rows sharing a `// comment` section.
+   Non-selectable — purely orientation. */
 .sectionrow {
   display: flex;
   align-items: center;
@@ -430,7 +430,7 @@ kbd,
 }
 
 /* Reserved slot rows (tokens, glossary): always rendered, fixed min-height —
-   the editor never changes geometry between strings (SPEC §7). */
+   the editor never changes geometry between strings. */
 .editor__slot {
   display: grid;
   grid-template-columns: 84px 1fr;

@@ -1,7 +1,7 @@
 /**
  * Application shell.
  *
- * Dashboard plus toolbar and two-panel workspace (SPEC §7): left = mod list,
+ * Dashboard plus toolbar and two-panel workspace: left = mod list,
  * right = string table. The Setup Wizard opens on first launch and via
  * Settings. Scans run in the Rust backend and populate the workspace.
  */
@@ -286,7 +286,7 @@ export function App() {
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(340);
   const [modsCollapsed, setModsCollapsed] = useState(false);
-  // Dashboard home vs. two-panel work view (SPEC §7). Overview is the app's
+  // Dashboard home vs. two-panel work view. Overview is the app's
   // landing view; opening a mod or choosing Workspace enters the workbench.
   const [view, setView] = useState<"home" | "work">("home");
   // modId -> epoch ms of the last open. This is only resume ordering, not an

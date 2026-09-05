@@ -7,7 +7,7 @@
 //! content + the pack's translated `Strings`). This module only *locates* a
 //! usable pack; [`crate::glossary::build_from_pack`] does the extraction.
 //!
-//! Read-only and narrowly bounded per `SCOPE_GUARDRAILS.md`: a pack's
+//! Read-only and narrowly bounded: a pack's
 //! `manifest.json` + `content.json` are parsed only to detect the language
 //! registration and locate its `Strings/` folder; the game's own `Data/*` is
 //! never read here. We do **not** implement Content Patcher — `When` matching is

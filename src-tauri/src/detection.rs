@@ -1,4 +1,4 @@
-//! Stardew Valley install auto-detection (SPEC §4).
+//! Stardew Valley install auto-detection.
 //!
 //! Pure helpers (`is_stardew_install`, `mods_path_for`, `parse_steam_library_paths`)
 //! are unit-tested. `detect()` touches the registry/filesystem and is verified
