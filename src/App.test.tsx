@@ -460,9 +460,12 @@ describe("App shell", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
     );
+    const searchSummary = await screen.findByRole("region", {
+      name: "Translation search results",
+    });
     expect(
-      await screen.findByRole("dialog", { name: "Nexus translations · fr" }),
-    ).toHaveTextContent("1 translation checks failed");
+      within(searchSummary).getByText("Checks failed").parentElement,
+    ).toHaveTextContent(/^1\s*Checks failed$/);
     expect(
       invokeMock.mock.calls.some(
         ([cmd, args]) =>
@@ -591,7 +594,7 @@ describe("App shell", () => {
         name: "Download & install all with Vortex (1)",
       }),
     );
-    await screen.findByText("Sent to Vortex");
+    await screen.findByText("1 sent to Vortex");
     const scans = invokeMock.mock.calls.filter(
       ([cmd]) => cmd === "scan_mods",
     ).length;
@@ -604,7 +607,7 @@ describe("App shell", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Check installed files" }),
     );
-    await screen.findByText("Sent to Vortex · rechecked");
+    await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(
       within(screen.getByRole("row", { name: "Canonical" })).getByText(
         "Details",
@@ -633,7 +636,9 @@ describe("App shell", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
     );
-    expect(screen.getByText("Sent to Vortex · rechecked")).toBeInTheDocument();
+    expect(
+      screen.getByText("1 sent to Vortex · files rechecked"),
+    ).toBeInTheDocument();
     expect(
       invokeMock.mock.calls.filter(
         ([cmd]) => cmd === "nexus_find_translations",
@@ -744,7 +749,7 @@ describe("App shell", () => {
         name: "Download & install all with Vortex (1)",
       }),
     );
-    await screen.findByText("Sent to Vortex");
+    await screen.findByText("1 sent to Vortex");
     expect(invokeMock).toHaveBeenCalledWith("nexus_handoff_to_vortex", {
       modId: 30,
       fileId: 7,

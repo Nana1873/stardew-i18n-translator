@@ -157,6 +157,7 @@ export function NexusDialog({
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
+  const [linkErrors, setLinkErrors] = useState<Record<number, string>>({});
   const [rows, setRows] = useState<Record<string, RowState>>({});
   const [fileSelections, setFileSelections] = useState<Record<number, string>>(
     {},
@@ -500,12 +501,51 @@ export function NexusDialog({
     };
   });
   const shown = groups.filter((group) => group.options.length > 0);
-  const metadataErrors = groups.reduce(
-    (sum, group) => sum + group.errors.length,
-    0,
+  const failedIds = new Set([
+    ...search.entries
+      .filter((entry) => entry.error)
+      .map((entry) => entry.modId),
+    ...groups
+      .filter((group) => group.errors.length)
+      .map((group) => group.entry.modId),
+  ]);
+  const unavailableCount = failedIds.size;
+  const noDownloadIds = new Set(
+    [
+      ...search.entries
+        .filter(
+          (entry) =>
+            entry.result && !entry.error && !entry.result.candidates.length,
+        )
+        .map((entry) => entry.modId),
+      ...groups
+        .filter(
+          (group) =>
+            !group.loading && !group.options.length && !group.errors.length,
+        )
+        .map((group) => group.entry.modId),
+    ].filter((id) => !failedIds.has(id)),
   );
-  const discoveryErrors = search.entries.filter((entry) => entry.error).length;
-  const unavailableCount = metadataErrors + discoveryErrors;
+  const actionRows = Object.values(rows);
+  const handoffCount = actionRows.filter((row) => row.handoff).length;
+  const actionStatus = active ? rows[active]?.status : undefined;
+  const allHandoffsRechecked =
+    checkedAt != null &&
+    actionRows.every((row) => !row.handoff || checkedAt >= row.handoff.at);
+  const resultStatus = [
+    handoffCount
+      ? `${handoffCount} sent to Vortex${allHandoffsRechecked ? " · files rechecked" : ""}`
+      : "",
+    actionRows.some((row) => row.completed || row.imported > 0)
+      ? `${actionRows.reduce((sum, row) => sum + row.imported, 0)} imported to Review`
+      : "",
+    actionRows.some((row) => row.choices?.length)
+      ? "Confirm matching text"
+      : "",
+    actionRows.some((row) => row.error) ? "Action failed" : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const loading = groups.some((group) => group.loading);
   const unresolved = shown.some((group) => !group.selected);
   const pending = shown.filter(
@@ -580,71 +620,89 @@ export function NexusDialog({
             )}
           </td>
           <td>
-            {group.options.length > 1 ? (
-              <select
-                aria-label={`Translation file for ${sourceName}`}
-                title={
-                  selected
-                    ? `${selected.candidate.name} · ${selected.file.fileName}`
-                    : "Choose a translation version"
-                }
+            <div className="nexus-file-link">
+              <div className="nexus-file-selection">
+                {group.options.length > 1 ? (
+                  <select
+                    aria-label={`Translation file for ${sourceName}`}
+                    title={
+                      selected
+                        ? `${selected.candidate.name} · ${selected.file.fileName}`
+                        : "Choose a translation version"
+                    }
+                    disabled={locked}
+                    value={group.value}
+                    onChange={(event) =>
+                      setFileSelections((previous) => ({
+                        ...previous,
+                        [sourceId]: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Choose translation version…</option>
+                    {group.candidates.map((item) => (
+                      <optgroup key={item.modId} label={item.name}>
+                        {group.options
+                          .filter(
+                            (option) => option.candidate.modId === item.modId,
+                          )
+                          .map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.file.name} ·{" "}
+                              {metadataLine(
+                                option.file.version,
+                                option.file.uploadedAt,
+                              )}
+                              {option.recommended ? " · recommended" : ""}
+                            </option>
+                          ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                ) : (
+                  <>
+                    <strong className="nexus-selected-title">
+                      {candidate.name}
+                    </strong>
+                    <small>
+                      {file && metadataLine(file.version, file.uploadedAt)}
+                    </small>
+                  </>
+                )}
+                {file && (
+                  <small className="nexus-file-name">{file.fileName}</small>
+                )}
+                {!selected && (
+                  <small>Choose the version for your installed mod.</small>
+                )}
+              </div>
+              <button
+                className={primary}
                 disabled={locked}
-                value={group.value}
-                onChange={(event) =>
-                  setFileSelections((previous) => ({
+                onClick={() => {
+                  setLinkErrors((previous) => ({
                     ...previous,
-                    [sourceId]: event.target.value,
-                  }))
-                }
+                    [sourceId]: "",
+                  }));
+                  void openUrl(
+                    `https://www.nexusmods.com/stardewvalley/mods/${candidate.modId}?tab=files`,
+                  ).catch((error: unknown) => {
+                    if (mounted.current)
+                      setLinkErrors((previous) => ({
+                        ...previous,
+                        [sourceId]: String(error),
+                      }));
+                  });
+                }}
               >
-                <option value="">Choose translation version…</option>
-                {group.candidates.map((item) => (
-                  <optgroup key={item.modId} label={item.name}>
-                    {group.options
-                      .filter((option) => option.candidate.modId === item.modId)
-                      .map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.file.name} ·{" "}
-                          {metadataLine(
-                            option.file.version,
-                            option.file.uploadedAt,
-                          )}
-                          {option.recommended ? " · recommended" : ""}
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
-              </select>
-            ) : (
-              <>
-                <strong className="nexus-selected-title">
-                  {candidate.name}
-                </strong>
-                <small>
-                  {file && metadataLine(file.version, file.uploadedAt)}
-                </small>
-              </>
+                Open Nexus Link
+              </button>
+            </div>
+            {linkErrors[sourceId] && (
+              <p role="alert">
+                Could not open Nexus Link: {linkErrors[sourceId]}
+              </p>
             )}
-            {file && <small className="nexus-file-name">{file.fileName}</small>}
-            {!selected && (
-              <small>Choose the version for your installed mod.</small>
-            )}
-          </td>
-          <td>
-            <p role="status">
-              {row.status ??
-                (row.handoff
-                  ? rechecked
-                    ? "Sent to Vortex · rechecked"
-                    : "Sent to Vortex"
-                  : row.choices?.length
-                    ? "Confirm matching text"
-                    : row.error
-                      ? "Action failed"
-                      : row.completed || row.imported > 0
-                        ? `${row.imported} imported to Review`
-                        : "Ready")}
-            </p>
             {row.error && (
               <>
                 <p role="alert">{row.error}</p>
@@ -659,73 +717,69 @@ export function NexusDialog({
                 )}
               </>
             )}
-            <details>
-              <summary>Details</summary>
-              {row.handoff && (
-                <p>
-                  Vortex launch was requested. Download, installation and
-                  deployment are not confirmed by this app.
-                </p>
-              )}
-              <small>
-                {disk
-                  ? `On disk: ${disk.covered}/${disk.total} keys${rechecked && baseline ? ` (${disk.covered - baseline.covered >= 0 ? "+" : ""}${disk.covered - baseline.covered} since handoff)` : ""}`
-                  : "Disk coverage unavailable"}
-              </small>
-              {disk && disk.differences > 0 && (
+            {(row.handoff ||
+              row.completed ||
+              row.imported > 0 ||
+              row.choices?.length ||
+              row.notice ||
+              row.details.length > 0) && (
+              <details>
+                <summary>Details</summary>
+                {row.handoff && (
+                  <p>
+                    Vortex launch was requested. Download, installation and
+                    deployment are not confirmed by this app.
+                  </p>
+                )}
                 <small>
-                  {disk.differences} saved values differ from disk; drafts kept.
+                  {disk
+                    ? `On disk: ${disk.covered}/${disk.total} keys${rechecked && baseline ? ` (${disk.covered - baseline.covered >= 0 ? "+" : ""}${disk.covered - baseline.covered} since handoff)` : ""}`
+                    : "Disk coverage unavailable"}
                 </small>
-              )}
-              {(row.completed || row.imported > 0) && (
-                <p>
-                  {row.imported > 0
-                    ? `${row.imported} imported to Review this session`
-                    : "No new strings added"}{" "}
-                  · {row.kept} existing values kept · {row.invalid} token errors
-                  {row.failures ? ` · ${row.failures} failed` : ""}
-                </p>
-              )}
-              {candidate.summary && <p>{candidate.summary}</p>}
-              {row.notice && <p>{row.notice}</p>}
-              {row.details.map((detail, index) => (
-                <p key={index}>{detail}</p>
-              ))}
-              {row.modIds.map(
-                (id) =>
-                  onOpenReview && (
-                    <button
-                      className={quiet}
-                      key={id}
-                      disabled={locked}
-                      onClick={() => onOpenReview(id)}
-                    >
-                      Open Review
-                      {row.modIds.length > 1
-                        ? ` · ${mods.find((mod) => mod.uniqueId === id)?.name ?? id}`
-                        : ""}
-                    </button>
-                  ),
-              )}
-              <button
-                className={quiet}
-                disabled={locked}
-                onClick={() =>
-                  void run(key, () =>
-                    openUrl(
-                      `https://www.nexusmods.com/stardewvalley/mods/${candidate.modId}?tab=files`,
+                {disk && disk.differences > 0 && (
+                  <small>
+                    {disk.differences} saved values differ from disk; drafts
+                    kept.
+                  </small>
+                )}
+                {(row.completed || row.imported > 0) && (
+                  <p>
+                    {row.imported > 0
+                      ? `${row.imported} imported to Review this session`
+                      : "No new strings added"}{" "}
+                    · {row.kept} existing values kept · {row.invalid} token
+                    errors
+                    {row.failures ? ` · ${row.failures} failed` : ""}
+                  </p>
+                )}
+                {candidate.summary && <p>{candidate.summary}</p>}
+                {row.notice && <p>{row.notice}</p>}
+                {row.details.map((detail, index) => (
+                  <p key={index}>{detail}</p>
+                ))}
+                {row.modIds.map(
+                  (id) =>
+                    onOpenReview && (
+                      <button
+                        className={quiet}
+                        key={id}
+                        disabled={locked}
+                        onClick={() => onOpenReview(id)}
+                      >
+                        Open Review
+                        {row.modIds.length > 1
+                          ? ` · ${mods.find((mod) => mod.uniqueId === id)?.name ?? id}`
+                          : ""}
+                      </button>
                     ),
-                  )
-                }
-              >
-                Open Nexus files
-              </button>
-            </details>
+                )}
+              </details>
+            )}
           </td>
         </tr>
         {Boolean(row.choices?.length) && (
           <tr>
-            <td colSpan={3}>
+            <td colSpan={2}>
               {Boolean(row.choices?.length) && (
                 <div className="nexus-inline-choice">
                   {expired ? (
@@ -892,6 +946,13 @@ export function NexusDialog({
       onClose={onClose}
     >
       <div className="nexus-session-summary">
+        {(actionStatus || resultStatus || checking) && (
+          <p role="status">
+            {checking
+              ? "Checking installed files…"
+              : actionStatus || resultStatus}
+          </p>
+        )}
         <div className="nexus-actions">
           <button
             className={primary}
@@ -954,18 +1015,11 @@ export function NexusDialog({
                 <tr>
                   <th>Installed mod</th>
                   <th>Translation file / version</th>
-                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>{shown.map(renderRow)}</tbody>
             </table>
           </div>
-        )}
-        {unavailableCount > 0 && (
-          <p role="alert">
-            {unavailableCount} translation checks failed. Open Options &amp;
-            search details to retry.
-          </p>
         )}
         {!shown.length && !loading && !search.running && (
           <p>
@@ -974,8 +1028,32 @@ export function NexusDialog({
               : "No suitable translation downloads found."}
           </p>
         )}
-        <details className="nexus-options">
-          <summary>Options & search details</summary>
+        <section
+          aria-label="Translation search results"
+          className="nexus-search-results"
+        >
+          <div className="translator-preflight-metrics">
+            {[
+              [`${search.completed}/${search.total}`, "IDs checked"],
+              [shown.length, "Mods with downloads"],
+              [noDownloadIds.size, "No suitable download found"],
+              [search.skippedComplete ?? 0, "Fully translated groups skipped"],
+              [search.noId, "Components without Nexus ID"],
+              [unavailableCount, "Checks failed"],
+            ].map(([value, label]) => (
+              <div className="translator-preflight-metric" key={label}>
+                <strong>{value}</strong>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
+          {search.stoppedReason ? (
+            <p role="alert">{search.stoppedReason}</p>
+          ) : search.cancelled ? (
+            <p role="status">Search cancelled · results are partial.</p>
+          ) : !search.running && search.completed < search.total ? (
+            <p role="status">Search incomplete · results are partial.</p>
+          ) : null}
           <div className="nexus-actions">
             <button
               className={quiet}
@@ -997,51 +1075,39 @@ export function NexusDialog({
               </button>
             )}
           </div>
-          <p>
-            {search.completed}/{search.total} IDs checked ·{" "}
-            {search.skippedComplete ?? 0} fully translated mod groups skipped ·{" "}
-            {search.noId} components without a Nexus ID.
-          </p>
-          <p>
-            Only likely translations with suitable current files are listed.
-            Missing results do not prove that no translation exists.
-          </p>
-          {search.stoppedReason && <p role="alert">{search.stoppedReason}</p>}
-          {groups
-            .filter((group) => group.errors.length)
-            .map((group) => (
-              <p role="alert" key={group.entry.modId}>
-                {group.errors.join("; ")}
+          {unavailableCount > 0 && (
+            <>
+              <p role="alert">
+                {unavailableCount} translation checks failed. Refresh search or
+                retry file metadata.
               </p>
-            ))}
-          {groups.some((group) => group.errors.length) && (
-            <button
-              className={quiet}
-              disabled={locked || loading}
-              onClick={fileMetadata.refresh}
-            >
-              Retry file metadata
-            </button>
+              {groups.some((group) => group.errors.length) && (
+                <button
+                  className={quiet}
+                  disabled={locked || loading}
+                  onClick={fileMetadata.refresh}
+                >
+                  Retry file metadata
+                </button>
+              )}
+              <details>
+                <summary>Error details</summary>
+                {search.entries
+                  .filter((entry) => entry.error)
+                  .map((entry) => (
+                    <p key={entry.modId}>
+                      {entry.localNames.join(", ")}: {entry.error}
+                    </p>
+                  ))}
+                {groups
+                  .filter((group) => group.errors.length)
+                  .map((group) => (
+                    <p key={group.entry.modId}>{group.errors.join("; ")}</p>
+                  ))}
+              </details>
+            </>
           )}
-          {groups
-            .filter(
-              (group) =>
-                !group.loading && !group.options.length && !group.errors.length,
-            )
-            .map((group) => (
-              <p key={group.entry.modId}>
-                {group.entry.result?.originalName}: no suitable current files.
-              </p>
-            ))}
-          {search.entries
-            .filter((entry) => !entry.result?.candidates.length)
-            .map((entry) => (
-              <p key={entry.modId}>
-                {entry.result?.originalName ?? entry.localNames.join(", ")}:{" "}
-                {entry.error ?? "No likely translation found."}
-              </p>
-            ))}
-        </details>
+        </section>
       </div>
     </NexusModal>
   );

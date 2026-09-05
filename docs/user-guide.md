@@ -46,7 +46,12 @@ Single-file results need no choice. The file IDs shown by this list are the
 ones used by the batch action; nothing downloads merely by opening the list.
 The newest suitable file is a selection hint, not proof that it matches your
 installed mod. Search metadata is cached locally for 24 hours.
-**Refresh search**, under **Options & search details**, requests fresh results.
+Each row has an **Open Nexus Link** button for the translation's Nexus files
+page. Search totals use compact counters for checked IDs, mods with downloads,
+confirmed searches without a suitable download, fully translated groups skipped,
+components without a Nexus ID, and failed checks. Pending or failed checks do not
+count as confirmed searches without a download. **Refresh search** requests
+fresh results.
 Cancellation and API failures preserve your local workspace; bounded searches
 may miss translations.
 
@@ -60,6 +65,11 @@ installation, conflicts, and deployment. A successful handoff means only that
 the launch request succeeded, not that a file was downloaded or installed.
 Stopping a batch prevents subsequent handoffs; it does not undo requests already
 sent to Vortex.
+
+Progress and the batch result appear above the download button. Individual
+results and disk comparisons are available after an action; a ready row has no
+status or details to dismiss. Action failures and ambiguous mappings remain
+visible so they can be resolved without losing completed work.
 
 After installing and deploying in Vortex, use **Check installed files**. This
 local rescan reads actual target-language files separately from saved app work.

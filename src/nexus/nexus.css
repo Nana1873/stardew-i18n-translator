@@ -72,13 +72,10 @@
   overflow-wrap: anywhere;
 }
 .nexus-table th:nth-child(1) {
-  width: 28%;
+  width: 30%;
 }
 .nexus-table th:nth-child(2) {
-  width: 50%;
-}
-.nexus-table th:nth-child(3) {
-  width: 22%;
+  width: 70%;
 }
 .nexus-table select {
   width: 100%;
@@ -164,12 +161,71 @@
   }
 }
 
-.nexus-options {
-  font-size: 0.8rem;
+.nexus-file-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
 }
-.nexus-options > .nexus-actions {
-  margin-top: 8px;
+.nexus-file-selection {
+  flex: 1;
+  min-width: 0;
 }
-.nexus-table td > p[role="status"] {
+.nexus-file-link > button {
+  flex: none;
+  margin-top: 0;
+}
+.nexus-search-results {
   font-size: 0.8rem;
+  margin-top: 12px;
+}
+#stardew-i18n-translator .nexus-search-results .translator-preflight-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 8px;
+}
+.nexus-search-results .nexus-actions > button {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+@media (max-width: 500px) {
+  #stardew-i18n-translator .nexus-search-results .translator-preflight-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+#stardew-i18n-translator
+  .nexus-search-results
+  .translator-preflight-metric:nth-child(3n) {
+  border-right: 0;
+}
+#stardew-i18n-translator
+  .nexus-search-results
+  .translator-preflight-metric:nth-child(n + 4) {
+  border-top: 1px solid var(--translator-border);
+}
+@media (max-width: 500px) {
+  #stardew-i18n-translator
+    .nexus-search-results
+    .translator-preflight-metric:nth-child(3n) {
+    border-right: 1px solid var(--translator-border);
+  }
+  #stardew-i18n-translator
+    .nexus-search-results
+    .translator-preflight-metric:nth-child(2n) {
+    border-right: 0;
+  }
+  #stardew-i18n-translator
+    .nexus-search-results
+    .translator-preflight-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--translator-border);
+  }
+}
+
+#stardew-i18n-translator
+  .nexus-search-results
+  .translator-preflight-metric
+  span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
 }

@@ -230,7 +230,7 @@ it("loads only candidate metadata before any action, without selection checkboxe
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.getAllByRole("columnheader").map((x) => x.textContent)).toEqual(
-    ["Installed mod", "Translation file / version", "Status"],
+    ["Installed mod", "Translation file / version"],
   );
   expect(
     translationRow().getByText("v1.2 \u00b7 1 Jan 2026"),
@@ -238,14 +238,19 @@ it("loads only candidate metadata before any action, without selection checkboxe
   expect(
     screen.queryByRole("button", { name: "Check installed files" }),
   ).not.toBeInTheDocument();
-  expect(
-    translationRow().getByText("Details").closest("details"),
-  ).not.toHaveAttribute("open");
+  expect(screen.queryByText("Details")).not.toBeInTheDocument();
+  expect(screen.queryByText("Ready")).not.toBeInTheDocument();
+  fireEvent.click(
+    translationRow().getByRole("button", { name: "Open Nexus Link" }),
+  );
+  expect(commandCalls("open_url")).toEqual([
+    { url: "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files" },
+  ]);
 });
 it("includes all ready rows automatically and never redownloads a completed handoff", async () => {
   const app = mount();
   await download();
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
     { modId: 30342, fileId: 7 },
   ]);
@@ -258,7 +263,7 @@ it("includes all ready rows automatically and never redownloads a completed hand
   ).toBeDisabled();
   app.setOpen(false);
   app.setOpen(true);
-  expect(screen.getByText("Sent to Vortex")).toBeInTheDocument();
+  expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
   expect(commandCalls("nexus_list_files")).toHaveLength(1);
 });
 it("routes an explicit folder installation to Review even if Vortex is configured", async () => {
@@ -275,9 +280,7 @@ it("routes an explicit folder installation to Review even if Vortex is configure
   expect(
     invoke.mock.calls.some(([cmd]) => /export|save_settings/.test(cmd)),
   ).toBe(false);
-  expect(translationRow().getByRole("status")).toHaveTextContent(
-    "1 imported to Review",
-  );
+  expect(screen.getByRole("status")).toHaveTextContent("1 imported to Review");
 });
 it("defaults legacy installations without Vortex to folder import", async () => {
   const app = mount({ executable: null });
@@ -313,7 +316,7 @@ it("requires an inline choice for genuine variants and sends exactly that versio
   ).toBeDisabled();
   fireEvent.change(choice, { target: { value: "30342:8" } });
   await download();
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
     { modId: 30342, fileId: 8 },
   ]);
@@ -337,7 +340,7 @@ it("keeps current older versions selectable while recommending the newest same-s
   expect(choice).toHaveValue("30342:8");
   fireEvent.change(choice, { target: { value: "30342:7" } });
   await download();
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
     { modId: 30342, fileId: 7 },
   ]);
@@ -368,7 +371,7 @@ it("combines candidates and files into one selector with candidate group labels"
   expect(choice.querySelectorAll("optgroup")).toHaveLength(2);
   fireEvent.change(choice, { target: { value: "50:7" } });
   await download();
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
     { modId: 50, fileId: 7 },
   ]);
@@ -401,12 +404,8 @@ it("does not call failed or pending metadata downloadable and allows an explicit
       name: "Download & install all with Vortex (0)",
     }),
   ).toBeDisabled();
-  fireEvent.click(screen.getByText("Options & search details"));
-  expect(
-    screen
-      .getAllByRole("alert")
-      .some((item) => item.textContent?.includes("Metadata unavailable")),
-  ).toBe(true);
+  fireEvent.click(screen.getByText("Error details"));
+  expect(screen.getByText(/Metadata unavailable/)).toBeInTheDocument();
   failed = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry file metadata" }));
   await screen.findByRole("row", { name: "Canonical title" });
@@ -430,7 +429,7 @@ it("requires explicit retry after a failed action", async () => {
   ).toBeDisabled();
   failed = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(2);
 });
 it("keeps default.json confirmation inline and never changes the English source", async () => {
@@ -473,12 +472,12 @@ it("shows zero new strings without saving when preflight finds no importable str
 it("rechecks local disk without refreshing metadata or losing drafts and receipts", async () => {
   const app = mount();
   await download();
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
   app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
   fireEvent.click(
     screen.getByRole("button", { name: "Check installed files" }),
   );
-  await screen.findByText("Sent to Vortex · rechecked");
+  await screen.findByText("1 sent to Vortex · files rechecked");
   fireEvent.click(translationRow().getByText("Details"));
   expect(translationRow().getByText(/On disk: 3\/3 keys/)).toBeInTheDocument();
   expect(
@@ -492,13 +491,13 @@ it.each([false, undefined])(
   async (traversal) => {
     const app = mount();
     await download();
-    await screen.findByText("Sent to Vortex");
+    await screen.findByText("1 sent to Vortex");
     app.setTraversal(traversal);
     app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
     fireEvent.click(
       screen.getByRole("button", { name: "Check installed files" }),
     );
-    await screen.findByText("Sent to Vortex · rechecked");
+    await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(translationRow().getByText("Details"));
     expect(
       translationRow().getByText("Disk coverage unavailable"),
@@ -588,7 +587,7 @@ it("waits for discovery to finish before enabling Download all", async () => {
   ).toBeDisabled();
   app.setSearch(search);
   await download();
-  await screen.findByText("Sent to Vortex");
+  await screen.findByText("1 sent to Vortex");
 });
 it("treats a whitespace executable as unconfigured and offers no per-action routing override", async () => {
   mount({ executable: "   " });
@@ -596,7 +595,6 @@ it("treats a whitespace executable as unconfigured and offers no per-action rout
   expect(
     screen.getByRole("button", { name: "Download & import all (1)" }),
   ).toBeEnabled();
-  fireEvent.click(translationRow().getByText("Details"));
   expect(
     screen.queryByRole("button", { name: "Import to Review instead" }),
   ).not.toBeInTheDocument();
@@ -629,4 +627,86 @@ it("can explicitly redownload an expired mapping confirmation without changing t
     { modId: 30342, fileId: 7 },
   ]);
   expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+});
+
+it("counts failed original groups once and never counts pending metadata as no suitable download", async () => {
+  const original = invoke.getMockImplementation()!;
+  let finish!: (files: NexusFile[]) => void;
+  invoke.mockImplementation((cmd: string, args: { modId?: number }) => {
+    if (cmd !== "nexus_list_files") return original(cmd, args);
+    if (args.modId === 30342)
+      return new Promise<NexusFile[]>((resolve) => {
+        finish = resolve;
+      });
+    return Promise.reject(new Error("Metadata unavailable"));
+  });
+  mount({
+    search: {
+      ...search,
+      completed: 3,
+      total: 5,
+      cancelled: true,
+      noId: 2,
+      entries: [
+        ...search.entries,
+        {
+          modId: 2,
+          localNames: ["Failed group"],
+          result: {
+            ...search.entries[1].result,
+            modId: 2,
+            candidates: [
+              { ...candidate, modId: 44 },
+              { ...candidate, modId: 45 },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const metric = (label: string) =>
+    within(screen.getByRole("region", { name: "Translation search results" }))
+      .getByText(label)
+      .parentElement?.querySelector("strong")?.textContent;
+  await waitFor(() => expect(metric("Checks failed")).toBe("1"));
+  expect(metric("No suitable download found")).toBe("1");
+  expect(metric("Mods with downloads")).toBe("0");
+  expect(metric("IDs checked")).toBe("3/5");
+  expect(metric("Fully translated groups skipped")).toBe("4");
+  expect(metric("Components without Nexus ID")).toBe("2");
+  expect(
+    screen.getByText("Search cancelled · results are partial."),
+  ).toBeInTheDocument();
+  expect(screen.queryByText("No-result mod")).not.toBeInTheDocument();
+  await act(async () => finish([file, { ...file, fileId: 8, version: "1.1" }]));
+  expect(metric("Mods with downloads")).toBe("1");
+  expect(metric("No suitable download found")).toBe("1");
+});
+
+it("keeps link failures separate from download eligibility and successful receipts", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "open_url"
+      ? Promise.reject(new Error("Browser unavailable"))
+      : original(cmd, ...args),
+  );
+  mount();
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open Nexus Link" }),
+  );
+  await screen.findByText(/Could not open Nexus Link/);
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (1)",
+    }),
+  ).toBeEnabled();
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  fireEvent.click(screen.getByRole("button", { name: "Open Nexus Link" }));
+  await screen.findByText(/Could not open Nexus Link/);
+  expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Retry" }),
+  ).not.toBeInTheDocument();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
 });
