@@ -254,7 +254,15 @@ export interface ScannedMod {
   statusCounts?: Record<StringStatus, number>;
 }
 
+export interface InstalledNexusTranslation {
+  sourceNexusId: number;
+  modId: number;
+  fileId: number;
+}
+
 export interface ScanResult {
+  /** Positive native evidence for exact deployed files; absent means unknown. */
+  installedNexusTranslations?: InstalledNexusTranslation[];
   mods: ScannedMod[];
   /** Only true proves traversal completed; absent/false means unknown coverage. */
   traversalComplete?: boolean;

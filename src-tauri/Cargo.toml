@@ -19,6 +19,8 @@ serde = { version = "1", features = ["derive"] }
 # preserve_order: keep i18n key order from default.json (table display + export).
 serde_json = { version = "1", features = ["preserve_order"] }
 sha2 = "0.10"
+md5 = "0.8"
+same-file = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 # Safe external-URL opening (ShellExecute, no shell parsing). The previous

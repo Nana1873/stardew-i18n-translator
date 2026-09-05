@@ -113,6 +113,7 @@ pub struct ScannedMod {
 #[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
+    pub installed_nexus_translations: Vec<crate::vortex_identity::InstalledNexusTranslation>,
     /// Scanner diagnostics that do not themselves represent an omitted
     /// component. Component-specific failures belong in `skipped_components`
     /// so the UI does not have to deduplicate free-form messages.
@@ -547,6 +548,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
         mod_count,
+        installed_nexus_translations: Vec::new(),
         file_count,
         mods: result_mods,
         warnings,

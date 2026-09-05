@@ -360,6 +360,194 @@ function deferred<T>() {
 }
 
 describe("App shell", () => {
+  async function showInstalledNexusFile() {
+    const scanned = exportScan(true);
+    scanned.traversalComplete = true;
+    scanned.installedNexusTranslations = [
+      { sourceNexusId: 10, modId: 30, fileId: 7 },
+    ];
+    Object.assign(scanned.mods[0], { nexusId: 10, diskTranslatedKeys: 0 });
+    mockConfigured(scanned);
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          installationMethod: "vortex",
+          vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+        });
+      if (cmd === "nexus_find_translations")
+        return Promise.resolve({
+          modId: 10,
+          originalName: "Canonical",
+          candidates: [
+            {
+              modId: 30,
+              name: "German translation",
+              version: "1",
+              summary: "German",
+              updatedAt: "2026-01-01",
+              relationshipTier: "possible-original-translation",
+            },
+          ],
+          limited: false,
+        });
+      if (cmd === "nexus_list_files")
+        return Promise.resolve([
+          {
+            fileId: 7,
+            name: "German",
+            fileName: "german.zip",
+            version: "1",
+            uploadedAt: "2026-01-01",
+            category: "MAIN",
+            description: "German",
+          },
+        ]);
+      return original(cmd, ...args);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "Find translations on Nexus Mods",
+        }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await screen.findByText(
+      "Available translation files are already installed.",
+    );
+    return scanned;
+  }
+
+  it.each([
+    ["current mod", "written"],
+    ["current mod", "removed"],
+    ["all mods", "written"],
+    ["all mods", "removed"],
+    ["current mod", "unchanged"],
+  ] as const)(
+    "invalidates exact Nexus evidence only for changed exports: %s / %s",
+    async (scope, outcome) => {
+      await showInstalledNexusFile();
+      const original = invokeMock.getMockImplementation()!;
+      const result = {
+        ...EXPORT_RESULT,
+        files: [
+          {
+            ...EXPORT_RESULT.files[0],
+            written: outcome === "written",
+            removed: outcome === "removed",
+          },
+        ],
+        filesWritten: Number(outcome === "written"),
+        filesRemoved: Number(outcome === "removed"),
+      };
+      invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+        if (cmd === "export_mod") return Promise.resolve(result);
+        if (cmd === "export_all_mods")
+          return Promise.resolve({
+            ...result,
+            modsChanged: outcome === "unchanged" ? 0 : 1,
+            mods: [{ modUniqueId: "a.b", result }],
+          });
+        return original(cmd, ...args);
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Close Nexus translations" }),
+      );
+      openWorkspace();
+      chooseToolbarAction(
+        "Export actions",
+        scope === "all mods" ? "Export all mods …" : "Export current mod",
+      );
+      const confirmation = await screen.findByRole("dialog", {
+        name: "Confirm export overwrite",
+      });
+      fireEvent.click(
+        within(confirmation).getByRole("button", {
+          name: scope === "all mods" ? "Export all mods" : "Export and replace",
+        }),
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Export actions" }),
+        ).toHaveTextContent("Export …"),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+      );
+      if (outcome === "unchanged") {
+        expect(
+          await screen.findByText(
+            "Available translation files are already installed.",
+          ),
+        ).toBeInTheDocument();
+      } else {
+        expect(
+          await screen.findByRole("button", {
+            name: "Download & install all with Vortex (1)",
+          }),
+        ).toBeEnabled();
+        expect(
+          screen.queryByText(
+            "Available translation files are already installed.",
+          ),
+        ).not.toBeInTheDocument();
+      }
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toHaveLength(1);
+      expect(
+        invokeMock.mock.calls.some(([cmd]) =>
+          /save_string|nexus_import|nexus_download/.test(cmd),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it.each(["rejected", "warning"])(
+    "invalidates exact Nexus evidence after a %s installed-file recheck",
+    async (failure) => {
+      const scanned = await showInstalledNexusFile();
+      const original = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+        if (cmd === "scan_mods")
+          return failure === "rejected"
+            ? Promise.reject(new Error("Mods folder unavailable"))
+            : Promise.resolve({
+                ...scanned,
+                warnings: ["Installed translation restore failed"],
+              });
+        return original(cmd, ...args);
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "Check installed files" }),
+      );
+      expect(
+        await screen.findByRole("button", {
+          name: "Download & install all with Vortex (1)",
+        }),
+      ).toBeEnabled();
+      expect(
+        screen.queryByText(
+          "Available translation files are already installed.",
+        ),
+      ).not.toBeInTheDocument();
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toHaveLength(2);
+      expect(
+        invokeMock.mock.calls.some(([cmd]) =>
+          /save_string|nexus_import|nexus_download|export_mod/.test(cmd),
+        ),
+      ).toBe(false);
+    },
+  );
+
   it.each(["folder", "vortex"] as const)(
     "reloads the open editor after a %s scan even when file paths stay unchanged",
     async (installationMethod) => {

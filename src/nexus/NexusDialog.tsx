@@ -12,6 +12,7 @@ import {
   type NexusCandidate,
   type NexusFile,
   type NexusImportRequest,
+  type InstalledNexusTranslation,
   type ScannedMod,
   type SkippedComponent,
 } from "../tauri/commands";
@@ -130,6 +131,7 @@ export function NexusDialog({
   onCheckInstalled,
   skippedComponents = [],
   traversalComplete = false,
+  installedNexusTranslations = [],
 }: {
   open?: boolean;
   vortexExecutable?: string | null;
@@ -139,6 +141,7 @@ export function NexusDialog({
   mods: ScannedMod[];
   skippedComponents?: SkippedComponent[];
   traversalComplete?: boolean;
+  installedNexusTranslations?: InstalledNexusTranslation[];
   targetLang: string;
   onSearch: (options?: {
     includeComplete?: boolean;
@@ -456,7 +459,7 @@ export function NexusDialog({
   );
   const groups = sources.map((entry) => {
     const candidates = candidatesFor(entry);
-    const options = candidates.flatMap((candidate) => {
+    const allOptions = candidates.flatMap((candidate) => {
       const files = fileMetadata.entries[candidate.modId]?.files;
       if (!files) return [];
       const choices = fileChoices(files, targetLang, isVortex);
@@ -467,14 +470,33 @@ export function NexusDialog({
         recommended: file.fileId === choices.recommended,
       }));
     });
+    const options = allOptions.filter(
+      (option) =>
+        !isVortex ||
+        !installedNexusTranslations.some(
+          (installed) =>
+            installed.sourceNexusId === entry.modId &&
+            installed.modId === option.candidate.modId &&
+            installed.fileId === option.file.fileId,
+        ),
+    );
+    const installedCount = allOptions.length - options.length;
     // Only the best-ranked candidate may supply a default. Variants need explicit selection.
-    const preferred = options.find(
+    const preferred = allOptions.find(
       (option) =>
         option.candidate.modId === candidates[0]?.modId && option.recommended,
     );
+    const explicit = fileSelections[entry.modId];
     const value =
-      fileSelections[entry.modId] ??
-      (options.length === 1 ? options[0].value : (preferred?.value ?? ""));
+      explicit !== undefined
+        ? options.some((option) => option.value === explicit)
+          ? explicit
+          : ""
+        : allOptions.length === 1
+          ? (options[0]?.value ?? "")
+          : options.some((option) => option.value === preferred?.value)
+            ? preferred!.value
+            : "";
     const selected = options.find((option) => option.value === value);
     const key = selected
       ? `${entry.modId}:${selected.value}`
@@ -488,6 +510,7 @@ export function NexusDialog({
       value,
       key,
       row,
+      installedCount,
       loading: candidates.some(
         (candidate) => !fileMetadata.entries[candidate.modId],
       ),
@@ -521,12 +544,22 @@ export function NexusDialog({
       ...groups
         .filter(
           (group) =>
-            !group.loading && !group.options.length && !group.errors.length,
+            !group.loading &&
+            !group.options.length &&
+            !group.errors.length &&
+            !group.installedCount,
         )
         .map((group) => group.entry.modId),
     ].filter((id) => !failedIds.has(id)),
   );
   const actionRows = Object.values(rows);
+  const installedGroups = groups.filter(
+    (group) =>
+      !group.loading &&
+      !group.errors.length &&
+      !group.options.length &&
+      group.installedCount > 0,
+  ).length;
   const handoffCount = actionRows.filter((row) => row.handoff).length;
   const actionStatus = active ? rows[active]?.status : undefined;
   const allHandoffsRechecked =
@@ -627,7 +660,7 @@ export function NexusDialog({
           <td>
             <div className="nexus-file-link">
               <div className="nexus-file-selection">
-                {group.options.length > 1 ? (
+                {group.options.length > 1 || !selected ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -1030,7 +1063,9 @@ export function NexusDialog({
           <p>
             {unavailableCount
               ? "No downloadable files could be confirmed."
-              : "No suitable translation downloads found."}
+              : installedGroups > 0
+                ? "Available translation files are already installed."
+                : "No suitable translation downloads found."}
           </p>
         )}
         <section
@@ -1042,7 +1077,10 @@ export function NexusDialog({
               [`${search.completed}/${search.total}`, "IDs checked"],
               [shown.length, "Mods with downloads"],
               [noDownloadIds.size, "No suitable download found"],
-              [search.skippedComplete ?? 0, "Fully translated groups skipped"],
+              [
+                `${search.skippedComplete ?? 0} / ${installedGroups}`,
+                "Groups skipped · fully translated / already installed",
+              ],
               [search.noId, "Components without Nexus ID"],
               [unavailableCount, "Checks failed"],
             ].map(([value, label]) => (

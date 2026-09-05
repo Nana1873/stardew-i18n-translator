@@ -12,6 +12,7 @@ import type {
   NexusFile,
   ScannedMod,
   SkippedComponent,
+  InstalledNexusTranslation,
 } from "../tauri/commands";
 const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
@@ -109,6 +110,7 @@ function mount(
     method?: "folder" | "vortex";
     executable?: string | null;
     open?: boolean;
+    installed?: InstalledNexusTranslation[];
   } = {},
 ) {
   let data = options.mods ?? mods,
@@ -121,6 +123,7 @@ function mount(
     open = options.open ?? true;
   let traversal: boolean | undefined = true,
     skipped: SkippedComponent[] = [];
+  let installed = options.installed;
   const onImported = vi.fn().mockResolvedValue(undefined),
     onSearch = vi.fn(),
     onCheckInstalled = vi.fn().mockResolvedValue(undefined),
@@ -135,6 +138,7 @@ function mount(
       vortexExecutable={executable}
       traversalComplete={traversal}
       skippedComponents={skipped}
+      installedNexusTranslations={installed}
       onImported={onImported}
       onSearch={onSearch}
       onCheckInstalled={onCheckInstalled}
@@ -161,6 +165,10 @@ function mount(
     },
     setMods: (next: ScannedMod[]) => {
       data = next;
+      rendered.rerender(view());
+    },
+    setInstalled: (next: InstalledNexusTranslation[] | undefined) => {
+      installed = next;
       rendered.rerender(view());
     },
     setTraversal: (next: boolean | undefined) => {
@@ -296,6 +304,158 @@ it("keeps unknown local coverage distinct from zero or installed before any acti
   expect(
     translationRow().queryByText(/0\/3|0 missing|installed/i),
   ).not.toBeInTheDocument();
+});
+const installedFile = { sourceNexusId: 1, modId: 30342, fileId: 7 };
+it("excludes a positively deployed exact file despite incomplete local coverage", async () => {
+  mount({
+    mods: [{ ...mods[0], totalKeys: 1000, diskTranslatedKeys: 999 }],
+    installed: [installedFile],
+  });
+  await screen.findByText("Available translation files are already installed.");
+  expect(
+    screen.queryByRole("row", { name: "Canonical title" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  expect(
+    screen.getByText("Groups skipped · fully translated / already installed")
+      .parentElement,
+  ).toHaveTextContent("4 / 1");
+  expect(
+    screen.getByText("No suitable download found").parentElement,
+  ).toHaveTextContent("1");
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+it.each([
+  undefined,
+  [],
+  [{ ...installedFile, sourceNexusId: 99 }],
+  [{ ...installedFile, modId: 99 }],
+  [{ ...installedFile, fileId: 99 }],
+])(
+  "keeps the download without exact positive evidence (%j)",
+  async (installed) => {
+    mount({ installed });
+    await screen.findByRole("row", { name: "Canonical title" });
+    expect(
+      screen.getByRole("button", {
+        name: "Download & install all with Vortex (1)",
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByText("Available translation files are already installed."),
+    ).not.toBeInTheDocument();
+  },
+);
+it("does not filter Review imports using Vortex evidence", async () => {
+  mount({ method: "folder", installed: [installedFile] });
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    screen.getByRole("button", { name: "Download & import all (1)" }),
+  ).toBeEnabled();
+});
+it.each([7, 8])(
+  "keeps newer files available without automatically downgrading installed file %i",
+  async (installedId) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "nexus_list_files"
+        ? Promise.resolve([
+            file,
+            { ...file, fileId: 8, version: "1.3", uploadedAt: "2026-02-01" },
+          ])
+        : original(cmd, ...args),
+    );
+    mount({ installed: [{ ...installedFile, fileId: installedId }] });
+    await screen.findByRole("row", { name: "Canonical title" });
+    const button = screen.getByRole("button", {
+      name: /^Download & install all/,
+    });
+    if (installedId === 8) {
+      expect(button).toBeDisabled();
+      const choice = screen.getByRole("combobox", {
+        name: "Translation file for Canonical title",
+      });
+      expect(choice).toHaveValue("");
+      fireEvent.change(choice, { target: { value: "30342:7" } });
+    } else expect(button).toBeEnabled();
+    await download();
+    await screen.findByText("1 sent to Vortex");
+    expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+      { modId: 30342, fileId: installedId === 8 ? 7 : 8 },
+    ]);
+  },
+);
+it("replaces deployment evidence on recheck and preserves unknown results", async () => {
+  const app = mount();
+  await screen.findByRole("row", { name: "Canonical title" });
+  app.onCheckInstalled.mockImplementation(async () =>
+    app.setInstalled([installedFile]),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check installed files" }),
+  );
+  await screen.findByText("Available translation files are already installed.");
+  app.setInstalled(undefined);
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (1)",
+    }),
+  ).toBeEnabled();
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+it("does not replace a selected installed file with a different download after recheck", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_list_files"
+      ? Promise.resolve([
+          file,
+          { ...file, fileId: 8, version: "1.3", uploadedAt: "2026-02-01" },
+        ])
+      : original(cmd, ...args),
+  );
+  const app = mount();
+  const choice = await screen.findByRole("combobox", {
+    name: "Translation file for Canonical title",
+  });
+  fireEvent.change(choice, { target: { value: "30342:7" } });
+  app.onCheckInstalled.mockImplementation(async () =>
+    app.setInstalled([installedFile]),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check installed files" }),
+  );
+  await waitFor(() => expect(choice).toHaveValue(""));
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+  fireEvent.change(choice, { target: { value: "30342:8" } });
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 30342, fileId: 8 },
+  ]);
+});
+it("applies scan evidence only in Vortex and accepts a replacement scan without evidence", async () => {
+  const app = mount({ method: "folder", installed: [installedFile] });
+  await screen.findByRole("row", { name: "Canonical title" });
+  app.setMethod("vortex");
+  await screen.findByText("Available translation files are already installed.");
+  app.setInstalled(undefined);
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (1)",
+    }),
+  ).toBeEnabled();
 });
 it("includes all ready rows automatically and never redownloads a completed handoff", async () => {
   const app = mount();
@@ -727,7 +887,9 @@ it("counts failed original groups once and never counts pending metadata as no s
   expect(metric("No suitable download found")).toBe("1");
   expect(metric("Mods with downloads")).toBe("0");
   expect(metric("IDs checked")).toBe("3/5");
-  expect(metric("Fully translated groups skipped")).toBe("4");
+  expect(metric("Groups skipped · fully translated / already installed")).toBe(
+    "4 / 0",
+  );
   expect(metric("Components without Nexus ID")).toBe("2");
   expect(
     screen.getByText("Search cancelled · results are partial."),

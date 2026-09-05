@@ -905,6 +905,9 @@ export function App() {
     } catch (error) {
       logFrontendError("scanMods", String(error));
       if (!isCurrentRequest()) return;
+      setScan((current) =>
+        current ? { ...current, installedNexusTranslations: [] } : current,
+      );
       setScanError(String(error));
       if (!scanDismissedRef.current) setScanDialogOpen(true);
     } finally {
@@ -1620,6 +1623,7 @@ export function App() {
       current
         ? {
             ...current,
+            installedNexusTranslations: [],
             mods: current.mods.map((mod) =>
               mod.uniqueId === modId
                 ? {
@@ -2322,6 +2326,7 @@ export function App() {
             }}
             search={nexus}
             mods={scan.mods}
+            installedNexusTranslations={scan.installedNexusTranslations}
             targetLang={settings.targetLang}
             skippedComponents={scan.skippedComponents}
             traversalComplete={scan.traversalComplete === true}
@@ -2336,8 +2341,14 @@ export function App() {
               });
               if (!result)
                 throw new Error("Local scan failed. Check scan diagnostics.");
-              if (result.warnings.length)
+              if (result.warnings.length) {
+                setScan((current) =>
+                  current
+                    ? { ...current, installedNexusTranslations: [] }
+                    : current,
+                );
                 throw new Error(result.warnings.join("\n"));
+              }
             }}
             onSearch={(options) =>
               void nexus.start(scan.mods, settings.targetLang!, {

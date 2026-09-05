@@ -21,6 +21,7 @@ mod scanner;
 mod settings;
 mod tokens;
 mod translations;
+mod vortex_identity;
 mod xnb;
 
 #[cfg(test)]
@@ -136,9 +137,6 @@ fn scan_with_installed_translation_restore(
     restore_installed_translations: bool,
 ) -> Result<ScanResult, String> {
     let mut result = scanner::scan_mods(mods_root, target_lang, config);
-    if !restore_installed_translations {
-        return Ok(result);
-    }
     let saved = settings::load_checked(config)?;
     let same_folder = saved
         .mods_path
@@ -150,6 +148,11 @@ fn scan_with_installed_translation_restore(
         || !same_folder
         || saved.target_lang.as_deref() != Some(target_lang)
     {
+        return Ok(result);
+    }
+    if !restore_installed_translations {
+        result.installed_nexus_translations =
+            vortex_identity::detect(mods_root, target_lang, &result);
         return Ok(result);
     }
     let translation_root = translations::language_root(config, target_lang)?;
@@ -177,6 +180,7 @@ fn scan_with_installed_translation_restore(
             .warnings
             .push(format!("Installed translation restore failed: {error}")),
     }
+    result.installed_nexus_translations = vortex_identity::detect(mods_root, target_lang, &result);
     Ok(result)
 }
 

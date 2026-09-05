@@ -40,6 +40,16 @@ Coverage is not a quality or compatibility guarantee.
 An existing translation can still be incomplete and appear in the results.
 Each row shows the exact local coverage and missing-string count; this is not a
 download-status check or proof that the offered Nexus file is already installed.
+In Vortex mode, a local scan can identify an exact deployed Nexus file and remove
+that file from the download choices even when it leaves strings untranslated.
+Newer files remain available; removing the installed version does not automatically
+select an older one. Identified files count as already deployed, rather than as
+searches without a suitable download.
+This check currently requires Vortex's local JSON backup, the original downloaded
+ZIP, and matching language files deployed through hardlinks. Backups may lag a
+new installation. Missing or conflicting metadata, deleted archives, other archive
+formats, or modified deployed files leave the identity unknown and the download
+available. The translator only reads these files; it does not open Vortex's database.
 Use **Check installed files** after a Vortex deployment, including installations
 started outside the translator. Workspace coverage reaches 100% only when every
 source key has text; nearly complete translations are no longer rounded to 100%.
@@ -88,7 +98,9 @@ its existing Clear and Export behavior. If Export already removed the language
 file, deploy the translation again in Vortex before scanning.
 Inspect differences before replacing or exporting nonempty text; a recheck
 does not automatically adopt conflicting disk values. Neither handoff nor disk
-coverage verifies Nexus source association or membership in a Collection. Check
+coverage verifies Nexus source association or membership in a Collection. The
+separate exact-file check identifies matching deployed language files, but does
+not establish the active profile, compatibility, or Collection membership. Check
 those in Vortex; practical Vortex acceptance remains a user-led test.
 
 ### Personal import into Review

@@ -177,7 +177,18 @@ retain the previous source hash and grant no token-mismatch exception. Ordinary
 loads, background refreshes, and Folder scans retain saved Clear values. A
 successful explicit scan reloads the open string table; absent disk text cannot
 be reconstructed. Concurrent saved edits prevent the restore transaction.
-It does not verify Vortex state or Collection tracking.
+Each configured Vortex scan may also return positive exact-file evidence from
+read-only local metadata and deployed files. Join the deployment manifest to
+Vortex's JSON backup by installation path and archive ID; require matching Nexus
+game/mod/file IDs, the original ZIP fingerprint, exact language-file paths and
+bytes, and verified staging/deployment hardlinks. Never derive IDs from filenames
+or use coverage or a handoff receipt as installation evidence. Missing, stale,
+unsupported or conflicting evidence remains unknown and must not hide downloads.
+Filter only the matching original-mod/translation-mod/file tuple, preserving
+newer alternatives and avoiding automatic downgrades after an installed file is
+removed. Replace this evidence on rescans and discard obsolete workspace evidence.
+This limited ZIP check does not verify active profiles or Collection tracking and
+does not open or modify a live Vortex database.
 
 The Review destination provides personal import. The explicit action downloads a
 ZIP through the official Premium API, runs native read-only preflight, and saves
