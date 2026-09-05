@@ -31,6 +31,17 @@ until a concrete user request; no MO2 implementation or probe is scheduled.
 ParaTranz remains a separate follow-up.
 Manager/profile identity must be reliable before claiming profile isolation.
 
+The [synthetic library probe](../scripts/mod-manager-probe/README.md) verified
+basic Vortex metadata access, but also found database writes during reads and
+substantial Python/Qt packaging costs. The standalone package failed its runtime
+check because a host DLL was bundled incorrectly. Do not add this helper to the
+app yet; evaluate a narrow Rust reader against disposable snapshots first.
+Consistent acquisition of a real profile snapshot remains unverified.
+
+The [output archive probe](../scripts/vortex-output-probe/README.md) verifies
+locale-only path handling in pinned official installer functions. Actual Vortex
+installation, deployment, replacement and restoration still need practical tests.
+
 The full Vortex result includes editing and applying those edits again. A
 working download handoff alone is an intermediate result, not completion.
 
