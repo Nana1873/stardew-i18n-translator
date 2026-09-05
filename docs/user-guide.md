@@ -32,7 +32,7 @@ saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
 `data/`; it does not move with the app. Opening Setup only checks local key
 readiness. **Test existing key** and **Validate and save key** contact Nexus.
 
-Use **Find translations on Nexus Mods**, or enable discovery after scans. Searches use Nexus
+Use **Find translations on Nexus**, or enable discovery after scans. Searches use Nexus
 update IDs and the selected language, never your local translation text. Shared
 IDs are searched once. Groups with complete language-file coverage on disk are
 skipped by default. Review drafts alone do not count as installed coverage.
@@ -74,7 +74,13 @@ visible so they can be resolved without losing completed work.
 After installing and deploying in Vortex, use **Check installed files**. This
 local rescan reads actual target-language files separately from saved app work.
 It reports disk coverage and differences from saved translations while retaining
-your drafts. Inspect differences before replacing or exporting text; a recheck
+your nonempty drafts. In Vortex mode, startup, **Scan mods**, and **Check installed
+files** also refill cleared, untranslated entries from nonempty installed language
+files. The open editor reloads after a successful scan. Switching mods or running
+a background refresh does not undo Clear; the manual installation workflow keeps
+its existing Clear and Export behavior. If Export already removed the language
+file, deploy the translation again in Vortex before scanning.
+Inspect differences before replacing or exporting nonempty text; a recheck
 does not automatically adopt conflicting disk values. Neither handoff nor disk
 coverage verifies Nexus source association or membership in a Collection. Check
 those in Vortex; practical Vortex acceptance remains a user-led test.

@@ -87,6 +87,7 @@ import { NexusDialog } from "./nexus/NexusDialog";
 import { useNexusSearch } from "./nexus/useNexusSearch";
 import "./nexus/nexus.css";
 import { SetupWizard } from "./setup/SetupWizard";
+import { installationMethodFor } from "./setup/InstallationSettings";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import {
   Dashboard,
@@ -685,7 +686,10 @@ export function App() {
         const complete = setupComplete(effectiveSettings);
         setWizardOpen(!complete);
         refreshGlossary(effectiveSettings.targetLang);
-        if (complete) void runScan(effectiveSettings, false, () => active);
+        if (complete)
+          void runScan(effectiveSettings, false, () => active, {
+            restoreInstalledTranslations: true,
+          });
       })
       .catch((error) => {
         logFrontendError("loadSettings", String(error));
@@ -770,6 +774,7 @@ export function App() {
     await runScan(merged, false, () => true, {
       clearExisting: true,
       showExtraKeyDialog: false,
+      restoreInstalledTranslations: true,
     });
   }
 
@@ -790,6 +795,7 @@ export function App() {
       await runScan(next, false, () => true, {
         clearExisting: true,
         showExtraKeyDialog: false,
+        restoreInstalledTranslations: true,
       });
     }
   }
@@ -814,6 +820,7 @@ export function App() {
       showExtraKeyDialog?: boolean;
       preserveSelection?: boolean;
       showDiagnostics?: boolean;
+      restoreInstalledTranslations?: boolean;
     } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
@@ -843,9 +850,15 @@ export function App() {
       const result = await scanMods(
         scanSettings.modsPath,
         scanSettings.targetLang,
+        options.restoreInstalledTranslations === true &&
+          installationMethodFor(scanSettings) === "vortex",
       );
       if (!isCurrentRequest()) return;
       setScan(result);
+      // Background import/AI refreshes already reload their saved work before
+      // scanning. Reloading again here could close a newly opened editor.
+      if (options.restoreInstalledTranslations)
+        setReloadToken((token) => token + 1);
       if (scanSettings.nexusSearchOnScan && options.nexusSearch !== false) {
         setNexusScanJob({
           mods: result.mods,
@@ -901,7 +914,9 @@ export function App() {
 
   async function handleScan() {
     if (!settings) return;
-    await runScan(settings, true);
+    await runScan(settings, true, () => true, {
+      restoreInstalledTranslations: true,
+    });
   }
 
   const configured = Boolean(settings && setupComplete(settings));
@@ -2326,10 +2341,12 @@ export function App() {
                 nexusSearch: false,
                 showDiagnostics: false,
                 showExtraKeyDialog: false,
+                restoreInstalledTranslations: true,
               });
               if (!result)
                 throw new Error("Local scan failed. Check scan diagnostics.");
-              setReloadToken((value) => value + 1);
+              if (result.warnings.length)
+                throw new Error(result.warnings.join("\n"));
             }}
             onSearch={(options) =>
               void nexus.start(scan.mods, settings.targetLang!, {
@@ -2855,10 +2872,10 @@ function AppToolbar({
           <SearchIcon aria-hidden />
           <span className="translator-action-label-compact">
             {nexusSearching
-              ? "Finding translations…"
+              ? "Searching Nexus…"
               : nexusResultCount !== null
-                ? `Translations (${nexusResultCount})`
-                : "Find translations on Nexus Mods"}
+                ? `Find translations on Nexus (${nexusResultCount})`
+                : "Find translations on Nexus"}
           </span>
         </button>
         <button

@@ -170,7 +170,13 @@ launch success is reported only as a handoff request, never as download,
 installation, deployment, original-source association or Collection membership.
 Batch cancellation stops subsequent requests without undoing earlier handoffs.
 A local installed-files recheck reports disk coverage separately from effective
-app-state coverage and exposes differences without overwriting saved drafts.
+app-state coverage and exposes differences without overwriting nonempty drafts.
+In the configured Vortex workspace, startup and explicit local scans refill
+saved empty untranslated entries from nonempty installed target strings. They
+retain the previous source hash and grant no token-mismatch exception. Ordinary
+loads, background refreshes, and Folder scans retain saved Clear values. A
+successful explicit scan reloads the open string table; absent disk text cannot
+be reconstructed. Concurrent saved edits prevent the restore transaction.
 It does not verify Vortex state or Collection tracking.
 
 The Review destination provides personal import. The explicit action downloads a

@@ -87,7 +87,12 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 }
 
 #[tauri::command(async)]
-fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
+fn scan_mods(
+    app: AppHandle,
+    mods_path: String,
+    target_lang: String,
+    restore_installed_translations: Option<bool>,
+) -> Result<ScanResult, String> {
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
     let mods_root = PathBuf::from(mods_path.trim());
@@ -97,7 +102,12 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
             mods_root.display()
         ));
     }
-    let mut result = scanner::scan_mods(&mods_root, &target_lang, &config);
+    let mut result = scan_with_installed_translation_restore(
+        &mods_root,
+        &target_lang,
+        &config,
+        restore_installed_translations.unwrap_or(false),
+    )?;
     if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
         log::warn!(target: "app", "Could not update source-change scan baseline: {error}");
         result.warnings.push(format!(
@@ -117,6 +127,462 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
         result.file_count
     );
     Ok(result)
+}
+
+fn scan_with_installed_translation_restore(
+    mods_root: &Path,
+    target_lang: &str,
+    config: &Path,
+    restore_installed_translations: bool,
+) -> Result<ScanResult, String> {
+    let mut result = scanner::scan_mods(mods_root, target_lang, config);
+    if !restore_installed_translations {
+        return Ok(result);
+    }
+    let saved = settings::load_checked(config)?;
+    let same_folder = saved
+        .mods_path
+        .as_deref()
+        .and_then(|path| std::fs::canonicalize(path.trim()).ok())
+        .zip(std::fs::canonicalize(mods_root).ok())
+        .is_some_and(|(configured, requested)| configured == requested);
+    if saved.installation_method != Some(settings::InstallationMethod::Vortex)
+        || !same_folder
+        || saved.target_lang.as_deref() != Some(target_lang)
+    {
+        return Ok(result);
+    }
+    let translation_root = translations::language_root(config, target_lang)?;
+    let restore =
+        scanner::prepare_installed_translation_restores(&result, mods_root, &translation_root)
+            .and_then(|groups| {
+                if groups.is_empty() {
+                    Ok(None)
+                } else {
+                    translations::save_groups_if_unchanged(&translation_root, groups).map(Some)
+                }
+            });
+    match restore {
+        Ok(Some(translations::ConditionalSaveOutcome::Saved)) => {
+            result = scanner::scan_mods(mods_root, target_lang, config);
+        }
+        Ok(Some(translations::ConditionalSaveOutcome::Stale)) => {
+            result = scanner::scan_mods(mods_root, target_lang, config);
+            result.warnings.push(
+                "Saved work changed during the scan; installed translations were not restored. Scan again.".into(),
+            );
+        }
+        Ok(None) => {}
+        Err(error) => result
+            .warnings
+            .push(format!("Installed translation restore failed: {error}")),
+    }
+    Ok(result)
+}
+
+#[cfg(test)]
+mod installed_translation_restore_tests {
+    use super::*;
+    use translations::{ConditionalSaveOutcome, ModState, StoredString};
+
+    struct Fixture {
+        root: PathBuf,
+        config: PathBuf,
+        mods: PathBuf,
+        state_root: PathBuf,
+        source: PathBuf,
+        target: PathBuf,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let root = crate::test_support::temp_dir("installed-translation-restore");
+            let config = root.join("config");
+            let mods = root.join("Mods");
+            let folder = mods.join("Example");
+            std::fs::create_dir_all(folder.join("i18n")).unwrap();
+            std::fs::write(
+                folder.join("manifest.json"),
+                r#"{"Name":"Example","UniqueID":"example.mod","Version":"1.0.0"}"#,
+            )
+            .unwrap();
+            let source = folder.join("i18n/default.json");
+            let target = folder.join("i18n/de.json");
+            std::fs::write(
+                &source,
+                r#"{"k":"Hello {{name}}","draft":"Draft source","kept":"Keep source"}"#,
+            )
+            .unwrap();
+            std::fs::write(
+                &target,
+                r#"{"k":"Hallo","draft":"Disk draft","kept":"Disk kept"}"#,
+            )
+            .unwrap();
+            settings::save(
+                &config,
+                &AppSettings {
+                    installation_method: Some(settings::InstallationMethod::Vortex),
+                    mods_path: Some(mods.display().to_string()),
+                    target_lang: Some("de".into()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            let state_root = translations::language_root(&config, "de").unwrap();
+            Self {
+                root,
+                config,
+                mods,
+                state_root,
+                source,
+                target,
+            }
+        }
+        fn entry(target: &str, status: &str, source: &str) -> StoredString {
+            StoredString {
+                target: target.into(),
+                status: status.into(),
+                source_hash: translations::source_hash(source),
+            }
+        }
+        fn put(&self, key: &str, value: StoredString) {
+            translations::save_one(
+                &self.state_root,
+                "example.mod",
+                translations::entry_key("i18n", key),
+                value,
+            )
+            .unwrap();
+        }
+        fn clear(&self) -> translations::ReversibleBatch {
+            translations::save_groups_with_previous(
+                &self.state_root,
+                vec![(
+                    "example.mod".into(),
+                    vec![(
+                        translations::entry_key("i18n", "k"),
+                        Self::entry("", "untranslated", "Hello {{name}}"),
+                    )],
+                )],
+            )
+            .unwrap()
+        }
+        fn state(&self) -> ModState {
+            translations::load(&self.state_root, "example.mod").unwrap()
+        }
+        fn rows(&self) -> Vec<scanner::StringRow> {
+            scanner::load_strings_checked(&self.source, &self.target, &self.state(), "i18n")
+                .unwrap()
+        }
+        fn scan(&self, restore: bool) -> Result<ScanResult, String> {
+            scan_with_installed_translation_restore(&self.mods, "de", &self.config, restore)
+        }
+        fn prepared(&self) -> Vec<(String, Vec<translations::ConditionalSaveEntry>)> {
+            scanner::prepare_installed_translation_restores(
+                &self.scan(false).unwrap(),
+                &self.mods,
+                &self.state_root,
+            )
+            .unwrap()
+        }
+    }
+
+    #[test]
+    fn explicit_vortex_refresh_restores_clears_across_loads_and_keeps_other_work() {
+        let f = Fixture::new();
+        f.put(
+            "k",
+            Fixture::entry(
+                "Accepted old value",
+                translations::TOKEN_MISMATCH_ACCEPTED_STATUS,
+                "Hello {{name}}",
+            ),
+        );
+        let undo = f.clear();
+        let draft = Fixture::entry("Personal draft", "review-needed", "Older source");
+        let kept = Fixture::entry("", "not-translatable", "Keep source");
+        f.put("draft", draft.clone());
+        f.put("kept", kept.clone());
+        assert_eq!(f.rows()[0].target, "");
+        let before = f.state();
+        f.scan(false).unwrap();
+        assert_eq!(f.state(), before);
+        let disk = std::fs::read(&f.target).unwrap();
+        let refreshed = f.scan(true).unwrap();
+        assert_eq!(refreshed.mods[0].translated_keys, 3);
+        let rows = f.rows();
+        assert_eq!(rows[0].target, "Hallo");
+        assert!(!rows[0].token_mismatch_accepted);
+        assert_eq!(f.state()[&translations::entry_key("i18n", "draft")], draft);
+        assert_eq!(f.state()[&translations::entry_key("i18n", "kept")], kept);
+        assert_eq!(std::fs::read(&f.target).unwrap(), disk);
+        let restored = f.state();
+        // A subsequent startup-style scan reloads persisted state, not UI rows.
+        f.scan(true).unwrap();
+        assert_eq!(f.state(), restored);
+        assert_eq!(f.rows()[0].target, "Hallo");
+        assert_eq!(
+            translations::restore_groups_if_unchanged(&f.state_root, &undo).unwrap(),
+            translations::RestoreManyOutcome::Stale
+        );
+    }
+
+    #[test]
+    fn refresh_keeps_old_source_hash_and_never_grants_token_exception() {
+        let f = Fixture::new();
+        f.clear();
+        let old_hash = f.state()[&translations::entry_key("i18n", "k")]
+            .source_hash
+            .clone();
+        std::fs::write(&f.source, r#"{"k":"New source {{name}}"}"#).unwrap();
+        f.scan(true).unwrap();
+        assert_eq!(
+            f.state()[&translations::entry_key("i18n", "k")].source_hash,
+            old_hash
+        );
+        let row = &f.rows()[0];
+        assert_eq!(row.status, "outdated");
+        assert!(!row.token_mismatch_accepted);
+    }
+
+    #[test]
+    fn restore_requires_flag_vortex_and_matching_configured_folder_and_language() {
+        let f = Fixture::new();
+        f.clear();
+        let before = f.state();
+        f.scan(false).unwrap();
+        assert_eq!(f.state(), before);
+        let mut saved = settings::load_checked(&f.config).unwrap();
+        saved.installation_method = Some(settings::InstallationMethod::Folder);
+        settings::save(&f.config, &saved).unwrap();
+        f.scan(true).unwrap();
+        assert_eq!(f.state(), before);
+        saved.installation_method = Some(settings::InstallationMethod::Vortex);
+        let other = f.root.join("OtherMods");
+        std::fs::create_dir_all(&other).unwrap();
+        saved.mods_path = Some(other.display().to_string());
+        settings::save(&f.config, &saved).unwrap();
+        f.scan(true).unwrap();
+        assert_eq!(f.state(), before);
+        saved.mods_path = Some(f.mods.display().to_string());
+        saved.target_lang = Some("fr".into());
+        settings::save(&f.config, &saved).unwrap();
+        f.scan(true).unwrap();
+        assert_eq!(f.state(), before);
+    }
+
+    #[test]
+    fn missing_empty_or_corrupt_target_does_not_replace_clear() {
+        let f = Fixture::new();
+        f.clear();
+        let before = f.state();
+        for target in [r#"{}"#, r#"{"k":"  "}"#] {
+            std::fs::write(&f.target, target).unwrap();
+            f.scan(true).unwrap();
+            assert_eq!(f.state(), before);
+        }
+        std::fs::remove_file(&f.target).unwrap();
+        f.scan(true).unwrap();
+        assert_eq!(f.state(), before);
+        std::fs::write(&f.target, "broken json").unwrap();
+        assert!(f
+            .scan(true)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|w| w.contains("Installed translation restore failed")));
+        assert_eq!(f.state(), before);
+    }
+
+    #[test]
+    fn refresh_uses_existing_entry_revisions_to_reject_edit_and_aba() {
+        let f = Fixture::new();
+        f.clear();
+        let groups = f.prepared();
+        f.put(
+            "k",
+            Fixture::entry("New personal work", "translated", "Hello {{name}}"),
+        );
+        assert_eq!(
+            translations::save_groups_if_unchanged(&f.state_root, groups).unwrap(),
+            ConditionalSaveOutcome::Stale
+        );
+        assert_eq!(f.rows()[0].target, "New personal work");
+        f.clear();
+        let groups = f.prepared();
+        f.put(
+            "k",
+            Fixture::entry("Temporary edit", "translated", "Hello {{name}}"),
+        );
+        f.clear();
+        assert_eq!(
+            translations::save_groups_if_unchanged(&f.state_root, groups).unwrap(),
+            ConditionalSaveOutcome::Stale
+        );
+        assert_eq!(f.rows()[0].target, "");
+    }
+
+    #[test]
+    fn corrupt_state_is_visible_and_never_replaced_by_disk_values() {
+        let f = Fixture::new();
+        f.clear();
+        let state_file = f.state_root.join("translations/example.mod.json");
+        std::fs::write(&state_file, "corrupt saved work").unwrap();
+        let disk_before = std::fs::read(&f.target).unwrap();
+        assert!(f
+            .scan(true)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|w| w.contains("Installed translation restore failed")));
+        assert_eq!(
+            std::fs::read_to_string(&state_file).unwrap(),
+            "corrupt saved work"
+        );
+        assert_eq!(std::fs::read(&f.target).unwrap(), disk_before);
+    }
+
+    #[test]
+    fn refresh_preserves_nonempty_manual_review_and_waived_values_exactly() {
+        let f = Fixture::new();
+        for status in [
+            "translated",
+            "review-needed",
+            translations::TOKEN_MISMATCH_ACCEPTED_STATUS,
+        ] {
+            f.clear();
+            let personal = Fixture::entry("Personal text", status, "Older source");
+            f.put("draft", personal.clone());
+            f.scan(true).unwrap();
+            assert_eq!(
+                f.state()[&translations::entry_key("i18n", "draft")],
+                personal
+            );
+        }
+    }
+
+    #[test]
+    fn normal_load_then_export_still_honors_clear() {
+        let f = Fixture::new();
+        std::fs::write(&f.source, r#"{"k":"Hello {{name}}"}"#).unwrap();
+        f.clear();
+        assert_eq!(f.rows()[0].target, "");
+        f.scan(false).unwrap();
+        let result = export::export_mod(
+            &f.state_root,
+            "example.mod",
+            &[export::ExportFileInput {
+                relative_dir: "i18n".into(),
+                default_path: f.source.display().to_string(),
+                target_path: f.target.display().to_string(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(result.files_removed, 1);
+        assert!(!f.target.exists());
+        assert!(f.target.with_extension("json.bak").exists());
+        f.scan(true).unwrap();
+        assert_eq!(f.rows()[0].target, "");
+    }
+
+    #[test]
+    fn preparation_error_prevents_partial_restore_and_portuguese_uses_disk_fallback() {
+        let f = Fixture::new();
+        f.clear();
+        let second = f.mods.join("Second/i18n");
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(
+            second.parent().unwrap().join("manifest.json"),
+            r#"{"Name":"Second","UniqueID":"second.mod","Version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(second.join("default.json"), r#"{"k":"Second"}"#).unwrap();
+        std::fs::write(second.join("de.json"), "broken json").unwrap();
+        let before = f.state();
+        assert!(f
+            .scan(true)
+            .unwrap()
+            .warnings
+            .iter()
+            .any(|w| w.contains("Installed translation restore failed")));
+        assert_eq!(f.state(), before);
+        std::fs::write(second.join("de.json"), r#"{"k":"Zweite"}"#).unwrap();
+        let mut saved = settings::load_checked(&f.config).unwrap();
+        saved.target_lang = Some("pt".into());
+        settings::save(&f.config, &saved).unwrap();
+        std::fs::write(f.target.with_file_name("pt-BR.json"), r#"{"k":"Olá"}"#).unwrap();
+        let pt_root = translations::language_root(&f.config, "pt").unwrap();
+        translations::save_one(
+            &pt_root,
+            "example.mod",
+            translations::entry_key("i18n", "k"),
+            Fixture::entry("", "untranslated", "Hello {{name}}"),
+        )
+        .unwrap();
+        scan_with_installed_translation_restore(&f.mods, "pt", &f.config, true).unwrap();
+        assert_eq!(
+            translations::load(&pt_root, "example.mod").unwrap()
+                [&translations::entry_key("i18n", "k")]
+                .target,
+            "Olá"
+        );
+        assert_eq!(f.state(), before);
+    }
+
+    #[test]
+    fn identical_keys_in_distinct_components_restore_their_own_disk_values() {
+        let f = Fixture::new();
+        f.clear();
+        let second = f.mods.join("Second/i18n");
+        std::fs::create_dir_all(&second).unwrap();
+        std::fs::write(
+            second.parent().unwrap().join("manifest.json"),
+            r#"{"Name":"Second","UniqueID":"second.mod","Version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(second.join("default.json"), r#"{"k":"Second"}"#).unwrap();
+        std::fs::write(second.join("de.json"), r#"{"k":"Zweite"}"#).unwrap();
+        translations::save_one(
+            &f.state_root,
+            "second.mod",
+            translations::entry_key("i18n", "k"),
+            Fixture::entry("", "untranslated", "Second"),
+        )
+        .unwrap();
+        f.scan(true).unwrap();
+        assert_eq!(
+            f.state()[&translations::entry_key("i18n", "k")].target,
+            "Hallo"
+        );
+        assert_eq!(
+            translations::load(&f.state_root, "second.mod").unwrap()
+                [&translations::entry_key("i18n", "k")]
+                .target,
+            "Zweite"
+        );
+    }
+
+    #[test]
+    fn broken_manifest_keeps_healthy_scan_results_and_reports_restore_warning() {
+        let f = Fixture::new();
+        f.clear();
+        let before = f.state();
+        let broken = f.mods.join("Broken/i18n");
+        std::fs::create_dir_all(&broken).unwrap();
+        std::fs::write(
+            broken.parent().unwrap().join("manifest.json"),
+            "broken manifest",
+        )
+        .unwrap();
+        std::fs::write(broken.join("default.json"), r#"{"k":"Hello"}"#).unwrap();
+        let scan = f.scan(true).unwrap();
+        assert!(scan.mods.iter().any(|m| m.unique_id == "example.mod"));
+        assert!(scan.skipped_components.iter().any(|s| s.requires_attention));
+        assert!(scan
+            .warnings
+            .iter()
+            .any(|w| w.contains("Installed translation restore failed")));
+        assert_eq!(f.state(), before);
+    }
 }
 
 #[cfg(test)]

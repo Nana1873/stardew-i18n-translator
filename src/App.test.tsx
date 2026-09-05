@@ -360,6 +360,94 @@ function deferred<T>() {
 }
 
 describe("App shell", () => {
+  it.each(["folder", "vortex"] as const)(
+    "reloads the open editor after a %s scan even when file paths stay unchanged",
+    async (installationMethod) => {
+      let target = "Installed before rescan";
+      mockConfigured(exportScan(true));
+      const original = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+        if (cmd === "load_settings")
+          return Promise.resolve({
+            ...CONFIGURED,
+            installationMethod,
+            vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+          });
+        if (cmd === "load_strings")
+          return Promise.resolve([
+            {
+              key: "greeting",
+              source: "Hello",
+              target,
+              targetPresent: true,
+              status: "translated",
+            },
+          ]);
+        return original(cmd, ...args);
+      });
+      render(<App />);
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
+      );
+      openWorkspace();
+      await screen.findByText(target);
+      target = "Restored installed translation";
+      fireEvent.click(screen.getByRole("button", { name: "Scan mods" }));
+      await screen.findByText(target);
+      expect(screen.queryByText("Installed before rescan")).toBeNull();
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toEqual(
+        [1, 2].map(() => [
+          "scan_mods",
+          {
+            modsPath: CONFIGURED.modsPath,
+            targetLang: "de",
+            ...(installationMethod === "vortex"
+              ? { restoreInstalledTranslations: true }
+              : {}),
+          },
+        ]),
+      );
+    },
+  );
+
+  it("keeps the open editor intact when a rescan fails", async () => {
+    let failScan = false;
+    let loads = 0;
+    mockConfigured(exportScan(true));
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+      if (cmd === "scan_mods" && failScan)
+        return Promise.reject("Installed target file is unreadable");
+      if (cmd === "load_strings") {
+        loads++;
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "Saved local translation",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      }
+      return original(cmd, ...args);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
+    );
+    openWorkspace();
+    await screen.findByText("Saved local translation");
+    const loadsBefore = loads;
+    failScan = true;
+    fireEvent.click(screen.getByRole("button", { name: "Scan mods" }));
+    await screen.findByText("Installed target file is unreadable");
+    expect(screen.getByText("Saved local translation")).toBeInTheDocument();
+    expect(loads).toBe(loadsBefore);
+  });
+
   it("scans after first-run setup and queues opted-in distinct Nexus IDs for the new language without blocking local work", async () => {
     const scanned = exportScan(false);
     scanned.mods = [10, 10, 20, null].map((nexusId, index) => ({
@@ -621,6 +709,16 @@ describe("App shell", () => {
       invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
     ).toHaveLength(scans + 1);
     expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods").at(-1),
+    ).toEqual([
+      "scan_mods",
+      {
+        modsPath: CONFIGURED.modsPath,
+        targetLang: "de",
+        restoreInstalledTranslations: true,
+      },
+    ]);
+    expect(
       invokeMock.mock.calls.filter(
         ([cmd]) => cmd === "nexus_find_translations",
       ),
@@ -639,6 +737,13 @@ describe("App shell", () => {
     expect(
       screen.getByText("1 sent to Vortex · files rechecked"),
     ).toBeInTheDocument();
+    const restoreWarning =
+      "Installed translation restore failed: broken target";
+    scanned = { ...scanned, warnings: [restoreWarning] };
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check installed files" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(restoreWarning);
     expect(
       invokeMock.mock.calls.filter(
         ([cmd]) => cmd === "nexus_find_translations",
@@ -2751,7 +2856,7 @@ describe("App shell", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("opens a multi-mod AI result without hiding Review rows in one component", async () => {
+  it("opens a multi-mod AI review queue and preserves new editor work when its background scan finishes", async () => {
     const scan = exportScan(false);
     scan.mods.push({
       ...scan.mods[0],
@@ -2779,6 +2884,7 @@ describe("App shell", () => {
     scan.modCount = 2;
     scan.fileCount = 2;
 
+    const backgroundScan = deferred<ScanResult>();
     let releaseTranslation: ((result: AiRunResult) => void) | null = null;
     let activeRunId = "";
     let completed = false;
@@ -2786,6 +2892,8 @@ describe("App shell", () => {
       if (cmd === "load_settings")
         return Promise.resolve({
           ...CONFIGURED,
+          installationMethod: "vortex",
+          vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
           llm: {
             provider: "custom",
             baseUrl: "http://127.0.0.1:1234/v1",
@@ -2794,7 +2902,8 @@ describe("App shell", () => {
           },
         });
       if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "scan_mods")
+        return completed ? backgroundScan.promise : Promise.resolve(scan);
       if (cmd === "load_strings") {
         const modUniqueId = (args as { modUniqueId: string }).modUniqueId;
         const first = modUniqueId === "a.b";
@@ -2901,6 +3010,38 @@ describe("App shell", () => {
       "aria-pressed",
       "true",
     );
+    await screen.findByText("Erste");
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toEqual([
+        [
+          "scan_mods",
+          {
+            modsPath: CONFIGURED.modsPath,
+            targetLang: "de",
+            restoreInstalledTranslations: true,
+          },
+        ],
+        ["scan_mods", { modsPath: CONFIGURED.modsPath, targetLang: "de" }],
+      ]),
+    );
+    const row = screen
+      .getByRole("button", { name: "first" })
+      .closest<HTMLElement>("[data-string-row]");
+    if (!row) throw new Error("String row was not rendered");
+    fireEvent.doubleClick(row);
+    const translation = await screen.findByRole("textbox", {
+      name: "German translation",
+    });
+    fireEvent.change(translation, {
+      target: { value: "New unsaved review edit" },
+    });
+    await act(async () => backgroundScan.resolve(scan));
+    expect(screen.getByRole("textbox", { name: "German translation" })).toBe(
+      translation,
+    );
+    expect(translation).toHaveValue("New unsaved review edit");
   });
 
   it("keeps error toasts assertive and dismissible while success stays polite", async () => {

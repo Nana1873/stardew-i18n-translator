@@ -305,8 +305,15 @@ export interface ExtraKeyDiagnostic {
 export function scanMods(
   modsPath: string,
   targetLang: string,
+  restoreInstalledTranslations = false,
 ): Promise<ScanResult> {
-  return invoke<ScanResult>("scan_mods", { modsPath, targetLang });
+  return invoke<ScanResult>("scan_mods", {
+    modsPath,
+    targetLang,
+    ...(restoreInstalledTranslations
+      ? { restoreInstalledTranslations: true }
+      : {}),
+  });
 }
 
 /** Current status model. Legacy `not-translatable` values migrate

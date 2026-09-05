@@ -778,6 +778,67 @@ pub fn imported_baselines(
         .collect()
 }
 
+/// Prepare an explicit installed-file refresh without changing ordinary row
+/// resolution: empty saved values must still survive normal loads and exports.
+pub(crate) fn prepare_installed_translation_restores(
+    scan: &ScanResult,
+    mods_root: &Path,
+    translation_root: &Path,
+) -> Result<Vec<(String, Vec<translations::ConditionalSaveEntry>)>, String> {
+    if !scan.traversal_complete
+        || scan
+            .skipped_components
+            .iter()
+            .any(|item| item.requires_attention)
+    {
+        return Err("Installed translations were not restored because the scan is incomplete. Resolve the scan errors and try again.".into());
+    }
+    let mut groups = Vec::new();
+    for component in &scan.mods {
+        // Do not reuse the scanner's warning-only fallback for unreadable state.
+        let snapshot = translations::load_snapshot(translation_root, &component.unique_id)?;
+        let mut entries = Vec::new();
+        for file in &component.i18n_files {
+            let source =
+                read_object_within_root(Path::new(&file.default_path), mods_root, "source")?;
+            let disk = read_target_object_within_root(Path::new(&file.target_path), mods_root)?;
+            let disk = TargetLookup::new(&disk);
+            for key in source.keys().filter(|key| !is_ignored_i18n_key(key)) {
+                let entry_key = translations::entry_key(&file.relative_dir, key);
+                let Some(old) = snapshot.state.get(&entry_key) else {
+                    continue;
+                };
+                if old.status != "untranslated" || !old.target.trim().is_empty() {
+                    continue;
+                }
+                let Some(target) = disk
+                    .get(key)
+                    .and_then(Value::as_str)
+                    .filter(|text| !text.trim().is_empty())
+                else {
+                    continue;
+                };
+                entries.push(translations::ConditionalSaveEntry {
+                    expected_revision: snapshot.entry_revision(&entry_key),
+                    key: entry_key,
+                    expected: Some(old.clone()),
+                    entry: translations::StoredString {
+                        target: target.to_string(),
+                        status: "translated".into(),
+                        // A refresh is not evidence that an old translation
+                        // matches today's source; preserve its existing baseline.
+                        source_hash: old.source_hash.clone(),
+                    },
+                });
+            }
+        }
+        if !entries.is_empty() {
+            groups.push((component.unique_id.clone(), entries));
+        }
+    }
+    Ok(groups)
+}
+
 /// Section titles from standalone `//` comment lines in `default.json`.
 /// A comment line on its own starts a section, and every key after
 /// it (until the next standalone comment) belongs to that section. Returns
