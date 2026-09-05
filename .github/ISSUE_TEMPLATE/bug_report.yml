@@ -22,7 +22,7 @@ body:
     attributes:
       label: App version
       description: Shown in Settings > About or in the downloaded release filename.
-      placeholder: e.g. 1.4.1
+      placeholder: Version shown in Settings > About
 
   - type: textarea
     id: steps

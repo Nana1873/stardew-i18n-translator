@@ -1,4 +1,4 @@
-//! External LLM batch format v2 (SPEC §11).
+//! External LLM batch format v2. See SPEC.md, External LLM Batches.
 //!
 //! The batch deliberately carries only one binding hash for the complete
 //! source selection. The LLM translates values inside `files` and copies the

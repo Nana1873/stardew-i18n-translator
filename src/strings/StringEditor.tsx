@@ -1,5 +1,5 @@
 /**
- * String editor dialog (SPEC §§7-10).
+ * String editor dialog.
  *
  * Opened by double-clicking a string row. Source on the left (read-only),
  * editable target on the right, with prev/next navigation, live validation, a
@@ -9,7 +9,7 @@
  *
  * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
  * fast path) · Esc cancel · Alt+←/→ prev/next · F2/F3 keep original (copies
- * the source — an explicit identical translation, SPEC §9) · F4 reset (clears
+ * the source — an explicit identical translation) · F4 reset (clears
  * the field) · Ctrl+F5 translate with the configured live AI engine.
  */
 import {
@@ -902,7 +902,7 @@ export function StringEditor({
         </header>
 
         <div className="translator-editor-body" {...nestedContentIsolation}>
-          {/* Reserved slots (SPEC §§5, 7 and 10): tokens + glossary rows exist on every
+          {/* Reserved slots: tokens + glossary rows exist on every
             string — empty-state text when N/A — so the panes and the action
             bar never move during a Save & next run. */}
           <div className="translator-editor-support">

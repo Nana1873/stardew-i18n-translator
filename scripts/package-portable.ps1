@@ -13,6 +13,14 @@ if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "Portable executable not found: $executable"
 }
 
+$executableVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($executable).ProductVersion
+if ([string]::IsNullOrWhiteSpace($executableVersion)) {
+    throw "Portable executable has no embedded product version: $executable"
+}
+if ($executableVersion -ne $version) {
+    throw "Expected executable product version $version, found $executableVersion. Rebuild the application before packaging."
+}
+
 $outputDir = Join-Path $targetDir "portable"
 $packageName = "Stardew-i18n-Translator_${version}_windows-x64-portable"
 $stagingDir = Join-Path $outputDir "Stardew i18n Translator"

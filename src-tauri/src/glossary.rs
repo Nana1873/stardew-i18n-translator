@@ -1,4 +1,4 @@
-//! Official game and community-pack glossary (SPEC §5).
+//! Official game and community-pack glossary. See SPEC.md, Optional Glossary and AI.
 //!
 //! The glossary is a **typed, high-confidence** dictionary of official Stardew
 //! terms — item / craftable / weapon / tool / clothing / NPC / location names
@@ -92,7 +92,7 @@ pub struct Glossary {
     #[serde(default)]
     pub source: GlossarySource,
     /// For a `CommunityPack` build, the pack's display name (provenance shown in
-    /// the UI). Never an on-disk path — see `SCOPE_GUARDRAILS.md`.
+    /// the UI). Never an on-disk path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pack_name: Option<String>,
     /// Typed official terms.
@@ -310,7 +310,7 @@ pub struct GlossaryStatus {
     pub pack_name: Option<String>,
 }
 
-/// Map a SMAPI i18n code to the game's content locale suffix (SPEC §5).
+/// Map a SMAPI i18n code to the game's content locale suffix.
 pub fn game_locale_suffix(smapi_lang: &str) -> Option<&'static str> {
     Some(match smapi_lang {
         "de" => "de-DE",
@@ -596,7 +596,7 @@ fn glossary_term(english: &str, target: &str) -> Option<(String, String)> {
     if en.is_empty() || tgt.is_empty() || en.eq_ignore_ascii_case(tgt) {
         return None;
     }
-    // The glossary is strictly official names (SPEC §5), not dialogue or UI
+    // The glossary is strictly official names, not dialogue or UI
     // vocabulary. Official names are Title Case proper nouns (`Parsnip`,
     // `Pelican Town`, `Iridium Ore`), so a value with a lowercase word — whether
     // a leading function word (`the farm`, `away from`) or an interior one

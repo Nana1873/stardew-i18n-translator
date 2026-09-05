@@ -1,54 +1,58 @@
-Stardew i18n Translator portable installation
+Stardew i18n Translator
 
-Keep this README beside stardew-i18n-translator.exe.
+START
 
-The application requires Microsoft Edge WebView2 Runtime. It is included with
-Windows 11 and most Windows 10 installations. If it is missing, the executable
-shows a native Windows message before the application UI starts. Choose Yes to
-open Microsoft's official download page, or No to close the application.
-Nothing is downloaded or installed automatically.
+1. Extract the complete ZIP to a writable folder, such as a folder under
+   Documents. Do not run the application from inside the ZIP.
+2. Open stardew-i18n-translator.exe. There is no installer.
+3. Select your Stardew Valley folder, Mods folder, and target language, then scan.
+4. Open a mod in Workspace, edit and review its strings, then export when ready.
 
+The application works with SMAPI i18n/default.json translation sources. Saving
+an edit keeps your work in the adjacent data folder; export is the separate
+action that writes translation files to the selected mod.
+
+REQUIREMENTS
+
+Use 64-bit Windows with Microsoft Edge WebView2 Runtime. The executable is
+unsigned, so Windows SmartScreen may show an unknown-publisher warning.
+If WebView2 is missing, the application offers to open Microsoft's download
+page before closing. Nothing is downloaded or installed automatically:
 https://developer.microsoft.com/en-us/microsoft-edge/webview2/
 
-The application creates a data folder beside the executable on first launch.
-It stores local data there:
+UPDATE AND BACK UP
 
-- settings.json: selected folders, language, shortcuts, non-secret AI settings,
-  and Workspace search, filter, sort, pane, and column-width preferences
-- scan-source-snapshot.json: rebuildable source hashes from the latest complete
-  Mods-folder scan, used to report changed, added, and removed English strings
-- glossary/glossary-<lang>.json: optional per-language glossary caches
-- language-state/<lang>/: saved translation work and automatic state backups
-- logs/: optional rotating diagnostic logs
+Read any release-specific upgrade notes before replacing your existing app:
+https://github.com/Nana1873/stardew-i18n-translator/releases/latest
 
-The five latest operation results and the single safe batch-undo snapshot are
-kept only for the running application session. They are not written to the data
-folder. Result details use the real paths and file names returned by the
-backend; values the backend does not provide are shown as Unavailable.
+1. Close the application and back up its complete folder, including data.
+2. Extract the new release ZIP to a separate application folder.
+3. Copy the existing data folder beside the new stardew-i18n-translator.exe.
+4. Start the new executable and check your folders, language, and saved work.
+   Keep the backup until you have verified the update.
 
-Manual translation and local-only workflows remain offline. The optional Codex
-CLI backend uses only the CLI's own login; the application never reads its
-authentication files or tokens.
+The data folder contains your settings, saved translation work, glossary caches,
+and local diagnostics. Copy the complete application folder to move your work
+to another computer. Select the Stardew Valley and Mods folders again if their
+paths differ. Exported files in Mods are separate from this application backup.
 
-Optional Local AI translation sends selected source text, section context,
-matching glossary terms, and up to two preceding and two following English
-source strings from the same component, i18n file, section, and related key
-group only to the loopback service configured in Settings. Neighboring strings
-are read-only context: they cannot be returned as translations or saved. The
-service-reported model list and non-secret endpoint settings are stored locally;
-no API key or custom cloud endpoint is stored.
+PRIVACY AND OPTIONAL AI
 
-When Codex CLI translation is selected, the same bounded translation context is
-sent through the installed CLI. Every AI result requires review before it
-becomes an accepted translation.
+Manual translation, scanning, validation, glossary building, and export run
+locally. Local AI sends selected text, nearby source context, and matching
+glossary terms to your configured local AI service. Codex CLI sends that context
+through the installed CLI to its service, using the CLI's own login. The app
+does not read its authentication files or tokens. External LLM batches leave
+your computer when you upload them yourself. AI suggestions enter Review for
+you to check.
 
-Codex CLI runs use an additional language-quality and repair pass by default.
-Settings can disable those extra calls to reduce time and token use. The app
-shows a warning because first drafts may need more manual correction; validation
-still runs and every result still enters Review.
+HELP
 
-Copy the complete application folder, including data, to move your work to
-another computer.
+User guide and project information:
+https://github.com/Nana1873/stardew-i18n-translator
 
-The saved Stardew Valley and Mods paths are absolute and may need to be selected
-again when the folder layout differs on the other computer.
+Report a problem with the app version, error message, and reproduction steps:
+https://github.com/Nana1873/stardew-i18n-translator/issues
+
+Settings > About opens the logs folder. Logs can contain local paths; remove
+private information before sharing them.

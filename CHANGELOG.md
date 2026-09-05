@@ -8,6 +8,16 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Changed
+
+- Reorganized user and contributor documentation, including clearer portable
+  update instructions and release preparation steps.
+
+### Fixed
+
+- Portable packaging and release preflight now reject executables with a
+  missing or mismatched embedded product version.
+
 ## [2.0.3] - 2026-09-03
 
 ### Fixed

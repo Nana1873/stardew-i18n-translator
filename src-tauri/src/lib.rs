@@ -1,8 +1,7 @@
 //! Stardew i18n Translator — Tauri backend.
 //!
 //! Portable settings and translation state, Stardew detection, mod scanning,
-//! i18n import/export, glossary extraction, and local-LLM integration. Kept
-//! minimal per SCOPE_GUARDRAILS — no plugin/provider abstractions.
+//! i18n import/export, glossary extraction, and direct AI integrations.
 
 mod ai;
 mod batch;
@@ -691,8 +690,8 @@ fn remember_llm_batch_export(
     );
 }
 
-/// Write the selected strings as an external LLM translation batch
-/// (SPEC §11). Opens a save dialog and writes the minimal format-2
+/// Write the selected strings as an external LLM translation batch.
+/// Opens a save dialog and writes the minimal format-2
 /// binding plus the selected source strings.
 #[tauri::command]
 fn export_llm_batch(

@@ -1,4 +1,4 @@
-//! Protected-token extraction (SPEC §10).
+//! Protected-token extraction. See SPEC.md, Validation and Export.
 //!
 //! A faithful Rust port of the frontend `protectedTokens.ts`. Most results are
 //! literal tokens a translation MUST preserve; well-formed gender switches use
@@ -85,7 +85,7 @@ fn normalize_protected_token(raw: &str) -> String {
 
 /// Tokens that are still *extracted* (the editor shows them as chips) but are
 /// **exempt from the blocking token error**: they never skip the string on
-/// export or trigger a pointless AI retry (SPEC §10).
+/// export or trigger a pointless AI retry.
 ///  - `\n` is **layout, not syntax**: a translation often needs a different
 ///    number of line breaks (German runs ~25% longer than English), and a
 ///    changed `\n` count never breaks the mod at runtime.
@@ -874,7 +874,7 @@ mod tests {
     fn quote_delimiters_are_soft_not_blocking() {
         // The source uses backticks (no `'`); the translation introduces a
         // paired `'…'`. That is punctuation, not runtime syntax, so it must not
-        // appear as a blocking difference or a missing token (SPEC §10).
+        // appear as a blocking difference or a missing token.
         let source = "Use `Default` to modify the settings.";
         let target = "'Standard' verwenden, um die Einstellungen anzupassen.";
         assert!(token_differences(source, target).is_empty());

@@ -1,4 +1,4 @@
-//! Safe SMAPI i18n export (SPEC §§10 and 14).
+//! Safe SMAPI i18n export. See SPEC.md, Validation and Export.
 //!
 //! Writes a mod's saved translations to its `i18n/<lang>.json`, preserving the
 //! key order of `default.json` (diff-friendly; never alphabetized), UTF-8
@@ -7,7 +7,7 @@
 //!  - The new content is written to a `.tmp` sibling, re-parsed to verify it is
 //!    valid JSON, then renamed over the target (atomic on the same volume).
 //!  - **Untranslated** keys are omitted (SMAPI falls back to `default.json`).
-//!    Kept-original strings (SPEC §9) carry the source as their target
+//!    Kept-original strings carry the source as their target
 //!    and are written like any other translation.
 //!  - Any protected-token count mismatch blocks the complete mod export before
 //!    backups or target writes begin.
@@ -1428,7 +1428,7 @@ mod tests {
     fn quote_delimiter_difference_does_not_block_export() {
         // The source uses backticks (no `'`); the translation adds a paired
         // `'…'`. Quotes are punctuation, not runtime syntax, so the export must
-        // proceed instead of blocking the whole mod (SPEC §10).
+        // proceed instead of blocking the whole mod.
         let root = crate::test_support::temp_dir("export-quote-soft");
         let i18n = root.join("i18n");
         write(
@@ -1540,7 +1540,7 @@ mod tests {
     fn legacy_not_translatable_exports_the_source_text() {
         // Legacy "not-translatable" state entries migrate to "keep
         // original": the export writes an explicit identical translation
-        // instead of omitting the key (SPEC §9).
+        // instead of omitting the key.
         let root = crate::test_support::temp_dir("export-keep-original");
         let i18n = root.join("i18n");
         write(&i18n.join("default.json"), "{ \"k\": \"Hello\" }");

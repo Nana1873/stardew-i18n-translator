@@ -1,87 +1,29 @@
-# Repository Guidance
+# Agent Guidance
 
-Stardew i18n Translator is a small, local-first Windows desktop app. Keep changes
+Stardew i18n Translator is a small, local-first Windows desktop app. Keep work
 proportional to that goal.
 
-## Working Style
-
-- The user's request or the current GitHub issue defines the task. An issue,
-  milestone, or formal implementation plan is optional.
-- Continue already-authorized steps without asking again. If new scope or a new
-  target needs approval, or a tool or policy blocks progress, explain the
-  concrete reason and respect that boundary.
+- Follow the current user request or GitHub issue. Issues, milestones, and
+  formal plans are optional; do not create roadmap, walkthrough, handoff, or
+  task-status files unless requested.
+- Continue authorized steps without asking again. If new scope or a new target
+  needs approval, or a tool or policy blocks progress, explain the concrete
+  reason and respect that boundary.
 - Retain concrete user ideas deferred from the current task in GitHub Issues.
-  Check for duplicates and update a matching issue when possible; include brief
-  context and a source reference, then link it in the reply. Do not create a
-  second roadmap or automatically implement the deferred idea.
-- Read the relevant code before editing. Use [README.md](README.md) for the user
-  workflow and [SPEC.md](SPEC.md) for durable product behavior.
-- Prefer a direct change over a new abstraction. Do not add provider systems,
-  plugin layers, dependency-injection frameworks, or generalized infrastructure
-  unless the current feature genuinely needs them.
-- Reuse the existing Tauri, Rust, React, and TypeScript architecture.
-- Do not create roadmap, walkthrough, handoff, or task-status files unless the
-  user specifically asks for one.
-- Pull-request labels and documentation changes are helpful when they add value,
-  but they are not mandatory ceremony.
-
-## Data Safety
-
-- Treat the user's real Stardew Valley and Mods folders as read-only.
-- Run write, import, export, and destructive tests only on synthetic fixtures or
-  temporary copies.
-- Never commit game assets, third-party mod content, generated translations,
-  local paths, user data, credentials, or API keys.
-- Keep application state beside the executable in `data/`.
-- Portable release archives contain only the executable and `README.txt`.
-
-## Product Boundaries
-
-- Translation and export target standard SMAPI `i18n/default.json` and
-  `i18n/<lang>.json` files.
-- Glossary extraction may read the narrow, read-only Stardew and community-pack
-  `Strings` sources described in [SPEC.md](SPEC.md).
-- Manual translation and local-only workflows remain offline. The optional
-  Codex CLI backend uses only the CLI's own authentication; never inspect,
-  import, or persist Codex authentication files or tokens.
-- When an AI backend is selected, source text, section context, and matching
-  glossary terms are sent to that service.
-- Do not add an AI provider marketplace, provider registry, or configurable
-  custom cloud base URL. Keep the implemented backends direct and explicit.
-- The desktop app does not perform automatic downloads, Nexus API operations,
-  mod-manager features, or Git integration.
-- AI output always enters the review workflow rather than becoming final
-  automatically.
-
-## Verification
-
-Run checks that match the changed surface instead of the full suite by default.
-
-```powershell
-# Documentation-only changes
-corepack pnpm check:docs
-
-# Frontend or shared TypeScript changes
-corepack pnpm typecheck
-corepack pnpm test
-
-# Rust changes
-Push-Location src-tauri
-cargo fmt --check
-cargo clippy --locked --all-targets --profile ci -- -D warnings
-cargo test --locked --profile ci
-Pop-Location
-```
-
-Broaden verification for shared behavior, packaging, or release changes. Report
-what was run and any remaining risk in the final response; no fixed handoff
-template is required.
-
-## Releases
-
-- Update synchronized versions with `corepack pnpm version:set <version>`.
-- Build and package the verified Windows executable locally.
-- Use `scripts/create-release.ps1`. It publishes a normal GitHub release by
-  default; pass `-Draft` only when a draft is intentionally wanted.
-- Keep `CHANGELOG.md` concise. A curated `docs/release/v<version>.md` file is
-  optional.
+  Check for duplicates, update a matching issue when possible, include brief
+  context and a source reference, and link it in the reply. Do not automatically
+  implement the deferred idea or create another roadmap.
+- Read the relevant code before editing. Use [README.md](README.md) and the
+  [user guide](docs/user-guide.md) for workflow, [SPEC.md](SPEC.md) for product
+  behavior, and [CONTRIBUTING.md](CONTRIBUTING.md) for setup, architecture, test
+  data, verification, and contribution conventions.
+- Prefer direct changes in the existing architecture. Add an abstraction only
+  when the current problem needs it; avoid generalized provider or plugin layers.
+- Treat real game and Mods folders as read-only test inputs. Run writes and
+  destructive tests only on synthetic fixtures or temporary copies; never
+  commit user data, game assets, translations, personal paths, or credentials.
+- Report changes, relevant checks, and remaining limitations in German. Keep
+  code, CLI text, commits, PRs, issues, and repository documentation in English.
+- For releases, follow the [release process](docs/release/release-process.md).
+  Preserve an explicitly requested draft or user-test step. Labels and curated
+  release notes are useful when they add value, not mandatory ceremony.

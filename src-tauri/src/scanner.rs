@@ -1,10 +1,11 @@
-//! Recursive mod scanner and lenient SMAPI i18n reader (SPEC §§6–7).
+//! Recursive mod scanner and lenient SMAPI i18n reader.
+//! See SPEC.md, Scanning and Source Changes.
 //!
 //! Walks the Mods folder, finds every `manifest.json`, reads its metadata, and
 //! discovers and reads the translatable `i18n/` units beneath each mod. Mods are
-//! grouped by package (top-level Mods subfolder, SPEC §7).
+//! grouped by package (top-level Mods subfolder).
 //!
-//! Edge cases handled (SPEC §6): nested/multi-component mods (each manifest is
+//! Edge cases handled: nested/multi-component mods (each manifest is
 //! its own mod; `i18n/` is associated with the nearest ancestor manifest),
 //! multiple `i18n/` folders per mod, Content Patcher data under `assets/i18n`
 //! (ignored because it is not a SMAPI translation target), malformed manifests
@@ -309,7 +310,7 @@ pub fn escape_control_chars_in_strings(text: &str) -> String {
 /// Extract a positive Nexus mod id from SMAPI `UpdateKeys`.
 ///
 /// Accepts `Nexus:1234` (whitespace tolerated, optional `@subkey` ignored).
-/// Rejects the `Nexus:-1` sentinel and any non-positive value (SPEC §6).
+/// Rejects the `Nexus:-1` sentinel and any non-positive value.
 pub fn extract_nexus_id(update_keys: &[String]) -> Option<u64> {
     for key in update_keys {
         let mut parts = key.splitn(2, ':');
@@ -667,12 +668,12 @@ pub struct StringRow {
     pub target: String,
     /// Whether the key exists in the target file (distinguishes "" from absent).
     pub target_present: bool,
-    /// untranslated | translated | review-needed | outdated (SPEC §9)
+    /// untranslated | translated | review-needed | outdated
     pub status: String,
     /// The translator explicitly accepted the current protected-token mismatch.
     pub token_mismatch_accepted: bool,
     /// Section this key belongs to — the nearest standalone `//` comment line
-    /// above it in `default.json` (SPEC §7). None = no section.
+    /// above it in `default.json`. None = no section.
     pub section: Option<String>,
 }
 
@@ -760,8 +761,8 @@ pub fn imported_baselines(
         .collect()
 }
 
-/// Section titles from standalone `//` comment lines in `default.json`
-/// (SPEC §7): a comment line on its own starts a section, and every key after
+/// Section titles from standalone `//` comment lines in `default.json`.
+/// A comment line on its own starts a section, and every key after
 /// it (until the next standalone comment) belongs to that section. Returns
 /// folded key → section title. String-aware, so `//` inside a value (URLs) or
 /// a trailing same-line comment never starts a section; `/* */` blocks are
@@ -1012,7 +1013,7 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
 /// (total source keys, source keys with a non-empty **working** target — saved
 /// state takes precedence over the imported `<lang>.json` value — and source
 /// keys whose stored status is an unreviewed AI suggestion). The review count
-/// feeds the dashboard's cross-mod review queue (SPEC §7).
+/// feeds the dashboard's cross-mod review queue.
 #[cfg(test)]
 fn count_keys(
     default_path: &Path,
@@ -2639,7 +2640,7 @@ mod tests {
     fn legacy_not_translatable_migrates_to_keep_original() {
         // Legacy `not-translatable` entries become "keep
         // original" — translated, with an empty stored target resolving to
-        // the current source text (SPEC §9).
+        // the current source text.
         let root = crate::test_support::temp_dir("load-keep-original");
         let i18n = root.join("i18n");
         write(
