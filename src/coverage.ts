@@ -7,3 +7,15 @@ export function coveragePercent(covered: number, total: number): number {
     ? Math.min(99.9, Math.round(percent * 10) / 10)
     : Math.round(percent);
 }
+
+/** Working coverage includes source/target pairs that need no translation text. */
+export function workingCoveredKeys(value: {
+  totalKeys: number;
+  translatedKeys: number;
+  noTranslationNeededKeys?: number;
+}): number {
+  return Math.min(
+    value.totalKeys,
+    value.translatedKeys + (value.noTranslationNeededKeys ?? 0),
+  );
+}

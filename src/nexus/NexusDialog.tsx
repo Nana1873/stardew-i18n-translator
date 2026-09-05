@@ -653,7 +653,7 @@ export function NexusDialog({
             )}
             <small>
               {disk
-                ? `Local translation: ${disk.covered}/${disk.total} strings · ${disk.total - disk.covered} missing`
+                ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
                 : "Local translation coverage unavailable"}
             </small>
           </td>
@@ -1079,7 +1079,7 @@ export function NexusDialog({
               [noDownloadIds.size, "No suitable download found"],
               [
                 `${search.skippedComplete ?? 0} / ${installedGroups}`,
-                "Groups skipped · fully translated / already installed",
+                "Groups skipped · no missing text / already installed",
               ],
               [search.noId, "Components without Nexus ID"],
               [unavailableCount, "Checks failed"],

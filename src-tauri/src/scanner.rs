@@ -40,6 +40,10 @@ pub struct ScannedI18nFile {
     pub translated_keys: usize,
     /// Nonempty source-key matches in the deployed target JSON, ignoring drafts.
     pub disk_translated_keys: usize,
+    /// Blank source/working-target pairs need no translation, without a saved exemption.
+    pub no_translation_needed_keys: usize,
+    /// Blank source/disk-target pairs, including absent targets; not file presence.
+    pub disk_no_translation_needed_keys: usize,
     /// Saved app values that differ from the deployed target (including empty values).
     pub state_disk_differences: usize,
     /// Source keys whose saved status is an unreviewed AI suggestion
@@ -99,6 +103,8 @@ pub struct ScannedMod {
     pub total_keys: usize,
     pub translated_keys: usize,
     pub disk_translated_keys: usize,
+    pub no_translation_needed_keys: usize,
+    pub disk_no_translation_needed_keys: usize,
     pub state_disk_differences: usize,
     /// Unreviewed AI suggestions across all i18n files (dashboard queue).
     pub review_needed: usize,
@@ -499,14 +505,25 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             .iter()
             .map(|f| f.disk_translated_keys)
             .sum();
+        scanned.no_translation_needed_keys = scanned
+            .i18n_files
+            .iter()
+            .map(|file| file.no_translation_needed_keys)
+            .sum();
+        scanned.disk_no_translation_needed_keys = scanned
+            .i18n_files
+            .iter()
+            .map(|file| file.disk_no_translation_needed_keys)
+            .sum();
         scanned.state_disk_differences = scanned
             .i18n_files
             .iter()
             .map(|f| f.state_disk_differences)
             .sum();
         scanned.review_needed = scanned.i18n_files.iter().map(|f| f.review_needed).sum();
-        scanned.progress = progress_of(scanned.total_keys, scanned.translated_keys);
-        scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
+        let completed_work = scanned.translated_keys + scanned.no_translation_needed_keys;
+        scanned.progress = progress_of(scanned.total_keys, completed_work);
+        scanned.status = derive_status(scanned.total_keys, completed_work).to_string();
     }
 
     // Exclude community language packs: such a pack ships its own `i18n/`
@@ -653,6 +670,8 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         total_keys: 0,
         translated_keys: 0,
         disk_translated_keys: 0,
+        no_translation_needed_keys: 0,
+        disk_no_translation_needed_keys: 0,
         state_disk_differences: 0,
         review_needed: 0,
         status_counts: StatusCounts::default(),
@@ -945,8 +964,23 @@ fn resolve_string(
         // now an explicit identical translation ("Keep original"). An empty
         // stored target takes the *current* source text — that pair can't be
         // stale, so it skips the outdated check below.
-        if stored.status == "not-translatable" && stored.target.trim().is_empty() {
+        // Preserve legacy Keep original except where its baseline proves the
+        // original was exactly empty: a new source is then new translation work.
+        if stored.status == "not-translatable"
+            && stored.target.trim().is_empty()
+            && stored.source_hash != translations::source_hash("")
+        {
             return (source_text.to_string(), "translated".to_string());
+        }
+        // Empty work is derived from the current source, never a permanent Done
+        // exemption. A later nonempty source reopens even an old saved Done row.
+        if stored.target.trim().is_empty() {
+            let status = if source_text.trim().is_empty() {
+                "translated"
+            } else {
+                "untranslated"
+            };
+            return (stored.target.clone(), status.to_string());
         }
         let status = normalize_status(&stored.status);
         // A `translated` or (AI-suggested) `review-needed` string goes stale when
@@ -961,7 +995,7 @@ fn resolve_string(
         return (stored.target.clone(), status);
     }
     let imported_text = imported.map(value_to_text).unwrap_or_default();
-    let status = if imported_text.trim().is_empty() {
+    let status = if imported_text.trim().is_empty() && !source_text.trim().is_empty() {
         "untranslated"
     } else {
         "translated"
@@ -1119,6 +1153,8 @@ struct KeyInspection {
     total: usize,
     translated: usize,
     disk_translated: usize,
+    no_translation_needed: usize,
+    disk_no_translation_needed: usize,
     state_disk_differences: usize,
     status_counts: StatusCounts,
     source_hashes: Vec<SourceKeyHash>,
@@ -1165,33 +1201,29 @@ fn inspect_keys_checked(
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
         .count();
-    let translated = source
-        .keys()
-        .filter(|key| !is_ignored_i18n_key(key))
-        .filter(|key| {
-            match state.get(&translations::entry_key(relative_dir, key)) {
-                // Legacy not-translatable counts as handled even without target
-                // text — it resolves to keep-original (source text) on load.
-                Some(stored) => {
-                    stored.status == "not-translatable" || !stored.target.trim().is_empty()
-                }
-                None => target
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty()),
-            }
-        })
-        .count();
+    let mut translated = 0;
+    let mut no_translation_needed = 0;
+    let mut disk_no_translation_needed = 0;
     let mut status_counts = StatusCounts::default();
     for (key, value) in source.iter().filter(|(key, _)| !is_ignored_i18n_key(key)) {
-        let status = resolve_string(
-            value.as_str().unwrap_or_default(),
-            target.get(key),
-            state,
-            relative_dir,
-            key,
-        )
-        .1;
+        let source_text = value.as_str().unwrap_or_default();
+        let (working_target, status) =
+            resolve_string(source_text, target.get(key), state, relative_dir, key);
+        if !working_target.trim().is_empty() {
+            translated += 1;
+        } else if source_text.trim().is_empty() {
+            no_translation_needed += 1;
+        }
+        if source_text.trim().is_empty()
+            && target
+                .get(key)
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+        {
+            disk_no_translation_needed += 1;
+        }
         status_counts.record(&status);
     }
     let source_hashes = source
@@ -1206,6 +1238,8 @@ fn inspect_keys_checked(
         total,
         translated,
         disk_translated,
+        no_translation_needed,
+        disk_no_translation_needed,
         state_disk_differences,
         status_counts,
         source_hashes,
@@ -1331,6 +1365,8 @@ fn build_i18n_file(
         total_keys: inspection.total,
         translated_keys: inspection.translated,
         disk_translated_keys: inspection.disk_translated,
+        no_translation_needed_keys: inspection.no_translation_needed,
+        disk_no_translation_needed_keys: inspection.disk_no_translation_needed,
         state_disk_differences: inspection.state_disk_differences,
         review_needed,
         source_hashes: inspection.source_hashes,
@@ -3029,5 +3065,280 @@ mod deployment_observation_tests {
         assert_eq!(result.state_disk_differences, 0);
         write(&root.join("pt-BR.json"), r#"{"a":42}"#);
         assert!(inspect_keys_checked(&source, &target, None, &ModState::new(), "i18n").is_err());
+    }
+}
+
+#[cfg(test)]
+mod blank_source_tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+
+    struct Fixture {
+        base: PathBuf,
+        mods: PathBuf,
+        config: PathBuf,
+        source: PathBuf,
+        target: PathBuf,
+    }
+    impl Fixture {
+        fn new(source: &str, target: Option<&str>) -> Self {
+            let base = crate::test_support::temp_dir("blank-source");
+            let mods = base.join("Mods");
+            let folder = mods.join("Example");
+            let source_path = folder.join("i18n/default.json");
+            let target_path = folder.join("i18n/de.json");
+            fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            fs::write(
+                folder.join("manifest.json"),
+                br#"{"UniqueID":"test.blank","Name":"Example"}"#,
+            )
+            .unwrap();
+            fs::write(
+                &source_path,
+                serde_json::to_vec(&json!({"key":source})).unwrap(),
+            )
+            .unwrap();
+            if let Some(target) = target {
+                fs::write(
+                    &target_path,
+                    serde_json::to_vec(&json!({"key":target})).unwrap(),
+                )
+                .unwrap();
+            }
+            Self {
+                config: base.join("config"),
+                base,
+                mods,
+                source: source_path,
+                target: target_path,
+            }
+        }
+        fn state_root(&self) -> PathBuf {
+            translations::language_root(&self.config, "de").unwrap()
+        }
+        fn scan(&self) -> ScanResult {
+            scan_mods(&self.mods, "de", &self.config)
+        }
+        fn rows(&self) -> Vec<StringRow> {
+            let state = translations::load(&self.state_root(), "test.blank").unwrap();
+            load_strings_checked(&self.source, &self.target, &state, "i18n").unwrap()
+        }
+        fn save(&self, source: &str, target: &str, status: &str) {
+            translations::save_one(
+                &self.state_root(),
+                "test.blank",
+                translations::entry_key("i18n", "key"),
+                translations::StoredString {
+                    target: target.into(),
+                    status: status.into(),
+                    source_hash: translations::source_hash(source),
+                },
+            )
+            .unwrap();
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.base).unwrap();
+        }
+    }
+
+    #[test]
+    fn blank_pairs_reopen_after_source_update_and_reload_without_saving_exemptions() {
+        // Unicode White_Space matches the frontend predicate: NEL is blank;
+        // FEFF is text (unlike JavaScript's built-in String.trim).
+        for source in ["", "   ", "\t\r\n", "\u{a0}", "\u{85}"] {
+            for target in [
+                None,
+                Some(""),
+                Some(" \t\r\n"),
+                Some("\u{a0}"),
+                Some("\u{85}"),
+            ] {
+                for status in [
+                    None,
+                    Some("untranslated"),
+                    Some("translated"),
+                    Some("review-needed"),
+                ] {
+                    let f = Fixture::new(source, target);
+                    if let Some(status) = status {
+                        f.save(source, target.unwrap_or_default(), status);
+                    }
+                    let before_state = translations::load(&f.state_root(), "test.blank").unwrap();
+                    let before_source = fs::read(&f.source).unwrap();
+                    let before_target = fs::read(&f.target).ok();
+                    let mut scan = f.scan();
+                    let row = &f.rows()[0];
+                    assert_eq!(row.status, "translated");
+                    assert_eq!(row.source, source);
+                    assert_eq!(row.target, target.unwrap_or_default());
+                    assert_eq!(row.target_present, target.is_some());
+                    let component = &scan.mods[0];
+                    assert_eq!(
+                        (
+                            component.total_keys,
+                            component.translated_keys,
+                            component.no_translation_needed_keys
+                        ),
+                        (1, 0, 1)
+                    );
+                    assert_eq!(
+                        (
+                            component.disk_translated_keys,
+                            component.disk_no_translation_needed_keys
+                        ),
+                        (0, 1)
+                    );
+                    assert_eq!(component.i18n_files[0].target_exists, target.is_some());
+                    assert_eq!(component.status_counts.untranslated, 0);
+                    assert_eq!(component.status_counts.translated, 1);
+                    assert_eq!(component.progress, 1.0);
+                    assert!(imported_baselines(&f.rows(), &before_state, "i18n").is_empty());
+                    assert_eq!(fs::read(&f.source).unwrap(), before_source);
+                    assert_eq!(fs::read(&f.target).ok(), before_target);
+                    crate::scan_snapshot::apply(&mut scan, &f.mods, &f.config).unwrap();
+                    fs::write(&f.source, br#"{"key":"Now needs translation"}"#).unwrap();
+                    // Reload all persisted state, as a fresh application process does.
+                    let mut updated = f.scan();
+                    crate::scan_snapshot::apply(&mut updated, &f.mods, &f.config).unwrap();
+                    assert_eq!(updated.source_deltas.as_ref().unwrap().sources_changed, 1);
+                    assert_eq!(updated.source_deltas.as_ref().unwrap().strings_added, 0);
+                    let component = &updated.mods[0];
+                    assert_eq!(f.rows()[0].status, "untranslated");
+                    assert_eq!(component.status_counts.untranslated, 1);
+                    assert_eq!(component.status_counts.outdated, 0);
+                    assert_eq!(component.no_translation_needed_keys, 0);
+                    assert_eq!(component.disk_no_translation_needed_keys, 0);
+                    assert_eq!(component.progress, 0.0);
+                    assert_eq!(
+                        translations::load(&f.state_root(), "test.blank").unwrap(),
+                        before_state
+                    );
+                    assert_eq!(fs::read(&f.target).ok(), before_target);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn feff_is_text_in_status_and_disjoint_work_and_disk_counts() {
+        let f = Fixture::new("\u{feff}", Some(""));
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert_eq!(f.scan().mods[0].no_translation_needed_keys, 0);
+        assert_eq!(f.scan().mods[0].disk_no_translation_needed_keys, 0);
+        f.save("\u{feff}", "", "translated");
+        fs::write(&f.source, br#"{"key":"New text"}"#).unwrap();
+        assert_eq!(f.rows()[0].status, "untranslated");
+        let f = Fixture::new("", Some("\u{feff}"));
+        let scan = f.scan();
+        assert_eq!(f.rows()[0].target, "\u{feff}");
+        assert_eq!(f.rows()[0].status, "translated");
+        assert_eq!(
+            (
+                scan.mods[0].translated_keys,
+                scan.mods[0].no_translation_needed_keys
+            ),
+            (1, 0)
+        );
+        assert_eq!(
+            (
+                scan.mods[0].disk_translated_keys,
+                scan.mods[0].disk_no_translation_needed_keys
+            ),
+            (1, 0)
+        );
+    }
+
+    #[test]
+    fn personal_text_retains_review_and_source_hash_changes_with_empty_source() {
+        for status in ["translated", "review-needed", "untranslated"] {
+            let f = Fixture::new("", Some(""));
+            f.save("", " Personal text ", status);
+            let scan = f.scan();
+            assert_eq!(f.rows()[0].status, status);
+            assert_eq!(
+                (
+                    scan.mods[0].translated_keys,
+                    scan.mods[0].no_translation_needed_keys
+                ),
+                (1, 0)
+            );
+            assert_eq!(
+                (
+                    scan.mods[0].disk_translated_keys,
+                    scan.mods[0].disk_no_translation_needed_keys
+                ),
+                (0, 1)
+            );
+            fs::write(&f.source, br#"{"key":"Changed source"}"#).unwrap();
+            let row = &f.rows()[0];
+            assert_eq!(row.target, " Personal text ");
+            assert_eq!(
+                row.status,
+                if status == "untranslated" {
+                    "untranslated"
+                } else {
+                    "outdated"
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn exactly_empty_legacy_baseline_reopens_counts_and_export_without_copying_source() {
+        let f = Fixture::new("", Some(""));
+        f.save("", "", "not-translatable");
+        assert_eq!(f.rows()[0].status, "translated");
+        fs::write(&f.source, br#"{"key":"New source"}"#).unwrap();
+        let scan = f.scan();
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert_eq!(f.rows()[0].target, "");
+        assert_eq!(scan.mods[0].translated_keys, 0);
+        assert_eq!(scan.mods[0].no_translation_needed_keys, 0);
+        assert_eq!(scan.mods[0].status_counts.untranslated, 1);
+        let result = crate::export::export_mod(
+            &f.state_root(),
+            "test.blank",
+            &[crate::export::ExportFileInput {
+                relative_dir: "i18n".into(),
+                default_path: f.source.display().to_string(),
+                target_path: f.target.display().to_string(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(result.total_written_keys, 0);
+        assert_eq!(result.total_untranslated, 1);
+        assert!(!f.target.exists());
+        assert!(f.target.with_file_name("de.json.bak").exists());
+        // Other historical baselines still mean the explicit legacy Keep original.
+        f.save("Previous text", "", "not-translatable");
+        assert_eq!(f.rows()[0].target, "New source");
+        assert_eq!(f.rows()[0].status, "translated");
+        assert_eq!(f.scan().mods[0].translated_keys, 1);
+    }
+
+    #[test]
+    fn clear_keeps_work_and_physical_coverage_separate() {
+        let f = Fixture::new("Normal source", Some("Installed translation"));
+        f.save("Normal source", "", "untranslated");
+        let scan = f.scan();
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert_eq!(
+            (
+                scan.mods[0].translated_keys,
+                scan.mods[0].no_translation_needed_keys
+            ),
+            (0, 0)
+        );
+        assert_eq!(
+            (
+                scan.mods[0].disk_translated_keys,
+                scan.mods[0].disk_no_translation_needed_keys
+            ),
+            (1, 0)
+        );
+        assert_eq!(scan.mods[0].progress, 0.0);
     }
 }

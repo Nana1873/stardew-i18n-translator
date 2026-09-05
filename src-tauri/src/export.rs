@@ -540,7 +540,9 @@ fn prepare_mod(
 
         for row in rows {
             if row.target.trim().is_empty() {
-                file_result.untranslated += 1;
+                if !row.source.trim().is_empty() {
+                    file_result.untranslated += 1;
+                }
                 continue;
             }
             if row.status == "outdated" {
@@ -1018,6 +1020,72 @@ mod tests {
 
         assert_eq!(resolved[0].mod_name, "Real Name");
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn blank_source_pairs_are_omitted_without_open_counts_or_new_target_files() {
+        for existing in [false, true] {
+            for mixed in [false, true] {
+                let root = crate::test_support::temp_dir("export-blank-pairs");
+                let source = root.join("i18n/default.json");
+                let target = root.join("i18n/de.json");
+                write(
+                    &source,
+                    r#"{"empty":"","spaces":" \t\r\n\u00a0","real":"Needs text"}"#,
+                );
+                if existing {
+                    write(&target, r#"{"empty":"","spaces":" \t\r\n\u00a0"}"#);
+                }
+                let original_source = std::fs::read(&source).unwrap();
+                let original_target = std::fs::read(&target).ok();
+                if mixed {
+                    translations::save_one(
+                        &root,
+                        "mod.id",
+                        translations::entry_key("i18n", "real"),
+                        translations::StoredString {
+                            target: "Personal text".into(),
+                            status: "review-needed".into(),
+                            source_hash: translations::source_hash("Needs text"),
+                        },
+                    )
+                    .unwrap();
+                }
+                let state = translations::load(&root, "mod.id").unwrap();
+                let files = [ExportFileInput {
+                    relative_dir: "i18n".into(),
+                    default_path: source.display().to_string(),
+                    target_path: target.display().to_string(),
+                }];
+                let prepared = prepare_mod(&root, "mod.id", &files).unwrap();
+                assert_eq!(
+                    std::fs::read(&target).ok(),
+                    original_target,
+                    "preflight is read-only"
+                );
+                assert!(!prepared.result.blocked);
+                let result = export_mod(&root, "mod.id", &files).unwrap();
+                assert_eq!(result.total_untranslated, usize::from(!mixed));
+                assert_eq!(result.total_written_keys, usize::from(mixed));
+                if mixed {
+                    let written = scanner::read_object_checked(&target).unwrap();
+                    assert_eq!(written.len(), 1);
+                    assert_eq!(written["real"], "Personal text");
+                    assert_eq!(result.total_review_needed, 1);
+                } else {
+                    assert!(!target.exists());
+                }
+                if let Some(bytes) = original_target {
+                    assert_eq!(
+                        std::fs::read(target.with_file_name("de.json.bak")).unwrap(),
+                        bytes
+                    );
+                }
+                assert_eq!(std::fs::read(&source).unwrap(), original_source);
+                assert_eq!(translations::load(&root, "mod.id").unwrap(), state);
+                std::fs::remove_dir_all(root).unwrap();
+            }
+        }
     }
 
     #[test]

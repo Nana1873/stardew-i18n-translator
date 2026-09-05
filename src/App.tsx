@@ -5,6 +5,7 @@
  * right = string table. The Setup Wizard opens on first launch and via
  * Settings. Scans run in the Rust backend and populate the workspace.
  */
+import { workingCoveredKeys } from "./coverage";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -143,7 +144,7 @@ function countInProgressPackages(mods: ScannedMod[]): number {
       translatedKeys: 0,
     };
     current.totalKeys += mod.totalKeys;
-    current.translatedKeys += mod.translatedKeys;
+    current.translatedKeys += workingCoveredKeys(mod);
     totals.set(mod.packageId, current);
   }
 
@@ -1059,6 +1060,7 @@ export function App() {
     modId: string,
     translatedKeys: number,
     statusCounts: Record<StringStatus, number>,
+    noTranslationNeededKeys: number,
   ) {
     setScan((prev) => {
       if (!prev) return prev;
@@ -1067,16 +1069,19 @@ export function App() {
         mods: prev.mods.map((mod) => {
           if (mod.uniqueId !== modId) return mod;
           const progress =
-            mod.totalKeys > 0 ? translatedKeys / mod.totalKeys : 0;
+            mod.totalKeys > 0
+              ? (translatedKeys + noTranslationNeededKeys) / mod.totalKeys
+              : 0;
           const status =
             mod.totalKeys === 0
               ? "none"
-              : translatedKeys >= mod.totalKeys
+              : translatedKeys + noTranslationNeededKeys >= mod.totalKeys
                 ? "translated"
                 : "untranslated";
           return {
             ...mod,
             translatedKeys,
+            noTranslationNeededKeys,
             progress,
             status,
             statusCounts,
@@ -1531,7 +1536,7 @@ export function App() {
         newFiles: newFiles.length,
         mods: null,
         willWrite: mod.translatedKeys,
-        openOmitted: Math.max(0, mod.totalKeys - mod.translatedKeys),
+        openOmitted: Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
         changedIncluded: mod.statusCounts?.outdated ?? null,
         reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
         acceptedMismatches: preflight.acceptedMismatches,
@@ -1581,7 +1586,8 @@ export function App() {
         mods: affected.length,
         willWrite: affected.reduce((sum, mod) => sum + mod.translatedKeys, 0),
         openOmitted: affected.reduce(
-          (sum, mod) => sum + Math.max(0, mod.totalKeys - mod.translatedKeys),
+          (sum, mod) =>
+            sum + Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
           0,
         ),
         changedIncluded: statusCountsKnown

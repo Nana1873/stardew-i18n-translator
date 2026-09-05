@@ -247,6 +247,15 @@ export function nexusSourceDiskCoverage(
       sum + Math.min(mod.totalKeys, Math.max(0, mod.diskTranslatedKeys ?? 0)),
     0,
   );
+  const noTextNeeded = components.reduce(
+    (sum, mod) =>
+      sum +
+      Math.min(
+        Math.max(0, mod.totalKeys - (mod.diskTranslatedKeys ?? 0)),
+        Math.max(0, mod.diskNoTranslationNeededKeys ?? 0),
+      ),
+    0,
+  );
   const differences = components.reduce(
     (sum, mod) => sum + (mod.stateDiskDifferences ?? 0),
     0,
@@ -255,7 +264,9 @@ export function nexusSourceDiskCoverage(
     total,
     covered,
     differences,
-    complete: total > 0 && covered >= total,
+    noTextNeeded,
+    missing: Math.max(0, total - covered - noTextNeeded),
+    complete: total > 0 && covered + noTextNeeded >= total,
   };
 }
 

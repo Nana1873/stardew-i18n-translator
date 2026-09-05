@@ -279,3 +279,44 @@ describe("Dashboard", () => {
     ).toBeInTheDocument();
   });
 });
+
+it("keeps physical text separate while blank source pairs need no open work", () => {
+  render(
+    <Dashboard
+      scan={sampleScan([
+        sampleMod({
+          totalKeys: 2,
+          translatedKeys: 1,
+          noTranslationNeededKeys: 1,
+          statusCounts: {
+            translated: 2,
+            untranslated: 0,
+            outdated: 0,
+            "review-needed": 0,
+          },
+        }),
+      ])}
+      scanning={false}
+      lastScanAt={null}
+      now={Date.now()}
+      languageLine="German (de)"
+      onScan={vi.fn()}
+      scanEnabled
+      onOpenMod={vi.fn()}
+      onBrowse={vi.fn()}
+      lastOpened={{}}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: /Has German text/ }),
+  ).toHaveTextContent("1 / 2 · 50%");
+  expect(screen.getByRole("button", { name: /^Open/ })).toHaveTextContent(
+    "0 · 0%",
+  );
+  expect(
+    screen.getByRole("button", { name: /Done for current source/ }),
+  ).toHaveTextContent("2 · 100%");
+  expect(
+    screen.getByText("1 empty sources need no translation text"),
+  ).toBeInTheDocument();
+});

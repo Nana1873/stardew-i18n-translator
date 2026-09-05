@@ -74,6 +74,17 @@ have no validation finding; a Done row can still have one. Review is a request
 for human assessment, not an export lock: non-empty Review and Changed values
 can be exported, with their counts shown in the export confirmation.
 
+### Empty source text
+
+A source and effective target containing only Unicode White_Space (including empty strings; FEFF is text)
+need no translation text. They stay visible and count as Done for the current
+source without saving an exemption. A missing target key is not a physical
+translation or installation proof. Nonempty personal targets retain their existing
+Review/Changed behavior. If a mod update supplies source text while the target is
+still blank, the row is Open again, including after a previous Save and restart.
+Nonempty translation counts remain separate from no-text-needed counts. Export
+still omits blank target values and keeps its existing backup/removal behavior.
+
 ## Validation and Export
 
 Validation protects runtime-sensitive SMAPI, Content Patcher, dialogue, mail,
@@ -136,8 +147,9 @@ The Nexus workflow is in local testing; it is not a registered production
 integration. Discovery is opt-in after scanning or explicitly user-started.
 Search once per positive Nexus ID and target language. By default, skip a group
 only when it has source keys and all associated components with source keys,
-including package siblings without an ID, have complete target-file coverage on
-disk. Use exact counts, not rounded progress. An explicit option includes covered
+including package siblings without an ID, have no missing required text on
+disk. Blank sources with blank or absent disk targets need no translation text;
+count them separately from physically present nonempty target strings. Use exact counts, not rounded progress. An explicit option includes covered
 groups for Collection curation. Saved Review/Changed text is not disk coverage;
 coverage does not imply quality approval.
 

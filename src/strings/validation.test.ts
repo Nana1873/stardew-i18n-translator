@@ -330,3 +330,32 @@ describe("validate", () => {
     ).not.toContain("escape-suspicious");
   });
 });
+
+it.each(["", " ", "\t\r\n", "\u00a0"])(
+  "does not warn for blank source and target %j, present or absent",
+  (blank) => {
+    expect(validate(blank, blank, true)).toEqual([]);
+    expect(validate(blank, blank, false)).toEqual([]);
+    expect(
+      validate("New title", blank, true).map((issue) => issue.ruleId),
+    ).toEqual(["empty-target"]);
+    expect(validate("New title", blank, false)).toEqual([]);
+  },
+);
+
+it("keeps token errors for whitespace targets when the source contains text", () => {
+  expect(validate("{{name}}", " ", true).map((issue) => issue.ruleId)).toEqual([
+    "token-missing",
+    "empty-target",
+  ]);
+  expect(validate("{{name}}", " ", false).map((issue) => issue.ruleId)).toEqual(
+    ["token-missing"],
+  );
+});
+
+it("classifies NEL as blank and BOM as text like the native scanner", () => {
+  expect(validate("\u0085", "\u0085", true)).toEqual([]);
+  expect(validate("\uFEFF", "", true).map((issue) => issue.ruleId)).toEqual([
+    "empty-target",
+  ]);
+});

@@ -22,6 +22,13 @@ component keeps the last complete baseline; comparison counts are unavailable
 until a complete scan succeeds. Expected community-language-pack exclusions
 do not make a scan incomplete.
 
+If the source and translation are both empty or whitespace-only, no translation
+text is needed: the row counts as Done without saving or changing either value.
+It stays visible. If a mod update later fills the source and the translation is
+still blank, the row becomes Open again. Missing target keys are not proof of an
+installed translation. Export continues to omit blank target values; its existing
+backup and empty-file removal behavior is unchanged.
+
 ## Find translations on Nexus
 
 This workflow is currently for local testing. Nexus is optional: configure an
@@ -34,8 +41,9 @@ readiness. **Test existing key** and **Validate and save key** contact Nexus.
 
 Use **Find translations on Nexus**, or enable discovery after scans. Searches use Nexus
 update IDs and the selected language, never your local translation text. Shared
-IDs are searched once. Groups with complete language-file coverage on disk are
-skipped by default. Review drafts alone do not count as installed coverage.
+IDs are searched once. Groups with no missing required text on disk are skipped
+by default. Empty sources need no translation text; local coverage lists them
+separately from actual nonempty translation strings. Review drafts alone do not count as installed coverage.
 Coverage is not a quality or compatibility guarantee.
 An existing translation can still be incomplete and appear in the results.
 Each row shows the exact local coverage and missing-string count; this is not a
@@ -64,7 +72,7 @@ The newest suitable file is a selection hint, not proof that it matches your
 installed mod. Search metadata is cached locally for 24 hours.
 Each row has an **Open Nexus Link** button for the translation's Nexus files
 page. Search totals use compact counters for checked IDs, mods with downloads,
-confirmed searches without a suitable download, fully translated groups skipped,
+confirmed searches without a suitable download, groups without missing text skipped,
 components without a Nexus ID, and failed checks. Pending or failed checks do not
 count as confirmed searches without a download. **Refresh search** requests
 fresh results.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NexusArchive, NexusFile, ScannedMod } from "../tauri/commands";
 import {
   resolveArchiveTranslations,
+  nexusSourceDiskCoverage,
   selectTranslationFile,
   translationFileOptions,
 } from "./resolveTranslation";
@@ -312,4 +313,43 @@ describe("archive mapping", () => {
     expect(result.mappings).toEqual([]);
     expect(result.choices).toEqual([]);
   });
+});
+
+it("separates blank sources from physically present disk text in Nexus coverage", () => {
+  const coverage = nexusSourceDiskCoverage(
+    [
+      mod("blank.mod", {
+        totalKeys: 2,
+        translatedKeys: 2,
+        noTranslationNeededKeys: 0,
+        diskTranslatedKeys: 0,
+        diskNoTranslationNeededKeys: 2,
+      }),
+    ],
+    10,
+    [],
+    true,
+  );
+  expect(coverage).toMatchObject({
+    total: 2,
+    covered: 0,
+    noTextNeeded: 2,
+    missing: 0,
+    complete: true,
+  });
+  expect(
+    nexusSourceDiskCoverage(
+      [
+        mod("blank.mod", {
+          totalKeys: 2,
+          translatedKeys: 2,
+          diskTranslatedKeys: 0,
+          diskNoTranslationNeededKeys: 1,
+        }),
+      ],
+      10,
+      [],
+      true,
+    ),
+  ).toMatchObject({ covered: 0, missing: 1, complete: false });
 });

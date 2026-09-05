@@ -524,3 +524,24 @@ describe("ModList", () => {
     expect(screen.getAllByRole("treeitem")).toHaveLength(4);
   });
 });
+
+it("includes no-text-needed work in progress without claiming translated strings", () => {
+  render(
+    <ModList
+      mods={[
+        mod({
+          uniqueId: "blank",
+          totalKeys: 2,
+          translatedKeys: 1,
+          noTranslationNeededKeys: 1,
+          progress: 1,
+        }),
+      ]}
+      selectedId={null}
+      onSelect={vi.fn()}
+    />,
+  );
+  const item = screen.getByRole("treeitem", { name: /blank/ });
+  expect(item).toHaveAttribute("data-mod-progress", "2 / 2 · 100%");
+  expect(item.getAttribute("title")).toContain("1 need no translation text");
+});

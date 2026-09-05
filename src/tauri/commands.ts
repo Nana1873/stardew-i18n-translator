@@ -225,6 +225,10 @@ export interface ScannedI18nFile {
   targetExists: boolean;
   totalKeys: number;
   translatedKeys: number;
+  /** Blank source and working target; no text required, not a saved approval. */
+  noTranslationNeededKeys?: number;
+  /** Blank source and blank/absent disk target; not physical file evidence. */
+  diskNoTranslationNeededKeys?: number;
   /** Deployed JSON coverage, independent of saved app drafts. */
   diskTranslatedKeys?: number;
   stateDiskDifferences?: number;
@@ -242,6 +246,10 @@ export interface ScannedMod {
   i18nFiles: ScannedI18nFile[];
   totalKeys: number;
   translatedKeys: number;
+  /** Blank source and working target; no text required, not a saved approval. */
+  noTranslationNeededKeys?: number;
+  /** Blank source and blank/absent disk target; not physical file evidence. */
+  diskNoTranslationNeededKeys?: number;
   diskTranslatedKeys?: number;
   stateDiskDifferences?: number;
   /** Unreviewed AI suggestions across all i18n files (dashboard queue). */

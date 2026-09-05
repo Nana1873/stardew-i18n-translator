@@ -321,7 +321,7 @@ it("excludes a positively deployed exact file despite incomplete local coverage"
     }),
   ).toBeDisabled();
   expect(
-    screen.getByText("Groups skipped · fully translated / already installed")
+    screen.getByText("Groups skipped · no missing text / already installed")
       .parentElement,
   ).toHaveTextContent("4 / 1");
   expect(
@@ -887,7 +887,7 @@ it("counts failed original groups once and never counts pending metadata as no s
   expect(metric("No suitable download found")).toBe("1");
   expect(metric("Mods with downloads")).toBe("0");
   expect(metric("IDs checked")).toBe("3/5");
-  expect(metric("Groups skipped · fully translated / already installed")).toBe(
+  expect(metric("Groups skipped · no missing text / already installed")).toBe(
     "4 / 0",
   );
   expect(metric("Components without Nexus ID")).toBe("2");
@@ -926,4 +926,26 @@ it("keeps link failures separate from download eligibility and successful receip
     screen.queryByRole("button", { name: "Retry" }),
   ).not.toBeInTheDocument();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+});
+
+it("labels no-text-needed sources separately from physical local strings", async () => {
+  mount({
+    mods: [
+      {
+        ...mods[0],
+        totalKeys: 3,
+        diskTranslatedKeys: 0,
+        diskNoTranslationNeededKeys: 2,
+      },
+    ],
+  });
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    translationRow().getByText(
+      "Local translation: 0/3 strings · 2 need no translation text · 1 missing",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText("Available translation files are already installed."),
+  ).not.toBeInTheDocument();
 });

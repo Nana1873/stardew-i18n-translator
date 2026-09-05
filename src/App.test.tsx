@@ -5230,3 +5230,55 @@ describe("App shell", () => {
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 });
+
+it("keeps App work progress and export eligibility coherent after clearing a personal blank-source target", async () => {
+  const scan = exportScan(true);
+  mockConfigured(scan);
+  const original = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+    if (cmd === "load_strings")
+      return Promise.resolve([
+        {
+          key: "blank",
+          source: "",
+          target: "Personal",
+          targetPresent: true,
+          status: "translated",
+          tokenMismatchAccepted: false,
+        },
+      ]);
+    return original(cmd, ...args);
+  });
+  render(<App />);
+  openWorkspace();
+  await screen.findByText("blank");
+  fireEvent.doubleClick(screen.getByText("blank"));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "German translation" }),
+    { target: { value: "" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(screen.getByRole("treeitem", { name: /Test Mod/ })).toHaveAttribute(
+      "data-mod-progress",
+      "1 / 1 · 100%",
+    ),
+  );
+  expect(screen.getByText("1 / 1 covered · 100%")).toBeInTheDocument();
+  chooseToolbarAction("Export actions", "Export current mod");
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Confirm export overwrite",
+  });
+  const eligible =
+    within(confirmation).getByText("currently eligible").parentElement;
+  const open = within(confirmation).getByText("currently open").parentElement;
+  expect(eligible).toHaveTextContent("0");
+  expect(open).toHaveTextContent("0");
+  expect(
+    invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+  ).toHaveLength(1);
+  expect(invokeMock).toHaveBeenCalledWith(
+    "save_string",
+    expect.objectContaining({ target: "", status: "untranslated" }),
+  );
+});
