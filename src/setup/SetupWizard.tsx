@@ -2,8 +2,7 @@
  * First-run setup wizard.
  *
  * Modal, 4 steps: Stardew folder, Mods folder, languages, optional glossary.
- * The Mods-folder step is a generic folder override only, not mod-manager
- * integration.
+ * The Mods-folder step also selects how Nexus translations are added.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -26,6 +25,10 @@ import {
 import { useDialogAccessibility } from "../dialogAccessibility";
 
 import { NexusSetup } from "../nexus/NexusSetup";
+import {
+  InstallationSettings,
+  installationMethodFor,
+} from "./InstallationSettings";
 
 type Step = 1 | 2 | 3 | 4;
 
@@ -54,6 +57,9 @@ export function SetupWizard({
   onCancel,
   onNexusKeySaved,
 }: SetupWizardProps) {
+  const [installationMethod, setInstallationMethod] = useState(() =>
+    installationMethodFor(initial),
+  );
   const [vortexExecutable, setVortexExecutable] = useState(
     initial?.vortexExecutable ?? null,
   );
@@ -210,10 +216,12 @@ export function SetupWizard({
     setError(null);
     try {
       await onComplete({
+        ...initial,
         stardewPath,
         modsPath,
         nexusSearchOnScan,
         vortexExecutable,
+        installationMethod,
         sourceLang: "default",
         targetLang,
       });
@@ -324,6 +332,13 @@ export function SetupWizard({
                   title="Choose your Mods folder"
                   description="This is the folder the app scans for translatable i18n files."
                 />
+                <InstallationSettings
+                  method={installationMethod}
+                  onMethodChange={setInstallationMethod}
+                  executable={vortexExecutable}
+                  onExecutableChange={setVortexExecutable}
+                  disabled={busy}
+                />
                 <div className="setup__note">
                   The recommended location is{" "}
                   <code>&lt;Stardew Valley&gt;/Mods</code>. Change it only when
@@ -380,8 +395,6 @@ export function SetupWizard({
             {step === 4 && (
               <section aria-label="Glossary">
                 <NexusSetup
-                  vortexExecutable={vortexExecutable}
-                  onVortexExecutableChange={setVortexExecutable}
                   searchOnScan={nexusSearchOnScan}
                   onSearchOnScanChange={setNexusSearchOnScan}
                   onKeySaved={onNexusKeySaved}

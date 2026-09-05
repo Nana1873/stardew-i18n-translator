@@ -2320,6 +2320,7 @@ export function App() {
             skippedComponents={scan.skippedComponents}
             traversalComplete={scan.traversalComplete === true}
             vortexExecutable={settings.vortexExecutable}
+            installationMethod={settings.installationMethod}
             onCheckInstalled={async () => {
               const result = await runScan(settings, false, () => true, {
                 nexusSearch: false,
@@ -2849,7 +2850,7 @@ function AppToolbar({
               ? "Search Nexus for possible translations; nothing downloads automatically"
               : `${nexusResultCount} possible translations found. Open search results; nothing downloads automatically.`
           }
-          aria-label="Find translations"
+          aria-label="Find translations on Nexus Mods"
         >
           <SearchIcon aria-hidden />
           <span className="translator-action-label-compact">
@@ -2857,7 +2858,7 @@ function AppToolbar({
               ? "Finding translations…"
               : nexusResultCount !== null
                 ? `Translations (${nexusResultCount})`
-                : "Find translations"}
+                : "Find translations on Nexus Mods"}
           </span>
         </button>
         <button

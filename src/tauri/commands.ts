@@ -70,6 +70,8 @@ export interface WorkspaceSettings {
 }
 
 export interface AppSettings {
+  /** Saved installation workflow; absent only in older configurations. */
+  installationMethod?: "folder" | "vortex";
   stardewPath: string | null;
   modsPath: string | null;
   sourceLang: string;

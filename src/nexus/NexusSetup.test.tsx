@@ -63,28 +63,3 @@ it("does not echo credential-bearing failures", async () => {
     "synthetic-secret",
   );
 });
-
-it("chooses the validated Vortex executable without launching or saving it", async () => {
-  const change = vi.fn();
-  invoke.mockImplementation((cmd: string) =>
-    Promise.resolve(
-      cmd === "pick_vortex_executable"
-        ? "C:/Tools/Vortex/Vortex.exe"
-        : { configured: false, premium: false },
-    ),
-  );
-  render(
-    <NexusSetup
-      searchOnScan={false}
-      onSearchOnScanChange={() => {}}
-      onVortexExecutableChange={change}
-    />,
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Choose Vortex.exe" }));
-  await waitFor(() =>
-    expect(change).toHaveBeenCalledWith("C:/Tools/Vortex/Vortex.exe"),
-  );
-  expect(
-    invoke.mock.calls.some(([cmd]) => /handoff|save_settings/.test(cmd)),
-  ).toBe(false);
-});

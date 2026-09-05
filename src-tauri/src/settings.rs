@@ -22,9 +22,20 @@ use serde::{Deserialize, Serialize};
 
 const SETTINGS_FILE: &str = "settings.json";
 
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum InstallationMethod {
+    #[default]
+    Folder,
+    Vortex,
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
+    /// None is accepted for legacy migration; normalized settings always contain a method.
+    #[serde(default)]
+    pub installation_method: Option<InstallationMethod>,
     #[serde(default)]
     pub vortex_executable: Option<String>,
     #[serde(default)]
@@ -218,6 +229,7 @@ fn default_status_filter() -> String {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            installation_method: Some(InstallationMethod::Folder),
             vortex_executable: None,
             stardew_path: None,
             mods_path: None,
@@ -354,6 +366,17 @@ fn parse_and_normalize(body: &str, validate_llm: bool) -> Result<AppSettings, St
 }
 
 fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSettings, String> {
+    settings.installation_method = Some(settings.installation_method.unwrap_or_else(|| {
+        if settings
+            .vortex_executable
+            .as_deref()
+            .is_some_and(|path| !path.trim().is_empty())
+        {
+            InstallationMethod::Vortex
+        } else {
+            InstallationMethod::Folder
+        }
+    }));
     if settings.source_lang != "default" {
         return Err("The source language must be default (English).".to_string());
     }
@@ -463,6 +486,89 @@ mod tests {
     use super::*;
 
     #[test]
+    fn installation_method_migrates_only_when_missing_or_null() {
+        for (body, expected) in [
+            (r#"{}"#, InstallationMethod::Folder),
+            (r#"{"vortexExecutable":"   "}"#, InstallationMethod::Folder),
+            (
+                r#"{"vortexExecutable":"C:\\Tools\\Vortex.exe"}"#,
+                InstallationMethod::Vortex,
+            ),
+            (
+                r#"{"installationMethod":null,"vortexExecutable":"C:\\Tools\\Vortex.exe"}"#,
+                InstallationMethod::Vortex,
+            ),
+            (
+                r#"{"installationMethod":"folder","vortexExecutable":"C:\\Tools\\Vortex.exe"}"#,
+                InstallationMethod::Folder,
+            ),
+            (
+                r#"{"installationMethod":"vortex"}"#,
+                InstallationMethod::Vortex,
+            ),
+        ] {
+            let settings = parse_and_normalize(body, false).unwrap();
+            assert_eq!(settings.installation_method, Some(expected), "{body}");
+            assert_eq!(normalize(settings.clone(), true).unwrap(), settings);
+        }
+        assert_eq!(
+            AppSettings::default().installation_method,
+            Some(InstallationMethod::Folder)
+        );
+    }
+
+    #[test]
+    fn installation_method_roundtrips_and_explicit_folder_retains_executable() {
+        let dir = crate::test_support::temp_dir("settings-installation-method");
+        for method in [InstallationMethod::Folder, InstallationMethod::Vortex] {
+            let settings = AppSettings {
+                installation_method: Some(method),
+                vortex_executable: Some(r"C:\Tools\Vortex.exe".into()),
+                ..Default::default()
+            };
+            save(&dir, &settings).unwrap();
+            assert_eq!(load_checked(&dir).unwrap(), settings);
+            let stored: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap())
+                    .unwrap();
+            assert_eq!(
+                stored["installationMethod"],
+                serde_json::to_value(method).unwrap()
+            );
+        }
+    }
+
+    #[test]
+    fn saving_legacy_installation_choice_persists_normalized_method() {
+        let dir = crate::test_support::temp_dir("settings-installation-legacy");
+        let legacy: AppSettings =
+            serde_json::from_str(r#"{"vortexExecutable":"C:\\Tools\\Vortex.exe"}"#).unwrap();
+        assert!(legacy.installation_method.is_none());
+        save(&dir, &legacy).unwrap();
+        assert_eq!(
+            load_checked(&dir).unwrap().installation_method,
+            Some(InstallationMethod::Vortex)
+        );
+        let saved: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap()).unwrap();
+        assert_eq!(saved["installationMethod"], "vortex");
+    }
+
+    #[test]
+    fn unsupported_installation_methods_fail_instead_of_inferring_vortex() {
+        for method in [
+            serde_json::json!("mo2"),
+            serde_json::json!("Folder"),
+            serde_json::json!(""),
+            serde_json::json!(42),
+            serde_json::json!(true),
+        ] {
+            let body = serde_json::json!({"installationMethod":method,"vortexExecutable":"C:\\Tools\\Vortex.exe"}).to_string();
+            assert!(parse_and_normalize(&body, false).is_err());
+        }
+    }
+
+    #[test]
     fn default_source_language_is_english() {
         assert_eq!(AppSettings::default().source_lang, "default");
         assert!(AppSettings::default().target_lang.is_none());
@@ -478,6 +584,7 @@ mod tests {
     fn save_then_load_roundtrips() {
         let dir = crate::test_support::temp_dir("settings-roundtrip");
         let settings = AppSettings {
+            installation_method: Some(InstallationMethod::Folder),
             nexus_search_on_scan: false,
             vortex_executable: None,
             stardew_path: Some(r"E:\SteamLibrary\steamapps\common\Stardew Valley".to_string()),

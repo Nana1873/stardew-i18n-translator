@@ -16,10 +16,10 @@ import {
   type SkippedComponent,
 } from "../tauri/commands";
 import {
-  selectTranslationFile,
   resolveArchiveTranslations,
   nexusSourceDiskCoverage,
 } from "./resolveTranslation";
+import { fileChoices, useNexusFiles } from "./useNexusFiles";
 import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
 
 const quiet = "translator-button translator-button-quiet";
@@ -44,16 +44,10 @@ interface RowState {
   status?: string;
   intent?: "vortex" | "review";
   handoff?: { at: number; before: ReturnType<typeof nexusSourceDiskCoverage> };
-  fileVersion?: string;
-  fileDate?: string;
   error?: string;
-  free?: boolean;
-  files?: NexusFile[];
-  selectedFile?: string;
   selectedArchive?: NexusFile;
   archive?: NexusArchive;
   downloadedAt?: number;
-  fileName?: string;
   choices?: MappingChoice[];
   selected?: Record<number, string>;
   confirmed?: Record<number, boolean>;
@@ -132,12 +126,14 @@ export function NexusDialog({
   onImported,
   onOpenReview,
   vortexExecutable,
+  installationMethod,
   onCheckInstalled,
   skippedComponents = [],
   traversalComplete = false,
 }: {
   open?: boolean;
   vortexExecutable?: string | null;
+  installationMethod?: "folder" | "vortex";
   onCheckInstalled?: () => Promise<void>;
   search: NexusSearchState;
   mods: ScannedMod[];
@@ -155,31 +151,40 @@ export function NexusDialog({
   onImported: () => Promise<void>;
   onOpenReview?: (modUniqueId: string) => void;
 }) {
-  const [destination, setDestination] = useState<"review" | "vortex">(
-    vortexExecutable ? "vortex" : "review",
-  );
-  const [includeComplete, setIncludeComplete] = useState(false);
+  const configuredVortex = vortexExecutable?.trim();
+  const method = installationMethod ?? (configuredVortex ? "vortex" : "folder");
+  const isVortex = method === "vortex";
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const [rows, setRows] = useState<Record<string, RowState>>({});
-  const [checked, setChecked] = useState<Record<number, boolean>>({});
-  const [candidateSelections, setCandidateSelections] = useState<
-    Record<number, string>
-  >({});
+  const [fileSelections, setFileSelections] = useState<Record<number, string>>(
+    {},
+  );
   const [batchRunning, setBatchRunning] = useState(false);
   const batchRef = useRef(false);
   const stopBatchRef = useRef(false);
   const [active, setActive] = useState<string | null>(null);
   const activeRef = useRef<string | null>(null);
   const generation = useRef(0);
-  const [now, setNow] = useState(Date.now);
-  useEffect(
-    () => () => {
+  const mounted = useRef(true);
+  const actionContext = useRef(`${targetLang}|${method}`);
+  useEffect(() => {
+    const next = `${targetLang}|${method}`;
+    if (actionContext.current !== next) {
+      actionContext.current = next;
       generation.current++;
-    },
-    [],
-  );
+      setFileSelections({});
+    }
+  }, [targetLang, method]);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      generation.current++;
+    };
+  }, []);
   useEffect(() => {
     if (!open) return;
     setNow(Date.now());
@@ -217,7 +222,7 @@ export function NexusDialog({
     if (activeRef.current) return;
     activeRef.current = key;
     setActive(key);
-    patch(key, { error: undefined, free: false });
+    patch(key, { error: undefined });
     const stamp = generation.current;
     const current = () => stamp === generation.current;
     try {
@@ -227,8 +232,8 @@ export function NexusDialog({
     } finally {
       if (current()) {
         patch(key, { status: undefined });
-        setActive(null);
       }
+      if (mounted.current) setActive(null);
       activeRef.current = null;
     }
   }
@@ -302,7 +307,6 @@ export function NexusDialog({
   ) {
     patch(key, {
       status: `Downloading ${file.fileName}…`,
-      files: undefined,
       choices: undefined,
       completed: false,
     });
@@ -319,9 +323,6 @@ export function NexusDialog({
       archive,
       downloadedAt: Date.now(),
       selectedArchive: file,
-      fileName: file.fileName,
-      fileVersion: file.version,
-      fileDate: file.uploadedAt,
       downloads: row.downloads + 1,
       choices: resolved.choices,
       selected: {},
@@ -335,97 +336,43 @@ export function NexusDialog({
     await importMappings(key, resolved.mappings, current);
     if (current()) patch(key, { completed: true });
   }
+
   async function startReview(
     key: string,
     sourceId: number,
     candidate: NexusCandidate,
-    chosenFile?: NexusFile,
+    file: NexusFile,
   ) {
     await run(key, async (current) => {
-      patch(key, { intent: "review" });
-      if (chosenFile && !chosenFile.fileName.toLowerCase().endsWith(".zip"))
+      if (!file.fileName.toLowerCase().endsWith(".zip"))
         throw new Error(
-          "The selected archive is not a ZIP. Personal Review import requires ZIP; use Vortex for this selected file.",
+          "The selected archive is not a ZIP. Review import requires ZIP; the selected file was not replaced.",
         );
-      if (chosenFile) {
-        await downloadAndImport(key, sourceId, candidate, chosenFile, current);
-        return;
-      }
-      patch(key, {
-        status: "Finding the matching ZIP…",
-        files: undefined,
-        choices: undefined,
-        completed: false,
-        notice: undefined,
-      });
-      const [status, files] = await Promise.all([
-        nexusStatus(true),
-        nexusListFiles(candidate.modId),
-      ]);
+      patch(key, { intent: "review", status: "Checking download access…" });
+      const status = await nexusStatus(true);
       if (!current()) return;
-      if (!status.premium) {
-        patch(key, {
-          free: true,
-          error: "Direct import requires Nexus Premium.",
-        });
-        return;
-      }
-      const selection = selectTranslationFile(files, targetLang);
-      if (selection.kind === "unavailable") throw new Error(selection.reason);
-      if (selection.kind === "choice") {
-        patch(key, {
-          files: selection.files,
-          selectedFile: "",
-          notice: selection.reason,
-        });
-        return;
-      }
-      await downloadAndImport(
-        key,
-        sourceId,
-        candidate,
-        selection.file,
-        current,
-      );
+      if (!status.premium)
+        throw new Error(
+          "Direct import requires Nexus Premium. Open Nexus files for a manual download.",
+        );
+      await downloadAndImport(key, sourceId, candidate, file, current);
     });
   }
   async function requestHandoff(
     key: string,
     sourceId: number,
     candidate: NexusCandidate,
-    chosenFile?: NexusFile,
+    file: NexusFile,
   ) {
     await run(key, async (current) => {
-      if (!vortexExecutable)
-        throw new Error("Choose Vortex.exe in Nexus settings first.");
+      if (!configuredVortex)
+        throw new Error("Choose Vortex.exe in installation settings first.");
       patch(key, {
         intent: "vortex",
-        status: "Selecting the latest suitable archive…",
-        files: undefined,
+        status: "Sending to Vortex…",
         choices: undefined,
       });
-      const selection = chosenFile
-        ? { kind: "selected" as const, file: chosenFile }
-        : selectTranslationFile(
-            await nexusListFiles(candidate.modId),
-            targetLang,
-            "vortex",
-          );
-      if (!current()) return;
-      if (selection.kind === "unavailable") throw new Error(selection.reason);
-      if (selection.kind === "choice") {
-        patch(key, {
-          files: selection.files,
-          selectedFile: "",
-          notice: selection.reason,
-        });
-        return;
-      }
-      patch(key, { status: "Requesting Vortex handoff…" });
-      const receipt = await nexusHandoffToVortex(
-        candidate.modId,
-        selection.file.fileId,
-      );
+      const receipt = await nexusHandoffToVortex(candidate.modId, file.fileId);
       if (!current()) return;
       if (receipt.status !== "handoff-requested")
         throw new Error("Vortex handoff was not confirmed by the launcher.");
@@ -439,11 +386,7 @@ export function NexusDialog({
             traversalComplete,
           ),
         },
-        selectedArchive: selection.file,
-        fileName: selection.file.fileName,
-        fileVersion: selection.file.version,
-        fileDate: selection.file.uploadedAt,
-        files: undefined,
+        selectedArchive: file,
         completed: false,
       });
     });
@@ -485,37 +428,17 @@ export function NexusDialog({
     };
   }
   const locked = Boolean(active) || batchRunning || checking;
-  function candidatesFor(entry: NexusSearchEntry) {
-    return [...(entry.result?.candidates ?? [])].sort(
+  const candidatesFor = (entry: NexusSearchEntry) =>
+    [...(entry.result?.candidates ?? [])].sort(
       (a, b) =>
         Number(a.relationshipTier !== "possible-original-translation") -
           Number(b.relationshipTier !== "possible-original-translation") ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
-  }
-  function selectedCandidate(entry: NexusSearchEntry): NexusCandidate {
-    const candidates = candidatesFor(entry);
-    const selection = candidateSelections[entry.modId];
-    return (
-      (selection !== "original"
-        ? (candidates.find(
-            (candidate) => String(candidate.modId) === selection,
-          ) ?? candidates[0])
-        : null) ?? {
-        modId: entry.modId,
-        name: entry.result?.originalName ?? entry.localNames.join(", "),
-        summary: "Original mod files; contents are checked before import.",
-        version: "",
-        updatedAt: "",
-        relationshipTier: "possible-original-translation",
-      }
-    );
-  }
-  const found = search.entries.filter(
+  const sources = search.entries.filter(
     (entry) =>
       entry.result?.candidates.length &&
-      (includeComplete ||
-        handedOffIds.includes(entry.modId) ||
+      (handedOffIds.includes(entry.modId) ||
         !nexusSourceDiskCoverage(
           mods,
           entry.modId,
@@ -523,97 +446,119 @@ export function NexusDialog({
           traversalComplete,
         )?.complete),
   );
-  const other = search.entries.filter(
-    (entry) => !entry.result?.candidates.length,
+  const fileMetadata = useNexusFiles(
+    sources.flatMap((entry) =>
+      candidatesFor(entry).map((candidate) => candidate.modId),
+    ),
+    open,
+    `${targetLang}|${method}`,
   );
-  const selectedEntries = found.filter(
-    (entry) =>
-      checked[entry.modId] &&
-      (!candidateSelections[entry.modId] ||
-        candidateSelections[entry.modId] === "original" ||
-        entry.result?.candidates.some(
-          (candidate) =>
-            String(candidate.modId) === candidateSelections[entry.modId],
-        )),
-  );
-  useEffect(() => {
-    const available = new Map(
-      search.entries.map((entry) => [String(entry.modId), entry]),
+  const groups = sources.map((entry) => {
+    const candidates = candidatesFor(entry);
+    const options = candidates.flatMap((candidate) => {
+      const files = fileMetadata.entries[candidate.modId]?.files;
+      if (!files) return [];
+      const choices = fileChoices(files, targetLang, isVortex);
+      return choices.files.map((file) => ({
+        candidate,
+        file,
+        value: `${candidate.modId}:${file.fileId}`,
+        recommended: file.fileId === choices.recommended,
+      }));
+    });
+    // Only the best-ranked candidate may supply a default. Variants need explicit selection.
+    const preferred = options.find(
+      (option) =>
+        option.candidate.modId === candidates[0]?.modId && option.recommended,
     );
-    const valid = (id: string) => {
-      const entry = available.get(id);
-      const selected = candidateSelections[Number(id)];
-      return Boolean(
-        entry &&
-        (!selected ||
-          selected === "original" ||
-          entry.result?.candidates.some(
-            (candidate) => String(candidate.modId) === selected,
-          )),
-      );
+    const value =
+      fileSelections[entry.modId] ??
+      (options.length === 1 ? options[0].value : (preferred?.value ?? ""));
+    const selected = options.find((option) => option.value === value);
+    const key = selected
+      ? `${entry.modId}:${selected.value}`
+      : `${entry.modId}:pending`;
+    const row = rows[key] ?? emptyRow();
+    return {
+      entry,
+      candidates,
+      options,
+      selected,
+      value,
+      key,
+      row,
+      loading: candidates.some(
+        (candidate) => !fileMetadata.entries[candidate.modId],
+      ),
+      errors: candidates.flatMap((candidate) =>
+        fileMetadata.entries[candidate.modId]?.error
+          ? [
+              `${candidate.name}: ${fileMetadata.entries[candidate.modId].error}`,
+            ]
+          : [],
+      ),
     };
-    setChecked((previous) => {
-      const next = Object.fromEntries(
-        Object.entries(previous).filter(([id]) => valid(id)),
-      );
-      return Object.keys(next).length === Object.keys(previous).length
-        ? previous
-        : next;
-    });
-    setCandidateSelections((previous) => {
-      const next = Object.fromEntries(
-        Object.entries(previous).filter(([id]) => valid(id)),
-      );
-      return Object.keys(next).length === Object.keys(previous).length
-        ? previous
-        : next;
-    });
-  }, [search.entries, candidateSelections]);
-  async function sendSelected() {
+  });
+  const shown = groups.filter((group) => group.options.length > 0);
+  const metadataErrors = groups.reduce(
+    (sum, group) => sum + group.errors.length,
+    0,
+  );
+  const discoveryErrors = search.entries.filter((entry) => entry.error).length;
+  const unavailableCount = metadataErrors + discoveryErrors;
+  const loading = groups.some((group) => group.loading);
+  const unresolved = shown.some((group) => !group.selected);
+  const pending = shown.filter(
+    (group) =>
+      group.selected &&
+      !group.row.handoff &&
+      !group.row.completed &&
+      !group.row.choices?.length &&
+      !group.row.error,
+  );
+  async function downloadAll(queue = pending) {
     if (activeRef.current || batchRef.current) return;
-    const queue = selectedEntries.map((entry) => ({
-      sourceId: entry.modId,
-      candidate: { ...selectedCandidate(entry) },
-      state: rows[`${entry.modId}:${selectedCandidate(entry).modId}`],
-    }));
+    const snapshot = queue.flatMap((group) =>
+      group.selected
+        ? [
+            {
+              key: group.key,
+              sourceId: group.entry.modId,
+              candidate: { ...group.selected.candidate },
+              file: { ...group.selected.file },
+            },
+          ]
+        : [],
+    );
     const stamp = generation.current;
     batchRef.current = true;
     stopBatchRef.current = false;
     setBatchRunning(true);
     try {
-      for (const item of queue) {
+      for (const item of snapshot) {
         if (stamp !== generation.current || stopBatchRef.current) break;
-
-        const chosenFile =
-          item.state?.files?.find(
-            (file) => String(file.fileId) === item.state?.selectedFile,
-          ) ?? item.state?.selectedArchive;
-        if (item.state?.files?.length && !chosenFile) continue;
-        if (destination === "review" && item.state?.choices?.length) continue;
-        await (destination === "vortex" ? requestHandoff : startReview)(
-          `${item.sourceId}:${item.candidate.modId}`,
+        await (isVortex ? requestHandoff : startReview)(
+          item.key,
           item.sourceId,
           item.candidate,
-          chosenFile ? { ...chosenFile } : undefined,
+          item.file,
         );
       }
     } finally {
       batchRef.current = false;
-      if (stamp === generation.current) setBatchRunning(false);
+      if (mounted.current) setBatchRunning(false);
     }
   }
-  function renderRow(entry: NexusSearchEntry) {
+  function renderRow(group: (typeof groups)[number]) {
+    const { entry, selected, key, row } = group;
     const sourceId = entry.modId;
-    const candidate = selectedCandidate(entry);
-    const candidates = candidatesFor(entry);
-    const key = `${sourceId}:${candidate.modId}`;
-    const row = rows[key] ?? emptyRow();
+    const candidate = selected?.candidate ?? group.candidates[0];
+    const sourceName =
+      entry.result?.originalName ?? entry.localNames.join(", ");
+    const file = selected?.file;
     const expired = Boolean(
       row.downloadedAt && now - row.downloadedAt >= 15 * 60_000,
     );
-    const awaiting = Boolean(row.files?.length || row.choices?.length);
-    const sourceName =
-      entry.result?.originalName ?? entry.localNames.join(", ");
     const disk = nexusSourceDiskCoverage(
       mods,
       sourceId,
@@ -624,239 +569,146 @@ export function NexusDialog({
     const rechecked = Boolean(
       row.handoff && checkedAt && checkedAt >= row.handoff.at,
     );
-    const chosenFile = row.files?.find(
-      (file) => String(file.fileId) === row.selectedFile,
-    );
-    const displayedVersion =
-      chosenFile?.version ?? row.fileVersion ?? candidate.version;
-    const displayedDate =
-      chosenFile?.uploadedAt ?? row.fileDate ?? candidate.updatedAt;
-    const displayedFileName = chosenFile?.fileName ?? row.fileName;
-    const originalVersion = mods.find(
-      (mod) => mod.nexusId === sourceId,
-    )?.version;
+    const version = mods.find((mod) => mod.nexusId === sourceId)?.version;
     return (
       <Fragment key={sourceId}>
         <tr aria-label={sourceName}>
           <td>
-            <input
-              type="checkbox"
-              aria-label={`Select ${sourceName}`}
-              checked={checked[sourceId] ?? false}
-              disabled={locked || !candidates.length}
-              onChange={(event) =>
-                setChecked((previous) => ({
-                  ...previous,
-                  [sourceId]: event.target.checked,
-                }))
-              }
-            />
-          </td>
-          <td>
             <strong>{sourceName}</strong>
-            {originalVersion && (
-              <small>
-                Installed v{originalVersion.replace(/^v(?=\d)/i, "")}
-              </small>
+            {version && (
+              <small>Installed v{version.replace(/^v(?=\d)/i, "")}</small>
             )}
           </td>
           <td>
-            {candidates.length > 1 ? (
+            {group.options.length > 1 ? (
               <select
-                title={candidate.name}
-                aria-label={`Translation for ${sourceName}`}
-                disabled={locked}
-                value={
-                  candidateSelections[sourceId] ?? String(candidates[0].modId)
+                aria-label={`Translation file for ${sourceName}`}
+                title={
+                  selected
+                    ? `${selected.candidate.name} · ${selected.file.fileName}`
+                    : "Choose a translation version"
                 }
+                disabled={locked}
+                value={group.value}
                 onChange={(event) =>
-                  setCandidateSelections((previous) => ({
+                  setFileSelections((previous) => ({
                     ...previous,
                     [sourceId]: event.target.value,
                   }))
                 }
               >
-                {candidates.map((item) => (
-                  <option key={item.modId} value={item.modId}>
-                    {item.name}
-                  </option>
+                <option value="">Choose translation version…</option>
+                {group.candidates.map((item) => (
+                  <optgroup key={item.modId} label={item.name}>
+                    {group.options
+                      .filter((option) => option.candidate.modId === item.modId)
+                      .map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.file.name} ·{" "}
+                          {metadataLine(
+                            option.file.version,
+                            option.file.uploadedAt,
+                          )}
+                          {option.recommended ? " · recommended" : ""}
+                        </option>
+                      ))}
+                  </optgroup>
                 ))}
-                <option value="original">Original mod files</option>
               </select>
             ) : (
-              <strong className="nexus-selected-title">{candidate.name}</strong>
-            )}
-            <small>
-              {metadataLine(displayedVersion, displayedDate)}
-              {candidate.relationshipTier ===
-              "possible-addon-or-other-translation"
-                ? " · possible add-on"
-                : ""}
-            </small>
-            {row.files?.length ? (
               <>
-                <select
-                  aria-label={`Archive variant for ${candidate.name}`}
-                  value={row.selectedFile ?? ""}
-                  disabled={locked}
-                  onChange={(event) =>
-                    patch(key, { selectedFile: event.target.value })
-                  }
-                >
-                  <option value="">Choose archive variant…</option>
-                  {row.files.map((file) => (
-                    <option key={file.fileId} value={file.fileId}>
-                      {file.name} · {file.version}
-                    </option>
-                  ))}
-                </select>
-                {row.intent === "review" && (
-                  <button
-                    type="button"
-                    className={quiet}
-                    disabled={locked || !chosenFile}
-                    onClick={() =>
-                      void startReview(key, sourceId, candidate, chosenFile)
-                    }
-                  >
-                    Import selected ZIP to Review
-                  </button>
-                )}
+                <strong className="nexus-selected-title">
+                  {candidate.name}
+                </strong>
+                <small>
+                  {file && metadataLine(file.version, file.uploadedAt)}
+                </small>
               </>
-            ) : null}
-            {displayedFileName && (
-              <small className="nexus-file-name">{displayedFileName}</small>
+            )}
+            {file && <small className="nexus-file-name">{file.fileName}</small>}
+            {!selected && (
+              <small>Choose the version for your installed mod.</small>
             )}
           </td>
           <td>
-            {(row.status ||
-              row.handoff ||
-              (!row.completed && row.imported === 0)) && (
-              <div className="nexus-row-status" aria-live="polite">
-                <p role="status">
-                  {row.status ??
-                    (row.handoff
-                      ? rechecked
-                        ? "Handoff requested · files rechecked"
-                        : "Handoff requested · deployment not checked"
-                      : awaiting
-                        ? "Choose matching file/text"
-                        : row.error
-                          ? "Action failed"
-                          : "Ready")}
-                </p>
-              </div>
-            )}
-            {(row.completed || row.imported > 0) && (
-              <p role="status" className="nexus-import-receipt">
-                {row.imported > 0
-                  ? `${row.imported} imported to Review this session`
-                  : "No new strings added"}{" "}
-                · {row.kept} existing values kept · {row.invalid} token errors
-                {row.failures ? ` · ${row.failures} failed` : ""}
-              </p>
-            )}
-            <small>
-              {disk
-                ? `On disk: ${disk.covered}/${disk.total} keys${rechecked && baseline ? ` (${disk.covered - baseline.covered >= 0 ? "+" : ""}${disk.covered - baseline.covered} since handoff)` : ""}`
-                : "Disk coverage unavailable"}
-            </small>
-            {disk && disk.differences > 0 && (
-              <small>
-                {disk.differences} saved values differ from disk; drafts kept.
-              </small>
-            )}
-            {(row.error || entry.error) && (
-              <p role="alert">{row.error ?? entry.error}</p>
+            <p role="status">
+              {row.status ??
+                (row.handoff
+                  ? rechecked
+                    ? "Sent to Vortex · rechecked"
+                    : "Sent to Vortex"
+                  : row.choices?.length
+                    ? "Confirm matching text"
+                    : row.error
+                      ? "Action failed"
+                      : row.completed || row.imported > 0
+                        ? `${row.imported} imported to Review`
+                        : "Ready")}
+            </p>
+            {row.error && (
+              <>
+                <p role="alert">{row.error}</p>
+                {selected && (
+                  <button
+                    className={quiet}
+                    disabled={locked}
+                    onClick={() => void downloadAll([group])}
+                  >
+                    Retry
+                  </button>
+                )}
+              </>
             )}
             <details>
-              <summary>Details & personal import</summary>
+              <summary>Details</summary>
               {row.handoff && (
                 <p>
-                  Vortex launch was requested. Download, installation,
-                  deployment and Collection membership are not confirmed by this
-                  app.
+                  Vortex launch was requested. Download, installation and
+                  deployment are not confirmed by this app.
+                </p>
+              )}
+              <small>
+                {disk
+                  ? `On disk: ${disk.covered}/${disk.total} keys${rechecked && baseline ? ` (${disk.covered - baseline.covered >= 0 ? "+" : ""}${disk.covered - baseline.covered} since handoff)` : ""}`
+                  : "Disk coverage unavailable"}
+              </small>
+              {disk && disk.differences > 0 && (
+                <small>
+                  {disk.differences} saved values differ from disk; drafts kept.
+                </small>
+              )}
+              {(row.completed || row.imported > 0) && (
+                <p>
+                  {row.imported > 0
+                    ? `${row.imported} imported to Review this session`
+                    : "No new strings added"}{" "}
+                  · {row.kept} existing values kept · {row.invalid} token errors
+                  {row.failures ? ` · ${row.failures} failed` : ""}
                 </p>
               )}
               {candidate.summary && <p>{candidate.summary}</p>}
-              {(row.fileName || chosenFile) && (
-                <p>
-                  Translation page:{" "}
-                  {metadataLine(candidate.version, candidate.updatedAt)}
-                </p>
-              )}
-              {!displayedFileName && (
-                <p>
-                  A suitable archive is selected when the action starts.
-                  Ambiguous variants require your choice.
-                </p>
-              )}
-              {entry.localNames.some((name) => name !== sourceName) && (
-                <p>Local components: {entry.localNames.join(", ")}</p>
-              )}
               {row.notice && <p>{row.notice}</p>}
               {row.details.map((detail, index) => (
                 <p key={index}>{detail}</p>
               ))}
-              <button
-                className={quiet}
-                type="button"
-                disabled={locked}
-                onClick={() =>
-                  void startReview(
-                    key,
-                    sourceId,
-                    candidate,
-                    chosenFile ?? row.selectedArchive,
-                  )
-                }
-              >
-                Import to Review instead
-              </button>
               {row.modIds.map(
-                (modId) =>
+                (id) =>
                   onOpenReview && (
                     <button
                       className={quiet}
-                      type="button"
-                      key={modId}
+                      key={id}
                       disabled={locked}
-                      onClick={() => onOpenReview(modId)}
+                      onClick={() => onOpenReview(id)}
                     >
                       Open Review
                       {row.modIds.length > 1
-                        ? ` · ${mods.find((mod) => mod.uniqueId === modId)?.name ?? modId}`
+                        ? ` · ${mods.find((mod) => mod.uniqueId === id)?.name ?? id}`
                         : ""}
                     </button>
                   ),
               )}
-              {candidates.length === 1 && (
-                <button
-                  className={quiet}
-                  type="button"
-                  disabled={locked}
-                  onClick={() => {
-                    setCandidateSelections((previous) => ({
-                      ...previous,
-                      [sourceId]:
-                        candidateSelections[sourceId] === "original"
-                          ? String(candidates[0].modId)
-                          : "original",
-                    }));
-                    setChecked((previous) => ({
-                      ...previous,
-                      [sourceId]: false,
-                    }));
-                  }}
-                >
-                  {candidateSelections[sourceId] === "original"
-                    ? "Use suggested translation"
-                    : "Use original mod files"}
-                </button>
-              )}
               <button
                 className={quiet}
-                type="button"
                 disabled={locked}
                 onClick={() =>
                   void run(key, () =>
@@ -873,13 +725,26 @@ export function NexusDialog({
         </tr>
         {Boolean(row.choices?.length) && (
           <tr>
-            <td colSpan={4}>
+            <td colSpan={3}>
               {Boolean(row.choices?.length) && (
                 <div className="nexus-inline-choice">
                   {expired ? (
-                    <p role="alert">
-                      The temporary ZIP expired. Download again to import it.
-                    </p>
+                    <>
+                      <p role="alert">
+                        The temporary ZIP expired. Download again to import it.
+                      </p>
+                      {file && (
+                        <button
+                          className={quiet}
+                          disabled={locked}
+                          onClick={() =>
+                            void startReview(key, sourceId, candidate, file)
+                          }
+                        >
+                          Download again
+                        </button>
+                      )}
+                    </>
                   ) : (
                     <>
                       {row.choices!.map((choice, index) => {
@@ -963,7 +828,7 @@ export function NexusDialog({
                         className={primary}
                         type="button"
                         disabled={
-                          Boolean(active) ||
+                          locked ||
                           row.choices!.some((choice, index) => {
                             const selected = selectedMapping(
                               row,
@@ -1019,43 +884,6 @@ export function NexusDialog({
       </Fragment>
     );
   }
-  const tableHead = (
-    <thead>
-      <tr>
-        <th>
-          <input
-            type="checkbox"
-            aria-label="Select all available translations"
-            checked={
-              found.length > 0 && selectedEntries.length === found.length
-            }
-            disabled={locked || !found.length}
-            onChange={(event) =>
-              setChecked(
-                Object.fromEntries(
-                  found.map((entry) => [entry.modId, event.target.checked]),
-                ),
-              )
-            }
-          />
-        </th>
-        <th>Mod</th>
-        <th>Translation / file</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-  );
-  const fetchedTimes = search.entries.flatMap((entry) =>
-    entry.result?.fetchedAt ? [entry.result.fetchedAt] : [],
-  );
-  const latestSearch = fetchedTimes.length
-    ? new Date(Math.min(...fetchedTimes)).toLocaleString("en-GB", {
-        day: "numeric",
-        month: "short",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    : null;
   if (!open) return null;
   return (
     <NexusModal
@@ -1063,38 +891,28 @@ export function NexusDialog({
       busy={locked}
       onClose={onClose}
     >
-      <div className="nexus-session-summary" aria-label="Nexus session status">
+      <div className="nexus-session-summary">
         <div className="nexus-actions">
-          <select
-            aria-label="Destination"
-            value={destination}
-            disabled={locked}
-            onChange={(event) =>
-              setDestination(event.target.value as "review" | "vortex")
-            }
-          >
-            <option value="review">Translator Review</option>
-            <option value="vortex">Vortex</option>
-          </select>
           <button
             className={primary}
-            type="button"
             disabled={
               locked ||
-              selectedEntries.length === 0 ||
-              (destination === "vortex" && !vortexExecutable)
+              search.running ||
+              loading ||
+              unresolved ||
+              !pending.length ||
+              (isVortex && !configuredVortex)
             }
-            onClick={() => void sendSelected()}
+            onClick={() => void downloadAll()}
           >
-            {destination === "vortex"
-              ? "Send selected to Vortex"
-              : "Import selected to Review"}{" "}
-            ({selectedEntries.length})
+            {isVortex
+              ? "Download & install all with Vortex"
+              : "Download & import all"}{" "}
+            ({pending.length})
           </button>
           {batchRunning && (
             <button
               className={quiet}
-              type="button"
               onClick={() => {
                 stopBatchRef.current = true;
               }}
@@ -1102,130 +920,127 @@ export function NexusDialog({
               Stop after current
             </button>
           )}
-          {(destination === "vortex" || handedOffIds.length > 0) && (
+          {handedOffIds.length > 0 && (
             <button
               className={quiet}
-              type="button"
               disabled={locked || !onCheckInstalled}
               onClick={() => void checkInstalled()}
             >
               {checking ? "Checking files…" : "Check installed files"}
             </button>
           )}
-          <button
-            className={`${quiet} nexus-refresh`}
-            type="button"
-            disabled={search.running || locked}
-            onClick={() => {
-              setChecked({});
-              setCandidateSelections({});
-              onSearch({
-                includeComplete,
-                forceRefresh: true,
-                retainIds: handedOffIds,
-              });
-            }}
-          >
-            Refresh search
-          </button>
-          {search.running && (
-            <button className={quiet} type="button" onClick={onCancel}>
-              Cancel search
-            </button>
-          )}
-          <button
-            className={quiet}
-            type="button"
-            disabled={locked}
-            onClick={onConfigure}
-          >
-            Configure Nexus
-          </button>
         </div>
         <small className="nexus-muted">
-          {destination === "review"
-            ? "Import into Review, check the text, then export explicitly to your Mods folder."
-            : vortexExecutable
-              ? "Install and deploy in Vortex, then check files here. Vortex uses its own account."
-              : "Choose Vortex.exe in Nexus settings to enable handoff."}
+          {isVortex
+            ? configuredVortex
+              ? "Vortex handles downloads and installation. Deploy there, then check files here."
+              : "Choose Vortex.exe in installation settings first."
+            : "Imports go to Review. Use the existing Export action when ready."}
         </small>
         {checkError && <p role="alert">{checkError}</p>}
       </div>
       <div className="nexus-dialog-body">
-        <div className="nexus-search-strip">
-          <label className="nexus-checkbox">
-            <input
-              type="checkbox"
-              checked={includeComplete}
-              disabled={locked || search.running}
-              onChange={(event) => {
-                const next = event.target.checked;
-                setIncludeComplete(next);
-                setChecked({});
-                if (next)
-                  onSearch({
-                    includeComplete: true,
-                    forceRefresh: false,
-                    retainIds: handedOffIds,
-                  });
-              }}
-            />{" "}
-            Include fully translated mods for Collection curation
-          </label>
-          {latestSearch && (
-            <small className="nexus-muted">
-              Search data from {latestSearch}
-              {search.entries.some(
-                (entry) => entry.result?.cacheStatus === "cached",
-              )
-                ? " · cached"
-                : ""}
-            </small>
-          )}
-          <small role="status">
-            {search.running
-              ? "Searching…"
-              : search.cancelled || search.stoppedReason
-                ? "Partial search"
-                : "Search complete"}{" "}
-            · {search.completed}/{search.total} IDs checked ·{" "}
-            {search.entries.filter((entry) => entry.error).length} failed ·{" "}
-            {search.skippedComplete ?? 0} fully translated mod groups skipped
-          </small>
-        </div>
-        {search.stoppedReason && <p role="alert">{search.stoppedReason}</p>}
-        <div className="nexus-table-scroll">
-          <table className="nexus-table" aria-label="Translation candidates">
-            {tableHead}
-            <tbody>{found.map(renderRow)}</tbody>
-          </table>
-        </div>
-        {!found.length && !search.running && (
-          <p>No translation candidates found by this limited search.</p>
-        )}
-        {other.length > 0 && (
-          <details>
-            <summary>
-              {other.length} mods without candidates / search errors
-            </summary>
-            <div className="nexus-table-scroll">
-              <table
-                className="nexus-table"
-                aria-label="Mods without translation candidates"
-              >
-                <tbody>{other.map(renderRow)}</tbody>
-              </table>
-            </div>
-          </details>
-        )}
-        <details>
-          <summary>
-            Search scope · {search.noId} components without a Nexus ID
-          </summary>
-          <p>
-            Limited candidate search; absence is not definitive. Search alone
-            downloads nothing. No mod installation is performed.
+        {(loading || search.running) && (
+          <p role="status">
+            {loading
+              ? "Loading translation versions…"
+              : "Finding translations…"}
           </p>
+        )}
+        {shown.length > 0 && (
+          <div className="nexus-table-scroll">
+            <table className="nexus-table" aria-label="Translation downloads">
+              <thead>
+                <tr>
+                  <th>Installed mod</th>
+                  <th>Translation file / version</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody>{shown.map(renderRow)}</tbody>
+            </table>
+          </div>
+        )}
+        {unavailableCount > 0 && (
+          <p role="alert">
+            {unavailableCount} translation checks failed. Open Options &amp;
+            search details to retry.
+          </p>
+        )}
+        {!shown.length && !loading && !search.running && (
+          <p>
+            {unavailableCount
+              ? "No downloadable files could be confirmed."
+              : "No suitable translation downloads found."}
+          </p>
+        )}
+        <details className="nexus-options">
+          <summary>Options & search details</summary>
+          <div className="nexus-actions">
+            <button
+              className={quiet}
+              disabled={locked || search.running}
+              onClick={() => {
+                setFileSelections({});
+                fileMetadata.refresh();
+                onSearch({ forceRefresh: true, retainIds: handedOffIds });
+              }}
+            >
+              Refresh search
+            </button>
+            <button className={quiet} disabled={locked} onClick={onConfigure}>
+              Nexus settings
+            </button>
+            {search.running && (
+              <button className={quiet} onClick={onCancel}>
+                Cancel search
+              </button>
+            )}
+          </div>
+          <p>
+            {search.completed}/{search.total} IDs checked ·{" "}
+            {search.skippedComplete ?? 0} fully translated mod groups skipped ·{" "}
+            {search.noId} components without a Nexus ID.
+          </p>
+          <p>
+            Only likely translations with suitable current files are listed.
+            Missing results do not prove that no translation exists.
+          </p>
+          {search.stoppedReason && <p role="alert">{search.stoppedReason}</p>}
+          {groups
+            .filter((group) => group.errors.length)
+            .map((group) => (
+              <p role="alert" key={group.entry.modId}>
+                {group.errors.join("; ")}
+              </p>
+            ))}
+          {groups.some((group) => group.errors.length) && (
+            <button
+              className={quiet}
+              disabled={locked || loading}
+              onClick={fileMetadata.refresh}
+            >
+              Retry file metadata
+            </button>
+          )}
+          {groups
+            .filter(
+              (group) =>
+                !group.loading && !group.options.length && !group.errors.length,
+            )
+            .map((group) => (
+              <p key={group.entry.modId}>
+                {group.entry.result?.originalName}: no suitable current files.
+              </p>
+            ))}
+          {search.entries
+            .filter((entry) => !entry.result?.candidates.length)
+            .map((entry) => (
+              <p key={entry.modId}>
+                {entry.result?.originalName ?? entry.localNames.join(", ")}:{" "}
+                {entry.error ?? "No likely translation found."}
+              </p>
+            ))}
         </details>
       </div>
     </NexusModal>

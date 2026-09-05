@@ -1,4 +1,4 @@
-//! Optional Nexus discovery, explicit Vortex download handoff, and state-only ZIP import.
+//! Optional Nexus discovery, explicit Vortex download/install requests, and state-only ZIP import.
 use crate::{language, scanner, settings, tokens, translations};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1451,7 +1451,8 @@ fn handoff_arguments(mod_id: u64, file_id: u64) -> Result<[String; 2], String> {
     positive(mod_id)?;
     positive(file_id)?;
     Ok([
-        "--download".into(),
+        // Vortex v2.6.3 forwards --install to its NXM handler with install=true.
+        "--install".into(),
         format!("nxm://stardewvalley/mods/{mod_id}/files/{file_id}"),
     ])
 }
@@ -1463,12 +1464,17 @@ fn request_vortex_handoff(
 ) -> Result<VortexHandoff, String> {
     let args = handoff_arguments(mod_id, file_id)?;
     let saved = settings::load_checked(config)?;
+    if saved.installation_method != Some(settings::InstallationMethod::Vortex) {
+        return Err(
+            "Choose the Vortex workflow in Settings before requesting installation.".into(),
+        );
+    }
     let configured = saved
         .vortex_executable
-        .ok_or("Configure Vortex.exe in Nexus setup before sending downloads.")?;
+        .ok_or("Configure Vortex.exe in Settings before requesting installation.")?;
     let executable = vortex_path(Path::new(&configured))?;
     launch(&executable, &args)?;
-    log::info!(target: "app", "event=nexus_vortex_handoff_requested mod_id={} file_id={} download_confirmed=false install_confirmed=false", mod_id, file_id);
+    log::info!(target: "app", "event=nexus_vortex_handoff_requested mod_id={} file_id={} action=download_install_requested download_confirmed=false install_confirmed=false deployment_confirmed=false", mod_id, file_id);
     Ok(VortexHandoff {
         mod_id,
         file_id,
@@ -1502,7 +1508,7 @@ pub fn nexus_handoff_to_vortex(
         file_id,
         |executable, args| {
             let mut child = vortex_command(executable, args).spawn().map_err(|_| {
-                "Could not launch configured Vortex. No download completion is confirmed."
+                "Could not launch configured Vortex. Download and installation are not confirmed."
             })?;
             std::thread::spawn(move || {
                 let _ = child.wait();
@@ -1580,6 +1586,7 @@ mod workflow_tests {
         settings::save(
             &root,
             &settings::AppSettings {
+                installation_method: Some(settings::InstallationMethod::Vortex),
                 vortex_executable: Some(executable.display().to_string()),
                 ..Default::default()
             },
@@ -1595,10 +1602,7 @@ mod workflow_tests {
         let (root, executable) = configured_vortex();
         let receipt = request_vortex_handoff(&root, 10, 20, |path, args| {
             assert_eq!(path, executable.canonicalize().unwrap());
-            assert_eq!(
-                args,
-                &["--download", "nxm://stardewvalley/mods/10/files/20"]
-            );
+            assert_eq!(args, &["--install", "nxm://stardewvalley/mods/10/files/20"]);
             let command = vortex_command(path, args);
             assert_eq!(
                 command.get_args().collect::<Vec<_>>(),
@@ -1635,6 +1639,43 @@ mod workflow_tests {
         let wrong = root.join("other.exe");
         std::fs::write(&wrong, b"MZ").unwrap();
         assert!(vortex_path(&wrong).is_err());
+    }
+    #[test]
+    fn vortex_handoff_rejects_folder_workflow_with_retained_executable() {
+        let (root, _) = configured_vortex();
+        let mut saved = settings::load_checked(&root).unwrap();
+        saved.installation_method = Some(settings::InstallationMethod::Folder);
+        settings::save(&root, &saved).unwrap();
+        let error = request_vortex_handoff(&root, 10, 20, |_, _| {
+            panic!("Folder workflow must not launch retained Vortex executable")
+        })
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "Choose the Vortex workflow in Settings before requesting installation."
+        );
+        assert_eq!(
+            settings::load_checked(&root).unwrap().vortex_executable,
+            saved.vortex_executable
+        );
+    }
+    #[test]
+    fn vortex_handoff_preserves_legacy_configured_workflow() {
+        let (root, executable) = configured_vortex();
+        std::fs::write(
+            settings::settings_path(&root),
+            serde_json::to_vec(&json!({
+                "vortexExecutable": executable.display().to_string()
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        let receipt = request_vortex_handoff(&root, 10, 20, |_, args| {
+            assert_eq!(args[0], "--install");
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(receipt.status, "handoff-requested");
     }
     #[test]
     fn language_aliases_are_bounded_and_de_is_not_a_prose_signal() {

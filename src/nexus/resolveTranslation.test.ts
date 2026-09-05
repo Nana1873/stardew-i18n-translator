@@ -3,6 +3,7 @@ import type { NexusArchive, NexusFile, ScannedMod } from "../tauri/commands";
 import {
   resolveArchiveTranslations,
   selectTranslationFile,
+  translationFileOptions,
 } from "./resolveTranslation";
 const file = (overrides: Partial<NexusFile> = {}): NexusFile => ({
   fileId: 1,
@@ -39,6 +40,35 @@ const entry = (path: string, manifestUniqueId: string | null = null) => ({
 });
 
 describe("ZIP selection", () => {
+  it("keeps earlier current versions available while recommending the newest", () => {
+    const earlier = file();
+    const latest = file({
+      fileId: 2,
+      name: "German Translation 1.1",
+      version: "1.1",
+      uploadedAt: "2026-02-01",
+    });
+    const available = [
+      earlier,
+      latest,
+      file({ fileId: 3, category: "ARCHIVED" }),
+    ];
+    expect(
+      translationFileOptions(available, "de").map((item) => item.fileId),
+    ).toEqual([2, 1]);
+    expect(selectTranslationFile(available, "de")).toMatchObject({
+      kind: "selected",
+      file: { fileId: 2 },
+    });
+  });
+
+  it("offers manager-supported formats only in the Vortex workflow", () => {
+    const zip = file();
+    const rar = file({ fileId: 2, fileName: "translation.rar" });
+    expect(translationFileOptions([zip, rar], "de", "review")).toEqual([zip]);
+    expect(translationFileOptions([zip, rar], "de", "vortex")).toHaveLength(2);
+  });
+
   it("selects a sole suitable ZIP and ignores removed, incompatible language and non-ZIP files", () => {
     const selected = file();
     expect(

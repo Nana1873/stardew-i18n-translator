@@ -8,7 +8,7 @@ number or delivery date is assigned.
 
 ## Intended result
 
-The user-facing loop stays short: scan -> choose found translations ->
+The user-facing loop stays short: scan -> choose a version only when needed ->
 download/install through the configured manager -> rescan -> optionally edit
 -> optionally export/apply. The setup choice remains editable. Users who are
 satisfied after installation are finished; the editing/output steps are optional.
@@ -72,20 +72,25 @@ mod updates and Nexus file IDs must not create a new workspace identity.
 Nexus; scan; edit; review; explicitly export. Declining Nexus leaves this fully
 usable offline.
 
-**Existing folder user with Nexus:** scan; open Find translations; select
-candidates in one table; import selected ZIPs into Review; edit; export. Personal
+**Existing folder user with Nexus:** scan; open Find translations; optionally
+choose versions in one table; download and import all listed ZIPs into Review;
+edit; export. Personal
 API downloads retain their account requirements. Import does not mean installed.
 
 **Vortex user:** select Vortex and its current Stardew installation; optionally
-enable Nexus discovery after local scans; select translations in the same table;
-send selected files to Vortex; install and deploy in Vortex; use Check installed
+enable Nexus discovery after local scans; optionally choose versions in the same
+table; request all listed downloads and installations through Vortex; deploy in
+Vortex; use Check installed
 files; open the existing editor to fill gaps; create/update private output;
 install or replace it in Vortex; deploy; check installed files again.
 
-The normal table shows selection, original mod/version, translation/file
-version/date, and action status. Alternatives use inline selectors; unique
-choices use readable text. One batch button follows the configured workflow.
-Personal Review import remains reachable as a secondary action in Vortex mode.
+The normal table shows mods with available translation files and a version
+choice only when needed. It has no per-mod or select-all checkboxes and no
+destination toggle. All available rows join one download batch following the
+installation method saved in Setup/Settings. File metadata loads before the
+user confirms the batch. Alternatives use inline selectors; unique choices
+use readable text. Detailed scan/file diagnostics stay in secondary details.
+The installation method can be changed in Settings, outside this dialog.
 Ambiguous language/component mapping remains an explicit choice. Routine
 success appears in the table or existing result tray, not another required modal.
 
@@ -101,7 +106,7 @@ Use separate, evidence-based labels:
 Cache Nexus metadata by original mod ID and language; display freshness and
 allow refresh. Proposed expiry: 24 hours, retaining the prototype's bounded
 cache. Re-evaluate matches against each current scan. Skip fully covered groups
-by default, with an Include fully translated option. Incomplete scans are not
+by default. Incomplete scans are not
 100% coverage. Version relevance comes before date where evidence is available;
 heuristic matches never become a promise to find every translation.
 

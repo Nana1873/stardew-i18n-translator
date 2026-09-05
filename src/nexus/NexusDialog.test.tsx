@@ -103,65 +103,94 @@ const file: NexusFile = {
 };
 let archive: NexusArchive;
 function mount(
-  onImported = vi.fn().mockResolvedValue(undefined),
-  scanned = mods,
-  initialSearch: NexusSearchState = search,
-  vortexExecutable: string | null = "C:/Tools/Vortex/Vortex.exe",
+  options: {
+    mods?: ScannedMod[];
+    search?: NexusSearchState;
+    method?: "folder" | "vortex";
+    executable?: string | null;
+    open?: boolean;
+  } = {},
 ) {
-  let skipped: SkippedComponent[] = [];
-  let traversalComplete: boolean | undefined = true;
-  const onOpenReview = vi.fn();
-  const onSearch = vi.fn();
-  const onCheckInstalled = vi.fn().mockResolvedValue(undefined);
-  const view = (open: boolean, data = initialSearch) => (
+  let data = options.mods ?? mods,
+    results = options.search ?? search,
+    method = options.method,
+    executable =
+      options.executable === undefined
+        ? "C:/Tools/Vortex/Vortex.exe"
+        : options.executable,
+    open = options.open ?? true;
+  let traversal: boolean | undefined = true,
+    skipped: SkippedComponent[] = [];
+  const onImported = vi.fn().mockResolvedValue(undefined),
+    onSearch = vi.fn(),
+    onCheckInstalled = vi.fn().mockResolvedValue(undefined),
+    onOpenReview = vi.fn();
+  const view = () => (
     <NexusDialog
       open={open}
-      search={data}
-      mods={scanned}
-      skippedComponents={skipped}
-      traversalComplete={traversalComplete}
+      search={results}
+      mods={data}
       targetLang="de"
+      installationMethod={method}
+      vortexExecutable={executable}
+      traversalComplete={traversal}
+      skippedComponents={skipped}
+      onImported={onImported}
       onSearch={onSearch}
-      vortexExecutable={vortexExecutable}
       onCheckInstalled={onCheckInstalled}
-      onCancel={() => {}}
+      onOpenReview={onOpenReview}
       onClose={() => {}}
       onConfigure={() => {}}
-      onImported={onImported}
-      onOpenReview={onOpenReview}
+      onCancel={() => {}}
     />
   );
-  const rendered = render(view(true));
+  const rendered = render(view());
   return {
     onImported,
+    onSearch,
+    onCheckInstalled,
+    onOpenReview,
+    unmount: rendered.unmount,
+    setOpen: (next: boolean) => {
+      open = next;
+      rendered.rerender(view());
+    },
+    setMethod: (next: "folder" | "vortex") => {
+      method = next;
+      rendered.rerender(view());
+    },
+    setMods: (next: ScannedMod[]) => {
+      data = next;
+      rendered.rerender(view());
+    },
     setTraversal: (next: boolean | undefined) => {
-      traversalComplete = next;
-      rendered.rerender(view(true));
+      traversal = next;
+      rendered.rerender(view());
+    },
+    setSearch: (next: NexusSearchState) => {
+      results = next;
+      rendered.rerender(view());
     },
     setSkipped: (next: SkippedComponent[]) => {
       skipped = next;
-      rendered.rerender(view(true));
+      rendered.rerender(view());
     },
-    onOpenReview,
-    onSearch,
-    onCheckInstalled,
-    setMods: (next: ScannedMod[]) => {
-      scanned = next;
-      rendered.rerender(view(true));
-    },
-    unmount: rendered.unmount,
-    setSearch: (data: NexusSearchState) => rendered.rerender(view(true, data)),
-    setOpen: (open: boolean) => rendered.rerender(view(open)),
   };
+}
+function commandCalls(name: string) {
+  return invoke.mock.calls
+    .filter(([cmd]) => cmd === name)
+    .map(([, args]) => args);
 }
 function translationRow() {
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
-function importCandidate() {
-  fireEvent.click(translationRow().getByText("Details & personal import"));
-  fireEvent.click(
-    translationRow().getByRole("button", { name: "Import to Review instead" }),
-  );
+async function download() {
+  const button = screen.getByRole("button", {
+    name: /^Download & (install|import) all/,
+  });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
 }
 beforeEach(() => {
   archive = {
@@ -176,330 +205,87 @@ beforeEach(() => {
     notice: "Inspected",
   };
   invoke.mockReset();
-  invoke.mockImplementation((cmd: string) => {
-    if (cmd === "nexus_status")
-      return Promise.resolve({
-        configured: true,
-        validated: true,
-        premium: true,
-      });
-    if (cmd === "nexus_handoff_to_vortex")
-      return Promise.resolve({
-        modId: 30342,
-        fileId: 7,
-        status: "handoff-requested",
-      });
-    if (cmd === "nexus_list_files") return Promise.resolve([file]);
-    if (cmd === "nexus_download_preflight") return Promise.resolve(archive);
-    if (cmd === "nexus_preflight_import") return Promise.resolve(counts);
-    if (cmd === "nexus_import_translation")
-      return Promise.resolve({ ...counts, imported: 1 });
-    return Promise.resolve(null);
-  });
+  invoke.mockImplementation(
+    (cmd: string, args?: { modId?: number; fileId?: number }) => {
+      if (cmd === "nexus_list_files") return Promise.resolve([file]);
+      if (cmd === "nexus_status")
+        return Promise.resolve({ configured: true, premium: true });
+      if (cmd === "nexus_handoff_to_vortex")
+        return Promise.resolve({ ...args, status: "handoff-requested" });
+      if (cmd === "nexus_download_preflight") return Promise.resolve(archive);
+      if (cmd === "nexus_preflight_import") return Promise.resolve(counts);
+      if (cmd === "nexus_import_translation")
+        return Promise.resolve({ ...counts, imported: 1 });
+      return Promise.resolve(null);
+    },
+  );
 });
 afterEach(() => vi.restoreAllMocks());
 
-it("imports through explicit secondary personal details, validates before saving, and retains the inline receipt on reopen", async () => {
-  const app = mount();
-  expect(invoke).not.toHaveBeenCalled();
-  expect(
-    screen.getByText(/4 fully translated mod groups skipped/),
-  ).toBeInTheDocument();
-  expect(
-    screen.queryByRole("button", {
-      name: /View files|Choose source|Check import/,
-    }),
-  ).not.toBeInTheDocument();
-  importCandidate();
-  await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
-  expect(
-    translationRow().getByText(
-      /imported to Review this session|No new strings added/,
-    ),
-  ).toHaveTextContent(
-    "1 imported to Review this session · 1 existing values kept · 1 token errors",
-  );
-  const commands = invoke.mock.calls.map(([cmd]) => cmd);
-  expect(commands.indexOf("nexus_preflight_import")).toBeLessThan(
-    commands.indexOf("nexus_import_translation"),
-  );
-  expect(invoke).toHaveBeenCalledWith("nexus_import_translation", {
-    archiveId: "archive",
-    archivePath: "i18n/de.json",
-    modUniqueId: "sample.mod",
-    relativeDir: "i18n",
-  });
-  expect(commands.some((cmd) => /export/.test(cmd))).toBe(false);
-  app.setOpen(false);
-  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-  app.setOpen(true);
-  expect(
-    translationRow().getByText(
-      /imported to Review this session|No new strings added/,
-    ),
-  ).toHaveTextContent("1 imported to Review");
-  fireEvent.click(
-    translationRow().getByRole("button", { name: "Open Review" }),
-  );
-  expect(app.onOpenReview).toHaveBeenCalledWith("sample.mod");
-});
-
-it("asks inline only when ZIP variants are genuinely ambiguous", async () => {
-  const original = invoke.getMockImplementation()!;
-  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
-    cmd === "nexus_list_files"
-      ? Promise.resolve([
-          { ...file, name: "German full" },
-          {
-            ...file,
-            fileId: 8,
-            name: "German lite",
-            fileName: "german-lite.zip",
-          },
-        ])
-      : original(cmd, ...args),
-  );
+it("loads only candidate metadata before any action, without selection checkboxes or destination controls", async () => {
   mount();
-  importCandidate();
-  const choice = await screen.findByLabelText(
-    "Archive variant for German translation",
-  );
-  expect(
-    invoke.mock.calls.some(([cmd]) => cmd === "nexus_download_preflight"),
-  ).toBe(false);
-  fireEvent.change(choice, { target: { value: "8" } });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Import selected ZIP to Review" }),
-  );
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("nexus_download_preflight", {
-      modId: 30342,
-      fileId: 8,
-    }),
-  );
-  await waitFor(() =>
-    expect(
-      translationRow().getByText(
-        /imported to Review this session|No new strings added/,
-      ),
-    ).toHaveTextContent("1 imported to Review"),
-  );
-});
-
-it("keeps translated default.json confirmation inline and does not save before it", async () => {
-  archive.files = [
-    {
-      path: "i18n/default.json",
-      manifestUniqueId: "sample.mod",
-      isDefault: true,
-    },
-  ];
-  mount();
-  importCandidate();
-  const confirm = await screen.findByRole("checkbox", {
-    name: /This default.json contains de translation text/,
-  });
-  expect(
-    invoke.mock.calls.some(([cmd]) => cmd === "nexus_preflight_import"),
-  ).toBe(false);
-  expect(
-    screen.getByRole("button", { name: "Import selected text" }),
-  ).toBeDisabled();
-  fireEvent.click(confirm);
-  fireEvent.click(screen.getByRole("button", { name: "Import selected text" }));
-  await waitFor(() =>
-    expect(
-      translationRow().getByText(
-        /imported to Review this session|No new strings added/,
-      ),
-    ).toHaveTextContent("1 imported to Review"),
-  );
-});
-
-it("shows zero new strings without attempting a save when native preflight has nothing importable", async () => {
-  const original = invoke.getMockImplementation()!;
-  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
-    cmd === "nexus_preflight_import"
-      ? Promise.resolve({ ...counts, importable: 0 })
-      : original(cmd, ...args),
-  );
-  mount();
-  importCandidate();
-  await waitFor(() =>
-    expect(
-      translationRow().getByText(
-        /imported to Review this session|No new strings added/,
-      ),
-    ).toHaveTextContent("No new strings added · 1 existing values kept"),
-  );
-  expect(
-    invoke.mock.calls.some(([cmd]) => cmd === "nexus_import_translation"),
-  ).toBe(false);
-});
-
-it("retains confirmed partial imports if a later component fails", async () => {
-  archive.files.push({
-    path: "Second/i18n/de.json",
-    manifestUniqueId: "sample.second",
-    isDefault: false,
-  });
-  const second = {
-    ...mods[0],
-    uniqueId: "sample.second",
-    name: "Second component",
-    folderPath: "x/Second",
-  };
-  const original = invoke.getMockImplementation()!;
-  invoke.mockImplementation((cmd: string, args?: { modUniqueId?: string }) =>
-    cmd === "nexus_preflight_import" && args?.modUniqueId === "sample.second"
-      ? Promise.reject(new Error("Source changed"))
-      : original(cmd, args),
-  );
-  mount(undefined, [...mods, second]);
-  importCandidate();
-  await waitFor(() =>
-    expect(
-      translationRow().getByText(
-        /imported to Review this session|No new strings added/,
-      ),
-    ).toHaveTextContent(
-      "1 imported to Review this session · 1 existing values kept · 1 token errors · 1 failed",
-    ),
-  );
-  expect(translationRow().getByRole("alert")).toHaveTextContent(
-    "Completed imports were kept",
-  );
-});
-
-it("reports download failure inline without claiming text was imported", async () => {
-  const original = invoke.getMockImplementation()!;
-  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
-    cmd === "nexus_download_preflight"
-      ? Promise.reject(new Error("Network unavailable"))
-      : original(cmd, ...args),
-  );
-  mount();
-  importCandidate();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Network unavailable",
-  );
-  expect(
-    invoke.mock.calls.some(([cmd]) => cmd === "nexus_import_translation"),
-  ).toBe(false);
-});
-
-it("requires a new download when an unresolved inline choice expires", async () => {
-  archive.files = [
-    {
-      path: "i18n/default.json",
-      manifestUniqueId: "sample.mod",
-      isDefault: true,
-    },
-  ];
-  const app = mount();
-  importCandidate();
-  await screen.findByRole("checkbox", {
-    name: /This default.json contains de translation text/,
-  });
-  app.setOpen(false);
-  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 16 * 60_000);
-  app.setOpen(true);
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "temporary ZIP expired",
-  );
-  expect(
-    translationRow().getByRole("button", { name: "Import to Review instead" }),
-  ).toBeEnabled();
-  expect(
-    screen.queryByRole("button", { name: "Import selected text" }),
-  ).not.toBeInTheDocument();
-});
-
-it("collapses no-candidate mods and retains an optional original-files import", async () => {
-  mount();
-  const hidden = screen.getByText("1 mods without candidates / search errors");
-  expect(hidden.closest("details")).not.toHaveAttribute("open");
-  fireEvent.click(hidden);
-  const source = within(screen.getByRole("row", { name: "No-result mod" }));
-  fireEvent.click(source.getByText("Details & personal import"));
-  fireEvent.click(
-    source.getByRole("button", { name: "Import to Review instead" }),
-  );
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("nexus_list_files", { modId: 99 }),
-  );
-});
-
-const twoSources: NexusSearchState = {
-  ...search,
-  entries: [
-    search.entries[1],
-    {
-      ...search.entries[0],
-      result: {
-        ...search.entries[0].result,
-        candidates: [{ ...candidate, modId: 999, name: "Second translation" }],
-      },
-    },
-  ],
-};
-
-function sendAll() {
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "Select all available translations" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: /Send selected to Vortex/ }),
-  );
-}
-it("hands off original IDs without Premium validation or import, retaining receipt and disk comparison on reopen", async () => {
-  const app = mount();
-  expect(
-    screen.queryByLabelText("Translation for Canonical title"),
-  ).not.toBeInTheDocument();
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(commandCalls("nexus_list_files")).toEqual([{ modId: 30342 }]);
+  expect(invoke.mock.calls.map(([cmd]) => cmd)).toEqual(["nexus_list_files"]);
+  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+  expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.getAllByRole("columnheader").map((x) => x.textContent)).toEqual(
-    ["", "Mod", "Translation / file", "Status"],
+    ["Installed mod", "Translation file / version", "Status"],
   );
-  sendAll();
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("nexus_handoff_to_vortex", {
-      modId: 30342,
-      fileId: 7,
-    }),
-  );
-  await screen.findByText("Handoff requested \u00b7 deployment not checked");
-  expect(invoke.mock.calls.map(([cmd]) => cmd)).toEqual([
-    "nexus_list_files",
-    "nexus_handoff_to_vortex",
+  expect(
+    translationRow().getByText("v1.2 \u00b7 1 Jan 2026"),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Check installed files" }),
+  ).not.toBeInTheDocument();
+  expect(
+    translationRow().getByText("Details").closest("details"),
+  ).not.toHaveAttribute("open");
+});
+it("includes all ready rows automatically and never redownloads a completed handoff", async () => {
+  const app = mount();
+  await download();
+  await screen.findByText("Sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 30342, fileId: 7 },
   ]);
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  expect(commandCalls("nexus_status")).toHaveLength(0);
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
   app.setOpen(false);
   app.setOpen(true);
-  expect(
-    screen.getByText("Handoff requested \u00b7 deployment not checked"),
-  ).toBeInTheDocument();
-  app.setMods([
-    {
-      ...mods[0],
-      diskTranslatedKeys: 3,
-      translatedKeys: 0,
-      stateDiskDifferences: 2,
-    },
-    mods[1],
-  ]);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
-  await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
-  await screen.findByText(/On disk: 3\/3 keys/);
-  expect(
-    screen.getByText(/2 saved values differ from disk; drafts kept/),
-  ).toBeInTheDocument();
-  expect(app.onSearch).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("row", { name: "Canonical title" }),
-  ).toBeInTheDocument();
+  expect(screen.getByText("Sent to Vortex")).toBeInTheDocument();
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
 });
-it("requires an explicit variant and hands off 7z while refusing a silent different ZIP personal import", async () => {
+it("routes an explicit folder installation to Review even if Vortex is configured", async () => {
+  const app = mount({ method: "folder" });
+  await download();
+  await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
+  expect(commandCalls("nexus_download_preflight")).toEqual([
+    { modId: 30342, fileId: 7 },
+  ]);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+  expect(
+    screen.getByRole("button", { name: "Download & import all (0)" }),
+  ).toBeDisabled();
+  expect(
+    invoke.mock.calls.some(([cmd]) => /export|save_settings/.test(cmd)),
+  ).toBe(false);
+  expect(translationRow().getByRole("status")).toHaveTextContent(
+    "1 imported to Review",
+  );
+});
+it("defaults legacy installations without Vortex to folder import", async () => {
+  const app = mount({ executable: null });
+  await download();
+  await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
+  expect(screen.queryByText("Destination")).not.toBeInTheDocument();
+});
+it("requires an inline choice for genuine variants and sends exactly that version without another file request", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
     cmd === "nexus_list_files"
@@ -515,31 +301,225 @@ it("requires an explicit variant and hands off 7z while refusing a silent differ
       : original(cmd, ...args),
   );
   mount();
-  sendAll();
-  fireEvent.change(
-    await screen.findByLabelText("Archive variant for German translation"),
-    { target: { value: "8" } },
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send selected to Vortex (1)" }),
-  );
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("nexus_handoff_to_vortex", {
-      modId: 30342,
-      fileId: 8,
-    }),
-  );
-  await screen.findByText("Handoff requested \u00b7 deployment not checked");
-  importCandidate();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "selected archive is not a ZIP",
-  );
+  const choice = await screen.findByRole("combobox", {
+    name: "Translation file for Canonical title",
+  });
+  expect(choice).toHaveValue("");
+  expect(choice.closest("details")).toBeNull();
   expect(
-    invoke.mock.calls.some(([cmd]) => cmd === "nexus_download_preflight"),
-  ).toBe(false);
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  fireEvent.change(choice, { target: { value: "30342:8" } });
+  await download();
+  await screen.findByText("Sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 30342, fileId: 8 },
+  ]);
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
 });
-it.each(["stop", "unmount"])(
-  "keeps sequential handoff from continuing after %s",
+it("keeps current older versions selectable while recommending the newest same-series file", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_list_files"
+      ? Promise.resolve([
+          file,
+          { ...file, fileId: 8, version: "1.3", uploadedAt: "2026-02-01" },
+        ])
+      : original(cmd, ...args),
+  );
+  mount();
+  const choice = await screen.findByRole("combobox", {
+    name: "Translation file for Canonical title",
+  });
+  expect(choice).toHaveValue("30342:8");
+  fireEvent.change(choice, { target: { value: "30342:7" } });
+  await download();
+  await screen.findByText("Sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 30342, fileId: 7 },
+  ]);
+});
+it("combines candidates and files into one selector with candidate group labels", async () => {
+  const alternate = {
+    ...candidate,
+    modId: 50,
+    name: "Alternative German translation",
+  };
+  mount({
+    search: {
+      ...search,
+      entries: [
+        {
+          ...search.entries[1],
+          result: {
+            ...search.entries[1].result,
+            candidates: [candidate, alternate],
+          },
+        },
+      ],
+    },
+  });
+  const choice = await screen.findByRole("combobox", {
+    name: "Translation file for Canonical title",
+  });
+  expect(choice.querySelectorAll("optgroup")).toHaveLength(2);
+  fireEvent.change(choice, { target: { value: "50:7" } });
+  await download();
+  await screen.findByText("Sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 50, fileId: 7 },
+  ]);
+});
+it("does not list candidates with no eligible files or original mods without translation candidates", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_list_files"
+      ? Promise.resolve([{ ...file, category: "ARCHIVED" }])
+      : original(cmd, ...args),
+  );
+  mount();
+  await screen.findByText("No suitable translation downloads found.");
+  expect(screen.queryByRole("row")).not.toBeInTheDocument();
+  expect(commandCalls("nexus_list_files")).toEqual([{ modId: 30342 }]);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+it("does not call failed or pending metadata downloadable and allows an explicit retry", async () => {
+  const original = invoke.getMockImplementation()!;
+  let failed = true;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_list_files" && failed
+      ? Promise.reject(new Error("Metadata unavailable"))
+      : original(cmd, ...args),
+  );
+  mount();
+  await screen.findByText("No downloadable files could be confirmed.");
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  fireEvent.click(screen.getByText("Options & search details"));
+  expect(
+    screen
+      .getAllByRole("alert")
+      .some((item) => item.textContent?.includes("Metadata unavailable")),
+  ).toBe(true);
+  failed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry file metadata" }));
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+it("requires explicit retry after a failed action", async () => {
+  const original = invoke.getMockImplementation()!;
+  let failed = true;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_handoff_to_vortex" && failed
+      ? Promise.reject(new Error("Launch failed"))
+      : original(cmd, ...args),
+  );
+  mount();
+  await download();
+  expect(await screen.findByRole("alert")).toHaveTextContent("Launch failed");
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  failed = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("Sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(2);
+});
+it("keeps default.json confirmation inline and never changes the English source", async () => {
+  archive.files = [
+    {
+      path: "i18n/default.json",
+      manifestUniqueId: "sample.mod",
+      isDefault: true,
+    },
+  ];
+  const app = mount({ method: "folder" });
+  await download();
+  const confirm = await screen.findByRole("checkbox", {
+    name: /This default.json contains de translation text/,
+  });
+  expect(commandCalls("nexus_preflight_import")).toHaveLength(0);
+  expect(
+    screen.getByRole("button", { name: "Import selected text" }),
+  ).toBeDisabled();
+  fireEvent.click(confirm);
+  fireEvent.click(screen.getByRole("button", { name: "Import selected text" }));
+  await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
+  expect(commandCalls("nexus_import_translation")[0]).toMatchObject({
+    archivePath: "i18n/default.json",
+    modUniqueId: "sample.mod",
+  });
+});
+it("shows zero new strings without saving when preflight finds no importable strings", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_preflight_import"
+      ? Promise.resolve({ ...counts, importable: 0 })
+      : original(cmd, ...args),
+  );
+  mount({ method: "folder" });
+  await download();
+  await screen.findByText("0 imported to Review");
+  expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+});
+it("rechecks local disk without refreshing metadata or losing drafts and receipts", async () => {
+  const app = mount();
+  await download();
+  await screen.findByText("Sent to Vortex");
+  app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check installed files" }),
+  );
+  await screen.findByText("Sent to Vortex · rechecked");
+  fireEvent.click(translationRow().getByText("Details"));
+  expect(translationRow().getByText(/On disk: 3\/3 keys/)).toBeInTheDocument();
+  expect(
+    translationRow().getByText(/2 saved values differ from disk; drafts kept/),
+  ).toBeInTheDocument();
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  expect(app.onSearch).not.toHaveBeenCalled();
+});
+it.each([false, undefined])(
+  "does not claim complete coverage after a recheck with traversal %s",
+  async (traversal) => {
+    const app = mount();
+    await download();
+    await screen.findByText("Sent to Vortex");
+    app.setTraversal(traversal);
+    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check installed files" }),
+    );
+    await screen.findByText("Sent to Vortex · rechecked");
+    fireEvent.click(translationRow().getByText("Details"));
+    expect(
+      translationRow().getByText("Disk coverage unavailable"),
+    ).toBeInTheDocument();
+  },
+);
+const twoSources: NexusSearchState = {
+  ...search,
+  entries: [
+    search.entries[1],
+    {
+      ...search.entries[0],
+      result: {
+        ...search.entries[0].result,
+        candidates: [{ ...candidate, modId: 999, name: "Second translation" }],
+      },
+    },
+  ],
+};
+it.each(["stop", "unmount", "method"])(
+  "stops remaining batch actions after %s",
   async (mode) => {
     let finish!: (value: unknown) => void;
     const original = invoke.getMockImplementation()!;
@@ -550,236 +530,103 @@ it.each(["stop", "unmount"])(
           })
         : original(cmd, ...args),
     );
-    const app = mount(undefined, mods, twoSources);
-    sendAll();
+    const app = mount({ search: twoSources });
+    await download();
     await waitFor(() =>
-      expect(
-        invoke.mock.calls.filter(([cmd]) => cmd === "nexus_handoff_to_vortex"),
-      ).toHaveLength(1),
+      expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1),
     );
     if (mode === "unmount") app.unmount();
+    else if (mode === "method") app.setMethod("folder");
     else
       fireEvent.click(
         screen.getByRole("button", { name: "Stop after current" }),
       );
     await act(async () => finish({ status: "handoff-requested" }));
-    expect(
-      invoke.mock.calls.filter(([cmd]) => cmd === "nexus_list_files"),
-    ).toHaveLength(1);
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
   },
 );
-it("reports failed launch without a successful handoff receipt", async () => {
+it("reloads eligible versions on method change and discards an invalid prior 7z selection", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
-    cmd === "nexus_handoff_to_vortex"
-      ? Promise.reject(new Error("Vortex executable not found"))
+    cmd === "nexus_list_files"
+      ? Promise.resolve([
+          { ...file, name: "German full", fileName: "german-full.7z" },
+          {
+            ...file,
+            fileId: 8,
+            name: "German lite",
+            fileName: "german-lite.zip",
+          },
+        ])
       : original(cmd, ...args),
   );
-  mount();
-  sendAll();
-  expect(await screen.findByRole("alert")).toHaveTextContent(
-    "Vortex executable not found",
-  );
-  expect(
-    screen.queryByText("Handoff requested \u00b7 deployment not checked"),
-  ).not.toBeInTheDocument();
-});
-it("passes explicit refresh and collection inclusion while clearing selection", () => {
   const app = mount();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "Select Canonical title" }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Refresh search" }));
-  expect(app.onSearch).toHaveBeenLastCalledWith({
-    includeComplete: false,
-    forceRefresh: true,
-    retainIds: [],
+  const choice = await screen.findByRole("combobox", {
+    name: "Translation file for Canonical title",
   });
-  expect(
-    screen.getByRole("button", { name: "Send selected to Vortex (0)" }),
-  ).toBeDisabled();
-  fireEvent.click(
-    screen.getByRole("checkbox", {
-      name: "Include fully translated mods for Collection curation",
-    }),
-  );
-  expect(app.onSearch).toHaveBeenLastCalledWith({
-    includeComplete: true,
-    forceRefresh: false,
-    retainIds: [],
-  });
-});
-
-it("keeps a partially scanned group visible and cannot prove complete deployment after recheck", async () => {
-  const app = mount();
-  sendAll();
-  await screen.findByText(/Handoff requested.*deployment not checked/);
-  app.setSkipped([
-    {
-      packageId: "sample",
-      componentUniqueId: null,
-      componentName: null,
-      relativeLocation: "Sample",
-      reason: "Malformed manifest",
-      requiresAttention: true,
-      restOfPackageLoaded: true,
-    },
-  ]);
-  app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
-  await screen.findByText(/Handoff requested.*files rechecked/);
-  expect(
-    translationRow().getByText("Disk coverage unavailable"),
-  ).toBeInTheDocument();
-  expect(translationRow().queryByText(/On disk: 3/)).not.toBeInTheDocument();
-  expect(app.onSearch).not.toHaveBeenCalled();
-});
-
-it("provides the primary Review workflow without Vortex and never writes Mods automatically", async () => {
-  const app = mount(undefined, mods, search, null);
-  expect(screen.getByLabelText("Destination")).toHaveValue("review");
-  expect(
-    screen.queryByRole("button", { name: "Check installed files" }),
-  ).not.toBeInTheDocument();
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "Select Canonical title" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Import selected to Review (1)" }),
-  );
-  await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
-  expect(
-    screen.getByText(/1 imported to Review this session/).closest("details"),
-  ).toBeNull();
-  expect(invoke.mock.calls.some(([cmd]) => /handoff|export/.test(cmd))).toBe(
-    false,
-  );
-  fireEvent.change(screen.getByLabelText("Destination"), {
-    target: { value: "vortex" },
-  });
-  expect(
-    screen.getByRole("button", { name: "Send selected to Vortex (1)" }),
-  ).toBeDisabled();
-});
-it("freezes selected candidate IDs and destination throughout a Review batch", async () => {
-  let finish!: () => void;
-  const onImported = vi
-    .fn()
-    .mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          finish = resolve;
-        }),
-    )
-    .mockResolvedValue(undefined);
-  const original = invoke.getMockImplementation()!;
-  invoke.mockImplementation((cmd: string, args?: { modId?: number }) =>
-    cmd === "nexus_download_preflight" && args?.modId === 999
-      ? Promise.resolve({
-          ...archive,
-          files: [
-            {
-              path: "i18n/de.json",
-              manifestUniqueId: "unrelated.mod",
-              isDefault: false,
-            },
-          ],
-        })
-      : original(cmd, args),
-  );
-  mount(onImported, mods, twoSources, null);
-  fireEvent.click(
-    screen.getByRole("checkbox", { name: "Select all available translations" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Import selected to Review (2)" }),
-  );
-  await waitFor(() => expect(onImported).toHaveBeenCalledOnce());
-  expect(screen.getByLabelText("Destination")).toBeDisabled();
-  fireEvent.change(screen.getByLabelText("Destination"), {
-    target: { value: "vortex" },
-  });
-  await act(async () => finish());
-  await waitFor(() => expect(onImported).toHaveBeenCalledTimes(2));
-  expect(
-    invoke.mock.calls
-      .filter(([cmd]) => cmd === "nexus_download_preflight")
-      .map(([, args]) => args),
-  ).toEqual([
-    { modId: 30342, fileId: 7 },
-    { modId: 999, fileId: 7 },
-  ]);
-  expect(
-    invoke.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
-  ).toBe(false);
-});
-
-it("shows one readable single-candidate title and concise dates while leaving details collapsed", () => {
-  mount();
-  const row = translationRow();
-  expect(row.getAllByText(candidate.name, { exact: true })).toHaveLength(1);
-  expect(row.getByText("v1.2 \u00b7 1 Jan 2026")).toBeInTheDocument();
-  expect(row.queryByRole("combobox")).not.toBeInTheDocument();
-  expect(
-    row.getByText("Details & personal import").closest("details"),
-  ).not.toHaveAttribute("open");
-  expect(
-    row.queryByText("Latest suitable archive resolved when sending"),
-  ).not.toBeInTheDocument();
-});
-it("exposes alternatives directly with a full title and preserves candidate selection", async () => {
-  const alternate = {
-    ...candidate,
-    modId: 30343,
-    name: "German translation for the expanded edition",
-  };
-  mount(undefined, mods, {
-    ...search,
-    entries: [
-      {
-        ...search.entries[1],
-        result: {
-          ...search.entries[1].result,
-          candidates: [candidate, alternate],
-        },
-      },
-    ],
-  });
-  const row = translationRow();
-  const choice = row.getByRole("combobox", {
-    name: "Translation for Canonical title",
-  });
-  expect(choice.closest("details")).toBeNull();
-  expect(choice).toHaveAttribute("title", candidate.name);
-  fireEvent.change(choice, { target: { value: "30343" } });
-  expect(choice).toHaveAttribute("title", alternate.name);
-  expect(choice).toHaveValue("30343");
-  sendAll();
+  fireEvent.change(choice, { target: { value: "30342:7" } });
+  app.setMethod("folder");
   await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("nexus_handoff_to_vortex", {
-      modId: 30343,
-      fileId: 7,
-    }),
+    expect(screen.queryByRole("combobox")).not.toBeInTheDocument(),
   );
+  await download();
+  await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
+  expect(commandCalls("nexus_download_preflight")).toEqual([
+    { modId: 30342, fileId: 8 },
+  ]);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });
-it.each([false, undefined])(
-  "does not claim disk coverage after recheck without confirmed traversal (%s)",
-  async (complete) => {
-    const app = mount();
-    sendAll();
-    await screen.findByText(/Handoff requested.*deployment not checked/);
-    app.setTraversal(complete);
-    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Check installed files" }),
-    );
-    await screen.findByText(/Handoff requested.*files rechecked/);
-    expect(
-      translationRow().getByText("Disk coverage unavailable"),
-    ).toBeInTheDocument();
-    expect(translationRow().queryByText(/On disk:/)).not.toBeInTheDocument();
-    expect(app.onSearch).not.toHaveBeenCalled();
-  },
-);
+
+it("waits for discovery to finish before enabling Download all", async () => {
+  const app = mount({ search: { ...search, running: true } });
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (1)",
+    }),
+  ).toBeDisabled();
+  app.setSearch(search);
+  await download();
+  await screen.findByText("Sent to Vortex");
+});
+it("treats a whitespace executable as unconfigured and offers no per-action routing override", async () => {
+  mount({ executable: "   " });
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    screen.getByRole("button", { name: "Download & import all (1)" }),
+  ).toBeEnabled();
+  fireEvent.click(translationRow().getByText("Details"));
+  expect(
+    screen.queryByRole("button", { name: "Import to Review instead" }),
+  ).not.toBeInTheDocument();
+});
+
+it("can explicitly redownload an expired mapping confirmation without changing the selected file", async () => {
+  archive.files = [
+    {
+      path: "i18n/default.json",
+      manifestUniqueId: "sample.mod",
+      isDefault: true,
+    },
+  ];
+  const app = mount({ method: "folder" });
+  await download();
+  await screen.findByRole("checkbox", {
+    name: /This default.json contains de translation text/,
+  });
+  app.setOpen(false);
+  vi.spyOn(Date, "now").mockReturnValue(Date.now() + 16 * 60_000);
+  app.setOpen(true);
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Download again" }),
+  );
+  await waitFor(() =>
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(2),
+  );
+  expect(commandCalls("nexus_download_preflight")).toEqual([
+    { modId: 30342, fileId: 7 },
+    { modId: 30342, fileId: 7 },
+  ]);
+  expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+});

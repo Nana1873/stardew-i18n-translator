@@ -25,28 +25,35 @@ do not make a scan incomplete.
 ## Find translations on Nexus
 
 This workflow is currently for local testing. Nexus is optional: configure an
-API key in Setup or Settings. Configure a Vortex executable only if you want to use Vortex. The validated key is
+API key in Setup or Settings. Choose **Manual / no mod manager** or **Vortex**
+in the installation section of Setup; this remains editable in Settings.
+Select Vortex.exe there when using Vortex. The validated key is
 saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
 `data/`; it does not move with the app. Opening Setup only checks local key
 readiness. **Test existing key** and **Validate and save key** contact Nexus.
 
-Use **Find translations**, or enable discovery after scans. Searches use Nexus
+Use **Find translations on Nexus Mods**, or enable discovery after scans. Searches use Nexus
 update IDs and the selected language, never your local translation text. Shared
 IDs are searched once. Groups with complete language-file coverage on disk are
-skipped by default; **Include fully translated mods** includes them for
-Collection curation. Review drafts alone do not count as installed coverage.
+skipped by default. Review drafts alone do not count as installed coverage.
 Coverage is not a quality or compatibility guarantee.
 
-The list shows likely translations and their file versions and upload dates.
-Choose a candidate or file inline when there is more than one suitable option.
+The list shows available likely translations for the scanned mods. All shown
+downloads are included automatically: there are no mod-selection checkboxes.
+File metadata loads before the download action. When more than one current
+version or variant is available, choose it directly in the row's dropdown.
+Single-file results need no choice. The file IDs shown by this list are the
+ones used by the batch action; nothing downloads merely by opening the list.
 The newest suitable file is a selection hint, not proof that it matches your
-installed mod. **Original mod files** may include bundled translations; it does
-not guarantee that your language is present. Search metadata is cached locally
-for 24 hours with a freshness time. **Refresh search** requests fresh results.
+installed mod. Search metadata is cached locally for 24 hours.
+**Refresh search**, under **Options & search details**, requests fresh results.
 Cancellation and API failures preserve your local workspace; bounded searches
 may miss translations.
 
-Select rows and choose the destination: **Review** or **Vortex**. One batch action matches that choice. Without configured Vortex, Review is the default; you do not need a mod manager to import translations. For Vortex, use **Send selected to Vortex**. The app passes their numeric
+One download button processes the list using the installation method saved in
+Setup/Settings. There is no Vortex/Review switch in the results dialog. Manual
+mode imports into the translator's Review; Vortex mode requests download and
+installation through Vortex. The app passes the chosen numeric
 Nexus mod/file references to the configured Vortex executable without passing
 its API key. Vortex uses its own account and handles download requirements,
 installation, conflicts, and deployment. A successful handoff means only that
@@ -64,7 +71,10 @@ those in Vortex; practical Vortex acceptance remains a user-led test.
 
 ### Personal import into Review
 
-Choose **Review** and use **Import selected to Review**. Selected rows are processed one at a time; stopping keeps completed imports and prevents further rows from starting. This action downloads
+With the **Manual / no mod manager** installation method, the download action
+imports eligible translations into Review. Rows are processed one at a time;
+stopping keeps completed imports and prevents further rows from starting.
+This action downloads
 a selected ZIP through the official Nexus API and requires Nexus Premium.
 Unambiguous language files are checked and imported; ambiguous files or component
 mappings require a choice. A translated `default.json` requires confirmation

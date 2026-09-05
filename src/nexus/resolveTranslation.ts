@@ -87,12 +87,12 @@ function series(file: NexusFile): string {
     .trim();
 }
 
-/** Metadata selection only; personal imports must also pass native archive preflight. */
-export function selectTranslationFile(
+/** Current language-matching versions, newest first; archive contents remain unverified. */
+export function translationFileOptions(
   files: NexusFile[],
   targetLang: string,
   purpose: "review" | "vortex" = "review",
-): TranslationFileSelection {
+): NexusFile[] {
   const target = locale(targetLang);
   const eligible = files.filter((file) => {
     if (
@@ -114,14 +114,7 @@ export function selectTranslationFile(
     const namedLanguages = signals(`${file.name} ${file.fileName}`);
     return namedLanguages.length === 0 || namedLanguages.includes(target);
   });
-  if (!eligible.length)
-    return {
-      kind: "unavailable",
-      reason:
-        purpose === "vortex"
-          ? "No current archive suitable for this language. Check the Nexus files page."
-          : "No current ZIP suitable for this language. Open the Nexus files page for other formats or versions.",
-    };
+  if (!eligible.length) return [];
   const languageSpecific = eligible.filter((file) =>
     signals(`${file.name} ${file.fileName}`).includes(target),
   );
@@ -140,9 +133,26 @@ export function selectTranslationFile(
     (file) => (file.category ?? "").toUpperCase() === "MAIN",
   );
   if (main.length) pool = main;
-  const sorted = [...pool].sort(
+  return [...pool].sort(
     (a, b) => timestamp(b) - timestamp(a) || b.fileId - a.fileId,
   );
+}
+
+/** Metadata selection only; personal imports must also pass native archive preflight. */
+export function selectTranslationFile(
+  files: NexusFile[],
+  targetLang: string,
+  purpose: "review" | "vortex" = "review",
+): TranslationFileSelection {
+  const sorted = translationFileOptions(files, targetLang, purpose);
+  if (!sorted.length)
+    return {
+      kind: "unavailable",
+      reason:
+        purpose === "vortex"
+          ? "No current archive suitable for this language. Check the Nexus files page."
+          : "No current ZIP suitable for this language. Open the Nexus files page for other formats or versions.",
+    };
   const sameSeries = new Set(sorted.map(series)).size === 1;
   if (
     sorted.length === 1 ||

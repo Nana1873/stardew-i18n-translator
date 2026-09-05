@@ -71,18 +71,14 @@
   border-bottom: 1px solid var(--translator-border);
   overflow-wrap: anywhere;
 }
-.nexus-table th:first-child,
-.nexus-table td:first-child:not([colspan]) {
-  width: 32px;
+.nexus-table th:nth-child(1) {
+  width: 28%;
 }
 .nexus-table th:nth-child(2) {
-  width: 24%;
+  width: 50%;
 }
 .nexus-table th:nth-child(3) {
-  width: 44%;
-}
-.nexus-table th:nth-child(4) {
-  width: 28%;
+  width: 22%;
 }
 .nexus-table select {
   width: 100%;
@@ -96,19 +92,6 @@
 .nexus-table button {
   margin-top: 6px;
   white-space: normal;
-}
-.nexus-table .nexus-row-status {
-  margin-top: 0;
-}
-.nexus-row-status {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-.nexus-row-status p {
-  margin: 0;
 }
 .nexus-inline-choice {
   border-left: 2px solid var(--translator-border-strong);
@@ -155,24 +138,6 @@
   margin-top: 6px;
 }
 
-.nexus-refresh {
-  margin-left: auto;
-}
-.nexus-search-strip {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 5px 16px;
-  font-size: 0.8rem;
-  color: var(--translator-muted);
-}
-.nexus-search-strip .nexus-checkbox {
-  margin: 0;
-  align-items: center;
-}
-.nexus-search-strip .nexus-checkbox input {
-  margin-top: 0;
-}
 .nexus-dialog select {
   color: var(--translator-text);
   background: var(--translator-surface);
@@ -190,9 +155,6 @@
 .nexus-table details {
   margin: 5px 0 0;
 }
-.nexus-import-receipt {
-  font-size: 0.75rem;
-}
 .nexus-file-name {
   overflow-wrap: anywhere;
 }
@@ -200,7 +162,14 @@
   .nexus-table {
     min-width: 640px;
   }
-  .nexus-refresh {
-    margin-left: 0;
-  }
+}
+
+.nexus-options {
+  font-size: 0.8rem;
+}
+.nexus-options > .nexus-actions {
+  margin-top: 8px;
+}
+.nexus-table td > p[role="status"] {
+  font-size: 0.8rem;
 }

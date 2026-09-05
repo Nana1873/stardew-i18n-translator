@@ -154,8 +154,18 @@ never enters portable settings, metadata cache, logs, handoff arguments, or
 response DTOs. Status exposes readiness and Premium eligibility; raw validation
 responses and signed download URLs remain in the backend.
 
-A visible Review/Vortex destination choice controls one matching batch action. Review is the default without configured Vortex; no mod manager is required for personal import. The Vortex action hands selected numeric Nexus mod/file references to an
-explicitly configured Vortex executable. Vortex uses its own account. Process
+A saved Folder/Vortex installation method controls the download action. It is
+selected in Setup and editable in Settings; the results dialog has no destination
+toggle or per-mod selection checkboxes. All available rows join the batch.
+File metadata loads before confirmation; multiple current versions or variants
+are selectable inline, while a unique file needs no further choice. The batch
+uses those exact mod/file IDs and does not silently resolve a different version.
+Legacy configurations with a Vortex executable retain that experimental default;
+other existing users retain Folder. An explicit Folder choice wins over a saved
+executable path. No mod manager is required for personal import.
+The Vortex action hands chosen numeric Nexus mod/file references to an
+explicitly configured Vortex executable to request download and installation.
+Vortex uses its own account. Process
 launch success is reported only as a handoff request, never as download,
 installation, deployment, original-source association or Collection membership.
 Batch cancellation stops subsequent requests without undoing earlier handoffs.

@@ -53,6 +53,10 @@ import {
 } from "../shortcuts";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import { NexusSetup } from "../nexus/NexusSetup";
+import {
+  InstallationSettings,
+  installationMethodFor,
+} from "../setup/InstallationSettings";
 import packageInfo from "../../package.json";
 
 const LLM_PRESETS: Record<string, string> = {
@@ -151,6 +155,9 @@ export function SettingsDialog({
   initialPage = "folders",
   onNexusKeySaved,
 }: SettingsDialogProps) {
+  const [installationMethod, setInstallationMethod] = useState(() =>
+    installationMethodFor(settings),
+  );
   const [vortexExecutable, setVortexExecutable] = useState(
     settings.vortexExecutable ?? null,
   );
@@ -549,6 +556,7 @@ export function SettingsDialog({
         diagnosticLogging,
         nexusSearchOnScan,
         vortexExecutable,
+        installationMethod,
         ai: {
           defaultEngine: defaultEngine ?? "local",
           codexModel: codexModel || null,
@@ -666,8 +674,6 @@ export function SettingsDialog({
                 aria-label="Nexus Mods"
               >
                 <NexusSetup
-                  vortexExecutable={vortexExecutable}
-                  onVortexExecutableChange={setVortexExecutable}
                   searchOnScan={nexusSearchOnScan}
                   onSearchOnScanChange={setNexusSearchOnScan}
                   onKeySaved={onNexusKeySaved}
@@ -685,6 +691,14 @@ export function SettingsDialog({
               hidden={page !== "folders"}
             >
               <h3>Folders & language</h3>
+              <InstallationSettings
+                method={installationMethod}
+                onMethodChange={setInstallationMethod}
+                executable={vortexExecutable}
+                onExecutableChange={setVortexExecutable}
+                disabled={saving}
+                active={page === "folders"}
+              />
               <p className="translator-settings-intro">
                 The app only reads mods and game content from the selected
                 folders.

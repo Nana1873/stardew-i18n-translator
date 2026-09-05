@@ -1,23 +1,14 @@
 import { useEffect, useState } from "react";
-import {
-  nexusSaveKey,
-  nexusStatus,
-  pickVortexExecutable,
-  type NexusStatus,
-} from "../tauri/commands";
+import { nexusSaveKey, nexusStatus, type NexusStatus } from "../tauri/commands";
 
 export function NexusSetup({
   searchOnScan,
   onSearchOnScanChange,
   onKeySaved,
-  vortexExecutable,
-  onVortexExecutableChange,
 }: {
   searchOnScan: boolean;
   onSearchOnScanChange: (value: boolean) => void;
   onKeySaved?: () => void;
-  vortexExecutable?: string | null;
-  onVortexExecutableChange?: (value: string | null) => void;
 }) {
   const [status, setStatus] = useState<NexusStatus | null>(null);
   const [key, setKey] = useState("");
@@ -60,39 +51,6 @@ export function NexusSetup({
   return (
     <section className="nexus-setup" aria-label="Optional Nexus setup">
       <h3>Nexus Mods · optional</h3>
-      <label className="wizard__field">
-        <span>Vortex executable</span>
-        <input
-          readOnly
-          value={vortexExecutable ?? ""}
-          placeholder="Select Vortex.exe"
-        />
-      </label>
-      <button
-        className="translator-button translator-button-quiet"
-        type="button"
-        disabled={busy || !onVortexExecutableChange}
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            const selected = await pickVortexExecutable();
-            if (selected) onVortexExecutableChange?.(selected);
-          } catch {
-            setError(
-              "Could not select Vortex.exe. Choose an existing Vortex executable.",
-            );
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        Choose Vortex.exe
-      </button>
-      <p>
-        Vortex uses its own Nexus account. Save these settings to enable
-        handoff; this app cannot verify Vortex login, downloads or deployment.
-      </p>
       <p>
         Find possible existing translations for your scanned mods. Search sends
         Nexus mod IDs and the target language; local translation text stays on
