@@ -602,6 +602,12 @@ describe("App shell", () => {
     expect(
       await screen.findByText("No suitable translation downloads found."),
     ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Nexus translations" }),
+    );
+    expect(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    ).toHaveTextContent(/^Find translations on Nexus$/);
   });
 
   it("rechecks deployed files locally while retaining Nexus receipt and saved Review coverage", async () => {
@@ -701,7 +707,9 @@ describe("App shell", () => {
         "Details",
       ),
     );
-    expect(screen.getByText(/On disk: 1\/1 keys/)).toBeInTheDocument();
+    expect(
+      screen.getByText("Local translation: 1/1 strings · 0 missing"),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/1 saved values differ from disk; drafts kept/),
     ).toBeInTheDocument();

@@ -236,8 +236,8 @@ it("loads only candidate metadata before any action, without selection checkboxe
     translationRow().getByText("v1.2 \u00b7 1 Jan 2026"),
   ).toBeInTheDocument();
   expect(
-    screen.queryByRole("button", { name: "Check installed files" }),
-  ).not.toBeInTheDocument();
+    screen.getByRole("button", { name: "Check installed files" }),
+  ).toBeEnabled();
   expect(screen.queryByText("Details")).not.toBeInTheDocument();
   expect(screen.queryByText("Ready")).not.toBeInTheDocument();
   fireEvent.click(
@@ -246,6 +246,56 @@ it("loads only candidate metadata before any action, without selection checkboxe
   expect(commandCalls("open_url")).toEqual([
     { url: "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files" },
   ]);
+});
+it("shows exact local coverage even when saved translations are complete", async () => {
+  mount({
+    mods: [
+      {
+        ...mods[0],
+        totalKeys: 1000,
+        translatedKeys: 1000,
+        diskTranslatedKeys: 999,
+      },
+    ],
+  });
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    translationRow().getByText(
+      "Local translation: 999/1000 strings · 1 missing",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/100%|1000\/1000/)).not.toBeInTheDocument();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+it("can recheck an external installation before any handoff without refreshing Nexus", async () => {
+  const app = mount();
+  await screen.findByRole("row", { name: "Canonical title" });
+  app.onCheckInstalled.mockImplementation(async () => {
+    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }]);
+  });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check installed files" }),
+  );
+  await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("row", { name: "Canonical title" }),
+    ).not.toBeInTheDocument(),
+  );
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  expect(app.onSearch).not.toHaveBeenCalled();
+});
+it("keeps unknown local coverage distinct from zero or installed before any action", async () => {
+  const app = mount();
+  app.setTraversal(false);
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    translationRow().getByText("Local translation coverage unavailable"),
+  ).toBeInTheDocument();
+  expect(
+    translationRow().queryByText(/0\/3|0 missing|installed/i),
+  ).not.toBeInTheDocument();
 });
 it("includes all ready rows automatically and never redownloads a completed handoff", async () => {
   const app = mount();
@@ -479,7 +529,12 @@ it("rechecks local disk without refreshing metadata or losing drafts and receipt
   );
   await screen.findByText("1 sent to Vortex · files rechecked");
   fireEvent.click(translationRow().getByText("Details"));
-  expect(translationRow().getByText(/On disk: 3\/3 keys/)).toBeInTheDocument();
+  expect(
+    translationRow().getByText("Local translation: 3/3 strings · 0 missing"),
+  ).toBeInTheDocument();
+  expect(
+    translationRow().getByText("+3 strings on disk since handoff"),
+  ).toBeInTheDocument();
   expect(
     translationRow().getByText(/2 saved values differ from disk; drafts kept/),
   ).toBeInTheDocument();
@@ -500,7 +555,7 @@ it.each([false, undefined])(
     await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(translationRow().getByText("Details"));
     expect(
-      translationRow().getByText("Disk coverage unavailable"),
+      translationRow().getByText("Local translation coverage unavailable"),
     ).toBeInTheDocument();
   },
 );

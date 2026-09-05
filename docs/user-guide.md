@@ -37,6 +37,12 @@ update IDs and the selected language, never your local translation text. Shared
 IDs are searched once. Groups with complete language-file coverage on disk are
 skipped by default. Review drafts alone do not count as installed coverage.
 Coverage is not a quality or compatibility guarantee.
+An existing translation can still be incomplete and appear in the results.
+Each row shows the exact local coverage and missing-string count; this is not a
+download-status check or proof that the offered Nexus file is already installed.
+Use **Check installed files** after a Vortex deployment, including installations
+started outside the translator. Workspace coverage reaches 100% only when every
+source key has text; nearly complete translations are no longer rounded to 100%.
 
 The list shows available likely translations for the scanned mods. All shown
 downloads are included automatically: there are no mod-selection checkboxes.

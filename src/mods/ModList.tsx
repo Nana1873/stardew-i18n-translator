@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ExternalLink, FolderOpen, SearchX } from "lucide-react";
 import { type ScannedMod, openModFolder, openUrl } from "../tauri/commands";
+import { coveragePercent } from "../coverage";
 
 interface PackageGroup {
   packageId: string;
@@ -80,9 +81,9 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
   }).sort((a, b) => byName(groupLabel(a), groupLabel(b)));
 }
 
-function progressStyle(progress: number): CSSProperties {
+function progressStyle(percent: number): CSSProperties {
   return {
-    "--translator-progress": `${Math.round(progress * 100)}%`,
+    "--translator-progress": `${percent}%`,
   } as CSSProperties;
 }
 
@@ -475,7 +476,7 @@ function PackageNode({
   ) => void;
   menuOpenId: string | null;
 }) {
-  const percent = Math.round(group.progress * 100);
+  const percent = coveragePercent(group.translatedKeys, group.totalKeys);
   return (
     <>
       <button
@@ -502,7 +503,7 @@ function PackageNode({
         <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
         <span className="translator-mod-percent">{percent}%</span>
         <span className="translator-mod-progress" aria-hidden="true">
-          <span style={progressStyle(group.progress)} />
+          <span style={progressStyle(percent)} />
         </span>
       </button>
       {expanded &&
@@ -550,7 +551,7 @@ function ModRow({
   menuOpen: boolean;
 }) {
   const selected = mod.uniqueId === selectedId;
-  const percent = Math.round(mod.progress * 100);
+  const percent = coveragePercent(mod.translatedKeys, mod.totalKeys);
   const multipleSources = mod.i18nFiles.length > 1;
   return (
     <div
@@ -600,7 +601,7 @@ function ModRow({
         {mod.totalKeys > 0 ? `${percent}%` : "—"}
       </span>
       <span className="translator-mod-progress" aria-hidden="true">
-        <span style={progressStyle(mod.progress)} />
+        <span style={progressStyle(percent)} />
       </span>
       <button
         type="button"

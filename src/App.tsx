@@ -2043,15 +2043,6 @@ export function App() {
           }}
           nexusEnabled={Boolean(scan) && !scanning && !exporting}
           nexusSearching={nexus.running}
-          nexusResultCount={
-            nexus.completed > 0
-              ? nexus.entries.reduce(
-                  (total, entry) =>
-                    total + (entry.result?.candidates.length ?? 0),
-                  0,
-                )
-              : null
-          }
           onExport={requestExport}
           exportEnabled={Boolean(selectedMod) && !exporting}
           onExportAll={requestExportAll}
@@ -2722,7 +2713,6 @@ function AppToolbar({
   onFindTranslations,
   nexusEnabled,
   nexusSearching,
-  nexusResultCount,
   onExport,
   exportEnabled,
   onExportAll,
@@ -2750,7 +2740,6 @@ function AppToolbar({
   onFindTranslations: () => void;
   nexusEnabled: boolean;
   nexusSearching: boolean;
-  nexusResultCount: number | null;
   onExport: () => void;
   exportEnabled: boolean;
   onExportAll: () => void;
@@ -2862,20 +2851,12 @@ function AppToolbar({
           className="translator-button translator-button-quiet"
           disabled={!nexusEnabled}
           onClick={onFindTranslations}
-          title={
-            nexusResultCount === null
-              ? "Search Nexus for possible translations; nothing downloads automatically"
-              : `${nexusResultCount} possible translations found. Open search results; nothing downloads automatically.`
-          }
+          title="Search Nexus for possible translations; nothing downloads automatically"
           aria-label="Find translations on Nexus Mods"
         >
           <SearchIcon aria-hidden />
           <span className="translator-action-label-compact">
-            {nexusSearching
-              ? "Searching Nexus…"
-              : nexusResultCount !== null
-                ? `Find translations on Nexus (${nexusResultCount})`
-                : "Find translations on Nexus"}
+            {nexusSearching ? "Searching Nexus…" : "Find translations on Nexus"}
           </span>
         </button>
         <button

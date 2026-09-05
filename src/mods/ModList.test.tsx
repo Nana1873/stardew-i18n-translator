@@ -154,6 +154,43 @@ describe("ModList", () => {
     expect(screen.getByText("50%")).toBeInTheDocument();
   });
 
+  it("keeps a nearly complete package and its incomplete component below 100 percent", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "a",
+            name: "Almost",
+            packageId: "Bundle",
+            totalKeys: 999,
+            translatedKeys: 998,
+            progress: 998 / 999,
+          }),
+          mod({
+            uniqueId: "b",
+            name: "Complete",
+            packageId: "Bundle",
+            totalKeys: 1,
+            translatedKeys: 1,
+            progress: 1,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByRole("treeitem", { name: /Bundle/ })).toHaveTextContent(
+      "99.9%",
+    );
+    expect(screen.getByRole("treeitem", { name: /Almost/ })).toHaveAttribute(
+      "data-mod-progress",
+      "998 / 999 · 99.9%",
+    );
+    expect(
+      screen.getByRole("treeitem", { name: /Complete/ }),
+    ).toHaveTextContent("100%");
+  });
+
   it("sorts packages alphabetically by name", () => {
     render(
       <ModList

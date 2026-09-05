@@ -441,6 +441,26 @@ describe("StringTable workbench", () => {
     expect(screen.getByText("scanned just now")).toBeVisible();
   });
 
+  it("does not round one missing string up to a complete workbench", async () => {
+    invokeMock.mockImplementation((command: string) =>
+      Promise.resolve(
+        command === "load_strings"
+          ? Array.from({ length: 200 }, (_, index) => ({
+              key: `key-${index}`,
+              source: "Source",
+              target: index === 199 ? "" : "Translation",
+              targetPresent: index !== 199,
+              status: index === 199 ? "untranslated" : "translated",
+            }))
+          : null,
+      ),
+    );
+    render(<StringTable mod={MOD} />);
+    expect(
+      await screen.findByText("199 / 200 translated · 99.5%"),
+    ).toBeVisible();
+  });
+
   it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
     const onOpenMod = vi.fn();
     render(

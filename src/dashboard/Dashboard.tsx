@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, FileCheck2, GitCompareArrows } from "lucide-react";
 import type { ScanResult, ScannedMod } from "../tauri/commands";
+import { coveragePercent } from "../coverage";
 
 export type OverviewFilter = "has-value" | "translated" | "untranslated";
 
@@ -105,8 +106,7 @@ export function Dashboard({
   const totalKeys = withKeys.reduce((sum, mod) => sum + mod.totalKeys, 0);
   const withText = withKeys.reduce((sum, mod) => sum + mod.translatedKeys, 0);
   const open = Math.max(0, totalKeys - withText);
-  const withTextPct =
-    totalKeys > 0 ? Math.round((withText / totalKeys) * 100) : 0;
+  const withTextPct = coveragePercent(withText, totalKeys);
   const openPct = totalKeys > 0 ? Math.round((open / totalKeys) * 100) : 0;
   const allStatusesKnown =
     scan != null && withKeys.every((mod) => mod.statusCounts != null);
@@ -119,9 +119,7 @@ export function Dashboard({
   const reviewedPct =
     reviewedCurrent == null
       ? null
-      : totalKeys > 0
-        ? Math.round((reviewedCurrent / totalKeys) * 100)
-        : 0;
+      : coveragePercent(reviewedCurrent, totalKeys);
   const recent = withKeys
     .filter((mod) => Number.isFinite(lastOpened[mod.uniqueId]))
     .sort((a, b) => lastOpened[b.uniqueId] - lastOpened[a.uniqueId])

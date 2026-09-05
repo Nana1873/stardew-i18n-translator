@@ -618,6 +618,11 @@ export function NexusDialog({
             {version && (
               <small>Installed v{version.replace(/^v(?=\d)/i, "")}</small>
             )}
+            <small>
+              {disk
+                ? `Local translation: ${disk.covered}/${disk.total} strings · ${disk.total - disk.covered} missing`
+                : "Local translation coverage unavailable"}
+            </small>
           </td>
           <td>
             <div className="nexus-file-link">
@@ -731,11 +736,11 @@ export function NexusDialog({
                     deployment are not confirmed by this app.
                   </p>
                 )}
-                <small>
-                  {disk
-                    ? `On disk: ${disk.covered}/${disk.total} keys${rechecked && baseline ? ` (${disk.covered - baseline.covered >= 0 ? "+" : ""}${disk.covered - baseline.covered} since handoff)` : ""}`
-                    : "Disk coverage unavailable"}
-                </small>
+                {rechecked && disk && baseline && (
+                  <small>
+                    {`${disk.covered - baseline.covered >= 0 ? "+" : ""}${disk.covered - baseline.covered} strings on disk since handoff`}
+                  </small>
+                )}
                 {disk && disk.differences > 0 && (
                   <small>
                     {disk.differences} saved values differ from disk; drafts
@@ -981,7 +986,7 @@ export function NexusDialog({
               Stop after current
             </button>
           )}
-          {handedOffIds.length > 0 && (
+          {isVortex && (
             <button
               className={quiet}
               disabled={locked || !onCheckInstalled}

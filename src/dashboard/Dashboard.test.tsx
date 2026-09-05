@@ -59,6 +59,40 @@ function sampleScan(mods = [sampleMod()]): ScanResult {
 }
 
 describe("Dashboard", () => {
+  it("does not report full coverage while a string is still open", () => {
+    render(
+      <Dashboard
+        scan={sampleScan([
+          sampleMod({
+            totalKeys: 1000,
+            translatedKeys: 999,
+            statusCounts: {
+              untranslated: 1,
+              translated: 999,
+              outdated: 0,
+              "review-needed": 0,
+            },
+          }),
+        ])}
+        scanning={false}
+        lastScanAt={null}
+        now={Date.now()}
+        languageLine="German (de)"
+        onScan={vi.fn()}
+        scanEnabled
+        onOpenMod={vi.fn()}
+        onBrowse={vi.fn()}
+        lastOpened={{}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: /Has German text/ }),
+    ).toHaveTextContent("99.9%");
+    expect(
+      screen.getByRole("button", { name: /Reviewed & current/ }),
+    ).toHaveTextContent("99.9%");
+  });
+
   it("renders Overview from real counts and explicit unavailable deltas", () => {
     const filter = vi.fn();
     const scanDetails = vi.fn();

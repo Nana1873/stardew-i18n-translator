@@ -18,6 +18,7 @@ import {
   useState,
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { coveragePercent } from "../coverage";
 import {
   ArrowDown,
   ArrowUp,
@@ -1853,8 +1854,7 @@ export function StringTable({
         : null
       : headerContext;
   const workingTranslated = countTranslated(data);
-  const workingProgress =
-    data.length > 0 ? Math.round((workingTranslated / data.length) * 100) : 0;
+  const workingProgress = coveragePercent(workingTranslated, data.length);
   const suppliedHeaderMeta =
     typeof headerMeta === "string"
       ? [headerMeta]
