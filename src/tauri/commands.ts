@@ -86,6 +86,116 @@ export interface AppSettings {
   workspace?: WorkspaceSettings;
   /** Whether rotating local diagnostic logs are written. Defaults to true. */
   diagnosticLogging?: boolean;
+  /** Optional Nexus metadata search after scanning; no credential is stored here. */
+  nexusSearchOnScan?: boolean;
+  /** Explicit local Vortex.exe path. No authentication information. */
+  vortexExecutable?: string | null;
+}
+
+export interface NexusStatus {
+  configured: boolean;
+  premium: boolean;
+  validated: boolean;
+}
+export interface NexusCandidate {
+  modId: number;
+  name: string;
+  summary: string;
+  version: string;
+  updatedAt: string;
+  relationshipTier:
+    "possible-original-translation" | "possible-addon-or-other-translation";
+}
+export interface NexusSearchResult {
+  modId: number;
+  originalName: string;
+  candidates: NexusCandidate[];
+  limited: boolean;
+  notice: string;
+  fetchedAt?: number;
+  expiresAt?: number;
+  cacheStatus?: "fresh" | "cached";
+}
+export interface NexusFile {
+  fileId: number;
+  name: string;
+  version: string;
+  uploadedAt: string;
+  fileName: string;
+  category: string;
+  description: string;
+}
+export interface NexusArchive {
+  archiveId: string;
+  files: {
+    path: string;
+    manifestUniqueId: string | null;
+    isDefault: boolean;
+  }[];
+  notice: string;
+}
+export interface NexusImportRequest {
+  archiveId: string;
+  archivePath: string;
+  modUniqueId: string;
+  relativeDir: string;
+}
+export interface NexusImportPreflight {
+  matched: number;
+  missing: number;
+  extra: number;
+  empty: number;
+  sourceEqual: number;
+  tokenInvalid: number;
+  conflicts: number;
+  importable: number;
+  notice: string;
+}
+export function nexusStatus(forceRefresh = false): Promise<NexusStatus> {
+  return invoke("nexus_status", { forceRefresh });
+}
+export function nexusSaveKey(key: string): Promise<NexusStatus> {
+  return invoke("nexus_save_key", { key });
+}
+export function nexusFindTranslations(
+  modId: number,
+  targetLang: string,
+  forceRefresh = false,
+): Promise<NexusSearchResult> {
+  return invoke("nexus_find_translations", { modId, targetLang, forceRefresh });
+}
+export function pickVortexExecutable(): Promise<string | null> {
+  return invoke("pick_vortex_executable");
+}
+export interface VortexHandoff {
+  modId: number;
+  fileId: number;
+  status: "handoff-requested";
+}
+export function nexusHandoffToVortex(
+  modId: number,
+  fileId: number,
+): Promise<VortexHandoff> {
+  return invoke("nexus_handoff_to_vortex", { modId, fileId });
+}
+export function nexusListFiles(modId: number): Promise<NexusFile[]> {
+  return invoke("nexus_list_files", { modId });
+}
+export function nexusDownloadPreflight(
+  modId: number,
+  fileId: number,
+): Promise<NexusArchive> {
+  return invoke("nexus_download_preflight", { modId, fileId });
+}
+export function nexusPreflightImport(
+  request: NexusImportRequest,
+): Promise<NexusImportPreflight> {
+  return invoke("nexus_preflight_import", { ...request });
+}
+export function nexusImportTranslation(
+  request: NexusImportRequest,
+): Promise<NexusImportPreflight & { imported: number }> {
+  return invoke("nexus_import_translation", { ...request });
 }
 
 export function detectStardew(): Promise<DetectedInstall | null> {
@@ -113,6 +223,9 @@ export interface ScannedI18nFile {
   targetExists: boolean;
   totalKeys: number;
   translatedKeys: number;
+  /** Deployed JSON coverage, independent of saved app drafts. */
+  diskTranslatedKeys?: number;
+  stateDiskDifferences?: number;
   /** Source keys whose saved status is an unreviewed AI suggestion. */
   reviewNeeded: number;
 }
@@ -127,6 +240,8 @@ export interface ScannedMod {
   i18nFiles: ScannedI18nFile[];
   totalKeys: number;
   translatedKeys: number;
+  diskTranslatedKeys?: number;
+  stateDiskDifferences?: number;
   /** Unreviewed AI suggestions across all i18n files (dashboard queue). */
   reviewNeeded: number;
   /** 0–1. */

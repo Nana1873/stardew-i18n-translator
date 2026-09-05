@@ -25,6 +25,8 @@ import {
 } from "../languages";
 import { useDialogAccessibility } from "../dialogAccessibility";
 
+import { NexusSetup } from "../nexus/NexusSetup";
+
 type Step = 1 | 2 | 3 | 4;
 
 const SETUP_STEPS: Array<{
@@ -43,13 +45,21 @@ interface SetupWizardProps {
   onComplete: (settings: AppSettings) => Promise<void> | void;
   /** Provided only when settings already exist (wizard re-opened from Settings). */
   onCancel?: () => void;
+  onNexusKeySaved?: () => void;
 }
 
 export function SetupWizard({
   initial,
   onComplete,
   onCancel,
+  onNexusKeySaved,
 }: SetupWizardProps) {
+  const [vortexExecutable, setVortexExecutable] = useState(
+    initial?.vortexExecutable ?? null,
+  );
+  const [nexusSearchOnScan, setNexusSearchOnScan] = useState(
+    initial?.nexusSearchOnScan ?? false,
+  );
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -202,6 +212,8 @@ export function SetupWizard({
       await onComplete({
         stardewPath,
         modsPath,
+        nexusSearchOnScan,
+        vortexExecutable,
         sourceLang: "default",
         targetLang,
       });
@@ -367,6 +379,13 @@ export function SetupWizard({
 
             {step === 4 && (
               <section aria-label="Glossary">
+                <NexusSetup
+                  vortexExecutable={vortexExecutable}
+                  onVortexExecutableChange={setVortexExecutable}
+                  searchOnScan={nexusSearchOnScan}
+                  onSearchOnScanChange={setNexusSearchOnScan}
+                  onKeySaved={onNexusKeySaved}
+                />
                 <StepHeading
                   eyebrow="Step 4 / Optional"
                   title="Add official translation hints"

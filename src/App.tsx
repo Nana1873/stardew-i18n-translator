@@ -76,12 +76,16 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
+  Search as SearchIcon,
   Settings as SettingsIcon,
   Table2,
   Upload,
   X,
 } from "lucide-react";
 import { TARGET_LANGUAGES } from "./languages";
+import { NexusDialog } from "./nexus/NexusDialog";
+import { useNexusSearch } from "./nexus/useNexusSearch";
+import "./nexus/nexus.css";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import {
@@ -264,11 +268,36 @@ export function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<
-    "folders" | "ai" | "glossary" | "shortcuts" | "about"
+    "folders" | "ai" | "nexus" | "glossary" | "shortcuts" | "about"
   >("folders");
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
 
+  const [nexusOpen, setNexusOpen] = useState(false);
+  const [nexusSessionRevision, setNexusSessionRevision] = useState(0);
+  const nexusWorkspaceKey = `${settings?.modsPath ?? ""}|${settings?.targetLang ?? ""}`;
+  const nexus = useNexusSearch(nexusWorkspaceKey);
+  function resetNexus() {
+    nexus.reset();
+    setNexusSessionRevision((value) => value + 1);
+  }
+  const [nexusScanJob, setNexusScanJob] = useState<{
+    mods: ScannedMod[];
+    skippedComponents: ScanResult["skippedComponents"];
+    targetLang: string;
+    workspaceKey: string;
+  } | null>(null);
+  useEffect(() => {
+    if (!nexusScanJob) return;
+    setNexusScanJob(null);
+    if (nexusScanJob.workspaceKey === nexusWorkspaceKey)
+      void nexus.start(nexusScanJob.mods, nexusScanJob.targetLang, {
+        skippedComponents: nexusScanJob.skippedComponents,
+      });
+  }, [nexusScanJob, nexusWorkspaceKey]);
+  useEffect(() => {
+    setNexusOpen(false);
+  }, [nexusWorkspaceKey]);
   const [scan, setScan] = useState<ScanResult | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -736,6 +765,10 @@ export function App() {
     // The wizard may have built a glossary, or the target language changed —
     // reload the cache for the now-active language.
     refreshGlossary(merged.targetLang);
+    await runScan(merged, false, () => true, {
+      clearExisting: true,
+      showExtraKeyDialog: false,
+    });
   }
 
   async function handleSaveSettings(next: AppSettings) {
@@ -774,6 +807,7 @@ export function App() {
     showProgress: boolean,
     isActive: () => boolean = () => true,
     options: {
+      nexusSearch?: boolean;
       clearExisting?: boolean;
       showExtraKeyDialog?: boolean;
       preserveSelection?: boolean;
@@ -781,6 +815,7 @@ export function App() {
     } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
+    if (options.nexusSearch !== false) resetNexus();
     const generation = ++scanGenerationRef.current;
     const isCurrentRequest = () =>
       generation === scanGenerationRef.current && isActive();
@@ -809,6 +844,14 @@ export function App() {
       );
       if (!isCurrentRequest()) return;
       setScan(result);
+      if (scanSettings.nexusSearchOnScan && options.nexusSearch !== false) {
+        setNexusScanJob({
+          mods: result.mods,
+          skippedComponents: result.skippedComponents,
+          targetLang: scanSettings.targetLang,
+          workspaceKey: `${scanSettings.modsPath}|${scanSettings.targetLang}`,
+        });
+      }
       const completedAt = Date.now();
       setLastScanAt(completedAt);
       setNow(completedAt);
@@ -842,6 +885,7 @@ export function App() {
               (result.extraKeys?.length ?? 0) > 0),
         );
       }
+      return result;
     } catch (error) {
       logFrontendError("scanMods", String(error));
       if (!isCurrentRequest()) return;
@@ -1928,6 +1972,7 @@ export function App() {
     : "No target language yet";
   const focusedDialogOpen = Boolean(
     wizardOpen ||
+    nexusOpen ||
     settingsOpen ||
     scanDialogOpen ||
     exportConfirm ||
@@ -1965,6 +2010,29 @@ export function App() {
           onScan={handleScan}
           scanEnabled={configured && !scanning && !exporting}
           scanning={scanning}
+          onFindTranslations={() => {
+            setNexusOpen(true);
+            if (
+              !nexus.running &&
+              nexus.completed === 0 &&
+              scan &&
+              settings?.targetLang
+            )
+              void nexus.start(scan.mods, settings.targetLang, {
+                skippedComponents: scan.skippedComponents,
+              });
+          }}
+          nexusEnabled={Boolean(scan) && !scanning && !exporting}
+          nexusSearching={nexus.running}
+          nexusResultCount={
+            nexus.completed > 0
+              ? nexus.entries.reduce(
+                  (total, entry) =>
+                    total + (entry.result?.candidates.length ?? 0),
+                  0,
+                )
+              : null
+          }
           onExport={requestExport}
           exportEnabled={Boolean(selectedMod) && !exporting}
           onExportAll={requestExportAll}
@@ -2231,9 +2299,59 @@ export function App() {
             </div>
           </section>
         )}
+        {scan && settings?.targetLang && (
+          <NexusDialog
+            key={`${nexusWorkspaceKey}:${nexusSessionRevision}`}
+            open={nexusOpen}
+            onOpenReview={(modId) => {
+              setNexusOpen(false);
+              openMod(modId);
+              setSearch("");
+              setIssuesOnly(false);
+              setStatusFilter("review-needed");
+            }}
+            search={nexus}
+            mods={scan.mods}
+            targetLang={settings.targetLang}
+            skippedComponents={scan.skippedComponents}
+            vortexExecutable={settings.vortexExecutable}
+            onCheckInstalled={async () => {
+              const result = await runScan(settings, false, () => true, {
+                nexusSearch: false,
+                showDiagnostics: false,
+                showExtraKeyDialog: false,
+              });
+              if (!result)
+                throw new Error("Local scan failed. Check scan diagnostics.");
+              setReloadToken((value) => value + 1);
+            }}
+            onSearch={(options) =>
+              void nexus.start(scan.mods, settings.targetLang!, {
+                ...options,
+                skippedComponents: scan.skippedComponents,
+              })
+            }
+            onCancel={nexus.cancel}
+            onClose={() => setNexusOpen(false)}
+            onConfigure={() => {
+              setNexusOpen(false);
+              setSettingsPage("nexus");
+              setSettingsOpen(true);
+            }}
+            onImported={async () => {
+              setReloadToken((value) => value + 1);
+              await runScan(settings, false, () => true, {
+                nexusSearch: false,
+                showDiagnostics: false,
+                showExtraKeyDialog: false,
+              });
+            }}
+          />
+        )}
         {wizardOpen && (
           <SetupWizard
             initial={settings}
+            onNexusKeySaved={resetNexus}
             onComplete={handleComplete}
             onCancel={configured ? () => setWizardOpen(false) : undefined}
           />
@@ -2241,6 +2359,7 @@ export function App() {
         {settingsOpen && settings && (
           <SettingsDialog
             settings={settings}
+            onNexusKeySaved={resetNexus}
             initialPage={settingsPage}
             onSave={handleSaveSettings}
             onClose={() => {
@@ -2576,6 +2695,10 @@ function AppToolbar({
   onScan,
   scanEnabled,
   scanning,
+  onFindTranslations,
+  nexusEnabled,
+  nexusSearching,
+  nexusResultCount,
   onExport,
   exportEnabled,
   onExportAll,
@@ -2600,6 +2723,10 @@ function AppToolbar({
   onScan: () => void;
   scanEnabled: boolean;
   scanning: boolean;
+  onFindTranslations: () => void;
+  nexusEnabled: boolean;
+  nexusSearching: boolean;
+  nexusResultCount: number | null;
   onExport: () => void;
   exportEnabled: boolean;
   onExportAll: () => void;
@@ -2706,6 +2833,27 @@ function AppToolbar({
         </button>
       </nav>
       <div className="translator-command-actions">
+        <button
+          type="button"
+          className="translator-button translator-button-quiet"
+          disabled={!nexusEnabled}
+          onClick={onFindTranslations}
+          title={
+            nexusResultCount === null
+              ? "Search Nexus for possible translations; nothing downloads automatically"
+              : `${nexusResultCount} possible translations found. Open search results; nothing downloads automatically.`
+          }
+          aria-label="Find translations"
+        >
+          <SearchIcon aria-hidden />
+          <span className="translator-action-label-compact">
+            {nexusSearching
+              ? "Finding translations…"
+              : nexusResultCount !== null
+                ? `Translations (${nexusResultCount})`
+                : "Find translations"}
+          </span>
+        </button>
         <button
           className="translator-button translator-button-quiet"
           type="button"

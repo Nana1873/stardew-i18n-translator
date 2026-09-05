@@ -38,6 +38,10 @@ pub struct ScannedI18nFile {
     pub total_keys: usize,
     /// Source keys with a non-empty value in the target `<lang>.json`.
     pub translated_keys: usize,
+    /// Nonempty source-key matches in the deployed target JSON, ignoring drafts.
+    pub disk_translated_keys: usize,
+    /// Saved app values that differ from the deployed target (including empty values).
+    pub state_disk_differences: usize,
     /// Source keys whose saved status is an unreviewed AI suggestion
     /// (`review-needed`) — feeds the dashboard review queue.
     pub review_needed: usize,
@@ -94,6 +98,8 @@ pub struct ScannedMod {
     /// Aggregates across all i18n files.
     pub total_keys: usize,
     pub translated_keys: usize,
+    pub disk_translated_keys: usize,
+    pub state_disk_differences: usize,
     /// Unreviewed AI suggestions across all i18n files (dashboard queue).
     pub review_needed: usize,
     /// Current per-status string counts across all i18n files.
@@ -488,6 +494,16 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             .sort_by(|a, b| a.relative_dir.cmp(&b.relative_dir));
         scanned.total_keys = scanned.i18n_files.iter().map(|f| f.total_keys).sum();
         scanned.translated_keys = scanned.i18n_files.iter().map(|f| f.translated_keys).sum();
+        scanned.disk_translated_keys = scanned
+            .i18n_files
+            .iter()
+            .map(|f| f.disk_translated_keys)
+            .sum();
+        scanned.state_disk_differences = scanned
+            .i18n_files
+            .iter()
+            .map(|f| f.state_disk_differences)
+            .sum();
         scanned.review_needed = scanned.i18n_files.iter().map(|f| f.review_needed).sum();
         scanned.progress = progress_of(scanned.total_keys, scanned.translated_keys);
         scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
@@ -635,6 +651,8 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         i18n_files: Vec::new(),
         total_keys: 0,
         translated_keys: 0,
+        disk_translated_keys: 0,
+        state_disk_differences: 0,
         review_needed: 0,
         status_counts: StatusCounts::default(),
         progress: 0.0,
@@ -962,7 +980,10 @@ pub(crate) fn read_object_checked(path: &Path) -> Result<serde_json::Map<String,
     parse_flat_object(&body, path)
 }
 
-fn parse_flat_object(text: &str, path: &Path) -> Result<serde_json::Map<String, Value>, String> {
+pub(crate) fn parse_flat_object(
+    text: &str,
+    path: &Path,
+) -> Result<serde_json::Map<String, Value>, String> {
     let value = parse_json_lenient(text)
         .map_err(|error| format!("Invalid JSON in {}: {error}", path.display()))?;
     let object = value
@@ -1022,10 +1043,23 @@ fn count_keys(
     relative_dir: &str,
 ) -> (usize, usize, usize) {
     inspect_keys_checked(default_path, target_path, None, state, relative_dir)
-        .map(|(total, translated, status_counts, _)| {
-            (total, translated, status_counts.review_needed)
+        .map(|inspection| {
+            (
+                inspection.total,
+                inspection.translated,
+                inspection.status_counts.review_needed,
+            )
         })
         .unwrap_or((0, 0, 0))
+}
+
+struct KeyInspection {
+    total: usize,
+    translated: usize,
+    disk_translated: usize,
+    state_disk_differences: usize,
+    status_counts: StatusCounts,
+    source_hashes: Vec<SourceKeyHash>,
 }
 
 fn inspect_keys_checked(
@@ -1034,7 +1068,7 @@ fn inspect_keys_checked(
     allowed_root: Option<&Path>,
     state: &ModState,
     relative_dir: &str,
-) -> Result<(usize, usize, StatusCounts, Vec<SourceKeyHash>), String> {
+) -> Result<KeyInspection, String> {
     let source = match allowed_root {
         Some(root) => read_object_within_root(default_path, root, "source")?,
         None => read_object_checked(default_path)?,
@@ -1044,6 +1078,27 @@ fn inspect_keys_checked(
         None => read_target_object_checked(target_path)?,
     };
     let target = TargetLookup::new(&target_map);
+    let disk_translated = source
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .filter(|key| {
+            target
+                .get(key)
+                .and_then(Value::as_str)
+                .is_some_and(|text| !text.trim().is_empty())
+        })
+        .count();
+    let state_disk_differences = source
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .filter(|key| {
+            state
+                .get(&translations::entry_key(relative_dir, key))
+                .is_some_and(|stored| {
+                    stored.target != target.get(key).and_then(Value::as_str).unwrap_or_default()
+                })
+        })
+        .count();
     let total = source
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
@@ -1085,7 +1140,14 @@ fn inspect_keys_checked(
             source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
         })
         .collect();
-    Ok((total, translated, status_counts, source_hashes))
+    Ok(KeyInspection {
+        total,
+        translated,
+        disk_translated,
+        state_disk_differences,
+        status_counts,
+        source_hashes,
+    })
 }
 
 fn read_target_object_within_root(
@@ -1191,25 +1253,27 @@ fn build_i18n_file(
         .replace('\\', "/");
     let default_path = i18n_dir.join("default.json");
     let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys, status_counts, source_hashes) = inspect_keys_checked(
+    let inspection = inspect_keys_checked(
         &default_path,
         &target_path,
         Some(mods_path),
         state,
         &relative_dir,
     )?;
-    let review_needed = status_counts.review_needed;
+    let review_needed = inspection.status_counts.review_needed;
     let file = ScannedI18nFile {
         target_exists: target_read_path(&target_path).is_file(),
         default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
         relative_dir,
-        total_keys,
-        translated_keys,
+        total_keys: inspection.total,
+        translated_keys: inspection.translated,
+        disk_translated_keys: inspection.disk_translated,
+        state_disk_differences: inspection.state_disk_differences,
         review_needed,
-        source_hashes,
+        source_hashes: inspection.source_hashes,
     };
-    Ok((file, status_counts))
+    Ok((file, inspection.status_counts))
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
@@ -2742,5 +2806,134 @@ mod tests {
                 cp.total_keys, cp.translated_keys, cp.status
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod deployment_observation_tests {
+    use super::*;
+    fn write(path: &Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+    #[test]
+    fn fully_covered_app_state_does_not_claim_a_missing_disk_translation() {
+        let root = crate::test_support::temp_dir("disk-missing-state-complete");
+        let source = root.join("default.json");
+        write(&source, r#"{"a":"Hello"}"#);
+        let state = ModState::from([(
+            translations::entry_key("i18n", "a"),
+            translations::StoredString {
+                target: "Saved review".into(),
+                status: "review-needed".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )]);
+        let result =
+            inspect_keys_checked(&source, &root.join("de.json"), None, &state, "i18n").unwrap();
+        assert_eq!(result.translated, result.total);
+        assert_eq!(result.disk_translated, 0);
+        assert_eq!(result.state_disk_differences, 1);
+    }
+    #[test]
+    fn deployed_multi_component_coverage_is_independent_of_saved_empty_and_review_drafts() {
+        let root = crate::test_support::temp_dir("deployed-disk-coverage");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let language_root = translations::language_root(&config, "de").unwrap();
+        for (folder, uid, update) in [
+            ("[CP] Example", "example.cp", "Nexus:10"),
+            ("Code", "example.code", "Nexus:-1"),
+        ] {
+            let component = mods.join("Example").join(folder);
+            write(&component.join("manifest.json"), &serde_json::json!({"UniqueID":uid,"Name":folder,"Version":"1.0","UpdateKeys":[update]}).to_string());
+            write(
+                &component.join("i18n/default.json"),
+                r#"{"empty":"Hello","review":"World"}"#,
+            );
+            translations::save_many(
+                &language_root,
+                uid,
+                vec![
+                    (
+                        translations::entry_key("i18n", "empty"),
+                        translations::StoredString {
+                            target: "".into(),
+                            status: "untranslated".into(),
+                            source_hash: translations::source_hash("Hello"),
+                        },
+                    ),
+                    (
+                        translations::entry_key("i18n", "review"),
+                        translations::StoredString {
+                            target: "My draft".into(),
+                            status: "review-needed".into(),
+                            source_hash: translations::source_hash("World"),
+                        },
+                    ),
+                ],
+            )
+            .unwrap();
+        }
+        let before = scan_mods(&mods, "de", &config);
+        assert_eq!(before.mods.len(), 2);
+        assert!(before
+            .mods
+            .iter()
+            .all(|m| m.disk_translated_keys == 0 && m.translated_keys == 1));
+        let saved_before = translations::load(&language_root, "example.cp").unwrap();
+        for folder in ["[CP] Example", "Code"] {
+            write(
+                &mods.join("Example").join(folder).join("i18n/de.json"),
+                r#"{"empty":"Hallo","review":"Welt","extra":"Ignored"}"#,
+            );
+        }
+        let after = scan_mods(&mods, "de", &config);
+        assert!(after.mods.iter().all(|m| m.disk_translated_keys == 2
+            && m.translated_keys == 1
+            && m.state_disk_differences == 2));
+        assert!(after
+            .mods
+            .iter()
+            .all(|m| m.i18n_files[0].target_exists && m.i18n_files[0].disk_translated_keys == 2));
+        assert_eq!(
+            translations::load(&language_root, "example.cp").unwrap(),
+            saved_before
+        );
+        let file = &after
+            .mods
+            .iter()
+            .find(|m| m.unique_id == "example.cp")
+            .unwrap()
+            .i18n_files[0];
+        let rows = load_strings_checked(
+            Path::new(&file.default_path),
+            Path::new(&file.target_path),
+            &saved_before,
+            "i18n",
+        )
+        .unwrap();
+        assert_eq!(rows[0].target, "");
+        assert_eq!(rows[1].target, "My draft");
+        assert_eq!(rows[1].status, "review-needed");
+    }
+    #[test]
+    fn disk_coverage_uses_portuguese_fallback_and_counts_only_nonempty_matching_keys() {
+        let root = crate::test_support::temp_dir("disk-portuguese");
+        let source = root.join("default.json");
+        let target = root.join("pt.json");
+        write(&source, r#"{"a":"A","b":"B"}"#);
+        write(&target, r#"{"a":"Canonical","b":"Canonical"}"#);
+        write(
+            &root.join("pt-BR.json"),
+            r#"{" A ":"Alfa","b":" ","extra":"extra"}"#,
+        );
+        let result =
+            inspect_keys_checked(&source, &target, None, &ModState::new(), "i18n").unwrap();
+        assert_eq!(result.disk_translated, 1);
+        assert_eq!(result.total, 2);
+        assert_eq!(result.state_disk_differences, 0);
+        write(&root.join("pt-BR.json"), r#"{"a":42}"#);
+        assert!(inspect_keys_checked(&source, &target, None, &ModState::new(), "i18n").is_err());
     }
 }

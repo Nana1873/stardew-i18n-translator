@@ -125,6 +125,8 @@ describe("SetupWizard", () => {
       modsPath: "E:/SDV/Mods",
       sourceLang: "default",
       targetLang: "de",
+      nexusSearchOnScan: false,
+      vortexExecutable: null,
     });
   });
 

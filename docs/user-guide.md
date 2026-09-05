@@ -22,6 +22,76 @@ component keeps the last complete baseline; comparison counts are unavailable
 until a complete scan succeeds. Expected community-language-pack exclusions
 do not make a scan incomplete.
 
+## Find translations on Nexus
+
+This workflow is currently for local testing. Nexus is optional: configure an
+API key in Setup or Settings. Configure a Vortex executable only if you want to use Vortex. The validated key is
+saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
+`data/`; it does not move with the app. Opening Setup only checks local key
+readiness. **Test existing key** and **Validate and save key** contact Nexus.
+
+Use **Find translations**, or enable discovery after scans. Searches use Nexus
+update IDs and the selected language, never your local translation text. Shared
+IDs are searched once. Groups with complete language-file coverage on disk are
+skipped by default; **Include fully translated mods** includes them for
+Collection curation. Review drafts alone do not count as installed coverage.
+Coverage is not a quality or compatibility guarantee.
+
+The list shows likely translations and their file versions and upload dates.
+Choose a candidate or file inline when there is more than one suitable option.
+The newest suitable file is a selection hint, not proof that it matches your
+installed mod. **Original mod files** may include bundled translations; it does
+not guarantee that your language is present. Search metadata is cached locally
+for 24 hours with a freshness time. **Refresh search** requests fresh results.
+Cancellation and API failures preserve your local workspace; bounded searches
+may miss translations.
+
+Select rows and choose the destination: **Review** or **Vortex**. One batch action matches that choice. Without configured Vortex, Review is the default; you do not need a mod manager to import translations. For Vortex, use **Send selected to Vortex**. The app passes their numeric
+Nexus mod/file references to the configured Vortex executable without passing
+its API key. Vortex uses its own account and handles download requirements,
+installation, conflicts, and deployment. A successful handoff means only that
+the launch request succeeded, not that a file was downloaded or installed.
+Stopping a batch prevents subsequent handoffs; it does not undo requests already
+sent to Vortex.
+
+After installing and deploying in Vortex, use **Check installed files**. This
+local rescan reads actual target-language files separately from saved app work.
+It reports disk coverage and differences from saved translations while retaining
+your drafts. Inspect differences before replacing or exporting text; a recheck
+does not automatically adopt conflicting disk values. Neither handoff nor disk
+coverage verifies Nexus source association or membership in a Collection. Check
+those in Vortex; practical Vortex acceptance remains a user-led test.
+
+### Personal import into Review
+
+Choose **Review** and use **Import selected to Review**. Selected rows are processed one at a time; stopping keeps completed imports and prevents further rows from starting. This action downloads
+a selected ZIP through the official Nexus API and requires Nexus Premium.
+Unambiguous language files are checked and imported; ambiguous files or component
+mappings require a choice. A translated `default.json` requires confirmation
+that it contains the target language. Nonempty local text is preserved, token
+errors are skipped, and eligible values enter Review. The archive stays in
+memory and no mod assets are installed. **Open Review** lets you inspect the
+result; explicit **Export…** is the separate action that writes language files.
+
+### Sharing and public distribution
+
+API access does not grant permission to republish downloaded translations.
+The existing translation ZIP can include imported or pre-existing text; verify
+its permissions before sharing. A combined private output-folder feature is not
+implemented. Collections reference original mods; they do not grant rights to
+rebundle their files. See the [Collections guidelines](https://help.nexusmods.com/article/115-guidelines-for-collections).
+
+Personal API keys are for private/testing use. Public distribution requires
+Nexus application registration and an appropriate application-key flow; SSO is
+optional and is not implemented here. Hosting this network-enabled utility on
+Nexus also requires discussing its network functionality with staff. No Nexus
+approval is claimed. See the [API acceptable-use policy](https://help.nexusmods.com/article/114-api-acceptable-use-policy)
+and [File Submission Guidelines](https://help.nexusmods.com/article/28-file-submission-guidelines).
+
+Releases and prereleases of this integration are on hold until Nexus Mods
+approves it after reviewing the local test build. Test builds remain local
+during this stage; the milestone does not authorize publication.
+
 ## Edit and save
 
 Double-click a string, or select it and press Enter. The English source stays
@@ -51,7 +121,7 @@ and dialogue commands when translating the surrounding words.
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **Open**         | No nonempty translation is available.                                                                                                  |
 | **Changed**      | The English source changed since the saved translation.                                                                                |
-| **Review**       | A live AI suggestion or external LLM result has not been accepted.                                                                     |
+| **Review**       | An AI suggestion, external LLM result, or Nexus import has not been accepted.                                                          |
 | **Done**         | A translation was saved/accepted for this source, or a nonempty existing translation file was loaded without an overriding saved edit. |
 
 Existing `<language>.json` files are taken as translated when scanned; this is

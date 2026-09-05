@@ -26,6 +26,10 @@ const SETTINGS_FILE: &str = "settings.json";
 #[serde(rename_all = "camelCase")]
 pub struct AppSettings {
     #[serde(default)]
+    pub vortex_executable: Option<String>,
+    #[serde(default)]
+    pub nexus_search_on_scan: bool,
+    #[serde(default)]
     pub stardew_path: Option<String>,
     #[serde(default)]
     pub mods_path: Option<String>,
@@ -214,6 +218,7 @@ fn default_status_filter() -> String {
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
+            vortex_executable: None,
             stardew_path: None,
             mods_path: None,
             source_lang: default_source_lang(),
@@ -224,6 +229,7 @@ impl Default for AppSettings {
             last_opened: BTreeMap::new(),
             workspace: WorkspaceSettings::default(),
             diagnostic_logging: true,
+            nexus_search_on_scan: false,
         }
     }
 }
@@ -472,6 +478,8 @@ mod tests {
     fn save_then_load_roundtrips() {
         let dir = crate::test_support::temp_dir("settings-roundtrip");
         let settings = AppSettings {
+            nexus_search_on_scan: false,
+            vortex_executable: None,
             stardew_path: Some(r"E:\SteamLibrary\steamapps\common\Stardew Valley".to_string()),
             mods_path: Some(r"E:\SteamLibrary\steamapps\common\Stardew Valley\Mods".to_string()),
             source_lang: "default".to_string(),

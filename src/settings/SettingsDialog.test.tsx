@@ -1014,7 +1014,7 @@ describe("SettingsDialog", () => {
         /two preceding and two following English strings as read-only context/i,
       ),
     ).toBeVisible();
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
     expect(
       container.querySelector(".translator-settings-dialog"),
     ).not.toBeNull();
@@ -1696,4 +1696,41 @@ describe("SettingsDialog", () => {
     document.body.removeEventListener("keydown", bubbled);
     trigger.remove();
   });
+});
+
+it("saves the explicitly picked Vortex executable only with Settings Save", async () => {
+  const onSave = vi.fn();
+  const original = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "pick_vortex_executable"
+      ? Promise.resolve("C:/Tools/Vortex/Vortex.exe")
+      : original(cmd, ...args),
+  );
+  render(
+    <SettingsDialog
+      settings={baseSettings}
+      initialPage="nexus"
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Choose Vortex.exe" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Vortex executable")).toHaveValue(
+      "C:/Tools/Vortex/Vortex.exe",
+    ),
+  );
+  expect(onSave).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+      }),
+    ),
+  );
+  expect(
+    invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
+  ).toBe(false);
 });
