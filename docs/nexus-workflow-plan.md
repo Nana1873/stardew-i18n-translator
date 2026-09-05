@@ -35,8 +35,11 @@ The [synthetic library probe](../scripts/mod-manager-probe/README.md) verified
 basic Vortex metadata access, but also found database writes during reads and
 substantial Python/Qt packaging costs. The standalone package failed its runtime
 check because a host DLL was bundled incorrectly. Do not add this helper to the
-app yet; evaluate a narrow Rust reader against disposable snapshots first.
-Consistent acquisition of a real profile snapshot remains unverified.
+app. The [standalone Rust probe](../scripts/vortex-state-probe/README.md)
+reproduces the synthetic metadata cases in an approximately 1 MiB executable.
+Its reader still needs reliable error reporting for partial/corrupt databases
+before adoption. Consistent acquisition of a real profile snapshot remains
+unverified; neither probe is connected to application storage or deployment.
 
 The [output archive probe](../scripts/vortex-output-probe/README.md) verifies
 locale-only path handling in pinned official installer functions. Actual Vortex
