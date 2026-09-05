@@ -13,6 +13,7 @@ mod input_limits;
 mod lang_pack;
 mod language;
 mod llm;
+mod nexus;
 mod operation_history;
 mod release_zip;
 mod scan_snapshot;
@@ -2620,6 +2621,15 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            nexus::nexus_status,
+            nexus::pick_vortex_executable,
+            nexus::nexus_handoff_to_vortex,
+            nexus::nexus_save_key,
+            nexus::nexus_find_translations,
+            nexus::nexus_list_files,
+            nexus::nexus_download_preflight,
+            nexus::nexus_preflight_import,
+            nexus::nexus_import_translation,
             detect_stardew,
             validate_stardew_path,
             default_mods_path,

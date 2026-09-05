@@ -360,6 +360,415 @@ function deferred<T>() {
 }
 
 describe("App shell", () => {
+  it("scans after first-run setup and queues opted-in distinct Nexus IDs for the new language without blocking local work", async () => {
+    const scanned = exportScan(false);
+    scanned.mods = [10, 10, 20, null].map((nexusId, index) => ({
+      ...scanned.mods[0],
+      uniqueId: `mod.${index}`,
+      name: `Local ${index}`,
+      nexusId,
+      translatedKeys: 0,
+    }));
+    scanned.modCount = 4;
+    const pending = deferred<unknown>();
+    invokeMock.mockImplementation((cmd: string, args?: { modId?: number }) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          stardewPath: null,
+          modsPath: null,
+          targetLang: null,
+        });
+      if (cmd === "detect_stardew") return Promise.resolve(CONFIGURED);
+      if (cmd === "scan_mods") return Promise.resolve(scanned);
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          sourceAvailable: false,
+          packAvailable: false,
+        });
+      if (cmd === "nexus_status")
+        return Promise.resolve({
+          configured: true,
+          validated: false,
+          premium: false,
+        });
+      if (cmd === "nexus_find_translations")
+        return args?.modId === 10
+          ? pending.promise
+          : Promise.reject(new Error("Nexus unavailable"));
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    await screen.findByRole("dialog", { name: "Setup" });
+    fireEvent.click(screen.getByRole("button", { name: "Auto-detect" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(
+      screen.getByLabelText(
+        "Search Nexus for existing translations when scanning",
+      ),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: CONFIGURED.modsPath,
+        targetLang: "fr",
+      }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("nexus_find_translations", {
+        modId: 10,
+        targetLang: "fr",
+        forceRefresh: false,
+      }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "Setup" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled();
+    openWorkspace();
+    expect(screen.getByRole("region", { name: "Mod list" })).toHaveTextContent(
+      "Local 0",
+    );
+    await act(async () =>
+      pending.resolve({
+        modId: 10,
+        originalName: "Canonical",
+        candidates: [],
+        limited: true,
+        notice: "Limited",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls
+          .filter(([cmd]) => cmd === "nexus_find_translations")
+          .map(([, args]) => args),
+      ).toEqual([
+        { modId: 10, targetLang: "fr", forceRefresh: false },
+        { modId: 20, targetLang: "fr", forceRefresh: false },
+      ]),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    const searchSummary = await screen.findByRole("region", {
+      name: "Translation search results",
+    });
+    expect(
+      within(searchSummary).getByText("Checks failed").parentElement,
+    ).toHaveTextContent(/^1\s*Checks failed$/);
+    expect(
+      invokeMock.mock.calls.some(
+        ([cmd, args]) =>
+          cmd === "save_settings" &&
+          args.settings.nexusSearchOnScan === true &&
+          args.settings.targetLang === "fr",
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps Nexus off on a normal scan and starts the same search from the explicit action", async () => {
+    const scanned = exportScan(false);
+    scanned.mods[0].nexusId = 10;
+    scanned.mods[0].translatedKeys = 0;
+    mockConfigured(scanned);
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_find_translations"),
+    ).toBe(false);
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "nexus_find_translations"
+        ? Promise.resolve({
+            modId: 10,
+            originalName: "Canonical",
+            candidates: [],
+            limited: true,
+            notice: "Limited",
+          })
+        : Promise.resolve(null),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("nexus_find_translations", {
+        modId: 10,
+        targetLang: "de",
+        forceRefresh: false,
+      }),
+    );
+    expect(
+      await screen.findByText("No suitable translation downloads found."),
+    ).toBeInTheDocument();
+  });
+
+  it("rechecks deployed files locally while retaining Nexus receipt and saved Review coverage", async () => {
+    let scanned = exportScan(false);
+    scanned.traversalComplete = true;
+    Object.assign(scanned.mods[0], {
+      nexusId: 10,
+      diskTranslatedKeys: 0,
+      stateDiskDifferences: 1,
+    });
+    mockConfigured(scanned);
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+        });
+      if (cmd === "scan_mods") return Promise.resolve(scanned);
+      if (cmd === "nexus_find_translations")
+        return Promise.resolve({
+          modId: 10,
+          originalName: "Canonical",
+          candidates: [
+            {
+              modId: 30,
+              name: "German translation",
+              version: "1",
+              summary: "German",
+              updatedAt: "2026-01-01",
+              relationshipTier: "possible-original-translation",
+            },
+          ],
+          limited: true,
+          notice: "Limited",
+        });
+      if (cmd === "nexus_list_files")
+        return Promise.resolve([
+          {
+            fileId: 7,
+            name: "German",
+            fileName: "german.zip",
+            version: "1",
+            uploadedAt: "2026-01-01",
+            category: "MAIN",
+            description: "German",
+          },
+        ]);
+      if (cmd === "nexus_handoff_to_vortex")
+        return Promise.resolve({
+          modId: 30,
+          fileId: 7,
+          status: "handoff-requested",
+        });
+      return original(cmd, ...args);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "Download & install all with Vortex (1)",
+        }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.queryByRole("checkbox", { name: "Select Canonical" }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Download & install all with Vortex (1)",
+      }),
+    );
+    await screen.findByText("1 sent to Vortex");
+    const scans = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "scan_mods",
+    ).length;
+    scanned = {
+      ...scanned,
+      mods: [
+        { ...scanned.mods[0], diskTranslatedKeys: 1, stateDiskDifferences: 1 },
+      ],
+    };
+    fireEvent.click(
+      screen.getByRole("button", { name: "Check installed files" }),
+    );
+    await screen.findByText("1 sent to Vortex · files rechecked");
+    fireEvent.click(
+      within(screen.getByRole("row", { name: "Canonical" })).getByText(
+        "Details",
+      ),
+    );
+    expect(screen.getByText(/On disk: 1\/1 keys/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/1 saved values differ from disk; drafts kept/),
+    ).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+    ).toHaveLength(scans + 1);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "nexus_find_translations",
+      ),
+    ).toHaveLength(1);
+    expect(
+      invokeMock.mock.calls.some(([cmd]) =>
+        /nexus_import|nexus_download|save_string|export_mod/.test(cmd),
+      ),
+    ).toBe(false);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Nexus translations" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    expect(
+      screen.getByText("1 sent to Vortex · files rechecked"),
+    ).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "nexus_find_translations",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("uses the saved installation method and applies Settings changes without restarting or rescanning", async () => {
+    const scanned = exportScan(false);
+    scanned.traversalComplete = true;
+    Object.assign(scanned.mods[0], { nexusId: 10, diskTranslatedKeys: 0 });
+    mockConfigured(scanned);
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          ...CONFIGURED,
+          installationMethod: "folder",
+          vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+        });
+      if (cmd === "nexus_find_translations")
+        return Promise.resolve({
+          modId: 10,
+          originalName: "Canonical",
+          candidates: [
+            {
+              modId: 30,
+              name: "German translation",
+              version: "1",
+              summary: "German",
+              updatedAt: "2026-01-01",
+              relationshipTier: "possible-original-translation",
+            },
+          ],
+          limited: true,
+          notice: "Limited",
+        });
+      if (cmd === "nexus_list_files")
+        return Promise.resolve([
+          {
+            fileId: 7,
+            name: "German",
+            fileName: "german.zip",
+            version: "1",
+            uploadedAt: "2026-01-01",
+            category: "MAIN",
+            description: "German",
+          },
+        ]);
+      if (cmd === "nexus_handoff_to_vortex")
+        return Promise.resolve({
+          modId: 30,
+          fileId: 7,
+          status: "handoff-requested",
+        });
+      return original(cmd, ...args);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Download & import all (1)" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      screen.queryByRole("button", { name: /Download & install all/ }),
+    ).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Nexus translations" }),
+    );
+    const scanCount = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "scan_mods",
+    ).length;
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Installation method"), {
+      target: { value: "vortex" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+    expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+      settings: expect.objectContaining({
+        installationMethod: "vortex",
+        vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+      }),
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "Download & install all with Vortex (1)",
+        }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Download & install all with Vortex (1)",
+      }),
+    );
+    await screen.findByText("1 sent to Vortex");
+    expect(invokeMock).toHaveBeenCalledWith("nexus_handoff_to_vortex", {
+      modId: 30,
+      fileId: 7,
+    });
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+    ).toHaveLength(scanCount);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "nexus_find_translations",
+      ),
+    ).toHaveLength(1);
+    expect(
+      invokeMock.mock.calls.some(([cmd]) =>
+        /nexus_import|nexus_download|save_string|export_mod/.test(cmd),
+      ),
+    ).toBe(false);
+  });
+
   it("renders Overview first and opens the complete workspace on demand", async () => {
     mockConfigured();
     render(<App />);
@@ -3478,6 +3887,9 @@ describe("App shell", () => {
           lastOpened,
           workspace,
           diagnosticLogging: false,
+          nexusSearchOnScan: false,
+          vortexExecutable: null,
+          installationMethod: "folder",
         },
       }),
     );

@@ -16,6 +16,7 @@ without an AI service._
 ## What you can do
 
 - Scan your Mods folder, group multi-part mods, and use existing translations.
+- In local test builds, find Nexus translations and send them to Review or Vortex.
 - Search across mods, filter unfinished work, and spot changed English strings.
 - Translate manually or use optional Local AI, Codex CLI, or external LLM batches.
 - Review suggestions with protected-token checks and optional glossary hints.
@@ -52,11 +53,19 @@ Windows may show a SmartScreen warning because the executable is unsigned.
 is required. If it is missing, the app offers to open Microsoft's download
 page. Nothing is installed automatically.
 
-## Optional AI and privacy
+## Optional online features and privacy
 
 Scanning, manual editing, glossary generation, validation, and export happen
 locally. The app has no accounts, analytics, or telemetry.
 
+The Nexus workflow is currently for local testing. It finds likely translations,
+offers Review import or handoff to your configured Vortex, and checks language
+files after you deploy them. Vortex uses its own account; a handoff does not
+confirm installation or Collection membership. Personal ZIP import into
+**Review** is the default without Vortex and requires Nexus Premium for downloads. The Nexus
+API key stays in your Windows user environment. See
+[Nexus translations](docs/user-guide.md#find-translations-on-nexus) for limits
+and the public-distribution boundary.
 Local AI sends translation text and context to your configured loopback service.
 Codex CLI sends them through its configured service using the CLI's own login;
 the app never reads or copies its authentication files. External batches leave

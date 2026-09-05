@@ -1,0 +1,231 @@
+.nexus-setup {
+  margin-bottom: 24px;
+}
+.nexus-setup p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+.nexus-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 12px 0;
+}
+.nexus-checkbox input {
+  flex: 0 0 auto;
+  margin-top: 3px;
+}
+#stardew-i18n-translator .translator-flow-dialog.nexus-dialog {
+  width: min(960px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.nexus-dialog * {
+  box-sizing: border-box;
+}
+.nexus-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 20px;
+}
+.nexus-dialog-header h2 {
+  font-size: 1.1rem;
+  margin: 0;
+}
+.nexus-session-summary {
+  padding: 10px 20px;
+  border-block: 1px solid var(--translator-border);
+}
+.nexus-session-summary p {
+  margin: 5px 0;
+}
+.nexus-dialog-body {
+  overflow: auto;
+  overflow-x: hidden;
+  min-height: 0;
+  padding: 10px 20px 16px;
+}
+.nexus-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.nexus-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+.nexus-table th,
+.nexus-table td {
+  padding: 7px 8px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--translator-border);
+  overflow-wrap: anywhere;
+}
+.nexus-table th:nth-child(1) {
+  width: 30%;
+}
+.nexus-table th:nth-child(2) {
+  width: 70%;
+}
+.nexus-table select {
+  width: 100%;
+  min-width: 0;
+}
+.nexus-table small {
+  display: block;
+  margin-top: 3px;
+  color: var(--translator-muted);
+}
+.nexus-table button {
+  margin-top: 6px;
+  white-space: normal;
+}
+.nexus-inline-choice {
+  border-left: 2px solid var(--translator-border-strong);
+  margin-top: 8px;
+  padding-left: 12px;
+}
+.nexus-inline-choice label {
+  display: block;
+  margin: 8px 0;
+}
+.nexus-inline-choice select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 4px;
+}
+.nexus-dialog details {
+  margin: 8px 0;
+}
+.nexus-dialog summary {
+  cursor: pointer;
+  color: var(--translator-muted);
+}
+.nexus-dialog h2,
+.nexus-dialog h3,
+.nexus-dialog p,
+.nexus-dialog strong,
+.nexus-dialog small {
+  overflow-wrap: anywhere;
+}
+.nexus-dialog select {
+  max-width: 100%;
+}
+
+.nexus-selected-title {
+  display: block;
+  margin: 0;
+}
+.nexus-muted {
+  color: var(--translator-muted);
+}
+.nexus-session-summary small {
+  display: block;
+  margin-top: 6px;
+}
+
+.nexus-dialog select {
+  color: var(--translator-text);
+  background: var(--translator-surface);
+  border: 1px solid var(--translator-border);
+  border-radius: 4px;
+  padding: 5px;
+}
+
+.nexus-table-scroll {
+  overflow-x: auto;
+}
+.nexus-table p {
+  margin: 0;
+}
+.nexus-table details {
+  margin: 5px 0 0;
+}
+.nexus-file-name {
+  overflow-wrap: anywhere;
+}
+@media (max-width: 700px) {
+  .nexus-table {
+    min-width: 640px;
+  }
+}
+
+.nexus-file-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.nexus-file-selection {
+  flex: 1;
+  min-width: 0;
+}
+.nexus-file-link > button {
+  flex: none;
+  margin-top: 0;
+}
+.nexus-search-results {
+  font-size: 0.8rem;
+  margin-top: 12px;
+}
+#stardew-i18n-translator .nexus-search-results .translator-preflight-metrics {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 8px;
+}
+.nexus-search-results .nexus-actions > button {
+  font-size: 0.75rem;
+  padding: 4px 8px;
+}
+@media (max-width: 500px) {
+  #stardew-i18n-translator .nexus-search-results .translator-preflight-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+#stardew-i18n-translator
+  .nexus-search-results
+  .translator-preflight-metric:nth-child(3n) {
+  border-right: 0;
+}
+#stardew-i18n-translator
+  .nexus-search-results
+  .translator-preflight-metric:nth-child(n + 4) {
+  border-top: 1px solid var(--translator-border);
+}
+@media (max-width: 500px) {
+  #stardew-i18n-translator
+    .nexus-search-results
+    .translator-preflight-metric:nth-child(3n) {
+    border-right: 1px solid var(--translator-border);
+  }
+  #stardew-i18n-translator
+    .nexus-search-results
+    .translator-preflight-metric:nth-child(2n) {
+    border-right: 0;
+  }
+  #stardew-i18n-translator
+    .nexus-search-results
+    .translator-preflight-metric:nth-child(n + 3) {
+    border-top: 1px solid var(--translator-border);
+  }
+}
+
+#stardew-i18n-translator
+  .nexus-search-results
+  .translator-preflight-metric
+  span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  overflow: visible;
+  text-overflow: clip;
+}

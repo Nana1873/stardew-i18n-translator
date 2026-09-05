@@ -1014,7 +1014,7 @@ describe("SettingsDialog", () => {
         /two preceding and two following English strings as read-only context/i,
       ),
     ).toBeVisible();
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
     expect(
       container.querySelector(".translator-settings-dialog"),
     ).not.toBeNull();
@@ -1696,4 +1696,121 @@ describe("SettingsDialog", () => {
     document.body.removeEventListener("keydown", bubbled);
     trigger.remove();
   });
+});
+
+it("migrates legacy Vortex selection and preserves an explicit manual choice after reopening", async () => {
+  const onSave = vi.fn();
+  const settings = { ...baseSettings, vortexExecutable: "C:/Tools/Vortex.exe" };
+  const view = render(
+    <SettingsDialog
+      settings={settings}
+      initialPage="folders"
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("Installation method")).toHaveValue("vortex");
+  fireEvent.change(screen.getByLabelText("Installation method"), {
+    target: { value: "folder" },
+  });
+  expect(
+    screen.queryByRole("button", { name: "Choose Vortex.exe" }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  const saved = onSave.mock.calls[0][0];
+  expect(saved).toEqual(
+    expect.objectContaining({
+      ...baseSettings,
+      installationMethod: "folder",
+      vortexExecutable: "C:/Tools/Vortex.exe",
+    }),
+  );
+  view.unmount();
+  render(
+    <SettingsDialog
+      settings={saved}
+      initialPage="folders"
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("Installation method")).toHaveValue("folder");
+  expect(
+    screen.queryByRole("button", { name: "Choose Vortex.exe" }),
+  ).not.toBeInTheDocument();
+});
+
+it("saves Vortex without an executable for later offline setup", async () => {
+  const onSave = vi.fn();
+  render(
+    <SettingsDialog
+      settings={baseSettings}
+      initialPage="folders"
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Installation method"), {
+    target: { value: "vortex" },
+  });
+  expect(screen.getByText(/continue working offline/)).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        installationMethod: "vortex",
+        vortexExecutable: null,
+      }),
+    ),
+  );
+  expect(
+    invokeMock.mock.calls.some(([cmd]) =>
+      /nexus_save_key|nexus_handoff/.test(cmd),
+    ),
+  ).toBe(false);
+});
+
+it("saves the explicitly picked Vortex executable only with Settings Save", async () => {
+  const onSave = vi.fn();
+  const original = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "pick_vortex_executable"
+      ? Promise.resolve("C:/Tools/Vortex/Vortex.exe")
+      : original(cmd, ...args),
+  );
+  render(
+    <SettingsDialog
+      settings={baseSettings}
+      initialPage="folders"
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Installation method"), {
+    target: { value: "vortex" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Choose Vortex.exe" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Vortex executable")).toHaveValue(
+      "C:/Tools/Vortex/Vortex.exe",
+    ),
+  );
+  expect(onSave).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        installationMethod: "vortex",
+        vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+      }),
+    ),
+  );
+  expect(
+    invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
+  ).toBe(false);
 });

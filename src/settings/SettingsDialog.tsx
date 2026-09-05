@@ -6,6 +6,7 @@ import {
 } from "react";
 import {
   BookOpen,
+  Download,
   Folder,
   HardDrive,
   Info,
@@ -51,6 +52,11 @@ import {
   shortcutProblem,
 } from "../shortcuts";
 import { useDialogAccessibility } from "../dialogAccessibility";
+import { NexusSetup } from "../nexus/NexusSetup";
+import {
+  InstallationSettings,
+  installationMethodFor,
+} from "../setup/InstallationSettings";
 import packageInfo from "../../package.json";
 
 const LLM_PRESETS: Record<string, string> = {
@@ -60,7 +66,7 @@ const LLM_PRESETS: Record<string, string> = {
 };
 
 export type SettingsPage =
-  "folders" | "ai" | "glossary" | "shortcuts" | "about";
+  "folders" | "ai" | "nexus" | "glossary" | "shortcuts" | "about";
 
 interface SettingsPageDefinition {
   id: SettingsPage;
@@ -71,6 +77,7 @@ interface SettingsPageDefinition {
 const SETTINGS_PAGES: readonly SettingsPageDefinition[] = [
   { id: "folders", label: "Folders & language", icon: Folder },
   { id: "ai", label: "Translation engines", icon: Sparkles },
+  { id: "nexus", label: "Nexus Mods", icon: Download },
   { id: "glossary", label: "Glossary", icon: BookOpen },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
   { id: "about", label: "About", icon: Info },
@@ -82,6 +89,7 @@ interface SettingsDialogProps {
   onClose: () => void;
   onReRunSetup: () => void;
   initialPage?: SettingsPage;
+  onNexusKeySaved?: () => void;
 }
 
 interface LlmConnectionResult {
@@ -145,7 +153,17 @@ export function SettingsDialog({
   onClose,
   onReRunSetup,
   initialPage = "folders",
+  onNexusKeySaved,
 }: SettingsDialogProps) {
+  const [installationMethod, setInstallationMethod] = useState(() =>
+    installationMethodFor(settings),
+  );
+  const [vortexExecutable, setVortexExecutable] = useState(
+    settings.vortexExecutable ?? null,
+  );
+  const [nexusSearchOnScan, setNexusSearchOnScan] = useState(
+    settings.nexusSearchOnScan ?? false,
+  );
   const savedAi = settings.ai ?? DEFAULT_AI_SETTINGS;
   const savedDefaultEngine =
     savedAi.defaultEngine === "local" || savedAi.defaultEngine === "codex"
@@ -536,6 +554,9 @@ export function SettingsDialog({
           ).map((command) => [command.id, shortcuts[command.id]]),
         ),
         diagnosticLogging,
+        nexusSearchOnScan,
+        vortexExecutable,
+        installationMethod,
         ai: {
           defaultEngine: defaultEngine ?? "local",
           codexModel: codexModel || null,
@@ -645,6 +666,20 @@ export function SettingsDialog({
           </nav>
 
           <div className="translator-settings-content">
+            {page === "nexus" && (
+              <section
+                id="settings-panel-nexus"
+                className="translator-settings-page is-active"
+                role="tabpanel"
+                aria-label="Nexus Mods"
+              >
+                <NexusSetup
+                  searchOnScan={nexusSearchOnScan}
+                  onSearchOnScanChange={setNexusSearchOnScan}
+                  onKeySaved={onNexusKeySaved}
+                />
+              </section>
+            )}
             <section
               id="settings-panel-folders"
               className={
@@ -656,6 +691,14 @@ export function SettingsDialog({
               hidden={page !== "folders"}
             >
               <h3>Folders & language</h3>
+              <InstallationSettings
+                method={installationMethod}
+                onMethodChange={setInstallationMethod}
+                executable={vortexExecutable}
+                onExecutableChange={setVortexExecutable}
+                disabled={saving}
+                active={page === "folders"}
+              />
               <p className="translator-settings-intro">
                 The app only reads mods and game content from the selected
                 folders.

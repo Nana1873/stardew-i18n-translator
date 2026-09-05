@@ -186,6 +186,9 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
         );
 
         let settings_value = AppSettings {
+            installation_method: Some(crate::settings::InstallationMethod::Folder),
+            vortex_executable: None,
+            nexus_search_on_scan: false,
             stardew_path: Some(root.display().to_string()),
             mods_path: Some(mods.display().to_string()),
             source_lang: "default".to_string(),

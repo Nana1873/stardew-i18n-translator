@@ -125,7 +125,49 @@ describe("SetupWizard", () => {
       modsPath: "E:/SDV/Mods",
       sourceLang: "default",
       targetLang: "de",
+      nexusSearchOnScan: false,
+      vortexExecutable: null,
+      installationMethod: "folder",
     });
+  });
+
+  it("saves Vortex without an executable or Nexus key while preserving initial settings", async () => {
+    const onComplete = vi.fn();
+    render(
+      <SetupWizard
+        initial={{
+          stardewPath: "E:/SDV",
+          modsPath: "E:/SDV/Mods",
+          sourceLang: "default",
+          targetLang: "de",
+          diagnosticLogging: false,
+        }}
+        onComplete={onComplete}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.change(screen.getByLabelText("Installation method"), {
+      target: { value: "vortex" },
+    });
+    expect(screen.getByText(/continue working offline/)).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+    expect(onComplete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        installationMethod: "vortex",
+        vortexExecutable: null,
+        diagnosticLogging: false,
+      }),
+    );
+    expect(
+      invokeMock.mock.calls.some(([cmd]) =>
+        /nexus_save_key|nexus_handoff/.test(cmd),
+      ),
+    ).toBe(false);
   });
 
   it("keeps setup open when saving fails", async () => {

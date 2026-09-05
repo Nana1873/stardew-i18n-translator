@@ -19,11 +19,13 @@ Translation targets are standard `<mod>/i18n/default.json` source files and
 supports built-in and curated custom-language targets; custom targets require
 a matching language mod for use in-game.
 
-The app does not install, activate, update, or download mods; manage profiles
-or Git repositories; use the Nexus API; or publish translations automatically.
+The app does not install, activate, or update mods; manage profiles or Git
+repositories; or publish translations automatically. Optional Nexus API
+discovery supports explicit Vortex download handoff and personal
+Review import. Vortex manages installation and deployment.
 It may open a browser link from a positive `Nexus:<id>` update key. It is not
-a general editor for Content Patcher, `Data/*.json`, or XNB files. The narrowly
-scoped glossary reads below are the only additional content sources.
+a general editor for Content Patcher, `Data/*.json`, or XNB files. Additional
+game-content reads are limited to the glossary sources described below.
 
 ## Scanning and Source Changes
 
@@ -54,7 +56,7 @@ and leave the last complete baseline intact. Intentional exclusions do not.
 | Open    | `untranslated`  | No target translation is available.                                           |
 | Done    | `translated`    | Manually saved or accepted text, or an existing target imported from the mod. |
 | Changed | `outdated`      | The source changed after the stored translation baseline.                     |
-| Review  | `review-needed` | An AI suggestion or external LLM batch import awaiting human review.          |
+| Review  | `review-needed` | An AI suggestion, external LLM batch, or Nexus import awaiting human review.  |
 
 Existing translations gain a source baseline when first opened, so later source
 changes can mark them Changed. AI suggestions also become Changed when their
@@ -128,6 +130,62 @@ Import skips empty values and preserves every non-empty local target, including
 Changed text. It validates all values eligible for import before the first
 state write. Accepted values enter Review; token errors block the import.
 
+## Optional Nexus Translations
+
+The Nexus workflow is in local testing; it is not a registered production
+integration. Discovery is opt-in after scanning or explicitly user-started.
+Search once per positive Nexus ID and target language. By default, skip a group
+only when it has source keys and all associated components with source keys,
+including package siblings without an ID, have complete target-file coverage on
+disk. Use exact counts, not rounded progress. An explicit option includes covered
+groups for Collection curation. Saved Review/Changed text is not disk coverage;
+coverage does not imply quality approval.
+
+Searches support cancellation and discard results from obsolete workspace or
+language contexts. Local metadata caching is scoped by Nexus ID and language,
+expires after 24 hours, exposes freshness, and supports forced refresh. Reapply
+current scan coverage when using cached results. Missing IDs, API failures and
+incomplete results do not break scanning. Matches and newest-file selection are
+heuristics, not compatibility or completeness guarantees.
+
+Only official Nexus APIs are used. The key is saved to the Windows user
+environment as `NEXUS_API_KEY`, preferred over an inherited process value. It
+never enters portable settings, metadata cache, logs, handoff arguments, or
+response DTOs. Status exposes readiness and Premium eligibility; raw validation
+responses and signed download URLs remain in the backend.
+
+A saved Folder/Vortex installation method controls the download action. It is
+selected in Setup and editable in Settings; the results dialog has no destination
+toggle or per-mod selection checkboxes. All available rows join the batch.
+File metadata loads before confirmation; multiple current versions or variants
+are selectable inline, while a unique file needs no further choice. The batch
+uses those exact mod/file IDs and does not silently resolve a different version.
+Legacy configurations with a Vortex executable retain that experimental default;
+other existing users retain Folder. An explicit Folder choice wins over a saved
+executable path. No mod manager is required for personal import.
+The Vortex action hands chosen numeric Nexus mod/file references to an
+explicitly configured Vortex executable to request download and installation.
+Vortex uses its own account. Process
+launch success is reported only as a handoff request, never as download,
+installation, deployment, original-source association or Collection membership.
+Batch cancellation stops subsequent requests without undoing earlier handoffs.
+A local installed-files recheck reports disk coverage separately from effective
+app-state coverage and exposes differences without overwriting saved drafts.
+It does not verify Vortex state or Collection tracking.
+
+The Review destination provides personal import. The explicit action downloads a
+ZIP through the official Premium API, runs native read-only preflight, and saves
+eligible text as Review. Ambiguous files/destinations require a choice;
+translated `default.json` requires confirmation. Archives stay in memory behind
+an opaque session ID and are not installed or extracted into Mods. Import
+rechecks current source, keys, protected tokens and effective targets, preserving
+nonempty local text. Explicit Export remains the translator's Mods-write boundary.
+
+API registration and an appropriate application-key flow are required before
+public distribution; SSO is optional and out of scope. Registration does not
+grant redistribution rights to imported text. Neither automatic publication nor
+a combined private translation output folder is implemented.
+
 ## Optional Glossary and AI
 
 The glossary supplies high-confidence names for items, tools, weapons, clothing,
@@ -159,11 +217,13 @@ failure behavior, and diagnostic privacy in one place.
 
 ## Portable Data
 
-All persistent application state lives in `data/` beside the executable:
+Portable application state lives in `data/` beside the executable. The optional
+Nexus API key is the exception: it stays in the Windows user environment.
 
-- `settings.json`: folders, language, non-secret AI preferences, last-opened
+- `settings.json`: folders, language, non-secret AI and Nexus preferences, last-opened
   timestamps, and Workspace view settings;
 - `scan-source-snapshot.json`: source-change baseline;
+- `nexus-discovery-cache.json`: optional expiring search metadata, without credentials or download URLs;
 - `glossary/glossary-<lang>.json`: optional glossary cache;
 - `language-state/<lang>/`: translation progress;
 - `logs/`: optional rotating local logs.

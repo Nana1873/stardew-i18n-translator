@@ -2,8 +2,7 @@
  * First-run setup wizard.
  *
  * Modal, 4 steps: Stardew folder, Mods folder, languages, optional glossary.
- * The Mods-folder step is a generic folder override only, not mod-manager
- * integration.
+ * The Mods-folder step also selects how Nexus translations are added.
  */
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
@@ -25,6 +24,12 @@ import {
 } from "../languages";
 import { useDialogAccessibility } from "../dialogAccessibility";
 
+import { NexusSetup } from "../nexus/NexusSetup";
+import {
+  InstallationSettings,
+  installationMethodFor,
+} from "./InstallationSettings";
+
 type Step = 1 | 2 | 3 | 4;
 
 const SETUP_STEPS: Array<{
@@ -43,13 +48,24 @@ interface SetupWizardProps {
   onComplete: (settings: AppSettings) => Promise<void> | void;
   /** Provided only when settings already exist (wizard re-opened from Settings). */
   onCancel?: () => void;
+  onNexusKeySaved?: () => void;
 }
 
 export function SetupWizard({
   initial,
   onComplete,
   onCancel,
+  onNexusKeySaved,
 }: SetupWizardProps) {
+  const [installationMethod, setInstallationMethod] = useState(() =>
+    installationMethodFor(initial),
+  );
+  const [vortexExecutable, setVortexExecutable] = useState(
+    initial?.vortexExecutable ?? null,
+  );
+  const [nexusSearchOnScan, setNexusSearchOnScan] = useState(
+    initial?.nexusSearchOnScan ?? false,
+  );
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -200,8 +216,12 @@ export function SetupWizard({
     setError(null);
     try {
       await onComplete({
+        ...initial,
         stardewPath,
         modsPath,
+        nexusSearchOnScan,
+        vortexExecutable,
+        installationMethod,
         sourceLang: "default",
         targetLang,
       });
@@ -312,6 +332,13 @@ export function SetupWizard({
                   title="Choose your Mods folder"
                   description="This is the folder the app scans for translatable i18n files."
                 />
+                <InstallationSettings
+                  method={installationMethod}
+                  onMethodChange={setInstallationMethod}
+                  executable={vortexExecutable}
+                  onExecutableChange={setVortexExecutable}
+                  disabled={busy}
+                />
                 <div className="setup__note">
                   The recommended location is{" "}
                   <code>&lt;Stardew Valley&gt;/Mods</code>. Change it only when
@@ -367,6 +394,11 @@ export function SetupWizard({
 
             {step === 4 && (
               <section aria-label="Glossary">
+                <NexusSetup
+                  searchOnScan={nexusSearchOnScan}
+                  onSearchOnScanChange={setNexusSearchOnScan}
+                  onKeySaved={onNexusKeySaved}
+                />
                 <StepHeading
                   eyebrow="Step 4 / Optional"
                   title="Add official translation hints"
