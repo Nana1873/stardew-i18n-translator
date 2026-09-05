@@ -1,0 +1,15 @@
+{
+  "repository": "Nexus-Mods/Vortex",
+  "revision": "5bf1ae71a9b62ace7f43b12bd844d2fd83bb6489",
+  "checkedOn": "2026-09-05",
+  "files": {
+    "extensions/games/game-stardewvalley/src/common.ts": "9ddf0bd4b9371b6b90ba93dcf41babd162f9f1da12196cefd061d8033bf9916f",
+    "extensions/games/game-stardewvalley/src/installers/archiveClassifier.ts": "a18859680cfe41f4bab346eb67394bb6beb47071d5eb569d8a84a37f6661da4b",
+    "extensions/games/game-stardewvalley/src/installers/rootFolderInstaller.ts": "252b17214ddd5425f09141b89bc86f8f8ceee02f3d0533b3d616f79a3aac43f8",
+    "extensions/games/game-stardewvalley/src/installers/stardewValleyInstaller.ts": "f54fe8d2c3a7abe76e8e5238126e739394c4ab113687b002447a2fdb24e3a117",
+    "extensions/games/game-stardewvalley/src/game/StardewValleyGame.ts": "6ec31f0f7a7de7fc82043732ad2642c641316175eba865b56a5b7f31c7cae0a5",
+    "src/renderer/src/extensions/mod_management/util/basicInstaller.ts": "d8a79a50c389fd35fc75f0cbc72b384d8c827653e76c8ebd4fbd4e68be643764",
+    "src/renderer/src/extensions/mod_management/index.ts": "6b6de4631dbc1df0d1d17050391437cb5bcef27c1e9ba9724c451a2e4f9d3d34",
+    "LICENSE.md": "3c61a4b99007718626612c474991852b9428a3d4ed27a77e46b42fdfb80f896f"
+  }
+}
