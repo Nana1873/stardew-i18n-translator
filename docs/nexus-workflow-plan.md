@@ -8,10 +8,13 @@ claim that the planned private-output workflow is already implemented.
 ## Intended result
 
 Keep the existing local-first Tauri/Rust/React editor and a short personal loop:
-scan -> optionally find translations on Nexus -> optionally translate manually
-or with AI -> export as **Stardew Translator Output** -> send to Vortex or save
+scan -> optionally find/download/import translation archives in the Translator
+-> optionally translate manually or with AI -> export as **Stardew Translator Output** -> send to Vortex or save
 its ZIP for manual Vortex import. Acquisition and editing are optional; users
 with satisfactory installed translations can stop after checking their scan.
+Base mods and the installed Collection remain managed normally by Vortex.
+Only the finished combined output needs installation/deployment in Vortex;
+installing original translation archives there is not an intermediate requirement.
 
 - In Vortex mode, the normal export creates one private, combined locale output.
 - In folder mode, direct folder export remains the main action.
@@ -49,15 +52,20 @@ AI preferences and the existing glossary may remain shared.
 
 The current code already has optional Nexus discovery, folder ZIP import into
 Review, original Nexus-file handoff to Vortex, installed-file rechecks and the
-existing editor/export actions. The original handoff is current behavior, not
-proof of the proposed controlled archive-to-component import path.
+existing editor/export actions. The original NXM handoff is an intermediate
+implementation, not the final acquisition architecture. The target workflow
+imports translations into the Translator before building the combined output.
+Respect existing Free/Premium download entitlements. Where automatic download
+is unavailable, support normal manual Nexus download followed by import, rather
+than requiring a Vortex installation detour.
 
 Keep discovery and version choices in the existing results surface. Ask only
 for unresolved file/language/component choices. Rechecks must not restart
 searches, overwrite conflicting drafts or turn unknown inventory into absence.
 Optional acquisition failures must leave local editing and export usable.
 
-Distinguish candidate found, handoff sent, installed files verified, local work
+Distinguish candidate found, archive downloaded/imported, output handoff sent,
+installed files verified, local work
 saved, output created, deployed output matches, and output outdated/unknown.
 Only retain intermediate states that explain a real user decision or result.
 Hashes establish deployment evidence, not translation quality or Nexus credit.
@@ -81,6 +89,9 @@ do not merge by key. Preserve deployment-relative component paths and nested
 i18n directories. Reuse existing token checks, Review/Changed handling and
 explicit accepted-token exceptions.
 
+Translation updates are explicitly fetched/imported in the Translator and
+compared with its previous base and personal work. They do not require first
+installing/deploying the original translation in Vortex and rescanning it.
 Untouched entries can adopt a verified new base. If base and personal text both
 changed differently, compare old base, new base and personal text explicitly.
 Source changes require fresh validation. Removing an override inherits the
@@ -102,8 +113,9 @@ mark it outdated. Disable/remove must recover the underlying translations.
 1. **#225: context, base and legacy data.** Establish the reliable active context
    and base excluding our output; extend JSON state and migration. Preserve
    drafts and reject stale asynchronous results after context changes.
-2. **#223: optional acquisition and verified mapping.** Preserve working original
-   handoff while implementing the chosen safe archive-to-component route.
+2. **#223: optional acquisition and verified mapping.** Implement translation
+   download/import in the Translator, including the supported manual fallback.
+   Treat original NXM handoff as existing intermediate behavior during transition.
    Retain original Nexus mod/file IDs, version and author/source links. Obtain
    originals through normal Nexus paths; do not substitute unattributed mirrors.
    Qualify Free/Premium behavior and never infer download counts from metadata.
@@ -137,7 +149,8 @@ Two technical decisions remain open before claiming full support:
   needs reliable partial/corrupt-state handling and consistent live snapshots.
   Prove context, enabled sources and file winners with our output excluded;
   do not guess from staging folders or write directly to the Vortex database.
-- **Archive-to-component mapping:** define safe handling for ZIP, RAR/7z,
+- **Acquisition and archive-to-component mapping:** the target workflow above is
+  settled; choose its safe technical route, including handling for ZIP, RAR/7z,
   split locales, multiple components and translations bundled with originals.
   Existing folder ZIP preflight is useful, but does not settle every format or
   ambiguous archive. Key overlap alone is not mod identity. Unsupported or
