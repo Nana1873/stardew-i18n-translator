@@ -655,6 +655,7 @@ describe("App shell", () => {
 
   it("adopts restored installed text after returning to Nexus and reloads saved drafts", async () => {
     const scanned = exportScan(false);
+    scanned.traversalComplete = true;
     Object.assign(scanned.mods[0], { nexusId: 10, totalKeys: 2 });
     mockConfigured(scanned);
     const original = invokeMock.getMockImplementation()!;
@@ -926,6 +927,7 @@ describe("App shell", () => {
 
   it("ignores legacy automatic Nexus settings on startup and rescan after manual results", async () => {
     const scanned = exportScan(false);
+    scanned.traversalComplete = true;
     scanned.mods[0].nexusId = 10;
     scanned.mods[0].translatedKeys = 0;
     mockConfigured(scanned);
@@ -989,6 +991,7 @@ describe("App shell", () => {
 
   it("keeps Nexus off on a normal scan and starts the same search from the explicit action", async () => {
     const scanned = exportScan(false);
+    scanned.traversalComplete = true;
     scanned.mods[0].nexusId = 10;
     scanned.mods[0].translatedKeys = 0;
     mockConfigured(scanned);

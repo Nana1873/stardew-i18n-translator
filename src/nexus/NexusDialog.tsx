@@ -698,6 +698,9 @@ export function NexusDialog({
           Number(b.relationshipTier !== "possible-original-translation") ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+  const scanIncomplete =
+    !traversalComplete ||
+    skippedComponents.some((item) => item.requiresAttention);
   const coveredIds = new Set(
     search.entries
       .filter(
@@ -712,7 +715,7 @@ export function NexusDialog({
       .map((entry) => entry.modId),
   );
   const evidenceFor = (sourceId: number) =>
-    isVortex
+    isVortex && !scanIncomplete
       ? installedNexusTranslations.filter(
           (item) =>
             item.sourceNexusId === sourceId &&
@@ -878,6 +881,7 @@ export function NexusDialog({
   const actionRows = Object.values(rows);
   const installedGroups = groups.filter(
     (group) =>
+      !scanIncomplete &&
       !group.loading &&
       !group.errors.length &&
       !group.selected &&
@@ -911,6 +915,7 @@ export function NexusDialog({
   const unresolvedCount = shown.filter(
     (group) => !group.selected && !group.evidence.length,
   ).length;
+  const skippedComplete = scanIncomplete ? 0 : (search.skippedComplete ?? 0);
   const pending = shown.filter(
     (group) =>
       group.selected &&
@@ -1023,7 +1028,7 @@ export function NexusDialog({
         <tr aria-label={sourceName}>
           <td>
             <strong>{sourceName}</strong>
-            {version && (
+            {version && !scanIncomplete && (
               <small>Installed v{version.replace(/^v(?=\d)/i, "")}</small>
             )}
             {group.evidence.length > 0 && (
@@ -1040,7 +1045,9 @@ export function NexusDialog({
             <small>
               {disk
                 ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
-                : "Local translation coverage unavailable"}
+                : scanIncomplete
+                  ? "Local translation coverage unavailable: scan incomplete."
+                  : "Local translation coverage unavailable"}
             </small>
             {group.problem && (
               <small>
@@ -1448,6 +1455,12 @@ export function NexusDialog({
       onClose={onClose}
     >
       <div className="nexus-session-summary">
+        {scanIncomplete && (
+          <p role="status">
+            Scan incomplete. Resolve scan errors and scan again to check Nexus
+            translations.
+          </p>
+        )}
         {(actionStatus || resultStatus) && (
           <p role="status">{actionStatus || resultStatus}</p>
         )}
@@ -1532,15 +1545,17 @@ export function NexusDialog({
           !loading &&
           !search.running && (
             <p>
-              {unavailableCount ||
-              search.stoppedReason ||
-              search.completed < search.total
-                ? "No downloadable files could be confirmed."
-                : installedGroups > 0
-                  ? "Available translation files are already installed."
-                  : coveredIds.size > 0
-                    ? "No missing translation text in the checked mods."
-                    : "No suitable translation downloads found."}
+              {scanIncomplete
+                ? "Nexus translation status is unknown until the scan is complete."
+                : unavailableCount ||
+                    search.stoppedReason ||
+                    search.completed < search.total
+                  ? "No downloadable files could be confirmed."
+                  : installedGroups > 0
+                    ? "Available translation files are already installed."
+                    : coveredIds.size > 0
+                      ? "No missing translation text in the checked mods."
+                      : "No suitable translation downloads found."}
             </p>
           )}
         <section
@@ -1567,9 +1582,9 @@ export function NexusDialog({
                 ],
                 [noDownloadIds.size, "No suitable download found"],
                 [
-                  (search.skippedComplete ?? 0) +
-                    coveredIds.size +
-                    installedGroups,
+                  scanIncomplete
+                    ? "\u2014"
+                    : skippedComplete + coveredIds.size + installedGroups,
                   "No new download needed",
                 ],
                 [search.noId, "Mods without Nexus ID"],
@@ -1580,7 +1595,9 @@ export function NexusDialog({
                   key={label}
                   title={
                     label === "No new download needed"
-                      ? `${(search.skippedComplete ?? 0) + coveredIds.size} mods with no missing text; ${installedGroups} installed translations with no new file selected; text gaps may remain`
+                      ? scanIncomplete
+                        ? "Scan incomplete"
+                        : `${skippedComplete + coveredIds.size} mods with no missing text; ${installedGroups} installed translations with no new file selected; text gaps may remain`
                       : undefined
                   }
                 >

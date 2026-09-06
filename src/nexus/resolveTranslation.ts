@@ -222,17 +222,9 @@ export function nexusSourceDiskCoverage(
   if (
     !traversalComplete ||
     !components.length ||
-    skipped.some(
-      (item) =>
-        item.requiresAttention &&
-        ((!item.packageId && !item.componentUniqueId) ||
-          components.some(
-            (mod) =>
-              (!!item.packageId && mod.packageId === item.packageId) ||
-              (!!item.componentUniqueId &&
-                mod.uniqueId === item.componentUniqueId),
-          )),
-    ) ||
+    // Native Nexus identity recovery rejects the whole scan on these errors.
+    // A surviving explicit ID may otherwise represent only part of its group.
+    skipped.some((item) => item.requiresAttention) ||
     components.some(
       (mod) =>
         !Number.isFinite(mod.totalKeys) ||

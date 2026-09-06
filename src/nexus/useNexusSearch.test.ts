@@ -464,7 +464,7 @@ it.each([
   ["same package", "sample", null, true, true],
   ["same component", null, "sample.mod", true, true],
   ["unknown location", null, null, true, true],
-  ["other package", "other", "other.mod", true, false],
+  ["other package", "other", "other.mod", true, true],
   ["intentional exclusion", "sample", null, false, false],
 ])(
   "handles scan diagnostics: %s",

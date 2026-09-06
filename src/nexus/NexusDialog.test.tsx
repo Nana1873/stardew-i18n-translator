@@ -349,7 +349,9 @@ it("keeps unknown local coverage distinct from zero or installed before any acti
   app.setTraversal(false);
   await screen.findByRole("row", { name: "Canonical title" });
   expect(
-    translationRow().getByText("Local translation coverage unavailable"),
+    translationRow().getByText(
+      "Local translation coverage unavailable: scan incomplete.",
+    ),
   ).toBeInTheDocument();
   expect(
     translationRow().queryByText(/0\/3|0 missing|installed/i),
@@ -752,7 +754,9 @@ it.each([false, undefined])(
     await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(translationRow().getByText("Details"));
     expect(
-      translationRow().getByText("Local translation coverage unavailable"),
+      translationRow().getByText(
+        "Local translation coverage unavailable: scan incomplete.",
+      ),
     ).toBeInTheDocument();
   },
 );
@@ -1962,9 +1966,12 @@ it("opens missing strings only for one unambiguous component with untranslated w
 it("keeps unknown coverage distinct from completeness for installed evidence", async () => {
   const app = mount({ installed: [installedFile] });
   app.setTraversal(false);
-  await screen.findByText("Translation installed");
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(screen.queryByText("Translation installed")).toBeNull();
   expect(
-    translationRow().getByText("Local translation coverage unavailable"),
+    translationRow().getByText(
+      "Local translation coverage unavailable: scan incomplete.",
+    ),
   ).toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "Open missing strings" }),
@@ -2309,5 +2316,97 @@ it.each(["vortex", "folder"] as const)(
         ),
       ).toEqual([{ modId: candidate.modId, fileId: file.fileId }]),
     );
+  },
+);
+
+it.each([0, 69])(
+  "keeps Nexus status unknown after unrelated scan errors with %i surviving sibling strings",
+  async (covered) => {
+    const app = mount({ search: { ...search, skippedComplete: 4 } });
+    await download();
+    await screen.findByText("1 sent to Vortex");
+    const before = invoke.mock.calls.length;
+    app.setSkipped([
+      {
+        packageId: "MultiSave",
+        componentUniqueId: "recon88.MultiSave",
+        componentName: "MultiSave",
+        relativeLocation: "MultiSave",
+        reason: "Duplicate mod identity",
+        requiresAttention: true,
+        restOfPackageLoaded: false,
+      },
+    ]);
+    app.setMods([
+      {
+        ...mods[0],
+        uniqueId: "FrontierFarm",
+        packageId: "Frontier",
+        version: "1.7",
+        totalKeys: 69,
+        diskTranslatedKeys: covered,
+      },
+    ]);
+    app.setInstalled([{ ...installedFile, state: "missing_dictionary" }]);
+    const row = translationRow();
+    expect(
+      row.getByText("Local translation coverage unavailable: scan incomplete."),
+    ).toBeInTheDocument();
+    expect(row.queryByText(/Local translation: /)).toBeNull();
+    expect(row.queryByText(/Installed v/)).toBeNull();
+    expect(row.queryByText("Translation installed")).toBeNull();
+    expect(
+      row.queryByText("Translation file missing from Vortex installation"),
+    ).toBeNull();
+    expect(
+      screen.getByText(
+        "Scan incomplete. Resolve scan errors and scan again to check Nexus translations.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
+    expect(
+      screen.getByText("No new download needed").parentElement,
+    ).toHaveTextContent("\u2014No new download needed");
+    expect(
+      screen.getByText("No new download needed").parentElement,
+    ).toHaveAttribute("title", "Scan incomplete");
+    expect(
+      invoke.mock.calls.slice(before).filter(([cmd]) => cmd !== "nexus_status"),
+    ).toEqual([]);
+    expect(app.onSearch).not.toHaveBeenCalled();
+    expect(app.onImported).not.toHaveBeenCalled();
+    app.setMods([{ ...mods[0], nexusId: null }]);
+    expect(
+      translationRow().getByText(
+        "Local translation coverage unavailable: scan incomplete.",
+      ),
+    ).toBeInTheDocument();
+    const restored = [
+      { ...mods[0], totalKeys: 10, diskTranslatedKeys: 1 },
+      {
+        ...mods[0],
+        uniqueId: "FrontierFarm",
+        packageId: "Frontier",
+        totalKeys: 69,
+        diskTranslatedKeys: 0,
+      },
+    ];
+    app.setMods(restored);
+    app.setInstalled([]);
+    app.setSkipped([]);
+    expect(
+      translationRow().getByText(
+        "Local translation: 1/79 strings \u00b7 78 missing",
+      ),
+    ).toBeInTheDocument();
+    app.setMods(
+      restored.map((mod) => ({ ...mod, diskTranslatedKeys: mod.totalKeys })),
+    );
+    expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
+    expect(
+      screen.queryByText(
+        "Scan incomplete. Resolve scan errors and scan again to check Nexus translations.",
+      ),
+    ).toBeNull();
   },
 );

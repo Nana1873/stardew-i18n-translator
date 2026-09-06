@@ -353,3 +353,37 @@ it("separates blank sources from physically present disk text in Nexus coverage"
     ),
   ).toMatchObject({ covered: 0, missing: 1, complete: false });
 });
+
+it.each([0, 69])(
+  "does not present a surviving sibling as whole-source coverage after unrelated scan errors (%i translated)",
+  (covered) => {
+    const surviving = mod("FrontierFarm", {
+      nexusId: 3753,
+      packageId: "Frontier",
+      totalKeys: 69,
+      diskTranslatedKeys: covered,
+    });
+    const skipped = [
+      {
+        packageId: "MultiSave",
+        componentUniqueId: "recon88.MultiSave",
+        componentName: "MultiSave",
+        relativeLocation: "MultiSave",
+        reason: "Duplicate mod identity",
+        requiresAttention: true,
+        restOfPackageLoaded: false,
+      },
+    ];
+    expect(
+      nexusSourceDiskCoverage([surviving], 3753, skipped, true),
+    ).toBeNull();
+    expect(
+      nexusSourceDiskCoverage(
+        [surviving],
+        3753,
+        [{ ...skipped[0], requiresAttention: false }],
+        true,
+      ),
+    ).toMatchObject({ total: 69, covered, complete: covered === 69 });
+  },
+);
