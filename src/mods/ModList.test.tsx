@@ -111,9 +111,9 @@ describe("ModList", () => {
     expect(packageRow.getAttribute("title")).toContain(
       "3 awaiting review, 3 i18n files",
     );
-    // The real Nexus id is surfaced both on the parent (rolled up) and on the
-    // [CP] child that owns it.
-    expect(screen.getAllByText("7286")).toHaveLength(2);
+    // The package ID is shown on the group, its owning child, and the sibling
+    // that inherits the unambiguous link.
+    expect(screen.getAllByText("7286")).toHaveLength(3);
   });
 
   it("draws ├─/└─ tree connectors on the components of a package", () => {
@@ -621,4 +621,96 @@ it("labels the Vortex origin on the existing package and component Nexus IDs", (
   ).toHaveAttribute("title", "Nexus ID from Vortex");
   fireEvent.click(screen.getByRole("treeitem", { name: /Bundle/ }));
   expect(screen.getAllByLabelText("Nexus ID 123 from Vortex")).toHaveLength(1);
+});
+
+it("inherits the full package link under filtering without mutating the component", () => {
+  vi.mocked(invoke).mockClear();
+  const child = mod({ uniqueId: "Child", packageId: "Bundle", nexusId: null });
+  render(
+    <ModList
+      mods={[
+        child,
+        mod({
+          uniqueId: "Parent",
+          packageId: "Bundle",
+          nexusId: 123,
+          nexusIdSource: "vortex",
+        }),
+      ]}
+      selectedId={null}
+      onSelect={() => {}}
+      query="Child"
+    />,
+  );
+  expect(screen.getByTitle("Nexus ID from package (Vortex)")).toHaveTextContent(
+    "123",
+  );
+  fireEvent.keyDown(screen.getByText("Child").closest('[role="treeitem"]')!, {
+    key: "F10",
+    shiftKey: true,
+  });
+  fireEvent.click(screen.getByRole("menuitem", { name: "Open on Nexus" }));
+  expect(invoke).toHaveBeenCalledWith("open_url", {
+    url: "https://www.nexusmods.com/stardewvalley/mods/123",
+  });
+  expect(child.nexusId).toBeNull();
+});
+
+it.each([
+  [123, 456],
+  [null, null],
+  [0, -1],
+])(
+  "keeps missing children unlinked when package IDs are %j and %j",
+  (first, second) => {
+    vi.mocked(invoke).mockClear();
+    render(
+      <ModList
+        mods={[
+          mod({ uniqueId: "A", packageId: "Bundle", nexusId: first }),
+          mod({ uniqueId: "B", packageId: "Bundle", nexusId: second }),
+          mod({ uniqueId: "Child", packageId: "Bundle", nexusId: null }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    expect(
+      screen
+        .getByText("Bundle")
+        .closest('[role="treeitem"]')!
+        .querySelector(".translator-mod-nexus"),
+    ).toHaveTextContent("—");
+    fireEvent.contextMenu(screen.getByText("Child"));
+    expect(
+      screen.getByRole("menuitem", { name: "Open on Nexus" }),
+    ).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole("menuitem", { name: "Open on Nexus" }), {
+      key: "Escape",
+    });
+    if (first === 123) {
+      fireEvent.contextMenu(screen.getByText("A"));
+      fireEvent.click(screen.getByRole("menuitem", { name: "Open on Nexus" }));
+      expect(invoke).toHaveBeenCalledWith("open_url", {
+        url: "https://www.nexusmods.com/stardewvalley/mods/123",
+      });
+    }
+  },
+);
+
+it("updates an open inherited link after the package becomes conflicting", () => {
+  const child = mod({ uniqueId: "Child", packageId: "Bundle" });
+  const parent = mod({ uniqueId: "Parent", packageId: "Bundle", nexusId: 123 });
+  const view = (mods: ScannedMod[]) => (
+    <ModList mods={mods} selectedId={null} onSelect={() => {}} />
+  );
+  const app = render(view([child, parent, { ...parent, uniqueId: "Same ID" }]));
+  fireEvent.contextMenu(screen.getByText("Child"));
+  expect(screen.getByRole("menuitem", { name: "Open on Nexus" })).toBeEnabled();
+  app.rerender(
+    view([child, parent, { ...parent, uniqueId: "Other ID", nexusId: 456 }]),
+  );
+  expect(
+    screen.getByRole("menuitem", { name: "Open on Nexus" }),
+  ).toBeDisabled();
 });

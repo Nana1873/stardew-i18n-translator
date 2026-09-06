@@ -55,7 +55,7 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
     else byId.set(mod.packageId, [mod]);
   }
 
-  return Array.from(byId, ([packageId, groupMods]) => {
+  return Array.from(byId, ([packageId, groupMods]): PackageGroup => {
     const sortedMods = [...groupMods].sort((a, b) => byName(a.name, b.name));
     const totalKeys = sortedMods.reduce((sum, mod) => sum + mod.totalKeys, 0);
     const translatedKeys = sortedMods.reduce(
@@ -74,12 +74,24 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       (sum, mod) => sum + mod.i18nFiles.length,
       0,
     );
-    const nexusMod = sortedMods.find((mod) => mod.nexusId != null);
+    const ids = new Set(
+      sortedMods.map((mod) => mod.nexusId).filter(validNexusId),
+    );
+    const nexusMod =
+      packageId && ids.size === 1
+        ? sortedMods.find((mod) => validNexusId(mod.nexusId))
+        : undefined;
     return {
       packageId,
       mods: sortedMods,
       nexusId: nexusMod?.nexusId ?? null,
-      nexusIdSource: nexusMod?.nexusIdSource,
+      nexusIdSource: nexusMod
+        ? sortedMods
+            .filter((mod) => validNexusId(mod.nexusId))
+            .every((mod) => mod.nexusIdSource === "vortex")
+          ? "vortex"
+          : "manifest"
+        : null,
       totalKeys,
       translatedKeys,
       noTranslationNeededKeys,
@@ -91,6 +103,25 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
           : 0,
     };
   }).sort((a, b) => byName(groupLabel(a), groupLabel(b)));
+}
+
+function validNexusId(id: number | null): id is number {
+  return id != null && Number.isSafeInteger(id) && id > 0;
+}
+
+function displayedNexus(mod: ScannedMod, group?: PackageGroup) {
+  const own = validNexusId(mod.nexusId);
+  const id = own ? mod.nexusId : (group?.nexusId ?? null);
+  const source = own ? mod.nexusIdSource : group?.nexusIdSource;
+  const title =
+    id == null
+      ? "No Nexus Mods link available"
+      : !own
+        ? `Nexus ID from package${source === "vortex" ? " (Vortex)" : ""}`
+        : source === "vortex"
+          ? "Nexus ID from Vortex"
+          : "Open Nexus Mods from the context menu";
+  return { id, title };
 }
 
 function progressStyle(percent: number): CSSProperties {
@@ -112,6 +143,19 @@ export function ModList({
     new Set(),
   );
   const [activeTreeId, setActiveTreeId] = useState<string | null>(null);
+  const menuMod =
+    menu &&
+    mods.find(
+      (mod) =>
+        mod.uniqueId === menu.mod.uniqueId &&
+        mod.folderPath === menu.mod.folderPath,
+    );
+  const menuNexusId = menuMod
+    ? displayedNexus(
+        menuMod,
+        groups.find((group) => group.packageId === menuMod.packageId),
+      ).id
+    : null;
   const menuRef = useRef<HTMLUListElement>(null);
   const q = query.trim().toLocaleLowerCase();
   const visible = q
@@ -422,16 +466,16 @@ export function ModList({
                 type="button"
                 role="menuitem"
                 aria-label="Open on Nexus"
-                disabled={menu.mod.nexusId == null}
+                disabled={menuNexusId == null}
                 title={
-                  menu.mod.nexusId == null
+                  menuNexusId == null
                     ? "No Nexus Mods link available"
                     : undefined
                 }
                 onClick={() => {
-                  if (menu.mod.nexusId == null) return;
+                  if (menuNexusId == null) return;
                   void openUrl(
-                    `https://www.nexusmods.com/stardewvalley/mods/${menu.mod.nexusId}`,
+                    `https://www.nexusmods.com/stardewvalley/mods/${menuNexusId}`,
                   );
                   closeMenu(false);
                 }}
@@ -439,7 +483,7 @@ export function ModList({
                 <span className="translator-menu-label">
                   <ExternalLink aria-hidden="true" /> Open on Nexus
                 </span>
-                {menu.mod.nexusId == null && (
+                {menuNexusId == null && (
                   <span
                     className="translator-context-shortcut"
                     aria-hidden="true"
@@ -538,6 +582,7 @@ function PackageNode({
           <ModRow
             key={mod.uniqueId}
             mod={mod}
+            packageGroup={group}
             child
             lastChild={index === visibleMods.length - 1}
             selectedId={selectedId}
@@ -554,6 +599,7 @@ function PackageNode({
 
 function ModRow({
   mod,
+  packageGroup,
   child = false,
   lastChild = false,
   selectedId,
@@ -564,6 +610,7 @@ function ModRow({
   menuOpen,
 }: {
   mod: ScannedMod;
+  packageGroup?: PackageGroup;
   child?: boolean;
   lastChild?: boolean;
   selectedId: string | null;
@@ -577,6 +624,7 @@ function ModRow({
   ) => void;
   menuOpen: boolean;
 }) {
+  const nexus = displayedNexus(mod, packageGroup);
   const selected = mod.uniqueId === selectedId;
   const percent = coveragePercent(workingCoveredKeys(mod), mod.totalKeys);
   const multipleSources = mod.i18nFiles.length > 1;
@@ -612,23 +660,19 @@ function ModRow({
           </span>
         )}
       </span>
-      <span className="translator-mod-version">{mod.version || "—"}</span>
+      <span className="translator-mod-version" title={mod.version || undefined}>
+        {mod.version || "—"}
+      </span>
       <span
         className="translator-mod-nexus"
-        title={
-          mod.nexusId == null
-            ? "No Nexus Mods link available"
-            : mod.nexusIdSource === "vortex"
-              ? "Nexus ID from Vortex"
-              : "Open Nexus Mods from the context menu"
-        }
+        title={nexus.title}
         aria-label={
-          mod.nexusId != null && mod.nexusIdSource === "vortex"
-            ? `Nexus ID ${mod.nexusId} from Vortex`
+          nexus.id != null && nexus.title.startsWith("Nexus ID from")
+            ? `Nexus ID ${nexus.id} ${nexus.title.slice(9)}`
             : undefined
         }
       >
-        {mod.nexusId ?? "—"}
+        {nexus.id ?? "—"}
       </span>
       <span className="translator-mod-percent">
         {mod.totalKeys > 0 ? `${percent}%` : "—"}

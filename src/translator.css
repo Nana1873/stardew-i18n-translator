@@ -592,6 +592,13 @@
   font-weight: 500;
 }
 
+#stardew-i18n-translator .translator-mod-version {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 #stardew-i18n-translator .translator-mod-version,
 #stardew-i18n-translator .translator-mod-nexus,
 #stardew-i18n-translator .translator-mod-percent {
