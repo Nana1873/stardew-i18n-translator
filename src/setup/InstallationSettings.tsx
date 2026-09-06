@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
-import { pickVortexExecutable, type AppSettings } from "../tauri/commands";
+import {
+  detectVortexExecutable,
+  pickVortexExecutable,
+  type AppSettings,
+} from "../tauri/commands";
 
 export function installationMethodFor(
   settings: Pick<AppSettings, "installationMethod" | "vortexExecutable"> | null,
@@ -17,6 +21,7 @@ export function InstallationSettings({
   onExecutableChange,
   disabled = false,
   active = true,
+  compact = false,
 }: {
   method: "folder" | "vortex";
   onMethodChange: (method: "folder" | "vortex") => void;
@@ -24,20 +29,56 @@ export function InstallationSettings({
   onExecutableChange: (value: string) => void;
   disabled?: boolean;
   active?: boolean;
+  compact?: boolean;
 }) {
   const [picking, setPicking] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const generation = useRef(0);
+  const detectionAttempted = useRef(false);
+  const [detecting, setDetecting] = useState(false);
   useEffect(() => {
     generation.current++;
     setPicking(false);
+    setDetecting(false);
     setError(null);
     return () => {
       generation.current++;
     };
-  }, [method, active, disabled]);
-  async function choose() {
+  }, [method, active, disabled, executable]);
+  useEffect(() => {
+    let cancelled = false;
+    setDetecting(false);
+    if (method !== "vortex" || !active || disabled || executable?.trim())
+      return;
     const stamp = generation.current;
+    // Defer starting so StrictMode's discarded effect cannot consume the attempt.
+    void Promise.resolve().then(async () => {
+      if (cancelled || detectionAttempted.current) return;
+      detectionAttempted.current = true;
+      setDetecting(true);
+      try {
+        const detected = await detectVortexExecutable();
+        if (
+          !cancelled &&
+          stamp === generation.current &&
+          typeof detected === "string" &&
+          detected.trim()
+        )
+          onExecutableChange(detected);
+      } catch {
+        // Manual selection remains available when local detection is unavailable.
+      } finally {
+        if (!cancelled && stamp === generation.current) setDetecting(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [method, active, disabled, executable]);
+  async function choose() {
+    const stamp = ++generation.current;
+    detectionAttempted.current = true;
+    setDetecting(false);
     setPicking(true);
     setError(null);
     try {
@@ -53,20 +94,75 @@ export function InstallationSettings({
       if (stamp === generation.current) setPicking(false);
     }
   }
+  const methodSelect = (
+    <select
+      className={compact ? "translator-select" : undefined}
+      aria-label="Installation method"
+      value={method}
+      disabled={disabled || !active}
+      onChange={(event) =>
+        onMethodChange(event.target.value as "folder" | "vortex")
+      }
+    >
+      <option value="folder">Manual / no mod manager</option>
+      <option value="vortex">Vortex</option>
+    </select>
+  );
+  const browse = (
+    <button
+      className="translator-button translator-button-quiet"
+      type="button"
+      aria-label="Choose Vortex.exe"
+      disabled={disabled || picking || !active}
+      onClick={() => void choose()}
+    >
+      {picking ? "Choosing…" : compact ? "Change" : "Choose Vortex.exe"}
+    </button>
+  );
+  const feedback = (
+    <>
+      {!executable?.trim() && (
+        <p role="status">
+          {detecting
+            ? "Looking for Vortex.exe…"
+            : "Choose Vortex.exe if it was not found automatically."}
+        </p>
+      )}
+      {error && <p role="alert">{error}</p>}
+    </>
+  );
+  if (compact)
+    return (
+      <section aria-label="Installation" className="translator-settings-group">
+        <label className="translator-setting-line">
+          <span className="translator-setting-copy">
+            <strong>Installation method</strong>
+          </span>
+          {methodSelect}
+        </label>
+        {method === "vortex" && (
+          <div className="translator-setting-line">
+            <div className="translator-setting-copy">
+              <strong>Vortex executable</strong>
+              <span
+                className="translator-vortex-path"
+                aria-label="Vortex executable"
+                title={executable || undefined}
+              >
+                {executable || "Not selected"}
+              </span>
+              {feedback}
+            </div>
+            {browse}
+          </div>
+        )}
+      </section>
+    );
   return (
     <section aria-label="Installation">
       <label className="wizard__field">
         <span>Installation method</span>
-        <select
-          value={method}
-          disabled={disabled}
-          onChange={(event) =>
-            onMethodChange(event.target.value as "folder" | "vortex")
-          }
-        >
-          <option value="folder">Manual / no mod manager</option>
-          <option value="vortex">Vortex</option>
-        </select>
+        {methodSelect}
       </label>
       <p>
         This choice controls how Nexus translations are added in this
@@ -82,20 +178,8 @@ export function InstallationSettings({
               placeholder="Select Vortex.exe"
             />
           </label>
-          <button
-            className="translator-button translator-button-quiet"
-            type="button"
-            disabled={disabled || picking || !active}
-            onClick={() => void choose()}
-          >
-            {picking ? "Choosing…" : "Choose Vortex.exe"}
-          </button>
-          <p role="status">
-            {executable?.trim()
-              ? "Vortex uses its own Nexus account. Save to use this selection."
-              : "Choose Vortex.exe before sending translations to Vortex. You can save now and continue working offline."}
-          </p>
-          {error && <p role="alert">{error}</p>}
+          {browse}
+          {feedback}
         </>
       )}
     </section>

@@ -181,6 +181,9 @@ export function nexusFindTranslations(
 ): Promise<NexusSearchResult> {
   return invoke("nexus_find_translations", { modId, targetLang, forceRefresh });
 }
+export function detectVortexExecutable(): Promise<string | null> {
+  return invoke("detect_vortex_executable");
+}
 export function pickVortexExecutable(): Promise<string | null> {
   return invoke("pick_vortex_executable");
 }

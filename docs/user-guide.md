@@ -39,8 +39,10 @@ backup and empty-file removal behavior is unchanged.
 This workflow is currently for local testing. Nexus is optional: configure an
 API key beside the Mods folder and installation method in Setup, or later in
 Settings. Choose **Manual / no mod manager** or **Vortex** in that Setup step;
-this remains editable in Settings.
-Select Vortex.exe there when using Vortex. The validated key is
+this remains editable in Settings. When Vortex is selected and no executable is
+set, the app tries to find Vortex.exe locally. You can always choose it manually;
+an existing selection is kept. Finish or Save changes stores the selected path.
+The validated key is
 saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
 `data/`; it does not move with the app. Enter a key in the password field and use
 **Save changes** in Settings or **Finish** in Setup to validate and save it. A

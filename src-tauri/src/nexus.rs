@@ -1684,6 +1684,131 @@ fn vortex_path(path: &Path) -> Result<PathBuf, String> {
     }
     Ok(canonical)
 }
+// Registry values are hints only. Never execute a registered command or expand its arguments.
+#[cfg(windows)]
+fn registered_executable(value: &str, command: bool) -> Option<PathBuf> {
+    let value = value.trim();
+    let path = if let Some(quoted) = value.strip_prefix('"') {
+        let (path, rest) = quoted.split_once('"')?;
+        if (!command && !rest.trim().is_empty())
+            || (command && !rest.is_empty() && !rest.starts_with(char::is_whitespace))
+        {
+            return None;
+        }
+        path
+    } else if command {
+        value.split_whitespace().next()?
+    } else {
+        value
+    };
+    (!path.is_empty() && !path.contains('"')).then(|| PathBuf::from(path))
+}
+
+#[cfg(windows)]
+fn registered_icon(value: &str) -> Option<PathBuf> {
+    let value = value.trim();
+    let path = match value.rsplit_once(',') {
+        Some((path, index)) if index.trim().parse::<i32>().is_ok() => path,
+        _ => value,
+    };
+    registered_executable(path, false)
+}
+
+#[cfg(windows)]
+fn local_vortex_candidate(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    path.has_root()
+        && matches!(
+            path.components().next(),
+            Some(Component::Prefix(prefix))
+                if matches!(prefix.kind(), Prefix::Disk(_) | Prefix::VerbatimDisk(_))
+        )
+}
+
+#[cfg(windows)]
+fn detected_vortex_path(registered: Vec<PathBuf>, standard: Vec<PathBuf>) -> Option<String> {
+    for candidates in [registered, standard] {
+        let mut found: Option<PathBuf> = None;
+        for candidate in candidates {
+            // Silent detection must not access a network or device path from registry hints.
+            if !local_vortex_candidate(&candidate) {
+                continue;
+            }
+            let Ok(path) = vortex_path(&candidate) else {
+                continue;
+            };
+            if let Some(previous) = &found {
+                if !previous
+                    .to_string_lossy()
+                    .eq_ignore_ascii_case(&path.to_string_lossy())
+                {
+                    // Conflicting valid installations require the user's Browse choice.
+                    return None;
+                }
+            } else {
+                found = Some(path);
+            }
+        }
+        if let Some(path) = found {
+            return Some(path.display().to_string());
+        }
+    }
+    None
+}
+
+#[tauri::command]
+pub fn detect_vortex_executable() -> Option<String> {
+    #[cfg(windows)]
+    {
+        use winreg::{enums::*, RegKey};
+        let mut candidates = Vec::new();
+        for hive in [HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE] {
+            for view in [KEY_WOW64_64KEY, KEY_WOW64_32KEY] {
+                let root = RegKey::predef(hive);
+                let read = |key: &str, name: &str| -> Option<String> {
+                    root.open_subkey_with_flags(key, KEY_READ | view)
+                        .ok()?
+                        .get_value(name)
+                        .ok()
+                };
+                if let Some(value) = read(
+                    r"Software\Microsoft\Windows\CurrentVersion\App Paths\Vortex.exe",
+                    "",
+                ) {
+                    candidates.extend(registered_executable(&value, false));
+                }
+                // Observed Vortex installer app ID; optional hint, without enumerating software.
+                let uninstall = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\57979c68-f490-55b8-8fed-8b017a5af2fe";
+                if read(uninstall, "DisplayName").as_deref() == Some("Vortex") {
+                    if let Some(value) = read(uninstall, "InstallLocation") {
+                        candidates.extend(
+                            registered_executable(&value, false).map(|p| p.join("Vortex.exe")),
+                        );
+                    }
+                    if let Some(value) = read(uninstall, "DisplayIcon") {
+                        candidates.extend(registered_icon(&value));
+                    }
+                }
+                if let Some(value) = read(r"Software\Classes\nxm\shell\open\command", "") {
+                    candidates.extend(registered_executable(&value, true));
+                }
+            }
+        }
+        let mut standard = Vec::new();
+        for variable in ["ProgramFiles", "ProgramFiles(x86)"] {
+            if let Some(root) = std::env::var_os(variable) {
+                standard.push(PathBuf::from(root).join("Vortex").join("Vortex.exe"));
+            }
+        }
+        if let Some(root) = std::env::var_os("LOCALAPPDATA") {
+            standard.push(PathBuf::from(root).join("Programs/Vortex/Vortex.exe"));
+        }
+        detected_vortex_path(candidates, standard)
+    }
+    #[cfg(not(windows))]
+    None
+}
+
 #[tauri::command]
 pub fn pick_vortex_executable(app: AppHandle) -> Result<Option<String>, String> {
     let Some(file) = app
@@ -1781,6 +1906,100 @@ pub fn nexus_handoff_to_vortex(
 #[cfg(test)]
 mod workflow_tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn vortex_detection_rejects_non_disk_paths_before_file_access() {
+        for path in [r"C:\Vortex\Vortex.exe", r"\\?\C:\Vortex\Vortex.exe"] {
+            assert!(local_vortex_candidate(Path::new(path)), "{path}");
+        }
+        for path in [
+            r"\\server\share\Vortex.exe",
+            r"\\?\UNC\server\share\Vortex.exe",
+            r"\\.\C:\Vortex\Vortex.exe",
+            r"\\.\pipe\Vortex.exe",
+            r"\\?\Volume{example}\Vortex.exe",
+            r"\??\C:\Vortex\Vortex.exe",
+            r"\Vortex\Vortex.exe",
+            r"C:Vortex.exe",
+            r"Vortex.exe",
+            "",
+        ] {
+            assert!(!local_vortex_candidate(Path::new(path)), "{path}");
+        }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn vortex_detection_parses_only_executable_hints() {
+        let expected = Some(PathBuf::from(r"C:\Example Vortex\Vortex.exe"));
+        assert_eq!(
+            registered_executable(r#""C:\Example Vortex\Vortex.exe" -d "%1""#, true),
+            expected
+        );
+        assert_eq!(
+            registered_executable(r"C:\Vortex\Vortex.exe --install %1", true),
+            Some(PathBuf::from(r"C:\Vortex\Vortex.exe"))
+        );
+        assert_eq!(
+            registered_executable(r#""C:\Example Vortex\Vortex.exe""#, false),
+            expected
+        );
+        assert_eq!(
+            registered_icon(r#""C:\Example Vortex\Vortex.exe",-1"#),
+            expected
+        );
+        assert_eq!(registered_icon(r"C:\Example Vortex\Vortex.exe,0"), expected);
+        assert_eq!(registered_icon(r"C:\Example Vortex\Vortex.exe"), expected);
+        for malformed in ["", "\"unterminated", "\"Vortex.exe\"suffix", "\"\""] {
+            assert!(registered_executable(malformed, true).is_none());
+        }
+        assert!(registered_executable(r#""C:\Vortex\Vortex.exe" --install"#, false).is_none());
+        // No guessing where an unquoted path containing spaces ends.
+        assert_eq!(
+            registered_executable(r"C:\Example Vortex\Vortex.exe -d %1", true),
+            Some(PathBuf::from(r"C:\Example"))
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn vortex_detection_validates_falls_back_and_rejects_ambiguity() {
+        let root = crate::test_support::temp_dir("vortex-detection");
+        let first = root.join("first/Vortex.exe");
+        let second = root.join("second/Vortex.exe");
+        let invalid = root.join("invalid/Vortex.exe");
+        let wrong_name = root.join("Other.exe");
+        for path in [&first, &second, &invalid] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"MZ synthetic fixture").unwrap();
+        }
+        std::fs::write(&invalid, b"not executable").unwrap();
+        std::fs::write(&wrong_name, b"MZ wrong name").unwrap();
+        let expected = Some(first.canonicalize().unwrap().display().to_string());
+        let stale = vec![
+            invalid,
+            wrong_name,
+            root.join("missing/Vortex.exe"),
+            PathBuf::from("Vortex.exe"),
+            root.clone(),
+        ];
+        assert!(detected_vortex_path(stale.clone(), vec![]).is_none());
+        assert_eq!(
+            detected_vortex_path(stale.clone(), vec![first.clone()]),
+            expected
+        );
+        let mut hints = stale;
+        hints.extend([first.clone(), first.parent().unwrap().join("./Vortex.exe")]);
+        assert_eq!(detected_vortex_path(hints, vec![second.clone()]), expected);
+        assert!(
+            detected_vortex_path(vec![first.clone(), second.clone()], vec![first.clone()])
+                .is_none()
+        );
+        assert!(detected_vortex_path(vec![], vec![first, second]).is_none());
+        assert!(detected_vortex_path(vec![], vec![]).is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn discovery(now: u64) -> Discovery {
         Discovery {
             mod_id: 10,

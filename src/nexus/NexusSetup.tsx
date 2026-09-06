@@ -59,6 +59,12 @@ export function NexusSetup({
   return (
     <section className="nexus-setup" aria-label="Optional Nexus setup">
       <h3>Nexus Mods · optional</h3>
+      <p>
+        Use <strong>Find translations on Nexus</strong> to find existing
+        translations for your scanned Stardew Valley mods. A personal Nexus API
+        key enables this optional search; local scans and editing work without
+        it.
+      </p>
       <label className="wizard__field">
         <span>Nexus API key</span>
         <input

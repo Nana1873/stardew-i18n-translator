@@ -3301,3 +3301,7 @@
     transition: none !important;
   }
 }
+
+#stardew-i18n-translator .translator-vortex-path {
+  overflow-wrap: anywhere;
+}

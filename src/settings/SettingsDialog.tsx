@@ -689,6 +689,7 @@ export function SettingsDialog({
             >
               <h3>Folders & language</h3>
               <InstallationSettings
+                compact
                 method={installationMethod}
                 onMethodChange={setInstallationMethod}
                 executable={vortexExecutable}

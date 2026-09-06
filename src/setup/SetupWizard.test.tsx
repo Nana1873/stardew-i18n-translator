@@ -130,44 +130,64 @@ describe("SetupWizard", () => {
     });
   });
 
-  it("saves Vortex without an executable or Nexus key while preserving initial settings", async () => {
-    const onComplete = vi.fn();
-    render(
-      <SetupWizard
-        initial={{
-          stardewPath: "E:/SDV",
-          modsPath: "E:/SDV/Mods",
-          sourceLang: "default",
-          targetLang: "de",
+  it.each([null, "C:/Detected/Vortex.exe"])(
+    "saves Vortex detection result %s only with Finish",
+    async (detected) => {
+      const original = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+        cmd === "detect_vortex_executable"
+          ? Promise.resolve(detected)
+          : original(cmd, ...args),
+      );
+      const onComplete = vi.fn();
+      render(
+        <SetupWizard
+          initial={{
+            stardewPath: "E:/SDV",
+            modsPath: "E:/SDV/Mods",
+            sourceLang: "default",
+            targetLang: "de",
+            diagnosticLogging: false,
+          }}
+          onComplete={onComplete}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      fireEvent.change(screen.getByLabelText("Installation method"), {
+        target: { value: "vortex" },
+      });
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith(
+          "detect_vortex_executable",
+          undefined,
+        ),
+      );
+      await waitFor(() =>
+        expect(screen.getByLabelText("Vortex executable")).toHaveValue(
+          detected ?? "",
+        ),
+      );
+      expect(onComplete).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      fireEvent.click(screen.getByRole("button", { name: "Next" }));
+      fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+      expect(onComplete).toHaveBeenCalledWith(
+        expect.objectContaining({
+          installationMethod: "vortex",
+          vortexExecutable: detected,
           diagnosticLogging: false,
-        }}
-        onComplete={onComplete}
-      />,
-    );
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.change(screen.getByLabelText("Installation method"), {
-      target: { value: "vortex" },
-    });
-    expect(screen.getByText(/continue working offline/)).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.click(screen.getByRole("button", { name: "Finish" }));
-    expect(onComplete).toHaveBeenCalledWith(
-      expect.objectContaining({
-        installationMethod: "vortex",
-        vortexExecutable: null,
-        diagnosticLogging: false,
-      }),
-    );
-    expect(
-      invokeMock.mock.calls.some(([cmd]) =>
-        /nexus_save_key|nexus_handoff/.test(cmd),
-      ),
-    ).toBe(false);
-  });
+        }),
+      );
+      expect(
+        invokeMock.mock.calls.some(([cmd]) =>
+          /nexus_save_key|nexus_handoff/.test(cmd),
+        ),
+      ).toBe(false);
+    },
+  );
 
   it("keeps setup open when saving fails", async () => {
     const onComplete = vi.fn().mockRejectedValue(new Error("cannot save"));

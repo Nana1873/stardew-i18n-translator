@@ -3168,6 +3168,7 @@ pub fn run() {
             nexus_deployment_stamp,
             nexus::nexus_status,
             nexus::pick_vortex_executable,
+            nexus::detect_vortex_executable,
             nexus::nexus_handoff_to_vortex,
             nexus::nexus_save_key,
             nexus::nexus_find_translations,

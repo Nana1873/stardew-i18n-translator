@@ -1757,7 +1757,11 @@ it("saves Vortex without an executable for later offline setup", async () => {
   fireEvent.change(screen.getByLabelText("Installation method"), {
     target: { value: "vortex" },
   });
-  expect(screen.getByText(/continue working offline/)).toBeVisible();
+  expect(
+    await screen.findByText(
+      /Choose Vortex.exe if it was not found automatically/,
+    ),
+  ).toBeVisible();
   fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() =>
     expect(onSave).toHaveBeenCalledWith(
@@ -1774,46 +1778,52 @@ it("saves Vortex without an executable for later offline setup", async () => {
   ).toBe(false);
 });
 
-it("saves the explicitly picked Vortex executable only with Settings Save", async () => {
-  const onSave = vi.fn();
-  const original = invokeMock.getMockImplementation()!;
-  invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
-    cmd === "pick_vortex_executable"
-      ? Promise.resolve("C:/Tools/Vortex/Vortex.exe")
-      : original(cmd, ...args),
-  );
-  render(
-    <SettingsDialog
-      settings={baseSettings}
-      initialPage="folders"
-      onSave={onSave}
-      onClose={() => {}}
-      onReRunSetup={() => {}}
-    />,
-  );
-  fireEvent.change(screen.getByLabelText("Installation method"), {
-    target: { value: "vortex" },
-  });
-  fireEvent.click(screen.getByRole("button", { name: "Choose Vortex.exe" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("Vortex executable")).toHaveValue(
-      "C:/Tools/Vortex/Vortex.exe",
-    ),
-  );
-  expect(onSave).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() =>
-    expect(onSave).toHaveBeenCalledWith(
-      expect.objectContaining({
-        installationMethod: "vortex",
-        vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
-      }),
-    ),
-  );
-  expect(
-    invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
-  ).toBe(false);
-});
+it.each(["pick", "detect"])(
+  "saves the %s Vortex executable only with Settings Save",
+  async (source) => {
+    const onSave = vi.fn();
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === `${source}_vortex_executable`
+        ? Promise.resolve("C:/Tools/Vortex/Vortex.exe")
+        : original(cmd, ...args),
+    );
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        initialPage="folders"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Installation method"), {
+      target: { value: "vortex" },
+    });
+    if (source === "pick")
+      fireEvent.click(
+        screen.getByRole("button", { name: "Choose Vortex.exe" }),
+      );
+    await waitFor(() =>
+      expect(screen.getByLabelText("Vortex executable")).toHaveTextContent(
+        "C:/Tools/Vortex/Vortex.exe",
+      ),
+    );
+    expect(onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith(
+        expect.objectContaining({
+          installationMethod: "vortex",
+          vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+        }),
+      ),
+    );
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
+    ).toBe(false);
+  },
+);
 
 it("saves a typed Nexus key through Save changes without leaking it into settings", async () => {
   const onSave = vi.fn();
