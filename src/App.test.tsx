@@ -563,7 +563,7 @@ describe("App shell", () => {
   );
 
   it.each(["rejected", "warning"])(
-    "invalidates exact Nexus evidence after a %s installed-file recheck",
+    "keeps re-downloads excluded after a %s installed-file recheck",
     async (failure) => {
       const scanned = await showInstalledNexusFile();
       const original = invokeMock.getMockImplementation()!;
@@ -584,12 +584,18 @@ describe("App shell", () => {
         );
       expect(
         await screen.findByRole("button", {
-          name: "Download all with Vortex (1)",
+          name: "Download all with Vortex (0)",
         }),
-      ).toBeEnabled();
-      expect(
-        screen.queryByText("Translation installed"),
-      ).not.toBeInTheDocument();
+      ).toBeDisabled();
+      if (failure === "rejected") {
+        expect(screen.queryByText("Translation installed")).toBeNull();
+        expect(
+          screen.getByText(
+            "Local translation coverage unavailable: scan incomplete.",
+          ),
+        ).toBeInTheDocument();
+      } else
+        expect(screen.getByText("Translation installed")).toBeInTheDocument();
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
       ).toHaveLength(2);
@@ -932,20 +938,16 @@ describe("App shell", () => {
     scanned.mods[0].translatedKeys = 0;
     mockConfigured(scanned);
     const fallback = invokeMock.getMockImplementation()!;
+    const manualSearch = deferred<unknown>();
     invokeMock.mockImplementation((cmd: string, args: unknown) => {
       if (cmd === "load_settings")
         return Promise.resolve({ ...CONFIGURED, nexusSearchOnScan: true });
-      if (cmd === "nexus_find_translations")
-        return Promise.resolve({
-          modId: 10,
-          originalName: "Original",
-          candidates: [],
-          limited: true,
-          notice: "Limited",
-        });
+      if (cmd === "nexus_find_translations") return manualSearch.promise;
       return fallback(cmd, args);
     });
-    render(<App />);
+    await act(async () => {
+      render(<App />);
+    });
     await waitFor(() =>
       expect(
         screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
@@ -956,10 +958,32 @@ describe("App shell", () => {
         ([cmd]) => cmd.startsWith("nexus_") && cmd !== "nexus_status",
       ),
     ).toHaveLength(0);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    await act(async () => {
+      fireEvent.click(
+        screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+      );
+    });
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("nexus_find_translations", {
+        modId: 10,
+        targetLang: "de",
+        forceRefresh: false,
+      }),
     );
-    await screen.findByText("No suitable translation downloads found.");
+    await act(async () => {
+      manualSearch.resolve({
+        modId: 10,
+        originalName: "Original",
+        candidates: [],
+        limited: true,
+        notice: "Limited",
+      });
+    });
+    expect(
+      within(
+        screen.getByRole("dialog", { name: "Nexus translations \u00b7 de" }),
+      ).getByText("No suitable translation downloads found."),
+    ).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Close Nexus translations" }),
     );
@@ -1164,9 +1188,38 @@ describe("App shell", () => {
     ).toBeInTheDocument();
     const restoreWarning =
       "Installed translation restore failed: broken target";
-    scanned = { ...scanned, warnings: [restoreWarning] };
+    scanned = {
+      ...scanned,
+      warnings: [restoreWarning],
+      mods: [{ ...scanned.mods[0], diskTranslatedKeys: 0 }],
+      installedNexusTranslations: [{ sourceNexusId: 10, modId: 30, fileId: 7 }],
+      skippedComponents: [
+        {
+          nexusId: 22953,
+          packageId: "MultiSave",
+          componentUniqueId: "recon88.MultiSave",
+          componentName: "MultiSave",
+          relativeLocation: "MultiSave",
+          reason: "Duplicate mod identity",
+          requiresAttention: true,
+          restOfPackageLoaded: false,
+        },
+      ],
+    };
     await changeDeployment();
     expect(await screen.findByRole("alert")).toHaveTextContent(restoreWarning);
+    expect(
+      await screen.findByText("Translation installed"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Download all with Vortex (0)" }),
+    ).toBeDisabled();
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "nexus_handoff_to_vortex",
+      ),
+    ).toHaveLength(1);
+
     expect(
       invokeMock.mock.calls.filter(
         ([cmd]) => cmd === "nexus_find_translations",

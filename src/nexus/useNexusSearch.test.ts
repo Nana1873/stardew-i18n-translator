@@ -552,3 +552,17 @@ it("uses Vortex original IDs for package search only on explicit start", async (
     components.slice(0, 2),
   );
 });
+
+it("does not skip complete-looking sources when native identity recovery is incomplete", async () => {
+  search.mockResolvedValue(result(1));
+  const hook = renderHook(() => useNexusSearch("mods|de"));
+  await act(() =>
+    hook.result.current.start(
+      [{ ...mod(1), totalKeys: 10, diskTranslatedKeys: 10 }],
+      "de",
+      { traversalComplete: true, nexusIdentityIncomplete: true },
+    ),
+  );
+  expect(search).toHaveBeenCalledWith(1, "de", false);
+  expect(hook.result.current.skippedComplete).toBe(0);
+});

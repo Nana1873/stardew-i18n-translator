@@ -20,6 +20,7 @@ import {
 import {
   resolveArchiveTranslations,
   nexusSourceDiskCoverage,
+  nexusSourceScanIncomplete,
   nexusSourceComponents,
 } from "./resolveTranslation";
 import { fileChoices, useNexusFiles } from "./useNexusFiles";
@@ -139,6 +140,7 @@ export function NexusDialog({
   workspaceKey = "",
   skippedComponents = [],
   traversalComplete = false,
+  nexusIdentityIncomplete = false,
   installedNexusTranslations = [],
 }: {
   open?: boolean;
@@ -152,6 +154,7 @@ export function NexusDialog({
   mods: ScannedMod[];
   skippedComponents?: SkippedComponent[];
   traversalComplete?: boolean;
+  nexusIdentityIncomplete?: boolean;
   installedNexusTranslations?: InstalledNexusTranslation[];
   targetLang: string;
   onSearch: (options?: {
@@ -464,6 +467,7 @@ export function NexusDialog({
                 origin.sourceId,
                 skippedComponents,
                 traversalComplete,
+                nexusIdentityIncomplete,
               ),
             },
             selectedArchive: file,
@@ -700,7 +704,16 @@ export function NexusDialog({
     );
   const scanIncomplete =
     !traversalComplete ||
+    nexusIdentityIncomplete ||
     skippedComponents.some((item) => item.requiresAttention);
+  const sourceScanIncomplete = (sourceId: number) =>
+    nexusSourceScanIncomplete(
+      mods,
+      sourceId,
+      skippedComponents,
+      traversalComplete,
+      nexusIdentityIncomplete,
+    );
   const coveredIds = new Set(
     search.entries
       .filter(
@@ -710,12 +723,13 @@ export function NexusDialog({
             entry.modId,
             skippedComponents,
             traversalComplete,
+            nexusIdentityIncomplete,
           )?.complete,
       )
       .map((entry) => entry.modId),
   );
   const evidenceFor = (sourceId: number) =>
-    isVortex && !scanIncomplete
+    isVortex && !sourceScanIncomplete(sourceId)
       ? installedNexusTranslations.filter(
           (item) =>
             item.sourceNexusId === sourceId &&
@@ -756,6 +770,7 @@ export function NexusDialog({
     batchRunning,
   ]);
   const groups = sources.map((entry) => {
+    const sourceUnknown = sourceScanIncomplete(entry.modId);
     const candidates = candidatesFor(entry);
     const evidence = evidenceFor(entry.modId);
     const problem = evidence.some(
@@ -803,7 +818,8 @@ export function NexusDialog({
         ? options.some((option) => option.value === explicit)
           ? explicit
           : ""
-        : evidence.some(
+        : sourceUnknown ||
+            evidence.some(
               (item) =>
                 !recordedOptions.some(
                   (option) =>
@@ -819,9 +835,18 @@ export function NexusDialog({
     const key = selected
       ? `${entry.modId}:${selected.value}`
       : `${entry.modId}:pending`;
-    const row = rows[key] ?? emptyRow();
+    const row =
+      rows[key] ??
+      (sourceUnknown && !selected
+        ? Object.entries(rows).find(
+            ([rowKey, value]) =>
+              rowKey.startsWith(`${entry.modId}:`) && value.handoff,
+          )?.[1]
+        : undefined) ??
+      emptyRow();
     return {
       entry,
+      sourceUnknown,
       candidates,
       options,
       selected,
@@ -880,7 +905,7 @@ export function NexusDialog({
   const actionRows = Object.values(rows);
   const installedGroups = groups.filter(
     (group) =>
-      !scanIncomplete &&
+      !group.sourceUnknown &&
       !group.loading &&
       !group.errors.length &&
       !group.selected &&
@@ -1006,6 +1031,7 @@ export function NexusDialog({
       sourceId,
       skippedComponents,
       traversalComplete,
+      nexusIdentityIncomplete,
     );
     const baseline = row.handoff?.before;
     const rechecked = Boolean(
@@ -1027,7 +1053,7 @@ export function NexusDialog({
         <tr aria-label={sourceName}>
           <td>
             <strong>{sourceName}</strong>
-            {version && !scanIncomplete && (
+            {version && !group.sourceUnknown && (
               <small>Installed v{version.replace(/^v(?=\d)/i, "")}</small>
             )}
             {group.evidence.length > 0 && (
@@ -1044,7 +1070,7 @@ export function NexusDialog({
             <small>
               {disk
                 ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
-                : scanIncomplete
+                : group.sourceUnknown
                   ? "Local translation coverage unavailable: scan incomplete."
                   : "Local translation coverage unavailable"}
             </small>
@@ -1073,7 +1099,8 @@ export function NexusDialog({
             <div className="nexus-file-link">
               <div className="nexus-file-selection">
                 {group.options.length > 1 ||
-                (group.options.length > 0 && group.evidence.length > 0) ? (
+                (group.options.length > 0 &&
+                  (group.evidence.length > 0 || group.sourceUnknown)) ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -1439,8 +1466,8 @@ export function NexusDialog({
       <div className="nexus-session-summary">
         {scanIncomplete && (
           <p role="status">
-            Scan incomplete. Resolve scan errors and scan again to check Nexus
-            translations.
+            Some Nexus translation statuses are unavailable. Resolve scan errors
+            and scan again; verified mods remain available.
           </p>
         )}
         {(actionStatus || resultStatus) && (
@@ -1564,9 +1591,7 @@ export function NexusDialog({
                 ],
                 [noDownloadIds.size, "No suitable download found"],
                 [
-                  scanIncomplete
-                    ? "\u2014"
-                    : skippedComplete + coveredIds.size + installedGroups,
+                  skippedComplete + coveredIds.size + installedGroups,
                   "No new download needed",
                 ],
                 [search.noId, "Mods without Nexus ID"],
@@ -1578,7 +1603,7 @@ export function NexusDialog({
                   title={
                     label === "No new download needed"
                       ? scanIncomplete
-                        ? "Scan incomplete"
+                        ? "Verified mods only; some scan results are unavailable"
                         : `${skippedComplete + coveredIds.size} mods with no missing text; ${installedGroups} installed translations with no new file selected; text gaps may remain`
                       : undefined
                   }

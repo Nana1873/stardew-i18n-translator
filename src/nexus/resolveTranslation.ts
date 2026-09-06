@@ -176,20 +176,92 @@ export function nexusSourceComponents(
   );
 }
 
+/** Match native scan exclusions before trusting a source's recovered identity. */
+export function nexusSourceScanIncomplete(
+  mods: ScannedMod[],
+  sourceNexusId: number,
+  skipped: SkippedComponent[] = [],
+  traversalComplete = false,
+  nexusIdentityIncomplete = false,
+) {
+  if (!traversalComplete || nexusIdentityIncomplete) return true;
+  const components = nexusSourceComponents(mods, sourceNexusId);
+  if (!components.length) return true;
+  const validId = (id: number | null | undefined): id is number =>
+    Number.isSafeInteger(id) && (id ?? 0) > 0;
+  const ids = new Set<number>();
+  const packages = new Set<string>();
+  const lower = (value: string | null | undefined) => value?.toLowerCase();
+  const lowerUniqueId = (value: string) =>
+    value.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+  for (const item of skipped) {
+    if (!item.requiresAttention) continue;
+    const matching = mods.filter(
+      (mod) =>
+        (!!item.packageId && lower(mod.packageId) === lower(item.packageId)) ||
+        (!!item.componentUniqueId &&
+          lowerUniqueId(mod.uniqueId) ===
+            lowerUniqueId(item.componentUniqueId)),
+    );
+    const matchedPackages = new Set(
+      matching.flatMap((mod) =>
+        mod.packageId ? [mod.packageId.toLowerCase()] : [],
+      ),
+    );
+    if (item.packageId) matchedPackages.add(item.packageId.toLowerCase());
+    const affected = mods.filter(
+      (mod) =>
+        matching.includes(mod) ||
+        (!!mod.packageId && matchedPackages.has(mod.packageId.toLowerCase())),
+    );
+    const sourceIds = [
+      item.nexusId,
+      ...affected.map((mod) => mod.nexusId),
+    ].filter(validId);
+    if (!sourceIds.length) return true;
+    sourceIds.forEach((id) => ids.add(id));
+    matchedPackages.forEach((id) => packages.add(id));
+  }
+  // A mixed-source package connects all its IDs and their companion packages.
+  let changed = true;
+  while (changed) {
+    const size = ids.size + packages.size;
+    for (const mod of mods) {
+      if (
+        (validId(mod.nexusId) && ids.has(mod.nexusId)) ||
+        (mod.packageId && packages.has(mod.packageId.toLowerCase()))
+      ) {
+        if (validId(mod.nexusId)) ids.add(mod.nexusId);
+        if (mod.packageId) packages.add(mod.packageId.toLowerCase());
+      }
+    }
+    changed = size !== ids.size + packages.size;
+  }
+  return (
+    ids.has(sourceNexusId) ||
+    components.some(
+      (mod) => !!mod.packageId && packages.has(mod.packageId.toLowerCase()),
+    )
+  );
+}
+
 /** Disk-only evidence; saved drafts/Review must never prove deployment. */
 export function nexusSourceDiskCoverage(
   mods: ScannedMod[],
   sourceNexusId: number,
   skipped: SkippedComponent[] = [],
   traversalComplete = false,
+  nexusIdentityIncomplete = false,
 ) {
   const components = nexusSourceComponents(mods, sourceNexusId);
   if (
-    !traversalComplete ||
-    !components.length ||
-    // Native Nexus identity recovery rejects the whole scan on these errors.
-    // A surviving explicit ID may otherwise represent only part of its group.
-    skipped.some((item) => item.requiresAttention) ||
+    nexusSourceScanIncomplete(
+      mods,
+      sourceNexusId,
+      skipped,
+      traversalComplete,
+      nexusIdentityIncomplete,
+    ) ||
     components.some(
       (mod) =>
         !Number.isFinite(mod.totalKeys) ||

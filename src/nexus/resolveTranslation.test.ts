@@ -3,6 +3,7 @@ import type { NexusArchive, NexusFile, ScannedMod } from "../tauri/commands";
 import {
   resolveArchiveTranslations,
   nexusSourceDiskCoverage,
+  nexusSourceScanIncomplete,
   selectTranslationFile,
   translationFileOptions,
 } from "./resolveTranslation";
@@ -412,3 +413,104 @@ it.each([0, 69])(
     ).toMatchObject({ total: 69, covered, complete: covered === 69 });
   },
 );
+
+it("scopes scan omissions by manifest ID and package identities while failing closed for unknown IDs", () => {
+  const original = mod("SVE", {
+    nexusId: 3753,
+    packageId: "SVE",
+    totalKeys: 10,
+    diskTranslatedKeys: 5,
+  });
+  const frontier = mod("Frontier", {
+    nexusId: 3753,
+    packageId: "Frontier",
+    totalKeys: 69,
+    diskTranslatedKeys: 69,
+  });
+  const omitted = {
+    nexusId: 22953,
+    packageId: "MultiSave",
+    componentUniqueId: "MultiSave",
+    componentName: null,
+    relativeLocation: "MultiSave",
+    reason: "Duplicate",
+    requiresAttention: true,
+    restOfPackageLoaded: false,
+  };
+  expect(
+    nexusSourceDiskCoverage([original, frontier], 3753, [omitted], true),
+  ).toMatchObject({ total: 79, covered: 74 });
+  expect(
+    nexusSourceScanIncomplete(
+      [original, frontier],
+      3753,
+      [{ ...omitted, nexusId: 3753 }],
+      true,
+    ),
+  ).toBe(true);
+  expect(
+    nexusSourceScanIncomplete(
+      [original, frontier],
+      3753,
+      [{ ...omitted, nexusId: null }],
+      true,
+    ),
+  ).toBe(true);
+  expect(
+    nexusSourceScanIncomplete(
+      [original, frontier],
+      3753,
+      [{ ...omitted, nexusId: null, packageId: "SVE" }],
+      true,
+    ),
+  ).toBe(true);
+  const other = mod("other", { nexusId: 5, packageId: "other" });
+  expect(
+    nexusSourceScanIncomplete(
+      [original, frontier, other],
+      5,
+      [
+        {
+          ...omitted,
+          nexusId: null,
+          componentUniqueId: "sve",
+          packageId: null,
+        },
+      ],
+      true,
+    ),
+  ).toBe(false);
+  expect(
+    nexusSourceScanIncomplete([original, frontier], 3753, [omitted], false),
+  ).toBe(true);
+});
+
+it("propagates affected Nexus IDs through mixed-source packages regardless of case", () => {
+  const mods = [
+    mod("a", { nexusId: 1, packageId: "A" }),
+    mod("b", { nexusId: 1, packageId: "Bridge" }),
+    mod("c", { nexusId: 2, packageId: "bridge" }),
+    mod("d", { nexusId: 2, packageId: "Final" }),
+    mod("e", { nexusId: 3, packageId: "FINAL" }),
+    mod("other", { nexusId: 9, packageId: "Unrelated" }),
+  ];
+  const skipped = [
+    {
+      nexusId: null,
+      packageId: "a",
+      componentUniqueId: null,
+      componentName: null,
+      relativeLocation: "A",
+      reason: "Duplicate",
+      requiresAttention: true,
+      restOfPackageLoaded: false,
+    },
+  ];
+  expect(nexusSourceScanIncomplete(mods, 3, skipped, true)).toBe(true);
+  expect(nexusSourceScanIncomplete(mods, 9, skipped, true)).toBe(false);
+});
+
+it("keeps source totals unknown when native identity-conflict recovery is incomplete", () => {
+  const complete = mod("source", { totalKeys: 10, diskTranslatedKeys: 10 });
+  expect(nexusSourceDiskCoverage([complete], 10, [], true, true)).toBeNull();
+});

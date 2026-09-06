@@ -352,6 +352,7 @@ mod tests {
 
         let expected_exclusion = crate::scanner::SkippedComponent {
             package_id: Some("Example.LanguagePack".to_string()),
+            nexus_id: None,
             component_unique_id: Some("Example.LanguagePack".to_string()),
             component_name: Some("Example Language Pack".to_string()),
             relative_location: "Example Language Pack".to_string(),

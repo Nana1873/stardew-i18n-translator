@@ -670,6 +670,7 @@ mod scan_logging_tests {
     fn skipped_component(requires_attention: bool) -> scanner::SkippedComponent {
         scanner::SkippedComponent {
             package_id: None,
+            nexus_id: None,
             component_unique_id: None,
             component_name: None,
             relative_location: "fixture/manifest.json".to_string(),

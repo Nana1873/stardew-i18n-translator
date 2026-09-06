@@ -71,10 +71,14 @@ Once a local rescan confirms no missing required text, the group leaves the
 download list, including after a Vortex handoff; the batch summary remains.
 An existing translation can still be incomplete and appear in the results.
 If the scan reports an error such as a duplicate mod ID, the Nexus list marks
-coverage and installation status as unavailable until the problem is resolved
-and you scan again. A remaining component's counts are not shown as the total
-for its entire mod group. This does not mean the installed translations were
-deleted. Previous download receipts remain visible.
+the affected mod group as unavailable until the problem is resolved and you
+scan again. Other reliably identified groups keep their installed status and
+coverage. If the error cannot be assigned to a Nexus group, or the folder scan
+is incomplete, status remains unavailable for all groups. Unavailable groups
+are not automatically selected for another download. A remaining component's
+counts are never shown as the total for its entire mod group. This does not
+mean installed translations were deleted. Previous download receipts remain
+visible; restoring text into saved work waits for an error-free scan.
 Each row shows the exact local coverage and missing-string count; this is not a
 download-status check or proof that the offered Nexus file is already installed.
 In Vortex mode, a local scan can identify an exact deployed Nexus file and remove

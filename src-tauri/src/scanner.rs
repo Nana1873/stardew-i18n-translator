@@ -121,6 +121,8 @@ pub struct ScannedMod {
 #[serde(rename_all = "camelCase")]
 pub struct ScanResult {
     pub mods: Vec<ScannedMod>,
+    /// Verified but ambiguous original identities prevent complete Nexus grouping.
+    pub nexus_identity_incomplete: bool,
     pub installed_nexus_translations: Vec<crate::vortex_identity::InstalledNexusTranslation>,
     /// Scanner diagnostics that do not themselves represent an omitted
     /// component. Component-specific failures belong in `skipped_components`
@@ -171,6 +173,8 @@ pub struct ScanStringIdentity {
 #[serde(rename_all = "camelCase")]
 pub struct SkippedComponent {
     pub package_id: Option<String>,
+    /// Valid manifest identity retained even when the component cannot load.
+    pub nexus_id: Option<u64>,
     pub component_unique_id: Option<String>,
     pub component_name: Option<String>,
     /// Location relative to the configured Mods folder; never an absolute
@@ -184,6 +188,86 @@ pub struct SkippedComponent {
     /// True when another real translation component from this package remains
     /// available in the final scan result.
     pub rest_of_package_loaded: bool,
+}
+
+pub(crate) struct NexusScanExclusions {
+    packages: HashSet<String>,
+    nexus_ids: HashSet<u64>,
+}
+
+impl NexusScanExclusions {
+    pub(crate) fn contains(&self, component: &ScannedMod) -> bool {
+        self.packages.contains(&component.package_id.to_lowercase())
+            || component
+                .nexus_id
+                .is_some_and(|id| self.nexus_ids.contains(&id))
+    }
+}
+
+/// Scope omissions only when a trustworthy Nexus source identity is available.
+/// An unknown skipped source could be a missing sibling of any recovered group.
+pub(crate) fn nexus_scan_exclusions(scan: &ScanResult) -> Option<NexusScanExclusions> {
+    if !scan.traversal_complete || scan.nexus_identity_incomplete {
+        return None;
+    }
+    let mut result = NexusScanExclusions {
+        packages: HashSet::new(),
+        nexus_ids: HashSet::new(),
+    };
+    for skipped in scan
+        .skipped_components
+        .iter()
+        .filter(|item| item.requires_attention)
+    {
+        let mut packages = HashSet::new();
+        if let Some(package) = &skipped.package_id {
+            packages.insert(package.to_lowercase());
+        }
+        for component in &scan.mods {
+            if skipped
+                .component_unique_id
+                .as_ref()
+                .is_some_and(|id| id.eq_ignore_ascii_case(&component.unique_id))
+            {
+                packages.insert(component.package_id.to_lowercase());
+            }
+        }
+        let ids: HashSet<_> = skipped
+            .nexus_id
+            .into_iter()
+            .chain(
+                scan.mods
+                    .iter()
+                    .filter(|component| packages.contains(&component.package_id.to_lowercase()))
+                    .filter_map(|component| component.nexus_id),
+            )
+            .filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
+            .collect();
+        if ids.is_empty() {
+            return None;
+        }
+        result.packages.extend(packages);
+        result.nexus_ids.extend(ids);
+    }
+    // A source ID on one sibling also binds its ID-less package companions.
+    loop {
+        let before = (result.packages.len(), result.nexus_ids.len());
+        for component in &scan.mods {
+            if result.contains(component) {
+                result.packages.insert(component.package_id.to_lowercase());
+                if let Some(id) = component
+                    .nexus_id
+                    .filter(|id| *id > 0 && *id <= 9_007_199_254_740_991)
+                {
+                    result.nexus_ids.insert(id);
+                }
+            }
+        }
+        if before == (result.packages.len(), result.nexus_ids.len()) {
+            break;
+        }
+    }
+    Some(result)
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -389,6 +473,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             Err(reason) => {
                 skipped_components.push(SkippedComponent {
                     package_id: package_id_for(dir, mods_path),
+                    nexus_id: None,
                     component_unique_id: None,
                     component_name: None,
                     relative_location: safe_relative_location(manifest, mods_path),
@@ -542,6 +627,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         }
         skipped_components.push(SkippedComponent {
             package_id: Some(scanned.package_id.clone()),
+            nexus_id: scanned.nexus_id,
             component_unique_id: Some(scanned.unique_id.clone()),
             component_name: Some(scanned.name.clone()),
             relative_location: safe_relative_location(Path::new(&scanned.folder_path), mods_path),
@@ -567,6 +653,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
         mod_count,
+        nexus_identity_incomplete: false,
         installed_nexus_translations: Vec::new(),
         file_count,
         mods: result_mods,
@@ -586,6 +673,7 @@ fn skipped_i18n_component(
 ) -> SkippedComponent {
     SkippedComponent {
         package_id: Some(scanned.package_id.clone()),
+        nexus_id: scanned.nexus_id,
         component_unique_id: Some(scanned.unique_id.clone()),
         component_name: Some(scanned.name.clone()),
         relative_location: safe_relative_location(&i18n_dir.join("default.json"), mods_path),

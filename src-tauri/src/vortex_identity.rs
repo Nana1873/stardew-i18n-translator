@@ -269,14 +269,7 @@ fn detect_checked(
     vortex: &Path,
     before_final_check: impl FnOnce(),
 ) -> Option<Vec<InstalledNexusTranslation>> {
-    if !scan.traversal_complete
-        || scan
-            .skipped_components
-            .iter()
-            .any(|item| item.requires_attention)
-    {
-        return None;
-    }
+    let exclusions = crate::scanner::nexus_scan_exclusions(scan)?;
     let evidence = Evidence::read(root, vortex)?;
     let root = &evidence.root;
     let staging = &evidence.staging;
@@ -286,6 +279,9 @@ fn detect_checked(
     let deployed = evidence.deployed()?;
     let mut targets: HashMap<String, BTreeSet<u64>> = HashMap::new();
     for component in &scan.mods {
+        if exclusions.contains(component) {
+            continue;
+        }
         let package_ids: BTreeSet<_> = scan
             .mods
             .iter()
@@ -806,10 +802,11 @@ pub(crate) fn resolve_original_ids(root: &Path, scan: &mut ScanResult) {
     let Some(appdata) = std::env::var_os("APPDATA") else {
         return;
     };
-    if let Some(ids) =
-        original_ids_checked(root, scan, &PathBuf::from(appdata).join("Vortex"), || {})
+    if let Some(identity) =
+        original_identity_checked(root, scan, &PathBuf::from(appdata).join("Vortex"), || {})
     {
-        for (index, id) in ids {
+        scan.nexus_identity_incomplete |= identity.incomplete;
+        for (index, id) in identity.ids {
             if scan.mods[index].nexus_id.is_none() {
                 scan.mods[index].nexus_id = Some(id);
                 scan.mods[index].nexus_id_source = Some("vortex");
@@ -907,20 +904,28 @@ fn component_snapshots(
     Some(snapshots)
 }
 
+#[cfg(test)]
 fn original_ids_checked(
     root: &Path,
     scan: &ScanResult,
     vortex: &Path,
     before_final_check: impl FnOnce(),
 ) -> Option<Vec<(usize, u64)>> {
-    if !scan.traversal_complete
-        || scan
-            .skipped_components
-            .iter()
-            .any(|item| item.requires_attention)
-    {
-        return None;
-    }
+    original_identity_checked(root, scan, vortex, before_final_check).map(|identity| identity.ids)
+}
+
+struct OriginalIdentities {
+    ids: Vec<(usize, u64)>,
+    incomplete: bool,
+}
+
+fn original_identity_checked(
+    root: &Path,
+    scan: &ScanResult,
+    vortex: &Path,
+    before_final_check: impl FnOnce(),
+) -> Option<OriginalIdentities> {
+    crate::scanner::nexus_scan_exclusions(scan)?;
     let identified_packages: HashSet<_> = scan
         .mods
         .iter()
@@ -932,7 +937,10 @@ fn original_ids_checked(
         .iter()
         .all(|component| identified_packages.contains(component.package_id.as_str()))
     {
-        return Some(Vec::new());
+        return Some(OriginalIdentities {
+            ids: Vec::new(),
+            incomplete: false,
+        });
     }
     let evidence = Evidence::read(root, vortex)?;
     let deployed = evidence.deployed()?;
@@ -1014,11 +1022,16 @@ fn original_ids_checked(
             .or_default()
             .insert(*id);
     }
+    let proven_count = result.len();
     result.retain(|(index, _)| package_ids[scan.mods[*index].package_id.as_str()].len() == 1);
+    let incomplete = result.len() != proven_count;
     before_final_check();
     recheck_files(&verified_files)?;
     evidence.unchanged(vortex)?;
-    Some(result)
+    Some(OriginalIdentities {
+        ids: result,
+        incomplete,
+    })
 }
 
 #[cfg(test)]
@@ -1207,6 +1220,110 @@ mod tests {
         fs::create_dir(&path).unwrap();
         assert_eq!(deployment_stamp(&root), None);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn scoped_duplicate_preserves_unrelated_original_ids_and_deployed_proof() {
+        let mut f = Fixture::new();
+        f.add_original("One", 11);
+        for folder in ["DuplicateA", "DuplicateB"] {
+            let dir = f.root.join(folder);
+            fs::create_dir_all(dir.join("i18n")).unwrap();
+            fs::write(
+                dir.join("manifest.json"),
+                br#"{"Name":"Duplicate","UniqueID":"Test.Duplicate","UpdateKeys":["Nexus:999"]}"#,
+            )
+            .unwrap();
+            fs::write(dir.join("i18n/default.json"), br#"{"key":"Value"}"#).unwrap();
+        }
+        let mut scan = f.scan();
+        assert_eq!(scan.skipped_components.len(), 2);
+        assert!(scan
+            .skipped_components
+            .iter()
+            .all(|item| item.nexus_id == Some(999)));
+        let ids = original_ids_checked(&f.root, &scan, &f.vortex, || {}).unwrap();
+        assert_eq!(ids.len(), 1);
+        assert_eq!(
+            (scan.mods[ids[0].0].unique_id.as_str(), ids[0].1),
+            ("Test.One", 11)
+        );
+        assert_eq!(detect_at(&f.root, "de", &scan, &f.vortex).unwrap().len(), 1);
+
+        // A skipped component in another package can still belong to this source.
+        scan.skipped_components[0].nexus_id = Some(11);
+        assert_eq!(
+            original_ids_checked(&f.root, &scan, &f.vortex, || {}).unwrap(),
+            ids
+        );
+        scan.skipped_components[0].nexus_id = Some(100);
+        assert!(detect_at(&f.root, "de", &scan, &f.vortex)
+            .unwrap()
+            .is_empty());
+        // Identity metadata remains available; exclusion is applied to coverage/proof.
+        scan.skipped_components[0].package_id = Some("One".into());
+        assert_eq!(
+            original_ids_checked(&f.root, &scan, &f.vortex, || {}).unwrap(),
+            ids
+        );
+        scan.skipped_components[0].package_id = None;
+        scan.skipped_components[0].nexus_id = None;
+        assert!(original_ids_checked(&f.root, &scan, &f.vortex, || {}).is_none());
+        assert!(detect_at(&f.root, "de", &scan, &f.vortex).is_none());
+    }
+
+    #[test]
+    fn conflicting_recovered_associations_keep_nexus_scope_unknown() {
+        let mut f = Fixture::new();
+        f.add_original("Bundle/One", 11);
+        f.add_original("Bundle/Two", 100);
+        let mut scan = f.scan();
+        scan.skipped_components
+            .push(crate::scanner::SkippedComponent {
+                package_id: Some("Duplicate".into()),
+                nexus_id: Some(11),
+                component_unique_id: Some("Test.Duplicate".into()),
+                component_name: None,
+                relative_location: "Duplicate/i18n/default.json".into(),
+                reason: "Duplicate identity".into(),
+                requires_attention: true,
+                rest_of_package_loaded: false,
+            });
+        let identity = original_identity_checked(&f.root, &scan, &f.vortex, || {}).unwrap();
+        assert!(
+            identity.ids.is_empty(),
+            "Conflicting package IDs must remain unassigned"
+        );
+        assert!(identity.incomplete);
+        scan.nexus_identity_incomplete = identity.incomplete;
+        assert!(crate::scanner::nexus_scan_exclusions(&scan).is_none());
+        assert!(detect_at(&f.root, "de", &scan, &f.vortex).is_none());
+        assert!(
+            scan.traversal_complete,
+            "Identity ambiguity is not a traversal error"
+        );
+    }
+
+    #[test]
+    fn scoped_attention_uses_surviving_package_or_uid_identity() {
+        let f = Fixture::new();
+        for (package, uid) in [(Some("EXAMPLE"), None), (None, Some("test.example"))] {
+            let mut scan = f.scan();
+            scan.skipped_components
+                .push(crate::scanner::SkippedComponent {
+                    package_id: package.map(str::to_owned),
+                    nexus_id: None,
+                    component_unique_id: uid.map(str::to_owned),
+                    component_name: None,
+                    relative_location: "Example/optional/i18n/default.json".into(),
+                    reason: "Unreadable source".into(),
+                    requires_attention: true,
+                    rest_of_package_loaded: true,
+                });
+            assert!(detect_at(&f.root, "de", &scan, &f.vortex)
+                .unwrap()
+                .is_empty());
+        }
     }
 
     #[test]
@@ -1783,6 +1900,7 @@ mod tests {
         scan.skipped_components
             .push(crate::scanner::SkippedComponent {
                 package_id: Some("LanguagePack".into()),
+                nexus_id: None,
                 component_unique_id: Some("Test.LanguagePack".into()),
                 component_name: Some("Language Pack".into()),
                 relative_location: "LanguagePack".into(),
@@ -1837,8 +1955,10 @@ mod tests {
             std::env::var_os("SIT_VORTEX_SMOKE_MODS")
                 .expect("Set SIT_VORTEX_SMOKE_MODS for the read-only fixture"),
         );
-        let scan = crate::scanner::scan_mods(&root, "de", &config);
-        let proofs = detect(&root, "de", &scan);
+        let language = std::env::var("SIT_VORTEX_SMOKE_LANGUAGE").unwrap_or_else(|_| "de".into());
+        let mut scan = crate::scanner::scan_mods(&root, &language, &config);
+        resolve_original_ids(&root, &mut scan);
+        let proofs = detect(&root, &language, &scan);
         for proof in &proofs {
             let components: Vec<_> = scan
                 .mods
@@ -1869,11 +1989,18 @@ mod tests {
         if config.exists() {
             fs::remove_dir_all(config).unwrap();
         }
-        assert!(proofs.contains(&InstalledNexusTranslation {
-            source_nexus_id: 7286,
-            mod_id: 20792,
-            file_id: 117404,
-            state: InstalledTranslationState::Deployed,
-        }));
+        if language == "zh" {
+            assert!(proofs
+                .iter()
+                .any(|proof| proof.source_nexus_id == 7286 && proof.mod_id == 9247));
+            assert!(proofs.iter().all(|proof| proof.source_nexus_id != 22953));
+        } else {
+            assert!(proofs.contains(&InstalledNexusTranslation {
+                source_nexus_id: 7286,
+                mod_id: 20792,
+                file_id: 117404,
+                state: InstalledTranslationState::Deployed,
+            }));
+        }
     }
 }

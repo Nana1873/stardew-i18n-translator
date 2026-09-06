@@ -155,12 +155,17 @@ count them separately from physically present nonempty target strings. Use exact
 groups for Collection curation. Saved Review/Changed text is not disk coverage;
 coverage does not imply quality approval.
 
-If traversal is incomplete or any skipped component requires attention, Nexus
-coverage and installed-file status are unavailable for the scan. Such errors
-also prevent native original-ID recovery, so a surviving component must not
-supply a partial total for its whole Nexus group. Do not hide rows as complete
-or retain earlier no-download-needed counts from that scan. Explain the scan
-problem while preserving handoff receipts and explicit download choices.
+Errors with a trustworthy source Nexus ID affect that entire Nexus group,
+including components in other packages. Preserve source IDs on skipped
+components and include IDs from matching package or UniqueID members when
+determining the affected groups. Unrelated groups retain read-only original-ID
+recovery, installed-file evidence and coverage. Incomplete traversal or an error
+without a trustworthy source association makes those statuses unavailable
+globally. A surviving component must never supply a partial total for its whole
+group. Unknown groups receive no automatic download selection or completion
+claim. Preserve handoff receipts and explicit choices, and retain valid native
+evidence when another group produces a warning. Restoring saved translation
+text still requires a complete error-free scan before any writes.
 
 Searches support cancellation and discard results from obsolete workspace or
 language contexts. Local metadata caching is scoped by Nexus ID and language,

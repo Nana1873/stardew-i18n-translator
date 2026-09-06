@@ -297,6 +297,8 @@ export interface InstalledNexusTranslation {
 }
 
 export interface ScanResult {
+  /** Native identity conflicts prevent proving complete Nexus source associations. */
+  nexusIdentityIncomplete?: boolean;
   /** Native evidence for exact deployed files or a proven missing dictionary; absent means unknown. */
   installedNexusTranslations?: InstalledNexusTranslation[];
   mods: ScannedMod[];
@@ -328,6 +330,8 @@ export interface ScanStringIdentity {
 }
 
 export interface SkippedComponent {
+  /** Positive Nexus update key retained from the omitted manifest, when available. */
+  nexusId?: number | null;
   packageId: string | null;
   componentUniqueId: string | null;
   componentName: string | null;

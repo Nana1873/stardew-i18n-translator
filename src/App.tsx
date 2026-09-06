@@ -883,7 +883,13 @@ export function App() {
       logFrontendError("scanMods", String(error));
       if (!isCurrentRequest()) return;
       setScan((current) =>
-        current ? { ...current, installedNexusTranslations: [] } : current,
+        current
+          ? {
+              ...current,
+              traversalComplete: false,
+              installedNexusTranslations: [],
+            }
+          : current,
       );
       setScanError(String(error));
       if (!scanDismissedRef.current) setScanDialogOpen(true);
@@ -2025,6 +2031,7 @@ export function App() {
               void nexus.start(scan.mods, settings.targetLang, {
                 skippedComponents: scan.skippedComponents,
                 traversalComplete: scan.traversalComplete === true,
+                nexusIdentityIncomplete: scan.nexusIdentityIncomplete,
               });
           }}
           nexusEnabled={Boolean(scan) && !scanning && !exporting}
@@ -2319,6 +2326,7 @@ export function App() {
             targetLang={settings.targetLang}
             skippedComponents={scan.skippedComponents}
             traversalComplete={scan.traversalComplete === true}
+            nexusIdentityIncomplete={scan.nexusIdentityIncomplete}
             vortexExecutable={settings.vortexExecutable}
             installationMethod={settings.installationMethod}
             workspaceKey={nexusWorkspaceKey}
@@ -2349,11 +2357,6 @@ export function App() {
               if (!result)
                 throw new Error("Local scan failed. Check scan diagnostics.");
               if (result.warnings.length) {
-                setScan((current) =>
-                  current
-                    ? { ...current, installedNexusTranslations: [] }
-                    : current,
-                );
                 throw new Error(result.warnings.join("\n"));
               }
             }}
@@ -2362,6 +2365,7 @@ export function App() {
                 ...options,
                 skippedComponents: scan.skippedComponents,
                 traversalComplete: scan.traversalComplete === true,
+                nexusIdentityIncomplete: scan.nexusIdentityIncomplete,
               })
             }
             onCancel={nexus.cancel}

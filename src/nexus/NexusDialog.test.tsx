@@ -113,6 +113,7 @@ function mount(
     installed?: InstalledNexusTranslation[];
     stamp?: () => Promise<string | null>;
     observe?: boolean;
+    identityIncomplete?: boolean;
   } = {},
 ) {
   let data = options.mods ?? mods,
@@ -150,6 +151,7 @@ function mount(
       installationMethod={method}
       vortexExecutable={executable}
       traversalComplete={traversal}
+      nexusIdentityIncomplete={options.identityIncomplete}
       skippedComponents={skipped}
       installedNexusTranslations={installed}
       onImported={onImported}
@@ -1815,6 +1817,10 @@ it.each([
         : original(cmd, args),
     );
     mount({
+      mods: [
+        ...mods,
+        { ...mods[0], uniqueId: "second.mod", packageId: "second", nexusId: 2 },
+      ],
       installed: [{ ...installedFile, fileId: installedId, state }],
       search: {
         ...search,
@@ -2012,6 +2018,10 @@ it.each(["vortex", "folder"] as const)(
         : original(cmd, args),
     );
     const app = mount({
+      mods: [
+        ...mods,
+        { ...mods[0], uniqueId: "second.mod", packageId: "second", nexusId: 2 },
+      ],
       method,
       search: {
         ...search,
@@ -2348,16 +2358,19 @@ it.each([0, 69])(
     ).toBeNull();
     expect(
       screen.getByText(
-        "Scan incomplete. Resolve scan errors and scan again to check Nexus translations.",
+        "Some Nexus translation statuses are unavailable. Resolve scan errors and scan again; verified mods remain available.",
       ),
     ).toBeInTheDocument();
     expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
     expect(
       screen.getByText("No new download needed").parentElement,
-    ).toHaveTextContent("\u2014No new download needed");
+    ).toHaveTextContent("0No new download needed");
     expect(
       screen.getByText("No new download needed").parentElement,
-    ).toHaveAttribute("title", "Scan incomplete");
+    ).toHaveAttribute(
+      "title",
+      "Verified mods only; some scan results are unavailable",
+    );
     expect(
       invoke.mock.calls.slice(before).filter(([cmd]) => cmd !== "nexus_status"),
     ).toEqual([]);
@@ -2393,7 +2406,7 @@ it.each([0, 69])(
     expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
     expect(
       screen.queryByText(
-        "Scan incomplete. Resolve scan errors and scan again to check Nexus translations.",
+        "Some Nexus translation statuses are unavailable. Resolve scan errors and scan again; verified mods remain available.",
       ),
     ).toBeNull();
   },
@@ -2476,4 +2489,75 @@ it("preselects by file date across original pages and keeps archive names in Det
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
     { modId: 44, fileId: 7 },
   ]);
+});
+
+it("keeps unrelated installed evidence and coverage while excluding an unknown source from the default batch", async () => {
+  const app = mount({
+    search: twoSources,
+    mods: [
+      { ...mods[0], diskTranslatedKeys: 1 },
+      { ...mods[1], totalKeys: 10, diskTranslatedKeys: 0 },
+    ],
+    installed: [installedFile],
+  });
+  await screen.findByText("Translation installed");
+  const before = commandCalls("nexus_list_files").length;
+  app.setSkipped([
+    {
+      nexusId: 99,
+      packageId: "other",
+      componentUniqueId: "unrelated.mod",
+      componentName: null,
+      relativeLocation: "Other",
+      reason: "Duplicate mod identity",
+      requiresAttention: true,
+      restOfPackageLoaded: false,
+    },
+  ]);
+  expect(
+    translationRow().getByText("Translation installed"),
+  ).toBeInTheDocument();
+  expect(
+    translationRow().getByText(
+      "Local translation: 1/3 strings \u00b7 2 missing",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: "Download all with Vortex (0)" }),
+  ).toBeDisabled();
+  const choice = screen.getByRole("combobox", {
+    name: "Translation file for No-result mod",
+  });
+  expect(choice).toHaveValue("");
+  expect(
+    screen.getByText("No new download needed").parentElement,
+  ).toHaveTextContent("1No new download needed");
+  expect(commandCalls("nexus_list_files")).toHaveLength(before);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+  fireEvent.change(choice, { target: { value: "999:7" } });
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 999, fileId: 7 },
+  ]);
+});
+
+it("does not default to a download when native original-ID associations are incomplete", async () => {
+  mount({
+    identityIncomplete: true,
+    installed: [installedFile],
+    mods: [{ ...mods[0], diskTranslatedKeys: 3 }],
+  });
+  const choice = await screen.findByRole("combobox");
+  expect(choice).toHaveValue("");
+  expect(
+    screen.getByRole("button", { name: "Download all with Vortex (0)" }),
+  ).toBeDisabled();
+  expect(screen.queryByText("Translation installed")).toBeNull();
+  expect(
+    screen.getByText(
+      "Local translation coverage unavailable: scan incomplete.",
+    ),
+  ).toBeInTheDocument();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });
