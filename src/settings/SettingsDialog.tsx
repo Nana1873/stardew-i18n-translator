@@ -161,9 +161,6 @@ export function SettingsDialog({
   const [vortexExecutable, setVortexExecutable] = useState(
     settings.vortexExecutable ?? null,
   );
-  const [nexusSearchOnScan, setNexusSearchOnScan] = useState(
-    settings.nexusSearchOnScan ?? false,
-  );
   const savedAi = settings.ai ?? DEFAULT_AI_SETTINGS;
   const savedDefaultEngine =
     savedAi.defaultEngine === "local" || savedAi.defaultEngine === "codex"
@@ -554,7 +551,6 @@ export function SettingsDialog({
           ).map((command) => [command.id, shortcuts[command.id]]),
         ),
         diagnosticLogging,
-        nexusSearchOnScan,
         vortexExecutable,
         installationMethod,
         ai: {
@@ -673,11 +669,7 @@ export function SettingsDialog({
                 role="tabpanel"
                 aria-label="Nexus Mods"
               >
-                <NexusSetup
-                  searchOnScan={nexusSearchOnScan}
-                  onSearchOnScanChange={setNexusSearchOnScan}
-                  onKeySaved={onNexusKeySaved}
-                />
+                <NexusSetup onKeySaved={onNexusKeySaved} />
               </section>
             )}
             <section

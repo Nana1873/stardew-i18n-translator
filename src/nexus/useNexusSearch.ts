@@ -22,6 +22,7 @@ export interface NexusSearchState {
   completed: number;
   total: number;
   noId: number;
+  unassignedNames?: string[];
   skippedComplete: number;
   cancelled: boolean;
   stoppedReason?: string;
@@ -44,19 +45,27 @@ export function nexusSearchTargets(
   traversalComplete = false,
 ) {
   const targets = new Map<number, string[]>();
-  let noId = 0;
+  const hasId = (mod: ScannedMod) =>
+    Number.isSafeInteger(mod.nexusId) && (mod.nexusId ?? 0) > 0;
+  const assignedPackages = new Set(
+    mods
+      .filter(hasId)
+      .map((mod) => mod.packageId)
+      .filter(Boolean),
+  );
+  const unassigned = new Map<string, string>();
   for (const mod of mods) {
-    if (
-      !mod.nexusId ||
-      !Number.isSafeInteger(mod.nexusId) ||
-      mod.nexusId <= 0
-    ) {
-      noId++;
+    if (!hasId(mod)) {
+      if (!mod.packageId || !assignedPackages.has(mod.packageId)) {
+        const identity =
+          mod.packageId || mod.uniqueId || String(mods.indexOf(mod));
+        unassigned.set(identity, mod.packageId || mod.name);
+      }
       continue;
     }
-    const names = targets.get(mod.nexusId) ?? [];
+    const names = targets.get(mod.nexusId!) ?? [];
     if (!names.includes(mod.name)) names.push(mod.name);
-    targets.set(mod.nexusId, names);
+    targets.set(mod.nexusId!, names);
   }
   let skippedComplete = 0;
   for (const id of targets.keys()) {
@@ -73,7 +82,12 @@ export function nexusSearchTargets(
       targets.set(id, [...new Set(components.map((mod) => mod.name))]);
     }
   }
-  return { targets, noId, skippedComplete };
+  return {
+    targets,
+    noId: unassigned.size,
+    unassignedNames: [...unassigned.values()],
+    skippedComplete,
+  };
 }
 
 export function useNexusSearch(workspaceKey: string) {
@@ -113,18 +127,20 @@ export function useNexusSearch(workspaceKey: string) {
     const run = ++generation.current;
     const key = context.current;
     const current = () => generation.current === run && context.current === key;
-    const { targets, noId, skippedComplete } = nexusSearchTargets(
-      mods,
-      options.includeComplete,
-      options.retainIds,
-      options.skippedComponents,
-      options.traversalComplete,
-    );
+    const { targets, noId, unassignedNames, skippedComplete } =
+      nexusSearchTargets(
+        mods,
+        options.includeComplete,
+        options.retainIds,
+        options.skippedComponents,
+        options.traversalComplete,
+      );
     setState({
       ...emptyState(),
       running: true,
       total: targets.size,
       noId,
+      unassignedNames,
       skippedComplete,
     });
     for (const [modId, localNames] of targets) {

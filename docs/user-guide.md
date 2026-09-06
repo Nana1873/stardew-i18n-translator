@@ -37,9 +37,16 @@ in the installation section of Setup; this remains editable in Settings.
 Select Vortex.exe there when using Vortex. The validated key is
 saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
 `data/`; it does not move with the app. Opening Setup only checks local key
-readiness. **Test existing key** and **Validate and save key** contact Nexus.
+readiness. **Connect Nexus** or **Replace key** reveals the key field;
+**Connect key** validates and saves it. **Refresh account** checks membership once.
+Account errors appear beside the connection. API usage shows only values last
+reported by Nexus, separately for **Mod data** and **Translation search**. Missing
+values stay unknown; expand the summary for observation times and any reported
+resets. Other apps may also use your account allowance.
 
-Use **Find translations on Nexus**, or enable discovery after scans. Searches use Nexus
+Use **Find translations on Nexus** to start discovery explicitly. Startup, normal
+scans, rescans, and installed-file checks never contact Nexus, including when
+older settings enabled automatic discovery. Searches use Nexus
 update IDs and the selected language, never your local translation text. Shared
 IDs are searched once. Groups with no missing required text on disk are skipped
 by default. Empty sources need no translation text; local coverage lists them
@@ -73,18 +80,24 @@ installed mod. Search metadata is cached locally for 24 hours.
 Each row has an **Open Nexus Link** button for the translation's Nexus files
 page. Search totals use compact counters for checked IDs, mods with downloads,
 confirmed searches without a suitable download, groups without missing text skipped,
-components without a Nexus ID, and failed checks. Pending or failed checks do not
+packages without a Nexus ID, exact files already deployed, and failed checks.
+An ID-less component is not counted as unmapped when a package sibling has an ID. Pending or failed checks do not
 count as confirmed searches without a download. **Refresh search** requests
 fresh results.
 Cancellation and API failures preserve your local workspace; bounded searches
 may miss translations.
 
-One download button processes the list using the installation method saved in
+For Folder users with Free or unknown membership, use each row's **Open Nexus Link**
+for a manual website download. There is no failing batch action or automatic
+opening of multiple tabs. Premium enables direct ZIP import.
+
+The supported batch action processes the list using the installation method saved in
 Setup/Settings. There is no Vortex/Review switch in the results dialog. Manual
 mode imports into the translator's Review; Vortex mode requests download and
 installation through Vortex. The app passes the chosen numeric
 Nexus mod/file references to the configured Vortex executable without passing
-its API key. Vortex uses its own account and handles download requirements,
+its API key. Vortex uses its own account, which may differ from the translator's
+key, and may ask for website confirmation. It handles download requirements,
 installation, conflicts, and deployment. A successful handoff means only that
 the launch request succeeded, not that a file was downloaded or installed.
 Stopping a batch prevents subsequent handoffs; it does not undo requests already

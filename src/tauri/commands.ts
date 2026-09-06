@@ -88,16 +88,31 @@ export interface AppSettings {
   workspace?: WorkspaceSettings;
   /** Whether rotating local diagnostic logs are written. Defaults to true. */
   diagnosticLogging?: boolean;
-  /** Optional Nexus metadata search after scanning; no credential is stored here. */
-  nexusSearchOnScan?: boolean;
   /** Explicit local Vortex.exe path. No authentication information. */
   vortexExecutable?: string | null;
 }
 
+export interface NexusQuota {
+  scope: "rest-v1" | "graphql-v2";
+  observedAt: number;
+  hourlyLimit: number | null;
+  hourlyRemaining: number | null;
+  hourlyReset: string | null;
+  dailyLimit: number | null;
+  dailyRemaining: number | null;
+  dailyReset: string | null;
+  retryAfterSeconds: number | null;
+  blockedUntil: number | null;
+}
 export interface NexusStatus {
   configured: boolean;
   premium: boolean;
   validated: boolean;
+  accountStatus?:
+    "unconfigured" | "unknown" | "premium" | "free" | "invalid" | "error";
+  checkedAt?: number | null;
+  error?: string | null;
+  quota?: NexusQuota[];
 }
 export interface NexusCandidate {
   modId: number;

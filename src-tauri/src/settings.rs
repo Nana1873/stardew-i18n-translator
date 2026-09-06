@@ -39,8 +39,6 @@ pub struct AppSettings {
     #[serde(default)]
     pub vortex_executable: Option<String>,
     #[serde(default)]
-    pub nexus_search_on_scan: bool,
-    #[serde(default)]
     pub stardew_path: Option<String>,
     #[serde(default)]
     pub mods_path: Option<String>,
@@ -241,7 +239,6 @@ impl Default for AppSettings {
             last_opened: BTreeMap::new(),
             workspace: WorkspaceSettings::default(),
             diagnostic_logging: true,
-            nexus_search_on_scan: false,
         }
     }
 }
@@ -539,6 +536,18 @@ mod tests {
     }
 
     #[test]
+    fn legacy_automatic_nexus_search_is_ignored_and_not_saved() {
+        let settings = parse_and_normalize(r#"{"nexusSearchOnScan":true}"#, false).unwrap();
+        let encoded = serde_json::to_value(&settings).unwrap();
+        assert!(encoded.get("nexusSearchOnScan").is_none());
+        let normalized = normalize(settings, true).unwrap();
+        assert!(serde_json::to_value(normalized)
+            .unwrap()
+            .get("nexusSearchOnScan")
+            .is_none());
+    }
+
+    #[test]
     fn saving_legacy_installation_choice_persists_normalized_method() {
         let dir = crate::test_support::temp_dir("settings-installation-legacy");
         let legacy: AppSettings =
@@ -585,7 +594,6 @@ mod tests {
         let dir = crate::test_support::temp_dir("settings-roundtrip");
         let settings = AppSettings {
             installation_method: Some(InstallationMethod::Folder),
-            nexus_search_on_scan: false,
             vortex_executable: None,
             stardew_path: Some(r"E:\SteamLibrary\steamapps\common\Stardew Valley".to_string()),
             mods_path: Some(r"E:\SteamLibrary\steamapps\common\Stardew Valley\Mods".to_string()),

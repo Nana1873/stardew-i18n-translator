@@ -28,6 +28,24 @@ pub struct NexusStatus {
     configured: bool,
     premium: bool,
     validated: bool,
+    account_status: &'static str,
+    checked_at: Option<u64>,
+    error: Option<String>,
+    quota: Vec<NexusQuota>,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NexusQuota {
+    scope: &'static str,
+    observed_at: u64,
+    hourly_limit: Option<u64>,
+    hourly_remaining: Option<u64>,
+    hourly_reset: Option<String>,
+    daily_limit: Option<u64>,
+    daily_remaining: Option<u64>,
+    daily_reset: Option<String>,
+    retry_after_seconds: Option<u64>,
+    blocked_until: Option<u64>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -87,6 +105,210 @@ struct Session {
     archives: HashMap<String, Archive>,
     auth: Option<(String, Instant, bool)>,
     preflights: HashMap<String, (Instant, String)>,
+    credential: Option<String>,
+    quota: Vec<NexusQuota>,
+    checked_at: Option<u64>,
+    auth_error: Option<(&'static str, String)>,
+}
+fn fingerprint(key: &str) -> String {
+    format!("{:x}", Sha256::digest(key.as_bytes()))
+}
+impl Session {
+    // The caller holds the session lock while reading the saved credential and
+    // preparing refresh. Never clear auth in a later, separate critical section.
+    fn begin_status(&mut self, key: Option<&str>, refresh: bool) {
+        self.activate(key);
+        if refresh {
+            self.auth = None;
+            self.auth_error = None;
+        }
+    }
+    fn activate(&mut self, key: Option<&str>) {
+        let credential = key.map(fingerprint);
+        if self.credential != credential {
+            *self = Self {
+                credential,
+                ..Self::default()
+            };
+        }
+    }
+    fn status(&self) -> NexusStatus {
+        let premium = self
+            .auth
+            .as_ref()
+            .filter(|(_, at, _)| at.elapsed() < TTL)
+            .map(|(_, _, premium)| *premium);
+        NexusStatus {
+            configured: self.credential.is_some(),
+            premium: premium.unwrap_or(false),
+            validated: premium.is_some(),
+            account_status: if self.credential.is_none() {
+                "unconfigured"
+            } else if let Some(premium) = premium {
+                if premium {
+                    "premium"
+                } else {
+                    "free"
+                }
+            } else if let Some((status, _)) = &self.auth_error {
+                status
+            } else {
+                "unknown"
+            },
+            checked_at: self.checked_at,
+            error: self.auth_error.as_ref().map(|(_, error)| error.clone()),
+            quota: self.quota.clone(),
+        }
+    }
+    fn check_request(&self, key: &str, _scope: &str, now: u64) -> Result<(), String> {
+        if self.credential.as_deref() != Some(&fingerprint(key)) {
+            return Err("Nexus credentials changed; start the action again.".into());
+        }
+        if let Some(("invalid", error)) = &self.auth_error {
+            return Err(error.clone());
+        }
+        self.check_backoff(now)
+    }
+    fn check_backoff(&self, now: u64) -> Result<(), String> {
+        // A cautious local pause across this credential's API calls does not
+        // assert that REST and GraphQL share a server-side allowance.
+        if self
+            .quota
+            .iter()
+            .any(|q| q.blocked_until.is_some_and(|until| until > now))
+        {
+            return Err("Nexus rate limit reached (HTTP 429). Wait before retrying; see API usage for retry details.".into());
+        }
+        Ok(())
+    }
+    fn commit_candidate(
+        &mut self,
+        candidate: Session,
+        persist: impl FnOnce() -> Result<(), String>,
+    ) -> Result<NexusStatus, String> {
+        persist()?;
+        *self = candidate;
+        Ok(self.status())
+    }
+    fn observe(
+        &mut self,
+        key: &str,
+        scope: &'static str,
+        headers: &reqwest::header::HeaderMap,
+        status: u16,
+        now: u64,
+    ) {
+        if self.credential.as_deref() != Some(&fingerprint(key)) {
+            return;
+        }
+        let counter = |name: &str| {
+            headers
+                .get(name)?
+                .to_str()
+                .ok()?
+                .parse::<u64>()
+                .ok()
+                .filter(|v| *v <= 9_007_199_254_740_991)
+        };
+        let reset = |name: &str| reset_value(headers.get(name)?.to_str().ok()?);
+        let retry_after_seconds = counter("retry-after");
+        let quota = NexusQuota {
+            scope,
+            observed_at: now,
+            hourly_limit: counter("x-rl-hourly-limit"),
+            hourly_remaining: counter("x-rl-hourly-remaining"),
+            hourly_reset: reset("x-rl-hourly-reset"),
+            daily_limit: counter("x-rl-daily-limit"),
+            daily_remaining: counter("x-rl-daily-remaining"),
+            daily_reset: reset("x-rl-daily-reset"),
+            retry_after_seconds,
+            // The documented daily allowance can fall back to the hourly
+            // allowance. Only an actual 429 starts this local backoff.
+            blocked_until: (status == 429).then(|| {
+                now.saturating_add(
+                    retry_after_seconds
+                        .unwrap_or(60)
+                        .max(1)
+                        .saturating_mul(1000),
+                )
+            }),
+        };
+        self.quota.retain(|q| q.scope != scope);
+        self.quota.push(quota);
+        if status == 401 || status == 403 {
+            self.auth = None;
+            self.checked_at = Some(now);
+            self.auth_error = Some((
+                if status == 401 { "invalid" } else { "error" },
+                api_error(status),
+            ));
+        }
+    }
+}
+fn api_error(status: u16) -> String {
+    match status {
+        401 => "Nexus rejected the API key (HTTP 401). Replace the key and reconnect.".into(),
+        403 => "Nexus denied API access (HTTP 403). Check the account and API permissions.".into(),
+        429 => "Nexus rate limit reached (HTTP 429). Wait before retrying; see API usage for retry details.".into(),
+        _ => format!("Nexus request failed (HTTP {status}). Retry later or check API setup."),
+    }
+}
+fn reset_value(value: &str) -> Option<String> {
+    if value.len() > 64 || value.is_empty() {
+        return None;
+    }
+    if value.bytes().all(|c| c.is_ascii_digit()) {
+        return value
+            .parse::<u64>()
+            .ok()
+            .filter(|v| *v <= 9_007_199_254_740_991)
+            .map(|_| value.to_owned());
+    }
+    // Accept a bounded UTC ISO timestamp; unsupported wire formats stay unknown.
+    let bytes = value.as_bytes();
+    if bytes.len() < 20
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || bytes[10] != b'T'
+        || bytes[13] != b':'
+        || bytes[16] != b':'
+        || bytes.last() != Some(&b'Z')
+    {
+        return None;
+    }
+    for (start, end, min, max) in [
+        (0, 4, 1, 9999),
+        (5, 7, 1, 12),
+        (8, 10, 1, 31),
+        (11, 13, 0, 23),
+        (14, 16, 0, 59),
+        (17, 19, 0, 59),
+    ] {
+        let part = bytes.get(start..end)?;
+        if !part.iter().all(u8::is_ascii_digit) {
+            return None;
+        }
+        let number = std::str::from_utf8(part).ok()?.parse::<u32>().ok()?;
+        if number < min || number > max {
+            return None;
+        }
+    }
+    if bytes.len() > 20
+        && (bytes[19] != b'.'
+            || bytes.len() == 21
+            || !bytes[20..bytes.len() - 1].iter().all(u8::is_ascii_digit))
+    {
+        return None;
+    }
+    Some(value.into())
+}
+fn account_premium(account: &Value) -> Result<bool, String> {
+    if number(&account["user_id"]).unwrap_or(0) == 0 {
+        return Err("Nexus API key validation failed.".into());
+    }
+    account["is_premium"]
+        .as_bool()
+        .ok_or_else(|| "Nexus account status is unavailable; reconnect later.".into())
 }
 fn session() -> &'static Mutex<Session> {
     static S: OnceLock<Mutex<Session>> = OnceLock::new();
@@ -159,7 +381,7 @@ async fn bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8
     }
     Ok(bytes)
 }
-async fn request(key: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+async fn send_api(key: &str, path: &str, body: Option<Value>) -> Result<reqwest::Response, String> {
     let c = client(20)?;
     let mut req = if body.is_some() {
         c.post(format!("{API}{path}"))
@@ -176,13 +398,31 @@ async fn request(key: &str, path: &str, body: Option<Value>) -> Result<Value, St
     if let Some(body) = body {
         req = req.json(&body);
     }
-    let bytes = bounded(
-        req.send()
-            .await
-            .map_err(|_| "Nexus request failed (network, timeout, or redirect).")?,
-        JSON_LIMIT,
-    )
-    .await?;
+    req.send()
+        .await
+        .map_err(|_| "Nexus request failed (network, timeout, or redirect).".into())
+}
+fn api_gate() -> &'static tokio::sync::Mutex<()> {
+    static REQUEST_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+    REQUEST_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
+async fn request(key: &str, path: &str, body: Option<Value>) -> Result<Value, String> {
+    // Queued calls recheck backoff; no automatic retries or background polling.
+    let _guard = api_gate().lock().await;
+    let scope = if path.starts_with("/v2/") {
+        "graphql-v2"
+    } else {
+        "rest-v1"
+    };
+    lock().check_request(key, scope, now_ms())?;
+    let response = send_api(key, path, body).await?;
+    let status = response.status().as_u16();
+    lock().observe(key, scope, response.headers(), status, now_ms());
+    if !response.status().is_success() {
+        return Err(api_error(status));
+    }
+    let bytes = bounded(response, JSON_LIMIT).await?;
+    lock().check_request(key, scope, now_ms())?;
     let value: Value = serde_json::from_slice(&bytes).map_err(|_| "Invalid Nexus API response.")?;
     if value.get("errors").is_some() {
         return Err("Nexus GraphQL search unavailable (API access or schema error).".into());
@@ -190,50 +430,54 @@ async fn request(key: &str, path: &str, body: Option<Value>) -> Result<Value, St
     Ok(value)
 }
 async fn validate(key: &str) -> Result<bool, String> {
-    let fingerprint = format!("{:x}", Sha256::digest(key.as_bytes()));
+    let fingerprint = fingerprint(key);
+    {
+        let mut session = lock();
+        if environment_key().as_deref() != Some(key) {
+            return Err("Nexus credentials changed; start the action again.".into());
+        }
+        session.activate(Some(key));
+    }
     if let Some((hash, at, premium)) = &lock().auth {
         if hash == &fingerprint && at.elapsed() < TTL {
             return Ok(*premium);
         }
     }
     let account = request(key, "/v1/users/validate.json", None).await?;
-    if number(&account["user_id"]).unwrap_or(0) == 0 {
-        return Err("Nexus API key validation failed.".into());
+    let premium = account_premium(&account)?;
+    let mut session = lock();
+    if session.credential.as_ref() != Some(&fingerprint) {
+        return Err("Nexus credentials changed; start the action again.".into());
     }
-    let premium = account["is_premium"] == true;
-    lock().auth = Some((fingerprint, Instant::now(), premium));
+    session.auth = Some((fingerprint, Instant::now(), premium));
+    session.checked_at = Some(now_ms());
+    session.auth_error = None;
     Ok(premium)
 }
 #[tauri::command]
 pub async fn nexus_status(force_refresh: Option<bool>) -> Result<NexusStatus, String> {
-    if force_refresh.unwrap_or(false) {
-        lock().auth = None;
-    }
-    let Some(key) = environment_key() else {
-        return Ok(NexusStatus {
-            configured: false,
-            premium: false,
-            validated: false,
-        });
+    let key = {
+        let mut session = lock();
+        let key = environment_key();
+        session.begin_status(key.as_deref(), force_refresh.unwrap_or(false));
+        key
     };
-    if !force_refresh.unwrap_or(false) {
-        let fingerprint = format!("{:x}", Sha256::digest(key.as_bytes()));
-        let cached = lock()
-            .auth
-            .as_ref()
-            .filter(|(hash, at, _)| hash == &fingerprint && at.elapsed() < TTL)
-            .map(|(_, _, p)| *p);
-        return Ok(NexusStatus {
-            configured: true,
-            premium: cached.unwrap_or(false),
-            validated: cached.is_some(),
-        });
+    if let Some(key) = key.filter(|_| force_refresh.unwrap_or(false)) {
+        if let Err(error) = validate(&key).await {
+            let mut session = lock();
+            if session.credential.as_deref() == Some(&fingerprint(&key)) {
+                session.checked_at = Some(now_ms());
+                if session
+                    .auth_error
+                    .as_ref()
+                    .is_none_or(|(kind, _)| *kind != "invalid")
+                {
+                    session.auth_error = Some(("error", error));
+                }
+            }
+        }
     }
-    Ok(NexusStatus {
-        configured: true,
-        premium: validate(&key).await?,
-        validated: true,
-    })
+    Ok(lock().status())
 }
 #[tauri::command]
 pub async fn nexus_save_key(key: String) -> Result<NexusStatus, String> {
@@ -241,30 +485,46 @@ pub async fn nexus_save_key(key: String) -> Result<NexusStatus, String> {
     if key.is_empty() || key.len() > 4096 {
         return Err("Enter a valid Nexus API key.".into());
     }
-    lock().auth = None;
-    let premium = validate(key).await?;
-    #[cfg(windows)]
+    let _guard = api_gate().lock().await;
     {
-        let env = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
-            .open_subkey_with_flags("Environment", winreg::enums::KEY_SET_VALUE)
-            .map_err(|_| "Could not open Windows user environment.")?;
-        env.set_value("NEXUS_API_KEY", &key)
-            .map_err(|_| "Could not save Nexus key to Windows user environment.")?;
+        let session = lock();
+        if session.credential.as_deref() == Some(&fingerprint(key)) {
+            session.check_backoff(now_ms())?;
+        }
     }
-    #[cfg(not(windows))]
-    {
-        return Err("Nexus setup is supported on Windows only.".into());
+    // Validate in isolation: passive snapshots continue to describe the saved
+    // connection until persistence and session activation succeed together.
+    let mut candidate = Session::default();
+    candidate.activate(Some(key));
+    let response = send_api(key, "/v1/users/validate.json", None).await?;
+    let status = response.status().as_u16();
+    candidate.observe(key, "rest-v1", response.headers(), status, now_ms());
+    // Rechecking the saved key may update its observed headers even on 429;
+    // an unsaved replacement must not overwrite the saved connection's data.
+    lock().observe(key, "rest-v1", response.headers(), status, now_ms());
+    if !response.status().is_success() {
+        return Err(api_error(status));
     }
-    {
-        let mut s = lock();
-        s.archives.clear();
-        s.preflights.clear();
-    }
-    #[allow(unreachable_code)]
-    Ok(NexusStatus {
-        configured: true,
-        premium,
-        validated: true,
+    let bytes = bounded(response, JSON_LIMIT).await?;
+    let account: Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid Nexus API response.")?;
+    let premium = account_premium(&account)?;
+    candidate.auth = Some((fingerprint(key), Instant::now(), premium));
+    candidate.checked_at = Some(now_ms());
+    lock().commit_candidate(candidate, || {
+        #[cfg(windows)]
+        {
+            let env = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER)
+                .open_subkey_with_flags("Environment", winreg::enums::KEY_SET_VALUE)
+                .map_err(|_| "Could not open Windows user environment.")?;
+            env.set_value("NEXUS_API_KEY", &key)
+                .map_err(|_| "Could not save Nexus key to Windows user environment.")?;
+            Ok(())
+        }
+        #[cfg(not(windows))]
+        {
+            Err("Nexus setup is supported on Windows only.".into())
+        }
     })
 }
 fn language_words(lang: &str) -> &'static [&'static str] {
@@ -1690,5 +1950,223 @@ mod workflow_tests {
         }
         assert!(!language_match("Example de configuration", "de"));
         assert!(!language_match("GERMANIUM", "de"));
+    }
+}
+
+#[cfg(test)]
+mod status_tests {
+    use super::*;
+    use reqwest::header::{HeaderMap, HeaderValue};
+    fn headers(values: &[(&'static str, &'static str)]) -> HeaderMap {
+        let mut result = HeaderMap::new();
+        for (name, value) in values {
+            result.insert(*name, HeaderValue::from_static(value));
+        }
+        result
+    }
+    #[test]
+    fn observed_scoped_quota_distinguishes_unknown_zero_and_hourly_fallback() {
+        let mut s = Session::default();
+        s.activate(Some("synthetic-one"));
+        s.observe(
+            "synthetic-one",
+            "rest-v1",
+            &headers(&[
+                ("x-rl-daily-limit", "20000"),
+                ("x-rl-daily-remaining", "0"),
+                ("x-rl-hourly-remaining", "499"),
+                ("x-rl-daily-reset", "2026-09-07T00:00:00Z"),
+            ]),
+            200,
+            1000,
+        );
+        let quota = &s.status().quota[0];
+        assert_eq!(quota.daily_remaining, Some(0));
+        assert_eq!(quota.hourly_remaining, Some(499));
+        assert_eq!(quota.hourly_limit, None);
+        assert_eq!(quota.hourly_reset, None);
+        assert_eq!(quota.observed_at, 1000);
+        assert!(s.check_request("synthetic-one", "rest-v1", 1001).is_ok());
+        s.observe("synthetic-one", "graphql-v2", &HeaderMap::new(), 200, 1002);
+        assert_eq!(s.status().quota.len(), 2);
+        assert_eq!(s.status().quota[1].daily_remaining, None);
+        assert_eq!(s.status().quota[0].daily_remaining, Some(0));
+        assert!(!s.status().validated);
+        assert_eq!(s.status().account_status, "unknown");
+    }
+    #[test]
+    fn rate_limit_keeps_headers_and_blocks_queued_requests_until_backoff() {
+        let mut s = Session::default();
+        s.activate(Some("synthetic"));
+        s.observe(
+            "synthetic",
+            "rest-v1",
+            &headers(&[
+                ("retry-after", "120"),
+                ("x-rl-daily-remaining", "0"),
+                ("x-rl-hourly-remaining", "0"),
+            ]),
+            429,
+            1000,
+        );
+        assert_eq!(s.status().quota[0].blocked_until, Some(121000));
+        assert_eq!(s.status().quota[0].hourly_remaining, Some(0));
+        assert!(s
+            .check_request("synthetic", "rest-v1", 120999)
+            .unwrap_err()
+            .contains("429"));
+        assert!(s.check_request("synthetic", "rest-v1", 121000).is_ok());
+        assert!(s.check_request("synthetic", "graphql-v2", 1001).is_err());
+        s.observe("synthetic", "rest-v1", &HeaderMap::new(), 429, 200000);
+        assert_eq!(s.status().quota[0].retry_after_seconds, None);
+        assert_eq!(s.status().quota[0].blocked_until, Some(260000));
+    }
+    #[test]
+    fn old_refresh_cannot_clear_a_connection_committed_after_refresh_preparation() {
+        let mut saved = Session::default();
+        saved.activate(Some("old-key"));
+        saved.auth = Some((fingerprint("old-key"), Instant::now(), false));
+        saved.begin_status(Some("old-key"), true);
+        assert!(!saved.status().validated);
+        let mut candidate = Session::default();
+        candidate.activate(Some("new-key"));
+        candidate.auth = Some((fingerprint("new-key"), Instant::now(), true));
+        candidate.checked_at = Some(1000);
+        saved.commit_candidate(candidate, || Ok(())).unwrap();
+        // The earlier refresh now resumes. Its old-credential request is
+        // rejected without a second auth-clear step affecting the new account.
+        assert!(saved.check_request("old-key", "rest-v1", 1001).is_err());
+        let status = saved.status();
+        assert!(status.validated && status.premium);
+        assert_eq!(status.account_status, "premium");
+        assert_eq!(status.checked_at, Some(1000));
+        saved.begin_status(Some("new-key"), false);
+        assert!(saved.status().validated);
+    }
+
+    #[test]
+    fn candidate_validation_survives_passive_reads_and_only_commits_after_persistence() {
+        let mut saved = Session::default();
+        saved.activate(Some("saved-key"));
+        saved.auth = Some((fingerprint("saved-key"), Instant::now(), false));
+        saved.observe(
+            "saved-key",
+            "rest-v1",
+            &headers(&[("x-rl-hourly-remaining", "10")]),
+            200,
+            1,
+        );
+        let mut candidate = Session::default();
+        candidate.activate(Some("candidate-key"));
+        // A local snapshot during the remote candidate request reads the old
+        // persisted key and cannot disturb the candidate's isolated response.
+        saved.activate(Some("saved-key"));
+        assert_eq!(saved.status().account_status, "free");
+        candidate.observe(
+            "candidate-key",
+            "rest-v1",
+            &headers(&[("x-rl-hourly-remaining", "20")]),
+            200,
+            2,
+        );
+        candidate.auth = Some((fingerprint("candidate-key"), Instant::now(), true));
+        candidate.checked_at = Some(2);
+        assert_eq!(saved.status().quota[0].hourly_remaining, Some(10));
+        let result = saved.commit_candidate(candidate, || Ok(())).unwrap();
+        assert_eq!(result.account_status, "premium");
+        assert_eq!(result.quota[0].hourly_remaining, Some(20));
+        let mut failing = Session::default();
+        failing.activate(Some("unsaved-key"));
+        failing.observe("unsaved-key", "rest-v1", &HeaderMap::new(), 429, 3);
+        assert!(saved
+            .commit_candidate(failing, || Err("Synthetic persistence failure".into()))
+            .is_err());
+        assert_eq!(saved.status().account_status, "premium");
+        assert_eq!(saved.status().quota[0].hourly_remaining, Some(20));
+        assert!(saved.check_request("candidate-key", "rest-v1", 4).is_ok());
+    }
+
+    #[test]
+    fn key_change_clears_account_quota_and_ignores_old_responses() {
+        let mut s = Session::default();
+        s.activate(Some("synthetic-old"));
+        s.auth = Some((fingerprint("synthetic-old"), Instant::now(), true));
+        s.checked_at = Some(1000);
+        s.observe(
+            "synthetic-old",
+            "rest-v1",
+            &headers(&[("x-rl-hourly-remaining", "10")]),
+            200,
+            1001,
+        );
+        assert!(s.status().premium);
+        s.activate(Some("synthetic-new"));
+        assert!(!s.status().validated);
+        assert_eq!(s.status().checked_at, None);
+        assert!(s.status().quota.is_empty());
+        s.observe(
+            "synthetic-old",
+            "rest-v1",
+            &headers(&[("x-rl-hourly-remaining", "8")]),
+            200,
+            1002,
+        );
+        assert!(s.status().quota.is_empty());
+        assert!(s.check_request("synthetic-old", "rest-v1", 1003).is_err());
+        let serialized = serde_json::to_string(&s.status()).unwrap();
+        assert!(
+            !serialized.contains("synthetic")
+                && !serialized.contains(&fingerprint("synthetic-new"))
+        );
+        s.activate(None);
+        assert_eq!(s.status().account_status, "unconfigured");
+    }
+    #[test]
+    fn malformed_headers_account_errors_and_expiry_stay_unknown() {
+        let mut s = Session::default();
+        s.activate(Some("synthetic"));
+        s.observe(
+            "synthetic",
+            "rest-v1",
+            &headers(&[
+                ("x-rl-daily-remaining", "-1"),
+                ("x-rl-hourly-limit", "9007199254740992"),
+                ("x-rl-daily-reset", "secret-value"),
+                ("x-rl-hourly-reset", ":::."),
+            ]),
+            200,
+            1,
+        );
+        let quota = &s.status().quota[0];
+        assert_eq!(quota.daily_remaining, None);
+        assert_eq!(quota.hourly_limit, None);
+        assert_eq!(quota.daily_reset, None);
+        assert_eq!(quota.hourly_reset, None);
+        assert_eq!(reset_value("2026-99-01T00:00:00Z"), None);
+        assert_eq!(reset_value("1788739200"), Some("1788739200".into()));
+        assert!(!account_premium(&json!({"user_id":1,"is_premium":false})).unwrap());
+        assert!(account_premium(&json!({"user_id":1})).is_err());
+        assert!(account_premium(&json!({"is_premium":true})).is_err());
+        s.auth = Some((fingerprint("synthetic"), Instant::now() - TTL, true));
+        assert_eq!(s.status().account_status, "unknown");
+        assert!(!s.status().premium);
+        s.observe("synthetic", "rest-v1", &HeaderMap::new(), 401, 2);
+        assert_eq!(s.status().account_status, "invalid");
+        assert!(s.check_request("synthetic", "rest-v1", 3).is_err());
+        s.observe("synthetic", "rest-v1", &HeaderMap::new(), 403, 4);
+        assert_eq!(s.status().account_status, "error");
+    }
+    #[tokio::test]
+    #[ignore = "Two explicit read-only official API requests; prints only account/quota status"]
+    async fn live_account_and_quota_headers_read_only() {
+        let status = nexus_status(Some(true)).await.unwrap();
+        assert!(status.validated, "Account validation must succeed");
+        let key = environment_key().expect("Configure the existing environment key");
+        let graph = request(&key, "/v2/graphql", Some(json!({"query":"{ __typename }"}))).await;
+        println!("graphql_request_succeeded={}", graph.is_ok());
+        println!(
+            "{}",
+            serde_json::to_string(&nexus_status(Some(false)).await.unwrap()).unwrap()
+        );
     }
 }

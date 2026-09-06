@@ -636,7 +636,7 @@ describe("App shell", () => {
     expect(loads).toBe(loadsBefore);
   });
 
-  it("scans after first-run setup and queues opted-in distinct Nexus IDs for the new language without blocking local work", async () => {
+  it("scans after first-run setup without Nexus and searches only after explicit Find", async () => {
     const scanned = exportScan(false);
     scanned.mods = [10, 10, 20, null].map((nexusId, index) => ({
       ...scanned.mods[0],
@@ -687,17 +687,26 @@ describe("App shell", () => {
       target: { value: "fr" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
-    fireEvent.click(
-      screen.getByLabelText(
-        "Search Nexus for existing translations when scanning",
-      ),
-    );
+    expect(
+      screen.queryByRole("checkbox", { name: /Search Nexus/ }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
         modsPath: CONFIGURED.modsPath,
         targetLang: "fr",
       }),
+    );
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_find_translations"),
+    ).toBe(false);
+    expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled();
+    openWorkspace();
+    expect(screen.getByRole("region", { name: "Mod list" })).toHaveTextContent(
+      "Local 0",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
     );
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("nexus_find_translations", {
@@ -709,11 +718,7 @@ describe("App shell", () => {
     expect(
       screen.queryByRole("dialog", { name: "Setup" }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled();
-    openWorkspace();
-    expect(screen.getByRole("region", { name: "Mod list" })).toHaveTextContent(
-      "Local 0",
-    );
+
     await act(async () =>
       pending.resolve({
         modId: 10,
@@ -733,9 +738,6 @@ describe("App shell", () => {
         { modId: 20, targetLang: "fr", forceRefresh: false },
       ]),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
-    );
     const searchSummary = await screen.findByRole("region", {
       name: "Translation search results",
     });
@@ -746,10 +748,73 @@ describe("App shell", () => {
       invokeMock.mock.calls.some(
         ([cmd, args]) =>
           cmd === "save_settings" &&
-          args.settings.nexusSearchOnScan === true &&
+          args.settings.nexusSearchOnScan === undefined &&
           args.settings.targetLang === "fr",
       ),
     ).toBe(true);
+  });
+
+  it("ignores legacy automatic Nexus settings on startup and rescan after manual results", async () => {
+    const scanned = exportScan(false);
+    scanned.mods[0].nexusId = 10;
+    scanned.mods[0].translatedKeys = 0;
+    mockConfigured(scanned);
+    const fallback = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, args: unknown) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({ ...CONFIGURED, nexusSearchOnScan: true });
+      if (cmd === "nexus_find_translations")
+        return Promise.resolve({
+          modId: 10,
+          originalName: "Original",
+          candidates: [],
+          limited: true,
+          notice: "Limited",
+        });
+      return fallback(cmd, args);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+      ).toBeEnabled(),
+    );
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd.startsWith("nexus_") && cmd !== "nexus_status",
+      ),
+    ).toHaveLength(0);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await screen.findByText("No suitable translation downloads found.");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Nexus translations" }),
+    );
+    const previous = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd.startsWith("nexus_") && cmd !== "nexus_status",
+    ).length;
+    const scans = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "scan_mods",
+    ).length;
+    fireEvent.click(screen.getByRole("button", { name: "Scan mods" }));
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toHaveLength(scans + 1),
+    );
+    await waitFor(() =>
+      expect(
+        screen
+          .getAllByRole("button", { name: "Scan mods", hidden: true })
+          .at(-1),
+      ).toBeEnabled(),
+    );
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd.startsWith("nexus_") && cmd !== "nexus_status",
+      ),
+    ).toHaveLength(previous);
   });
 
   it("keeps Nexus off on a normal scan and starts the same search from the explicit action", async () => {
@@ -959,6 +1024,12 @@ describe("App shell", () => {
           ...CONFIGURED,
           installationMethod: "folder",
           vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+        });
+      if (cmd === "nexus_status")
+        return Promise.resolve({
+          configured: true,
+          validated: true,
+          premium: true,
         });
       if (cmd === "nexus_find_translations")
         return Promise.resolve({
@@ -4224,7 +4295,6 @@ describe("App shell", () => {
           lastOpened,
           workspace,
           diagnosticLogging: false,
-          nexusSearchOnScan: false,
           vortexExecutable: null,
           installationMethod: "folder",
         },

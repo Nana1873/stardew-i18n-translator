@@ -63,9 +63,6 @@ export function SetupWizard({
   const [vortexExecutable, setVortexExecutable] = useState(
     initial?.vortexExecutable ?? null,
   );
-  const [nexusSearchOnScan, setNexusSearchOnScan] = useState(
-    initial?.nexusSearchOnScan ?? false,
-  );
   const [step, setStep] = useState<Step>(1);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -219,7 +216,6 @@ export function SetupWizard({
         ...initial,
         stardewPath,
         modsPath,
-        nexusSearchOnScan,
         vortexExecutable,
         installationMethod,
         sourceLang: "default",
@@ -394,11 +390,7 @@ export function SetupWizard({
 
             {step === 4 && (
               <section aria-label="Glossary">
-                <NexusSetup
-                  searchOnScan={nexusSearchOnScan}
-                  onSearchOnScanChange={setNexusSearchOnScan}
-                  onKeySaved={onNexusKeySaved}
-                />
+                <NexusSetup onKeySaved={onNexusKeySaved} />
                 <StepHeading
                   eyebrow="Step 4 / Optional"
                   title="Add official translation hints"

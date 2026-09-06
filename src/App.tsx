@@ -283,22 +283,6 @@ export function App() {
     nexus.reset();
     setNexusSessionRevision((value) => value + 1);
   }
-  const [nexusScanJob, setNexusScanJob] = useState<{
-    mods: ScannedMod[];
-    skippedComponents: ScanResult["skippedComponents"];
-    traversalComplete: boolean;
-    targetLang: string;
-    workspaceKey: string;
-  } | null>(null);
-  useEffect(() => {
-    if (!nexusScanJob) return;
-    setNexusScanJob(null);
-    if (nexusScanJob.workspaceKey === nexusWorkspaceKey)
-      void nexus.start(nexusScanJob.mods, nexusScanJob.targetLang, {
-        skippedComponents: nexusScanJob.skippedComponents,
-        traversalComplete: nexusScanJob.traversalComplete,
-      });
-  }, [nexusScanJob, nexusWorkspaceKey]);
   useEffect(() => {
     setNexusOpen(false);
   }, [nexusWorkspaceKey]);
@@ -860,15 +844,6 @@ export function App() {
       // scanning. Reloading again here could close a newly opened editor.
       if (options.restoreInstalledTranslations)
         setReloadToken((token) => token + 1);
-      if (scanSettings.nexusSearchOnScan && options.nexusSearch !== false) {
-        setNexusScanJob({
-          mods: result.mods,
-          skippedComponents: result.skippedComponents,
-          traversalComplete: result.traversalComplete === true,
-          targetLang: scanSettings.targetLang,
-          workspaceKey: `${scanSettings.modsPath}|${scanSettings.targetLang}`,
-        });
-      }
       const completedAt = Date.now();
       setLastScanAt(completedAt);
       setNow(completedAt);

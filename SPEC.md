@@ -144,7 +144,9 @@ state write. Accepted values enter Review; token errors block the import.
 ## Optional Nexus Translations
 
 The Nexus workflow is in local testing; it is not a registered production
-integration. Discovery is opt-in after scanning or explicitly user-started.
+integration. Discovery is explicitly user-started. Startup, normal scans,
+rescans, and installed-file checks never contact Nexus, even with legacy
+automatic-search settings.
 Search once per positive Nexus ID and target language. By default, skip a group
 only when it has source keys and all associated components with source keys,
 including package siblings without an ID, have no missing required text on
@@ -163,12 +165,18 @@ heuristics, not compatibility or completeness guarantees.
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It
 never enters portable settings, metadata cache, logs, handoff arguments, or
-response DTOs. Status exposes readiness and Premium eligibility; raw validation
+response DTOs. Status exposes readiness, Free/Premium/unknown membership, safe
+errors, and nullable response-header quota snapshots by API scope. Display only
+reported values with observation times; do not invent limits or reset times.
+Connecting a key or explicitly refreshing the account validates it; opening
+Setup or the results dialog only reads session status. Raw validation
 responses and signed download URLs remain in the backend.
 
 A saved Folder/Vortex installation method controls the download action. It is
 selected in Setup and editable in Settings; the results dialog has no destination
-toggle or per-mod selection checkboxes. All available rows join the batch.
+toggle or per-mod selection checkboxes. All available rows join a supported batch.
+Folder direct ZIP import requires Premium. Free/unknown Folder users use the
+existing per-result website links; never open multiple tabs automatically.
 File metadata loads before confirmation; multiple current versions or variants
 are selectable inline, while a unique file needs no further choice. The batch
 uses those exact mod/file IDs and does not silently resolve a different version.

@@ -434,3 +434,26 @@ it.each([
     expect(search).toHaveBeenCalledTimes(shouldSearch ? 1 : 0);
   },
 );
+
+it("counts genuinely unassigned packages once and includes idless siblings in identified packages", async () => {
+  search.mockResolvedValue(result(1));
+  const hook = renderHook(() => useNexusSearch("mods|de"));
+  await act(() =>
+    hook.result.current.start(
+      [
+        { ...mod(1, "Base"), packageId: "Identified" },
+        { ...mod(null, "Addon"), packageId: "Identified" },
+        { ...mod(null, "Code"), packageId: "Missing A" },
+        { ...mod(null, "Content"), packageId: "Missing A" },
+        { ...mod(null, "Other"), packageId: "Missing B" },
+      ],
+      "de",
+    ),
+  );
+  expect(hook.result.current).toMatchObject({
+    noId: 2,
+    unassignedNames: ["Missing A", "Missing B"],
+  });
+  expect(hook.result.current.entries[0].localNames).toEqual(["Base", "Addon"]);
+  expect(search).toHaveBeenCalledTimes(1);
+});

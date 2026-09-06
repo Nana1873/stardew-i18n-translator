@@ -194,7 +194,7 @@ function translationRow() {
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
 async function download() {
-  const button = screen.getByRole("button", {
+  const button = await screen.findByRole("button", {
     name: /^Download & (install|import) all/,
   });
   await waitFor(() => expect(button).toBeEnabled());
@@ -217,7 +217,11 @@ beforeEach(() => {
     (cmd: string, args?: { modId?: number; fileId?: number }) => {
       if (cmd === "nexus_list_files") return Promise.resolve([file]);
       if (cmd === "nexus_status")
-        return Promise.resolve({ configured: true, premium: true });
+        return Promise.resolve({
+          configured: true,
+          premium: true,
+          validated: true,
+        });
       if (cmd === "nexus_handoff_to_vortex")
         return Promise.resolve({ ...args, status: "handoff-requested" });
       if (cmd === "nexus_download_preflight") return Promise.resolve(archive);
@@ -234,7 +238,14 @@ it("loads only candidate metadata before any action, without selection checkboxe
   mount();
   await screen.findByRole("row", { name: "Canonical title" });
   expect(commandCalls("nexus_list_files")).toEqual([{ modId: 30342 }]);
-  expect(invoke.mock.calls.map(([cmd]) => cmd)).toEqual(["nexus_list_files"]);
+  expect(
+    invoke.mock.calls
+      .filter(([cmd]) => cmd !== "nexus_status")
+      .map(([cmd]) => cmd),
+  ).toEqual(["nexus_list_files"]);
+  expect(
+    commandCalls("nexus_status").every((args) => args.forceRefresh === false),
+  ).toBe(true);
   expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
   expect(screen.getAllByRole("columnheader").map((x) => x.textContent)).toEqual(
@@ -321,9 +332,8 @@ it("excludes a positively deployed exact file despite incomplete local coverage"
     }),
   ).toBeDisabled();
   expect(
-    screen.getByText("Groups skipped · no missing text / already installed")
-      .parentElement,
-  ).toHaveTextContent("4 / 1");
+    screen.getByText("No download needed").parentElement,
+  ).toHaveTextContent("5");
   expect(
     screen.getByText("No suitable download found").parentElement,
   ).toHaveTextContent("1");
@@ -465,7 +475,9 @@ it("includes all ready rows automatically and never redownloads a completed hand
     { modId: 30342, fileId: 7 },
   ]);
   expect(commandCalls("nexus_list_files")).toHaveLength(1);
-  expect(commandCalls("nexus_status")).toHaveLength(0);
+  expect(commandCalls("nexus_status").some((args) => args.forceRefresh)).toBe(
+    false,
+  );
   expect(
     screen.getByRole("button", {
       name: "Download & install all with Vortex (0)",
@@ -490,7 +502,7 @@ it("routes an explicit folder installation to Review even if Vortex is configure
   expect(
     invoke.mock.calls.some(([cmd]) => /export|save_settings/.test(cmd)),
   ).toBe(false);
-  expect(screen.getByRole("status")).toHaveTextContent("1 imported to Review");
+  expect(screen.getByText("1 imported to Review")).toBeInTheDocument();
 });
 it("defaults legacy installations without Vortex to folder import", async () => {
   const app = mount({ executable: null });
@@ -887,10 +899,8 @@ it("counts failed original groups once and never counts pending metadata as no s
   expect(metric("No suitable download found")).toBe("1");
   expect(metric("Mods with downloads")).toBe("0");
   expect(metric("IDs checked")).toBe("3/5");
-  expect(metric("Groups skipped · no missing text / already installed")).toBe(
-    "4 / 0",
-  );
-  expect(metric("Components without Nexus ID")).toBe("2");
+  expect(metric("No download needed")).toBe("4");
+  expect(metric("Mods without Nexus ID")).toBe("2");
   expect(
     screen.getByText("Search cancelled · results are partial."),
   ).toBeInTheDocument();
@@ -948,4 +958,157 @@ it("labels no-text-needed sources separately from physical local strings", async
   expect(
     screen.queryByText("Available translation files are already installed."),
   ).not.toBeInTheDocument();
+});
+
+it.each(["free", "unknown", "invalid"] as const)(
+  "offers manual links before any failed direct import for %s accounts",
+  async (accountStatus) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "nexus_status"
+        ? Promise.resolve({
+            configured: true,
+            premium: false,
+            validated: accountStatus === "free",
+            accountStatus,
+          })
+        : original(cmd, ...args),
+    );
+    mount({ method: "folder" });
+    await screen.findByRole("row", { name: "Canonical title" });
+    expect(
+      screen.queryByRole("button", { name: /^Download & import all/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Open Nexus Link" }),
+    ).toBeEnabled();
+    expect(commandCalls("open_url")).toHaveLength(0);
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    expect(
+      commandCalls("nexus_status").every((args) => !args.forceRefresh),
+    ).toBe(true);
+  },
+);
+
+it("enables Premium import after one deliberate account refresh without polling", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, args: { forceRefresh?: boolean }) =>
+    cmd === "nexus_status"
+      ? Promise.resolve({
+          configured: true,
+          premium: !!args.forceRefresh,
+          validated: !!args.forceRefresh,
+        })
+      : original(cmd, args),
+  );
+  mount({ method: "folder" });
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(
+    screen.queryByRole("button", { name: /^Download & import all/ }),
+  ).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
+  expect(
+    await screen.findByRole("button", { name: "Download & import all (1)" }),
+  ).toBeEnabled();
+  expect(
+    commandCalls("nexus_status").filter((args) => args.forceRefresh),
+  ).toHaveLength(1);
+});
+
+it("keeps Vortex handoff independent of the API key's Free membership", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_status"
+      ? Promise.resolve({
+          configured: true,
+          premium: false,
+          validated: true,
+          accountStatus: "free",
+        })
+      : original(cmd, ...args),
+  );
+  mount();
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+});
+
+it("does not fetch newly visible metadata during a local installed-files recheck", async () => {
+  const app = mount({ mods: [{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]] });
+  await waitFor(() => expect(commandCalls("nexus_list_files")).toHaveLength(1));
+  app.setMods([{ ...mods[0], diskTranslatedKeys: 0 }, mods[1]]);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Check installed files" }),
+  );
+  await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  expect(commandCalls("nexus_status").some((args) => args.forceRefresh)).toBe(
+    false,
+  );
+});
+
+it("discards delayed local snapshots after explicit account refresh", async () => {
+  const snapshots: ((value: unknown) => void)[] = [];
+  invoke.mockImplementation((cmd: string, args: { forceRefresh?: boolean }) => {
+    if (cmd === "nexus_status")
+      return args.forceRefresh
+        ? Promise.resolve({
+            configured: true,
+            validated: true,
+            premium: true,
+            accountStatus: "premium",
+          })
+        : new Promise((resolve) => snapshots.push(resolve));
+    if (cmd === "nexus_list_files") return Promise.resolve([file]);
+    return Promise.resolve(null);
+  });
+  mount({ method: "folder" });
+  await act(async () => {});
+  const oldSnapshots = [...snapshots];
+  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
+  await screen.findByText(/Premium account/);
+  await act(async () =>
+    oldSnapshots.forEach((resolve) =>
+      resolve({
+        configured: true,
+        validated: true,
+        premium: false,
+        accountStatus: "free",
+      }),
+    ),
+  );
+  expect(screen.getByText(/Premium account/)).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Download & import all/ }),
+  ).toBeInTheDocument();
+});
+
+it("does not start passive account reads when metadata arrives during refresh", async () => {
+  let resolveRefresh!: (value: unknown) => void;
+  let resolveFiles!: (value: unknown) => void;
+  let currentStatus = { configured: true, validated: false, premium: false };
+  invoke.mockImplementation((cmd: string, args: { forceRefresh?: boolean }) => {
+    if (cmd === "nexus_status")
+      return args.forceRefresh
+        ? new Promise((resolve) => {
+            resolveRefresh = resolve;
+          })
+        : Promise.resolve(currentStatus);
+    if (cmd === "nexus_list_files")
+      return new Promise((resolve) => {
+        resolveFiles = resolve;
+      });
+    return Promise.resolve(null);
+  });
+  mount({ method: "folder" });
+  await screen.findByText(/Account not checked/);
+  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
+  const reads = commandCalls("nexus_status").length;
+  await act(async () => resolveFiles([file]));
+  expect(commandCalls("nexus_status")).toHaveLength(reads);
+  currentStatus = { configured: true, validated: true, premium: true };
+  await act(async () => resolveRefresh(currentStatus));
+  expect(screen.getByText(/Premium account/)).toBeInTheDocument();
 });

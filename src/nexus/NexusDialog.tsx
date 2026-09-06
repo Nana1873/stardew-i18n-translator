@@ -8,6 +8,7 @@ import {
   nexusPreflightImport,
   nexusImportTranslation,
   openUrl,
+  type NexusStatus,
   type NexusArchive,
   type NexusCandidate,
   type NexusFile,
@@ -22,6 +23,8 @@ import {
 } from "./resolveTranslation";
 import { fileChoices, useNexusFiles } from "./useNexusFiles";
 import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
+
+import { NexusAccountSummary, nexusAccountKind } from "./NexusAccountSummary";
 
 const quiet = "translator-button translator-button-quiet";
 const primary = "translator-button translator-button-primary";
@@ -157,6 +160,27 @@ export function NexusDialog({
   const configuredVortex = vortexExecutable?.trim();
   const method = installationMethod ?? (configuredVortex ? "vortex" : "folder");
   const isVortex = method === "vortex";
+  const [account, setAccount] = useState<NexusStatus | null>(null);
+  const [refreshingAccount, setRefreshingAccount] = useState(false);
+  const [accountError, setAccountError] = useState<string | null>(null);
+  const accountGeneration = useRef(0);
+  const canDirectImport = nexusAccountKind(account) === "premium";
+  async function refreshAccount() {
+    const request = ++accountGeneration.current;
+    setRefreshingAccount(true);
+    setAccountError(null);
+    try {
+      const next = await nexusStatus(true);
+      if (mounted.current && accountGeneration.current === request)
+        setAccount(next);
+    } catch {
+      if (mounted.current)
+        setAccountError("Account refresh unavailable. Try again later.");
+    } finally {
+      if (mounted.current) setRefreshingAccount(false);
+    }
+  }
+
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
@@ -353,9 +377,9 @@ export function NexusDialog({
           "The selected archive is not a ZIP. Review import requires ZIP; the selected file was not replaced.",
         );
       patch(key, { intent: "review", status: "Checking download access…" });
-      const status = await nexusStatus(true);
+      const status = await nexusStatus();
       if (!current()) return;
-      if (!status.premium)
+      if (!status?.validated || !status.premium)
         throw new Error(
           "Direct import requires Nexus Premium. Open Nexus files for a manual download.",
         );
@@ -431,7 +455,8 @@ export function NexusDialog({
           : undefined,
     };
   }
-  const locked = Boolean(active) || batchRunning || checking;
+  const locked =
+    Boolean(active) || batchRunning || checking || refreshingAccount;
   const candidatesFor = (entry: NexusSearchEntry) =>
     [...(entry.result?.candidates ?? [])].sort(
       (a, b) =>
@@ -451,18 +476,42 @@ export function NexusDialog({
         )?.complete),
   );
   const fileMetadata = useNexusFiles(
-    sources.flatMap((entry) =>
+    search.entries.flatMap((entry) =>
       candidatesFor(entry).map((candidate) => candidate.modId),
     ),
     open,
     `${targetLang}|${method}`,
   );
+  // Only reads the native session snapshot; never validates or sends HTTP here.
+  useEffect(() => {
+    if (!open || refreshingAccount) return;
+    let current = true;
+    const request = accountGeneration.current;
+    void nexusStatus()
+      .then((value) => {
+        if (current && accountGeneration.current === request) setAccount(value);
+      })
+      .catch(() => {});
+    return () => {
+      current = false;
+    };
+  }, [
+    open,
+    search.completed,
+    fileMetadata.entries,
+    batchRunning,
+    refreshingAccount,
+  ]);
   const groups = sources.map((entry) => {
     const candidates = candidatesFor(entry);
     const allOptions = candidates.flatMap((candidate) => {
       const files = fileMetadata.entries[candidate.modId]?.files;
       if (!files) return [];
-      const choices = fileChoices(files, targetLang, isVortex);
+      const choices = fileChoices(
+        files,
+        targetLang,
+        isVortex || !canDirectImport,
+      );
       return choices.files.map((file) => ({
         candidate,
         file,
@@ -590,7 +639,12 @@ export function NexusDialog({
       !group.row.error,
   );
   async function downloadAll(queue = pending) {
-    if (activeRef.current || batchRef.current) return;
+    if (
+      activeRef.current ||
+      batchRef.current ||
+      (!isVortex && !canDirectImport)
+    )
+      return;
     const snapshot = queue.flatMap((group) =>
       group.selected
         ? [
@@ -991,24 +1045,35 @@ export function NexusDialog({
               : actionStatus || resultStatus}
           </p>
         )}
+        <NexusAccountSummary status={account} />
         <div className="nexus-actions">
           <button
-            className={primary}
-            disabled={
-              locked ||
-              search.running ||
-              loading ||
-              unresolved ||
-              !pending.length ||
-              (isVortex && !configuredVortex)
-            }
-            onClick={() => void downloadAll()}
+            className={quiet}
+            disabled={locked}
+            onClick={() => void refreshAccount()}
           >
-            {isVortex
-              ? "Download & install all with Vortex"
-              : "Download & import all"}{" "}
-            ({pending.length})
+            {refreshingAccount ? "Refreshing…" : "Refresh account"}
           </button>
+          {accountError && <p role="alert">{accountError}</p>}
+          {(isVortex || canDirectImport) && (
+            <button
+              className={primary}
+              disabled={
+                locked ||
+                search.running ||
+                loading ||
+                unresolved ||
+                !pending.length ||
+                (isVortex && !configuredVortex)
+              }
+              onClick={() => void downloadAll()}
+            >
+              {isVortex
+                ? "Download & install all with Vortex"
+                : "Download & import all"}{" "}
+              ({pending.length})
+            </button>
+          )}
           {batchRunning && (
             <button
               className={quiet}
@@ -1032,9 +1097,13 @@ export function NexusDialog({
         <small className="nexus-muted">
           {isVortex
             ? configuredVortex
-              ? "Vortex handles downloads and installation. Deploy there, then check files here."
+              ? "Vortex uses its own account, which may differ from this API key. Vortex may ask you to confirm a website download. A handoff only sends a request; deploy there, then check files here."
               : "Choose Vortex.exe in installation settings first."
-            : "Imports go to Review. Use the existing Export action when ready."}
+            : canDirectImport
+              ? "Imports go to Review. Use the existing Export action when ready."
+              : nexusAccountKind(account) === "free"
+                ? "Free account: use each Open Nexus Link below to download manually. Direct ZIP import requires Premium."
+                : "Use Open Nexus Link below for manual downloads, or refresh account details to check Premium import access."}
         </small>
         {checkError && <p role="alert">{checkError}</p>}
       </div>
@@ -1072,19 +1141,37 @@ export function NexusDialog({
           aria-label="Translation search results"
           className="nexus-search-results"
         >
+          {Boolean(search.unassignedNames?.length) && (
+            <details>
+              <summary>Mods without Nexus ID ({search.noId})</summary>
+              <p>{search.unassignedNames!.join(", ")}</p>
+              <small>
+                These packages have no Nexus update key. Their strings are still
+                available locally.
+              </small>
+            </details>
+          )}
           <div className="translator-preflight-metrics">
             {[
               [`${search.completed}/${search.total}`, "IDs checked"],
               [shown.length, "Mods with downloads"],
               [noDownloadIds.size, "No suitable download found"],
               [
-                `${search.skippedComplete ?? 0} / ${installedGroups}`,
-                "Groups skipped · no missing text / already installed",
+                (search.skippedComplete ?? 0) + installedGroups,
+                "No download needed",
               ],
-              [search.noId, "Components without Nexus ID"],
+              [search.noId, "Mods without Nexus ID"],
               [unavailableCount, "Checks failed"],
             ].map(([value, label]) => (
-              <div className="translator-preflight-metric" key={label}>
+              <div
+                className="translator-preflight-metric"
+                key={label}
+                title={
+                  label === "No download needed"
+                    ? `${search.skippedComplete ?? 0} mods with no missing text; ${installedGroups} exact files already deployed`
+                    : undefined
+                }
+              >
                 <strong>{value}</strong>
                 <span>{label}</span>
               </div>
