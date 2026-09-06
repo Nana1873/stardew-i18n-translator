@@ -1995,3 +1995,94 @@ it.each(["deployed", "missing_dictionary"] as const)(
     expect(translationRow().queryByText("Nexus 30342 · file 7")).toBeNull();
   },
 );
+
+it.each(["vortex", "folder"] as const)(
+  "downloads selected files while leaving an unresolved variant untouched in %s mode",
+  async (method) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, args?: { modId?: number }) =>
+      cmd === "nexus_list_files" && args?.modId === 44
+        ? Promise.resolve([
+            { ...file, name: "German full", fileId: 10 },
+            { ...file, name: "German lite", fileId: 11 },
+          ])
+        : original(cmd, args),
+    );
+    const app = mount({
+      method,
+      search: {
+        ...search,
+        entries: [
+          ...search.entries,
+          {
+            modId: 2,
+            localNames: ["Variants"],
+            result: {
+              ...search.entries[1].result,
+              modId: 2,
+              originalName: "Variants",
+              candidates: [{ ...candidate, modId: 44 }],
+            },
+          },
+        ],
+      },
+    });
+    const choice = await screen.findByRole("combobox", {
+      name: "Translation file for Variants",
+    });
+    expect(choice).toHaveValue("");
+    expect(
+      within(screen.getByRole("row", { name: "Variants" })).getByText(
+        "Choose a version to include this mod in the download.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("1 mod needs a version choice and is not included."),
+    ).toBeInTheDocument();
+    const button = screen.getByRole("button", {
+      name:
+        method === "vortex"
+          ? "Download & install all with Vortex (1)"
+          : "Download & import all (1)",
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    app.setBlocked(true);
+    expect(button).toBeDisabled();
+    fireEvent.click(button);
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    app.setBlocked(false);
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    if (method === "vortex") {
+      await screen.findByText("1 sent to Vortex");
+      expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+        { modId: 30342, fileId: 7 },
+      ]);
+    } else {
+      await waitFor(() => expect(app.onImported).toHaveBeenCalledOnce());
+      expect(commandCalls("nexus_download_preflight")).toEqual([
+        { modId: 30342, fileId: 7 },
+      ]);
+    }
+    expect(choice).toHaveValue("");
+    fireEvent.change(choice, { target: { value: "44:11" } });
+    await download();
+    if (method === "vortex") {
+      await screen.findByText("2 sent to Vortex");
+      expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+        { modId: 30342, fileId: 7 },
+        { modId: 44, fileId: 11 },
+      ]);
+    } else {
+      await waitFor(() =>
+        expect(commandCalls("nexus_download_preflight")).toHaveLength(2),
+      );
+      expect(commandCalls("nexus_download_preflight")).toEqual([
+        { modId: 30342, fileId: 7 },
+        { modId: 44, fileId: 11 },
+      ]);
+    }
+    expect(commandCalls("nexus_list_files")).toHaveLength(2);
+  },
+);

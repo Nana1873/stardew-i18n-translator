@@ -179,7 +179,9 @@ download URLs remain in the backend.
 
 A saved Folder/Vortex installation method controls the download action. It is
 selected in Setup and editable in Settings; the results dialog has no destination
-toggle or per-mod selection checkboxes. All available rows join a supported batch.
+toggle or per-mod selection checkboxes. A supported batch processes the currently
+selected files. Rows awaiting a version choice stay unrequested and do not block
+other selected downloads.
 Folder direct ZIP import requires Premium. Free/unknown Folder users use the
 existing per-result website links; never open multiple tabs automatically.
 File metadata loads before confirmation; multiple current versions or variants

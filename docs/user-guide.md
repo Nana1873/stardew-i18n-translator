@@ -96,8 +96,10 @@ Use **Scan** after installations started outside the translator. Workspace
 coverage reaches 100% only when every source key has the required text; nearly
 complete translations are no longer rounded to 100%.
 
-The list shows available likely translations for the scanned mods. All shown
-downloads are included automatically: there are no mod-selection checkboxes.
+The list shows available likely translations for the scanned mods. The batch
+includes currently selected files; there are no mod-selection checkboxes. Mods
+awaiting a version choice stay in the list without blocking other downloads.
+Choose their version when ready to include them in a later batch.
 File metadata loads before the download action. When more than one current
 version or variant is available, choose it directly in the row's dropdown.
 Single-file results need no choice. The file IDs shown by this list are the

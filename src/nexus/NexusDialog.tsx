@@ -903,9 +903,9 @@ export function NexusDialog({
     .filter(Boolean)
     .join(" · ");
   const loading = groups.some((group) => group.loading);
-  const unresolved = shown.some(
+  const unresolvedCount = shown.filter(
     (group) => !group.selected && !group.evidence.length,
-  );
+  ).length;
   const pending = shown.filter(
     (group) =>
       group.selected &&
@@ -1131,7 +1131,9 @@ export function NexusDialog({
                   </small>
                 )}
                 {!selected && !group.evidence.length && (
-                  <small>Choose the version for your installed mod.</small>
+                  <small>
+                    Choose a version to include this mod in the download.
+                  </small>
                 )}
               </div>
               <button
@@ -1418,7 +1420,6 @@ export function NexusDialog({
                 locked ||
                 search.running ||
                 loading ||
-                unresolved ||
                 !pending.length ||
                 (isVortex && !configuredVortex)
               }
@@ -1430,6 +1431,15 @@ export function NexusDialog({
               ({pendingDownloads})
             </button>
           )}
+          {!resolvingInstalled &&
+            (isVortex || canDirectImport) &&
+            unresolvedCount > 0 && (
+              <small>
+                {unresolvedCount}{" "}
+                {unresolvedCount === 1 ? "mod needs" : "mods need"} a version
+                choice and {unresolvedCount === 1 ? "is" : "are"} not included.
+              </small>
+            )}
           {batchRunning && (
             <button
               className={quiet}
