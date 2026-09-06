@@ -52,19 +52,35 @@ export function useNexusSetup(onKeySaved?: () => void) {
 export function NexusSetup({
   connection,
   disabled = false,
+  compact = false,
 }: {
   connection: ReturnType<typeof useNexusSetup>;
   disabled?: boolean;
+  compact?: boolean;
 }) {
   return (
-    <section className="nexus-setup" aria-label="Optional Nexus setup">
+    <section
+      className={
+        compact
+          ? "nexus-setup setup__nexus-card translator-settings-group"
+          : "nexus-setup"
+      }
+      aria-label="Optional Nexus setup"
+    >
       <h3>Nexus Mods · optional</h3>
-      <p>
-        Use <strong>Find translations on Nexus</strong> to find existing
-        translations for your scanned Stardew Valley mods. A personal Nexus API
-        key enables this optional search; local scans and editing work without
-        it.
-      </p>
+      {compact ? (
+        <p>
+          Find existing translations for your mods with a personal Nexus API
+          key. Local scans and editing work without it.
+        </p>
+      ) : (
+        <p>
+          Use <strong>Find translations on Nexus</strong> to find existing
+          translations for your scanned Stardew Valley mods. A personal Nexus
+          API key enables this optional search; local scans and editing work
+          without it.
+        </p>
+      )}
       <label className="wizard__field">
         <span>Nexus API key</span>
         <input

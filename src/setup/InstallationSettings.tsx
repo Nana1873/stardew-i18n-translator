@@ -164,10 +164,6 @@ export function InstallationSettings({
         <span>Installation method</span>
         {methodSelect}
       </label>
-      <p>
-        This choice controls how Nexus translations are added in this
-        experimental build. Editing and export remain unchanged.
-      </p>
       {method === "vortex" && (
         <>
           <label className="wizard__field">

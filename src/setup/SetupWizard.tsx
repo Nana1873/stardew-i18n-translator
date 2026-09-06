@@ -80,6 +80,16 @@ export function SetupWizard({
   const [glossaryBuilt, setGlossaryBuilt] = useState<GlossaryInfo | null>(null);
   const autoBuildKey = useRef<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const previousStep = useRef(step);
+  useEffect(() => {
+    if (bodyRef.current) {
+      bodyRef.current.scrollTop = 0;
+      if (previousStep.current !== step)
+        bodyRef.current.focus({ preventScroll: true });
+    }
+    previousStep.current = step;
+  }, [step]);
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
     onEscape: onCancel ?? (() => {}),
@@ -297,32 +307,47 @@ export function SetupWizard({
             })}
           </nav>
 
-          <div className="wizard__body setup__body">
+          <div
+            ref={bodyRef}
+            className="wizard__body setup__body"
+            tabIndex={-1}
+            role="region"
+            aria-label="Setup step content"
+          >
             {step === 1 && (
               <section aria-label="Stardew Valley folder">
                 <StepHeading
                   eyebrow="Step 1"
                   title="Find your game"
-                  description="We use the game folder to locate your Mods directory and, optionally, build official translation hints."
+                  description="Locate Stardew Valley to find your Mods folder and optional glossary content."
                 />
-                <div className="wizard__row">
-                  <button
-                    type="button"
-                    className="wizard__primary"
-                    onClick={autoDetect}
-                    disabled={busy}
-                  >
-                    {busy ? "Detecting..." : "Auto-detect"}
-                  </button>
-                  <button type="button" onClick={browseStardew} disabled={busy}>
-                    Browse...
-                  </button>
+                <div className="translator-settings-group">
+                  <PathDisplay
+                    path={stardewPath}
+                    valid={stardewValid}
+                    label="Stardew Valley folder"
+                    action={
+                      <div className="setup__row-actions">
+                        <button
+                          type="button"
+                          className="wizard__primary"
+                          onClick={autoDetect}
+                          disabled={busy}
+                        >
+                          {busy ? "Detecting..." : "Auto-detect"}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Browse Stardew Valley folder"
+                          onClick={browseStardew}
+                          disabled={busy}
+                        >
+                          {stardewPath ? "Change" : "Browse…"}
+                        </button>
+                      </div>
+                    }
+                  />
                 </div>
-                <PathDisplay
-                  path={stardewPath}
-                  valid={stardewValid}
-                  label="Stardew Valley folder"
-                />
               </section>
             )}
 
@@ -333,39 +358,49 @@ export function SetupWizard({
                   title="Choose your Mods folder"
                   description={
                     installationMethod === "vortex"
-                      ? "Choose Stardew Valley's deployed Mods folder. The translator needs it to read the files Vortex has deployed."
+                      ? "Scan the files Vortex has deployed to your game."
                       : "This is the folder the app scans for translatable i18n files."
                   }
                 />
                 <InstallationSettings
+                  compact
                   method={installationMethod}
                   onMethodChange={setInstallationMethod}
                   executable={vortexExecutable}
                   onExecutableChange={setVortexExecutable}
                   disabled={busy}
                 />
-                <div className="setup__note">
-                  Usually prefilled from your game folder:{" "}
-                  <code>&lt;Stardew Valley&gt;/Mods</code>.
-                  {installationMethod === "vortex"
-                    ? " Use this Mods folder, not Vortex's staging or downloads folder."
-                    : " Change it if your game uses a different Mods folder."}
+                <div className="translator-settings-group">
+                  <PathDisplay
+                    path={modsPath}
+                    valid={modsPath ? true : null}
+                    label={
+                      installationMethod === "vortex"
+                        ? "Deployed game Mods folder"
+                        : "Mods folder"
+                    }
+                    description={
+                      installationMethod === "vortex"
+                        ? "Use the game's Mods folder, not Vortex's staging or downloads folder."
+                        : "Usually <Stardew Valley>/Mods. Change it if your game uses a different folder."
+                    }
+                    action={
+                      <button
+                        type="button"
+                        aria-label="Browse Mods folder"
+                        onClick={browseMods}
+                        disabled={busy}
+                      >
+                        {modsPath ? "Change" : "Browse…"}
+                      </button>
+                    }
+                  />
                 </div>
-                <div className="wizard__row">
-                  <button type="button" onClick={browseMods} disabled={busy}>
-                    Browse...
-                  </button>
-                </div>
-                <PathDisplay
-                  path={modsPath}
-                  valid={modsPath ? true : null}
-                  label={
-                    installationMethod === "vortex"
-                      ? "Deployed game Mods folder"
-                      : "Mods folder"
-                  }
+                <NexusSetup
+                  compact
+                  connection={nexusConnection}
+                  disabled={busy}
                 />
-                <NexusSetup connection={nexusConnection} disabled={busy} />
               </section>
             )}
 
@@ -376,15 +411,21 @@ export function SetupWizard({
                   title="Set your languages"
                   description="Stardew mods use English as their source. Choose the language you want to translate into."
                 />
-                <div className="setup__language-grid">
-                  <label className="wizard__field setup__language-card">
-                    <span>Source language</span>
-                    <input type="text" value={SOURCE_LANGUAGE_LABEL} disabled />
-                    <small>Fixed by the Stardew i18n format</small>
-                  </label>
-                  <label className="wizard__field setup__language-card">
-                    <span>Target language</span>
+                <div className="translator-settings-group">
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
+                      <strong>Source language</strong>
+                      <span>From i18n/default.json</span>
+                    </span>
+                    <span>{SOURCE_LANGUAGE_LABEL}</span>
+                  </div>
+                  <label className="translator-setting-line">
+                    <span className="translator-setting-copy">
+                      <strong>Target language</strong>
+                      <span>For imports, exports, and glossary hints</span>
+                    </span>
                     <select
+                      className="translator-select"
                       value={targetLang}
                       onChange={(event) => setTargetLang(event.target.value)}
                       aria-label="Target language"
@@ -398,7 +439,6 @@ export function SetupWizard({
                         </option>
                       ))}
                     </select>
-                    <small>Used for imports, exports, and glossary hints</small>
                   </label>
                 </div>
               </section>
@@ -412,33 +452,23 @@ export function SetupWizard({
                   description="A local glossary helps you use Stardew Valley's official names for items, characters, places, seasons, and UI terms."
                 />
 
-                <div
-                  className="setup__howto"
-                  role="region"
-                  aria-label="How the glossary works"
-                >
-                  <h4>How it works</h4>
-                  <ol>
-                    <li>
-                      <strong>Read locally.</strong> The app reads glossary
-                      terms from your installed game or an installed community
-                      language pack.
-                    </li>
-                    <li>
-                      <strong>Build locally.</strong> The app matches official
-                      English terms with your selected language.
-                    </li>
-                    <li>
-                      <strong>Use as hints.</strong> Matching terms appear while
-                      you translate and are included as guidance for AI tools.
-                    </li>
-                  </ol>
-                  <p>
-                    Your game files are only read, never changed or uploaded.
-                    You can skip this now and build the glossary later in
-                    Settings.
-                  </p>
-                </div>
+                <details className="setup__glossary-help">
+                  <summary tabIndex={0}>How the glossary works</summary>
+                  <div role="region" aria-label="How the glossary works">
+                    <p>
+                      <strong>Read locally.</strong> Match English terms from
+                      your game or an installed community language pack with
+                      your selected language.
+                    </p>
+                    <p>
+                      Matching terms appear as translation hints and guidance
+                      for AI tools. Game files are never changed or uploaded.
+                    </p>
+                  </div>
+                </details>
+                <p className="setup__optional-note">
+                  You can finish now and build the glossary later in Settings.
+                </p>
 
                 {glossary === null ? (
                   <StatusCard tone="neutral" title="Checking game content...">
@@ -662,30 +692,30 @@ function PathDisplay({
   path,
   valid,
   label,
+  description,
+  action,
 }: {
   path: string;
   valid: boolean | null;
   label: string;
+  description?: string;
+  action: ReactNode;
 }) {
-  const invalid = valid === false;
   return (
-    <div
-      className={`wizard__path${!path ? " wizard__path--empty" : ""}${
-        invalid ? " wizard__path--invalid" : ""
-      }`}
-    >
-      <span className="wizard__path-status" aria-hidden="true">
-        {path && valid === true ? "✓" : invalid ? "!" : "..."}
-      </span>
-      <span className="wizard__path-content">
+    <div className="translator-setting-line">
+      <div className="translator-setting-copy">
         <strong>{label}</strong>
-        {path ? <code>{path}</code> : <span>No folder selected yet</span>}
-        {invalid && (
-          <small className="wizard__bad">
+        <span className="setup__path-value" title={path || undefined}>
+          {path || "No folder selected yet"}
+        </span>
+        {description && <span>{description}</span>}
+        {valid === false && (
+          <span className="wizard__bad" role="alert">
             This does not look like a Stardew Valley folder.
-          </small>
+          </span>
         )}
-      </span>
+      </div>
+      {action}
     </div>
   );
 }

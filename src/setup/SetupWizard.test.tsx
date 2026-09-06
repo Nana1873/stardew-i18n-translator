@@ -166,8 +166,8 @@ describe("SetupWizard", () => {
         ),
       );
       await waitFor(() =>
-        expect(screen.getByLabelText("Vortex executable")).toHaveValue(
-          detected ?? "",
+        expect(screen.getByLabelText("Vortex executable")).toHaveTextContent(
+          detected ?? "Not selected",
         ),
       );
       expect(onComplete).not.toHaveBeenCalled();
@@ -208,6 +208,7 @@ describe("SetupWizard", () => {
     expect(
       await screen.findByRole("button", { name: "Open StardewXnbHack" }),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByText("How the glossary works"));
     expect(
       screen.getByRole("region", { name: "How the glossary works" }),
     ).toHaveTextContent("Read locally");
@@ -415,4 +416,54 @@ it("places the optional key beside the deployed Mods folder and preserves a save
   expect(invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_save_key")).toBe(
     false,
   );
+});
+
+it("keeps manual folder selection and resets content scroll and focus between steps", async () => {
+  const original = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "pick_folder"
+      ? Promise.resolve("C:/Synthetic/Stardew Valley")
+      : original(cmd, ...args),
+  );
+  render(<SetupWizard initial={null} onComplete={() => {}} />);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Browse Stardew Valley folder" }),
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+  );
+  const content = screen.getByRole("region", { name: "Setup step content" });
+  content.scrollTop = 160;
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  await waitFor(() => expect(content).toHaveFocus());
+  expect(content.scrollTop).toBe(0);
+  expect(
+    screen.getByRole("button", { name: "Browse Mods folder" }),
+  ).toHaveTextContent("Change");
+  expect(screen.getByRole("region", { name: "Installation" })).toHaveClass(
+    "translator-settings-group",
+  );
+  expect(
+    screen.getByRole("region", { name: "Optional Nexus setup" }),
+  ).toHaveClass("setup__nexus-card");
+  expect(
+    screen.queryByText(/experimental build|This choice controls/),
+  ).toBeNull();
+  expect(screen.getByLabelText("Nexus API key")).toHaveAttribute(
+    "type",
+    "password",
+  );
+});
+
+it("includes glossary help in the modal keyboard focus loop", async () => {
+  render(<SetupWizard initial={null} onComplete={() => {}} />);
+  await gotoGlossaryStep();
+  await screen.findByRole("button", { name: "Open StardewXnbHack" });
+  const finish = screen.getByRole("button", { name: "Finish" });
+  const summary = screen.getByText("How the glossary works");
+  finish.focus();
+  fireEvent.keyDown(finish, { key: "Tab" });
+  expect(summary).toHaveFocus();
+  fireEvent.keyDown(summary, { key: "Tab", shiftKey: true });
+  expect(finish).toHaveFocus();
 });

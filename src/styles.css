@@ -793,7 +793,8 @@ kbd,
 /* First-run setup: guided layout layered on top of the shared wizard styles. */
 .wizard--setup {
   width: 820px;
-  max-height: min(720px, calc(100vh - 32px));
+  height: min(680px, calc(100dvh - 32px));
+  max-height: calc(100dvh - 32px);
   overflow: hidden;
 }
 
@@ -802,7 +803,8 @@ kbd,
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  padding: 22px 26px 19px;
+  padding: 16px 20px;
+  flex-shrink: 0;
   background:
     radial-gradient(
       circle at 85% 0%,
@@ -851,6 +853,7 @@ kbd,
 }
 
 .setup__progress-track {
+  flex-shrink: 0;
   height: 3px;
   background: rgba(255, 255, 255, 0.045);
 }
@@ -864,12 +867,15 @@ kbd,
 
 .setup__layout {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  min-height: 390px;
-  overflow: auto;
+  grid-template-columns: 190px minmax(0, 1fr);
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .setup__steps {
+  min-height: 0;
+  overflow-y: auto;
   padding: 22px 16px;
   background: rgba(0, 0, 0, 0.12);
   border-right: 1px solid var(--border);
@@ -942,8 +948,10 @@ kbd,
 }
 
 .wizard--setup .setup__body {
-  min-height: 390px;
-  padding: 26px 28px 24px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
 }
 
 .setup__heading {
@@ -1184,6 +1192,7 @@ kbd,
 }
 
 .setup__footer {
+  flex-shrink: 0;
   padding: 13px 20px;
   background: rgba(0, 0, 0, 0.08);
 }
@@ -1198,7 +1207,8 @@ kbd,
   }
 
   .setup__layout {
-    display: block;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .setup__steps {
@@ -1223,8 +1233,8 @@ kbd,
   }
 
   .wizard--setup .setup__body {
-    min-height: auto;
-    padding: 20px 18px;
+    min-height: 0;
+    padding: 16px;
   }
 
   .setup__language-grid,
