@@ -213,7 +213,10 @@ export function SetupWizard({
     setBusy(true);
     setError(null);
     try {
-      if (nexusConnection.key.trim() && !(await nexusConnection.save())) return;
+      if (nexusConnection.key.trim() && !(await nexusConnection.save())) {
+        setStep(2);
+        return;
+      }
       await onComplete({
         ...initial,
         stardewPath,
@@ -328,7 +331,11 @@ export function SetupWizard({
                 <StepHeading
                   eyebrow="Step 2"
                   title="Choose your Mods folder"
-                  description="This is the folder the app scans for translatable i18n files."
+                  description={
+                    installationMethod === "vortex"
+                      ? "Choose Stardew Valley's deployed Mods folder. The translator needs it to read the files Vortex has deployed."
+                      : "This is the folder the app scans for translatable i18n files."
+                  }
                 />
                 <InstallationSettings
                   method={installationMethod}
@@ -338,9 +345,11 @@ export function SetupWizard({
                   disabled={busy}
                 />
                 <div className="setup__note">
-                  The recommended location is{" "}
-                  <code>&lt;Stardew Valley&gt;/Mods</code>. Change it only when
-                  your mods are stored elsewhere.
+                  Usually prefilled from your game folder:{" "}
+                  <code>&lt;Stardew Valley&gt;/Mods</code>.
+                  {installationMethod === "vortex"
+                    ? " Use this Mods folder, not Vortex's staging or downloads folder."
+                    : " Change it if your game uses a different Mods folder."}
                 </div>
                 <div className="wizard__row">
                   <button type="button" onClick={browseMods} disabled={busy}>
@@ -350,8 +359,13 @@ export function SetupWizard({
                 <PathDisplay
                   path={modsPath}
                   valid={modsPath ? true : null}
-                  label="Mods folder"
+                  label={
+                    installationMethod === "vortex"
+                      ? "Deployed game Mods folder"
+                      : "Mods folder"
+                  }
                 />
+                <NexusSetup connection={nexusConnection} disabled={busy} />
               </section>
             )}
 
@@ -392,7 +406,6 @@ export function SetupWizard({
 
             {step === 4 && (
               <section aria-label="Glossary">
-                <NexusSetup connection={nexusConnection} disabled={busy} />
                 <StepHeading
                   eyebrow="Step 4 / Optional"
                   title="Add official translation hints"

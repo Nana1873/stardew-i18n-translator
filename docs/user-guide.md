@@ -10,6 +10,11 @@ change them later in **Settings**. Translation work is stored separately for
 each language. Custom-language targets also need a matching language mod for
 in-game use; selecting a language here does not install one.
 
+The Mods folder is the folder the game loads, usually `<Stardew Valley>/Mods`.
+Setup prefills it from the detected or selected game folder. Vortex users also
+need this path: scan the game's deployed Mods folder, not Vortex's staging or
+downloads folder. Deploy changes in Vortex before scanning them here.
+
 The scan reads standard `i18n/default.json` sources and existing target-language
 files. Multi-part packages are grouped in the mod list. Mods that do not use
 standard SMAPI i18n files cannot be translated here.
@@ -32,8 +37,9 @@ backup and empty-file removal behavior is unchanged.
 ## Find translations on Nexus
 
 This workflow is currently for local testing. Nexus is optional: configure an
-API key in Setup or Settings. Choose **Manual / no mod manager** or **Vortex**
-in the installation section of Setup; this remains editable in Settings.
+API key beside the Mods folder and installation method in Setup, or later in
+Settings. Choose **Manual / no mod manager** or **Vortex** in that Setup step;
+this remains editable in Settings.
 Select Vortex.exe there when using Vortex. The validated key is
 saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
 `data/`; it does not move with the app. Enter a key in the password field and use
@@ -123,7 +129,9 @@ After a handoff, keep the list open while installing and deploying in Vortex.
 For up to two minutes, the app watches local deployment metadata and rescans
 when it changes. Returning to the app with the list open or reopening the list
 only checks that metadata for changes; unchanged metadata does not refresh the
-workspace. These checks make no Nexus requests. If deployment finishes later,
+workspace. While the opening check or a detected deployment change is being
+resolved, the list shows a short checking message instead of outdated download
+offers. These checks make no Nexus requests. If deployment finishes later,
 return to the list or use **Scan**.
 
 The local rescan reads actual target-language files separately from saved app work.

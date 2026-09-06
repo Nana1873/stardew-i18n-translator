@@ -310,9 +310,14 @@ it("validates a new Nexus key on Finish before completing setup", async () => {
   const onComplete = vi.fn();
   render(<SetupWizard initial={null} onComplete={onComplete} />);
   await gotoGlossaryStep();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.change(screen.getByLabelText("Nexus API key"), {
     target: { value: "synthetic-key" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.queryByLabelText("Nexus API key")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Finish" }));
   await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
   expect(invokeMock).toHaveBeenCalledWith("nexus_save_key", {
@@ -331,13 +336,63 @@ it("keeps setup open when a typed Nexus key cannot be validated", async () => {
   const onComplete = vi.fn();
   render(<SetupWizard initial={null} onComplete={onComplete} />);
   await gotoGlossaryStep();
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
+  fireEvent.click(screen.getByRole("button", { name: "Back" }));
   fireEvent.change(screen.getByLabelText("Nexus API key"), {
     target: { value: "synthetic-key" },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.queryByLabelText("Nexus API key")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Finish" }));
   expect(await screen.findByRole("alert")).toHaveTextContent(
     "previous key is kept",
   );
   expect(onComplete).not.toHaveBeenCalled();
   expect(screen.getByRole("dialog", { name: "Setup" })).toBeInTheDocument();
+  expect(
+    screen.getByRole("progressbar", { name: "Setup progress" }),
+  ).toHaveAttribute("aria-valuenow", "2");
+  expect(screen.getByLabelText("Nexus API key")).toHaveValue("synthetic-key");
+});
+
+it("places the optional key beside the deployed Mods folder and preserves a saved key on Cancel", async () => {
+  const onCancel = vi.fn();
+  const fallback = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, args: unknown) =>
+    cmd === "nexus_status"
+      ? Promise.resolve({ configured: true, validated: false, premium: false })
+      : fallback(cmd, args),
+  );
+  render(
+    <SetupWizard
+      initial={{
+        stardewPath: "E:/SDV",
+        modsPath: "E:/SDV/Mods",
+        installationMethod: "vortex",
+        sourceLang: "default",
+        targetLang: "de",
+      }}
+      onComplete={() => {}}
+      onCancel={onCancel}
+    />,
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByText("Deployed game Mods folder")).toBeInTheDocument();
+  expect(
+    screen.getByText(/not Vortex's staging or downloads folder/),
+  ).toBeInTheDocument();
+  expect(screen.getByLabelText("Nexus API key")).toHaveAttribute(
+    "placeholder",
+    "••••••••",
+  );
+  expect(screen.getByLabelText("Nexus API key")).toHaveValue("");
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(onCancel).toHaveBeenCalledOnce();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_save_key")).toBe(
+    false,
+  );
 });

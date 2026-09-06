@@ -189,6 +189,9 @@ export function NexusDialog({
   live.current = { open, context, onCheckInstalled, onDeploymentStamp };
   const actionContext = useRef(context);
   const [recheckPending, setRecheckPending] = useState<string | null>(null);
+  const [presentationContext, setPresentationContext] = useState<string | null>(
+    null,
+  );
   const deployment = useRef<{
     context: string;
     baseline?: string | null;
@@ -209,6 +212,7 @@ export function NexusDialog({
       setCheckedAt(null);
       setCheckError(null);
       setRecheckPending(null);
+      setPresentationContext(null);
       setMonitor(null);
       deployment.current = { context };
     }
@@ -218,6 +222,7 @@ export function NexusDialog({
       generation.current++;
       stopBatchRef.current = true;
       setMonitor(null);
+      setPresentationContext(null);
     }
   }, [open, isVortex]);
   const [now, setNow] = useState(Date.now);
@@ -484,7 +489,9 @@ export function NexusDialog({
     if (!open || !isVortex || !live.current.onDeploymentStamp) return;
     let cancelled = false,
       reading = false;
-    let timer: number | undefined, pollTimer: number | undefined;
+    let timer: number | undefined,
+      pollTimer: number | undefined,
+      readTimer: number | undefined;
     let candidate: string | undefined,
       candidateAt = 0,
       settleUntil = 0;
@@ -495,6 +502,10 @@ export function NexusDialog({
     const probe = async () => {
       if (cancelled || reading) return;
       reading = true;
+      // An unavailable hint must not indefinitely hide the last scan's results.
+      readTimer = window.setTimeout(() => {
+        if (!cancelled) setPresentationContext(context);
+      }, 5000);
       try {
         const next = await live.current.onDeploymentStamp!();
         if (cancelled || live.current.context !== context || !live.current.open)
@@ -502,28 +513,43 @@ export function NexusDialog({
         const known = deployment.current;
         if (known.baseline == null) {
           if (next != null) known.baseline = next;
+          setPresentationContext(context);
           return;
         }
         // Missing/locked deployment metadata cannot establish that installation settled.
         if (next == null || next === known.baseline) {
           candidate = undefined;
           if (!checkInFlight.current) setRecheckPending(null);
+          setPresentationContext(context);
           return;
         }
-        if (known.failed === next) return;
+        if (known.failed === next || !live.current.onCheckInstalled) {
+          candidate = undefined;
+          if (!checkInFlight.current) setRecheckPending(null);
+          setPresentationContext(context);
+          return;
+        }
         if (candidate === next && Date.now() - candidateAt >= 1500) {
+          setPresentationContext(null);
           setRecheckPending(next);
         } else {
           if (!candidate) settleUntil = Date.now() + 10_000;
           candidate = next;
           candidateAt = Date.now();
           if (!checkInFlight.current) setRecheckPending(null);
-          if (Date.now() < settleUntil) schedule(1500);
+          if (Date.now() < settleUntil) {
+            setPresentationContext(null);
+            schedule(1500);
+          } else setPresentationContext(context);
         }
       } catch {
         candidate = undefined;
-        if (!cancelled && !checkInFlight.current) setRecheckPending(null);
+        if (!cancelled) {
+          if (!checkInFlight.current) setRecheckPending(null);
+          setPresentationContext(context);
+        }
       } finally {
+        window.clearTimeout(readTimer);
         reading = false;
       }
     };
@@ -550,6 +576,7 @@ export function NexusDialog({
       cancelled = true;
       window.clearTimeout(timer);
       window.clearTimeout(pollTimer);
+      window.clearTimeout(readTimer);
       probeDeployment.current = () => {};
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", visible);
@@ -581,7 +608,21 @@ export function NexusDialog({
       setCheckError(null);
       void (async () => {
         // Busy UI may have deferred this check while Vortex continued deployment.
-        const latest = await live.current.onDeploymentStamp?.();
+        let hintTimer: number | undefined;
+        const latest = await Promise.race([
+          live.current.onDeploymentStamp?.(),
+          new Promise<never>((_, reject) => {
+            hintTimer = window.setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "Deployment information is unavailable. Use Scan to check installed translations.",
+                  ),
+                ),
+              5000,
+            );
+          }),
+        ]).finally(() => window.clearTimeout(hintTimer));
         if (!current()) return;
         if (latest !== recheckPending) {
           setRecheckPending(null);
@@ -594,6 +635,7 @@ export function NexusDialog({
           deployment.current.failed = undefined;
           setRecheckPending(null);
           setCheckedAt(Date.now());
+          setPresentationContext(context);
         }
       })()
         .catch((cause) => {
@@ -601,6 +643,7 @@ export function NexusDialog({
             deployment.current.failed = recheckPending;
             setRecheckPending(null);
             setCheckError(String(cause));
+            setPresentationContext(context);
           }
         })
         .finally(() => {
@@ -635,7 +678,16 @@ export function NexusDialog({
           : undefined,
     };
   }
-  const locked = Boolean(active) || batchRunning || checking || recheckBlocked;
+  const resolvingInstalled =
+    isVortex &&
+    Boolean(onDeploymentStamp) &&
+    (presentationContext !== context || recheckPending !== null || checking);
+  const locked =
+    Boolean(active) ||
+    batchRunning ||
+    checking ||
+    recheckBlocked ||
+    resolvingInstalled;
   const candidatesFor = (entry: NexusSearchEntry) =>
     [...(entry.result?.candidates ?? [])].sort(
       (a, b) =>
@@ -1234,15 +1286,14 @@ export function NexusDialog({
       onClose={onClose}
     >
       <div className="nexus-session-summary">
-        {(actionStatus || resultStatus || checking) && (
-          <p role="status">
-            {checking
-              ? "Checking installed files…"
-              : actionStatus || resultStatus}
-          </p>
+        {(actionStatus || resultStatus) && (
+          <p role="status">{actionStatus || resultStatus}</p>
+        )}
+        {resolvingInstalled && (
+          <p role="status">Checking installed translations…</p>
         )}
         <div className="nexus-actions">
-          {(isVortex || canDirectImport) && (
+          {!resolvingInstalled && (isVortex || canDirectImport) && (
             <button
               className={primary}
               disabled={
@@ -1295,7 +1346,7 @@ export function NexusDialog({
               : "Finding translations…"}
           </p>
         )}
-        {shown.length > 0 && (
+        {!resolvingInstalled && shown.length > 0 && (
           <div className="nexus-table-scroll">
             <table className="nexus-table" aria-label="Translation downloads">
               <thead>
@@ -1308,19 +1359,22 @@ export function NexusDialog({
             </table>
           </div>
         )}
-        {!shown.length && !loading && !search.running && (
-          <p>
-            {unavailableCount ||
-            search.stoppedReason ||
-            search.completed < search.total
-              ? "No downloadable files could be confirmed."
-              : installedGroups > 0
-                ? "Available translation files are already installed."
-                : coveredIds.size > 0
-                  ? "No missing translation text in the checked mods."
-                  : "No suitable translation downloads found."}
-          </p>
-        )}
+        {!resolvingInstalled &&
+          !shown.length &&
+          !loading &&
+          !search.running && (
+            <p>
+              {unavailableCount ||
+              search.stoppedReason ||
+              search.completed < search.total
+                ? "No downloadable files could be confirmed."
+                : installedGroups > 0
+                  ? "Available translation files are already installed."
+                  : coveredIds.size > 0
+                    ? "No missing translation text in the checked mods."
+                    : "No suitable translation downloads found."}
+            </p>
+          )}
         <section
           aria-label="Translation search results"
           className="nexus-search-results"
@@ -1335,34 +1389,36 @@ export function NexusDialog({
               </small>
             </details>
           )}
-          <div className="translator-preflight-metrics">
-            {[
-              [`${search.completed}/${search.total}`, "IDs checked"],
-              [shown.length, "Mods with downloads"],
-              [noDownloadIds.size, "No suitable download found"],
-              [
-                (search.skippedComplete ?? 0) +
-                  coveredIds.size +
-                  installedGroups,
-                "No download needed",
-              ],
-              [search.noId, "Mods without Nexus ID"],
-              [unavailableCount, "Checks failed"],
-            ].map(([value, label]) => (
-              <div
-                className="translator-preflight-metric"
-                key={label}
-                title={
-                  label === "No download needed"
-                    ? `${(search.skippedComplete ?? 0) + coveredIds.size} mods with no missing text; ${installedGroups} exact files already deployed`
-                    : undefined
-                }
-              >
-                <strong>{value}</strong>
-                <span>{label}</span>
-              </div>
-            ))}
-          </div>
+          {!resolvingInstalled && (
+            <div className="translator-preflight-metrics">
+              {[
+                [`${search.completed}/${search.total}`, "IDs checked"],
+                [shown.length, "Mods with downloads"],
+                [noDownloadIds.size, "No suitable download found"],
+                [
+                  (search.skippedComplete ?? 0) +
+                    coveredIds.size +
+                    installedGroups,
+                  "No download needed",
+                ],
+                [search.noId, "Mods without Nexus ID"],
+                [unavailableCount, "Checks failed"],
+              ].map(([value, label]) => (
+                <div
+                  className="translator-preflight-metric"
+                  key={label}
+                  title={
+                    label === "No download needed"
+                      ? `${(search.skippedComplete ?? 0) + coveredIds.size} mods with no missing text; ${installedGroups} exact files already deployed`
+                      : undefined
+                  }
+                >
+                  <strong>{value}</strong>
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {search.stoppedReason ? (
             <p role="alert">{search.stoppedReason}</p>
           ) : search.cancelled ? (

@@ -112,6 +112,7 @@ function mount(
     open?: boolean;
     installed?: InstalledNexusTranslation[];
     stamp?: () => Promise<string | null>;
+    observe?: boolean;
   } = {},
 ) {
   let data = options.mods ?? mods,
@@ -142,7 +143,9 @@ function mount(
       targetLang={targetLang}
       workspaceKey={workspaceKey}
       recheckBlocked={blocked}
-      onDeploymentStamp={onDeploymentStamp}
+      onDeploymentStamp={
+        options.observe === false ? undefined : onDeploymentStamp
+      }
       installationMethod={method}
       vortexExecutable={executable}
       traversalComplete={traversal}
@@ -469,14 +472,17 @@ it("does not replace a selected installed file with a different download after r
     app.setInstalled([installedFile]),
   );
   await app.changeDeployment();
-  await waitFor(() => expect(choice).toHaveValue(""));
+  const refreshedChoice = await screen.findByRole("combobox", {
+    name: "Translation file for Canonical title",
+  });
+  expect(refreshedChoice).toHaveValue("");
   expect(
     screen.getByRole("button", {
       name: "Download & install all with Vortex (0)",
     }),
   ).toBeDisabled();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
-  fireEvent.change(choice, { target: { value: "30342:8" } });
+  fireEvent.change(refreshedChoice, { target: { value: "30342:8" } });
   await download();
   await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
@@ -1096,7 +1102,7 @@ it("discards a delayed account snapshot after newer search progress", async () =
   ).toBeInTheDocument();
 });
 
-it("does not claim no matches when account validation stopped discovery", () => {
+it("does not claim no matches when account validation stopped discovery", async () => {
   mount({
     search: {
       ...search,
@@ -1106,7 +1112,7 @@ it("does not claim no matches when account validation stopped discovery", () => 
     },
   });
   expect(
-    screen.getByText("No downloadable files could be confirmed."),
+    await screen.findByText("No downloadable files could be confirmed."),
   ).toBeInTheDocument();
   expect(
     screen.queryByText("No suitable translation downloads found."),
@@ -1495,6 +1501,9 @@ it("suppresses retries for the same failed hint until a new deployment hint arri
     await advance(250, 1500, 250);
     expect(app.onCheckInstalled).toHaveBeenCalledOnce();
     expect(screen.getByRole("alert")).toHaveTextContent("Local scan failed");
+    expect(
+      screen.getByRole("row", { name: "Canonical title" }),
+    ).toBeInTheDocument();
     fireEvent.focus(window);
     await advance(30000);
     app.setOpen(false);
@@ -1511,4 +1520,276 @@ it("suppresses retries for the same failed hint until a new deployment hint arri
     app.unmount();
     vi.useRealTimers();
   }
+});
+
+function expectInstalledPresentationPending() {
+  expect(
+    screen.getByText("Checking installed translations…"),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("table", { name: "Translation downloads" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: /^Download &/ })).toBeNull();
+  expect(screen.queryByText("Mods with downloads")).toBeNull();
+  expect(
+    screen.queryByText(
+      /^(No suitable translation downloads found\.|No missing translation text in the checked mods\.|Available translation files are already installed\.|No downloadable files could be confirmed\.)$/,
+    ),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Close Nexus translations" }),
+  ).toBeEnabled();
+}
+
+it("withholds initial offers and holds reopened results through settling and the fresh scan", async () => {
+  let resolveHint!: (value: string) => void;
+  let hint = new Promise<string>((resolve) => {
+    resolveHint = resolve;
+  });
+  const app = mount({ stamp: () => hint });
+  expectInstalledPresentationPending();
+  await act(async () => resolveHint("before"));
+  await screen.findByRole("row", { name: "Canonical title" });
+  expect(app.onCheckInstalled).not.toHaveBeenCalled();
+  app.setOpen(false);
+  hint = new Promise<string>((resolve) => {
+    resolveHint = resolve;
+  });
+  let finishScan!: () => void;
+  app.onCheckInstalled.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finishScan = resolve;
+      }),
+  );
+  vi.useFakeTimers();
+  try {
+    app.setOpen(true);
+    expectInstalledPresentationPending();
+    await act(async () => resolveHint("deployed"));
+    expectInstalledPresentationPending();
+    await advance(1500);
+    expectInstalledPresentationPending();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    await advance(250);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    expectInstalledPresentationPending();
+    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
+    expectInstalledPresentationPending();
+    await act(async () => finishScan());
+    expect(screen.queryByText("Checking installed translations…")).toBeNull();
+    expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
+    expect(
+      screen.getByText("No missing translation text in the checked mods."),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Mods with downloads").parentElement,
+    ).toHaveTextContent("0");
+    expect(commandCalls("nexus_list_files")).toHaveLength(1);
+    expect(app.onSearch).not.toHaveBeenCalled();
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("keeps an open table visible during unchanged polls and a slow ordinary focus hint", async () => {
+  let hint: Promise<string> = Promise.resolve("unchanged");
+  const app = mount({ stamp: () => hint });
+  const button = await screen.findByRole("button", {
+    name: "Download & install all with Vortex (1)",
+  });
+  await waitFor(() => expect(button).toBeEnabled());
+  vi.useFakeTimers();
+  try {
+    await act(async () => fireEvent.click(button));
+    await advance(9000);
+    const row = screen.getByRole("row", { name: "Canonical title" });
+    expect(screen.queryByText("Checking installed translations…")).toBeNull();
+    let resolveHint!: (value: string) => void;
+    hint = new Promise((resolve) => {
+      resolveHint = resolve;
+    });
+    fireEvent.focus(window);
+    await advance(250);
+    expect(row).toBeInTheDocument();
+    expect(screen.queryByText("Checking installed translations…")).toBeNull();
+    await act(async () => resolveHint("unchanged"));
+    expect(row).toBeInTheDocument();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    expect(commandCalls("nexus_list_files")).toHaveLength(1);
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+    expect(app.onSearch).not.toHaveBeenCalled();
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["unknown", "rejected", "timeout"])(
+  "releases initial presentation for a %s hint without claiming a fresh scan",
+  async (mode) => {
+    let resolveHint!: (value: string | null) => void;
+    let rejectHint!: (reason: Error) => void;
+    const hint = new Promise<string | null>((resolve, reject) => {
+      resolveHint = resolve;
+      rejectHint = reject;
+    });
+    vi.useFakeTimers();
+    const app = mount({ stamp: () => hint });
+    try {
+      expectInstalledPresentationPending();
+      if (mode === "timeout") {
+        await advance(4999);
+        expectInstalledPresentationPending();
+        await advance(1);
+      } else
+        await act(async () => {
+          if (mode === "unknown") resolveHint(null);
+          else rejectHint(new Error("Hint unavailable"));
+        });
+      expect(
+        screen.getByRole("row", { name: "Canonical title" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("Checking installed translations…")).toBeNull();
+      expect(
+        screen.queryByText(
+          /files rechecked|Available translation files are already installed/,
+        ),
+      ).toBeNull();
+      expect(app.onCheckInstalled).not.toHaveBeenCalled();
+      expect(app.onSearch).not.toHaveBeenCalled();
+    } finally {
+      app.unmount();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it.each(["reopen", "root", "language"])(
+  "does not let an obsolete hint release the new %s presentation",
+  async (change) => {
+    const replies: ((value: string) => void)[] = [];
+    const app = mount({
+      stamp: () => new Promise((resolve) => replies.push(resolve)),
+    });
+    expectInstalledPresentationPending();
+    if (change === "reopen") {
+      app.setOpen(false);
+      app.setOpen(true);
+    } else
+      app.setContext(
+        change === "root" ? "other" : "mods",
+        change === "language" ? "fr" : "de",
+      );
+    expectInstalledPresentationPending();
+    await act(async () => replies[0]("old"));
+    expectInstalledPresentationPending();
+    await act(async () => replies.at(-1)!("current"));
+    expect(
+      screen.queryByText("Checking installed translations\u2026"),
+    ).toBeNull();
+    expect(screen.getByText("Mods with downloads")).toBeInTheDocument();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+  },
+);
+
+it("releases presentation when a changing deployment exhausts the settling window", async () => {
+  const app = mount();
+  await screen.findByRole("row", { name: "Canonical title" });
+  vi.useFakeTimers();
+  try {
+    app.setStamp("changing");
+    fireEvent.focus(window);
+    await advance(250);
+    expectInstalledPresentationPending();
+    for (let index = 0; index < 7; index++) {
+      app.setStamp(`changing-${index}`);
+      await advance(1500);
+    }
+    expect(
+      screen.getByRole("row", { name: "Canonical title" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Checking installed translations…")).toBeNull();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it.each([{ method: "folder" as const }, { observe: false }])(
+  "does not add a local freshness gate without Vortex observation: %j",
+  async (options) => {
+    const app = mount(options);
+    expect(screen.queryByText("Checking installed translations…")).toBeNull();
+    await screen.findByRole("row", { name: "Canonical title" });
+    expect(app.onDeploymentStamp).not.toHaveBeenCalled();
+  },
+);
+
+it("releases a hanging final pre-scan hint and ignores its late response", async () => {
+  const stamp = vi.fn(async () => "before");
+  const app = mount({ stamp });
+  await screen.findByRole("row", { name: "Canonical title" });
+  let finishHint!: (value: string) => void;
+  stamp
+    .mockResolvedValue("after")
+    .mockResolvedValueOnce("after")
+    .mockResolvedValueOnce("after")
+    .mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishHint = resolve;
+        }),
+    );
+  vi.useFakeTimers();
+  try {
+    fireEvent.focus(window);
+    await advance(250, 1500, 250);
+    expectInstalledPresentationPending();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    await advance(4999);
+    expectInstalledPresentationPending();
+    await advance(1);
+    expect(
+      screen.getByRole("row", { name: "Canonical title" }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Deployment information is unavailable",
+    );
+    expect(screen.queryByText("Checking installed translations…")).toBeNull();
+    await act(async () => finishHint("after"));
+    fireEvent.focus(window);
+    await advance(3000);
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    expect(
+      screen.getByRole("row", { name: "Canonical title" }),
+    ).toBeInTheDocument();
+    expect(commandCalls("nexus_list_files")).toHaveLength(1);
+    expect(app.onSearch).not.toHaveBeenCalled();
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("checks presentation again after returning to a previously resolved workspace", async () => {
+  const stamp = vi.fn(async () => "before");
+  const app = mount({ stamp });
+  await screen.findByRole("row", { name: "Canonical title" });
+  const replies: ((value: string) => void)[] = [];
+  stamp.mockImplementation(
+    () => new Promise((resolve) => replies.push(resolve)),
+  );
+  app.setContext("other", "de");
+  app.setContext("mods", "de");
+  expectInstalledPresentationPending();
+  await act(async () => replies[0]("other"));
+  expectInstalledPresentationPending();
+  await act(async () => replies[1]("current"));
+  expect(
+    screen.getByRole("row", { name: "Canonical title" }),
+  ).toBeInTheDocument();
+  expect(app.onCheckInstalled).not.toHaveBeenCalled();
 });
