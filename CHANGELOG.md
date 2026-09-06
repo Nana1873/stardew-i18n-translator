@@ -12,6 +12,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 - Reorganized user and contributor documentation, including clearer portable
   update instructions and release preparation steps.
+- In local Nexus test builds, show available downloads before collapsed installed
+  translations, prefer updates from the installed translation page, and refresh
+  Vortex installation identities independently of translation scans.
 
 ### Fixed
 

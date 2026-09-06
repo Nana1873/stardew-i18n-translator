@@ -199,6 +199,13 @@ export function nexusDeploymentStamp(
 ): Promise<string | null> {
   return invoke("nexus_deployment_stamp", { modsPath, targetLang });
 }
+/** Read installation identities independently of the translation scan. Null is unavailable. */
+export function nexusVortexInstalledFiles(
+  modsPath: string,
+  targetLang: string,
+): Promise<VortexInstalledFile[] | null> {
+  return invoke("nexus_vortex_installed_files", { modsPath, targetLang });
+}
 export function nexusHandoffToVortex(
   modId: number,
   fileId: number,

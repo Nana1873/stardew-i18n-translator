@@ -86,9 +86,11 @@ records. **Installed in Vortex** removes that file from the download choices
 even if its archive layout or language files cannot be verified in the game.
 It does not claim that the mod is enabled, deployed correctly or fully translated.
 A separate check can identify an exact deployed translation file.
-The row stays in the same list with an installed indication and its missing-text
-count. Where the corresponding editor component has untranslated work, you can
-open it directly. Your existing nonempty translations remain preserved.
+Already installed results are grouped under **Installed translations**, collapsed
+by default. Available downloads and updates remain above them. When all listed
+files are installed, the result says so instead of showing a disabled download
+button. Missing text remains a separate fact: open the corresponding component
+in Workspace to continue translating. Your existing nonempty translations remain preserved.
 Newer files remain available; removing the installed version does not automatically
 select an older one or prevent downloads for other mods. Identified files do not
 count as searches without a suitable download.
@@ -107,7 +109,11 @@ download batch. A different file version remains selectable. This diagnosis
 does not repair the installation: check the archive's instructions or an
 author-provided correction. Unsupported or ambiguous layouts remain unknown;
 missing strings alone never establish an installation problem.
-Use **Scan** after installations started outside the translator. Workspace
+Opening the Nexus results or returning to the app refreshes Vortex's installation
+identities without scanning translation files or contacting Nexus. An unavailable
+refresh keeps the last verified list with a notice; it is not treated as an empty
+installation. **Scan** updates actual deployed text and Workspace coverage after
+installations started outside the translator. Workspace
 coverage reaches 100% only when every source key has the required text; nearly
 complete translations are no longer rounded to 100%.
 
@@ -115,7 +121,9 @@ The list shows available likely translations for the scanned mods. The batch
 includes currently selected files; there are no mod-selection checkboxes or
 separate inclusion buttons. File metadata loads before the download action.
 The newest eligible file is preselected, with original-mod matches preferred
-over related matches. You can choose another available version in the dropdown;
+over related matches. Once a translation page has an installed file, updates stay
+on that page; a newer file from another page does not replace it automatically.
+You can choose another available version in the dropdown;
 a single available file needs no extra choice. **Other match** results may
 translate a related mod, so check their Nexus page before downloading.
 Nexus page titles, versions and dates identify the choices; archive names are

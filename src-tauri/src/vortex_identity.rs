@@ -47,10 +47,13 @@ pub struct VortexInstalledFile {
 }
 
 pub(crate) fn installed_files(root: &Path) -> Vec<VortexInstalledFile> {
-    let Some(appdata) = std::env::var_os("APPDATA") else {
-        return Vec::new();
-    };
-    installed_files_checked(root, &PathBuf::from(appdata).join("Vortex"), || {}).unwrap_or_default()
+    installed_files_snapshot(root).unwrap_or_default()
+}
+
+/// None means the inventory could not be verified, not that Vortex is empty.
+pub(crate) fn installed_files_snapshot(root: &Path) -> Option<Vec<VortexInstalledFile>> {
+    let appdata = std::env::var_os("APPDATA")?;
+    installed_files_checked(root, &PathBuf::from(appdata).join("Vortex"), || {})
 }
 
 fn installed_files_checked(
@@ -1283,6 +1286,19 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.base).unwrap();
         }
+    }
+
+    #[test]
+    fn inventory_distinguishes_unavailable_metadata_from_an_empty_installation() {
+        let mut f = Fixture::new();
+        f.backup["persistent"]["mods"]["stardewvalley"] = json!({});
+        f.save();
+        assert_eq!(
+            installed_files_checked(&f.root, &f.vortex, || {}),
+            Some(vec![])
+        );
+        fs::write(f.vortex.join("temp/state_backups_full/hourly.json"), b"{").unwrap();
+        assert_eq!(installed_files_checked(&f.root, &f.vortex, || {}), None);
     }
 
     #[test]

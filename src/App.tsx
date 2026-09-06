@@ -59,6 +59,7 @@ import {
   saveSettings,
   scanMods,
   nexusDeploymentStamp,
+  nexusVortexInstalledFiles,
   translateWithCodexCli,
   translateWithLocalAi,
   undoBatchEdit,
@@ -87,6 +88,7 @@ import {
 import { TARGET_LANGUAGES } from "./languages";
 import { NexusDialog } from "./nexus/NexusDialog";
 import { useNexusSearch } from "./nexus/useNexusSearch";
+import { useVortexInventoryRefresh } from "./nexus/useVortexInventoryRefresh";
 import "./nexus/nexus.css";
 import { SetupWizard } from "./setup/SetupWizard";
 import { installationMethodFor } from "./setup/InstallationSettings";
@@ -313,6 +315,26 @@ export function App() {
 
   const [exporting, setExporting] = useState(false);
   const [checkingExportReadiness, setCheckingExportReadiness] = useState(false);
+  const inventoryRefreshWarning = useVortexInventoryRefresh({
+    enabled: nexusOpen && installationMethodFor(settings) === "vortex",
+    blocked:
+      scanning ||
+      exporting ||
+      checkingExportReadiness ||
+      settingsOpen ||
+      wizardOpen,
+    workspaceKey: nexusWorkspaceKey,
+    refresh: () =>
+      nexusVortexInstalledFiles(settings!.modsPath!, settings!.targetLang!),
+    apply: (files) =>
+      setScan((current) =>
+        current &&
+        JSON.stringify(current.vortexInstalledFiles ?? []) !==
+          JSON.stringify(files)
+          ? { ...current, vortexInstalledFiles: files }
+          : current,
+      ),
+  });
   const exportPreflightRef = useRef<{
     nextRequestId: number;
     activeRequestId: number | null;
@@ -2317,6 +2339,7 @@ export function App() {
             mods={scan.mods}
             installedNexusTranslations={scan.installedNexusTranslations}
             vortexInstalledFiles={scan.vortexInstalledFiles}
+            inventoryRefreshWarning={inventoryRefreshWarning}
             targetLang={settings.targetLang}
             skippedComponents={scan.skippedComponents}
             traversalComplete={scan.traversalComplete === true}

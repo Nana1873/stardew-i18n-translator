@@ -165,6 +165,19 @@ those exact files from repeat handoffs without requiring supported ZIP content,
 a matching language dictionary or a complete local translation scan. Label this
 as installed in Vortex, never as proof of activation or complete translation.
 Stale or unavailable backup metadata remains a limitation of this read-only check.
+Opening Nexus results or returning focus refreshes these installation identities
+independently of the full translation scan. A failed or unavailable snapshot
+retains the last verified inventory with a notice; a verified empty inventory
+clears it. Discard responses after closing, changing context or starting a
+conflicting local operation. This refresh performs no Nexus request or writes.
+
+Present actionable downloads before a collapsed installed-results section.
+Hide a zero-download action and distinguish all listed files installed from
+no selection, pending verification and an unsuccessful search. Missing text
+leads to the corresponding Workspace component, including reliably scanned
+components with installation-only evidence. Installation and text completeness
+remain distinct. Derive displayed file selections and the batch from the same
+result state.
 
 Errors with a trustworthy source Nexus ID affect that entire Nexus group,
 including components in other packages. Preserve source IDs on skipped
@@ -218,7 +231,9 @@ the newest eligible file by upload date, preferring original-mod matches over
 other matches with eligible files. Other-only results also receive a default,
 with their relationship note retained. Multiple versions remain selectable
 inline; a single file needs no extra inclusion action. Use Nexus page titles,
-version and date as labels; expose archive names in Details. Installed-file
+version and date as labels; expose archive names in Details. Prefer updates on
+an already installed translation page over newer files from another page, while
+retaining explicit alternatives. Installed-file
 evidence retains the no-new-download default when the preferred file is already
 installed or the installed file cannot be resolved; never promote an older file
 merely because the installed file was removed from the choices. The batch
@@ -241,7 +256,8 @@ A local installed-files recheck reports disk coverage separately from effective
 app-state coverage and exposes differences without overwriting nonempty drafts.
 After handoff, observe only deployment-manifest metadata for a bounded period
 while the results dialog is open. Returning focus or reopening the list checks
-only this metadata; unchanged metadata never triggers a full scan. Rescan after
+this hint alongside the independent installation inventory; unchanged deployment
+metadata never triggers a full scan. Rescan after
 a deployment change. Coalesce events and defer checks during scans, exports,
 settings changes, searches and download batches. Closing the dialog or changing
 workspace cancels observation and prevents obsolete checks from updating the UI.

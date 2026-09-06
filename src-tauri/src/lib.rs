@@ -153,6 +153,29 @@ fn configured_vortex_deployment_stamp(
     vortex_identity::deployment_stamp(mods_root)
 }
 
+#[tauri::command(async)]
+fn nexus_vortex_installed_files(
+    app: AppHandle,
+    mods_path: String,
+    target_lang: String,
+) -> Option<Vec<vortex_identity::VortexInstalledFile>> {
+    let config = config_dir(&app).ok()?;
+    let target_lang = language::normalize_target_code(&target_lang).ok()?;
+    configured_vortex_inventory(Path::new(mods_path.trim()), &target_lang, &config)
+}
+
+fn configured_vortex_inventory(
+    mods_root: &Path,
+    target_lang: &str,
+    config: &Path,
+) -> Option<Vec<vortex_identity::VortexInstalledFile>> {
+    let saved = settings::load_checked(config).ok()?;
+    if !matches_vortex_workspace(&saved, mods_root, target_lang) {
+        return None;
+    }
+    vortex_identity::installed_files_snapshot(mods_root)
+}
+
 fn matches_vortex_workspace(saved: &AppSettings, mods_root: &Path, target_lang: &str) -> bool {
     saved.installation_method == Some(settings::InstallationMethod::Vortex)
         && saved.target_lang.as_deref() == Some(target_lang)
@@ -393,6 +416,20 @@ mod installed_translation_restore_tests {
         let row = &f.rows()[0];
         assert_eq!(row.status, "outdated");
         assert!(!row.token_mismatch_accepted);
+    }
+
+    #[test]
+    fn inventory_refresh_rejects_another_folder_language_or_installation_method() {
+        let f = Fixture::new();
+        assert_eq!(configured_vortex_inventory(&f.mods, "fr", &f.config), None);
+        assert_eq!(
+            configured_vortex_inventory(&f.config, "de", &f.config),
+            None
+        );
+        let mut saved = settings::load_checked(&f.config).unwrap();
+        saved.installation_method = Some(settings::InstallationMethod::Folder);
+        settings::save(&f.config, &saved).unwrap();
+        assert_eq!(configured_vortex_inventory(&f.mods, "de", &f.config), None);
     }
 
     #[test]
@@ -3169,6 +3206,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             nexus_deployment_stamp,
+            nexus_vortex_installed_files,
             nexus::nexus_status,
             nexus::pick_vortex_executable,
             nexus::detect_vortex_executable,

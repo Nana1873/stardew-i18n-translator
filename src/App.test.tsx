@@ -463,20 +463,95 @@ describe("App shell", () => {
         inventoryOnly ? "Installed in Vortex" : "Translation installed",
       ),
     ).toBeInTheDocument();
+    const installedDetails = screen.queryByText(/^Installed translations/);
+    if (installedDetails?.closest("details")) fireEvent.click(installedDetails);
     return scanned;
   }
 
   it("uses native Vortex inventory to avoid repeat downloads without deployment evidence", async () => {
     await showInstalledNexusFile(false, true);
     expect(
-      screen.getByRole("button", { name: "Download all with Vortex (0)" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByText("Translation installed")).toBeNull();
     expect(
       screen.getByText(
         "Check deployment in Vortex to verify local translation files.",
       ),
     ).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
+    ).toBe(false);
+  });
+
+  it("refreshes exact Vortex inventory on focus independently of deployment and retains exclusions after an unavailable snapshot", async () => {
+    await showInstalledNexusFile(false, true);
+    const original = invokeMock.getMockImplementation()!;
+    let inventory: { modId: number; fileId: number }[] | null = [];
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "nexus_vortex_installed_files"
+        ? Promise.resolve(inventory)
+        : original(cmd, ...args),
+    );
+    const initialScanCalls = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "scan_mods",
+    ).length;
+    const initialSearchCalls = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "nexus_find_translations",
+    ).length;
+    const stamp = deploymentStamp;
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    expect(
+      await screen.findByRole("button", {
+        name: "Download all with Vortex (1)",
+      }),
+    ).toBeEnabled();
+
+    inventory = [{ modId: 30, fileId: 7 }];
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    expect(
+      screen.queryByRole("button", { name: /^Download all/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Installed in Vortex")).toBeInTheDocument();
+    expect(screen.queryByText("Translation installed")).not.toBeInTheDocument();
+
+    inventory = null;
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    expect(
+      screen.queryByRole("button", { name: /^Download all/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText(/installation list could not be refreshed/),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Installed in Vortex")).toBeInTheDocument();
+
+    inventory = [];
+    await act(async () => {
+      fireEvent.focus(window);
+    });
+    expect(
+      await screen.findByRole("button", {
+        name: "Download all with Vortex (1)",
+      }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByText(/installation list could not be refreshed/),
+    ).not.toBeInTheDocument();
+    expect(deploymentStamp).toBe(stamp);
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+    ).toHaveLength(initialScanCalls);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "nexus_find_translations",
+      ),
+    ).toHaveLength(initialSearchCalls);
     expect(
       invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
     ).toBe(false);
@@ -615,10 +690,10 @@ describe("App shell", () => {
           await screen.findByRole("button", { name: "Close scan" }),
         );
       expect(
-        await screen.findByRole("button", {
+        screen.queryByRole("button", {
           name: "Download all with Vortex (0)",
         }),
-      ).toBeDisabled();
+      ).not.toBeInTheDocument();
       if (failure === "rejected") {
         expect(screen.queryByText("Translation installed")).toBeNull();
         expect(screen.queryByText("Installed in Vortex")).toBeNull();
@@ -1249,8 +1324,8 @@ describe("App shell", () => {
       await screen.findByText("Translation installed"),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "Download all with Vortex (0)" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+    ).not.toBeInTheDocument();
     expect(
       invokeMock.mock.calls.filter(
         ([cmd]) => cmd === "nexus_handoff_to_vortex",

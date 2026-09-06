@@ -17,7 +17,7 @@
 }
 #stardew-i18n-translator .translator-flow-dialog.nexus-dialog {
   width: min(960px, calc(100vw - 40px));
-  max-height: calc(100vh - 40px);
+  max-height: min(720px, calc(100dvh - 40px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -26,6 +26,7 @@
   box-sizing: border-box;
 }
 .nexus-dialog-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -37,6 +38,7 @@
   margin: 0;
 }
 .nexus-session-summary {
+  flex-shrink: 0;
   padding: 10px 20px;
   border-block: 1px solid var(--translator-border);
 }
@@ -44,6 +46,7 @@
   margin: 5px 0;
 }
 .nexus-dialog-body {
+  flex: 0 1 auto;
   overflow: auto;
   overflow-x: hidden;
   min-height: 0;
@@ -234,4 +237,28 @@
   overflow-wrap: anywhere;
   overflow: visible;
   text-overflow: clip;
+}
+
+.nexus-installed-results {
+  border: 1px solid var(--translator-border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+.nexus-installed-results > summary {
+  color: var(--translator-text);
+  font-weight: 600;
+}
+.nexus-installed-results > p {
+  color: var(--translator-muted);
+  font-size: 0.8rem;
+}
+.nexus-complete-state {
+  padding: 12px;
+  background: var(--translator-surface);
+  border: 1px solid var(--translator-border);
+  border-radius: 6px;
+}
+.nexus-table .nexus-handoff-status {
+  color: var(--translator-text);
+  font-weight: 600;
 }

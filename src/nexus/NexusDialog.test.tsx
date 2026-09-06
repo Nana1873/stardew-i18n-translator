@@ -235,7 +235,45 @@ function commandCalls(name: string) {
     .filter(([cmd]) => cmd === name)
     .map(([, args]) => args);
 }
+function openInstalledResults() {
+  const summary = screen.queryByText(/^Installed translations \(\d+\)$/);
+  if (summary && !summary.closest("details")?.open) fireEvent.click(summary);
+}
+
+it("distinguishes an empty download selection from completed acquisition", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_list_files"
+      ? Promise.resolve([
+          file,
+          { ...file, fileId: 8, uploadedAt: "2026-02-01" },
+        ])
+      : original(cmd, ...args),
+  );
+  mount();
+  fireEvent.change(await screen.findByRole("combobox"), {
+    target: { value: "" },
+  });
+  expect(
+    screen.getByText(
+      "No downloads selected. Review the available translation files.",
+    ),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/No new downloads needed/)).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download all/ })).toBeNull();
+});
+
+it("does not present unknown source coverage as completed acquisition", async () => {
+  const app = mount();
+  await screen.findByRole("row", { name: "Canonical title" });
+  app.setTraversal(false);
+  expect(
+    screen.getByText("No downloads ready. Some results could not be verified."),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/No new downloads needed/)).toBeNull();
+});
 function translationRow() {
+  openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
 async function download() {
@@ -370,14 +408,13 @@ it("excludes a positively deployed exact file despite incomplete local coverage"
     installed: [installedFile],
   });
   await screen.findByText("Translation installed");
+  openInstalledResults();
   expect(
     screen.getByRole("row", { name: "Canonical title" }),
   ).toHaveTextContent("999/1000 strings");
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   expect(
     screen.getByText("No new download needed").parentElement,
   ).toHaveTextContent("5");
@@ -422,17 +459,25 @@ it.each([7, 8])(
     );
     mount({ installed: [{ ...installedFile, fileId: installedId }] });
     await screen.findByRole("row", { name: "Canonical title" });
-    const button = screen.getByRole("button", {
+    expect(
+      screen.getByText("Mods with downloads").parentElement,
+    ).toHaveTextContent(installedId === 8 ? "0" : "1");
+    expect(document.querySelector(".nexus-selected-title")).toBeNull();
+    const button = screen.queryByRole("button", {
       name: /^Download all/,
     });
     if (installedId === 8) {
-      expect(button).toBeDisabled();
+      expect(button).not.toBeInTheDocument();
+      openInstalledResults();
       const choice = screen.getByRole("combobox");
       expect(choice).toHaveValue("");
       fireEvent.change(choice, { target: { value: "30342:7" } });
     } else expect(button).toBeEnabled();
     await download();
     await screen.findByText("1 sent to Vortex");
+    expect(
+      screen.getByText("Mods with downloads").parentElement,
+    ).toHaveTextContent("0");
     expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
       { modId: 30342, fileId: installedId === 8 ? 7 : 8 },
     ]);
@@ -446,6 +491,7 @@ it("replaces deployment evidence on recheck and preserves unknown results", asyn
   );
   await app.changeDeployment();
   await screen.findByText("Translation installed");
+  openInstalledResults();
   app.setInstalled(undefined);
   await screen.findByRole("row", { name: "Canonical title" });
   expect(
@@ -478,10 +524,8 @@ it("does not replace a selected installed file with a different download after r
   const refreshedChoice = await screen.findByRole("combobox");
   expect(refreshedChoice).toHaveValue("");
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
   fireEvent.change(refreshedChoice, { target: { value: "30342:8" } });
   await download();
@@ -495,6 +539,7 @@ it("applies scan evidence only in Vortex and accepts a replacement scan without 
   await screen.findByRole("row", { name: "Canonical title" });
   app.setMethod("vortex");
   await screen.findByText("Translation installed");
+  openInstalledResults();
   app.setInstalled(undefined);
   await screen.findByRole("row", { name: "Canonical title" });
   expect(
@@ -515,10 +560,8 @@ it("includes all ready rows automatically and never redownloads a completed hand
     false,
   );
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   app.setOpen(false);
   app.setOpen(true);
   expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
@@ -533,8 +576,8 @@ it("routes an explicit folder installation to Review even if Vortex is configure
   ]);
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
   expect(
-    screen.getByRole("button", { name: "Download & import all (0)" }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download & import all (0)" }),
+  ).not.toBeInTheDocument();
   expect(
     invoke.mock.calls.some(([cmd]) => /export|save_settings/.test(cmd)),
   ).toBe(false);
@@ -659,10 +702,8 @@ it("does not call failed or pending metadata downloadable and allows an explicit
   mount();
   await screen.findByText("No downloadable files could be confirmed.");
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   fireEvent.click(screen.getByText("Error details"));
   expect(screen.getByText(/Metadata unavailable/)).toBeInTheDocument();
   failed = false;
@@ -682,10 +723,8 @@ it("requires explicit retry after a failed action", async () => {
   await download();
   expect(await screen.findByRole("alert")).toHaveTextContent("Launch failed");
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   failed = false;
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   await screen.findByText("1 sent to Vortex");
@@ -1390,10 +1429,8 @@ it("shares a failed Vortex handoff and one explicit retry across its original gr
       .every((alert) => alert.textContent?.includes("Launch failed")),
   ).toBe(true);
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
   fail = false;
   fireEvent.click(screen.getAllByRole("button", { name: "Retry" })[0]);
@@ -1402,10 +1439,8 @@ it("shares a failed Vortex handoff and one explicit retry across its original gr
   expect(screen.queryAllByRole("alert")).toHaveLength(0);
   expect(screen.getAllByText(/Vortex launch was requested/)).toHaveLength(2);
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
 });
 
 it("imports shared archive mappings separately for each original in Review", async () => {
@@ -1843,7 +1878,7 @@ it.each([
     });
     const row = await screen.findByRole("row", { name: "Canonical title" });
     if (installedId === 7) {
-      fireEvent.change(within(row).getByRole("combobox"), {
+      fireEvent.change(translationRow().getByRole("combobox"), {
         target: { value: "" },
       });
     }
@@ -1854,7 +1889,7 @@ it.each([
         }),
       ).toBeEnabled(),
     );
-    expect(within(row).getByRole("combobox")).toHaveValue("");
+    expect(translationRow().getByRole("combobox")).toHaveValue("");
     expect(row).toHaveTextContent(
       state === "deployed"
         ? "Translation installed"
@@ -1862,7 +1897,7 @@ it.each([
     );
     if (state === "missing_dictionary")
       expect(row).not.toHaveTextContent("Translation installed");
-    fireEvent.change(within(row).getByRole("combobox"), {
+    fireEvent.change(translationRow().getByRole("combobox"), {
       target: { value: installedId === 7 ? "30342:8" : "30342:7" },
     });
     expect(
@@ -1870,10 +1905,10 @@ it.each([
         name: "Download all with Vortex (2)",
       }),
     ).toBeEnabled();
-    fireEvent.change(within(row).getByRole("combobox"), {
+    fireEvent.change(translationRow().getByRole("combobox"), {
       target: { value: "" },
     });
-    expect(within(row).getByRole("combobox")).toHaveValue("");
+    expect(translationRow().getByRole("combobox")).toHaveValue("");
     expect(
       screen.getByRole("button", {
         name: "Download all with Vortex (1)",
@@ -1896,10 +1931,8 @@ it("shows the proven missing dictionary without a blind repeat or a successful-i
     ),
   ).toHaveTextContent("but it is missing from this installation.");
   expect(
-    screen.getByRole("button", {
-      name: "Download all with Vortex (0)",
-    }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   expect(
     screen.getByText("No new download needed").parentElement,
   ).toHaveTextContent("4");
@@ -1927,6 +1960,7 @@ it.each([{ files: [] }, { files: [file] }])(
     );
     mount({ installed: [{ ...installedFile, fileId: 99, state: "deployed" }] });
     await screen.findByText("Translation installed");
+    openInstalledResults();
     await waitFor(() =>
       expect(screen.queryByText("Loading translation versions…")).toBeNull(),
     );
@@ -1934,10 +1968,8 @@ it.each([{ files: [] }, { files: [file] }])(
       translationRow().getByText("Nexus 30342 · file 99"),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", {
-        name: "Download all with Vortex (0)",
-      }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+    ).not.toBeInTheDocument();
     if (files.length) {
       fireEvent.change(translationRow().getByRole("combobox"), {
         target: { value: "30342:7" },
@@ -1953,6 +1985,8 @@ it.each([{ files: [] }, { files: [file] }])(
 
 it("opens missing strings only for one unambiguous component with untranslated working text", async () => {
   const app = mount({ installed: [installedFile] });
+  await screen.findByText("Translation installed");
+  openInstalledResults();
   fireEvent.click(
     await screen.findByRole("button", { name: "Open missing strings" }),
   );
@@ -2503,6 +2537,7 @@ it("keeps unrelated installed evidence and coverage while excluding an unknown s
     installed: [installedFile],
   });
   await screen.findByText("Translation installed");
+  openInstalledResults();
   const before = commandCalls("nexus_list_files").length;
   app.setSkipped([
     {
@@ -2525,8 +2560,8 @@ it("keeps unrelated installed evidence and coverage while excluding an unknown s
     ),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Download all with Vortex (0)" }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   const choice = screen.getByRole("combobox", {
     name: "Translation file for No-result mod",
   });
@@ -2553,8 +2588,8 @@ it("does not default to a download when native original-ID associations are inco
   const choice = await screen.findByRole("combobox");
   expect(choice).toHaveValue("");
   expect(
-    screen.getByRole("button", { name: "Download all with Vortex (0)" }),
-  ).toBeDisabled();
+    screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+  ).not.toBeInTheDocument();
   expect(screen.queryByText("Translation installed")).toBeNull();
   expect(
     screen.getByText(
@@ -2569,13 +2604,14 @@ it.each([false, true])(
   async (identityIncomplete) => {
     mount({ inventory: [{ modId: 30342, fileId: 7 }], identityIncomplete });
     await screen.findByText("Installed in Vortex");
+    openInstalledResults();
     expect(screen.queryByText("Translation installed")).toBeNull();
     expect(
       screen.queryByText("Translation file missing from Vortex installation"),
     ).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Download all with Vortex (0)" }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+    ).not.toBeInTheDocument();
     expect(
       screen
         .getByText(
@@ -2604,8 +2640,8 @@ it.each([7, 8, 99])(
     expect(choice).toHaveValue(installedId === 7 ? "30342:8" : "");
     if (installedId !== 7)
       expect(
-        screen.getByRole("button", { name: "Download all with Vortex (0)" }),
-      ).toBeDisabled();
+        screen.queryByRole("button", { name: "Download all with Vortex (0)" }),
+      ).not.toBeInTheDocument();
     expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
     fireEvent.change(choice, {
       target: { value: installedId === 7 ? "30342:8" : "30342:7" },
@@ -2626,4 +2662,40 @@ it("ignores Vortex inventory in folder mode", async () => {
     ).toBeEnabled(),
   );
   expect(screen.queryByText("Installed in Vortex")).toBeNull();
+});
+
+it("collapses installed inventory while keeping honest deployment context and component-specific Workspace actions", async () => {
+  const app = mount({
+    inventory: [{ modId: 30342, fileId: 7 }],
+    mods: [
+      mods[0],
+      { ...mods[0], uniqueId: "component.two", name: "Second component" },
+    ],
+  });
+  const summary = await screen.findByText("Installed translations (1)");
+  expect(summary.closest("details")).not.toHaveAttribute("open");
+  expect(
+    screen.queryByText(
+      "Vortex handles installation according to your settings.",
+    ),
+  ).toBeNull();
+  expect(document.querySelector(".nexus-session-summary")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: /Download all with Vortex/ }),
+  ).toBeNull();
+  fireEvent.click(summary);
+  expect(screen.getByText(/Deployment not verified/)).toBeVisible();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open missing strings � Local mod" }),
+  );
+  fireEvent.click(
+    screen.getByRole("button", {
+      name: "Open missing strings � Second component",
+    }),
+  );
+  expect(app.onOpenMissing.mock.calls).toEqual([
+    ["sample.mod"],
+    ["component.two"],
+  ]);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });

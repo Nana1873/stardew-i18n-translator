@@ -24,7 +24,8 @@ import {
   nexusSourceScanIncomplete,
   nexusSourceComponents,
 } from "./resolveTranslation";
-import { fileChoices, useNexusFiles } from "./useNexusFiles";
+import { useNexusFiles } from "./useNexusFiles";
+import { deriveNexusResult, nexusCandidates } from "./resultState";
 import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
 
 import { NexusQuotaSummary, nexusAccountKind } from "./NexusAccountSummary";
@@ -144,6 +145,7 @@ export function NexusDialog({
   nexusIdentityIncomplete = false,
   installedNexusTranslations = [],
   vortexInstalledFiles = [],
+  inventoryRefreshWarning,
 }: {
   open?: boolean;
   vortexExecutable?: string | null;
@@ -159,6 +161,7 @@ export function NexusDialog({
   nexusIdentityIncomplete?: boolean;
   installedNexusTranslations?: InstalledNexusTranslation[];
   vortexInstalledFiles?: VortexInstalledFile[];
+  inventoryRefreshWarning?: string;
   targetLang: string;
   onSearch: (options?: {
     includeComplete?: boolean;
@@ -698,57 +701,13 @@ export function NexusDialog({
     checking ||
     recheckBlocked ||
     resolvingInstalled;
-  const candidatesFor = (entry: NexusSearchEntry) =>
-    [...(entry.result?.candidates ?? [])].sort(
-      (a, b) =>
-        Number(a.relationshipTier !== "possible-original-translation") -
-          Number(b.relationshipTier !== "possible-original-translation") ||
-        b.updatedAt.localeCompare(a.updatedAt),
-    );
   const scanIncomplete =
     !traversalComplete ||
     nexusIdentityIncomplete ||
     skippedComponents.some((item) => item.requiresAttention);
-  const sourceScanIncomplete = (sourceId: number) =>
-    nexusSourceScanIncomplete(
-      mods,
-      sourceId,
-      skippedComponents,
-      traversalComplete,
-      nexusIdentityIncomplete,
-    );
-  const coveredIds = new Set(
-    search.entries
-      .filter(
-        (entry) =>
-          nexusSourceDiskCoverage(
-            mods,
-            entry.modId,
-            skippedComponents,
-            traversalComplete,
-            nexusIdentityIncomplete,
-          )?.complete,
-      )
-      .map((entry) => entry.modId),
-  );
-  const evidenceFor = (sourceId: number) =>
-    isVortex && !sourceScanIncomplete(sourceId)
-      ? installedNexusTranslations.filter(
-          (item) =>
-            item.sourceNexusId === sourceId &&
-            (item.state === undefined ||
-              item.state === "deployed" ||
-              item.state === "missing_dictionary"),
-        )
-      : [];
-  const sources = search.entries.filter(
-    (entry) =>
-      (entry.result?.candidates.length || evidenceFor(entry.modId).length) &&
-      !coveredIds.has(entry.modId),
-  );
   const fileMetadata = useNexusFiles(
     search.entries.flatMap((entry) =>
-      candidatesFor(entry).map((candidate) => candidate.modId),
+      nexusCandidates(entry).map((candidate) => candidate.modId),
     ),
     open,
     `${targetLang}|${method}`,
@@ -772,112 +731,48 @@ export function NexusDialog({
     fileMetadata.entries,
     batchRunning,
   ]);
-  const groups = sources.map((entry) => {
-    const sourceUnknown = sourceScanIncomplete(entry.modId);
-    const candidates = candidatesFor(entry);
-    const evidence = evidenceFor(entry.modId);
-    const inventory = isVortex
-      ? vortexInstalledFiles.filter((item) =>
-          candidates.some((candidate) => candidate.modId === item.modId),
-        )
-      : [];
-    const installed = [...evidence, ...inventory];
-    const problem = evidence.some(
-      (item) => item.state === "missing_dictionary",
-    );
-    const allOptions = candidates.flatMap((candidate) => {
-      const files = fileMetadata.entries[candidate.modId]?.files;
-      if (!files) return [];
-      const choices = fileChoices(
-        files,
-        targetLang,
-        isVortex || !canDirectImport,
-      );
-      return choices.files.map((file) => ({
-        candidate,
-        file,
-        value: `${candidate.modId}:${file.fileId}`,
-      }));
-    });
-    const recordedOptions = allOptions.filter((option) =>
-      installed.some(
-        (item) =>
-          item.modId === option.candidate.modId &&
-          item.fileId === option.file.fileId,
-      ),
-    );
-    const options = allOptions.filter(
-      (option) => !recordedOptions.includes(option),
-    );
-    const preferred = [...allOptions].sort(
-      (a, b) =>
-        Number(
-          a.candidate.relationshipTier !== "possible-original-translation",
-        ) -
-          Number(
-            b.candidate.relationshipTier !== "possible-original-translation",
-          ) ||
-        (Date.parse(b.file.uploadedAt) || 0) -
-          (Date.parse(a.file.uploadedAt) || 0) ||
-        b.file.fileId - a.file.fileId,
-    )[0];
-    const explicit = fileSelections[entry.modId];
-    const value =
-      explicit !== undefined
-        ? options.some((option) => option.value === explicit)
-          ? explicit
-          : ""
-        : sourceUnknown ||
-            installed.some(
-              (item) =>
-                !recordedOptions.some(
-                  (option) =>
-                    option.candidate.modId === item.modId &&
-                    option.file.fileId === item.fileId,
-                ),
-            )
-          ? ""
-          : options.some((option) => option.value === preferred?.value)
-            ? preferred!.value
-            : "";
-    const selected = options.find((option) => option.value === value);
-    const key = selected
-      ? `${entry.modId}:${selected.value}`
-      : `${entry.modId}:pending`;
-    const row =
-      rows[key] ??
-      (sourceUnknown && !selected
-        ? Object.entries(rows).find(
-            ([rowKey, value]) =>
-              rowKey.startsWith(`${entry.modId}:`) && value.handoff,
-          )?.[1]
-        : undefined) ??
-      emptyRow();
-    return {
+  const results = search.entries.map((entry) =>
+    deriveNexusResult({
       entry,
-      sourceUnknown,
-      candidates,
-      options,
-      selected,
-      value,
-      key,
-      row,
-      evidence,
-      inventory,
-      problem,
-      recordedOptions,
-      loading: candidates.some(
-        (candidate) => !fileMetadata.entries[candidate.modId],
-      ),
-      errors: candidates.flatMap((candidate) =>
-        fileMetadata.entries[candidate.modId]?.error
-          ? [
-              `${candidate.name}: ${fileMetadata.entries[candidate.modId].error}`,
-            ]
-          : [],
-      ),
-    };
-  });
+      mods,
+      skippedComponents,
+      traversalComplete,
+      nexusIdentityIncomplete,
+      isVortex,
+      installedNexusTranslations,
+      vortexInstalledFiles,
+      fileMetadata: fileMetadata.entries,
+      targetLang,
+      allowArchives: isVortex || !canDirectImport,
+      explicitSelection: fileSelections[entry.modId],
+    }),
+  );
+  const coveredIds = new Set(
+    results
+      .filter((result) => result.covered)
+      .map((result) => result.entry.modId),
+  );
+  const groups = results
+    .filter(
+      (result) =>
+        !result.covered && (result.candidates.length || result.evidence.length),
+    )
+    .map((result) => {
+      const { entry, selected, sourceUnknown } = result;
+      const key = selected
+        ? `${entry.modId}:${selected.value}`
+        : `${entry.modId}:pending`;
+      const row =
+        rows[key] ??
+        (sourceUnknown && !selected
+          ? Object.entries(rows).find(
+              ([rowKey, value]) =>
+                rowKey.startsWith(`${entry.modId}:`) && value.handoff,
+            )?.[1]
+          : undefined) ??
+        emptyRow();
+      return { ...result, key, row };
+    });
   const shown = groups.filter(
     (group) =>
       group.options.length > 0 ||
@@ -913,19 +808,25 @@ export function NexusDialog({
         .map((group) => group.entry.modId),
     ].filter(
       (id) =>
-        !failedIds.has(id) && !coveredIds.has(id) && !evidenceFor(id).length,
+        !failedIds.has(id) &&
+        !coveredIds.has(id) &&
+        !results.find((result) => result.entry.modId === id)?.evidence.length,
     ),
   );
   const actionRows = Object.values(rows);
-  const installedGroups = groups.filter(
+  const installedResults = shown.filter(
     (group) =>
-      (!group.sourceUnknown || group.inventory.length > 0) &&
-      !group.loading &&
-      !group.errors.length &&
       !group.selected &&
-      (group.evidence.length > 0 || group.inventory.length > 0) &&
-      !group.problem,
-  ).length;
+      !group.problem &&
+      !group.row.error &&
+      !group.row.choices?.length &&
+      !group.row.handoff &&
+      (group.evidence.length > 0 || group.inventory.length > 0),
+  );
+  const installedGroups = installedResults.length;
+  const acquisitionResults = shown.filter(
+    (group) => !installedResults.includes(group),
+  );
   const handoffCount = new Set(
     Object.entries(rows)
       .filter(([, row]) => row.handoff)
@@ -1086,6 +987,17 @@ export function NexusDialog({
             {!group.evidence.length && group.inventory.length > 0 && (
               <small>Installed in Vortex</small>
             )}
+            {row.handoff && (
+              <small className="nexus-handoff-status">
+                Sent to Vortex � installation and deployment unconfirmed
+              </small>
+            )}
+            {!group.evidence.length && group.inventory.length > 0 && (
+              <small>
+                Deployment not verified. Check Vortex, then recheck installed
+                files.
+              </small>
+            )}
             <small>
               {disk
                 ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
@@ -1100,19 +1012,22 @@ export function NexusDialog({
               </small>
             )}
             {!group.problem &&
-              group.evidence.length > 0 &&
+              (group.evidence.length > 0 || group.inventory.length > 0) &&
               disk &&
               disk.missing > 0 &&
-              missingComponents.length === 1 &&
-              onOpenMissing && (
+              missingComponents.length > 0 &&
+              onOpenMissing &&
+              missingComponents.map((component) => (
                 <button
+                  key={component.uniqueId}
                   className={quiet}
                   disabled={locked}
-                  onClick={() => onOpenMissing(missingComponents[0].uniqueId)}
+                  onClick={() => onOpenMissing(component.uniqueId)}
                 >
                   Open missing strings
+                  {missingComponents.length > 1 ? ` � ${component.name}` : ""}
                 </button>
-              )}
+              ))}
           </td>
           <td>
             <div className="nexus-file-link">
@@ -1184,7 +1099,7 @@ export function NexusDialog({
                 ) : (
                   <>
                     <strong className="nexus-selected-title">
-                      {candidate?.name ?? "Translation archive"}
+                      {candidate?.name ?? "Installed translation"}
                     </strong>
                     <small>
                       {displayFile &&
@@ -1194,15 +1109,6 @@ export function NexusDialog({
                         )}
                     </small>
                   </>
-                )}
-                {!selected && unidentifiedEvidence.length > 0 && (
-                  <small>
-                    {unidentifiedEvidence
-                      .map(
-                        (item) => `Nexus ${item.modId} · file ${item.fileId}`,
-                      )
-                      .join("; ")}
-                  </small>
                 )}
                 {group.options.length > 0 &&
                   candidate?.relationshipTier !==
@@ -1214,7 +1120,7 @@ export function NexusDialog({
                   )}
               </div>
               <button
-                className={primary}
+                className={quiet}
                 disabled={locked || !linkModId}
                 onClick={() => {
                   setLinkErrors((previous) => ({
@@ -1255,6 +1161,7 @@ export function NexusDialog({
               </>
             )}
             {(displayFile ||
+              unidentifiedEvidence.length > 0 ||
               group.inventory.length > 0 ||
               row.handoff ||
               row.completed ||
@@ -1264,6 +1171,16 @@ export function NexusDialog({
               row.details.length > 0) && (
               <details>
                 <summary>Details</summary>
+                {!selected && unidentifiedEvidence.length > 0 && (
+                  <small>
+                    {unidentifiedEvidence
+                      .map(
+                        (item) => `Nexus ${item.modId} · file ${item.fileId}`,
+                      )
+                      .join("; ")}
+                  </small>
+                )}
+
                 {!group.evidence.length &&
                   group.inventory.length > 0 &&
                   !disk?.complete && (
@@ -1300,7 +1217,7 @@ export function NexusDialog({
                     {row.failures ? ` · ${row.failures} failed` : ""}
                   </p>
                 )}
-                {candidate.summary && <p>{candidate.summary}</p>}
+                {candidate?.summary && <p>{candidate.summary}</p>}
                 {row.notice && <p>{row.notice}</p>}
                 {row.details.map((detail, index) => (
                   <p key={index}>{detail}</p>
@@ -1486,6 +1403,20 @@ export function NexusDialog({
       </Fragment>
     );
   }
+  const showInstallationHint =
+    pendingDownloads > 0 ||
+    batchRunning ||
+    handoffCount > 0 ||
+    (!isVortex && acquisitionResults.length > 0);
+  const showSessionSummary =
+    scanIncomplete ||
+    actionStatus ||
+    resultStatus ||
+    inventoryRefreshWarning ||
+    resolvingInstalled ||
+    unresolvedCount > 0 ||
+    showInstallationHint ||
+    checkError;
   if (!open) return null;
   return (
     <NexusModal
@@ -1493,71 +1424,82 @@ export function NexusDialog({
       busy={Boolean(active) || batchRunning}
       onClose={onClose}
     >
-      <div className="nexus-session-summary">
-        {scanIncomplete && (
-          <p role="status">
-            Some Nexus translation statuses are unavailable. Resolve scan errors
-            and scan again; verified mods remain available.
-          </p>
-        )}
-        {(actionStatus || resultStatus) && (
-          <p role="status">{actionStatus || resultStatus}</p>
-        )}
-        {resolvingInstalled && (
-          <p role="status">Checking installed translations…</p>
-        )}
-        <div className="nexus-actions">
-          {!resolvingInstalled && (isVortex || canDirectImport) && (
-            <button
-              className={primary}
-              disabled={
-                locked ||
-                search.running ||
-                loading ||
-                !pending.length ||
-                (isVortex && !configuredVortex)
-              }
-              onClick={() => void downloadAll()}
-            >
-              {isVortex ? "Download all with Vortex" : "Download & import all"}{" "}
-              ({pendingDownloads})
-            </button>
+      {showSessionSummary && (
+        <div className="nexus-session-summary">
+          {scanIncomplete && (
+            <p role="status">
+              Some Nexus translation statuses are unavailable. Resolve scan
+              errors and scan again; verified mods remain available.
+            </p>
           )}
-          {!resolvingInstalled &&
-            (isVortex || canDirectImport) &&
-            unresolvedCount > 0 && (
-              <small>
-                {unresolvedCount}{" "}
-                {unresolvedCount === 1 ? "mod is" : "mods are"} not included in
-                the download.
-              </small>
+          {(actionStatus || resultStatus) && (
+            <p role="status">{actionStatus || resultStatus}</p>
+          )}
+          {inventoryRefreshWarning && (
+            <small className="nexus-muted">{inventoryRefreshWarning}</small>
+          )}
+          {resolvingInstalled && (
+            <p role="status">Checking installed translations…</p>
+          )}
+          <div className="nexus-actions">
+            {!resolvingInstalled &&
+              (isVortex || canDirectImport) &&
+              pendingDownloads > 0 && (
+                <button
+                  className={primary}
+                  disabled={
+                    locked ||
+                    search.running ||
+                    loading ||
+                    !pending.length ||
+                    (isVortex && !configuredVortex)
+                  }
+                  onClick={() => void downloadAll()}
+                >
+                  {isVortex
+                    ? "Download all with Vortex"
+                    : "Download & import all"}{" "}
+                  ({pendingDownloads})
+                </button>
+              )}
+            {!resolvingInstalled &&
+              (isVortex || canDirectImport) &&
+              unresolvedCount > 0 && (
+                <small>
+                  {unresolvedCount}{" "}
+                  {unresolvedCount === 1 ? "mod is" : "mods are"} not included
+                  in the download.
+                </small>
+              )}
+            {batchRunning && (
+              <button
+                className={quiet}
+                onClick={() => {
+                  stopBatchRef.current = true;
+                }}
+              >
+                Stop after current
+              </button>
             )}
-          {batchRunning && (
-            <button
-              className={quiet}
-              onClick={() => {
-                stopBatchRef.current = true;
-              }}
-            >
-              Stop after current
-            </button>
+          </div>
+          {showInstallationHint && (
+            <small className="nexus-muted">
+              {isVortex
+                ? configuredVortex
+                  ? handedOffIds.length > 0
+                    ? "Install and deploy in Vortex; this list updates when you return."
+                    : "Vortex handles installation according to your settings."
+                  : "Choose Vortex.exe in installation settings first."
+                : canDirectImport
+                  ? "Imports go to Review. Use the existing Export action when ready."
+                  : nexusAccountKind(account) === "free"
+                    ? "Free account: use each Open Nexus Link below to download manually. Direct ZIP import requires Premium."
+                    : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}
+            </small>
           )}
+          {checkError && <p role="alert">{checkError}</p>}
         </div>
-        <small className="nexus-muted">
-          {isVortex
-            ? configuredVortex
-              ? handedOffIds.length > 0
-                ? "Install and deploy in Vortex; this list updates when you return."
-                : "Vortex handles installation according to your settings."
-              : "Choose Vortex.exe in installation settings first."
-            : canDirectImport
-              ? "Imports go to Review. Use the existing Export action when ready."
-              : nexusAccountKind(account) === "free"
-                ? "Free account: use each Open Nexus Link below to download manually. Direct ZIP import requires Premium."
-                : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}
-        </small>
-        {checkError && <p role="alert">{checkError}</p>}
-      </div>
+      )}
       <div className="nexus-dialog-body">
         {(loading || search.running) && (
           <p role="status">
@@ -1566,19 +1508,71 @@ export function NexusDialog({
               : "Finding translations…"}
           </p>
         )}
-        {!resolvingInstalled && shown.length > 0 && (
-          <div className="nexus-table-scroll">
-            <table className="nexus-table" aria-label="Translation downloads">
-              <thead>
-                <tr>
-                  <th>Installed mod</th>
-                  <th>Translation file / version</th>
-                </tr>
-              </thead>
-              <tbody>{shown.map(renderRow)}</tbody>
-            </table>
-          </div>
+        {!resolvingInstalled && acquisitionResults.length > 0 && (
+          <section aria-label="Available translations">
+            <h3>
+              {pendingDownloads > 0
+                ? "Available downloads and updates"
+                : "Translation actions"}
+            </h3>
+            <div className="nexus-table-scroll">
+              <table className="nexus-table" aria-label="Translation downloads">
+                <thead>
+                  <tr>
+                    <th>Installed mod</th>
+                    <th>Translation file / version</th>
+                  </tr>
+                </thead>
+                <tbody>{acquisitionResults.map(renderRow)}</tbody>
+              </table>
+            </div>
+          </section>
         )}
+        {!resolvingInstalled && installedResults.length > 0 && (
+          <details className="nexus-installed-results">
+            <summary>
+              Installed translations ({installedResults.length})
+            </summary>
+            <p>
+              These files are already installed. Missing strings can be
+              completed in Workspace; installation alone does not confirm
+              deployment or complete coverage.
+            </p>
+            <div className="nexus-table-scroll">
+              <table
+                className="nexus-table"
+                aria-label="Installed translations"
+              >
+                <thead>
+                  <tr>
+                    <th>Installed mod</th>
+                    <th>Translation file / version</th>
+                  </tr>
+                </thead>
+                <tbody>{installedResults.map(renderRow)}</tbody>
+              </table>
+            </div>
+          </details>
+        )}
+        {!resolvingInstalled &&
+          !loading &&
+          !search.running &&
+          pendingDownloads === 0 &&
+          shown.length > 0 &&
+          !actionStatus &&
+          !resultStatus && (
+            <p role="status" className="nexus-complete-state">
+              {unavailableCount ||
+              scanIncomplete ||
+              search.cancelled ||
+              search.stoppedReason ||
+              search.completed < search.total
+                ? "No downloads ready. Some results could not be verified."
+                : installedResults.length === shown.length
+                  ? "No new downloads needed. Check missing strings in Workspace."
+                  : "No downloads selected. Review the available translation files."}
+            </p>
+          )}
         {!resolvingInstalled &&
           !shown.length &&
           !loading &&
@@ -1616,7 +1610,12 @@ export function NexusDialog({
               {[
                 [`${search.completed}/${search.total}`, "IDs checked"],
                 [
-                  shown.filter((group) => group.options.length > 0).length,
+                  acquisitionResults.filter(
+                    (group) =>
+                      group.options.length > 0 &&
+                      !group.row.handoff &&
+                      !group.row.completed,
+                  ).length,
                   "Mods with downloads",
                 ],
                 [noDownloadIds.size, "No suitable download found"],
