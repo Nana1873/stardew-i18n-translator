@@ -45,8 +45,11 @@ export function NexusQuotaSummary({ status }: { status: NexusStatus | null }) {
   const quota = status?.quota ?? [];
   const scopeLabel = (scope: string) =>
     scope === "rest-v1" ? "Mod data" : "Translation search";
-  const remaining = quota
-    .flatMap((item) => {
+  const reported = quota.filter(
+    (item) => item.dailyRemaining != null || item.hourlyRemaining != null,
+  );
+  const remaining = reported
+    .map((item) => {
       const values = [
         item.dailyRemaining != null
           ? `${item.dailyRemaining.toLocaleString()} daily`
@@ -55,11 +58,9 @@ export function NexusQuotaSummary({ status }: { status: NexusStatus | null }) {
           ? `${item.hourlyRemaining.toLocaleString()} hourly`
           : "",
       ].filter(Boolean);
-      return values.length
-        ? [`${scopeLabel(item.scope)}: ${values.join(", ")}`]
-        : [];
+      return `${reported.length > 1 ? `${scopeLabel(item.scope)}: ` : ""}${values.join(" | ")}`;
     })
-    .join(" · ");
+    .join(" | ");
   const detail = quota
     .map((item) =>
       [
@@ -83,7 +84,7 @@ export function NexusQuotaSummary({ status }: { status: NexusStatus | null }) {
   return (
     <small title={detail || undefined}>
       {remaining
-        ? `API requests left · ${remaining}`
+        ? `API requests left | ${remaining}`
         : "API requests left: Not reported"}
     </small>
   );

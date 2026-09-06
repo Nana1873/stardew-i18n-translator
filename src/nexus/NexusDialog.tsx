@@ -188,10 +188,15 @@ export function NexusDialog({
   const live = useRef({ open, context, onCheckInstalled, onDeploymentStamp });
   live.current = { open, context, onCheckInstalled, onDeploymentStamp };
   const actionContext = useRef(context);
-  const [recheckPending, setRecheckPending] = useState(false);
+  const [recheckPending, setRecheckPending] = useState<string | null>(null);
+  const deployment = useRef<{
+    context: string;
+    baseline?: string | null;
+    failed?: string;
+  }>({ context });
+  const probeDeployment = useRef<() => void>(() => {});
   const checkInFlight = useRef(false);
   const [monitor, setMonitor] = useState<{
-    baseline: string | null;
     until: number;
   } | null>(null);
   useEffect(() => {
@@ -203,21 +208,17 @@ export function NexusDialog({
       setRows({});
       setCheckedAt(null);
       setCheckError(null);
-      setRecheckPending(false);
+      setRecheckPending(null);
       setMonitor(null);
+      deployment.current = { context };
     }
   }, [context]);
-  const wasOpen = useRef(open);
   useEffect(() => {
     if (!open) {
       generation.current++;
       stopBatchRef.current = true;
-      setRecheckPending(false);
       setMonitor(null);
-    } else if (!wasOpen.current && isVortex) {
-      setRecheckPending(true);
     }
-    wasOpen.current = open;
   }, [open, isVortex]);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -406,43 +407,69 @@ export function NexusDialog({
   }
   async function requestHandoff(
     key: string,
-    sourceId: number,
+    origins: { key: string; sourceId: number }[],
     candidate: NexusCandidate,
     file: NexusFile,
   ) {
     await run(key, async (current) => {
-      if (!configuredVortex)
-        throw new Error("Choose Vortex.exe in installation settings first.");
-      patch(key, {
-        intent: "vortex",
-        status: "Sending to Vortex…",
-        choices: undefined,
-      });
-      // Capture before launch: deployment can finish before the receipt returns.
-      const baseline =
-        (await live.current.onDeploymentStamp?.().catch(() => null)) ?? null;
-      if (!current()) return;
-      const receipt = await nexusHandoffToVortex(candidate.modId, file.fileId);
-      if (!current()) return;
-      if (receipt.status !== "handoff-requested")
-        throw new Error("Vortex handoff was not confirmed by the launcher.");
-      patch(key, {
-        handoff: {
-          at: Date.now(),
-          before: nexusSourceDiskCoverage(
-            mods,
-            sourceId,
-            skippedComponents,
-            traversalComplete,
-          ),
-        },
-        selectedArchive: file,
-        completed: false,
-      });
-      setMonitor((previous) => ({
-        baseline: previous ? previous.baseline : baseline,
-        until: Date.now() + 120_000,
-      }));
+      try {
+        if (!configuredVortex)
+          throw new Error("Choose Vortex.exe in installation settings first.");
+        patch(key, {
+          intent: "vortex",
+          status: "Sending to Vortex…",
+          choices: undefined,
+        });
+        // Capture before launch: deployment can finish before the receipt returns.
+        const baseline =
+          (await live.current.onDeploymentStamp?.().catch(() => null)) ?? null;
+        if (!current()) return;
+        if (
+          deployment.current.context === context &&
+          deployment.current.baseline === undefined
+        )
+          deployment.current.baseline = baseline;
+        const previous = Object.entries(rows).find(
+          ([rowKey, row]) =>
+            row.handoff &&
+            rowKey.endsWith(`:${candidate.modId}:${file.fileId}`),
+        )?.[1].handoff;
+        if (!previous) {
+          const receipt = await nexusHandoffToVortex(
+            candidate.modId,
+            file.fileId,
+          );
+          if (!current()) return;
+          if (receipt.status !== "handoff-requested")
+            throw new Error(
+              "Vortex handoff was not confirmed by the launcher.",
+            );
+        }
+        for (const origin of origins)
+          patch(origin.key, {
+            intent: "vortex",
+            error: undefined,
+            handoff: rows[origin.key]?.handoff ?? {
+              at: previous?.at ?? Date.now(),
+              before: nexusSourceDiskCoverage(
+                mods,
+                origin.sourceId,
+                skippedComponents,
+                traversalComplete,
+              ),
+            },
+            selectedArchive: file,
+            completed: false,
+          });
+        setMonitor({
+          until: Date.now() + 120_000,
+        });
+      } catch (cause) {
+        if (current())
+          for (const origin of origins)
+            patch(origin.key, { error: String(cause), status: undefined });
+        throw cause;
+      }
     });
   }
   const handedOffIds = [
@@ -452,51 +479,80 @@ export function NexusDialog({
         .map(([key]) => Number(key.split(":")[0])),
     ),
   ];
-  // User return/reopen is a fallback even when deployment hints are unavailable.
+  // Focus/reopen only observes a cheap hint. A changed, settled hint permits a scan.
   useEffect(() => {
-    if (!open || !isVortex) return;
-    const request = () => {
-      if (!checkInFlight.current) setRecheckPending(true);
+    if (!open || !isVortex || !live.current.onDeploymentStamp) return;
+    let cancelled = false,
+      reading = false;
+    let timer: number | undefined, pollTimer: number | undefined;
+    let candidate: string | undefined,
+      candidateAt = 0,
+      settleUntil = 0;
+    const schedule = (delay: number) => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(probe, delay);
     };
+    const probe = async () => {
+      if (cancelled || reading) return;
+      reading = true;
+      try {
+        const next = await live.current.onDeploymentStamp!();
+        if (cancelled || live.current.context !== context || !live.current.open)
+          return;
+        const known = deployment.current;
+        if (known.baseline == null) {
+          if (next != null) known.baseline = next;
+          return;
+        }
+        // Missing/locked deployment metadata cannot establish that installation settled.
+        if (next == null || next === known.baseline) {
+          candidate = undefined;
+          if (!checkInFlight.current) setRecheckPending(null);
+          return;
+        }
+        if (known.failed === next) return;
+        if (candidate === next && Date.now() - candidateAt >= 1500) {
+          setRecheckPending(next);
+        } else {
+          if (!candidate) settleUntil = Date.now() + 10_000;
+          candidate = next;
+          candidateAt = Date.now();
+          if (!checkInFlight.current) setRecheckPending(null);
+          if (Date.now() < settleUntil) schedule(1500);
+        }
+      } catch {
+        candidate = undefined;
+        if (!cancelled && !checkInFlight.current) setRecheckPending(null);
+      } finally {
+        reading = false;
+      }
+    };
+    const request = () => {
+      schedule(250);
+    };
+    probeDeployment.current = request;
     const focus = (event: FocusEvent) => {
       if (!(event.target instanceof Node)) request();
     };
-    window.addEventListener("focus", focus);
     const visible = () => {
       if (document.visibilityState === "visible") request();
     };
+    window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", visible);
-    return () => {
-      window.removeEventListener("focus", focus);
-      document.removeEventListener("visibilitychange", visible);
+    void probe();
+    const poll = () => {
+      if (cancelled || !monitor || Date.now() >= monitor.until) return;
+      void probe();
+      pollTimer = window.setTimeout(poll, 3000);
     };
-  }, [open, isVortex, context]);
-  useEffect(() => {
-    if (!open || !isVortex || !monitor || !live.current.onDeploymentStamp)
-      return;
-    let cancelled = false;
-    let baseline = monitor.baseline;
-    let timer: number;
-    const poll = async () => {
-      if (cancelled || Date.now() >= monitor.until) return;
-      try {
-        const next = await live.current.onDeploymentStamp?.();
-        if (cancelled || !live.current.open || live.current.context !== context)
-          return;
-        if (next !== undefined && next !== baseline) {
-          baseline = next;
-          setRecheckPending(true);
-        }
-      } catch {
-        /* An unavailable hint is not installation evidence. */
-      }
-      if (!cancelled && Date.now() < monitor.until)
-        timer = window.setTimeout(poll, 3000);
-    };
-    timer = window.setTimeout(poll, 3000);
+    if (monitor) pollTimer = window.setTimeout(poll, 3000);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      window.clearTimeout(pollTimer);
+      probeDeployment.current = () => {};
+      window.removeEventListener("focus", focus);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, [open, isVortex, context, monitor]);
   useEffect(() => {
@@ -521,15 +577,31 @@ export function NexusDialog({
         live.current.context === context &&
         stamp === generation.current;
       checkInFlight.current = true;
-      setRecheckPending(false);
       setChecking(true);
       setCheckError(null);
-      void live.current.onCheckInstalled!(current)
-        .then(() => {
-          if (current()) setCheckedAt(Date.now());
-        })
+      void (async () => {
+        // Busy UI may have deferred this check while Vortex continued deployment.
+        const latest = await live.current.onDeploymentStamp?.();
+        if (!current()) return;
+        if (latest !== recheckPending) {
+          setRecheckPending(null);
+          probeDeployment.current();
+          return;
+        }
+        await live.current.onCheckInstalled!(current);
+        if (current()) {
+          deployment.current.baseline = recheckPending;
+          deployment.current.failed = undefined;
+          setRecheckPending(null);
+          setCheckedAt(Date.now());
+        }
+      })()
         .catch((cause) => {
-          if (current()) setCheckError(String(cause));
+          if (current()) {
+            deployment.current.failed = recheckPending;
+            setRecheckPending(null);
+            setCheckError(String(cause));
+          }
         })
         .finally(() => {
           checkInFlight.current = false;
@@ -571,16 +643,21 @@ export function NexusDialog({
           Number(b.relationshipTier !== "possible-original-translation") ||
         b.updatedAt.localeCompare(a.updatedAt),
     );
+  const coveredIds = new Set(
+    search.entries
+      .filter(
+        (entry) =>
+          nexusSourceDiskCoverage(
+            mods,
+            entry.modId,
+            skippedComponents,
+            traversalComplete,
+          )?.complete,
+      )
+      .map((entry) => entry.modId),
+  );
   const sources = search.entries.filter(
-    (entry) =>
-      entry.result?.candidates.length &&
-      (handedOffIds.includes(entry.modId) ||
-        !nexusSourceDiskCoverage(
-          mods,
-          entry.modId,
-          skippedComponents,
-          traversalComplete,
-        )?.complete),
+    (entry) => entry.result?.candidates.length && !coveredIds.has(entry.modId),
   );
   const fileMetadata = useNexusFiles(
     search.entries.flatMap((entry) =>
@@ -705,7 +782,7 @@ export function NexusDialog({
             !group.installedCount,
         )
         .map((group) => group.entry.modId),
-    ].filter((id) => !failedIds.has(id)),
+    ].filter((id) => !failedIds.has(id) && !coveredIds.has(id)),
   );
   const actionRows = Object.values(rows);
   const installedGroups = groups.filter(
@@ -715,7 +792,11 @@ export function NexusDialog({
       !group.options.length &&
       group.installedCount > 0,
   ).length;
-  const handoffCount = actionRows.filter((row) => row.handoff).length;
+  const handoffCount = new Set(
+    Object.entries(rows)
+      .filter(([, row]) => row.handoff)
+      .map(([key]) => key.split(":").slice(1).join(":")),
+  ).size;
   const actionStatus = active ? rows[active]?.status : undefined;
   const allHandoffsRechecked =
     checkedAt != null &&
@@ -744,6 +825,9 @@ export function NexusDialog({
       !group.row.choices?.length &&
       !group.row.error,
   );
+  const pendingDownloads = isVortex
+    ? new Set(pending.map((group) => group.selected!.value)).size
+    : pending.length;
   async function downloadAll(queue = pending) {
     if (
       activeRef.current ||
@@ -768,14 +852,20 @@ export function NexusDialog({
     stopBatchRef.current = false;
     setBatchRunning(true);
     try {
+      const sent = new Set<string>();
       for (const item of snapshot) {
         if (stamp !== generation.current || stopBatchRef.current) break;
-        await (isVortex ? requestHandoff : startReview)(
-          item.key,
-          item.sourceId,
-          item.candidate,
-          item.file,
-        );
+        if (isVortex) {
+          const target = `${item.candidate.modId}:${item.file.fileId}`;
+          if (sent.has(target)) continue;
+          sent.add(target);
+          const origins = groups
+            .filter((group) => group.selected?.value === target)
+            .map((group) => ({ key: group.key, sourceId: group.entry.modId }));
+          await requestHandoff(item.key, origins, item.candidate, item.file);
+        } else {
+          await startReview(item.key, item.sourceId, item.candidate, item.file);
+        }
       }
     } finally {
       batchRef.current = false;
@@ -1168,7 +1258,7 @@ export function NexusDialog({
               {isVortex
                 ? "Download & install all with Vortex"
                 : "Download & import all"}{" "}
-              ({pending.length})
+              ({pendingDownloads})
             </button>
           )}
           {batchRunning && (
@@ -1226,7 +1316,9 @@ export function NexusDialog({
               ? "No downloadable files could be confirmed."
               : installedGroups > 0
                 ? "Available translation files are already installed."
-                : "No suitable translation downloads found."}
+                : coveredIds.size > 0
+                  ? "No missing translation text in the checked mods."
+                  : "No suitable translation downloads found."}
           </p>
         )}
         <section
@@ -1249,7 +1341,9 @@ export function NexusDialog({
               [shown.length, "Mods with downloads"],
               [noDownloadIds.size, "No suitable download found"],
               [
-                (search.skippedComplete ?? 0) + installedGroups,
+                (search.skippedComplete ?? 0) +
+                  coveredIds.size +
+                  installedGroups,
                 "No download needed",
               ],
               [search.noId, "Mods without Nexus ID"],
@@ -1260,7 +1354,7 @@ export function NexusDialog({
                 key={label}
                 title={
                   label === "No download needed"
-                    ? `${search.skippedComplete ?? 0} mods with no missing text; ${installedGroups} exact files already deployed`
+                    ? `${(search.skippedComplete ?? 0) + coveredIds.size} mods with no missing text; ${installedGroups} exact files already deployed`
                     : undefined
                 }
               >
@@ -1283,7 +1377,10 @@ export function NexusDialog({
               onClick={() => {
                 setFileSelections({});
                 fileMetadata.refresh();
-                onSearch({ forceRefresh: true, retainIds: handedOffIds });
+                onSearch({
+                  forceRefresh: true,
+                  retainIds: handedOffIds.filter((id) => !coveredIds.has(id)),
+                });
               }}
             >
               Search again

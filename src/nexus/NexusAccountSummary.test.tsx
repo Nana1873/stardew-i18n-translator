@@ -93,9 +93,9 @@ it("keeps reported zero distinct from unknown and preserves API scopes", () => {
       }}
     />,
   );
-  const text = screen.getByText(/^API requests left ·/);
+  const text = screen.getByText(/^API requests left \|/);
   expect(text).toHaveTextContent(
-    "Mod data: 0 daily · Translation search: 12 hourly",
+    "Mod data: 0 daily | Translation search: 12 hourly",
   );
   expect(text).not.toHaveTextContent("Daily limit");
   expect(text).toHaveAttribute(
@@ -107,3 +107,32 @@ it("keeps reported zero distinct from unknown and preserves API scopes", () => {
     expect.stringContaining("2026-09-07T00:00:00Z"),
   );
 });
+
+it.each(["rest-v1", "graphql-v2"] as const)(
+  "omits visible scope labels when only %s reports remaining values",
+  (scope) => {
+    render(
+      <NexusQuotaSummary
+        status={{
+          configured: true,
+          validated: true,
+          premium: true,
+          quota: [
+            { ...quota, scope, dailyRemaining: 19833, hourlyRemaining: 1988 },
+            { ...quota, scope: scope === "rest-v1" ? "graphql-v2" : "rest-v1" },
+          ],
+        }}
+      />,
+    );
+    const text = screen.getByText(/^API requests left \|/);
+    expect(text.textContent).toBe(
+      `API requests left | ${(19833).toLocaleString()} daily | ${(1988).toLocaleString()} hourly`,
+    );
+    expect(text).toHaveAttribute(
+      "title",
+      expect.stringContaining(
+        scope === "rest-v1" ? "Mod data" : "Translation search",
+      ),
+    );
+  },
+);

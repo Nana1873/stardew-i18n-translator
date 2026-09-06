@@ -125,6 +125,8 @@ function mount(
   let traversal: boolean | undefined = true,
     skipped: SkippedComponent[] = [];
   let installed = options.installed;
+  let deploymentStamp = "initial";
+  const onDeploymentStamp = options.stamp ?? vi.fn(async () => deploymentStamp);
   let blocked = false,
     workspaceKey = "mods",
     targetLang = "de";
@@ -140,7 +142,7 @@ function mount(
       targetLang={targetLang}
       workspaceKey={workspaceKey}
       recheckBlocked={blocked}
-      onDeploymentStamp={options.stamp}
+      onDeploymentStamp={onDeploymentStamp}
       installationMethod={method}
       vortexExecutable={executable}
       traversalComplete={traversal}
@@ -161,6 +163,23 @@ function mount(
     onSearch,
     onCheckInstalled,
     onOpenReview,
+    onDeploymentStamp,
+    setStamp: (value: string) => {
+      deploymentStamp = value;
+    },
+    changeDeployment: async () => {
+      deploymentStamp += "-changed";
+      vi.useFakeTimers({ now: Date.now() - 2000 });
+      try {
+        fireEvent.focus(window);
+        for (const duration of [250, 1500, 250])
+          await act(async () => {
+            await vi.advanceTimersByTimeAsync(duration);
+          });
+      } finally {
+        vi.useRealTimers();
+      }
+    },
     setBlocked: (next: boolean) => {
       blocked = next;
       rendered.rerender(view());
@@ -308,7 +327,7 @@ it("can recheck an external installation before any handoff without refreshing N
   app.onCheckInstalled.mockImplementation(async () => {
     app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }]);
   });
-  fireEvent.focus(window);
+  await app.changeDeployment();
   await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
   await waitFor(() =>
     expect(
@@ -419,7 +438,7 @@ it("replaces deployment evidence on recheck and preserves unknown results", asyn
   app.onCheckInstalled.mockImplementation(async () =>
     app.setInstalled([installedFile]),
   );
-  fireEvent.focus(window);
+  await app.changeDeployment();
   await screen.findByText("Available translation files are already installed.");
   app.setInstalled(undefined);
   await screen.findByRole("row", { name: "Canonical title" });
@@ -449,7 +468,7 @@ it("does not replace a selected installed file with a different download after r
   app.onCheckInstalled.mockImplementation(async () =>
     app.setInstalled([installedFile]),
   );
-  fireEvent.focus(window);
+  await app.changeDeployment();
   await waitFor(() => expect(choice).toHaveValue(""));
   expect(
     screen.getByRole("button", {
@@ -705,15 +724,15 @@ it("rechecks local disk without refreshing metadata or losing drafts and receipt
   const app = mount();
   await download();
   await screen.findByText("1 sent to Vortex");
-  app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
-  fireEvent.focus(window);
+  app.setMods([{ ...mods[0], diskTranslatedKeys: 2 }, mods[1]]);
+  await app.changeDeployment();
   await screen.findByText("1 sent to Vortex · files rechecked");
   fireEvent.click(translationRow().getByText("Details"));
   expect(
-    translationRow().getByText("Local translation: 3/3 strings · 0 missing"),
+    translationRow().getByText("Local translation: 2/3 strings · 1 missing"),
   ).toBeInTheDocument();
   expect(
-    translationRow().getByText("+3 strings on disk since handoff"),
+    translationRow().getByText("+2 strings on disk since handoff"),
   ).toBeInTheDocument();
   expect(
     translationRow().getByText(/2 saved values differ from disk; drafts kept/),
@@ -729,7 +748,7 @@ it.each([false, undefined])(
     await screen.findByText("1 sent to Vortex");
     app.setTraversal(traversal);
     app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
-    fireEvent.focus(window);
+    await app.changeDeployment();
     await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(translationRow().getByText("Details"));
     expect(
@@ -1043,7 +1062,7 @@ it("does not fetch newly visible metadata during a local installed-files recheck
   const app = mount({ mods: [{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]] });
   await waitFor(() => expect(commandCalls("nexus_list_files")).toHaveLength(1));
   app.setMods([{ ...mods[0], diskTranslatedKeys: 0 }, mods[1]]);
-  fireEvent.focus(window);
+  await app.changeDeployment();
   await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
   await screen.findByRole("row", { name: "Canonical title" });
   expect(commandCalls("nexus_list_files")).toHaveLength(1);
@@ -1109,7 +1128,7 @@ it("observes a late deployment hint without repeatedly scanning or redownloading
       fireEvent.click(button);
     });
     expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
-    expect(stamp).toHaveBeenCalledOnce();
+    expect(stamp.mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(app.onCheckInstalled).not.toHaveBeenCalled();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(6000);
@@ -1122,6 +1141,9 @@ it("observes a late deployment hint without repeatedly scanning or redownloading
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
     });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(250);
@@ -1147,7 +1169,7 @@ it("observes a late deployment hint without repeatedly scanning or redownloading
   }
 });
 
-it("deduplicates return events, waits for busy UI, and retries on a later return", async () => {
+it("deduplicates changed hints, waits for busy UI, and ignores unchanged returns", async () => {
   const app = mount();
   await download();
   await screen.findByText("1 sent to Vortex");
@@ -1157,20 +1179,27 @@ it("deduplicates return events, waits for busy UI, and retries on a later return
     fireEvent.focus(window);
     fireEvent.focus(window);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1000);
+      await vi.advanceTimersByTimeAsync(3000);
     });
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    app.setStamp("deployed");
+    fireEvent.focus(window);
+    fireEvent(document, new Event("visibilitychange"));
+    for (const duration of [250, 1500, 250])
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(duration);
+      });
     expect(app.onCheckInstalled).not.toHaveBeenCalled();
     app.setBlocked(false);
     await act(async () => {
       await vi.advanceTimersByTimeAsync(250);
     });
     expect(app.onCheckInstalled).toHaveBeenCalledOnce();
-    // An unchanged early scan does not consume the next actual return.
     fireEvent.focus(window);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(250);
+      await vi.advanceTimersByTimeAsync(6000);
     });
-    expect(app.onCheckInstalled).toHaveBeenCalledTimes(2);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
     expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
   } finally {
     app.unmount();
@@ -1191,7 +1220,7 @@ it.each(["close", "root", "language", "method", "unmount"])(
         finish = resolve;
       });
     });
-    fireEvent.focus(window);
+    await app.changeDeployment();
     await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
     expect(current()).toBe(true);
     if (change === "close") app.setOpen(false);
@@ -1205,20 +1234,29 @@ it.each(["close", "root", "language", "method", "unmount"])(
   },
 );
 
-it("cancels observation on close and refreshes local evidence on reopen", async () => {
-  const stamp = vi.fn(async () => "before");
-  const app = mount({ stamp });
+it("stops observation on close and compares the retained baseline on reopen", async () => {
+  const app = mount();
   await download();
   await screen.findByText("1 sent to Vortex");
   vi.useFakeTimers();
   try {
     app.setOpen(false);
+    const reads = vi.mocked(app.onDeploymentStamp).mock.calls.length;
     await act(async () => {
       await vi.advanceTimersByTimeAsync(9000);
     });
-    expect(stamp).toHaveBeenCalledOnce();
-    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    expect(app.onDeploymentStamp).toHaveBeenCalledTimes(reads);
     app.setOpen(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    app.setOpen(false);
+    app.setStamp("deployed while closed");
+    app.setOpen(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1500);
+    });
     await act(async () => {
       await vi.advanceTimersByTimeAsync(250);
     });
@@ -1226,6 +1264,249 @@ it("cancels observation on close and refreshes local evidence on reopen", async 
     expect(
       commandCalls("nexus_status").every((args) => !args.forceRefresh),
     ).toBe(true);
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("removes fully covered handoffs from downloads and retained search IDs while keeping the receipt", async () => {
+  const app = mount();
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  app.onCheckInstalled.mockImplementation(async () =>
+    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]),
+  );
+  await app.changeDeployment();
+  expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
+  expect(screen.getByText(/1 sent to Vortex/)).toBeInTheDocument();
+  expect(
+    screen.getByText("No missing translation text in the checked mods."),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText("Available translation files are already installed."),
+  ).toBeNull();
+  const metrics = within(
+    screen.getByRole("region", { name: "Translation search results" }),
+  );
+  expect(
+    metrics.getByText("Mods with downloads").parentElement,
+  ).toHaveTextContent("0");
+  expect(
+    metrics.getByText("No download needed").parentElement,
+  ).toHaveTextContent("5");
+  fireEvent.click(screen.getByRole("button", { name: "Search again" }));
+  expect(app.onSearch).toHaveBeenCalledWith(
+    expect.objectContaining({ retainIds: [] }),
+  );
+  app.setSearch({
+    ...search,
+    entries: [search.entries[0]],
+    skippedComplete: 5,
+  });
+  expect(screen.getByText(/1 sent to Vortex/)).toBeInTheDocument();
+  expect(
+    metrics.getByText("No download needed").parentElement,
+  ).toHaveTextContent("5");
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+});
+
+const sharedArchiveSources = {
+  ...twoSources,
+  entries: twoSources.entries.map((entry) => ({
+    ...entry,
+    result: { ...entry.result!, candidates: [candidate] },
+  })),
+};
+const sharedArchiveMods = [
+  mods[0],
+  { ...mods[0], uniqueId: "second.mod", nexusId: 99, packageId: "second" },
+];
+
+it("hands one shared Vortex archive off once and preserves each original's coverage receipt", async () => {
+  const app = mount({ search: sharedArchiveSources, mods: sharedArchiveMods });
+  const button = await screen.findByRole("button", {
+    name: "Download & install all with Vortex (1)",
+  });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  fireEvent.click(button);
+  await screen.findByText("1 sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 30342, fileId: 7 },
+  ]);
+  expect(button).toBeDisabled();
+  expect(screen.getAllByText(/Vortex launch was requested/)).toHaveLength(2);
+  app.onCheckInstalled.mockImplementation(async () =>
+    app.setMods([
+      { ...sharedArchiveMods[0], diskTranslatedKeys: 1 },
+      { ...sharedArchiveMods[1], diskTranslatedKeys: 2 },
+    ]),
+  );
+  await app.changeDeployment();
+  expect(
+    screen.getByText(/\+1 strings on disk since handoff/),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/\+2 strings on disk since handoff/),
+  ).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Search again" }));
+  expect(app.onSearch).toHaveBeenCalledWith(
+    expect.objectContaining({ retainIds: [1, 99] }),
+  );
+  app.setSearch({ ...sharedArchiveSources });
+  expect(button).toBeDisabled();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+});
+
+it("does not merge equal file IDs from different Nexus mods", async () => {
+  mount({ search: twoSources });
+  await download();
+  await screen.findByText("2 sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+    { modId: 30342, fileId: 7 },
+    { modId: 999, fileId: 7 },
+  ]);
+});
+
+it("shares a failed Vortex handoff and one explicit retry across its original groups", async () => {
+  const original = invoke.getMockImplementation()!;
+  let fail = true;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_handoff_to_vortex" && fail
+      ? Promise.reject(new Error("Launch failed"))
+      : original(cmd, ...args),
+  );
+  mount({ search: sharedArchiveSources, mods: sharedArchiveMods });
+  await download();
+  await waitFor(() => expect(screen.getAllByRole("alert")).toHaveLength(2));
+  expect(
+    screen
+      .getAllByRole("alert")
+      .every((alert) => alert.textContent?.includes("Launch failed")),
+  ).toBe(true);
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+  fail = false;
+  fireEvent.click(screen.getAllByRole("button", { name: "Retry" })[0]);
+  await screen.findByText("1 sent to Vortex");
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(2);
+  expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  expect(screen.getAllByText(/Vortex launch was requested/)).toHaveLength(2);
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+});
+
+it("imports shared archive mappings separately for each original in Review", async () => {
+  archive.files.push({
+    path: "Second/i18n/de.json",
+    manifestUniqueId: "second.mod",
+    isDefault: false,
+  });
+  mount({
+    method: "folder",
+    search: sharedArchiveSources,
+    mods: sharedArchiveMods,
+  });
+  await download();
+  await screen.findByText("2 imported to Review");
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(2);
+  expect(
+    commandCalls("nexus_import_translation").map((call) => call.modUniqueId),
+  ).toEqual(["sample.mod", "second.mod"]);
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+
+async function advance(...durations: number[]) {
+  for (const duration of durations)
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(duration);
+    });
+}
+
+it("requires a settled hint and revalidates a blocked hint before scanning", async () => {
+  const app = mount();
+  await screen.findByRole("row", { name: "Canonical title" });
+  vi.useFakeTimers();
+  try {
+    app.setBlocked(true);
+    app.setStamp("deploying-1");
+    fireEvent.focus(window);
+    await advance(250);
+    app.setStamp("deploying-2");
+    await advance(1500);
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    await advance(1500);
+    // The settled hint is now queued, but deployment changes while the UI is busy.
+    app.setStamp("deployed");
+    app.setBlocked(false);
+    await advance(250);
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    await advance(250, 1500, 250);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("does not scan for unavailable hints or the first known hint after an unknown baseline", async () => {
+  let value: string | null = null;
+  const app = mount({ stamp: async () => value });
+  await screen.findByRole("row", { name: "Canonical title" });
+  vi.useFakeTimers();
+  try {
+    fireEvent.focus(window);
+    await advance(3000);
+    value = "first known";
+    fireEvent.focus(window);
+    await advance(250, 1500, 250);
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    value = null;
+    fireEvent.focus(window);
+    await advance(3000);
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    value = "changed";
+    fireEvent.focus(window);
+    await advance(250, 1500, 250);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("suppresses retries for the same failed hint until a new deployment hint arrives", async () => {
+  const app = mount();
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  app.onCheckInstalled.mockRejectedValueOnce(new Error("Local scan failed"));
+  vi.useFakeTimers();
+  try {
+    app.setStamp("failed deployment");
+    fireEvent.focus(window);
+    await advance(250, 1500, 250);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    expect(screen.getByRole("alert")).toHaveTextContent("Local scan failed");
+    fireEvent.focus(window);
+    await advance(30000);
+    app.setOpen(false);
+    app.setOpen(true);
+    await advance(3000);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    app.setStamp("new deployment");
+    fireEvent.focus(window);
+    await advance(250, 1500, 250);
+    expect(app.onCheckInstalled).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
   } finally {
     app.unmount();
     vi.useRealTimers();

@@ -42,9 +42,10 @@ saved key appears as a mask; leaving the field untouched keeps it. Cancel leaves
 the saved key unchanged. Opening Setup only checks local readiness. Each explicit
 Nexus search also checks the account, including searches using cached results.
 Account errors appear beside the connection. The results footer shows remaining
-requests last reported by Nexus, separately for **Mod data** and **Translation
-search**. Missing values stay unknown; observation times and reported resets are
-available in the tooltip. Other apps may also use your account allowance.
+requests last reported by Nexus as daily and hourly values. The API scope,
+observation times and reported resets are available in the tooltip. If multiple
+API scopes report allowances, they remain labelled separately. Missing values
+stay unknown. Other apps may also use your account allowance.
 
 Use **Find translations on Nexus** to start discovery explicitly. Startup, normal
 scans, rescans, and installed-file checks never contact Nexus, including when
@@ -58,6 +59,8 @@ translation compatibility, download, or installation. Groups with no missing req
 by default. Empty sources need no translation text; local coverage lists them
 separately from actual nonempty translation strings. Review drafts alone do not count as installed coverage.
 Coverage is not a quality or compatibility guarantee.
+Once a local rescan confirms no missing required text, the group leaves the
+download list, including after a Vortex handoff; the batch summary remains.
 An existing translation can still be incomplete and appear in the results.
 Each row shows the exact local coverage and missing-string count; this is not a
 download-status check or proof that the offered Nexus file is already installed.
@@ -108,6 +111,8 @@ installation, conflicts, and deployment. A successful handoff means only that
 the launch request succeeded, not that a file was downloaded or installed.
 Stopping a batch prevents subsequent handoffs; it does not undo requests already
 sent to Vortex.
+If multiple mods use the same translation archive, the batch sends that exact
+Nexus mod/file pair to Vortex once and keeps the outcome for every matching row.
 
 Progress and the batch result appear above the download button. Individual
 results and disk comparisons are available after an action; a ready row has no
@@ -117,8 +122,9 @@ visible so they can be resolved without losing completed work.
 After a handoff, keep the list open while installing and deploying in Vortex.
 For up to two minutes, the app watches local deployment metadata and rescans
 when it changes. Returning to the app with the list open or reopening the list
-also checks installed files. These checks make no Nexus requests. If deployment
-finishes later, return to the list or use **Scan**.
+only checks that metadata for changes; unchanged metadata does not refresh the
+workspace. These checks make no Nexus requests. If deployment finishes later,
+return to the list or use **Scan**.
 
 The local rescan reads actual target-language files separately from saved app work.
 It reports disk coverage and differences from saved translations while retaining

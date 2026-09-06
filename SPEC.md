@@ -172,8 +172,10 @@ Saving a typed key through Setup or Settings validates it before saving. The
 password field never receives the saved secret; an untouched mask preserves it.
 Each explicit Nexus search validates the account once, including cache hits;
 opening Setup or the results dialog only reads session status. Quotas appear as
-a static footer summary, with observation times and reported resets in its
-tooltip. Raw validation responses and signed download URLs remain in the backend.
+a static footer summary. A single reported scope uses concise daily/hourly
+values with its scope, observation times and reported resets in the tooltip;
+multiple reported scopes remain distinct. Raw validation responses and signed
+download URLs remain in the backend.
 
 A saved Folder/Vortex installation method controls the download action. It is
 selected in Setup and editable in Settings; the results dialog has no destination
@@ -192,11 +194,15 @@ Vortex uses its own account. Process
 launch success is reported only as a handoff request, never as download,
 installation, deployment, original-source association or Collection membership.
 Batch cancellation stops subsequent requests without undoing earlier handoffs.
+Within Vortex batches, deduplicate exact translation mod/file pairs while keeping
+all original-mod associations and consistent failure/retry outcomes. Counts
+reflect unique handoff requests; Review import still maps each original separately.
 A local installed-files recheck reports disk coverage separately from effective
 app-state coverage and exposes differences without overwriting nonempty drafts.
 After handoff, observe only deployment-manifest metadata for a bounded period
-while the results dialog is open. Rescan after a change, on returning focus, or
-on reopening the list. Coalesce events and defer checks during scans, exports,
+while the results dialog is open. Returning focus or reopening the list checks
+only this metadata; unchanged metadata never triggers a full scan. Rescan after
+a deployment change. Coalesce events and defer checks during scans, exports,
 settings changes, searches and download batches. Closing the dialog or changing
 workspace cancels observation and prevents obsolete checks from updating the UI.
 A metadata change is only a rescan trigger, never installation evidence. These

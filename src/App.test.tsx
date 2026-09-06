@@ -10,6 +10,7 @@ import {
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
+let deploymentStamp = "initial";
 let backendHistory: OperationHistoryEntry[] = [];
 let fileDropHandler:
   | ((
@@ -23,6 +24,8 @@ let fileDropHandler:
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => {
     const mocked = invokeMock(cmd, args);
+    if (cmd === "nexus_deployment_stamp")
+      return Promise.resolve(mocked).then((value) => value ?? deploymentStamp);
     if (cmd === "nexus_status") {
       return Promise.resolve(mocked).then(
         (value) =>
@@ -209,9 +212,24 @@ const READY_IMPORT_PREFLIGHT: LlmImportPreflight = {
 beforeEach(() => {
   invokeMock.mockReset();
   backendHistory = [];
+  deploymentStamp = "initial";
   fileDropHandler = null;
   localStorage.clear();
 });
+
+async function changeDeployment() {
+  deploymentStamp += "-changed";
+  vi.useFakeTimers({ now: Date.now() - 2000 });
+  try {
+    fireEvent.focus(window);
+    for (const duration of [250, 1500, 250])
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(duration);
+      });
+  } finally {
+    vi.useRealTimers();
+  }
+}
 
 const EMPTY_SCAN = {
   mods: [],
@@ -412,20 +430,20 @@ describe("App shell", () => {
         ]);
       return original(cmd, ...args);
     });
-    render(<App />);
-    await waitFor(() =>
-      expect(
-        screen.getByRole("button", {
-          name: "Find translations on Nexus Mods",
-        }),
-      ).toBeEnabled(),
-    );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
-    );
-    await screen.findByText(
-      "Available translation files are already installed.",
-    );
+    await act(async () => {
+      render(<App />);
+    });
+    const findTranslations = screen.getByRole("button", {
+      name: "Find translations on Nexus Mods",
+    });
+    expect(findTranslations).toBeEnabled();
+    // Flush validation, discovery and the resulting file-metadata effects together.
+    await act(async () => {
+      fireEvent.click(findTranslations);
+    });
+    expect(
+      screen.getByText("Available translation files are already installed."),
+    ).toBeInTheDocument();
     return scanned;
   }
 
@@ -530,7 +548,11 @@ describe("App shell", () => {
               });
         return original(cmd, ...args);
       });
-      fireEvent.focus(window);
+      await changeDeployment();
+      if (failure === "rejected")
+        fireEvent.click(
+          await screen.findByRole("button", { name: "Close scan" }),
+        );
       expect(
         await screen.findByRole("button", {
           name: "Download & install all with Vortex (1)",
@@ -663,7 +685,7 @@ describe("App shell", () => {
     );
     await screen.findByText("No suitable translation downloads found.");
     deployed = true;
-    fireEvent.focus(window);
+    await changeDeployment();
     await waitFor(() => expect(restored).toBe(true));
     await screen.findByText("Newly deployed text");
     fireEvent.click(
@@ -724,7 +746,7 @@ describe("App shell", () => {
     const reads = invokeMock.mock.calls.filter(
       ([cmd]) => cmd === "scan_mods",
     ).length;
-    fireEvent.focus(window);
+    await changeDeployment();
     await waitFor(() =>
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
@@ -1072,18 +1094,11 @@ describe("App shell", () => {
         { ...scanned.mods[0], diskTranslatedKeys: 1, stateDiskDifferences: 1 },
       ],
     };
-    fireEvent.focus(window);
+    await changeDeployment();
     await screen.findByText("1 sent to Vortex · files rechecked");
-    fireEvent.click(
-      within(screen.getByRole("row", { name: "Canonical" })).getByText(
-        "Details",
-      ),
-    );
+    expect(screen.queryByRole("row", { name: "Canonical" })).toBeNull();
     expect(
-      screen.getByText("Local translation: 1/1 strings · 0 missing"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/1 saved values differ from disk; drafts kept/),
+      screen.getByText("No missing translation text in the checked mods."),
     ).toBeInTheDocument();
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
@@ -1120,7 +1135,7 @@ describe("App shell", () => {
     const restoreWarning =
       "Installed translation restore failed: broken target";
     scanned = { ...scanned, warnings: [restoreWarning] };
-    fireEvent.focus(window);
+    await changeDeployment();
     expect(await screen.findByRole("alert")).toHaveTextContent(restoreWarning);
     expect(
       invokeMock.mock.calls.filter(
