@@ -73,6 +73,11 @@ Changed text can be exported after a warning. Empty translations are omitted so
 the game can fall back to English. Target-only keys absent from English sources
 are also omitted. See [export behavior](user-guide.md#export-translation-files).
 
+Translation entries without a matching English source are informational. You
+can leave the existing file as it is; these entries do not block progress or
+export. Their details are collapsed in the scan report. Absence from
+`default.json` alone does not establish whether the mod uses a key.
+
 For a blocked export, use **Open issue** in the confirmation to inspect an
 affected string. Correct protected tokens or invalid text. Use **Save anyway**
 only for an intentional token difference after checking its effect.

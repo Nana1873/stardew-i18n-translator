@@ -38,6 +38,101 @@ pub enum InstalledTranslationState {
     MissingDictionary,
 }
 
+/// Exact Vortex installation identity; no language, deployment or coverage claim.
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "camelCase")]
+pub struct VortexInstalledFile {
+    pub mod_id: u64,
+    pub file_id: u64,
+}
+
+pub(crate) fn installed_files(root: &Path) -> Vec<VortexInstalledFile> {
+    let Some(appdata) = std::env::var_os("APPDATA") else {
+        return Vec::new();
+    };
+    installed_files_checked(root, &PathBuf::from(appdata).join("Vortex"), || {}).unwrap_or_default()
+}
+
+fn installed_files_checked(
+    root: &Path,
+    vortex: &Path,
+    before_final_check: impl FnOnce(),
+) -> Option<Vec<VortexInstalledFile>> {
+    let evidence = Evidence::read(root, vortex)?;
+    let mods = evidence.backup["persistent"]["mods"]["stardewvalley"].as_object()?;
+    let downloads = evidence.backup["persistent"]["downloads"]["files"].as_object()?;
+    let mut paths = HashMap::new();
+    for entry in mods.values() {
+        if let Some(path) = entry["installationPath"].as_str().and_then(relative) {
+            *paths.entry(key(&path)).or_insert(0usize) += 1;
+        }
+    }
+    let mut result = BTreeSet::new();
+    let mut directories = Vec::new();
+    for entry in mods.values() {
+        let candidate = (|| {
+            if entry["state"] != "installed" {
+                return None;
+            }
+            let rel = relative(entry["installationPath"].as_str()?)?;
+            if paths.get(&key(&rel)) != Some(&1)
+                || rel.components().any(|part| {
+                    part.as_os_str()
+                        .to_string_lossy()
+                        .to_lowercase()
+                        .ends_with(".installing")
+                })
+            {
+                return None;
+            }
+            let directory = plain_path(&evidence.staging.join(&rel))?;
+            if !directory.is_dir() || !directory.starts_with(&evidence.staging) {
+                return None;
+            }
+            let attr = &entry["attributes"];
+            if attr["source"] != "nexus" || attr["downloadGame"] != "stardewvalley" {
+                return None;
+            }
+            let mod_id = positive(&attr["modId"])?;
+            let file_id = positive(&attr["fileId"])?;
+            let download = downloads.get(entry["archiveId"].as_str()?)?;
+            let ids = &download["modInfo"]["nexus"]["ids"];
+            if download["state"] != "finished"
+                || ids["gameId"] != "stardewvalley"
+                || positive(&ids["modId"])? != mod_id
+                || positive(&ids["fileId"])? != file_id
+                || !download["game"]
+                    .as_array()?
+                    .iter()
+                    .any(|game| game == "stardewvalley")
+            {
+                return None;
+            }
+            let fingerprint = attr["fileMD5"].as_str()?;
+            if fingerprint.len() != 32
+                || !fingerprint.bytes().all(|byte| byte.is_ascii_hexdigit())
+                || !fingerprint.eq_ignore_ascii_case(download["fileMD5"].as_str()?)
+            {
+                return None;
+            }
+            Some((VortexInstalledFile { mod_id, file_id }, directory))
+        })();
+        if let Some((file, directory)) = candidate {
+            result.insert(file);
+            directories.push(directory);
+        }
+    }
+    before_final_check();
+    if directories
+        .iter()
+        .any(|directory| plain_path(directory).as_ref() != Some(directory) || !directory.is_dir())
+    {
+        return None;
+    }
+    evidence.unchanged(vortex)?;
+    Some(result.into_iter().collect())
+}
+
 pub(crate) fn detect(
     root: &Path,
     language: &str,
@@ -1187,6 +1282,117 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.base).unwrap();
+        }
+    }
+
+    #[test]
+    fn vortex_installation_identity_does_not_require_zip_language_or_deployment_proof() {
+        let mut f = Fixture::new();
+        f.backup["persistent"]["downloads"]["files"]["archive"]["localPath"] =
+            json!("unavailable.7z");
+        f.manifest["files"] = json!([]);
+        f.save();
+        assert_eq!(
+            installed_files_checked(&f.root, &f.vortex, || {}).unwrap(),
+            vec![VortexInstalledFile {
+                mod_id: 200,
+                file_id: 300
+            }]
+        );
+        assert!(detect_at(&f.root, "zh", &f.scan(), &f.vortex)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn vortex_installation_identity_rejects_ambiguous_missing_or_conflicting_records() {
+        for failure in [
+            "directory",
+            "installing",
+            "state",
+            "source",
+            "game",
+            "file",
+            "fingerprint",
+            "duplicate",
+            "unsafe",
+        ] {
+            let mut f = Fixture::new();
+            match failure {
+                "directory" => {
+                    fs::remove_dir_all(f.base.join("staging/translation")).unwrap();
+                }
+                "installing" => {
+                    f.backup["persistent"]["mods"]["stardewvalley"]["entry"]["installationPath"] =
+                        json!("translation.installing");
+                }
+                "state" => {
+                    f.backup["persistent"]["mods"]["stardewvalley"]["entry"]["state"] =
+                        json!("downloaded");
+                }
+                "source" => {
+                    f.backup["persistent"]["mods"]["stardewvalley"]["entry"]["attributes"]
+                        ["source"] = json!("other");
+                }
+                "game" => {
+                    f.backup["persistent"]["downloads"]["files"]["archive"]["modInfo"]["nexus"]
+                        ["ids"]["gameId"] = json!("skyrimse");
+                }
+                "file" => {
+                    f.backup["persistent"]["downloads"]["files"]["archive"]["modInfo"]["nexus"]
+                        ["ids"]["fileId"] = json!(301);
+                }
+                "fingerprint" => {
+                    f.backup["persistent"]["downloads"]["files"]["archive"]["fileMD5"] =
+                        json!("00000000000000000000000000000000");
+                }
+                "duplicate" => {
+                    f.backup["persistent"]["mods"]["stardewvalley"]["copy"] =
+                        f.backup["persistent"]["mods"]["stardewvalley"]["entry"].clone();
+                }
+                _ => {
+                    f.backup["persistent"]["mods"]["stardewvalley"]["entry"]["installationPath"] =
+                        json!("../translation");
+                }
+            }
+            f.save();
+            assert!(
+                installed_files_checked(&f.root, &f.vortex, || {})
+                    .unwrap()
+                    .is_empty(),
+                "{failure}"
+            );
+        }
+    }
+
+    #[test]
+    fn vortex_installation_identity_rechecks_snapshot_and_directory() {
+        for change in ["backup", "directory"] {
+            let f = Fixture::new();
+            assert!(installed_files_checked(&f.root, &f.vortex, || {
+                if change == "backup" {
+                    fs::write(f.vortex.join("temp/state_backups_full/hourly.json"), b"{}").unwrap();
+                } else {
+                    fs::remove_dir_all(f.base.join("staging/translation")).unwrap();
+                }
+            })
+            .is_none());
+        }
+    }
+
+    #[test]
+    #[ignore = "Read-only Vortex installed-file inventory for the user's five reported repeats"]
+    fn live_installed_files_read_only() {
+        let root = PathBuf::from(
+            std::env::var_os("SIT_VORTEX_SMOKE_MODS").expect("Set SIT_VORTEX_SMOKE_MODS"),
+        );
+        let files = installed_files(&root);
+        for mod_id in [10342, 45719, 42449, 50381, 19881] {
+            let found: Vec<_> = files.iter().filter(|file| file.mod_id == mod_id).collect();
+            assert!(!found.is_empty(), "Missing installed mod {mod_id}");
+            for file in found {
+                println!("installed_mod={} file={}", file.mod_id, file.file_id);
+            }
         }
     }
 

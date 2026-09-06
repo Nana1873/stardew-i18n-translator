@@ -179,6 +179,7 @@ fn scan_with_installed_translation_restore(
         vortex_identity::resolve_original_ids(mods_root, &mut result);
         result.installed_nexus_translations =
             vortex_identity::detect(mods_root, target_lang, &result);
+        result.vortex_installed_files = vortex_identity::installed_files(mods_root);
         return Ok(result);
     }
     let translation_root = translations::language_root(config, target_lang)?;
@@ -208,6 +209,7 @@ fn scan_with_installed_translation_restore(
     }
     vortex_identity::resolve_original_ids(mods_root, &mut result);
     result.installed_nexus_translations = vortex_identity::detect(mods_root, target_lang, &result);
+    result.vortex_installed_files = vortex_identity::installed_files(mods_root);
     Ok(result)
 }
 

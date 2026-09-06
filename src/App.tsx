@@ -759,7 +759,6 @@ export function App() {
     refreshGlossary(merged.targetLang);
     await runScan(merged, false, () => true, {
       clearExisting: true,
-      showExtraKeyDialog: false,
       restoreInstalledTranslations: true,
     });
   }
@@ -775,12 +774,9 @@ export function App() {
     // Settings may have built a glossary or switched language — reload per-language.
     refreshGlossary(next.targetLang);
     if (workspaceChanged && setupComplete(next)) {
-      // A folder or language switch changes the scanned workspace, so refresh it
-      // immediately. Keep optional extra-key cleanup quiet here: those hints are
-      // useful on manual scans, but noisy during a deliberate settings change.
+      // Refresh the scanned workspace when its folder or language changes.
       await runScan(next, false, () => true, {
         clearExisting: true,
-        showExtraKeyDialog: false,
         restoreInstalledTranslations: true,
       });
     }
@@ -803,7 +799,6 @@ export function App() {
     options: {
       nexusSearch?: boolean;
       clearExisting?: boolean;
-      showExtraKeyDialog?: boolean;
       preserveSelection?: boolean;
       showDiagnostics?: boolean;
       restoreInstalledTranslations?: boolean;
@@ -873,9 +868,7 @@ export function App() {
             (result.skippedComponents?.some(
               (component) => component.requiresAttention,
             ) ??
-              false) ||
-            (options.showExtraKeyDialog !== false &&
-              (result.extraKeys?.length ?? 0) > 0),
+              false),
         );
       }
       return result;
@@ -888,6 +881,7 @@ export function App() {
               ...current,
               traversalComplete: false,
               installedNexusTranslations: [],
+              vortexInstalledFiles: [],
             }
           : current,
       );
@@ -1872,7 +1866,6 @@ export function App() {
       if (settings) {
         void runScan(settings, false, () => true, {
           preserveSelection: true,
-          showExtraKeyDialog: false,
           showDiagnostics: false,
         });
       }
@@ -2323,6 +2316,7 @@ export function App() {
             search={nexus}
             mods={scan.mods}
             installedNexusTranslations={scan.installedNexusTranslations}
+            vortexInstalledFiles={scan.vortexInstalledFiles}
             targetLang={settings.targetLang}
             skippedComponents={scan.skippedComponents}
             traversalComplete={scan.traversalComplete === true}
@@ -2350,7 +2344,6 @@ export function App() {
               const result = await runScan(settings, false, stillCurrent, {
                 nexusSearch: false,
                 showDiagnostics: false,
-                showExtraKeyDialog: false,
                 restoreInstalledTranslations: true,
               });
               if (!stillCurrent()) return;
@@ -2380,7 +2373,6 @@ export function App() {
               await runScan(settings, false, () => true, {
                 nexusSearch: false,
                 showDiagnostics: false,
-                showExtraKeyDialog: false,
               });
             }}
           />

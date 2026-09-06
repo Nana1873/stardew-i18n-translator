@@ -384,12 +384,19 @@ function deferred<T>() {
 }
 
 describe("App shell", () => {
-  async function showInstalledNexusFile(missing = false) {
+  async function showInstalledNexusFile(
+    missing = false,
+    inventoryOnly = false,
+  ) {
     const scanned = exportScan(true);
     scanned.traversalComplete = true;
     scanned.installedNexusTranslations = [
       { sourceNexusId: 10, modId: 30, fileId: 7 },
     ];
+    if (inventoryOnly) {
+      scanned.installedNexusTranslations = [];
+      scanned.vortexInstalledFiles = [{ modId: 30, fileId: 7 }];
+    }
     Object.assign(scanned.mods[0], { nexusId: 10, diskTranslatedKeys: 0 });
     if (missing)
       Object.assign(scanned.mods[0], {
@@ -451,9 +458,29 @@ describe("App shell", () => {
     await act(async () => {
       fireEvent.click(findTranslations);
     });
-    expect(screen.getByText("Translation installed")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        inventoryOnly ? "Installed in Vortex" : "Translation installed",
+      ),
+    ).toBeInTheDocument();
     return scanned;
   }
+
+  it("uses native Vortex inventory to avoid repeat downloads without deployment evidence", async () => {
+    await showInstalledNexusFile(false, true);
+    expect(
+      screen.getByRole("button", { name: "Download all with Vortex (0)" }),
+    ).toBeDisabled();
+    expect(screen.queryByText("Translation installed")).toBeNull();
+    expect(
+      screen.getByText(
+        "Check deployment in Vortex to verify local translation files.",
+      ),
+    ).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
+    ).toBe(false);
+  });
 
   it("opens installed translation gaps in the existing untranslated filter", async () => {
     await showInstalledNexusFile(true);
@@ -562,10 +589,15 @@ describe("App shell", () => {
     },
   );
 
-  it.each(["rejected", "warning"])(
-    "keeps re-downloads excluded after a %s installed-file recheck",
-    async (failure) => {
-      const scanned = await showInstalledNexusFile();
+  it.each([
+    ["rejected", false],
+    ["warning", false],
+    ["rejected", true],
+    ["warning", true],
+  ] as const)(
+    "keeps re-downloads excluded after a %s recheck with inventory-only %s",
+    async (failure, inventoryOnly) => {
+      const scanned = await showInstalledNexusFile(false, inventoryOnly);
       const original = invokeMock.getMockImplementation()!;
       invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
         if (cmd === "scan_mods")
@@ -589,13 +621,18 @@ describe("App shell", () => {
       ).toBeDisabled();
       if (failure === "rejected") {
         expect(screen.queryByText("Translation installed")).toBeNull();
+        expect(screen.queryByText("Installed in Vortex")).toBeNull();
         expect(
           screen.getByText(
             "Local translation coverage unavailable: scan incomplete.",
           ),
         ).toBeInTheDocument();
       } else
-        expect(screen.getByText("Translation installed")).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            inventoryOnly ? "Installed in Vortex" : "Translation installed",
+          ),
+        ).toBeInTheDocument();
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
       ).toHaveLength(2);
@@ -5294,7 +5331,7 @@ describe("App shell", () => {
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 
-  it("opens the scan dialog when an automatic scan finds extra target keys", async () => {
+  it("keeps extra target keys quiet on automatic scans and available in latest scan", async () => {
     mockConfigured({
       ...EMPTY_SCAN,
       extraKeys: [
@@ -5308,9 +5345,14 @@ describe("App shell", () => {
     });
     render(<App />);
 
-    expect(
-      await screen.findByRole("dialog", { name: "Scan" }),
-    ).toHaveTextContent("removed-key");
+    const latest = await screen.findByRole("button", { name: /Latest scan:/ });
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    fireEvent.click(latest);
+    const summary = await screen.findByText(
+      "1 translation entry without matching English source",
+    );
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("removed-key")).not.toBeVisible();
   });
 
   it("opens the scan dialog when an automatic scan fails", async () => {

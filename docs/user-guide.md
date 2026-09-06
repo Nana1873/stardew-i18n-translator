@@ -81,19 +81,25 @@ mean installed translations were deleted. Previous download receipts remain
 visible; restoring text into saved work waits for an error-free scan.
 Each row shows the exact local coverage and missing-string count; this is not a
 download-status check or proof that the offered Nexus file is already installed.
-In Vortex mode, a local scan can identify an exact deployed Nexus file and remove
-that file from the download choices even when it leaves strings untranslated.
+In Vortex mode, a local scan checks exact Nexus file IDs in Vortex's installation
+records. **Installed in Vortex** removes that file from the download choices
+even if its archive layout or language files cannot be verified in the game.
+It does not claim that the mod is enabled, deployed correctly or fully translated.
+A separate check can identify an exact deployed translation file.
 The row stays in the same list with an installed indication and its missing-text
 count. Where the corresponding editor component has untranslated work, you can
 open it directly. Your existing nonempty translations remain preserved.
 Newer files remain available; removing the installed version does not automatically
 select an older one or prevent downloads for other mods. Identified files do not
 count as searches without a suitable download.
-This check currently requires Vortex's local JSON backup, the original downloaded
-ZIP, and matching language files deployed through hardlinks. Backups may lag a
-new installation. Missing or conflicting metadata, deleted archives, other archive
-formats, or modified deployed files leave the identity unknown and the download
-available. The translator only reads these files; it does not open Vortex's database.
+The installation check requires Vortex's local JSON backup, a matching finished
+download record and an existing installation directory. It also works with RAR
+and 7z files and does not need to extract the archive. Backups may lag a new
+installation; missing or conflicting records leave this status unknown.
+The separate deployment check requires the original downloaded ZIP and matching
+language files deployed through hardlinks. Unsupported layouts or changed files
+can prevent that stronger check even when Vortex installation is known.
+The translator only reads these files; it does not open Vortex's database.
 For a supported ZIP layout, it can also identify an installation whose helper
 component was deployed while the archive's language dictionary is missing.
 The row reports the installation problem and keeps that exact file out of the

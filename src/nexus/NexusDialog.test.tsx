@@ -114,6 +114,7 @@ function mount(
     stamp?: () => Promise<string | null>;
     observe?: boolean;
     identityIncomplete?: boolean;
+    inventory?: { modId: number; fileId: number }[];
   } = {},
 ) {
   let data = options.mods ?? mods,
@@ -154,6 +155,7 @@ function mount(
       nexusIdentityIncomplete={options.identityIncomplete}
       skippedComponents={skipped}
       installedNexusTranslations={installed}
+      vortexInstalledFiles={options.inventory}
       onImported={onImported}
       onSearch={onSearch}
       onCheckInstalled={onCheckInstalled}
@@ -2560,4 +2562,68 @@ it("does not default to a download when native original-ID associations are inco
     ),
   ).toBeInTheDocument();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+
+it.each([false, true])(
+  "excludes exact Vortex inventory without claiming deployment when identity incomplete is %s",
+  async (identityIncomplete) => {
+    mount({ inventory: [{ modId: 30342, fileId: 7 }], identityIncomplete });
+    await screen.findByText("Installed in Vortex");
+    expect(screen.queryByText("Translation installed")).toBeNull();
+    expect(
+      screen.queryByText("Translation file missing from Vortex installation"),
+    ).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Download all with Vortex (0)" }),
+    ).toBeDisabled();
+    expect(
+      screen
+        .getByText(
+          "Check deployment in Vortex to verify local translation files.",
+        )
+        .closest("details"),
+    ).not.toHaveAttribute("open");
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+  },
+);
+
+it.each([7, 8, 99])(
+  "keeps version alternatives selectable without replacing Vortex inventory file %i",
+  async (installedId) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "nexus_list_files"
+        ? Promise.resolve([
+            file,
+            { ...file, fileId: 8, version: "1.3", uploadedAt: "2026-02-01" },
+          ])
+        : original(cmd, ...args),
+    );
+    mount({ inventory: [{ modId: 30342, fileId: installedId }] });
+    const choice = await screen.findByRole("combobox");
+    expect(choice).toHaveValue(installedId === 7 ? "30342:8" : "");
+    if (installedId !== 7)
+      expect(
+        screen.getByRole("button", { name: "Download all with Vortex (0)" }),
+      ).toBeDisabled();
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+    fireEvent.change(choice, {
+      target: { value: installedId === 7 ? "30342:8" : "30342:7" },
+    });
+    await download();
+    await screen.findByText("1 sent to Vortex");
+    expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+      { modId: 30342, fileId: installedId === 7 ? 8 : 7 },
+    ]);
+  },
+);
+
+it("ignores Vortex inventory in folder mode", async () => {
+  mount({ method: "folder", inventory: [{ modId: 30342, fileId: 7 }] });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Download & import all (1)" }),
+    ).toBeEnabled(),
+  );
+  expect(screen.queryByText("Installed in Vortex")).toBeNull();
 });

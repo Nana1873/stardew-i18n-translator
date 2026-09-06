@@ -36,7 +36,10 @@ game-content reads are limited to the glossary sources described below.
   flat string objects. Preserve source key order for display and export.
 - Import existing targets using SMAPI-compatible case-insensitive, trimmed key
   matching. Extra target keys are informational: they do not count toward
-  progress or block export, and a rewritten target omits them.
+  progress or block export, and a rewritten target omits them. Show them in a
+  neutral, initially collapsed information section; they alone do not open the
+  scan dialog automatically. Absence from default.json does not prove a key is
+  unused by the mod.
 - Ignore Content Patcher `assets/i18n` data. Exclude detected community language
   packs from translation targets as expected information, not a warning.
 - Report malformed components and skip them without inventing empty rows or
@@ -154,6 +157,14 @@ disk. Blank sources with blank or absent disk targets need no translation text;
 count them separately from physically present nonempty target strings. Use exact counts, not rounded progress. An explicit option includes covered
 groups for Collection curation. Saved Review/Changed text is not disk coverage;
 coverage does not imply quality approval.
+
+Track Vortex's installed file inventory separately from deployment and coverage.
+Bind exact Nexus mod/file IDs to matching installed and finished-download records,
+the configured Vortex instance and an existing installation directory. Exclude
+those exact files from repeat handoffs without requiring supported ZIP content,
+a matching language dictionary or a complete local translation scan. Label this
+as installed in Vortex, never as proof of activation or complete translation.
+Stale or unavailable backup metadata remains a limitation of this read-only check.
 
 Errors with a trustworthy source Nexus ID affect that entire Nexus group,
 including components in other packages. Preserve source IDs on skipped

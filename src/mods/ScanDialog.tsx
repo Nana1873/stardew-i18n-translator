@@ -237,12 +237,8 @@ function ScanResultContent({ result }: { result: ScanResult }) {
     );
   }
   const hasWarningDiagnostics = warningParts.length > 0;
-  const hasInformation = expectedExclusions.length > 0 || extraKeys.length > 0;
-  const extraKeySummary = `${extraKeys.length} ${
-    extraKeys.length === 1
-      ? "translation entry has"
-      : "translation entries have"
-  } no matching English source`;
+  const hasInformation = expectedExclusions.length > 0;
+  const extraKeySummary = `${extraKeys.length} ${extraKeys.length === 1 ? "translation entry" : "translation entries"} without matching English source`;
 
   return (
     <>
@@ -422,51 +418,51 @@ function ScanResultContent({ result }: { result: ScanResult }) {
             </ul>
           </section>
         )}
-
-        {extraKeys.length > 0 && (
-          <section className="translator-scan-info-section">
-            <p className="translator-scan-info-summary">
-              <Info aria-hidden="true" /> <strong>{extraKeySummary}.</strong>{" "}
-              They are in the translation file, but not in the mod&apos;s
-              English source file (default.json), usually because the mod
-              removed or renamed them. SMAPI ignores them. They do not count
-              toward progress or block export. No action is required. The next
-              export omits them from the new translation file and retains the
-              original file in its backup.
-            </p>
-            <ul
-              className="translator-scan-extra-groups"
-              aria-label="Translation entries without matching English source"
-            >
-              {extraKeyGroups.map((group) => (
-                <li key={`${group.modName}:${group.targetPath}`}>
-                  <strong>{group.modName}</strong>
-                  <details open={group.keys.length <= 3}>
-                    <summary>
-                      <code>{group.displayPath}</code>
-                      <span>
-                        {group.keys.length}{" "}
-                        {group.keys.length === 1 ? "entry" : "entries"}
-                      </span>
-                    </summary>
-                    <p className="translator-scan-extra-path">
-                      Translation file: <code>{group.targetPath}</code>
-                    </p>
-                    <ul aria-label={`${group.displayPath} unmatched entries`}>
-                      {group.keys.map((key) => (
-                        <li key={key}>
-                          <code>{key}</code>
-                          <span>Not found in English source</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
+
+      {extraKeys.length > 0 && (
+        <details className="translator-scan-extra-info">
+          <summary>
+            <Info aria-hidden="true" /> {extraKeySummary}
+          </summary>
+          <p>
+            These entries are in the translation file but not in the local
+            English source (default.json). They do not count toward progress or
+            block export. The next export omits them from the new translation
+            file and retains the original file in its backup.
+          </p>
+          <ul
+            className="translator-scan-extra-groups"
+            aria-label="Translation entries without matching English source"
+          >
+            {extraKeyGroups.map((group) => (
+              <li key={`${group.modName}:${group.targetPath}`}>
+                <strong>{group.modName}</strong>
+                <details>
+                  <summary>
+                    <code>{group.displayPath}</code>
+                    <span>
+                      {group.keys.length}{" "}
+                      {group.keys.length === 1 ? "entry" : "entries"}
+                    </span>
+                  </summary>
+                  <p className="translator-scan-extra-path">
+                    Translation file: <code>{group.targetPath}</code>
+                  </p>
+                  <ul aria-label={`${group.displayPath} unmatched entries`}>
+                    {group.keys.map((key) => (
+                      <li key={key}>
+                        <code>{key}</code>
+                        <span>Not found in English source</span>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </>
   );
 }

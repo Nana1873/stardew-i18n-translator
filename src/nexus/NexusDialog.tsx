@@ -14,6 +14,7 @@ import {
   type NexusFile,
   type NexusImportRequest,
   type InstalledNexusTranslation,
+  type VortexInstalledFile,
   type ScannedMod,
   type SkippedComponent,
 } from "../tauri/commands";
@@ -142,6 +143,7 @@ export function NexusDialog({
   traversalComplete = false,
   nexusIdentityIncomplete = false,
   installedNexusTranslations = [],
+  vortexInstalledFiles = [],
 }: {
   open?: boolean;
   vortexExecutable?: string | null;
@@ -156,6 +158,7 @@ export function NexusDialog({
   traversalComplete?: boolean;
   nexusIdentityIncomplete?: boolean;
   installedNexusTranslations?: InstalledNexusTranslation[];
+  vortexInstalledFiles?: VortexInstalledFile[];
   targetLang: string;
   onSearch: (options?: {
     includeComplete?: boolean;
@@ -773,6 +776,12 @@ export function NexusDialog({
     const sourceUnknown = sourceScanIncomplete(entry.modId);
     const candidates = candidatesFor(entry);
     const evidence = evidenceFor(entry.modId);
+    const inventory = isVortex
+      ? vortexInstalledFiles.filter((item) =>
+          candidates.some((candidate) => candidate.modId === item.modId),
+        )
+      : [];
+    const installed = [...evidence, ...inventory];
     const problem = evidence.some(
       (item) => item.state === "missing_dictionary",
     );
@@ -791,7 +800,7 @@ export function NexusDialog({
       }));
     });
     const recordedOptions = allOptions.filter((option) =>
-      evidence.some(
+      installed.some(
         (item) =>
           item.modId === option.candidate.modId &&
           item.fileId === option.file.fileId,
@@ -819,7 +828,7 @@ export function NexusDialog({
           ? explicit
           : ""
         : sourceUnknown ||
-            evidence.some(
+            installed.some(
               (item) =>
                 !recordedOptions.some(
                   (option) =>
@@ -854,6 +863,7 @@ export function NexusDialog({
       key,
       row,
       evidence,
+      inventory,
       problem,
       recordedOptions,
       loading: candidates.some(
@@ -869,7 +879,10 @@ export function NexusDialog({
     };
   });
   const shown = groups.filter(
-    (group) => group.options.length > 0 || group.evidence.length > 0,
+    (group) =>
+      group.options.length > 0 ||
+      group.evidence.length > 0 ||
+      group.inventory.length > 0,
   );
   const failedIds = new Set([
     ...search.entries
@@ -894,7 +907,8 @@ export function NexusDialog({
             !group.loading &&
             !group.options.length &&
             !group.errors.length &&
-            !group.evidence.length,
+            !group.evidence.length &&
+            !group.inventory.length,
         )
         .map((group) => group.entry.modId),
     ].filter(
@@ -905,11 +919,11 @@ export function NexusDialog({
   const actionRows = Object.values(rows);
   const installedGroups = groups.filter(
     (group) =>
-      !group.sourceUnknown &&
+      (!group.sourceUnknown || group.inventory.length > 0) &&
       !group.loading &&
       !group.errors.length &&
       !group.selected &&
-      group.evidence.length > 0 &&
+      (group.evidence.length > 0 || group.inventory.length > 0) &&
       !group.problem,
   ).length;
   const handoffCount = new Set(
@@ -937,7 +951,8 @@ export function NexusDialog({
     .join(" · ");
   const loading = groups.some((group) => group.loading);
   const unresolvedCount = shown.filter(
-    (group) => !group.selected && !group.evidence.length,
+    (group) =>
+      !group.selected && !group.evidence.length && !group.inventory.length,
   ).length;
   const skippedComplete = scanIncomplete ? 0 : (search.skippedComplete ?? 0);
   const pending = shown.filter(
@@ -1010,7 +1025,8 @@ export function NexusDialog({
             group.evidence.some((record) => record.modId === item.modId),
           )
         : group.candidates[0]);
-    const linkModId = candidate?.modId ?? group.evidence[0]?.modId;
+    const linkModId =
+      candidate?.modId ?? group.evidence[0]?.modId ?? group.inventory[0]?.modId;
     const sourceName =
       entry.result?.originalName ?? entry.localNames.join(", ");
     const file = selected?.file;
@@ -1067,6 +1083,9 @@ export function NexusDialog({
                   : "Translation installed"}
               </small>
             )}
+            {!group.evidence.length && group.inventory.length > 0 && (
+              <small>Installed in Vortex</small>
+            )}
             <small>
               {disk
                 ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
@@ -1100,7 +1119,9 @@ export function NexusDialog({
               <div className="nexus-file-selection">
                 {group.options.length > 1 ||
                 (group.options.length > 0 &&
-                  (group.evidence.length > 0 || group.sourceUnknown)) ? (
+                  (group.evidence.length > 0 ||
+                    group.inventory.length > 0 ||
+                    group.sourceUnknown)) ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -1234,6 +1255,7 @@ export function NexusDialog({
               </>
             )}
             {(displayFile ||
+              group.inventory.length > 0 ||
               row.handoff ||
               row.completed ||
               row.imported > 0 ||
@@ -1242,6 +1264,14 @@ export function NexusDialog({
               row.details.length > 0) && (
               <details>
                 <summary>Details</summary>
+                {!group.evidence.length &&
+                  group.inventory.length > 0 &&
+                  !disk?.complete && (
+                    <p>
+                      Check deployment in Vortex to verify local translation
+                      files.
+                    </p>
+                  )}
                 {displayFile && <p>{displayFile.fileName}</p>}
                 {row.handoff && (
                   <p>

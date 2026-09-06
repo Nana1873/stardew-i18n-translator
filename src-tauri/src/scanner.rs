@@ -124,6 +124,7 @@ pub struct ScanResult {
     /// Verified but ambiguous original identities prevent complete Nexus grouping.
     pub nexus_identity_incomplete: bool,
     pub installed_nexus_translations: Vec<crate::vortex_identity::InstalledNexusTranslation>,
+    pub vortex_installed_files: Vec<crate::vortex_identity::VortexInstalledFile>,
     /// Scanner diagnostics that do not themselves represent an omitted
     /// component. Component-specific failures belong in `skipped_components`
     /// so the UI does not have to deduplicate free-form messages.
@@ -655,6 +656,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         mod_count,
         nexus_identity_incomplete: false,
         installed_nexus_translations: Vec::new(),
+        vortex_installed_files: Vec::new(),
         file_count,
         mods: result_mods,
         warnings,

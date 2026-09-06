@@ -296,7 +296,14 @@ export interface InstalledNexusTranslation {
   fileId: number;
 }
 
+export interface VortexInstalledFile {
+  modId: number;
+  fileId: number;
+}
+
 export interface ScanResult {
+  /** Exact files installed in Vortex; does not prove deployment or language coverage. */
+  vortexInstalledFiles?: VortexInstalledFile[];
   /** Native identity conflicts prevent proving complete Nexus source associations. */
   nexusIdentityIncomplete?: boolean;
   /** Native evidence for exact deployed files or a proven missing dictionary; absent means unknown. */

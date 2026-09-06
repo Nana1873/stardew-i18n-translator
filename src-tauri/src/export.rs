@@ -65,7 +65,7 @@ pub struct ExportFileResult {
     /// Exported, but an unreviewed AI suggestion — review advised.
     pub review_needed: usize,
     /// Keys present in the **existing** target file but absent from
-    /// `default.json` (SMAPI ignores them). They are dropped from the rewritten
+    /// `default.json`. They are dropped from the rewritten
     /// file — reported here so a community translation is never pruned
     /// silently. The pre-export content survives in `<file>.bak`.
     pub orphan_keys: Vec<String>,
