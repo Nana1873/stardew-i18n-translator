@@ -8,7 +8,6 @@ import type {
 
 export type TranslationFileSelection =
   | { kind: "selected"; file: NexusFile; reason: string }
-  | { kind: "choice"; files: NexusFile[]; reason: string }
   | { kind: "unavailable"; reason: string };
 
 export interface TranslationMappingChoice {
@@ -68,25 +67,6 @@ function timestamp(file: NexusFile): number {
   const value = Date.parse(file.uploadedAt);
   return Number.isFinite(value) ? value : 0;
 }
-function series(file: NexusFile): string {
-  // Dates/version suffixes identify revisions; words such as Lite/Full or
-  // Content Patcher/SMAPI remain, so distinct variants never collapse together.
-  let name = file.name
-    .toLowerCase()
-    .replace(/\.zip$/i, "")
-    .trim();
-  if (file.version && !/\b(?:for|stardew|smapi|sdv)\b/i.test(name)) {
-    const version = file.version
-      .toLowerCase()
-      .replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    name = name.replace(new RegExp(`(?:^|[\\s_-])v?${version}$`), " ");
-  }
-  return name
-    .replace(/\.(?:zip|7z|rar)\b/g, " ")
-    .replace(/[^\p{L}\p{N}]+/gu, " ")
-    .trim();
-}
-
 /** Current language-matching versions, newest first; archive contents remain unverified. */
 export function translationFileOptions(
   files: NexusFile[],
@@ -153,30 +133,15 @@ export function selectTranslationFile(
           ? "No current archive suitable for this language. Check the Nexus files page."
           : "No current ZIP suitable for this language. Open the Nexus files page for other formats or versions.",
     };
-  const sameSeries = new Set(sorted.map(series)).size === 1;
-  if (
-    sorted.length === 1 ||
-    (sameSeries && timestamp(sorted[0]) > timestamp(sorted[1]))
-  ) {
-    return {
-      kind: "selected",
-      file: sorted[0],
-      reason:
-        purpose === "vortex"
-          ? "Newest suitable current archive; install and deploy in Vortex."
-          : "Newest suitable current ZIP; translation contents will be checked before import.",
-    };
-  }
   return {
-    kind: "choice",
-    files: sorted,
+    kind: "selected",
+    file: sorted[0],
     reason:
       purpose === "vortex"
-        ? "Choose the archive variant for your installed mod."
-        : "Choose the ZIP variant for your installed mod.",
+        ? "Newest suitable current archive; install and deploy in Vortex."
+        : "Newest suitable current ZIP; translation contents will be checked before import.",
   };
 }
-
 function pathParts(value: string): string[] | null {
   const normalized = value.replaceAll("\\", "/").toLowerCase();
   const parts = normalized.split("/");

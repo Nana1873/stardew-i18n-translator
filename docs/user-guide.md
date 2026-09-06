@@ -102,18 +102,16 @@ coverage reaches 100% only when every source key has the required text; nearly
 complete translations are no longer rounded to 100%.
 
 The list shows available likely translations for the scanned mods. The batch
-includes currently selected files; there are no mod-selection checkboxes. Mods
-awaiting a version choice or your decision on an uncertain match stay in the list
-without blocking other downloads.
-File metadata loads before the download action. When more than one current
-version or variant is available, choose it directly in the row's dropdown.
-Single-file results with a direct title match need no choice. An uncertain
-single-file result shows **Use this translation** instead of a dropdown;
-**Exclude translation** reverses that choice. **Other match** results may
-translate a related mod, so check their Nexus page before including them.
-They never become an automatic
-fallback when the original mod's translation has no suitable file.
-The file IDs shown by this list are the
+includes currently selected files; there are no mod-selection checkboxes or
+separate inclusion buttons. File metadata loads before the download action.
+The newest eligible file is preselected, with original-mod matches preferred
+over related matches. You can choose another available version in the dropdown;
+a single available file needs no extra choice. **Other match** results may
+translate a related mod, so check their Nexus page before downloading.
+Nexus page titles, versions and dates identify the choices; archive names are
+available under **Details**. Already installed files are not downloaded again
+automatically, and an installed newest file does not cause an older file to be
+selected instead. The file IDs shown by this list are the
 ones used by the batch action; nothing downloads merely by opening the list.
 The newest suitable file is a selection hint, not proof that it matches your
 installed mod. Search metadata is cached locally for 24 hours.

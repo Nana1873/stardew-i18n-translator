@@ -106,7 +106,7 @@ describe("ZIP selection", () => {
       ),
     ).toMatchObject({ kind: "selected", file: { fileId: 2 } });
   });
-  it("keeps Full/Lite and numeric game compatibility variants ambiguous", () => {
+  it("defaults to the newest upload across Full/Lite and game compatibility variants", () => {
     for (const names of [
       ["German Full", "German Lite"],
       ["German for Stardew 1.5", "German for Stardew 1.6"],
@@ -117,20 +117,45 @@ describe("ZIP selection", () => {
             file({ fileId: i + 1, name, uploadedAt: `2026-0${i + 1}-01` }),
           ),
           "de",
-        ).kind,
-      ).toBe("choice");
+        ),
+      ).toMatchObject({ kind: "selected", file: { fileId: 2 } });
     }
   });
-  it("does not guess chronology when dates are missing or equal", () => {
-    expect(
-      selectTranslationFile([file(), file({ fileId: 2 })], "de").kind,
-    ).toBe("choice");
+  it("uses the highest file ID deterministically when dates are equal or invalid", () => {
+    for (const uploadedAt of ["2026-01-01", "", "invalid"]) {
+      const options = [file({ uploadedAt }), file({ fileId: 2, uploadedAt })];
+      for (const ordered of [options, [...options].reverse()]) {
+        expect(selectTranslationFile(ordered, "de")).toMatchObject({
+          kind: "selected",
+          file: { fileId: 2 },
+        });
+      }
+    }
+  });
+  it("keeps language, category and archive eligibility ahead of upload recency", () => {
+    const eligible = file();
+    const newer = { fileId: 9, uploadedAt: "2026-03-01" };
     expect(
       selectTranslationFile(
-        [file({ uploadedAt: "" }), file({ fileId: 2, uploadedAt: "" })],
+        [
+          eligible,
+          file({ ...newer, name: "French Translation" }),
+          file({ ...newer, category: "OLD_VERSION" }),
+          file({ ...newer, category: "ARCHIVED" }),
+          file({ ...newer, name: "German Mobile Translation" }),
+          file({ ...newer, fileName: "translation.rar" }),
+        ],
         "de",
-      ).kind,
-    ).toBe("choice");
+        "review",
+      ),
+    ).toMatchObject({ kind: "selected", file: eligible });
+    expect(
+      selectTranslationFile(
+        [eligible, file({ ...newer, fileName: "translation.rar" })],
+        "de",
+        "vortex",
+      ),
+    ).toMatchObject({ kind: "selected", file: { fileId: 9 } });
   });
   it("does not reject a German file merely because description mentions the English source", () => {
     expect(

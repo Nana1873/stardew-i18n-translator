@@ -166,11 +166,11 @@ Searches support cancellation and discard results from obsolete workspace or
 language contexts. Local metadata caching is scoped by Nexus ID and language,
 expires after 24 hours, exposes freshness, and supports forced refresh. Reapply
 current scan coverage when using cached results. Missing IDs, API failures and
-incomplete results do not break scanning. Automatic file selection requires a
-conservative match to the original mod's identity, including shared parenthetical
+incomplete results do not break scanning. Candidate ranking uses a conservative
+match to the original mod's identity, including shared parenthetical
 context and reordered title words. Language labels and neutral connecting words
 do not establish a different mod; additional subjects, including parenthesized
-add-on names, remain other matches requiring explicit inclusion. Reclassify
+add-on names, remain labelled as other matches. Reclassify
 valid cached results using the same rules without another API request. Matches
 and newest-file selection remain heuristics, not compatibility or completeness
 guarantees; the UI does not label files as recommended.
@@ -193,16 +193,19 @@ download URLs remain in the backend.
 A saved Folder/Vortex installation method controls the download action. It is
 selected in Setup and editable in Settings; the results dialog has no destination
 toggle or per-mod selection checkboxes. A supported batch processes the currently
-selected files. Rows awaiting a version choice or explicit inclusion stay
-unrequested and do not block other selected downloads.
+selected files. Opening the list or changing a version does not start a download;
+the batch action confirms the displayed selections.
 Folder direct ZIP import requires Premium. Free/unknown Folder users use the
 existing per-result website links; never open multiple tabs automatically.
-File metadata loads before confirmation; multiple current versions or variants
-are selectable inline, while a unique file for a direct title match needs no
-further choice. A single other/unknown file is shown directly with an explicit,
-reversible inclusion action instead of a one-option version dropdown.
-A direct candidate without an eligible file never supplies
-an automatic fallback from an other match. The batch
+File metadata loads before confirmation. For an uninstalled group, default to
+the newest eligible file by upload date, preferring original-mod matches over
+other matches with eligible files. Other-only results also receive a default,
+with their relationship note retained. Multiple versions remain selectable
+inline; a single file needs no extra inclusion action. Use Nexus page titles,
+version and date as labels; expose archive names in Details. Installed-file
+evidence retains the no-new-download default when the preferred file is already
+installed or the installed file cannot be resolved; never promote an older file
+merely because the installed file was removed from the choices. The batch
 uses those exact mod/file IDs and does not silently resolve a different version.
 Legacy configurations with a Vortex executable retain that experimental default;
 other existing users retain Folder. An explicit Folder choice wins over a saved

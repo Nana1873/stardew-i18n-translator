@@ -773,7 +773,6 @@ export function NexusDialog({
         candidate,
         file,
         value: `${candidate.modId}:${file.fileId}`,
-        recommended: file.fileId === choices.recommended,
       }));
     });
     const recordedOptions = allOptions.filter((option) =>
@@ -786,13 +785,18 @@ export function NexusDialog({
     const options = allOptions.filter(
       (option) => !recordedOptions.includes(option),
     );
-    // Only a positively classified direct match may supply a default.
-    const preferred = allOptions.find(
-      (option) =>
-        option.candidate.modId === candidates[0]?.modId &&
-        option.candidate.relationshipTier === "possible-original-translation" &&
-        option.recommended,
-    );
+    const preferred = [...allOptions].sort(
+      (a, b) =>
+        Number(
+          a.candidate.relationshipTier !== "possible-original-translation",
+        ) -
+          Number(
+            b.candidate.relationshipTier !== "possible-original-translation",
+          ) ||
+        (Date.parse(b.file.uploadedAt) || 0) -
+          (Date.parse(a.file.uploadedAt) || 0) ||
+        b.file.fileId - a.file.fileId,
+    )[0];
     const explicit = fileSelections[entry.modId];
     const value =
       explicit !== undefined
@@ -808,14 +812,9 @@ export function NexusDialog({
                 ),
             )
           ? ""
-          : allOptions.length === 1
-            ? options[0]?.candidate.relationshipTier ===
-              "possible-original-translation"
-              ? options[0].value
-              : ""
-            : options.some((option) => option.value === preferred?.value)
-              ? preferred!.value
-              : "";
+          : options.some((option) => option.value === preferred?.value)
+            ? preferred!.value
+            : "";
     const selected = options.find((option) => option.value === value);
     const key = selected
       ? `${entry.modId}:${selected.value}`
@@ -1073,7 +1072,8 @@ export function NexusDialog({
           <td>
             <div className="nexus-file-link">
               <div className="nexus-file-selection">
-                {group.options.length > 1 ? (
+                {group.options.length > 1 ||
+                (group.options.length > 0 && group.evidence.length > 0) ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -1090,11 +1090,7 @@ export function NexusDialog({
                       }))
                     }
                   >
-                    <option value="">
-                      {group.evidence.length
-                        ? "No new download"
-                        : "Choose translation version…"}
-                    </option>
+                    <option value="">No new download</option>
                     {group.candidates.map((item) => (
                       <optgroup
                         key={item.modId}
@@ -1111,11 +1107,27 @@ export function NexusDialog({
                           )
                           .map((option) => (
                             <option key={option.value} value={option.value}>
-                              {option.file.name} ·{" "}
+                              {item.name} ·{" "}
                               {metadataLine(
                                 option.file.version,
                                 option.file.uploadedAt,
                               )}
+                              {group.options.some(
+                                (other) =>
+                                  other.value !== option.value &&
+                                  other.candidate.modId ===
+                                    option.candidate.modId &&
+                                  metadataLine(
+                                    other.file.version,
+                                    other.file.uploadedAt,
+                                  ) ===
+                                    metadataLine(
+                                      option.file.version,
+                                      option.file.uploadedAt,
+                                    ),
+                              )
+                                ? ` · ${option.file.name}`
+                                : ""}
                             </option>
                           ))}
                       </optgroup>
@@ -1135,11 +1147,6 @@ export function NexusDialog({
                     </small>
                   </>
                 )}
-                {displayFile && (
-                  <small className="nexus-file-name">
-                    {displayFile.fileName}
-                  </small>
-                )}
                 {!selected && unidentifiedEvidence.length > 0 && (
                   <small>
                     {unidentifiedEvidence
@@ -1155,33 +1162,6 @@ export function NexusDialog({
                     <small>
                       This may translate a related mod rather than the installed
                       original.
-                    </small>
-                  )}
-                {soleOption &&
-                  (soleOption.candidate.relationshipTier !==
-                    "possible-original-translation" ||
-                    group.evidence.length > 0 ||
-                    fileSelections[sourceId] !== undefined) && (
-                    <button
-                      className={quiet}
-                      disabled={locked}
-                      onClick={() =>
-                        setFileSelections((previous) => ({
-                          ...previous,
-                          [sourceId]: selected ? "" : soleOption.value,
-                        }))
-                      }
-                    >
-                      {selected
-                        ? "Exclude translation"
-                        : "Use this translation"}
-                    </button>
-                  )}
-                {!selected &&
-                  !group.evidence.length &&
-                  group.options.length > 1 && (
-                    <small>
-                      Choose a version to include this mod in the download.
                     </small>
                   )}
               </div>
@@ -1226,7 +1206,8 @@ export function NexusDialog({
                 )}
               </>
             )}
-            {(row.handoff ||
+            {(displayFile ||
+              row.handoff ||
               row.completed ||
               row.imported > 0 ||
               row.choices?.length ||
@@ -1234,6 +1215,7 @@ export function NexusDialog({
               row.details.length > 0) && (
               <details>
                 <summary>Details</summary>
+                {displayFile && <p>{displayFile.fileName}</p>}
                 {row.handoff && (
                   <p>
                     Vortex launch was requested. Download, installation and
