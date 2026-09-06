@@ -98,13 +98,15 @@ complete translations are no longer rounded to 100%.
 
 The list shows available likely translations for the scanned mods. The batch
 includes currently selected files; there are no mod-selection checkboxes. Mods
-awaiting a version choice stay in the list without blocking other downloads.
-Choose their version when ready to include them in a later batch.
+awaiting a version choice or your decision on an uncertain match stay in the list
+without blocking other downloads.
 File metadata loads before the download action. When more than one current
 version or variant is available, choose it directly in the row's dropdown.
-Single-file results with a direct title match need no choice. **Other match**
-results may translate a related mod and require an explicit choice, even for a
-single file; check their Nexus page first. They never become an automatic
+Single-file results with a direct title match need no choice. An uncertain
+single-file result shows **Use this translation** instead of a dropdown;
+**Exclude translation** reverses that choice. **Other match** results may
+translate a related mod, so check their Nexus page before including them.
+They never become an automatic
 fallback when the original mod's translation has no suitable file.
 The file IDs shown by this list are the
 ones used by the batch action; nothing downloads merely by opening the list.

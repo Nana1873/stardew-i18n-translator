@@ -577,6 +577,24 @@ fn normalized(value: &str) -> String {
         .join(" ")
 }
 fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
+    let joined_translation_label = |word: &str| {
+        word.strip_suffix("translation")
+            .is_some_and(|language| language_words(lang).contains(&language))
+    };
+    let translation_qualifier = |word: &str| {
+        language_words(lang).contains(&word)
+            || joined_translation_label(word)
+            || word == lang
+            || matches!(word, "translation" | "translations")
+            || (lang == "de" && matches!(word, "ger" | "übersetzung"))
+            || (lang == "ja" && word == "jp")
+            || (lang == "zh" && matches!(word, "chs" | "cht" | "simplified" | "traditional"))
+    };
+    let has_language = |words: &[&str]| {
+        words.contains(&lang)
+            || language_match(&words.join(" "), lang)
+            || words.iter().any(|word| joined_translation_label(word))
+    };
     let source = normalized(&search_name(original));
     // Keep candidate qualifiers, including parentheses: they may name an add-on.
     let title = normalized(title);
@@ -592,20 +610,33 @@ fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
                 .chain(&title[start + source.len()..])
                 .copied()
                 .collect();
-            if (qualifiers.contains(&lang) || language_match(&qualifiers.join(" "), lang))
-                && qualifiers.iter().all(|word| {
-                    language_words(lang).contains(word)
-                        || *word == lang
-                        || matches!(*word, "translation" | "translations")
-                        || (lang == "de" && matches!(*word, "ger" | "übersetzung"))
-                        || (lang == "ja" && *word == "jp")
-                        || (lang == "zh"
-                            && matches!(*word, "chs" | "cht" | "simplified" | "traditional"))
-                })
+            if has_language(&qualifiers)
+                && qualifiers.iter().all(|word| translation_qualifier(word))
             {
                 return "possible-original-translation";
             }
         }
+    }
+    // A translation may reorder a subtitle ("NPC Rodney" -> "Rodney a new
+    // NPC"). Require every full-title token, including parenthetical subjects,
+    // before allowing that wording. Extra named subjects still identify add-ons.
+    let full_source = normalized(original);
+    let mut qualifiers = title.clone();
+    if !full_source.is_empty()
+        && full_source.split_whitespace().all(|word| {
+            if let Some(index) = qualifiers.iter().position(|candidate| *candidate == word) {
+                qualifiers.remove(index);
+                true
+            } else {
+                false
+            }
+        })
+        && has_language(&qualifiers)
+        && qualifiers
+            .iter()
+            .all(|word| translation_qualifier(word) || matches!(*word, "a" | "new" | "for"))
+    {
+        return "possible-original-translation";
     }
     "possible-addon-or-other-translation"
 }
@@ -2102,6 +2133,43 @@ mod workflow_tests {
                 relationship_tier("Ridgeside Village", title, "zh"),
                 "possible-addon-or-other-translation",
                 "{title}"
+            );
+        }
+    }
+
+    #[test]
+    fn candidate_titles_preserve_full_identity_when_subtitles_are_reworded() {
+        let leilani = "Leilani (NPC for Ridgeside Village) new Chinese";
+        let rodney = "Chinese translation-Creative Differences - Rodney a new NPC for East Scarp";
+        for (original, title) in [
+            ("Leilani (NPC for Ridgeside Village)", leilani),
+            ("Creative Differences - NPC Rodney (East Scarp)", rodney),
+            ("Quest Helper", "Quest Helper-ChineseTranslation"),
+        ] {
+            assert_eq!(
+                relationship_tier(original, title, "zh"),
+                "possible-original-translation"
+            );
+            assert_eq!(
+                relationship_tier(original, title, "de"),
+                "possible-addon-or-other-translation"
+            );
+        }
+        for (original, title) in [
+            ("Ridgeside Village", leilani),
+            ("East Scarp", rodney),
+            ("Ridgeside Village", "Ridgeside Village Fish Chinese"),
+            ("Leilani (NPC for Ridgeside Village)", "Leilani new Chinese"),
+            ("Leilani (NPC for Ridgeside Village)", "Leilani (NPC for Ridgeside Village) Interior Chinese"),
+            ("Creative Differences - NPC Rodney (East Scarp)", "Chinese translation-Creative Differences - Rodney a new NPC for Ridgeside Village"),
+            ("Creative Differences - NPC Rodney (East Scarp)", "Chinese translation-Creative Differences - Rodney a new NPC for East Scarp Adventures"),
+            ("Example Example", "Example Chinese"),
+            ("Quest Helper", "Quest Helper-ChineseTranslationAddon"),
+        ] {
+            assert_eq!(
+                relationship_tier(original, title, "zh"),
+                "possible-addon-or-other-translation",
+                "{original}: {title}"
             );
         }
     }

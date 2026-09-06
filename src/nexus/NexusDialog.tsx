@@ -970,8 +970,11 @@ export function NexusDialog({
     const { entry, selected, key, row } = group;
     const sourceId = entry.modId;
     const recorded = group.recordedOptions[0];
+    const soleOption =
+      group.options.length === 1 ? group.options[0] : undefined;
     const candidate =
       selected?.candidate ??
+      soleOption?.candidate ??
       recorded?.candidate ??
       (group.evidence.length
         ? group.candidates.find((item) =>
@@ -982,7 +985,7 @@ export function NexusDialog({
     const sourceName =
       entry.result?.originalName ?? entry.localNames.join(", ");
     const file = selected?.file;
-    const displayFile = file ?? recorded?.file;
+    const displayFile = file ?? soleOption?.file ?? recorded?.file;
     const unidentifiedEvidence = group.evidence.filter(
       (item) =>
         !group.recordedOptions.some(
@@ -1063,15 +1066,7 @@ export function NexusDialog({
           <td>
             <div className="nexus-file-link">
               <div className="nexus-file-selection">
-                {group.options.length > 0 &&
-                (group.options.length > 1 ||
-                  !selected ||
-                  group.evidence.length > 0 ||
-                  group.options.some(
-                    (option) =>
-                      option.candidate.relationshipTier !==
-                      "possible-original-translation",
-                  )) ? (
+                {group.options.length > 1 ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -1147,19 +1142,41 @@ export function NexusDialog({
                       .join("; ")}
                   </small>
                 )}
-                {selected &&
-                  selected.candidate.relationshipTier !==
+                {group.options.length > 0 &&
+                  candidate?.relationshipTier !==
                     "possible-original-translation" && (
                     <small>
                       This may translate a related mod rather than the installed
                       original.
                     </small>
                   )}
-                {!selected && !group.evidence.length && (
-                  <small>
-                    Choose a version to include this mod in the download.
-                  </small>
-                )}
+                {soleOption &&
+                  (soleOption.candidate.relationshipTier !==
+                    "possible-original-translation" ||
+                    group.evidence.length > 0 ||
+                    fileSelections[sourceId] !== undefined) && (
+                    <button
+                      className={quiet}
+                      disabled={locked}
+                      onClick={() =>
+                        setFileSelections((previous) => ({
+                          ...previous,
+                          [sourceId]: selected ? "" : soleOption.value,
+                        }))
+                      }
+                    >
+                      {selected
+                        ? "Exclude translation"
+                        : "Use this translation"}
+                    </button>
+                  )}
+                {!selected &&
+                  !group.evidence.length &&
+                  group.options.length > 1 && (
+                    <small>
+                      Choose a version to include this mod in the download.
+                    </small>
+                  )}
               </div>
               <button
                 className={primary}
@@ -1459,8 +1476,8 @@ export function NexusDialog({
             unresolvedCount > 0 && (
               <small>
                 {unresolvedCount}{" "}
-                {unresolvedCount === 1 ? "mod needs" : "mods need"} a version
-                choice and {unresolvedCount === 1 ? "is" : "are"} not included.
+                {unresolvedCount === 1 ? "mod is" : "mods are"} not included in
+                the download.
               </small>
             )}
           {batchRunning && (

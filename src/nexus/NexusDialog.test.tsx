@@ -419,11 +419,10 @@ it.each([7, 8])(
     });
     if (installedId === 8) {
       expect(button).toBeDisabled();
-      const choice = screen.getByRole("combobox", {
-        name: "Translation file for Canonical title",
-      });
-      expect(choice).toHaveValue("");
-      fireEvent.change(choice, { target: { value: "30342:7" } });
+      expect(screen.queryByRole("combobox")).toBeNull();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Use this translation" }),
+      );
     } else expect(button).toBeEnabled();
     await download();
     await screen.findByText("1 sent to Vortex");
@@ -469,17 +468,15 @@ it("does not replace a selected installed file with a different download after r
     app.setInstalled([installedFile]),
   );
   await app.changeDeployment();
-  const refreshedChoice = await screen.findByRole("combobox", {
-    name: "Translation file for Canonical title",
-  });
-  expect(refreshedChoice).toHaveValue("");
+  await screen.findByRole("button", { name: "Use this translation" });
+  expect(screen.queryByRole("combobox")).toBeNull();
   expect(
     screen.getByRole("button", {
       name: "Download all with Vortex (0)",
     }),
   ).toBeDisabled();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
-  fireEvent.change(refreshedChoice, { target: { value: "30342:8" } });
+  fireEvent.click(screen.getByRole("button", { name: "Use this translation" }));
   await download();
   await screen.findByText("1 sent to Vortex");
   expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
@@ -1830,12 +1827,11 @@ it.each([
         ],
       },
     });
-    const choice = await screen.findByRole("combobox", {
-      name: "Translation file for Canonical title",
-    });
+    const row = await screen.findByRole("row", { name: "Canonical title" });
     if (installedId === 7) {
-      expect(choice).toHaveValue("30342:8");
-      fireEvent.change(choice, { target: { value: "" } });
+      fireEvent.click(
+        within(row).getByRole("button", { name: "Exclude translation" }),
+      );
     }
     await waitFor(() =>
       expect(
@@ -1844,8 +1840,10 @@ it.each([
         }),
       ).toBeEnabled(),
     );
-    const row = screen.getByRole("row", { name: "Canonical title" });
-    expect(within(row).getByRole("combobox")).toHaveValue("");
+    expect(within(row).queryByRole("combobox")).toBeNull();
+    expect(
+      within(row).getByRole("button", { name: "Use this translation" }),
+    ).toBeEnabled();
     expect(row).toHaveTextContent(
       state === "deployed"
         ? "Translation installed"
@@ -1853,19 +1851,20 @@ it.each([
     );
     if (state === "missing_dictionary")
       expect(row).not.toHaveTextContent("Translation installed");
-    fireEvent.change(choice, {
-      target: { value: installedId === 7 ? "30342:8" : "30342:7" },
-    });
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Use this translation" }),
+    );
     expect(
       screen.getByRole("button", {
         name: "Download all with Vortex (2)",
       }),
     ).toBeEnabled();
-    const retainedChoice = screen.getByRole("combobox", {
-      name: "Translation file for Canonical title",
-    });
-    fireEvent.change(retainedChoice, { target: { value: "" } });
-    expect(retainedChoice).toHaveValue("");
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Exclude translation" }),
+    );
+    expect(
+      within(row).getByRole("button", { name: "Use this translation" }),
+    ).toBeEnabled();
     expect(
       screen.getByRole("button", {
         name: "Download all with Vortex (1)",
@@ -1931,9 +1930,9 @@ it.each([{ files: [] }, { files: [file] }])(
       }),
     ).toBeDisabled();
     if (files.length) {
-      fireEvent.change(translationRow().getByRole("combobox"), {
-        target: { value: "30342:7" },
-      });
+      fireEvent.click(
+        translationRow().getByRole("button", { name: "Use this translation" }),
+      );
       await download();
       await screen.findByText("1 sent to Vortex");
       expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
@@ -2037,7 +2036,7 @@ it.each(["vortex", "folder"] as const)(
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("1 mod needs a version choice and is not included."),
+      screen.getByText("1 mod is not included in the download."),
     ).toBeInTheDocument();
     const button = screen.getByRole("button", {
       name:
@@ -2157,27 +2156,29 @@ it.each(["vortex", "folder"] as const)(
         ],
       },
     });
-    const choice = await screen.findByRole("combobox", {
-      name: "Translation file for Canonical title",
+    const include = await screen.findByRole("button", {
+      name: "Use this translation",
     });
-    expect(choice).toHaveValue("");
-    expect(
-      within(choice).getByRole("group", { name: "Other match: Related mod" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: /^Download (?:& import )?all/ }),
-    ).toBeDisabled();
-    fireEvent.change(choice, { target: { value: "44:7" } });
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(screen.getByText(file.fileName)).toBeInTheDocument();
     expect(
       screen.getByText(
         "This may translate a related mod rather than the installed original.",
       ),
     ).toBeInTheDocument();
-    fireEvent.change(choice, { target: { value: "" } });
     expect(
       screen.getByRole("button", { name: /^Download (?:& import )?all/ }),
     ).toBeDisabled();
-    fireEvent.change(choice, { target: { value: "44:7" } });
+    fireEvent.click(include);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Exclude translation" }),
+    );
+    expect(
+      screen.getByRole("button", { name: /^Download (?:& import )?all/ }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Use this translation" }),
+    );
     await download();
     if (method === "vortex") {
       await screen.findByText("1 sent to Vortex");
@@ -2232,15 +2233,26 @@ it.each(["unknown-tier", "direct-without-file", "direct-with-newer-addon"])(
         ],
       },
     });
-    const choice = await screen.findByRole("combobox", {
-      name: "Translation file for Canonical title",
-    });
     await waitFor(() =>
-      expect(screen.queryByText("Loading translation versions…")).toBeNull(),
+      expect(
+        screen.queryByText("Loading translation versions\u2026"),
+      ).toBeNull(),
     );
-    expect(choice).toHaveValue(
-      scenario === "direct-with-newer-addon" ? "30342:7" : "",
-    );
+    if (scenario === "direct-with-newer-addon") {
+      expect(
+        screen.getByRole("combobox", {
+          name: "Translation file for Canonical title",
+        }),
+      ).toHaveValue("30342:7");
+    } else {
+      expect(screen.queryByRole("combobox")).toBeNull();
+      expect(
+        screen.getByRole("button", { name: "Use this translation" }),
+      ).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: /^Download all/ }),
+      ).toBeDisabled();
+    }
     expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
   },
 );
@@ -2264,3 +2276,38 @@ it("describes Vortex download handoff without promising automatic installation",
     ),
   ).toBeInTheDocument();
 });
+
+it.each(["vortex", "folder"] as const)(
+  "includes a single direct file without asking for a choice in %s mode",
+  async (method) => {
+    mount({ method });
+    await waitFor(() =>
+      expect(
+        screen.queryByText("Loading translation versions\u2026"),
+      ).toBeNull(),
+    );
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Use this translation" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Exclude translation" }),
+    ).toBeNull();
+    expect(screen.getByText(file.fileName)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Download (?:& import )?all/ }),
+    ).toBeEnabled();
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    await download();
+    await waitFor(() =>
+      expect(
+        commandCalls(
+          method === "vortex"
+            ? "nexus_handoff_to_vortex"
+            : "nexus_download_preflight",
+        ),
+      ).toEqual([{ modId: candidate.modId, fileId: file.fileId }]),
+    );
+  },
+);
