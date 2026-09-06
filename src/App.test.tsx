@@ -384,13 +384,23 @@ function deferred<T>() {
 }
 
 describe("App shell", () => {
-  async function showInstalledNexusFile() {
+  async function showInstalledNexusFile(missing = false) {
     const scanned = exportScan(true);
     scanned.traversalComplete = true;
     scanned.installedNexusTranslations = [
       { sourceNexusId: 10, modId: 30, fileId: 7 },
     ];
     Object.assign(scanned.mods[0], { nexusId: 10, diskTranslatedKeys: 0 });
+    if (missing)
+      Object.assign(scanned.mods[0], {
+        translatedKeys: 0,
+        statusCounts: {
+          untranslated: 1,
+          outdated: 0,
+          "review-needed": 0,
+          translated: 0,
+        },
+      });
     mockConfigured(scanned);
     const original = invokeMock.getMockImplementation()!;
     invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
@@ -441,11 +451,34 @@ describe("App shell", () => {
     await act(async () => {
       fireEvent.click(findTranslations);
     });
-    expect(
-      screen.getByText("Available translation files are already installed."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Translation installed")).toBeInTheDocument();
     return scanned;
   }
+
+  it("opens installed translation gaps in the existing untranslated filter", async () => {
+    await showInstalledNexusFile(true);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open missing strings" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: /Nexus translations/ }),
+      ).toBeNull(),
+    );
+    expect(
+      within(await screen.findByRole("group", { name: "Status" })).getByRole(
+        "button",
+        { name: /^Open / },
+      ),
+    ).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Workspace" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
+    ).toBe(false);
+  });
 
   it.each([
     ["current mod", "written"],
@@ -506,9 +539,7 @@ describe("App shell", () => {
       );
       if (outcome === "unchanged") {
         expect(
-          await screen.findByText(
-            "Available translation files are already installed.",
-          ),
+          await screen.findByText("Translation installed"),
         ).toBeInTheDocument();
       } else {
         expect(
@@ -517,9 +548,7 @@ describe("App shell", () => {
           }),
         ).toBeEnabled();
         expect(
-          screen.queryByText(
-            "Available translation files are already installed.",
-          ),
+          screen.queryByText("Translation installed"),
         ).not.toBeInTheDocument();
       }
       expect(
@@ -559,9 +588,7 @@ describe("App shell", () => {
         }),
       ).toBeEnabled();
       expect(
-        screen.queryByText(
-          "Available translation files are already installed.",
-        ),
+        screen.queryByText("Translation installed"),
       ).not.toBeInTheDocument();
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),

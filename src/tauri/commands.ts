@@ -289,13 +289,15 @@ export interface ScannedMod {
 }
 
 export interface InstalledNexusTranslation {
+  /** Missing state is legacy positive deployment evidence; neither state proves coverage. */
+  state?: "deployed" | "missing_dictionary";
   sourceNexusId: number;
   modId: number;
   fileId: number;
 }
 
 export interface ScanResult {
-  /** Positive native evidence for exact deployed files; absent means unknown. */
+  /** Native evidence for exact deployed files or a proven missing dictionary; absent means unknown. */
   installedNexusTranslations?: InstalledNexusTranslation[];
   mods: ScannedMod[];
   /** Only true proves traversal completed; absent/false means unknown coverage. */

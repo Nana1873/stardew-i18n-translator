@@ -2306,6 +2306,13 @@ export function App() {
               setIssuesOnly(false);
               setStatusFilter("review-needed");
             }}
+            onOpenMissing={(modId) => {
+              setNexusOpen(false);
+              openMod(modId);
+              setSearch("");
+              setIssuesOnly(false);
+              setStatusFilter("untranslated");
+            }}
             search={nexus}
             mods={scan.mods}
             installedNexusTranslations={scan.installedNexusTranslations}

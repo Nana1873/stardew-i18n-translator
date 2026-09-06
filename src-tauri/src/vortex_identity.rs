@@ -19,6 +19,8 @@ const MAX_ARCHIVE: u64 = 128 * 1024 * 1024;
 const MAX_EXPANDED: u64 = 64 * 1024 * 1024;
 const MAX_ENTRIES: usize = 20_000;
 const MAX_CANDIDATES: usize = 128;
+// Missing-dictionary diagnosis is intentionally limited to small translation ZIPs.
+const MAX_DIAGNOSTIC_ARCHIVE: u64 = 8 * 1024 * 1024;
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
@@ -26,6 +28,14 @@ pub struct InstalledNexusTranslation {
     pub source_nexus_id: u64,
     pub mod_id: u64,
     pub file_id: u64,
+    pub state: InstalledTranslationState,
+}
+
+#[derive(Serialize, Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+pub enum InstalledTranslationState {
+    Deployed,
+    MissingDictionary,
 }
 
 pub(crate) fn detect(
@@ -173,6 +183,8 @@ struct SourceProof {
     mod_id: u64,
     file_id: u64,
     targets: HashSet<String>,
+    archive_path: PathBuf,
+    archive_digest: String,
 }
 
 struct Evidence {
@@ -297,6 +309,16 @@ fn detect_checked(
                 if let Ok(rel) = effective.strip_prefix(root) {
                     targets.entry(key(rel)).or_default().extend(&ids);
                 }
+            } else if absent_plain_path(&effective) {
+                // Missing targets cannot be canonicalized. Their existing i18n
+                // parent still binds the expected destination to the scan root.
+                if let Some(parent) = effective.parent().and_then(plain_path) {
+                    if let Some(name) = effective.file_name() {
+                        if let Ok(rel) = parent.join(name).strip_prefix(root) {
+                            targets.entry(key(rel)).or_default().extend(&ids);
+                        }
+                    }
+                }
             }
         }
     }
@@ -331,12 +353,84 @@ fn detect_checked(
                         source_nexus_id: *source_nexus_id,
                         mod_id: proof.mod_id,
                         file_id: proof.file_id,
+                        state: InstalledTranslationState::Deployed,
                     });
                 }
             }
         }
     }
+    let mut problems = Vec::new();
+    let candidates: BTreeSet<_> = deployed
+        .iter()
+        .filter(|(path, _)| path.starts_with("mods/") && path.ends_with("/manifest.json"))
+        .filter_map(|(_, file)| file["source"].as_str())
+        .collect();
+    let mut candidates: Vec<_> = candidates
+        .into_iter()
+        .filter_map(|source| {
+            let source_rel = relative(source)?;
+            if source_rel.components().any(|part| {
+                part.as_os_str()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .ends_with(".installing")
+            }) {
+                return None;
+            }
+            let mut installed = mods
+                .values()
+                .filter(|entry| entry["installationPath"].as_str() == Some(source));
+            let entry = installed.next()?;
+            if installed.next().is_some() || entry["state"] != "installed" {
+                return None;
+            }
+            let download = downloads.get(entry["archiveId"].as_str()?)?;
+            if download["state"] != "finished" {
+                return None;
+            }
+            let archive = relative(download["localPath"].as_str()?)?;
+            if archive.components().count() != 1
+                || !archive.extension()?.eq_ignore_ascii_case("zip")
+            {
+                return None;
+            }
+            let path = plain_path(&download_root.join("stardewvalley").join(archive))?;
+            let size = fs::metadata(path).ok()?.len();
+            (size <= MAX_DIAGNOSTIC_ARCHIVE).then_some((size, source))
+        })
+        .collect();
+    candidates.sort_unstable();
+    let mut text_budget = MAX_JSON;
+    if candidates.len() <= MAX_CANDIDATES {
+        for (_, source) in candidates {
+            if let Some(problem) = missing_dictionary(
+                source,
+                language,
+                scan,
+                &evidence,
+                &deployed,
+                &targets,
+                &mut budget,
+                &mut text_budget,
+                &mut verified_files,
+            ) {
+                problems.push(problem);
+            }
+        }
+    }
     before_final_check();
+    for problem in problems {
+        if problem
+            .snapshots
+            .iter()
+            .all(|(path, bytes)| bounded(path, MAX_JSON).as_ref() == Some(bytes))
+            && bounded(&problem.archive_path, MAX_ARCHIVE)
+                .is_some_and(|bytes| format!("{:x}", md5::compute(bytes)) == problem.archive_digest)
+            && problem.missing.iter().all(|path| absent_plain_path(path))
+        {
+            result.extend(problem.records);
+        }
+    }
     // Recheck all earlier files after later sources have finished. Retained
     // handles also detect a replacement with identical bytes and new hardlinks.
     recheck_files(&verified_files)?;
@@ -504,6 +598,192 @@ fn prove_source(
         mod_id,
         file_id,
         targets: verified_targets,
+        archive_path,
+        archive_digest: digest,
+    })
+}
+
+struct MissingDictionaryProof {
+    records: Vec<InstalledNexusTranslation>,
+    missing: Vec<PathBuf>,
+    snapshots: Vec<(PathBuf, Vec<u8>)>,
+    archive_path: PathBuf,
+    archive_digest: String,
+}
+
+// NotFound alone is insufficient: a missing leaf may sit below a reparse point.
+fn absent_plain_path(path: &Path) -> bool {
+    if !path.is_absolute() {
+        return false;
+    }
+    match fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        _ => return false,
+    }
+    for ancestor in path.ancestors().skip(1) {
+        match fs::symlink_metadata(ancestor) {
+            Ok(metadata) => return metadata.is_dir() && plain_path(ancestor).is_some(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return false,
+        }
+    }
+    false
+}
+
+#[allow(clippy::too_many_arguments)]
+fn missing_dictionary(
+    source: &str,
+    language: &str,
+    scan: &ScanResult,
+    evidence: &Evidence,
+    deployed: &HashMap<String, &Value>,
+    targets: &HashMap<String, BTreeSet<u64>>,
+    budget: &mut (u64, u64),
+    text_budget: &mut u64,
+    verified_files: &mut Vec<VerifiedFile>,
+) -> Option<MissingDictionaryProof> {
+    let source_rel = relative(source)?;
+    // Prove every deployed file from this source, not merely a checker name.
+    let anchors: HashMap<_, _> = deployed
+        .iter()
+        .filter(|(_, record)| record["source"].as_str() == Some(source))
+        .map(|(path, _)| (path.clone(), BTreeSet::new()))
+        .collect();
+    let proof = prove_source(
+        source,
+        None,
+        &evidence.root,
+        &evidence.staging,
+        &evidence.download_root,
+        evidence.backup["persistent"]["mods"]["stardewvalley"].as_object()?,
+        evidence.backup["persistent"]["downloads"]["files"].as_object()?,
+        deployed,
+        &anchors,
+        budget,
+        verified_files,
+    )?;
+    if anchors.len() != proof.targets.len() {
+        return None;
+    }
+    // Reserve the inspection and final archive recheck in the shared scan budget.
+    budget.0 = budget.0.checked_sub(
+        fs::metadata(&proof.archive_path)
+            .ok()?
+            .len()
+            .checked_mul(2)?,
+    )?;
+    let bytes = bounded(&proof.archive_path, MAX_ARCHIVE)?;
+    if format!("{:x}", md5::compute(&bytes)) != proof.archive_digest {
+        return None;
+    }
+    let mut archive = zip::ZipArchive::new(Cursor::new(&bytes)).ok()?;
+    let mut source_ids = BTreeSet::new();
+    let mut missing = Vec::new();
+    let mut snapshots = Vec::new();
+    let mut checked_components = HashSet::new();
+    let mut checker = false;
+    for index in 0..archive.len() {
+        let mut file = archive.by_index(index).ok()?;
+        budget.1 = budget.1.checked_sub(file.size())?;
+        if file.is_dir() {
+            continue;
+        }
+        let rel = relative(file.name())?;
+        let rel_key = key(&rel);
+        if rel_key.starts_with("mods/")
+            && rel_key.ends_with("/manifest.json")
+            && anchors.contains_key(&rel_key)
+        {
+            let manifest = bounded(&evidence.root.join(&rel), MAX_JSON)?;
+            *text_budget = text_budget.checked_sub(manifest.len() as u64)?;
+            let value =
+                crate::scanner::parse_json_lenient(std::str::from_utf8(&manifest).ok()?).ok()?;
+            let keys: Vec<_> = value["UpdateKeys"]
+                .as_array()?
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect();
+            checker |= crate::scanner::extract_nexus_id(&keys) == Some(proof.mod_id);
+        }
+        let name = rel.file_name()?.to_str()?;
+        if !(name.eq_ignore_ascii_case(&format!("{language}.json"))
+            || language == "pt" && name.eq_ignore_ascii_case("pt-BR.json"))
+        {
+            continue;
+        }
+        // One literal Mods/ wrapper is the only supported installer layout here.
+        // Match the entire scanned destination, never a basename or package title.
+        let stripped = rel_key.strip_prefix("mods/")?;
+        let ids = targets.get(stripped)?;
+        if ids.len() != 1
+            || ids.contains(&proof.mod_id)
+            || deployed.contains_key(stripped)
+            || deployed.contains_key(&rel_key)
+        {
+            return None;
+        }
+        let mut components = scan.mods.iter().enumerate().filter(|(_, component)| {
+            component.i18n_files.iter().any(|file| {
+                let path = Path::new(&file.default_path);
+                plain_path(path)
+                    .and_then(|path| path.parent().map(|parent| parent.join(name)))
+                    .and_then(|path| path.strip_prefix(&evidence.root).ok().map(key))
+                    .is_some_and(|path| path == stripped)
+            })
+        });
+        let (index, component) = components.next()?;
+        if components.next().is_some() || component.nexus_id != ids.first().copied() {
+            return None;
+        }
+        if checked_components.insert(index) {
+            snapshots.extend(component_snapshots(component, text_budget)?);
+        }
+        let stripped_rel = relative(stripped)?;
+        let mut paths = vec![
+            evidence.root.join(&stripped_rel),
+            evidence.root.join(&rel),
+            evidence.staging.join(&source_rel).join(&rel),
+            evidence.staging.join(&source_rel).join(&stripped_rel),
+        ];
+        if language == "pt" {
+            for path in paths.clone() {
+                paths.push(path.with_file_name("pt.json"));
+                paths.push(path.with_file_name("pt-BR.json"));
+            }
+        }
+        if !paths.iter().all(|path| absent_plain_path(path)) {
+            return None;
+        }
+        let mut dictionary = Vec::new();
+        (&mut file)
+            .take(MAX_JSON + 1)
+            .read_to_end(&mut dictionary)
+            .ok()?;
+        if dictionary.len() as u64 > MAX_JSON || dictionary.len() as u64 != file.size() {
+            return None;
+        }
+        crate::scanner::parse_flat_object(std::str::from_utf8(&dictionary).ok()?, &rel).ok()?;
+        source_ids.extend(ids);
+        missing.extend(paths);
+    }
+    if !checker || source_ids.is_empty() {
+        return None;
+    }
+    Some(MissingDictionaryProof {
+        records: source_ids
+            .into_iter()
+            .map(|source_nexus_id| InstalledNexusTranslation {
+                source_nexus_id,
+                mod_id: proof.mod_id,
+                file_id: proof.file_id,
+                state: InstalledTranslationState::MissingDictionary,
+            })
+            .collect(),
+        missing,
+        snapshots,
+        archive_path: proof.archive_path,
+        archive_digest: proof.archive_digest,
     })
 }
 
@@ -552,6 +832,31 @@ fn original_candidate(
     deployed: &HashMap<String, &Value>,
     text_budget: &mut u64,
 ) -> Option<OriginalCandidate> {
+    let snapshots = component_snapshots(component, text_budget)?;
+    let mut paths = HashSet::new();
+    let mut sources = BTreeSet::new();
+    for (path, _) in &snapshots {
+        let rel = key(path.strip_prefix(&evidence.root).ok()?);
+        sources.insert(deployed.get(&rel)?["source"].as_str()?.to_owned());
+        if !paths.insert(rel) {
+            return None;
+        }
+    }
+    if sources.len() != 1 {
+        return None;
+    }
+    Some(OriginalCandidate {
+        index,
+        source: sources.into_iter().next()?,
+        paths,
+        snapshots,
+    })
+}
+
+fn component_snapshots(
+    component: &crate::scanner::ScannedMod,
+    text_budget: &mut u64,
+) -> Option<Vec<(PathBuf, Vec<u8>)>> {
     let manifest_path = plain_path(&Path::new(&component.folder_path).join("manifest.json"))?;
     let manifest_bytes = bounded(&manifest_path, MAX_JSON)?;
     *text_budget = text_budget.checked_sub(manifest_bytes.len() as u64)?;
@@ -599,24 +904,7 @@ fn original_candidate(
     if snapshots.len() < 2 {
         return None;
     }
-    let mut paths = HashSet::new();
-    let mut sources = BTreeSet::new();
-    for (path, _) in &snapshots {
-        let rel = key(path.strip_prefix(&evidence.root).ok()?);
-        sources.insert(deployed.get(&rel)?["source"].as_str()?.to_owned());
-        if !paths.insert(rel) {
-            return None;
-        }
-    }
-    if sources.len() != 1 {
-        return None;
-    }
-    Some(OriginalCandidate {
-        index,
-        source: sources.into_iter().next()?,
-        paths,
-        snapshots,
-    })
+    Some(snapshots)
 }
 
 fn original_ids_checked(
@@ -1102,9 +1390,239 @@ mod tests {
             vec![InstalledNexusTranslation {
                 source_nexus_id: 100,
                 mod_id: 200,
-                file_id: 300
+                file_id: 300,
+                state: InstalledTranslationState::Deployed,
             }]
         );
+    }
+
+    const CHECKER: &str = "Mods/TranslationChecker/manifest.json";
+    const CHECKER_BODY: &[u8] = br#"{"Name":"Checker","UniqueID":"Test.Checker","Version":"1.0","UpdateKeys":["Nexus:200"]}"#;
+    const OMITTED: &str = "Mods/Example/i18n/de.json";
+
+    fn missing_dictionary_fixture() -> Fixture {
+        let mut f = Fixture::new();
+        fs::remove_file(f.root.join(REL)).unwrap();
+        fs::remove_file(f.base.join("staging/translation").join(REL)).unwrap();
+        f.manifest["files"] = json!([]);
+        f.add_target(CHECKER, CHECKER_BODY);
+        f.add_target("Mods/TranslationChecker/content.json", b"{}");
+        f.archive(&[
+            (OMITTED, BODY),
+            (CHECKER, CHECKER_BODY),
+            ("Mods/TranslationChecker/content.json", b"{}"),
+        ]);
+        f.save();
+        f
+    }
+
+    #[test]
+    fn missing_dictionary_proves_exact_file_without_claiming_text_coverage() {
+        let f = missing_dictionary_fixture();
+        let scan = f.scan();
+        let original = scan
+            .mods
+            .iter()
+            .find(|m| m.unique_id == "Test.Example")
+            .unwrap();
+        assert_eq!(original.disk_translated_keys, 0);
+        assert_eq!(
+            f.proofs(),
+            vec![InstalledNexusTranslation {
+                source_nexus_id: 100,
+                mod_id: 200,
+                file_id: 300,
+                state: InstalledTranslationState::MissingDictionary,
+            }]
+        );
+        assert_eq!(
+            serde_json::to_value(f.proofs()).unwrap()[0]["state"],
+            "missing_dictionary"
+        );
+    }
+
+    #[test]
+    fn missing_dictionary_rejects_present_staging_target_or_ambiguous_siblings() {
+        for location in ["target", "wrapper_target", "staging", "wrapper_staging"] {
+            let f = missing_dictionary_fixture();
+            let path = match location {
+                "target" => f.root.join(REL),
+                "wrapper_target" => f.root.join(OMITTED),
+                "staging" => f.base.join("staging/translation").join(REL),
+                _ => f.base.join("staging/translation").join(OMITTED),
+            };
+            fs::create_dir_all(path.parent().unwrap()).unwrap();
+            fs::write(path, BODY).unwrap();
+            assert!(f.proofs().is_empty(), "{location}");
+        }
+        for extra in [
+            "Mods/Unknown/i18n/de.json",
+            "Other/Example/i18n/de.json",
+            "Mods/Example/i18n/DE.json",
+        ] {
+            let mut f = missing_dictionary_fixture();
+            f.archive(&[
+                (OMITTED, BODY),
+                (extra, BODY),
+                (CHECKER, CHECKER_BODY),
+                ("Mods/TranslationChecker/content.json", b"{}"),
+            ]);
+            assert!(f.proofs().is_empty(), "{extra}");
+        }
+    }
+
+    #[test]
+    fn missing_dictionary_rejects_uncertain_metadata_context_and_checker() {
+        for change in [
+            "id",
+            "archive",
+            "copied",
+            "changed",
+            "original",
+            "source",
+            "language",
+            "incomplete",
+            "foreign",
+        ] {
+            let mut f = missing_dictionary_fixture();
+            let mut scan = f.scan();
+            match change {
+                "id" => {
+                    f.backup["persistent"]["downloads"]["files"]["archive"]["modInfo"]["nexus"]
+                        ["ids"]["fileId"] = json!(999)
+                }
+                "archive" => fs::write(
+                    f.base.join("downloads/stardewvalley/unrelated-name.zip"),
+                    b"changed",
+                )
+                .unwrap(),
+                "copied" => {
+                    fs::remove_file(f.root.join(CHECKER)).unwrap();
+                    fs::write(f.root.join(CHECKER), CHECKER_BODY).unwrap();
+                }
+                "changed" => fs::write(f.root.join(CHECKER), b"{}").unwrap(),
+                "original" => fs::write(f.root.join("Example/manifest.json"), b"{}").unwrap(),
+                "source" => fs::write(
+                    f.root.join("Example/i18n/default.json"),
+                    br#"{"first":"Changed"}"#,
+                )
+                .unwrap(),
+                "incomplete" => scan.traversal_complete = false,
+                "foreign" => f.manifest["files"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"relPath":REL,"source":"other"})),
+                _ => {}
+            }
+            f.save();
+            let result = detect_at(
+                &f.root,
+                if change == "language" { "fr" } else { "de" },
+                &scan,
+                &f.vortex,
+            )
+            .unwrap_or_default();
+            assert!(result.is_empty(), "{change}");
+        }
+    }
+
+    #[test]
+    fn missing_dictionary_rechecks_absence_archive_and_original_after_proof() {
+        for change in [
+            "target", "staging", "checker", "archive", "default", "manifest", "backup",
+        ] {
+            let f = missing_dictionary_fixture();
+            let scan = f.scan();
+            let result = detect_checked(&f.root, "de", &scan, &f.vortex, || {
+                let path = match change {
+                    "target" => f.root.join(REL),
+                    "staging" => f.base.join("staging/translation").join(OMITTED),
+                    "checker" => f.root.join(CHECKER),
+                    "archive" => f.base.join("downloads/stardewvalley/unrelated-name.zip"),
+                    "default" => f.root.join("Example/i18n/default.json"),
+                    "manifest" => f.root.join("vortex.deployment.json"),
+                    _ => f.vortex.join("temp/state_backups_full/hourly.json"),
+                };
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, b"changed").unwrap();
+            })
+            .unwrap_or_default();
+            assert!(result.is_empty(), "{change}");
+        }
+    }
+
+    #[test]
+    fn missing_dictionary_respects_portuguese_fallback_and_size_budget() {
+        for location in ["none", "target", "staging"] {
+            let mut f = missing_dictionary_fixture();
+            f.archive(&[
+                ("Mods/Example/i18n/pt.json", BODY),
+                (CHECKER, CHECKER_BODY),
+                ("Mods/TranslationChecker/content.json", b"{}"),
+            ]);
+            if location != "none" {
+                let path = if location == "target" {
+                    f.root.join("Example/i18n/pt-BR.json")
+                } else {
+                    f.base
+                        .join("staging/translation/Mods/Example/i18n/pt-BR.json")
+                };
+                fs::create_dir_all(path.parent().unwrap()).unwrap();
+                fs::write(path, BODY).unwrap();
+            }
+            f.save();
+            let scan = crate::scanner::scan_mods(&f.root, "pt", &f.base.join("config"));
+            let proofs = detect_at(&f.root, "pt", &scan, &f.vortex).unwrap();
+            assert_eq!(proofs.len(), usize::from(location == "none"), "{location}");
+        }
+        let mut f = missing_dictionary_fixture();
+        // An unrelated huge original ZIP is pruned before reads or budget reservation.
+        let large = f.base.join("downloads/stardewvalley/large.zip");
+        File::create(&large)
+            .unwrap()
+            .set_len(MAX_DIAGNOSTIC_ARCHIVE + 1)
+            .unwrap();
+        let mut entry = f.backup["persistent"]["mods"]["stardewvalley"]["entry"].clone();
+        entry["installationPath"] = json!("aaa-large");
+        entry["archiveId"] = json!("large");
+        f.backup["persistent"]["mods"]["stardewvalley"]["large"] = entry;
+        let mut download = f.backup["persistent"]["downloads"]["files"]["archive"].clone();
+        download["localPath"] = json!("large.zip");
+        f.backup["persistent"]["downloads"]["files"]["large"] = download;
+        f.manifest["files"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"relPath":"Mods/Large/manifest.json","source":"aaa-large"}));
+        assert_eq!(f.proofs().len(), 1);
+        File::options()
+            .write(true)
+            .open(f.base.join("downloads/stardewvalley/unrelated-name.zip"))
+            .unwrap()
+            .set_len(MAX_DIAGNOSTIC_ARCHIVE + 1)
+            .unwrap();
+        assert!(f.proofs().is_empty());
+    }
+
+    #[test]
+    fn missing_dictionary_absence_requires_real_not_found_and_plain_ancestors() {
+        let f = missing_dictionary_fixture();
+        assert!(absent_plain_path(&f.root.join("missing/i18n/de.json")));
+        assert!(!absent_plain_path(Path::new("relative/de.json")));
+        assert!(!absent_plain_path(&f.root.join(CHECKER)));
+        assert!(!absent_plain_path(&f.root));
+        assert!(!absent_plain_path(&f.root.join(CHECKER).join("de.json")));
+        #[cfg(windows)]
+        {
+            let link = f.root.join("linked");
+            let linked = std::os::windows::fs::symlink_dir(f.base.join("staging"), &link);
+            match linked {
+                Ok(()) => {
+                    assert!(!absent_plain_path(&link.join("missing/i18n/de.json")));
+                    fs::remove_dir(link).unwrap();
+                }
+                Err(error) => assert_eq!(error.raw_os_error(), Some(1314)),
+            }
+        }
     }
 
     #[test]
@@ -1277,7 +1795,8 @@ mod tests {
             vec![InstalledNexusTranslation {
                 source_nexus_id: 100,
                 mod_id: 200,
-                file_id: 300
+                file_id: 300,
+                state: InstalledTranslationState::Deployed,
             }]
         );
         scan.skipped_components[0].requires_attention = true;
@@ -1321,9 +1840,29 @@ mod tests {
         let scan = crate::scanner::scan_mods(&root, "de", &config);
         let proofs = detect(&root, "de", &scan);
         for proof in &proofs {
+            let components: Vec<_> = scan
+                .mods
+                .iter()
+                .filter(|component| component.nexus_id == Some(proof.source_nexus_id))
+                .collect();
             println!(
-                "source={} mod={} file={}",
-                proof.source_nexus_id, proof.mod_id, proof.file_id
+                "source={} mod={} file={} state={:?} disk_translated={} total={} empty_sources={}",
+                proof.source_nexus_id,
+                proof.mod_id,
+                proof.file_id,
+                proof.state,
+                components
+                    .iter()
+                    .map(|component| component.disk_translated_keys)
+                    .sum::<usize>(),
+                components
+                    .iter()
+                    .map(|component| component.total_keys)
+                    .sum::<usize>(),
+                components
+                    .iter()
+                    .map(|component| component.disk_no_translation_needed_keys)
+                    .sum::<usize>(),
             );
         }
         println!("proof_count={}", proofs.len());
@@ -1333,7 +1872,8 @@ mod tests {
         assert!(proofs.contains(&InstalledNexusTranslation {
             source_nexus_id: 7286,
             mod_id: 20792,
-            file_id: 117404
+            file_id: 117404,
+            state: InstalledTranslationState::Deployed,
         }));
     }
 }

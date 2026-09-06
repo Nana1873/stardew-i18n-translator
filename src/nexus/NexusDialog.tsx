@@ -20,6 +20,7 @@ import {
 import {
   resolveArchiveTranslations,
   nexusSourceDiskCoverage,
+  nexusSourceComponents,
 } from "./resolveTranslation";
 import { fileChoices, useNexusFiles } from "./useNexusFiles";
 import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
@@ -129,6 +130,7 @@ export function NexusDialog({
   onConfigure,
   onImported,
   onOpenReview,
+  onOpenMissing,
   vortexExecutable,
   installationMethod,
   onCheckInstalled,
@@ -162,6 +164,7 @@ export function NexusDialog({
   onConfigure: () => void;
   onImported: () => Promise<void>;
   onOpenReview?: (modUniqueId: string) => void;
+  onOpenMissing?: (modUniqueId: string) => void;
 }) {
   const configuredVortex = vortexExecutable?.trim();
   const method = installationMethod ?? (configuredVortex ? "vortex" : "folder");
@@ -708,8 +711,20 @@ export function NexusDialog({
       )
       .map((entry) => entry.modId),
   );
+  const evidenceFor = (sourceId: number) =>
+    isVortex
+      ? installedNexusTranslations.filter(
+          (item) =>
+            item.sourceNexusId === sourceId &&
+            (item.state === undefined ||
+              item.state === "deployed" ||
+              item.state === "missing_dictionary"),
+        )
+      : [];
   const sources = search.entries.filter(
-    (entry) => entry.result?.candidates.length && !coveredIds.has(entry.modId),
+    (entry) =>
+      (entry.result?.candidates.length || evidenceFor(entry.modId).length) &&
+      !coveredIds.has(entry.modId),
   );
   const fileMetadata = useNexusFiles(
     search.entries.flatMap((entry) =>
@@ -739,6 +754,10 @@ export function NexusDialog({
   ]);
   const groups = sources.map((entry) => {
     const candidates = candidatesFor(entry);
+    const evidence = evidenceFor(entry.modId);
+    const problem = evidence.some(
+      (item) => item.state === "missing_dictionary",
+    );
     const allOptions = candidates.flatMap((candidate) => {
       const files = fileMetadata.entries[candidate.modId]?.files;
       if (!files) return [];
@@ -754,17 +773,16 @@ export function NexusDialog({
         recommended: file.fileId === choices.recommended,
       }));
     });
-    const options = allOptions.filter(
-      (option) =>
-        !isVortex ||
-        !installedNexusTranslations.some(
-          (installed) =>
-            installed.sourceNexusId === entry.modId &&
-            installed.modId === option.candidate.modId &&
-            installed.fileId === option.file.fileId,
-        ),
+    const recordedOptions = allOptions.filter((option) =>
+      evidence.some(
+        (item) =>
+          item.modId === option.candidate.modId &&
+          item.fileId === option.file.fileId,
+      ),
     );
-    const installedCount = allOptions.length - options.length;
+    const options = allOptions.filter(
+      (option) => !recordedOptions.includes(option),
+    );
     // Only the best-ranked candidate may supply a default. Variants need explicit selection.
     const preferred = allOptions.find(
       (option) =>
@@ -776,11 +794,20 @@ export function NexusDialog({
         ? options.some((option) => option.value === explicit)
           ? explicit
           : ""
-        : allOptions.length === 1
-          ? (options[0]?.value ?? "")
-          : options.some((option) => option.value === preferred?.value)
-            ? preferred!.value
-            : "";
+        : evidence.some(
+              (item) =>
+                !recordedOptions.some(
+                  (option) =>
+                    option.candidate.modId === item.modId &&
+                    option.file.fileId === item.fileId,
+                ),
+            )
+          ? ""
+          : allOptions.length === 1
+            ? (options[0]?.value ?? "")
+            : options.some((option) => option.value === preferred?.value)
+              ? preferred!.value
+              : "";
     const selected = options.find((option) => option.value === value);
     const key = selected
       ? `${entry.modId}:${selected.value}`
@@ -794,7 +821,9 @@ export function NexusDialog({
       value,
       key,
       row,
-      installedCount,
+      evidence,
+      problem,
+      recordedOptions,
       loading: candidates.some(
         (candidate) => !fileMetadata.entries[candidate.modId],
       ),
@@ -807,7 +836,9 @@ export function NexusDialog({
       ),
     };
   });
-  const shown = groups.filter((group) => group.options.length > 0);
+  const shown = groups.filter(
+    (group) => group.options.length > 0 || group.evidence.length > 0,
+  );
   const failedIds = new Set([
     ...search.entries
       .filter((entry) => entry.error)
@@ -831,18 +862,22 @@ export function NexusDialog({
             !group.loading &&
             !group.options.length &&
             !group.errors.length &&
-            !group.installedCount,
+            !group.evidence.length,
         )
         .map((group) => group.entry.modId),
-    ].filter((id) => !failedIds.has(id) && !coveredIds.has(id)),
+    ].filter(
+      (id) =>
+        !failedIds.has(id) && !coveredIds.has(id) && !evidenceFor(id).length,
+    ),
   );
   const actionRows = Object.values(rows);
   const installedGroups = groups.filter(
     (group) =>
       !group.loading &&
       !group.errors.length &&
-      !group.options.length &&
-      group.installedCount > 0,
+      !group.selected &&
+      group.evidence.length > 0 &&
+      !group.problem,
   ).length;
   const handoffCount = new Set(
     Object.entries(rows)
@@ -868,7 +903,9 @@ export function NexusDialog({
     .filter(Boolean)
     .join(" · ");
   const loading = groups.some((group) => group.loading);
-  const unresolved = shown.some((group) => !group.selected);
+  const unresolved = shown.some(
+    (group) => !group.selected && !group.evidence.length,
+  );
   const pending = shown.filter(
     (group) =>
       group.selected &&
@@ -927,10 +964,28 @@ export function NexusDialog({
   function renderRow(group: (typeof groups)[number]) {
     const { entry, selected, key, row } = group;
     const sourceId = entry.modId;
-    const candidate = selected?.candidate ?? group.candidates[0];
+    const recorded = group.recordedOptions[0];
+    const candidate =
+      selected?.candidate ??
+      recorded?.candidate ??
+      (group.evidence.length
+        ? group.candidates.find((item) =>
+            group.evidence.some((record) => record.modId === item.modId),
+          )
+        : group.candidates[0]);
+    const linkModId = candidate?.modId ?? group.evidence[0]?.modId;
     const sourceName =
       entry.result?.originalName ?? entry.localNames.join(", ");
     const file = selected?.file;
+    const displayFile = file ?? recorded?.file;
+    const unidentifiedEvidence = group.evidence.filter(
+      (item) =>
+        !group.recordedOptions.some(
+          (option) =>
+            option.candidate.modId === item.modId &&
+            option.file.fileId === item.fileId,
+        ),
+    );
     const expired = Boolean(
       row.downloadedAt && now - row.downloadedAt >= 15 * 60_000,
     );
@@ -945,6 +1000,16 @@ export function NexusDialog({
       row.handoff && checkedAt && checkedAt >= row.handoff.at,
     );
     const version = mods.find((mod) => mod.nexusId === sourceId)?.version;
+    const missingComponents = nexusSourceComponents(mods, sourceId).filter(
+      (mod) =>
+        (mod.statusCounts?.untranslated ??
+          Math.max(
+            0,
+            mod.totalKeys -
+              mod.translatedKeys -
+              (mod.noTranslationNeededKeys ?? 0),
+          )) > 0,
+    );
     return (
       <Fragment key={sourceId}>
         <tr aria-label={sourceName}>
@@ -953,16 +1018,50 @@ export function NexusDialog({
             {version && (
               <small>Installed v{version.replace(/^v(?=\d)/i, "")}</small>
             )}
+            {group.evidence.length > 0 && (
+              <small
+                className={
+                  group.problem ? "nexus-installation-problem" : undefined
+                }
+              >
+                {group.problem
+                  ? "Translation file missing from Vortex installation"
+                  : "Translation installed"}
+              </small>
+            )}
             <small>
               {disk
                 ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
                 : "Local translation coverage unavailable"}
             </small>
+            {group.problem && (
+              <small>
+                The archive contains a translation file for this language, but
+                it is missing from this installation.
+              </small>
+            )}
+            {!group.problem &&
+              group.evidence.length > 0 &&
+              disk &&
+              disk.missing > 0 &&
+              missingComponents.length === 1 &&
+              onOpenMissing && (
+                <button
+                  className={quiet}
+                  disabled={locked}
+                  onClick={() => onOpenMissing(missingComponents[0].uniqueId)}
+                >
+                  Open missing strings
+                </button>
+              )}
           </td>
           <td>
             <div className="nexus-file-link">
               <div className="nexus-file-selection">
-                {group.options.length > 1 || !selected ? (
+                {group.options.length > 0 &&
+                (group.options.length > 1 ||
+                  !selected ||
+                  group.evidence.length > 0) ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -979,7 +1078,11 @@ export function NexusDialog({
                       }))
                     }
                   >
-                    <option value="">Choose translation version…</option>
+                    <option value="">
+                      {group.evidence.length
+                        ? "No new download"
+                        : "Choose translation version…"}
+                    </option>
                     {group.candidates.map((item) => (
                       <optgroup key={item.modId} label={item.name}>
                         {group.options
@@ -1002,30 +1105,45 @@ export function NexusDialog({
                 ) : (
                   <>
                     <strong className="nexus-selected-title">
-                      {candidate.name}
+                      {candidate?.name ?? "Translation archive"}
                     </strong>
                     <small>
-                      {file && metadataLine(file.version, file.uploadedAt)}
+                      {displayFile &&
+                        metadataLine(
+                          displayFile.version,
+                          displayFile.uploadedAt,
+                        )}
                     </small>
                   </>
                 )}
-                {file && (
-                  <small className="nexus-file-name">{file.fileName}</small>
+                {displayFile && (
+                  <small className="nexus-file-name">
+                    {displayFile.fileName}
+                  </small>
                 )}
-                {!selected && (
+                {!selected && unidentifiedEvidence.length > 0 && (
+                  <small>
+                    {unidentifiedEvidence
+                      .map(
+                        (item) => `Nexus ${item.modId} · file ${item.fileId}`,
+                      )
+                      .join("; ")}
+                  </small>
+                )}
+                {!selected && !group.evidence.length && (
                   <small>Choose the version for your installed mod.</small>
                 )}
               </div>
               <button
                 className={primary}
-                disabled={locked}
+                disabled={locked || !linkModId}
                 onClick={() => {
                   setLinkErrors((previous) => ({
                     ...previous,
                     [sourceId]: "",
                   }));
                   void openUrl(
-                    `https://www.nexusmods.com/stardewvalley/mods/${candidate.modId}?tab=files`,
+                    `https://www.nexusmods.com/stardewvalley/mods/${linkModId}?tab=files`,
                   ).catch((error: unknown) => {
                     if (mounted.current)
                       setLinkErrors((previous) => ({
@@ -1393,13 +1511,16 @@ export function NexusDialog({
             <div className="translator-preflight-metrics">
               {[
                 [`${search.completed}/${search.total}`, "IDs checked"],
-                [shown.length, "Mods with downloads"],
+                [
+                  shown.filter((group) => group.options.length > 0).length,
+                  "Mods with downloads",
+                ],
                 [noDownloadIds.size, "No suitable download found"],
                 [
                   (search.skippedComplete ?? 0) +
                     coveredIds.size +
                     installedGroups,
-                  "No download needed",
+                  "No new download needed",
                 ],
                 [search.noId, "Mods without Nexus ID"],
                 [unavailableCount, "Checks failed"],
@@ -1408,8 +1529,8 @@ export function NexusDialog({
                   className="translator-preflight-metric"
                   key={label}
                   title={
-                    label === "No download needed"
-                      ? `${(search.skippedComplete ?? 0) + coveredIds.size} mods with no missing text; ${installedGroups} exact files already deployed`
+                    label === "No new download needed"
+                      ? `${(search.skippedComplete ?? 0) + coveredIds.size} mods with no missing text; ${installedGroups} installed translations with no new file selected; text gaps may remain`
                       : undefined
                   }
                 >

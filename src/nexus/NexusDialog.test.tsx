@@ -134,7 +134,8 @@ function mount(
   const onImported = vi.fn().mockResolvedValue(undefined),
     onSearch = vi.fn(),
     onCheckInstalled = vi.fn().mockResolvedValue(undefined),
-    onOpenReview = vi.fn();
+    onOpenReview = vi.fn(),
+    onOpenMissing = vi.fn();
   const view = () => (
     <NexusDialog
       open={open}
@@ -155,6 +156,7 @@ function mount(
       onSearch={onSearch}
       onCheckInstalled={onCheckInstalled}
       onOpenReview={onOpenReview}
+      onOpenMissing={onOpenMissing}
       onClose={() => {}}
       onConfigure={() => {}}
       onCancel={() => {}}
@@ -166,6 +168,7 @@ function mount(
     onSearch,
     onCheckInstalled,
     onOpenReview,
+    onOpenMissing,
     onDeploymentStamp,
     setStamp: (value: string) => {
       deploymentStamp = value;
@@ -358,30 +361,24 @@ it("excludes a positively deployed exact file despite incomplete local coverage"
     mods: [{ ...mods[0], totalKeys: 1000, diskTranslatedKeys: 999 }],
     installed: [installedFile],
   });
-  await screen.findByText("Available translation files are already installed.");
+  await screen.findByText("Translation installed");
   expect(
-    screen.queryByRole("row", { name: "Canonical title" }),
-  ).not.toBeInTheDocument();
+    screen.getByRole("row", { name: "Canonical title" }),
+  ).toHaveTextContent("999/1000 strings");
   expect(
     screen.getByRole("button", {
       name: "Download & install all with Vortex (0)",
     }),
   ).toBeDisabled();
   expect(
-    screen.getByText("No download needed").parentElement,
+    screen.getByText("No new download needed").parentElement,
   ).toHaveTextContent("5");
   expect(
     screen.getByText("No suitable download found").parentElement,
   ).toHaveTextContent("1");
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });
-it.each([
-  undefined,
-  [],
-  [{ ...installedFile, sourceNexusId: 99 }],
-  [{ ...installedFile, modId: 99 }],
-  [{ ...installedFile, fileId: 99 }],
-])(
+it.each([undefined, [], [{ ...installedFile, sourceNexusId: 99 }]])(
   "keeps the download without exact positive evidence (%j)",
   async (installed) => {
     mount({ installed });
@@ -392,7 +389,7 @@ it.each([
       }),
     ).toBeEnabled();
     expect(
-      screen.queryByText("Available translation files are already installed."),
+      translationRow().queryByText("Translation installed"),
     ).not.toBeInTheDocument();
   },
 );
@@ -442,7 +439,7 @@ it("replaces deployment evidence on recheck and preserves unknown results", asyn
     app.setInstalled([installedFile]),
   );
   await app.changeDeployment();
-  await screen.findByText("Available translation files are already installed.");
+  await screen.findByText("Translation installed");
   app.setInstalled(undefined);
   await screen.findByRole("row", { name: "Canonical title" });
   expect(
@@ -493,7 +490,7 @@ it("applies scan evidence only in Vortex and accepts a replacement scan without 
   const app = mount({ method: "folder", installed: [installedFile] });
   await screen.findByRole("row", { name: "Canonical title" });
   app.setMethod("vortex");
-  await screen.findByText("Available translation files are already installed.");
+  await screen.findByText("Translation installed");
   app.setInstalled(undefined);
   await screen.findByRole("row", { name: "Canonical title" });
   expect(
@@ -930,7 +927,7 @@ it("counts failed original groups once and never counts pending metadata as no s
   expect(metric("No suitable download found")).toBe("1");
   expect(metric("Mods with downloads")).toBe("0");
   expect(metric("IDs checked")).toBe("3/5");
-  expect(metric("No download needed")).toBe("4");
+  expect(metric("No new download needed")).toBe("4");
   expect(metric("Mods without Nexus ID")).toBe("2");
   expect(
     screen.getByText("Search cancelled · results are partial."),
@@ -986,9 +983,7 @@ it("labels no-text-needed sources separately from physical local strings", async
       "Local translation: 0/3 strings · 2 need no translation text · 1 missing",
     ),
   ).toBeInTheDocument();
-  expect(
-    screen.queryByText("Available translation files are already installed."),
-  ).not.toBeInTheDocument();
+  expect(screen.queryByText("Translation installed")).not.toBeInTheDocument();
 });
 
 it.each(["free", "unknown", "invalid"] as const)(
@@ -1155,9 +1150,7 @@ it("observes a late deployment hint without repeatedly scanning or redownloading
       await vi.advanceTimersByTimeAsync(250);
     });
     expect(app.onCheckInstalled).toHaveBeenCalledOnce();
-    expect(
-      screen.getByText("Available translation files are already installed."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Translation installed")).toBeInTheDocument();
     await act(async () => {
       await vi.advanceTimersByTimeAsync(150000);
     });
@@ -1289,9 +1282,7 @@ it("removes fully covered handoffs from downloads and retained search IDs while 
   expect(
     screen.getByText("No missing translation text in the checked mods."),
   ).toBeInTheDocument();
-  expect(
-    screen.queryByText("Available translation files are already installed."),
-  ).toBeNull();
+  expect(screen.queryByText("Translation installed")).toBeNull();
   const metrics = within(
     screen.getByRole("region", { name: "Translation search results" }),
   );
@@ -1299,7 +1290,7 @@ it("removes fully covered handoffs from downloads and retained search IDs while 
     metrics.getByText("Mods with downloads").parentElement,
   ).toHaveTextContent("0");
   expect(
-    metrics.getByText("No download needed").parentElement,
+    metrics.getByText("No new download needed").parentElement,
   ).toHaveTextContent("5");
   fireEvent.click(screen.getByRole("button", { name: "Search again" }));
   expect(app.onSearch).toHaveBeenCalledWith(
@@ -1312,7 +1303,7 @@ it("removes fully covered handoffs from downloads and retained search IDs while 
   });
   expect(screen.getByText(/1 sent to Vortex/)).toBeInTheDocument();
   expect(
-    metrics.getByText("No download needed").parentElement,
+    metrics.getByText("No new download needed").parentElement,
   ).toHaveTextContent("5");
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
 });
@@ -1793,3 +1784,214 @@ it("checks presentation again after returning to a previously resolved workspace
   ).toBeInTheDocument();
   expect(app.onCheckInstalled).not.toHaveBeenCalled();
 });
+
+it.each([
+  { state: "deployed" as const, installedId: 7 },
+  { state: "deployed" as const, installedId: 8 },
+  { state: "missing_dictionary" as const, installedId: 7 },
+  { state: "missing_dictionary" as const, installedId: 8 },
+])(
+  "keeps a reversible no-download choice with unrelated downloads: %j",
+  async ({ state, installedId }) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, args: { modId?: number }) =>
+      cmd === "nexus_list_files"
+        ? Promise.resolve(
+            args.modId === 30342
+              ? [
+                  file,
+                  {
+                    ...file,
+                    fileId: 8,
+                    version: "1.3",
+                    uploadedAt: "2026-02-01",
+                  },
+                ]
+              : [{ ...file, fileId: 9 }],
+          )
+        : original(cmd, args),
+    );
+    mount({
+      installed: [{ ...installedFile, fileId: installedId, state }],
+      search: {
+        ...search,
+        entries: [
+          search.entries[1],
+          {
+            modId: 2,
+            localNames: ["Second"],
+            result: {
+              ...search.entries[1].result,
+              modId: 2,
+              originalName: "Second",
+              candidates: [{ ...candidate, modId: 44 }],
+            },
+          },
+        ],
+      },
+    });
+    const choice = await screen.findByRole("combobox", {
+      name: "Translation file for Canonical title",
+    });
+    if (installedId === 7) {
+      expect(choice).toHaveValue("30342:8");
+      fireEvent.change(choice, { target: { value: "" } });
+    }
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", {
+          name: "Download & install all with Vortex (1)",
+        }),
+      ).toBeEnabled(),
+    );
+    const row = screen.getByRole("row", { name: "Canonical title" });
+    expect(within(row).getByRole("combobox")).toHaveValue("");
+    expect(row).toHaveTextContent(
+      state === "deployed"
+        ? "Translation installed"
+        : "Translation file missing from Vortex installation",
+    );
+    if (state === "missing_dictionary")
+      expect(row).not.toHaveTextContent("Translation installed");
+    fireEvent.change(choice, {
+      target: { value: installedId === 7 ? "30342:8" : "30342:7" },
+    });
+    expect(
+      screen.getByRole("button", {
+        name: "Download & install all with Vortex (2)",
+      }),
+    ).toBeEnabled();
+    const retainedChoice = screen.getByRole("combobox", {
+      name: "Translation file for Canonical title",
+    });
+    fireEvent.change(retainedChoice, { target: { value: "" } });
+    expect(retainedChoice).toHaveValue("");
+    expect(
+      screen.getByRole("button", {
+        name: "Download & install all with Vortex (1)",
+      }),
+    ).toBeEnabled();
+    await download();
+    await screen.findByText("1 sent to Vortex");
+    expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+      { modId: 44, fileId: 9 },
+    ]);
+  },
+);
+
+it("shows the proven missing dictionary without a blind repeat or a successful-install metric", async () => {
+  mount({ installed: [{ ...installedFile, state: "missing_dictionary" }] });
+  await screen.findByText("Translation file missing from Vortex installation");
+  expect(
+    translationRow().getByText(
+      /archive contains a translation file for this language/,
+    ),
+  ).toHaveTextContent("but it is missing from this installation.");
+  expect(
+    screen.getByRole("button", {
+      name: "Download & install all with Vortex (0)",
+    }),
+  ).toBeDisabled();
+  expect(
+    screen.getByText("No new download needed").parentElement,
+  ).toHaveTextContent("4");
+  expect(
+    screen.getByText("Mods with downloads").parentElement,
+  ).toHaveTextContent("0");
+  expect(screen.getByText("Checks failed").parentElement).toHaveTextContent(
+    "0",
+  );
+  expect(
+    screen.getByText("No suitable download found").parentElement,
+  ).toHaveTextContent("1");
+  expect(translationRow().queryByRole("combobox")).toBeNull();
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
+
+it.each([{ files: [] }, { files: [file] }])(
+  "retains installed identity when its file has disappeared remotely (%j)",
+  async ({ files }) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "nexus_list_files"
+        ? Promise.resolve(files)
+        : original(cmd, ...args),
+    );
+    mount({ installed: [{ ...installedFile, fileId: 99, state: "deployed" }] });
+    await screen.findByText("Translation installed");
+    await waitFor(() =>
+      expect(screen.queryByText("Loading translation versions…")).toBeNull(),
+    );
+    expect(
+      translationRow().getByText("Nexus 30342 · file 99"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: "Download & install all with Vortex (0)",
+      }),
+    ).toBeDisabled();
+    if (files.length) {
+      fireEvent.change(translationRow().getByRole("combobox"), {
+        target: { value: "30342:7" },
+      });
+      await download();
+      await screen.findByText("1 sent to Vortex");
+      expect(commandCalls("nexus_handoff_to_vortex")).toEqual([
+        { modId: 30342, fileId: 7 },
+      ]);
+    }
+  },
+);
+
+it("opens missing strings only for one unambiguous component with untranslated working text", async () => {
+  const app = mount({ installed: [installedFile] });
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Open missing strings" }),
+  );
+  expect(app.onOpenMissing).toHaveBeenCalledWith("sample.mod");
+  expect(app.onOpenReview).not.toHaveBeenCalled();
+  app.setMods([{ ...mods[0], translatedKeys: 3 }]);
+  expect(
+    screen.queryByRole("button", { name: "Open missing strings" }),
+  ).toBeNull();
+  app.setMods([mods[0], { ...mods[0], uniqueId: "component.two" }]);
+  expect(
+    screen.queryByRole("button", { name: "Open missing strings" }),
+  ).toBeNull();
+});
+
+it("keeps unknown coverage distinct from completeness for installed evidence", async () => {
+  const app = mount({ installed: [installedFile] });
+  app.setTraversal(false);
+  await screen.findByText("Translation installed");
+  expect(
+    translationRow().getByText("Local translation coverage unavailable"),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "Open missing strings" }),
+  ).toBeNull();
+});
+
+it("keeps missing-dictionary evidence out of manual Review mode", async () => {
+  mount({
+    method: "folder",
+    installed: [{ ...installedFile, state: "missing_dictionary" }],
+  });
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Download & import all (1)" }),
+    ).toBeEnabled(),
+  );
+  expect(
+    screen.queryByText("Translation file missing from Vortex installation"),
+  ).toBeNull();
+});
+
+it.each(["deployed", "missing_dictionary"] as const)(
+  "omits duplicate IDs for a known %s archive",
+  async (state) => {
+    mount({ installed: [{ ...installedFile, state }] });
+    expect(await screen.findByText("german.zip")).toBeInTheDocument();
+    expect(translationRow().queryByText("Nexus 30342 · file 7")).toBeNull();
+  },
+);

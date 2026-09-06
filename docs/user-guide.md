@@ -74,14 +74,24 @@ Each row shows the exact local coverage and missing-string count; this is not a
 download-status check or proof that the offered Nexus file is already installed.
 In Vortex mode, a local scan can identify an exact deployed Nexus file and remove
 that file from the download choices even when it leaves strings untranslated.
+The row stays in the same list with an installed indication and its missing-text
+count. Where the corresponding editor component has untranslated work, you can
+open it directly. Your existing nonempty translations remain preserved.
 Newer files remain available; removing the installed version does not automatically
-select an older one. Identified files count as already deployed, rather than as
-searches without a suitable download.
+select an older one or prevent downloads for other mods. Identified files do not
+count as searches without a suitable download.
 This check currently requires Vortex's local JSON backup, the original downloaded
 ZIP, and matching language files deployed through hardlinks. Backups may lag a
 new installation. Missing or conflicting metadata, deleted archives, other archive
 formats, or modified deployed files leave the identity unknown and the download
 available. The translator only reads these files; it does not open Vortex's database.
+For a supported ZIP layout, it can also identify an installation whose helper
+component was deployed while the archive's language dictionary is missing.
+The row reports the installation problem and keeps that exact file out of the
+download batch. A different file version remains selectable. This diagnosis
+does not repair the installation: check the archive's instructions or an
+author-provided correction. Unsupported or ambiguous layouts remain unknown;
+missing strings alone never establish an installation problem.
 Use **Scan** after installations started outside the translator. Workspace
 coverage reaches 100% only when every source key has the required text; nearly
 complete translations are no longer rounded to 100%.

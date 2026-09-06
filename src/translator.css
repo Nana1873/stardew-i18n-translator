@@ -3305,3 +3305,7 @@
 #stardew-i18n-translator .translator-vortex-path {
   overflow-wrap: anywhere;
 }
+
+#stardew-i18n-translator .nexus-installation-problem {
+  color: var(--translator-orange);
+}

@@ -220,9 +220,30 @@ game/mod/file IDs, the original ZIP fingerprint, exact language-file paths and
 bytes, and verified staging/deployment hardlinks. Never derive IDs from filenames
 or use coverage or a handoff receipt as installation evidence. Missing, stale,
 unsupported or conflicting evidence remains unknown and must not hide downloads.
-Filter only the matching original-mod/translation-mod/file tuple, preserving
-newer alternatives and avoiding automatic downgrades after an installed file is
-removed. Replace this evidence on rescans and discard obsolete workspace evidence.
+Exclude only the matching original-mod/translation-mod/file tuple from new
+downloads. Keep an identified translation with missing text visible in the same
+list as installed. Available alternatives remain selectable; excluding an
+installed file must not automatically select an older file or block downloads
+for other mods. A contextual editor action opens existing untranslated work,
+not a separate translation editor.
+
+A separate ZIP check, limited to archives up to 8 MiB, may report
+`missing_dictionary` when an exact
+archive's manifest-bearing component is verifiably deployed but its language
+dictionary is absent from both the Vortex installation and the expected game
+path. Associate the dictionary through its complete path to an unambiguous
+scanned target, allowing only the explicitly checked outer `Mods/` wrapper.
+The current original manifest must supply the matching Nexus ID. Recovered-only
+IDs and an omitted `pt-BR.json` with a canonical `pt.json` scan target remain
+unknown in this limited diagnosis.
+Do not infer destinations from similar mod names or overlapping string keys.
+Recheck absence and all supporting evidence before returning the diagnosis.
+This state is an installation problem, not deployed translation evidence or
+complete coverage. Show it in the same list and exclude that exact file from
+the ordinary download batch; different files remain eligible. Neither this
+check nor its UI changes archives, installation paths or Vortex state.
+
+Replace installation evidence on rescans and discard obsolete workspace evidence.
 This limited ZIP check does not verify active profiles or Collection tracking and
 does not open or modify a live Vortex database.
 
