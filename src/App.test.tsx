@@ -387,6 +387,120 @@ function deferred<T>() {
 
 describe("App shell", () => {
   it.each(["folder", "vortex"] as const)(
+    "builds private output through Export in %s mode with overwrite confirmation",
+    async (installationMethod) => {
+      mockConfigured(exportScan(false));
+      const original = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((cmd: string, args: unknown) => {
+        if (cmd === "load_settings")
+          return Promise.resolve({ ...CONFIGURED, installationMethod });
+        if (cmd === "pick_translation_zip_destination")
+          return Promise.resolve("C:/Output.zip");
+        if (cmd === "build_private_output") {
+          if (!(args as { overwrite: boolean }).overwrite)
+            return Promise.reject("OVERWRITE_REQUIRED");
+          return Promise.resolve({
+            path: "C:/Output.zip",
+            folder: "C:/",
+            fileName: "Output.zip",
+            entries: 2,
+            strings: 4,
+          });
+        }
+        return original(cmd, args);
+      });
+      render(<App />);
+      await screen.findByRole("main", { name: "Overview" });
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Export actions" }),
+        ).toBeEnabled(),
+      );
+      chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+      const dialog = await screen.findByRole("dialog", {
+        name: "Confirm ZIP overwrite",
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: /Replace/ }));
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith("build_private_output", {
+          destination: "C:/Output.zip",
+          overwrite: true,
+        }),
+      );
+      expect(
+        (await screen.findAllByText("Output.zip", { exact: true }))[0],
+      ).toBeVisible();
+    },
+  );
+  it("opens downloaded translation import from the Import menu without Vortex installation", async () => {
+    mockConfigured(exportScan(false));
+    render(<App />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Import actions" }),
+      ).toBeEnabled(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Import actions" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", {
+        name: "Import downloaded translation ZIP…",
+      }),
+    );
+    expect(
+      await screen.findByRole("dialog", {
+        name: "Import downloaded translation ZIP",
+      }),
+    ).toBeVisible();
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("nexus_pick_archive", undefined),
+    );
+    expect(
+      invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_send_to_vortex"),
+    ).toBe(false);
+  });
+
+  it("retains Overview summaries, scan details, recent mods and status navigation without exposing internal translation storage", async () => {
+    mockConfigured(exportScan(false));
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "load_settings"
+        ? Promise.resolve({
+            ...CONFIGURED,
+            installationMethod: "vortex",
+            lastOpened: { "a.b": Date.now() - 60_000 },
+          })
+        : original(cmd, ...args),
+    );
+    render(<App />);
+    const overview = within(
+      await screen.findByRole("main", { name: "Overview" }),
+    );
+    expect(
+      overview.queryByRole("region", { name: "Translation library" }),
+    ).toBeNull();
+    expect(
+      overview.getByRole("button", { name: /Has German text/ }),
+    ).toBeVisible();
+    expect(
+      overview.getByRole("button", { name: /Reviewed & current/ }),
+    ).toBeVisible();
+    expect(overview.getByText("Recently opened")).toBeVisible();
+    expect(
+      overview.getByRole("button", { name: "Continue Test Mod" }),
+    ).toBeVisible();
+    fireEvent.click(overview.getByRole("button", { name: /^Latest scan/ }));
+    await screen.findByRole("dialog", { name: "Scan" });
+    fireEvent.click(screen.getByRole("button", { name: "Close scan" }));
+    fireEvent.click(
+      overview.getByRole("button", {
+        name: /^Open/,
+      }),
+    );
+    expect(
+      screen.getByRole("region", { name: "Translation workspace" }),
+    ).toBeVisible();
+  });
+  it.each(["folder", "vortex"] as const)(
     "reloads the open editor after a %s scan even when file paths stay unchanged",
     async (installationMethod) => {
       let target = "Installed before rescan";
@@ -1517,7 +1631,7 @@ describe("App shell", () => {
     expect(exportActions).not.toHaveTextContent("Exporting…");
     expect(screen.getByRole("button", { name: "Scan mods" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Import LLM batch" }),
+      screen.getByRole("button", { name: "Import actions" }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
 
@@ -3705,7 +3819,7 @@ describe("App shell", () => {
     ).toEqual(["Overview", "Workspace"]);
     expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: "Import LLM batch" }),
+      screen.getByRole("button", { name: "Import actions" }),
     ).toBeEnabled();
     expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
 
@@ -3762,7 +3876,8 @@ describe("App shell", () => {
     expect(screen.queryByRole("menu", { name: "Export" })).toBeNull();
     expect(exportButton).toHaveFocus();
 
-    fireEvent.click(screen.getByRole("button", { name: "Import LLM batch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import LLM batch" }));
     const importDialog = screen.getByRole("dialog", {
       name: "Import LLM batch",
     });
@@ -4186,7 +4301,8 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findByRole("treeitem", { name: /Test Mod/ });
-    fireEvent.click(screen.getByRole("button", { name: "Import LLM batch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Import actions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import LLM batch" }));
     const dialog = await screen.findByRole("dialog", {
       name: "Import LLM batch",
     });

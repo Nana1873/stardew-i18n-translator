@@ -14,6 +14,8 @@ export function ManualTranslationImport({
   disabled,
   onImported,
   onBusy,
+  autoPick = false,
+  onComplete,
 }: {
   mod: ScannedMod | undefined;
   language: string;
@@ -21,6 +23,8 @@ export function ManualTranslationImport({
   disabled: boolean;
   onImported: () => Promise<void>;
   onBusy: (busy: boolean) => void;
+  autoPick?: boolean;
+  onComplete?: () => void;
 }) {
   const [choices, setChoices] = useState<NexusImportRequest[]>([]);
   const [selection, setSelection] = useState(0);
@@ -28,6 +32,13 @@ export function ManualTranslationImport({
   const [running, setRunning] = useState(false);
   const currentContext = useRef(context);
   currentContext.current = context;
+  const started = useRef(false);
+  useEffect(() => {
+    if (autoPick && !started.current) {
+      started.current = true;
+      void run(true);
+    }
+  }, [autoPick]);
   useEffect(() => {
     setChoices([]);
     setMessage("");
@@ -43,6 +54,7 @@ export function ManualTranslationImport({
       `Saved to translation library. ${result.imported} strings added to Review; ${result.conflicts} existing values kept.`,
     );
     await onImported();
+    onComplete?.();
   }
   async function run(pick: boolean) {
     if (!mod || running || disabled) return;
@@ -100,7 +112,7 @@ export function ManualTranslationImport({
         disabled={!mod || running || disabled}
         onClick={() => void run(true)}
       >
-        {running ? "Importing…" : "Import downloaded ZIP"}
+        {running ? "Importing…" : "Choose translation ZIP…"}
       </button>
       <small>
         {mod

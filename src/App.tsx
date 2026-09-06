@@ -38,6 +38,7 @@ import {
   type ZipComponentInput,
   type ZipPreview,
   buildTranslationZip,
+  buildPrivateOutput,
   cancelAiRun,
   codexCliStatus,
   exportAllMods,
@@ -87,7 +88,9 @@ import {
 } from "lucide-react";
 import { TARGET_LANGUAGES } from "./languages";
 import { NexusDialog } from "./nexus/NexusDialog";
-import { TranslationLibrary } from "./nexus/TranslationLibrary";
+import { useDialogAccessibility } from "./dialogAccessibility";
+import { ManualTranslationImport } from "./nexus/ManualTranslationImport";
+
 import { useNexusSearch } from "./nexus/useNexusSearch";
 import { useVortexInventoryRefresh } from "./nexus/useVortexInventoryRefresh";
 import "./nexus/nexus.css";
@@ -357,6 +360,12 @@ export function App() {
   const [resultHidden, setResultHidden] = useState(false);
   const latestResultButtonRef = useRef<HTMLButtonElement>(null);
   const resultToggleButtonRef = useRef<HTMLButtonElement>(null);
+  const [manualImportOpen, setManualImportOpen] = useState(false);
+  const [privateOverwrite, setPrivateOverwrite] = useState<{
+    destination: string;
+    context: string;
+  } | null>(null);
+  const privateBuildBusy = useRef(false);
   const [zipPreview, setZipPreview] = useState<ZipPreview | null>(null);
   const [zipError, setZipError] = useState<string | null>(null);
   const [zipBuilding, setZipBuilding] = useState(false);
@@ -1393,6 +1402,70 @@ export function App() {
     );
   }
 
+  async function buildOutput(
+    destination?: string,
+    expectedContext = nexusWorkspaceKey,
+  ) {
+    if (privateBuildBusy.current || exporting || scanning) return;
+    const currentContext = () =>
+      `${settingsRef.current?.modsPath ?? ""}|${settingsRef.current?.targetLang ?? ""}`;
+    if (currentContext() !== expectedContext) return;
+    privateBuildBusy.current = true;
+    setExporting(true);
+    let pickedPath: string | null = destination ?? null;
+    try {
+      const path =
+        destination ??
+        (await pickTranslationZipDestination("Stardew Translator Output.zip"));
+      pickedPath = path;
+      if (!path || currentContext() !== expectedContext) return;
+      const outcome = await buildPrivateOutput(path, Boolean(destination));
+      if (currentContext() !== expectedContext) return;
+      setPrivateOverwrite(null);
+      await refreshCompletedResult(
+        {
+          kind: "zip",
+          title: outcome.fileName,
+          collapsed: false,
+          pending: false,
+          error: null,
+          outcome,
+          problems: [],
+        },
+        "zip",
+      );
+      if (currentContext() === expectedContext)
+        setLastSuccessfulExport({
+          label: "Last export · Stardew Translator Output",
+          path: outcome.path,
+          folder: outcome.folder,
+        });
+    } catch (error) {
+      if (currentContext() !== expectedContext) return;
+      if (String(error).includes("OVERWRITE_REQUIRED") && !destination) {
+        if (pickedPath)
+          setPrivateOverwrite({
+            destination: pickedPath,
+            context: expectedContext,
+          });
+      } else {
+        setResultTray({
+          kind: "zip",
+          title: "Stardew Translator Output",
+          collapsed: false,
+          pending: false,
+          error: String(error),
+          outcome: null,
+          problems: [],
+        });
+        setResultHidden(false);
+      }
+    } finally {
+      privateBuildBusy.current = false;
+      setExporting(false);
+    }
+  }
+
   async function buildZipAt(
     destination: string,
     overwrite: boolean,
@@ -1997,6 +2070,8 @@ export function App() {
     ? `${languageLabel} (${settings.targetLang})`
     : "No target language yet";
   const focusedDialogOpen = Boolean(
+    manualImportOpen ||
+    privateOverwrite ||
     wizardOpen ||
     nexusOpen ||
     settingsOpen ||
@@ -2025,7 +2100,6 @@ export function App() {
   const nexusPanel = scan && settings?.targetLang && (
     <NexusDialog
       libraryMode={installationMethodFor(settings) === "vortex"}
-      embedded={installationMethodFor(settings) === "vortex"}
       key={`${nexusWorkspaceKey}:${nexusSessionRevision}`}
       open={nexusOpen}
       onOpenReview={(modId) => {
@@ -2122,7 +2196,6 @@ export function App() {
           scanEnabled={configured && !scanning && !exporting}
           scanning={scanning}
           onFindTranslations={() => {
-            setView("home");
             setNexusOpen(true);
             if (
               !nexus.running &&
@@ -2148,6 +2221,17 @@ export function App() {
           buildZipEnabled={Boolean(selectedMod) && !zipBuilding && !exporting}
           onReleaseNotes={() => void requestReleaseNotes()}
           releaseNotesEnabled={Boolean(selectedMod) && !exporting}
+          onRevealLastExport={
+            lastSuccessfulExport
+              ? () => void openFolder(lastSuccessfulExport.folder)
+              : undefined
+          }
+          onBuildOutput={() => void buildOutput()}
+          outputEnabled={Boolean(scan?.mods.length) && !exporting && !scanning}
+          onImportTranslation={() => {
+            setNexusOpen(false);
+            setManualImportOpen(true);
+          }}
           onImportBatch={() => void handleImportBatch()}
           importBatchEnabled={Boolean(selectedMod) && !exporting}
           onOpenSettings={() => {
@@ -2165,59 +2249,30 @@ export function App() {
             className="translator-view-panel is-active"
             aria-label="Translation overview"
           >
-            {scan &&
-            settings?.targetLang &&
-            installationMethodFor(settings) === "vortex" ? (
-              <TranslationLibrary
-                mods={scan.mods}
-                selectedId={selectedModId}
-                onSelect={setSelectedModId}
-                onOpenMod={openMod}
-                language={settings.targetLang}
-                revision={reloadToken}
-                context={nexusWorkspaceKey}
-                nexusOpen={nexusOpen}
-                onShowLibrary={() => setNexusOpen(false)}
-                onShowNexus={() => setNexusOpen(true)}
-                nexusPanel={nexusPanel}
-                busy={scanning || exporting}
-                onBusy={setExporting}
-                onImported={async () => {
-                  setReloadToken((value) => value + 1);
-                  await runScan(settings, false, () => true, {
-                    nexusSearch: false,
-                    showDiagnostics: false,
-                  });
-                }}
-              />
-            ) : (
-              <Dashboard
-                scan={scan}
-                scanning={scanning}
-                lastScanAt={lastScanAt}
-                now={now}
-                languageLine={languageLine}
-                onScan={handleScan}
-                scanEnabled={configured && !scanning && !exporting}
-                onOpenMod={openMod}
-                onBrowse={() => {
-                  setView("work");
-                }}
-                lastOpened={lastOpened}
-                onShowScanDetails={
-                  scan ? () => openLatestScan(false) : undefined
-                }
-                onOpenOverviewFilter={openOverviewFilter}
-                lastExport={lastSuccessfulExport}
-                onShowLastExport={
-                  lastSuccessfulExport
-                    ? () => {
-                        void openFolder(lastSuccessfulExport.folder);
-                      }
-                    : undefined
-                }
-              />
-            )}
+            <Dashboard
+              scan={scan}
+              scanning={scanning}
+              lastScanAt={lastScanAt}
+              now={now}
+              languageLine={languageLine}
+              onScan={handleScan}
+              scanEnabled={configured && !scanning && !exporting}
+              onOpenMod={openMod}
+              onBrowse={() => {
+                setView("work");
+              }}
+              lastOpened={lastOpened}
+              onShowScanDetails={scan ? () => openLatestScan(false) : undefined}
+              onOpenOverviewFilter={openOverviewFilter}
+              lastExport={lastSuccessfulExport}
+              onShowLastExport={
+                lastSuccessfulExport
+                  ? () => {
+                      void openFolder(lastSuccessfulExport.folder);
+                    }
+                  : undefined
+              }
+            />
           </section>
         ) : (
           <section
@@ -2433,7 +2488,7 @@ export function App() {
             </div>
           </section>
         )}
-        {installationMethodFor(settings) !== "vortex" && nexusPanel}
+        {nexusPanel}
         {wizardOpen && (
           <SetupWizard
             initial={settings}
@@ -2618,6 +2673,56 @@ export function App() {
             onClose={() => setReleaseNotes(null)}
           />
         )}
+        {manualImportOpen && selectedMod && settings?.targetLang && (
+          <ManualImportModal
+            busy={exporting}
+            onClose={() => setManualImportOpen(false)}
+          >
+            <h2>Import downloaded translation ZIP</h2>
+            <p>
+              Import translations downloaded manually from Nexus Mods or another
+              source.
+            </p>
+            <ManualTranslationImport
+              key={`${nexusWorkspaceKey}:${selectedMod.uniqueId}`}
+              mod={selectedMod}
+              language={settings.targetLang}
+              context={nexusWorkspaceKey}
+              disabled={exporting || scanning}
+              onBusy={setExporting}
+              autoPick
+              onComplete={() => setManualImportOpen(false)}
+              onImported={async () => {
+                setReloadToken((value) => value + 1);
+                await runScan(settings, false, () => true, {
+                  nexusSearch: false,
+                  showDiagnostics: false,
+                });
+              }}
+            />
+            <button
+              className="translator-button"
+              disabled={exporting}
+              onClick={() => setManualImportOpen(false)}
+            >
+              Close
+            </button>
+          </ManualImportModal>
+        )}
+        {privateOverwrite && (
+          <ZipOverwriteDialog
+            fileName={
+              privateOverwrite.destination.split(/[\\/]/).pop() ??
+              privateOverwrite.destination
+            }
+            onCancel={() => setPrivateOverwrite(null)}
+            onConfirm={() => {
+              const pending = privateOverwrite;
+              setPrivateOverwrite(null);
+              void buildOutput(pending.destination, pending.context);
+            }}
+          />
+        )}
         {zipOverwrite && (
           <ZipOverwriteDialog
             fileName={
@@ -2794,6 +2899,10 @@ function AppToolbar({
   buildZipEnabled,
   onReleaseNotes,
   releaseNotesEnabled,
+  onImportTranslation,
+  onBuildOutput,
+  onRevealLastExport,
+  outputEnabled,
   onImportBatch,
   importBatchEnabled,
   onOpenSettings,
@@ -2821,6 +2930,10 @@ function AppToolbar({
   buildZipEnabled: boolean;
   onReleaseNotes: () => void;
   releaseNotesEnabled: boolean;
+  onImportTranslation: () => void;
+  onBuildOutput: () => void;
+  onRevealLastExport?: () => void;
+  outputEnabled: boolean;
   onImportBatch: () => void;
   importBatchEnabled: boolean;
   onOpenSettings: () => void;
@@ -2829,6 +2942,7 @@ function AppToolbar({
   latestResultButtonRef: React.RefObject<HTMLButtonElement | null>;
   onReopenResult: () => void;
 }) {
+  const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const exportTriggerRef = useRef<HTMLButtonElement>(null);
@@ -2943,17 +3057,61 @@ function AppToolbar({
             {scanning ? "Scanning…" : "Scan"}
           </span>
         </button>
-        <button
-          className="translator-button translator-button-quiet"
-          type="button"
-          aria-label="Import LLM batch"
-          title="Import LLM batch"
-          onClick={onImportBatch}
-          disabled={!importBatchEnabled}
+        <div
+          className="translator-menu"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget))
+              setImportOpen(false);
+          }}
         >
-          <Download aria-hidden />
-          <span className="translator-action-label-compact">Import …</span>
-        </button>
+          <button
+            className="translator-button translator-button-quiet"
+            type="button"
+            aria-label="Import actions"
+            aria-haspopup="menu"
+            aria-expanded={importOpen}
+            disabled={!importBatchEnabled}
+            onClick={() => {
+              setImportOpen(!importOpen);
+              setExportOpen(false);
+            }}
+          >
+            <Download aria-hidden />
+            <span className="translator-action-label-compact">Import …</span>
+          </button>
+          {importOpen && (
+            <div
+              className="translator-popover"
+              role="menu"
+              aria-label="Import actions"
+              onKeyDown={(event) => {
+                if (event.key === "Escape") setImportOpen(false);
+                else handleExportMenuKey(event);
+              }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setImportOpen(false);
+                  onImportTranslation();
+                }}
+              >
+                Import downloaded translation ZIP…
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setImportOpen(false);
+                  onImportBatch();
+                }}
+              >
+                Import LLM batch
+              </button>
+            </div>
+          )}
+        </div>
         <div className="translator-menu" ref={menuRef}>
           <button
             ref={exportTriggerRef}
@@ -2977,8 +3135,12 @@ function AppToolbar({
               }
             }}
             disabled={
-              !(exportEnabled || exportAllEnabled || buildZipEnabled) ||
-              exporting
+              !(
+                exportEnabled ||
+                exportAllEnabled ||
+                buildZipEnabled ||
+                outputEnabled
+              ) || exporting
             }
           >
             <Upload aria-hidden />
@@ -3026,12 +3188,29 @@ function AppToolbar({
               <button
                 type="button"
                 role="menuitem"
+                disabled={!outputEnabled}
+                onClick={() => run(onBuildOutput)}
+              >
+                Build Stardew Translator Output
+              </button>
+              <button
+                type="button"
+                role="menuitem"
                 onClick={() => run(onReleaseNotes)}
                 disabled={!releaseNotesEnabled}
               >
                 <NotebookPen aria-hidden /> Translation notes
               </button>
               <div className="translator-popover-divider" role="separator" />
+              {onRevealLastExport && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => run(onRevealLastExport)}
+                >
+                  Show last export in folder
+                </button>
+              )}
               <span className="translator-popover-note" role="presentation">
                 Advanced
               </span>
@@ -3069,6 +3248,37 @@ function AppToolbar({
           <span className="translator-action-label-compact">Settings</span>
         </button>
       </div>
+    </div>
+  );
+}
+
+function ManualImportModal({
+  children,
+  busy,
+  onClose,
+}: {
+  children: React.ReactNode;
+  busy: boolean;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLElement>(null);
+  const { onDialogKeyDown } = useDialogAccessibility({
+    dialogRef,
+    onEscape: onClose,
+    escapeDisabled: busy,
+  });
+  return (
+    <div className="translator-flow-overlay">
+      <section
+        ref={dialogRef}
+        className="translator-flow-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import downloaded translation ZIP"
+        onKeyDown={onDialogKeyDown}
+      >
+        {children}
+      </section>
     </div>
   );
 }

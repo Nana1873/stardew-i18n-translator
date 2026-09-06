@@ -291,6 +291,50 @@ it("imports Vortex-mode acquisition into the local library instead of handing of
   );
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });
+it("remembers an imported Nexus file across reopening while offering missing strings", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.resolve([
+          {
+            modUniqueId: "sample.mod",
+            relativeDir: "i18n",
+            archivePath: "i18n/de.json",
+            strings: 2,
+            sourceUrl:
+              "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files&file_id=7",
+          },
+        ])
+      : original(command, ...args),
+  );
+  const app = mount({ method: "vortex", libraryMode: true });
+  await screen.findByText("Already imported · 3 strings still missing");
+  expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Open missing strings" }));
+  expect(app.onOpenMissing).toHaveBeenCalledWith("sample.mod");
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.reject(new Error("Store unavailable"))
+      : original(command, ...args),
+  );
+  app.setOpen(false);
+  app.setOpen(true);
+  await screen.findByText("Already imported · 3 strings still missing");
+  await screen.findByText(/Saved import status is unavailable/);
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+});
+it("does not offer a repeat download when saved import status cannot be read", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.reject(new Error("Store unavailable"))
+      : original(command, ...args),
+  );
+  mount({ method: "vortex", libraryMode: true });
+  await screen.findByText(/Saved import status is unavailable/);
+  expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
+  expect(screen.queryByText(/No new downloads needed/)).toBeNull();
+});
 async function download() {
   const button = await screen.findByRole("button", {
     name: /^Download (?:& import )?all/,
@@ -314,6 +358,7 @@ beforeEach(() => {
   invoke.mockImplementation(
     (cmd: string, args?: { modId?: number; fileId?: number }) => {
       if (cmd === "nexus_list_files") return Promise.resolve([file]);
+      if (cmd === "list_community_library") return Promise.resolve([]);
       if (cmd === "nexus_status")
         return Promise.resolve({
           configured: true,

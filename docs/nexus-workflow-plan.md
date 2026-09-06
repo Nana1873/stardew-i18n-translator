@@ -5,9 +5,11 @@ Status: implementation plan with a bounded library/output prototype, updated 202
 groups the remaining work. This document is not a release announcement or a
 claim that the planned private-output workflow is already implemented.
 
-The first prototype implements Vortex-mode Overview with a local library,
-Translator-owned ZIP acquisition/import, and a combined output ZIP for manual
-Vortex import. It uses the configured Mods folder and language, and only
+The prototype keeps the original Overview and Workspace. Community storage is
+an internal implementation detail, not another screen or a panel in Overview.
+The existing Nexus dialog provides translation acquisition/import; the existing
+Import and Export menus provide manual ZIP import and combined output ZIP creation
+for manual Vortex import. It uses the configured Mods folder and language, and only
 library-mapped components enter the combined output. It does not yet implement
 profile detection, automatic output handoff, community-update merging, or the
 complete output lifecycle below. The first library import binds use of legacy
@@ -59,6 +61,15 @@ explicit. Do not introduce text-equality or glossary automatic prefill. Global
 AI preferences and the existing glossary may remain shared.
 
 ## User flows and visible states
+
+Keep the visible loop to Scan -> Find translations on Nexus -> manual/AI work
+in Workspace -> Export. Preserve Overview's progress cards, scan summary, last
+export and recent-work table. Do not replace them with a library or compress
+away useful counts, explanations and statuses. A successfully imported Nexus
+file can be marked in the existing results with remaining missing text shown
+separately; an incomplete translation must not trigger the same download again.
+Original downloaded ZIPs are inspected in memory in this prototype. Imported
+locale text and source identity persist; manual source archives are left intact.
 
 The current code already has optional Nexus discovery, folder ZIP import into
 Review, original Nexus-file handoff to Vortex, installed-file rechecks and the

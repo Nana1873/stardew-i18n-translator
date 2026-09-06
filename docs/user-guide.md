@@ -36,32 +36,33 @@ backup and empty-file removal behavior is unchanged.
 
 ## Find translations on Nexus
 
-### Local translation-library prototype
+### Translation import and combined output
 
-In Vortex mode, Overview now shows mods on the left and the complete local
-translation library on the right. Selecting a mod highlights its library
-entries; **Open Workspace** opens the existing editor. The **Nexus results**
-tab keeps optional discovery separate from already imported translations.
+Scan your Mods folder, then use **Find translations on Nexus** to find existing
+translations. In Vortex mode, downloaded translations are imported into the
+Translator instead of sending original archives to Vortex. Imported values enter
+Review; existing personal values are kept. **Open missing strings** leads to the
+existing Workspace for manual or AI-assisted editing. Already imported Nexus files
+are remembered separately from translation completeness, so an incomplete archive
+does not require downloading again.
 
-Premium API downloads are imported into the Translator instead of sending
-original translation archives to Vortex. For manual downloads, select the
-matching mod and choose **Import downloaded ZIP**. A single matching locale
-file imports directly; ambiguous files/components require a selection. This
-prototype supports ZIP locale files, not default-language-only bundles or
-RAR/7z imports. Existing personal values are kept; newly imported working
-strings enter Review. Imports refresh the library without a manual rescan.
+For a manually downloaded translation, select its mod in Workspace and choose
+**Import … → Import downloaded translation ZIP…**. A single matching locale file
+imports directly; ambiguous files/components require a selection. ZIP locale files
+are supported; default-language-only bundles and RAR/7z imports are not.
 
-**Build Stardew Translator Output** creates a combined locale ZIP for
-library-mapped components in the configured Mods folder and target language.
-Save it outside game and staging folders, then import it manually into Vortex.
-Creation does not prove installation or deployment. Folder export and the
-per-package **Build translation ZIP** remain available.
+**Export … → Build Stardew Translator Output** creates one locale ZIP containing
+imported components and their saved edits for the configured Mods folder and target
+language. Save it outside game and staging folders, then import it manually into
+Vortex. Creation does not prove installation or deployment. Existing folder export
+and per-package **Build translation ZIP** remain available.
 
-This is a bounded local prototype: it does not detect or switch Vortex profiles,
-perform automatic output handoff, or merge conflicting community updates.
-The first library import pins saved work to the configured Mods folder; changing
-that folder is rejected instead of silently reusing work in another context.
-Use an isolated application/data copy for evaluation.
+This prototype retains imported text and source identity internally, not a permanent
+copy of downloaded ZIPs. It does not detect or switch Vortex profiles, automatically
+hand off output, or merge conflicting community updates. The first import pins saved
+work to the configured Mods folder; changing that folder is rejected instead of
+silently reusing work in another context. Use an isolated application/data copy for
+evaluation.
 
 ### Folder import and legacy Nexus implementation notes
 

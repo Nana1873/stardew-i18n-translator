@@ -2,6 +2,8 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import {
   nexusStatus,
+  listCommunityLibrary,
+  type CommunityLibraryEntry,
   nexusHandoffToVortex,
   nexusListFiles,
   nexusDownloadPreflight,
@@ -762,6 +764,47 @@ export function NexusDialog({
       explicitSelection: fileSelections[entry.modId],
     }),
   );
+  const [importedState, setImportedState] = useState<{
+    context: string;
+    entries: CommunityLibraryEntry[];
+    verified: boolean;
+    error?: string;
+  }>({ context: "", entries: [], verified: false });
+  const importedContext = `${workspaceKey}|${targetLang}`;
+  const importedSources =
+    importedState.context === importedContext ? importedState.entries : [];
+  const importStatusUnknown =
+    libraryMode &&
+    (importedState.context !== importedContext || !importedState.verified);
+  useEffect(() => {
+    if (!open || !libraryMode) return;
+    let current = true;
+    void listCommunityLibrary()
+      .then((entries) => {
+        if (!Array.isArray(entries))
+          throw new Error("Invalid saved import status");
+        if (current)
+          setImportedState({
+            context: importedContext,
+            entries,
+            verified: true,
+          });
+      })
+      .catch(() => {
+        if (current)
+          setImportedState((previous) => ({
+            context: importedContext,
+            entries:
+              previous.context === importedContext ? previous.entries : [],
+            verified: previous.context === importedContext && previous.verified,
+            error:
+              "Saved import status is unavailable. Reopen Nexus results to retry.",
+          }));
+      });
+    return () => {
+      current = false;
+    };
+  }, [open, libraryMode, importedContext, mods]);
   const coveredIds = new Set(
     results
       .filter((result) => result.covered)
@@ -774,19 +817,44 @@ export function NexusDialog({
     )
     .map((result) => {
       const { entry, selected, sourceUnknown } = result;
+      const components = nexusSourceComponents(mods, entry.modId);
+      const acquired =
+        libraryMode &&
+        Boolean(selected) &&
+        components.length > 0 &&
+        components.every((component) =>
+          component.i18nFiles.every((directory) =>
+            importedSources.some(
+              (saved) =>
+                saved.modUniqueId === component.uniqueId &&
+                saved.relativeDir === directory.relativeDir &&
+                saved.sourceUrl ===
+                  `https://www.nexusmods.com/stardewvalley/mods/${selected!.candidate.modId}?tab=files&file_id=${selected!.file.fileId}`,
+            ),
+          ),
+        );
       const key = selected
         ? `${entry.modId}:${selected.value}`
         : `${entry.modId}:pending`;
-      const row =
-        rows[key] ??
+      const row = rows[key] ??
         (sourceUnknown && !selected
           ? Object.entries(rows).find(
               ([rowKey, value]) =>
                 rowKey.startsWith(`${entry.modId}:`) && value.handoff,
             )?.[1]
-          : undefined) ??
-        emptyRow();
-      return { ...result, key, row };
+          : undefined) ?? {
+          ...emptyRow(),
+          completed: acquired,
+          modIds: acquired
+            ? components.map((component) => component.uniqueId)
+            : [],
+        };
+      return {
+        ...result,
+        key,
+        row: acquired ? { ...row, completed: true } : row,
+        acquired,
+      };
     });
   const shown = groups.filter(
     (group) =>
@@ -873,6 +941,7 @@ export function NexusDialog({
   const skippedComplete = scanIncomplete ? 0 : (search.skippedComplete ?? 0);
   const pending = shown.filter(
     (group) =>
+      !importStatusUnknown &&
       group.selected &&
       !group.row.handoff &&
       !group.row.completed &&
@@ -883,6 +952,7 @@ export function NexusDialog({
     ? new Set(pending.map((group) => group.selected!.value)).size
     : pending.length;
   async function downloadAll(queue = pending) {
+    if (importStatusUnknown) return;
     if (
       activeRef.current ||
       batchRef.current ||
@@ -890,7 +960,7 @@ export function NexusDialog({
     )
       return;
     const snapshot = queue.flatMap((group) =>
-      group.selected
+      group.selected && !group.acquired
         ? [
             {
               key: group.key,
@@ -1007,6 +1077,24 @@ export function NexusDialog({
                 Sent to Vortex � installation and deployment unconfirmed
               </small>
             )}
+            {group.acquired && (
+              <small>
+                Already imported ·{" "}
+                {missingComponents.reduce(
+                  (sum, component) =>
+                    sum +
+                    (component.statusCounts?.untranslated ??
+                      Math.max(
+                        0,
+                        component.totalKeys -
+                          component.translatedKeys -
+                          (component.noTranslationNeededKeys ?? 0),
+                      )),
+                  0,
+                )}{" "}
+                strings still missing
+              </small>
+            )}
             {!group.evidence.length && group.inventory.length > 0 && (
               <small>
                 Deployment not verified. Check Vortex, then recheck installed
@@ -1027,9 +1115,9 @@ export function NexusDialog({
               </small>
             )}
             {!group.problem &&
-              (group.evidence.length > 0 || group.inventory.length > 0) &&
-              disk &&
-              disk.missing > 0 &&
+              (group.acquired ||
+                group.evidence.length > 0 ||
+                group.inventory.length > 0) &&
               missingComponents.length > 0 &&
               onOpenMissing &&
               missingComponents.map((component) => (
@@ -1451,6 +1539,12 @@ export function NexusDialog({
           {(actionStatus || resultStatus) && (
             <p role="status">{actionStatus || resultStatus}</p>
           )}
+          {libraryMode &&
+            importedState.context === importedContext &&
+            importedState.error && <p role="alert">{importedState.error}</p>}
+          {importStatusUnknown && !importedState.error && (
+            <p role="status">Checking saved import status…</p>
+          )}
           {inventoryRefreshWarning && (
             <small className="nexus-muted">{inventoryRefreshWarning}</small>
           )}
@@ -1571,6 +1665,7 @@ export function NexusDialog({
           </details>
         )}
         {!resolvingInstalled &&
+          !importStatusUnknown &&
           !loading &&
           !search.running &&
           pendingDownloads === 0 &&
