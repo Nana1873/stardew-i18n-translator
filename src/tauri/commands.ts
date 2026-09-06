@@ -687,6 +687,15 @@ export function nexusPickArchive(): Promise<NexusArchive | null> {
 export function nexusPickLocaleJson(): Promise<NexusArchive | null> {
   return invoke("nexus_pick_locale_json");
 }
+export interface NexusArchiveResolution {
+  mappings: NexusImportRequest[];
+  unresolved: { archivePath: string; reason: string }[];
+}
+export function nexusResolveArchive(
+  archiveId: string,
+): Promise<NexusArchiveResolution> {
+  return invoke("nexus_resolve_archive", { archiveId });
+}
 
 export interface CommunityLibraryEntry {
   modUniqueId: string;

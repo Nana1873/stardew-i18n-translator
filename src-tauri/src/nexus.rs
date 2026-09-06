@@ -1763,6 +1763,155 @@ mod tests {
     }
 
     #[test]
+    fn archive_mapping_resolves_sve_components_without_nexus_group_representative() {
+        let (config, mods, _) = fixture("archive-components");
+        for (folder, uid) in [
+            ("Stardew Valley Expanded Code", "SVE.Code"),
+            ("[CP] Stardew Valley Expanded", "SVE.CP"),
+            ("Frontier Farm", "SVE.Frontier"),
+        ] {
+            let root = mods.join("Stardew Valley Expanded").join(folder);
+            std::fs::create_dir_all(root.join("i18n")).unwrap();
+            std::fs::write(root.join("manifest.json"), serde_json::json!({"Name":folder,"UniqueID":uid,"Version":"1.0.0","Author":"Fixture","UpdateKeys":["Nexus:3753"]}).to_string()).unwrap();
+            std::fs::write(root.join("i18n/default.json"), r#"{"hello":"Hello"}"#).unwrap();
+        }
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        let archive = inspect_zip(zip_bytes(&[
+            (
+                "Stardew Valley Expanded/Stardew Valley Expanded Code/i18n/de.json",
+                r#"{"hello":"Hallo"}"#,
+            ),
+            (
+                "Stardew Valley Expanded/[CP] Stardew Valley Expanded/i18n/de.json",
+                r#"{"hello":"Hallo"}"#,
+            ),
+            ("unrelated/i18n/de.json", r#"{"hello":"Hallo"}"#),
+        ]))
+        .unwrap();
+        let resolved = resolve_archive_components("sve", &archive, &scan.mods, "de");
+        assert_eq!(resolved.mappings.len(), 2);
+        assert_eq!(resolved.unresolved.len(), 1);
+        assert!(resolved
+            .mappings
+            .iter()
+            .all(|m| m.mod_unique_id != "SVE.Frontier"));
+        assert!(resolved
+            .mappings
+            .iter()
+            .any(|m| m.mod_unique_id == "SVE.Code"));
+        assert!(resolved
+            .mappings
+            .iter()
+            .any(|m| m.mod_unique_id == "SVE.CP"));
+        let multilingual = inspect_zip(zip_bytes(&[
+            (
+                "Stardew Valley Expanded/Stardew Valley Expanded Code/i18n/de.json",
+                r#"{"hello":"Hallo"}"#,
+            ),
+            (
+                "Stardew Valley Expanded/Stardew Valley Expanded Code/i18n/default.json",
+                r#"{"hello":"Hello"}"#,
+            ),
+            (
+                "Stardew Valley Expanded/Stardew Valley Expanded Code/i18n/fr.json",
+                r#"{"hello":"Bonjour"}"#,
+            ),
+        ]))
+        .unwrap();
+        let mapped = resolve_archive_components("multilingual", &multilingual, &scan.mods, "de");
+        assert_eq!(mapped.mappings.len(), 1);
+        assert!(mapped.unresolved.is_empty());
+        let default_only =
+            inspect_zip(zip_bytes(&[("i18n/default.json", r#"{"hello":"Hallo"}"#)])).unwrap();
+        assert_eq!(
+            resolve_archive_components("default-only", &default_only, &scan.mods, "de")
+                .unresolved
+                .len(),
+            1
+        );
+        let duplicate = inspect_zip(zip_bytes(&[
+            (
+                "first/Stardew Valley Expanded Code/i18n/de.json",
+                r#"{"hello":"Hallo"}"#,
+            ),
+            (
+                "second/Stardew Valley Expanded Code/i18n/de.json",
+                r#"{"hello":"Hallo"}"#,
+            ),
+        ]))
+        .unwrap();
+        assert!(
+            resolve_archive_components("dup", &duplicate, &scan.mods, "de")
+                .mappings
+                .is_empty()
+        );
+        let manifest = inspect_zip(zip_bytes(&[
+            ("Wrapper/manifest.json", r#"{"UniqueID":"SVE.CP"}"#),
+            ("Wrapper/i18n/de.json", r#"{"hello":"Hallo"}"#),
+        ]))
+        .unwrap();
+        assert_eq!(
+            resolve_archive_components("manifest", &manifest, &scan.mods, "de").mappings[0]
+                .mod_unique_id,
+            "SVE.CP"
+        );
+    }
+
+    #[test]
+    fn numbered_fishing_folder_alias_requires_substantial_unique_source_evidence() {
+        let (config, mods, _) = fixture("fishing-alias");
+        let keys: serde_json::Map<String, Value> = (0..12)
+            .map(|n| {
+                (
+                    format!("config.fishing.option{n}"),
+                    Value::String("Fixture".into()),
+                )
+            })
+            .collect();
+        let root = mods.join("FishingAssistant");
+        std::fs::create_dir_all(root.join("i18n")).unwrap();
+        std::fs::write(root.join("manifest.json"), r#"{"Name":"Fishing","UniqueID":"Fixture.Fishing","Version":"3.4.0","Author":"Fixture"}"#).unwrap();
+        std::fs::write(
+            root.join("i18n/default.json"),
+            serde_json::to_vec(&keys).unwrap(),
+        )
+        .unwrap();
+        let archive = inspect_zip(zip_bytes(&[(
+            "FishingAssistant3/i18n/de.json",
+            &serde_json::to_string(&keys).unwrap(),
+        )]))
+        .unwrap();
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        assert_eq!(
+            resolve_archive_components("alias", &archive, &scan.mods, "de").mappings[0]
+                .mod_unique_id,
+            "Fixture.Fishing"
+        );
+        let tiny = inspect_zip(zip_bytes(&[(
+            "FishingAssistant3/i18n/de.json",
+            r#"{"ok":"OK","cancel":"Cancel"}"#,
+        )]))
+        .unwrap();
+        assert!(resolve_archive_components("tiny", &tiny, &scan.mods, "de")
+            .mappings
+            .is_empty());
+        let second = mods.join("FishingAssistant2");
+        std::fs::create_dir_all(second.join("i18n")).unwrap();
+        std::fs::write(second.join("manifest.json"), r#"{"Name":"Other version","UniqueID":"Fixture.OtherFishing","Version":"2.0.0","Author":"Fixture"}"#).unwrap();
+        std::fs::write(
+            second.join("i18n/default.json"),
+            serde_json::to_vec(&keys).unwrap(),
+        )
+        .unwrap();
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        assert!(
+            resolve_archive_components("conflict", &archive, &scan.mods, "de")
+                .mappings
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn native_import_requires_preflight_and_only_writes_done_state() {
         let (config, mods, id) = fixture("nexus-import");
         let source = std::fs::read(mods.join("Example/i18n/default.json")).unwrap();
@@ -2889,6 +3038,226 @@ fn import_from_config(
         false,
     )
 }
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResolvedArchiveMapping {
+    archive_id: String,
+    archive_path: String,
+    mod_unique_id: String,
+    relative_dir: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnresolvedArchiveMapping {
+    archive_path: String,
+    reason: String,
+}
+#[derive(Serialize)]
+pub struct ArchiveResolution {
+    mappings: Vec<ResolvedArchiveMapping>,
+    unresolved: Vec<UnresolvedArchiveMapping>,
+}
+
+fn resolve_archive_components(
+    archive_id: &str,
+    archive: &Archive,
+    mods: &[scanner::ScannedMod],
+    lang: &str,
+) -> ArchiveResolution {
+    let mut result = ArchiveResolution {
+        mappings: Vec::new(),
+        unresolved: Vec::new(),
+    };
+    let has_target_locale = archive.files.iter().any(|file| {
+        let filename = file
+            .path
+            .rsplit('/')
+            .next()
+            .unwrap_or_default()
+            .to_lowercase();
+        !file.is_default
+            && (filename == format!("{lang}.json") || (lang == "pt" && filename == "pt-br.json"))
+    });
+    for file in &archive.files {
+        let path = file.path.replace('\\', "/").to_lowercase();
+        let filename = path.rsplit('/').next().unwrap_or_default();
+        if file.is_default
+            || (filename != format!("{lang}.json") && !(lang == "pt" && filename == "pt-br.json"))
+        {
+            if file.is_default && !has_target_locale {
+                result.unresolved.push(UnresolvedArchiveMapping {
+                    archive_path: file.path.clone(),
+                    reason: "This archive has no explicit target-language file. Translated default.json files require explicit import and are not automatically mapped.".into(),
+                });
+            }
+            continue;
+        }
+        let parent = path.rsplit_once('/').map(|(p, _)| p).unwrap_or_default();
+        let mut candidates: Vec<_> = mods
+            .iter()
+            .flat_map(|component| {
+                let folder = component.folder_path.replace('\\', "/");
+                let name = folder
+                    .trim_end_matches('/')
+                    .rsplit('/')
+                    .next()
+                    .unwrap_or_default()
+                    .to_lowercase();
+                component.i18n_files.iter().filter_map(move |i18n| {
+                    let relative = i18n.relative_dir.replace('\\', "/").to_lowercase();
+                    let suffix = format!("{name}/{relative}");
+                    let identity_matches = match &file.manifest_unique_id {
+                        Some(uid) => uid.eq_ignore_ascii_case(&component.unique_id),
+                        None => {
+                            !matches!(
+                                name.as_str(),
+                                "mod"
+                                    | "mods"
+                                    | "code"
+                                    | "data"
+                                    | "i18n"
+                                    | "translation"
+                                    | "translations"
+                                    | "content"
+                                    | "contentpack"
+                                    | "cp"
+                                    | "plugin"
+                            ) && (parent == suffix || parent.ends_with(&format!("/{suffix}")))
+                        }
+                    };
+                    let relative_matches =
+                        parent == relative || parent.ends_with(&format!("/{relative}"));
+                    (identity_matches && relative_matches).then_some((component, i18n))
+                })
+            })
+            .collect();
+        // A numbered folder alias is considered only after exact identity/path
+        // failed, and only with substantial source-key corroboration.
+        if candidates.is_empty() && file.manifest_unique_id.is_none() {
+            let keys: HashSet<String> = archive
+                .documents
+                .get(&file.path)
+                .and_then(|body| scanner::parse_flat_object(body, Path::new("archive locale")).ok())
+                .map(|map| {
+                    map.keys()
+                        .filter(|k| k.as_str() != "$schema")
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            if keys.len() >= 8 {
+                for component in mods {
+                    let folder = component.folder_path.replace('\\', "/");
+                    let name = folder
+                        .trim_end_matches('/')
+                        .rsplit('/')
+                        .next()
+                        .unwrap_or_default()
+                        .to_lowercase();
+                    let stem = name.trim_end_matches(|c: char| c.is_ascii_digit());
+                    if stem.len() < 8 {
+                        continue;
+                    }
+                    for i18n in &component.i18n_files {
+                        let relative = i18n.relative_dir.replace('\\', "/").to_lowercase();
+                        let prefix = parent
+                            .strip_suffix(&format!("/{relative}"))
+                            .unwrap_or_default();
+                        let archive_folder = prefix.rsplit('/').next().unwrap_or_default();
+                        if archive_folder == name
+                            || archive_folder.trim_end_matches(|c: char| c.is_ascii_digit()) != stem
+                        {
+                            continue;
+                        }
+                        if let Some(source) = std::fs::read_to_string(&i18n.default_path)
+                            .ok()
+                            .and_then(|body| {
+                                scanner::parse_flat_object(&body, Path::new(&i18n.default_path))
+                                    .ok()
+                            })
+                        {
+                            let matched =
+                                keys.iter().filter(|key| source.contains_key(*key)).count();
+                            let substantive = keys
+                                .iter()
+                                .filter(|key| key.len() >= 12 && source.contains_key(*key))
+                                .count();
+                            if matched * 100 >= keys.len() * 90 && substantive >= 8 {
+                                candidates.push((component, i18n));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if let [(component, i18n)] = candidates.as_slice() {
+            result.mappings.push(ResolvedArchiveMapping {
+                archive_id: archive_id.into(),
+                archive_path: file.path.clone(),
+                mod_unique_id: component.unique_id.clone(),
+                relative_dir: i18n.relative_dir.clone(),
+            });
+        } else {
+            result.unresolved.push(UnresolvedArchiveMapping {
+                archive_path: file.path.clone(),
+                reason: if candidates.is_empty() {
+                    "No installed component with matching manifest identity or component path."
+                } else {
+                    "More than one installed component/path matches; no automatic target selected."
+                }
+                .into(),
+            });
+        }
+    }
+    let mut counts = HashMap::new();
+    for mapping in &result.mappings {
+        *counts
+            .entry((
+                mapping.mod_unique_id.to_lowercase(),
+                mapping.relative_dir.to_lowercase(),
+            ))
+            .or_insert(0) += 1;
+    }
+    result.mappings.retain(|mapping| {
+        if counts[&(mapping.mod_unique_id.to_lowercase(), mapping.relative_dir.to_lowercase())] == 1 {true} else {
+            result.unresolved.push(UnresolvedArchiveMapping {archive_path: mapping.archive_path.clone(), reason: "Multiple archive files target the same installed locale; no automatic winner selected.".into()});false
+        }
+    });
+    result
+}
+
+#[tauri::command]
+pub fn nexus_resolve_archive(
+    app: AppHandle,
+    archive_id: String,
+) -> Result<ArchiveResolution, String> {
+    let archive = lock()
+        .archives
+        .get(&archive_id)
+        .filter(|a| a.created.elapsed() < TTL)
+        .cloned()
+        .ok_or("Archive expired. Select it again.")?;
+    let config = crate::config_dir(&app)?;
+    let saved = settings::load_checked(&config)?;
+    let lang = language::normalize_target_code(
+        saved
+            .target_lang
+            .as_deref()
+            .ok_or("Choose a target language.")?,
+    )?;
+    let mods = saved.mods_path.ok_or("Choose a Mods folder.")?;
+    let scan = scanner::scan_mods(Path::new(&mods), &lang, &config);
+    if !scan.traversal_complete {
+        return Err("Scan traversal is incomplete; automatic mapping is unavailable.".into());
+    }
+    Ok(resolve_archive_components(
+        &archive_id,
+        &archive,
+        &scan.mods,
+        &lang,
+    ))
+}
+
 fn inspect_locale_json(
     path: &Path,
     target_lang: &str,

@@ -22,7 +22,7 @@ a matching language mod for use in-game.
 The app does not install, activate, or update mods; manage profiles or Git
 repositories; or publish translations automatically. Optional Nexus API
 discovery supports explicit Vortex download handoff and personal
-Review import. Vortex manages installation and deployment.
+translation import. Valid locale/translation ZIP imports are marked Done; external LLM imports remain Review. Vortex manages installation and deployment.
 It may open a browser link from a positive `Nexus:<id>` update key. It is not
 a general editor for Content Patcher, `Data/*.json`, or XNB files. Additional
 game-content reads are limited to the glossary sources described below.
@@ -59,7 +59,7 @@ and leave the last complete baseline intact. Intentional exclusions do not.
 | Open    | `untranslated`  | No target translation is available.                                           |
 | Done    | `translated`    | Manually saved or accepted text, or an existing target imported from the mod. |
 | Changed | `outdated`      | The source changed after the stored translation baseline.                     |
-| Review  | `review-needed` | An AI suggestion, external LLM batch, or Nexus import awaiting human review.  |
+| Review  | `review-needed` | An AI suggestion or external LLM batch awaiting human review.                 |
 
 Existing translations gain a source baseline when first opened, so later source
 changes can mark them Changed. AI suggestions also become Changed when their
@@ -204,6 +204,8 @@ valid cached results using the same rules without another API request. Matches
 and newest-file selection remain heuristics, not compatibility or completeness
 guarantees; the UI does not label files as recommended.
 
+Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. Unmatched target-language files are reported without assigning them to the representative component. Row coverage names its actual components; after mapping it uses those mapped component IDs.
+
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It
 never enters portable settings, metadata cache, logs, handoff arguments, or
@@ -251,7 +253,7 @@ installation, deployment, original-source association or Collection membership.
 Batch cancellation stops subsequent requests without undoing earlier handoffs.
 Within Vortex batches, deduplicate exact translation mod/file pairs while keeping
 all original-mod associations and consistent failure/retry outcomes. Counts
-reflect unique handoff requests; Review import still maps each original separately.
+reflect unique handoff requests; translation import resolves archive components against all installed components.
 A local installed-files recheck reports disk coverage separately from effective
 app-state coverage and exposes differences without overwriting nonempty drafts.
 After handoff, observe only deployment-manifest metadata for a bounded period

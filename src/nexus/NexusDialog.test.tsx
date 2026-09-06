@@ -291,6 +291,79 @@ it("imports Vortex-mode acquisition into the local library instead of handing of
   );
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });
+it("retains mapped working coverage when only an unrelated source has a scan error", async () => {
+  const app = mount({ method: "vortex", libraryMode: true });
+  await download();
+  await waitFor(() => expect(app.onImported).toHaveBeenCalled());
+  app.setSkipped([
+    {
+      packageId: "other",
+      componentUniqueId: "unrelated.mod",
+      componentName: "Other mod",
+      relativeLocation: "Other/manifest.json",
+      nexusId: 99,
+      requiresAttention: true,
+      restOfPackageLoaded: true,
+      reason: "Unreadable optional file",
+    },
+  ]);
+  expect(
+    screen.getByText("Working translation: 0/3 strings · 3 missing"),
+  ).toBeVisible();
+  app.setTraversal(false);
+  expect(
+    screen.getByText(
+      "Local translation coverage unavailable: scan incomplete.",
+    ),
+  ).toBeVisible();
+});
+it.each(["folder", "vortex"] as const)(
+  "imports all native component matches without source-page filtering in %s mode",
+  async (method) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "nexus_resolve_archive"
+        ? Promise.resolve({
+            mappings: [
+              {
+                archiveId: "archive",
+                archivePath: "SVE Code/i18n/de.json",
+                modUniqueId: "sample.mod",
+                relativeDir: "i18n",
+              },
+              {
+                archiveId: "archive",
+                archivePath: "[CP] SVE/i18n/de.json",
+                modUniqueId: "unrelated.mod",
+                relativeDir: "i18n",
+              },
+            ],
+            unresolved: [
+              {
+                archivePath: "Unknown/i18n/de.json",
+                reason: "No installed component matches this path.",
+              },
+            ],
+          })
+        : original(command, ...args),
+    );
+    mount({ method, libraryMode: method === "vortex" });
+    await download();
+    await waitFor(() =>
+      expect(commandCalls("nexus_import_translation")).toHaveLength(2),
+    );
+    expect(
+      commandCalls("nexus_import_translation").map(
+        (request) => request.modUniqueId,
+      ),
+    ).toEqual(["sample.mod", "unrelated.mod"]);
+    expect(screen.queryByRole("combobox")).toBeNull();
+    expect(
+      await screen.findByText(/Could not match 1 translation file/),
+    ).toBeVisible();
+    expect(screen.getByText("Components: Local mod, Other mod")).toBeVisible();
+  },
+);
 it("remembers an imported Nexus file across reopening while offering missing strings", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((command: string, ...args: unknown[]) =>

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   nexusPickArchive,
   nexusPickLocaleJson,
+  nexusResolveArchive,
   nexusPreflightImport,
   nexusImportTranslation,
   type NexusImportRequest,
@@ -48,7 +49,11 @@ export function ManualTranslationImport({
     setChoices([]);
     setMessage("");
   }, [context, mod?.uniqueId]);
-  async function save(request: NexusImportRequest, stamp: string) {
+  async function save(
+    request: NexusImportRequest,
+    stamp: string,
+    finish = true,
+  ) {
     if (currentContext.current !== stamp) return;
     await nexusPreflightImport(request);
     if (currentContext.current !== stamp) return;
@@ -58,8 +63,10 @@ export function ManualTranslationImport({
     setMessage(
       `${result.imported} strings imported as Done; ${result.conflicts} existing values kept.`,
     );
-    await onImported();
-    onComplete?.();
+    if (finish) {
+      await onImported();
+      onComplete?.();
+    }
   }
   async function run(pick: boolean) {
     if (!mod || running || disabled) return;
@@ -76,18 +83,36 @@ export function ManualTranslationImport({
         ? nexusPickLocaleJson()
         : nexusPickArchive());
       if (!archive || currentContext.current !== stamp) return;
+      if (format === "zip") {
+        const resolved = await nexusResolveArchive(archive.archiveId);
+        if (currentContext.current !== stamp) return;
+        const problems = resolved.unresolved.map(
+          (item) => `${item.archivePath}: ${item.reason}`,
+        );
+        let saved = 0;
+        for (const mapping of resolved.mappings) {
+          if (currentContext.current !== stamp) return;
+          try {
+            await save({ ...mapping, communityLibrary }, stamp, false);
+            saved++;
+          } catch (cause) {
+            problems.push(`${mapping.archivePath}: ${String(cause)}`);
+          }
+        }
+        if (currentContext.current !== stamp) return;
+        if (saved) await onImported();
+        if (problems.length)
+          setMessage(
+            `${saved} components imported. ${problems.length} files need attention: ${problems.join("; ")}`,
+          );
+        else if (saved) onComplete?.();
+        else setMessage("No matching installed components were found.");
+        return;
+      }
       const options = archive.files.flatMap((file) => {
         if (
           file.manifestUniqueId &&
           file.manifestUniqueId.toLowerCase() !== mod.uniqueId.toLowerCase()
-        )
-          return [];
-        if (
-          format !== "json" &&
-          !file.path
-            .toLowerCase()
-            .endsWith(`/${language.toLowerCase()}.json`) &&
-          file.path.toLowerCase() !== `${language.toLowerCase()}.json`
         )
           return [];
         return mod.i18nFiles.map((directory) => ({
@@ -127,9 +152,11 @@ export function ManualTranslationImport({
             : "Choose translation ZIP…"}
       </button>
       <small>
-        {mod
-          ? `Into ${mod.name} · ${language}`
-          : "Select a mod for a manual translation import."}
+        {format === "zip"
+          ? `Matches installed components automatically · ${language}`
+          : mod
+            ? `Into ${mod.name} · ${language}`
+            : "Select a mod for a manual translation import."}
       </small>
       {choices.length > 0 && (
         <div>

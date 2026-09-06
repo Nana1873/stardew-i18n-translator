@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import {
   nexusStatus,
+  nexusResolveArchive,
   listCommunityLibrary,
   type CommunityLibraryEntry,
   nexusHandoffToVortex,
@@ -51,6 +52,7 @@ type MappingChoice = ReturnType<
   typeof resolveArchiveTranslations
 >["choices"][number];
 interface RowState {
+  unresolved?: { archivePath: string; reason: string }[];
   status?: string;
   intent?: "vortex" | "review";
   handoff?: { at: number; before: ReturnType<typeof nexusSourceDiskCoverage> };
@@ -393,12 +395,19 @@ export function NexusDialog({
     });
     const archive = await nexusDownloadPreflight(candidate.modId, file.fileId);
     if (!current()) return;
-    const resolved = resolveArchiveTranslations(
-      archive,
-      sourceId,
-      mods,
-      targetLang,
-    );
+    const nativeResolution =
+      libraryMode || archive.files.some((file) => !file.isDefault)
+        ? await nexusResolveArchive(archive.archiveId)
+        : null;
+    if (!current()) return;
+    const resolved = nativeResolution
+      ? {
+          mappings: nativeResolution.mappings,
+          choices: [],
+          rejected: nativeResolution.unresolved.length,
+          reason: "",
+        }
+      : resolveArchiveTranslations(archive, sourceId, mods, targetLang);
     patch(key, (row) => ({
       ...row,
       archive,
@@ -406,6 +415,13 @@ export function NexusDialog({
       selectedArchive: file,
       downloads: row.downloads + 1,
       choices: resolved.choices,
+      unresolved: nativeResolution?.unresolved,
+      modIds: [
+        ...new Set([
+          ...row.modIds,
+          ...resolved.mappings.map((mapping) => mapping.modUniqueId),
+        ]),
+      ],
       selected: {},
       confirmed: {},
       notice: resolved.reason,
@@ -817,7 +833,15 @@ export function NexusDialog({
     )
     .map((result) => {
       const { entry, selected, sourceUnknown } = result;
-      const components = nexusSourceComponents(mods, entry.modId);
+      const archiveSource = selected
+        ? `https://www.nexusmods.com/stardewvalley/mods/${selected.candidate.modId}?tab=files&file_id=${selected.file.fileId}`
+        : null;
+      const recordedComponents = importedSources
+        .filter((saved) => archiveSource && saved.sourceUrl === archiveSource)
+        .map((saved) => saved.modUniqueId);
+      const components = recordedComponents.length
+        ? mods.filter((mod) => recordedComponents.includes(mod.uniqueId))
+        : nexusSourceComponents(mods, entry.modId);
       const acquired =
         libraryMode &&
         Boolean(selected) &&
@@ -1040,7 +1064,39 @@ export function NexusDialog({
       row.handoff && checkedAt && checkedAt >= row.handoff.at,
     );
     const version = mods.find((mod) => mod.nexusId === sourceId)?.version;
-    const missingComponents = nexusSourceComponents(mods, sourceId).filter(
+    const displayedComponents = row.modIds.length
+      ? mods.filter((mod) => row.modIds.includes(mod.uniqueId))
+      : nexusSourceComponents(mods, sourceId);
+    const workingTotal = displayedComponents.reduce(
+      (sum, component) => sum + component.totalKeys,
+      0,
+    );
+    const workingKnown =
+      displayedComponents.length > 0 &&
+      displayedComponents.every(
+        (component) =>
+          Number.isFinite(component.totalKeys) &&
+          Number.isFinite(component.translatedKeys),
+      );
+    const displayedScanIncomplete = displayedComponents.some((component) =>
+      nexusSourceScanIncomplete(
+        mods,
+        component.nexusId && component.nexusId > 0
+          ? component.nexusId
+          : sourceId,
+        skippedComponents,
+        traversalComplete,
+        nexusIdentityIncomplete,
+      ),
+    );
+    const workingCovered = displayedComponents.reduce(
+      (sum, component) =>
+        sum +
+        component.translatedKeys +
+        (component.noTranslationNeededKeys ?? 0),
+      0,
+    );
+    const missingComponents = displayedComponents.filter(
       (mod) =>
         (mod.statusCounts?.untranslated ??
           Math.max(
@@ -1101,13 +1157,32 @@ export function NexusDialog({
                 files.
               </small>
             )}
+            {displayedComponents.length > 0 && (
+              <small>
+                Components:{" "}
+                {displayedComponents
+                  .map((component) => component.name)
+                  .join(", ")}
+              </small>
+            )}
             <small>
-              {disk
-                ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
-                : group.sourceUnknown
-                  ? "Local translation coverage unavailable: scan incomplete."
-                  : "Local translation coverage unavailable"}
+              {row.modIds.length > 0
+                ? !displayedScanIncomplete && workingKnown
+                  ? `Working translation: ${workingCovered}/${workingTotal} strings · ${Math.max(0, workingTotal - workingCovered)} missing`
+                  : "Working translation coverage unavailable: scan incomplete."
+                : disk
+                  ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
+                  : group.sourceUnknown
+                    ? "Local translation coverage unavailable: scan incomplete."
+                    : "Local translation coverage unavailable"}
             </small>
+            {row.unresolved && row.unresolved.length > 0 && (
+              <small>
+                Could not match {row.unresolved.length} translation{" "}
+                {row.unresolved.length === 1 ? "file" : "files"}. See Details;
+                no uncertain component was chosen.
+              </small>
+            )}
             {group.problem && (
               <small>
                 The archive contains a translation file for this language, but
@@ -1116,6 +1191,7 @@ export function NexusDialog({
             )}
             {!group.problem &&
               (group.acquired ||
+                row.modIds.length > 0 ||
                 group.evidence.length > 0 ||
                 group.inventory.length > 0) &&
               missingComponents.length > 0 &&
@@ -1322,6 +1398,11 @@ export function NexusDialog({
                 )}
                 {candidate?.summary && <p>{candidate.summary}</p>}
                 {row.notice && <p>{row.notice}</p>}
+                {row.unresolved?.map((item) => (
+                  <p key={item.archivePath}>
+                    {item.archivePath}: {item.reason}
+                  </p>
+                ))}
                 {row.details.map((detail, index) => (
                   <p key={index}>{detail}</p>
                 ))}

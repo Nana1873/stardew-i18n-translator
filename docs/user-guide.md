@@ -48,8 +48,7 @@ does not require downloading again.
 The **Import …** menu groups language JSON and LLM batches under **JSON files**, and downloaded translations under **ZIP archives**. To import a standalone locale file, select its mod and choose **Import language JSON…**. Choose the matching component when the mod has multiple i18n directories. The filename must match the configured language (for example, `de.json`). Valid locale and translation ZIP values are marked **Done**; external LLM batches remain **Review**.
 
 For a manually downloaded translation, select its mod in Workspace and choose
-**Import … → Import downloaded translation ZIP…**. A single matching locale file
-imports directly; ambiguous files/components require a selection. ZIP locale files
+**Import … → Import downloaded translation ZIP…**. ZIP locale files are matched against all installed components. Every unambiguous match imports automatically; unmatched target-language files are listed without guessing a component. ZIP locale files
 are supported; default-language-only bundles and RAR/7z imports are not.
 
 The **Export …** menu lists all-mod and current-mod JSON exports first, followed by ZIP archives and translation-note tools.

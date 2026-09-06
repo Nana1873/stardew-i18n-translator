@@ -3220,6 +3220,7 @@ pub fn run() {
             nexus::nexus_import_translation,
             nexus::nexus_pick_archive,
             nexus::nexus_pick_locale_json,
+            nexus::nexus_resolve_archive,
             community_library::list_community_library,
             community_library::build_private_output,
             detect_stardew,
