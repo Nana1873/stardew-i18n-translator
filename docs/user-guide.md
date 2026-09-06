@@ -40,16 +40,19 @@ backup and empty-file removal behavior is unchanged.
 
 Scan your Mods folder, then use **Find translations on Nexus** to find existing
 translations. In Vortex mode, downloaded translations are imported into the
-Translator instead of sending original archives to Vortex. Imported values enter
-Review; existing personal values are kept. **Open missing strings** leads to the
+Translator instead of sending original archives to Vortex. Valid imported values are marked **Done**; existing personal values are kept. **Open missing strings** leads to the
 existing Workspace for manual or AI-assisted editing. Already imported Nexus files
 are remembered separately from translation completeness, so an incomplete archive
 does not require downloading again.
+
+The **Import …** menu groups language JSON and LLM batches under **JSON files**, and downloaded translations under **ZIP archives**. To import a standalone locale file, select its mod and choose **Import language JSON…**. Choose the matching component when the mod has multiple i18n directories. The filename must match the configured language (for example, `de.json`). Valid locale and translation ZIP values are marked **Done**; external LLM batches remain **Review**.
 
 For a manually downloaded translation, select its mod in Workspace and choose
 **Import … → Import downloaded translation ZIP…**. A single matching locale file
 imports directly; ambiguous files/components require a selection. ZIP locale files
 are supported; default-language-only bundles and RAR/7z imports are not.
+
+The **Export …** menu lists all-mod and current-mod JSON exports first, followed by ZIP archives and translation-note tools.
 
 **Export … → Build Stardew Translator Output** creates one locale ZIP containing
 imported components and their saved edits for the configured Mods folder and target
@@ -185,7 +188,7 @@ opening of multiple tabs. Premium enables direct ZIP import.
 
 The supported batch action processes the list using the installation method saved in
 Setup/Settings. There is no Vortex/Review switch in the results dialog. Manual
-mode imports into the translator's Review; **Download all with Vortex** sends
+mode imports valid translations as Done; **Download all with Vortex** sends
 the chosen files to Vortex. Its own settings control automatic installation;
 if automatic installation is disabled, install the downloads there, then deploy.
 The app passes the chosen numeric
@@ -228,18 +231,18 @@ separate exact-file check identifies matching deployed language files, but does
 not establish the active profile, compatibility, or Collection membership. Check
 those in Vortex; practical Vortex acceptance remains a user-led test.
 
-### Personal import into Review
+### Personal translation import
 
 With the **Manual / no mod manager** installation method, the download action
-imports eligible translations into Review. Rows are processed one at a time;
+imports eligible translations as Done. Rows are processed one at a time;
 stopping keeps completed imports and prevents further rows from starting.
 This action downloads
 a selected ZIP through the official Nexus API and requires Nexus Premium.
 Unambiguous language files are checked and imported; ambiguous files or component
 mappings require a choice. A translated `default.json` requires confirmation
 that it contains the target language. Nonempty local text is preserved, token
-errors are skipped, and eligible values enter Review. The archive stays in
-memory and no mod assets are installed. **Open Review** lets you inspect the
+errors are skipped, and eligible values are marked Done. The archive stays in
+memory and no mod assets are installed. **Open imported strings** lets you inspect the
 result; explicit **Export…** is the separate action that writes language files.
 
 ### Sharing and public distribution
@@ -290,7 +293,7 @@ and dialogue commands when translating the surrounding words.
 | ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | **Open**         | No nonempty translation is available.                                                                                                  |
 | **Changed**      | The English source changed since the saved translation.                                                                                |
-| **Review**       | An AI suggestion, external LLM result, or Nexus import has not been accepted.                                                          |
+| **Review**       | An AI suggestion or external LLM result has not been accepted.                                                                         |
 | **Done**         | A translation was saved/accepted for this source, or a nonempty existing translation file was loaded without an overriding saved edit. |
 
 Existing `<language>.json` files are taken as translated when scanned; this is

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   nexusPickArchive,
+  nexusPickLocaleJson,
   nexusPreflightImport,
   nexusImportTranslation,
   type NexusImportRequest,
@@ -16,6 +17,8 @@ export function ManualTranslationImport({
   onBusy,
   autoPick = false,
   onComplete,
+  format = "zip",
+  communityLibrary = true,
 }: {
   mod: ScannedMod | undefined;
   language: string;
@@ -25,6 +28,8 @@ export function ManualTranslationImport({
   onBusy: (busy: boolean) => void;
   autoPick?: boolean;
   onComplete?: () => void;
+  format?: "zip" | "json";
+  communityLibrary?: boolean;
 }) {
   const [choices, setChoices] = useState<NexusImportRequest[]>([]);
   const [selection, setSelection] = useState(0);
@@ -51,7 +56,7 @@ export function ManualTranslationImport({
     if (currentContext.current !== stamp) return;
     setChoices([]);
     setMessage(
-      `Saved to translation library. ${result.imported} strings added to Review; ${result.conflicts} existing values kept.`,
+      `${result.imported} strings imported as Done; ${result.conflicts} existing values kept.`,
     );
     await onImported();
     onComplete?.();
@@ -67,7 +72,9 @@ export function ManualTranslationImport({
         await save(choices[selection], stamp);
         return;
       }
-      const archive = await nexusPickArchive();
+      const archive = await (format === "json"
+        ? nexusPickLocaleJson()
+        : nexusPickArchive());
       if (!archive || currentContext.current !== stamp) return;
       const options = archive.files.flatMap((file) => {
         if (
@@ -76,6 +83,7 @@ export function ManualTranslationImport({
         )
           return [];
         if (
+          format !== "json" &&
           !file.path
             .toLowerCase()
             .endsWith(`/${language.toLowerCase()}.json`) &&
@@ -87,7 +95,7 @@ export function ManualTranslationImport({
           archivePath: file.path,
           modUniqueId: mod.uniqueId,
           relativeDir: directory.relativeDir,
-          communityLibrary: true,
+          communityLibrary,
         }));
       });
       if (options.length === 1) await save(options[0], stamp);
@@ -112,7 +120,11 @@ export function ManualTranslationImport({
         disabled={!mod || running || disabled}
         onClick={() => void run(true)}
       >
-        {running ? "Importing…" : "Choose translation ZIP…"}
+        {running
+          ? "Importing…"
+          : format === "json"
+            ? "Choose language JSON…"
+            : "Choose translation ZIP…"}
       </button>
       <small>
         {mod

@@ -641,7 +641,7 @@ it("routes an explicit folder installation to Review even if Vortex is configure
   expect(
     invoke.mock.calls.some(([cmd]) => /export|save_settings/.test(cmd)),
   ).toBe(false);
-  expect(screen.getByText("1 imported to Review")).toBeInTheDocument();
+  expect(screen.getByText("1 imported as Done")).toBeInTheDocument();
 });
 it("defaults legacy installations without Vortex to folder import", async () => {
   const app = mount({ executable: null });
@@ -824,7 +824,7 @@ it("shows zero new strings without saving when preflight finds no importable str
   );
   mount({ method: "folder" });
   await download();
-  await screen.findByText("0 imported to Review");
+  await screen.findByText("0 imported as Done");
   expect(commandCalls("nexus_import_translation")).toHaveLength(0);
 });
 it("rechecks local disk without refreshing metadata or losing drafts and receipts", async () => {
@@ -1515,7 +1515,7 @@ it("imports shared archive mappings separately for each original in Review", asy
     mods: sharedArchiveMods,
   });
   await download();
-  await screen.findByText("2 imported to Review");
+  await screen.findByText("2 imported as Done");
   expect(commandCalls("nexus_download_preflight")).toHaveLength(2);
   expect(
     commandCalls("nexus_import_translation").map((call) => call.modUniqueId),

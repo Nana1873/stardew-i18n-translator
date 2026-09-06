@@ -684,6 +684,9 @@ export interface ZipBuildOutcome {
 export function nexusPickArchive(): Promise<NexusArchive | null> {
   return invoke("nexus_pick_archive");
 }
+export function nexusPickLocaleJson(): Promise<NexusArchive | null> {
+  return invoke("nexus_pick_locale_json");
+}
 
 export interface CommunityLibraryEntry {
   modUniqueId: string;

@@ -8,7 +8,7 @@ claim that the planned private-output workflow is already implemented.
 The prototype keeps the original Overview and Workspace. Community storage is
 an internal implementation detail, not another screen or a panel in Overview.
 The existing Nexus dialog provides translation acquisition/import; the existing
-Import and Export menus provide manual ZIP import and combined output ZIP creation
+Import and Export menus provide manual language JSON/ZIP import and combined output ZIP creation
 for manual Vortex import. It uses the configured Mods folder and language, and only
 library-mapped components enter the combined output. It does not yet implement
 profile detection, automatic output handoff, community-update merging, or the
@@ -71,8 +71,11 @@ separately; an incomplete translation must not trigger the same download again.
 Original downloaded ZIPs are inspected in memory in this prototype. Imported
 locale text and source identity persist; manual source archives are left intact.
 
-The current code already has optional Nexus discovery, folder ZIP import into
-Review, original Nexus-file handoff to Vortex, installed-file rechecks and the
+Valid language JSON and translation ZIP imports are marked Done; external LLM
+batches remain in Review. Existing personal values and validation guards are preserved.
+
+The current code already has optional Nexus discovery, folder ZIP import,
+original Nexus-file handoff to Vortex, installed-file rechecks and the
 existing editor/export actions. The original NXM handoff is an intermediate
 implementation, not the final acquisition architecture. The target workflow
 imports translations into the Translator before building the combined output.

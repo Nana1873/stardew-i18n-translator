@@ -427,7 +427,7 @@ export function NexusDialog({
     await run(key, async (current) => {
       if (!file.fileName.toLowerCase().endsWith(".zip"))
         throw new Error(
-          "The selected archive is not a ZIP. Review import requires ZIP; the selected file was not replaced.",
+          "The selected archive is not a ZIP. Translation import requires ZIP; the selected file was not replaced.",
         );
       patch(key, { intent: "review", status: "Checking download access…" });
       const status = await nexusStatus();
@@ -924,7 +924,7 @@ export function NexusDialog({
       ? `${handoffCount} sent to Vortex${allHandoffsRechecked ? " · files rechecked" : ""}`
       : "",
     actionRows.some((row) => row.completed || row.imported > 0)
-      ? `${actionRows.reduce((sum, row) => sum + row.imported, 0)} imported to Review`
+      ? `${actionRows.reduce((sum, row) => sum + row.imported, 0)} imported as Done`
       : "",
     actionRows.some((row) => row.choices?.length)
       ? "Confirm matching text"
@@ -1313,7 +1313,7 @@ export function NexusDialog({
                 {(row.completed || row.imported > 0) && (
                   <p>
                     {row.imported > 0
-                      ? `${row.imported} imported to Review this session`
+                      ? `${row.imported} imported as Done this session`
                       : "No new strings added"}{" "}
                     · {row.kept} existing values kept · {row.invalid} token
                     errors
@@ -1334,7 +1334,7 @@ export function NexusDialog({
                         disabled={locked}
                         onClick={() => onOpenReview(id)}
                       >
-                        Open Review
+                        Open imported strings
                         {row.modIds.length > 1
                           ? ` · ${mods.find((mod) => mod.uniqueId === id)?.name ?? id}`
                           : ""}
@@ -1601,7 +1601,7 @@ export function NexusDialog({
                     : "Vortex handles installation according to your settings."
                   : "Choose Vortex.exe in installation settings first."
                 : canDirectImport
-                  ? "Imports go to Review. Use the existing Export action when ready."
+                  ? "Valid imports are marked Done. Use the existing Export action when ready."
                   : nexusAccountKind(account) === "free"
                     ? "Free account: use each Open Nexus Link below to download manually. Direct ZIP import requires Premium."
                     : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}

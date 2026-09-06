@@ -458,6 +458,77 @@ describe("App shell", () => {
       invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_send_to_vortex"),
     ).toBe(false);
   });
+  it.each(["folder", "vortex"] as const)(
+    "imports locale JSON through explicit component preflight in %s mode",
+    async (method) => {
+      mockConfigured(exportScan(false));
+      const original = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((command: string, ...args: unknown[]) => {
+        if (command === "load_settings")
+          return Promise.resolve({ ...CONFIGURED, installationMethod: method });
+        if (command === "nexus_pick_locale_json")
+          return Promise.resolve({
+            archiveId: "locale",
+            files: [
+              {
+                path: "C:/Translations/de.json",
+                isDefault: false,
+                manifestUniqueId: null,
+              },
+            ],
+            notice: "",
+          });
+        if (command === "nexus_preflight_import")
+          return Promise.resolve({ importable: 1 });
+        if (command === "nexus_import_translation")
+          return Promise.resolve({ imported: 1, conflicts: 0 });
+        return original(command, ...args);
+      });
+      render(<App />);
+      await waitFor(() =>
+        expect(
+          screen.getByRole("button", { name: "Import actions" }),
+        ).toBeEnabled(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Import actions" }));
+      const menu = screen.getByRole("menu", { name: "Import actions" });
+      expect(
+        within(menu)
+          .getAllByRole("menuitem")
+          .map((item) => item.textContent),
+      ).toEqual([
+        " Import language JSON…",
+        " Import LLM batch",
+        " Import downloaded translation ZIP…",
+      ]);
+      expect(
+        within(menu)
+          .getAllByRole("menuitem")
+          .every((item) => item.querySelector("svg")),
+      ).toBe(true);
+      fireEvent.click(
+        within(menu).getByRole("menuitem", { name: "Import language JSON…" }),
+      );
+      await waitFor(() =>
+        expect(invokeMock).toHaveBeenCalledWith(
+          "nexus_import_translation",
+          expect.objectContaining({
+            archiveId: "locale",
+            archivePath: "C:/Translations/de.json",
+            modUniqueId: "a.b",
+            relativeDir: "i18n",
+            communityLibrary: method === "vortex",
+          }),
+        ),
+      );
+      const commands = invokeMock.mock.calls.map(([command]) => command);
+      expect(commands.indexOf("nexus_preflight_import")).toBeLessThan(
+        commands.indexOf("nexus_import_translation"),
+      );
+      expect(commands).not.toContain("import_llm_batch_path");
+      expect(commands).not.toContain("nexus_handoff_to_vortex");
+    },
+  );
 
   it("retains Overview summaries, scan details, recent mods and status navigation without exposing internal translation storage", async () => {
     mockConfigured(exportScan(false));
@@ -3351,7 +3422,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
 
     await screen.findByText("Test Mod/i18n/de.json");
     expect(
@@ -3642,7 +3716,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
     await screen.findByLabelText("Package version");
     const zipDialog = screen.getByRole("dialog", {
       name: "Build translation ZIP",
@@ -3712,7 +3789,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
     const problems = await screen.findByRole("list", {
       name: "Blocking ZIP problems",
     });
@@ -3780,7 +3860,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
     await screen.findByLabelText("Package version");
     const chooseLocation = await screen.findByRole("button", {
       name: "Choose save location …",
@@ -3837,24 +3920,41 @@ describe("App shell", () => {
     const currentExport = screen.getByRole("menuitem", {
       name: "Export current mod",
     });
-    await waitFor(() => expect(currentExport).toHaveFocus());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: "Export all mods …" }),
+      ).toHaveFocus(),
+    );
     expect(currentExport).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: "Export all mods …" }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("menuitem", { name: "Build translation ZIP" }),
+      screen.getByRole("menuitem", {
+        name: "Build translation ZIP · current mod",
+      }),
     ).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: "Translation notes" }),
     ).toBeEnabled();
     expect(screen.getByRole("menu", { name: "Export" })).toHaveTextContent(
-      "Advanced",
+      "JSON files",
     );
+    const exportItems = within(
+      screen.getByRole("menu", { name: "Export" }),
+    ).getAllByRole("menuitem");
+    expect(exportItems.map((item) => item.textContent?.trim())).toEqual([
+      "Export all mods …",
+      "Export current mod",
+      "Build translation ZIP · current mod",
+      "Build Stardew Translator Output",
+      "Translation notes",
+    ]);
+    expect(exportItems.every((item) => item.querySelector("svg"))).toBe(true);
 
     fireEvent.keyDown(currentExport, { key: "End" });
     expect(
-      screen.getByRole("menuitem", { name: "Export all mods …" }),
+      screen.getByRole("menuitem", { name: "Translation notes" }),
     ).toHaveFocus();
     const allExport = screen.getByRole("menuitem", {
       name: "Export all mods …",
@@ -3868,7 +3968,7 @@ describe("App shell", () => {
     fireEvent.keyDown(exportButton, { key: "ArrowDown" });
     await waitFor(() =>
       expect(
-        screen.getByRole("menuitem", { name: "Export current mod" }),
+        screen.getByRole("menuitem", { name: "Export all mods …" }),
       ).toHaveFocus(),
     );
 

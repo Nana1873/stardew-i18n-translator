@@ -1096,7 +1096,7 @@ fn analyze(
             translations::entry_key(relative_dir, &row.key),
             translations::StoredString {
                 target: (*value).into(),
-                status: "review-needed".into(),
+                status: "translated".into(),
                 source_hash: translations::source_hash(&row.source),
             },
         ));
@@ -1279,7 +1279,7 @@ fn import_from_config_mode(
                     translations::entry_key(relative_dir, &row.key),
                     translations::StoredString {
                         target: row.target,
-                        status: "review-needed".into(),
+                        status: "translated".into(),
                         source_hash: translations::source_hash(&row.source),
                     },
                 );
@@ -1301,7 +1301,7 @@ fn import_from_config_mode(
                     translations::entry_key(relative_dir, &row.key),
                     translations::StoredString {
                         target: value.into(),
-                        status: "review-needed".into(),
+                        status: "translated".into(),
                         source_hash: translations::source_hash(&row.source),
                     },
                 );
@@ -1355,7 +1355,7 @@ fn import_from_config_mode(
         // Counts only: no archive paths, translated text, API keys or signed
         // URLs enter diagnostics. Emit after the conditional transaction, never
         // for a preview or a failed/stale write.
-        log::info!(target: "app", "event=nexus_import_complete imported={} preserved_local={} token_invalid={} empty={} missing={} extra={} destination=review_state exported=0", counts.imported, counts.conflicts, counts.token_invalid, counts.empty, counts.missing, counts.extra);
+        log::info!(target: "app", "event=nexus_import_complete imported={} preserved_local={} token_invalid={} empty={} missing={} extra={} destination=translation_state exported=0", counts.imported, counts.conflicts, counts.token_invalid, counts.empty, counts.missing, counts.extra);
     }
     Ok(counts)
 }
@@ -1507,7 +1507,7 @@ mod tests {
             (4, 1, 1, 1, 1, 1, 2)
         );
         assert_eq!(entries.len(), 2);
-        assert!(entries.iter().all(|(_, v)| v.status == "review-needed"));
+        assert!(entries.iter().all(|(_, v)| v.status == "translated"));
     }
     #[test]
     fn rejects_added_and_missing_tokens_but_keeps_other_valid_values() {
@@ -1709,7 +1709,61 @@ mod tests {
     }
 
     #[test]
-    fn native_import_requires_preflight_and_only_writes_review_state() {
+    fn local_locale_json_reuses_guarded_import_and_preserves_local_provenance() {
+        let (config, mods, _) = fixture("locale-json");
+        let file = config.join("de.json");
+        std::fs::write(&file, r#"{"new":"Hallo","local":"Replacement"}"#).unwrap();
+        let (preview, archive) = inspect_locale_json(&file, "de").unwrap();
+        lock().archives.insert(preview.archive_id.clone(), archive);
+        let path = &preview.files[0].path;
+        assert!(path.ends_with("/de.json"));
+        assert!(preview.files[0].manifest_unique_id.is_none());
+        assert!(import_from_config_mode(
+            &config,
+            &preview.archive_id,
+            path,
+            "Example.Mod",
+            "i18n",
+            true,
+            true
+        )
+        .is_err());
+        import_from_config_mode(
+            &config,
+            &preview.archive_id,
+            path,
+            "Example.Mod",
+            "i18n",
+            false,
+            true,
+        )
+        .unwrap();
+        import_from_config_mode(
+            &config,
+            &preview.archive_id,
+            path,
+            "Example.Mod",
+            "i18n",
+            true,
+            true,
+        )
+        .unwrap();
+        let library = crate::community_library::list(&config).unwrap();
+        assert_eq!(library[0].archive_path, *path);
+        assert!(library[0].source_url.is_none());
+        assert_eq!(
+            std::fs::read_to_string(mods.join("Example/i18n/de.json")).unwrap(),
+            r#"{"local":"Existing"}"#
+        );
+        assert!(inspect_locale_json(&file, "fr").is_err());
+        for body in [r#"{"key":12}"#, r#"{"Key":"a"," key ":"b"}"#, "[]"] {
+            std::fs::write(&file, body).unwrap();
+            assert!(inspect_locale_json(&file, "de").is_err());
+        }
+    }
+
+    #[test]
+    fn native_import_requires_preflight_and_only_writes_done_state() {
         let (config, mods, id) = fixture("nexus-import");
         let source = std::fs::read(mods.join("Example/i18n/default.json")).unwrap();
         let target = std::fs::read(mods.join("Example/i18n/de.json")).unwrap();
@@ -1728,7 +1782,7 @@ mod tests {
         )
         .unwrap();
         let entry = &state[&translations::entry_key("i18n", "new")];
-        assert_eq!(entry.status, "review-needed");
+        assert_eq!(entry.status, "translated");
         assert_eq!(entry.source_hash, translations::source_hash("Hello"));
         assert_eq!(
             std::fs::read(mods.join("Example/i18n/default.json")).unwrap(),
@@ -2835,6 +2889,89 @@ fn import_from_config(
         false,
     )
 }
+fn inspect_locale_json(
+    path: &Path,
+    target_lang: &str,
+) -> Result<(ArchivePreview, Archive), String> {
+    let lang = language::normalize_target_code(target_lang)?;
+    let filename = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or("Invalid locale filename.")?
+        .to_lowercase();
+    if filename != format!("{lang}.json") && !(lang == "pt" && filename == "pt-br.json") {
+        return Err(format!("Select {lang}.json for the configured target language. Files are not automatically relabelled."));
+    }
+    let path = path
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve locale JSON: {e}"))?;
+    let mut bytes = Vec::new();
+    std::fs::File::open(&path)
+        .map_err(|e| e.to_string())?
+        .take(ARCHIVE_JSON_LIMIT as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
+    if bytes.len() > ARCHIVE_JSON_LIMIT {
+        return Err("Locale JSON exceeds 16 MiB limit.".into());
+    }
+    let body = std::str::from_utf8(&bytes).map_err(|_| "Locale JSON must be UTF-8.")?;
+    let object = scanner::parse_flat_object(body, &path)?;
+    // Reuse duplicate/folded-key validation before retaining the document.
+    analyze(&[], body, "i18n")?;
+    let local_path = path.to_string_lossy().replace('\\', "/");
+    let archive_id = format!(
+        "local-json:{:x}",
+        Sha256::digest([local_path.as_bytes(), &bytes].concat())
+    );
+    let file = ArchiveFile {
+        path: local_path.clone(),
+        manifest_unique_id: None,
+        is_default: false,
+    };
+    let archive = Archive {
+        created: Instant::now(),
+        files: vec![file.clone()],
+        documents: HashMap::from([(
+            local_path,
+            serde_json::to_string(&object).map_err(|e| e.to_string())?,
+        )]),
+        source_url: None,
+    };
+    Ok((ArchivePreview {
+        archive_id,
+        files: vec![file],
+        notice: "Local locale JSON; confirm its target component. No Nexus source identity is inferred.".into(),
+    }, archive))
+}
+
+#[tauri::command]
+pub fn nexus_pick_locale_json(app: AppHandle) -> Result<Option<ArchivePreview>, String> {
+    let config = crate::config_dir(&app)?;
+    let settings = settings::load_checked(&config)?;
+    let lang = settings
+        .target_lang
+        .as_deref()
+        .ok_or("Choose a target language first.")?;
+    let Some(file) = app
+        .dialog()
+        .file()
+        .set_title(format!("Import {lang}.json"))
+        .add_filter("Locale JSON", &["json"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let (preview, archive) =
+        inspect_locale_json(&file.into_path().map_err(|e| e.to_string())?, lang)?;
+    let mut session = lock();
+    session.archives.retain(|_, a| a.created.elapsed() < TTL);
+    if session.archives.len() >= 3 {
+        session.archives.clear();
+    }
+    session.archives.insert(preview.archive_id.clone(), archive);
+    Ok(Some(preview))
+}
+
 #[tauri::command]
 pub fn nexus_pick_archive(app: AppHandle) -> Result<Option<ArchivePreview>, String> {
     let Some(file) = app

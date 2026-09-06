@@ -72,6 +72,8 @@ import {
   CircleX,
   Download,
   FileCheck2,
+  FileJson,
+  Files,
   FolderUp,
   Folders,
   Info,
@@ -361,6 +363,9 @@ export function App() {
   const latestResultButtonRef = useRef<HTMLButtonElement>(null);
   const resultToggleButtonRef = useRef<HTMLButtonElement>(null);
   const [manualImportOpen, setManualImportOpen] = useState(false);
+  const [manualImportFormat, setManualImportFormat] = useState<"zip" | "json">(
+    "zip",
+  );
   const [privateOverwrite, setPrivateOverwrite] = useState<{
     destination: string;
     context: string;
@@ -2107,7 +2112,7 @@ export function App() {
         openMod(modId);
         setSearch("");
         setIssuesOnly(false);
-        setStatusFilter("review-needed");
+        setStatusFilter("translated");
       }}
       onOpenMissing={(modId) => {
         setNexusOpen(false);
@@ -2229,6 +2234,12 @@ export function App() {
           onBuildOutput={() => void buildOutput()}
           outputEnabled={Boolean(scan?.mods.length) && !exporting && !scanning}
           onImportTranslation={() => {
+            setManualImportFormat("zip");
+            setNexusOpen(false);
+            setManualImportOpen(true);
+          }}
+          onImportLocale={() => {
+            setManualImportFormat("json");
             setNexusOpen(false);
             setManualImportOpen(true);
           }}
@@ -2675,13 +2686,23 @@ export function App() {
         )}
         {manualImportOpen && selectedMod && settings?.targetLang && (
           <ManualImportModal
+            title={
+              manualImportFormat === "json"
+                ? "Import language JSON"
+                : "Import downloaded translation ZIP"
+            }
             busy={exporting}
             onClose={() => setManualImportOpen(false)}
           >
-            <h2>Import downloaded translation ZIP</h2>
+            <h2>
+              {manualImportFormat === "json"
+                ? "Import language JSON"
+                : "Import downloaded translation ZIP"}
+            </h2>
             <p>
-              Import translations downloaded manually from Nexus Mods or another
-              source.
+              {manualImportFormat === "json"
+                ? `Import ${settings.targetLang}.json into ${selectedMod.name}. Existing saved values are kept.`
+                : "Import translations downloaded manually from Nexus Mods or another source."}
             </p>
             <ManualTranslationImport
               key={`${nexusWorkspaceKey}:${selectedMod.uniqueId}`}
@@ -2691,6 +2712,11 @@ export function App() {
               disabled={exporting || scanning}
               onBusy={setExporting}
               autoPick
+              format={manualImportFormat}
+              communityLibrary={
+                manualImportFormat === "zip" ||
+                installationMethodFor(settings) === "vortex"
+              }
               onComplete={() => setManualImportOpen(false)}
               onImported={async () => {
                 setReloadToken((value) => value + 1);
@@ -2900,6 +2926,7 @@ function AppToolbar({
   onReleaseNotes,
   releaseNotesEnabled,
   onImportTranslation,
+  onImportLocale,
   onBuildOutput,
   onRevealLastExport,
   outputEnabled,
@@ -2931,6 +2958,7 @@ function AppToolbar({
   onReleaseNotes: () => void;
   releaseNotesEnabled: boolean;
   onImportTranslation: () => void;
+  onImportLocale: () => void;
   onBuildOutput: () => void;
   onRevealLastExport?: () => void;
   outputEnabled: boolean;
@@ -3089,15 +3117,18 @@ function AppToolbar({
                 else handleExportMenuKey(event);
               }}
             >
+              <span className="translator-popover-note" role="presentation">
+                JSON files
+              </span>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => {
                   setImportOpen(false);
-                  onImportTranslation();
+                  onImportLocale();
                 }}
               >
-                Import downloaded translation ZIP…
+                <FileJson aria-hidden /> Import language JSON…
               </button>
               <button
                 type="button"
@@ -3107,7 +3138,21 @@ function AppToolbar({
                   onImportBatch();
                 }}
               >
-                Import LLM batch
+                <Files aria-hidden /> Import LLM batch
+              </button>
+              <div className="translator-popover-divider" role="separator" />
+              <span className="translator-popover-note" role="presentation">
+                ZIP archives
+              </span>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setImportOpen(false);
+                  onImportTranslation();
+                }}
+              >
+                <Archive aria-hidden /> Import downloaded translation ZIP…
               </button>
             </div>
           )}
@@ -3168,6 +3213,17 @@ function AppToolbar({
                 }
               }}
             >
+              <span className="translator-popover-note" role="presentation">
+                JSON files
+              </span>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                <Folders aria-hidden /> Export all mods …
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -3177,13 +3233,16 @@ function AppToolbar({
                 <FolderUp aria-hidden /> Export current mod
               </button>
               <div className="translator-popover-divider" role="separator" />
+              <span className="translator-popover-note" role="presentation">
+                ZIP archives
+              </span>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => run(onBuildZip)}
                 disabled={!buildZipEnabled}
               >
-                <Archive aria-hidden /> Build translation ZIP
+                <Archive aria-hidden /> Build translation ZIP · current mod
               </button>
               <button
                 type="button"
@@ -3191,8 +3250,12 @@ function AppToolbar({
                 disabled={!outputEnabled}
                 onClick={() => run(onBuildOutput)}
               >
-                Build Stardew Translator Output
+                <Archive aria-hidden /> Build Stardew Translator Output
               </button>
+              <div className="translator-popover-divider" role="separator" />
+              <span className="translator-popover-note" role="presentation">
+                Tools
+              </span>
               <button
                 type="button"
                 role="menuitem"
@@ -3208,20 +3271,9 @@ function AppToolbar({
                   role="menuitem"
                   onClick={() => run(onRevealLastExport)}
                 >
-                  Show last export in folder
+                  <FolderUp aria-hidden /> Show last export in folder
                 </button>
               )}
-              <span className="translator-popover-note" role="presentation">
-                Advanced
-              </span>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => run(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                <Folders aria-hidden /> Export all mods …
-              </button>
             </div>
           )}
         </div>
@@ -3253,11 +3305,13 @@ function AppToolbar({
 }
 
 function ManualImportModal({
+  title,
   children,
   busy,
   onClose,
 }: {
   children: React.ReactNode;
+  title: string;
   busy: boolean;
   onClose: () => void;
 }) {
@@ -3274,7 +3328,7 @@ function ManualImportModal({
         className="translator-flow-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Import downloaded translation ZIP"
+        aria-label={title}
         onKeyDown={onDialogKeyDown}
       >
         {children}
