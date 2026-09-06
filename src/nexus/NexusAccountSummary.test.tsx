@@ -1,9 +1,20 @@
 import { render, screen } from "@testing-library/react";
-import { NexusAccountSummary } from "./NexusAccountSummary";
-import type { NexusStatus } from "../tauri/commands";
-
+import { NexusAccountSummary, NexusQuotaSummary } from "./NexusAccountSummary";
+import type { NexusQuota } from "../tauri/commands";
+const quota: NexusQuota = {
+  scope: "rest-v1",
+  observedAt: 0,
+  hourlyLimit: null,
+  hourlyRemaining: null,
+  hourlyReset: null,
+  dailyLimit: null,
+  dailyRemaining: null,
+  dailyReset: null,
+  retryAfterSeconds: null,
+  blockedUntil: null,
+};
 it.each(["free", "premium", "unknown", "invalid", "error"] as const)(
-  "shows observed account state %s without guessing membership",
+  "shows the reported account state %s",
   (accountStatus) => {
     render(
       <NexusAccountSummary
@@ -23,100 +34,76 @@ it.each(["free", "premium", "unknown", "invalid", "error"] as const)(
       error: "Account check unavailable",
     };
     expect(screen.getByRole("status")).toHaveTextContent(labels[accountStatus]);
-    expect(
-      screen.getByText("API usage: Not reported by Nexus yet."),
-    ).toBeInTheDocument();
   },
 );
-
-it("keeps missing quota values unknown and scopes independent including zero remaining", () => {
-  const quota = {
-    scope: "rest-v1" as const,
-    observedAt: 0,
-    hourlyLimit: null,
-    hourlyRemaining: 0,
-    hourlyReset: null,
-    dailyLimit: 20,
-    dailyRemaining: 12,
-    dailyReset: "2026-09-07T00:00:00Z",
-    retryAfterSeconds: null,
-    blockedUntil: null,
-  };
-  const status: NexusStatus = {
-    configured: true,
-    premium: true,
-    validated: true,
-    quota: [
-      quota,
-      {
-        ...quota,
-        scope: "graphql-v2",
-        dailyLimit: null,
-        dailyRemaining: null,
-        dailyReset: null,
-        hourlyRemaining: null,
-      },
-    ],
-  };
-  render(<NexusAccountSummary status={status} />);
-  const summary = screen.getByText(/^API requests left ·/);
-  expect(summary).toHaveTextContent("Mod data: 12 daily, 0 hourly");
-  expect(summary).not.toHaveTextContent("Translation search");
-  const rest = screen.getByText("Mod data").parentElement!;
-  const graph = screen.getByText("Translation search").parentElement!;
-  expect(rest).toHaveTextContent("2026-09-07T00:00:00Z");
-  expect(rest).toHaveTextContent("Observed");
-  expect(graph).toHaveTextContent("Usage not reported");
-  expect(graph).not.toHaveTextContent("2026-09-07T00:00:00Z");
-});
-
-it("shows sanitized account errors, including rate-limit guidance", () => {
+it("shows actionable sanitized status errors", () => {
   render(
     <NexusAccountSummary
       status={{
         configured: true,
-        premium: false,
         validated: false,
-        accountStatus: "error",
-        error: "Nexus request limit reached. Retry later.",
+        premium: false,
+        accountStatus: "invalid",
+        error: "Key rejected. Enter a valid key.",
       }}
     />,
   );
-  expect(screen.getByRole("alert")).toHaveTextContent(
-    "Nexus request limit reached. Retry later.",
-  );
+  expect(screen.getByRole("alert")).toHaveTextContent("Key rejected");
 });
-
 it.each([
+  {},
   { dailyLimit: 20 },
   { hourlyReset: "2026-09-07T00:00:00Z" },
   { retryAfterSeconds: 30 },
-])("keeps remaining requests unknown with partial headers %j", (partial) => {
+])(
+  "keeps absent remaining values unknown with partial headers %j",
+  (partial) => {
+    const { container } = render(
+      <NexusQuotaSummary
+        status={{
+          configured: true,
+          validated: true,
+          premium: true,
+          quota: [{ ...quota, ...partial }],
+        }}
+      />,
+    );
+    expect(
+      screen.getByText("API requests left: Not reported"),
+    ).toBeInTheDocument();
+    expect(container.querySelector("details, summary")).toBeNull();
+  },
+);
+it("keeps reported zero distinct from unknown and preserves API scopes", () => {
   render(
-    <NexusAccountSummary
+    <NexusQuotaSummary
       status={{
         configured: true,
         validated: true,
-        premium: false,
+        premium: true,
         quota: [
           {
-            scope: "rest-v1",
-            observedAt: 0,
-            hourlyLimit: null,
-            hourlyRemaining: null,
-            hourlyReset: null,
-            dailyLimit: null,
-            dailyRemaining: null,
-            dailyReset: null,
-            retryAfterSeconds: null,
-            blockedUntil: null,
-            ...partial,
+            ...quota,
+            dailyRemaining: 0,
+            dailyLimit: 20,
+            dailyReset: "2026-09-07T00:00:00Z",
           },
+          { ...quota, scope: "graphql-v2", hourlyRemaining: 12 },
         ],
       }}
     />,
   );
-  const summary = screen.getByText(/^API requests left/);
-  expect(summary).toHaveTextContent("Remaining requests not reported");
-  expect(summary).not.toHaveTextContent(/0 (daily|hourly)/);
+  const text = screen.getByText(/^API requests left ·/);
+  expect(text).toHaveTextContent(
+    "Mod data: 0 daily · Translation search: 12 hourly",
+  );
+  expect(text).not.toHaveTextContent("Daily limit");
+  expect(text).toHaveAttribute(
+    "title",
+    expect.stringContaining("Daily limit 20"),
+  );
+  expect(text).toHaveAttribute(
+    "title",
+    expect.stringContaining("2026-09-07T00:00:00Z"),
+  );
 });

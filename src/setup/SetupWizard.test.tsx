@@ -305,3 +305,39 @@ describe("SetupWizard", () => {
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 });
+
+it("validates a new Nexus key on Finish before completing setup", async () => {
+  const onComplete = vi.fn();
+  render(<SetupWizard initial={null} onComplete={onComplete} />);
+  await gotoGlossaryStep();
+  fireEvent.change(screen.getByLabelText("Nexus API key"), {
+    target: { value: "synthetic-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+  await waitFor(() => expect(onComplete).toHaveBeenCalledOnce());
+  expect(invokeMock).toHaveBeenCalledWith("nexus_save_key", {
+    key: "synthetic-key",
+  });
+  expect(JSON.stringify(onComplete.mock.calls)).not.toContain("synthetic-key");
+});
+
+it("keeps setup open when a typed Nexus key cannot be validated", async () => {
+  const fallback = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, args: unknown) =>
+    cmd === "nexus_save_key"
+      ? Promise.reject("synthetic-key")
+      : fallback(cmd, args),
+  );
+  const onComplete = vi.fn();
+  render(<SetupWizard initial={null} onComplete={onComplete} />);
+  await gotoGlossaryStep();
+  fireEvent.change(screen.getByLabelText("Nexus API key"), {
+    target: { value: "synthetic-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Finish" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "previous key is kept",
+  );
+  expect(onComplete).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog", { name: "Setup" })).toBeInTheDocument();
+});

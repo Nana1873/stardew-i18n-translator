@@ -23,6 +23,12 @@ let fileDropHandler:
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => {
     const mocked = invokeMock(cmd, args);
+    if (cmd === "nexus_status") {
+      return Promise.resolve(mocked).then(
+        (value) =>
+          value ?? { configured: true, validated: true, premium: true },
+      );
+    }
     if (cmd === "list_operation_history") {
       return Promise.resolve(mocked).then((value) =>
         Array.isArray(value) ? value : backendHistory,
@@ -524,9 +530,7 @@ describe("App shell", () => {
               });
         return original(cmd, ...args);
       });
-      fireEvent.click(
-        screen.getByRole("button", { name: "Check installed files" }),
-      );
+      fireEvent.focus(window);
       expect(
         await screen.findByRole("button", {
           name: "Download & install all with Vortex (1)",
@@ -600,6 +604,80 @@ describe("App shell", () => {
     },
   );
 
+  it("adopts restored installed text after returning to Nexus and reloads saved drafts", async () => {
+    const scanned = exportScan(false);
+    Object.assign(scanned.mods[0], { nexusId: 10, totalKeys: 2 });
+    mockConfigured(scanned);
+    const original = invokeMock.getMockImplementation()!;
+    let deployed = false,
+      restored = false;
+    invokeMock.mockImplementation(
+      (cmd: string, args: Record<string, unknown>) => {
+        if (cmd === "load_settings")
+          return Promise.resolve({
+            ...CONFIGURED,
+            installationMethod: "vortex",
+            vortexExecutable: "C:/Tools/Vortex/Vortex.exe",
+          });
+        if (cmd === "scan_mods") {
+          if (deployed && args.restoreInstalledTranslations === true)
+            restored = true;
+          return Promise.resolve(scanned);
+        }
+        if (cmd === "nexus_find_translations")
+          return Promise.resolve({
+            modId: 10,
+            originalName: "Original",
+            candidates: [],
+            limited: false,
+            notice: "",
+          });
+        if (cmd === "load_strings")
+          return Promise.resolve([
+            {
+              key: "cleared",
+              source: "Hello",
+              target: restored ? "Newly deployed text" : "",
+              targetPresent: restored,
+              status: restored ? "translated" : "untranslated",
+            },
+            {
+              key: "draft",
+              source: "Other",
+              target: "Personal Review draft",
+              targetPresent: true,
+              status: "review-needed",
+            },
+          ]);
+        return original(cmd, args);
+      },
+    );
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
+    );
+    openWorkspace();
+    await screen.findByText("Personal Review draft");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Find translations on Nexus Mods" }),
+    );
+    await screen.findByText("No suitable translation downloads found.");
+    deployed = true;
+    fireEvent.focus(window);
+    await waitFor(() => expect(restored).toBe(true));
+    await screen.findByText("Newly deployed text");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Nexus translations" }),
+    );
+    expect(screen.getByText("Personal Review draft")).toBeInTheDocument();
+    expect(screen.getByText("Newly deployed text")).toBeInTheDocument();
+    expect(
+      invokeMock.mock.calls.some(([cmd]) =>
+        /save_string|nexus_import|export_mod/.test(cmd),
+      ),
+    ).toBe(false);
+  });
+
   it("keeps the open editor intact when a rescan fails", async () => {
     let failScan = false;
     let loads = 0;
@@ -636,6 +714,49 @@ describe("App shell", () => {
     expect(loads).toBe(loadsBefore);
   });
 
+  it("discards a delayed automatic local scan after closing Nexus", async () => {
+    const scanned = await showInstalledNexusFile();
+    const pending = deferred<ScanResult>();
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) =>
+      cmd === "scan_mods" ? pending.promise : original(cmd, ...args),
+    );
+    const reads = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "scan_mods",
+    ).length;
+    fireEvent.focus(window);
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+      ).toHaveLength(reads + 1),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Close Nexus translations" }),
+    );
+    await act(async () =>
+      pending.resolve({
+        ...scanned,
+        mods: [{ ...scanned.mods[0], name: "Stale background replacement" }],
+      }),
+    );
+    expect(screen.queryByText("Stale background replacement")).toBeNull();
+    expect(
+      screen.queryByRole("dialog", { name: /Nexus translations/ }),
+    ).toBeNull();
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd]) => cmd === "nexus_find_translations",
+      ),
+    ).toHaveLength(1);
+    expect(
+      invokeMock.mock.calls.filter(
+        ([cmd, args]) =>
+          cmd === "nexus_status" &&
+          (args as { forceRefresh?: boolean })?.forceRefresh,
+      ),
+    ).toHaveLength(1);
+  });
+
   it("scans after first-run setup without Nexus and searches only after explicit Find", async () => {
     const scanned = exportScan(false);
     scanned.mods = [10, 10, 20, null].map((nexusId, index) => ({
@@ -666,7 +787,7 @@ describe("App shell", () => {
       if (cmd === "nexus_status")
         return Promise.resolve({
           configured: true,
-          validated: false,
+          validated: true,
           premium: false,
         });
       if (cmd === "nexus_find_translations")
@@ -951,9 +1072,7 @@ describe("App shell", () => {
         { ...scanned.mods[0], diskTranslatedKeys: 1, stateDiskDifferences: 1 },
       ],
     };
-    fireEvent.click(
-      screen.getByRole("button", { name: "Check installed files" }),
-    );
+    fireEvent.focus(window);
     await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(
       within(screen.getByRole("row", { name: "Canonical" })).getByText(
@@ -1001,9 +1120,7 @@ describe("App shell", () => {
     const restoreWarning =
       "Installed translation restore failed: broken target";
     scanned = { ...scanned, warnings: [restoreWarning] };
-    fireEvent.click(
-      screen.getByRole("button", { name: "Check installed files" }),
-    );
+    fireEvent.focus(window);
     expect(await screen.findByRole("alert")).toHaveTextContent(restoreWarning);
     expect(
       invokeMock.mock.calls.filter(

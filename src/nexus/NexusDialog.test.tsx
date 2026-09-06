@@ -111,6 +111,7 @@ function mount(
     executable?: string | null;
     open?: boolean;
     installed?: InstalledNexusTranslation[];
+    stamp?: () => Promise<string | null>;
   } = {},
 ) {
   let data = options.mods ?? mods,
@@ -124,6 +125,9 @@ function mount(
   let traversal: boolean | undefined = true,
     skipped: SkippedComponent[] = [];
   let installed = options.installed;
+  let blocked = false,
+    workspaceKey = "mods",
+    targetLang = "de";
   const onImported = vi.fn().mockResolvedValue(undefined),
     onSearch = vi.fn(),
     onCheckInstalled = vi.fn().mockResolvedValue(undefined),
@@ -133,7 +137,10 @@ function mount(
       open={open}
       search={results}
       mods={data}
-      targetLang="de"
+      targetLang={targetLang}
+      workspaceKey={workspaceKey}
+      recheckBlocked={blocked}
+      onDeploymentStamp={options.stamp}
       installationMethod={method}
       vortexExecutable={executable}
       traversalComplete={traversal}
@@ -154,6 +161,15 @@ function mount(
     onSearch,
     onCheckInstalled,
     onOpenReview,
+    setBlocked: (next: boolean) => {
+      blocked = next;
+      rendered.rerender(view());
+    },
+    setContext: (root: string, language: string) => {
+      workspaceKey = root;
+      targetLang = language;
+      rendered.rerender(view());
+    },
     unmount: rendered.unmount,
     setOpen: (next: boolean) => {
       open = next;
@@ -255,8 +271,8 @@ it("loads only candidate metadata before any action, without selection checkboxe
     translationRow().getByText("v1.2 \u00b7 1 Jan 2026"),
   ).toBeInTheDocument();
   expect(
-    screen.getByRole("button", { name: "Check installed files" }),
-  ).toBeEnabled();
+    screen.queryByRole("button", { name: "Check installed files" }),
+  ).not.toBeInTheDocument();
   expect(screen.queryByText("Details")).not.toBeInTheDocument();
   expect(screen.queryByText("Ready")).not.toBeInTheDocument();
   fireEvent.click(
@@ -292,9 +308,7 @@ it("can recheck an external installation before any handoff without refreshing N
   app.onCheckInstalled.mockImplementation(async () => {
     app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }]);
   });
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
+  fireEvent.focus(window);
   await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
   await waitFor(() =>
     expect(
@@ -405,9 +419,7 @@ it("replaces deployment evidence on recheck and preserves unknown results", asyn
   app.onCheckInstalled.mockImplementation(async () =>
     app.setInstalled([installedFile]),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
+  fireEvent.focus(window);
   await screen.findByText("Available translation files are already installed.");
   app.setInstalled(undefined);
   await screen.findByRole("row", { name: "Canonical title" });
@@ -437,9 +449,7 @@ it("does not replace a selected installed file with a different download after r
   app.onCheckInstalled.mockImplementation(async () =>
     app.setInstalled([installedFile]),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
+  fireEvent.focus(window);
   await waitFor(() => expect(choice).toHaveValue(""));
   expect(
     screen.getByRole("button", {
@@ -696,9 +706,7 @@ it("rechecks local disk without refreshing metadata or losing drafts and receipt
   await download();
   await screen.findByText("1 sent to Vortex");
   app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
+  fireEvent.focus(window);
   await screen.findByText("1 sent to Vortex · files rechecked");
   fireEvent.click(translationRow().getByText("Details"));
   expect(
@@ -721,9 +729,7 @@ it.each([false, undefined])(
     await screen.findByText("1 sent to Vortex");
     app.setTraversal(traversal);
     app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
-    fireEvent.click(
-      screen.getByRole("button", { name: "Check installed files" }),
-    );
+    fireEvent.focus(window);
     await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(translationRow().getByText("Details"));
     expect(
@@ -990,29 +996,28 @@ it.each(["free", "unknown", "invalid"] as const)(
   },
 );
 
-it("enables Premium import after one deliberate account refresh without polling", async () => {
+it("uses account access updated by explicit search without a refresh button", async () => {
+  let premium = false;
   const original = invoke.getMockImplementation()!;
-  invoke.mockImplementation((cmd: string, args: { forceRefresh?: boolean }) =>
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
     cmd === "nexus_status"
-      ? Promise.resolve({
-          configured: true,
-          premium: !!args.forceRefresh,
-          validated: !!args.forceRefresh,
-        })
-      : original(cmd, args),
+      ? Promise.resolve({ configured: true, validated: premium, premium })
+      : original(cmd, ...args),
   );
-  mount({ method: "folder" });
+  const app = mount({ method: "folder" });
   await screen.findByRole("row", { name: "Canonical title" });
+  expect(screen.queryByRole("button", { name: "Refresh account" })).toBeNull();
   expect(
-    screen.queryByRole("button", { name: /^Download & import all/ }),
-  ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
+    screen.queryByRole("button", { name: /Download & import all/ }),
+  ).toBeNull();
+  premium = true;
+  app.setSearch({ ...search, completed: 3 });
   expect(
     await screen.findByRole("button", { name: "Download & import all (1)" }),
   ).toBeEnabled();
-  expect(
-    commandCalls("nexus_status").filter((args) => args.forceRefresh),
-  ).toHaveLength(1);
+  expect(commandCalls("nexus_status").every((args) => !args.forceRefresh)).toBe(
+    true,
+  );
 });
 
 it("keeps Vortex handoff independent of the API key's Free membership", async () => {
@@ -1038,9 +1043,7 @@ it("does not fetch newly visible metadata during a local installed-files recheck
   const app = mount({ mods: [{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]] });
   await waitFor(() => expect(commandCalls("nexus_list_files")).toHaveLength(1));
   app.setMods([{ ...mods[0], diskTranslatedKeys: 0 }, mods[1]]);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Check installed files" }),
-  );
+  fireEvent.focus(window);
   await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
   await screen.findByRole("row", { name: "Canonical title" });
   expect(commandCalls("nexus_list_files")).toHaveLength(1);
@@ -1049,66 +1052,182 @@ it("does not fetch newly visible metadata during a local installed-files recheck
   );
 });
 
-it("discards delayed local snapshots after explicit account refresh", async () => {
+it("discards a delayed account snapshot after newer search progress", async () => {
   const snapshots: ((value: unknown) => void)[] = [];
-  invoke.mockImplementation((cmd: string, args: { forceRefresh?: boolean }) => {
+  invoke.mockImplementation((cmd: string) => {
     if (cmd === "nexus_status")
-      return args.forceRefresh
-        ? Promise.resolve({
-            configured: true,
-            validated: true,
-            premium: true,
-            accountStatus: "premium",
-          })
-        : new Promise((resolve) => snapshots.push(resolve));
+      return new Promise((resolve) => snapshots.push(resolve));
     if (cmd === "nexus_list_files") return Promise.resolve([file]);
     return Promise.resolve(null);
   });
-  mount({ method: "folder" });
+  const app = mount({ method: "folder" });
   await act(async () => {});
-  const oldSnapshots = [...snapshots];
-  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
-  await screen.findByText(/Premium account/);
+  const old = [...snapshots];
+  app.setSearch({ ...search, completed: 3 });
   await act(async () =>
-    oldSnapshots.forEach((resolve) =>
-      resolve({
-        configured: true,
-        validated: true,
-        premium: false,
-        accountStatus: "free",
-      }),
+    snapshots.at(-1)!({ configured: true, validated: true, premium: true }),
+  );
+  await act(async () =>
+    old.forEach((resolve) =>
+      resolve({ configured: true, validated: true, premium: false }),
     ),
   );
-  expect(screen.getByText(/Premium account/)).toBeInTheDocument();
   expect(
     screen.getByRole("button", { name: /Download & import all/ }),
   ).toBeInTheDocument();
 });
 
-it("does not start passive account reads when metadata arrives during refresh", async () => {
-  let resolveRefresh!: (value: unknown) => void;
-  let resolveFiles!: (value: unknown) => void;
-  let currentStatus = { configured: true, validated: false, premium: false };
-  invoke.mockImplementation((cmd: string, args: { forceRefresh?: boolean }) => {
-    if (cmd === "nexus_status")
-      return args.forceRefresh
-        ? new Promise((resolve) => {
-            resolveRefresh = resolve;
-          })
-        : Promise.resolve(currentStatus);
-    if (cmd === "nexus_list_files")
-      return new Promise((resolve) => {
-        resolveFiles = resolve;
-      });
-    return Promise.resolve(null);
+it("does not claim no matches when account validation stopped discovery", () => {
+  mount({
+    search: {
+      ...search,
+      entries: [],
+      completed: 0,
+      stoppedReason: "Nexus rate limit reached (HTTP 429).",
+    },
   });
-  mount({ method: "folder" });
-  await screen.findByText(/Account not checked/);
-  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
-  const reads = commandCalls("nexus_status").length;
-  await act(async () => resolveFiles([file]));
-  expect(commandCalls("nexus_status")).toHaveLength(reads);
-  currentStatus = { configured: true, validated: true, premium: true };
-  await act(async () => resolveRefresh(currentStatus));
-  expect(screen.getByText(/Premium account/)).toBeInTheDocument();
+  expect(
+    screen.getByText("No downloadable files could be confirmed."),
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText("No suitable translation downloads found."),
+  ).toBeNull();
+  expect(screen.getByRole("alert")).toHaveTextContent("HTTP 429");
+});
+
+it("observes a late deployment hint without repeatedly scanning or redownloading", async () => {
+  let value = "before";
+  const stamp = vi.fn(async () => value);
+  const app = mount({ stamp });
+  const button = await screen.findByRole("button", {
+    name: "Download & install all with Vortex (1)",
+  });
+  await waitFor(() => expect(button).toBeEnabled());
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      fireEvent.click(button);
+    });
+    expect(screen.getByText("1 sent to Vortex")).toBeInTheDocument();
+    expect(stamp).toHaveBeenCalledOnce();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(6000);
+    });
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    value = "deployed";
+    app.onCheckInstalled.mockImplementation(async (current: () => boolean) => {
+      if (current())
+        app.setInstalled([{ sourceNexusId: 1, modId: 30342, fileId: 7 }]);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3000);
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    expect(
+      screen.getByText("Available translation files are already installed."),
+    ).toBeInTheDocument();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(150000);
+    });
+    const reads = stamp.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60000);
+    });
+    expect(stamp).toHaveBeenCalledTimes(reads);
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+    expect(commandCalls("nexus_list_files")).toHaveLength(1);
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("deduplicates return events, waits for busy UI, and retries on a later return", async () => {
+  const app = mount();
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  app.setBlocked(true);
+  vi.useFakeTimers();
+  try {
+    fireEvent.focus(window);
+    fireEvent.focus(window);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    app.setBlocked(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    // An unchanged early scan does not consume the next actual return.
+    fireEvent.focus(window);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(app.onCheckInstalled).toHaveBeenCalledTimes(2);
+    expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it.each(["close", "root", "language", "method", "unmount"])(
+  "invalidates an in-flight local result after %s",
+  async (change) => {
+    const app = mount();
+    await screen.findByRole("row", { name: "Canonical title" });
+    let finish!: () => void;
+    let current!: () => boolean;
+    app.onCheckInstalled.mockImplementation((guard: () => boolean) => {
+      current = guard;
+      return new Promise<void>((resolve) => {
+        finish = resolve;
+      });
+    });
+    fireEvent.focus(window);
+    await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
+    expect(current()).toBe(true);
+    if (change === "close") app.setOpen(false);
+    if (change === "root") app.setContext("other", "de");
+    if (change === "language") app.setContext("mods", "fr");
+    if (change === "method") app.setMethod("folder");
+    if (change === "unmount") app.unmount();
+    expect(current()).toBe(false);
+    await act(async () => finish());
+    expect(screen.queryByText(/files rechecked/)).toBeNull();
+  },
+);
+
+it("cancels observation on close and refreshes local evidence on reopen", async () => {
+  const stamp = vi.fn(async () => "before");
+  const app = mount({ stamp });
+  await download();
+  await screen.findByText("1 sent to Vortex");
+  vi.useFakeTimers();
+  try {
+    app.setOpen(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(9000);
+    });
+    expect(stamp).toHaveBeenCalledOnce();
+    expect(app.onCheckInstalled).not.toHaveBeenCalled();
+    app.setOpen(true);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(250);
+    });
+    expect(app.onCheckInstalled).toHaveBeenCalledOnce();
+    expect(
+      commandCalls("nexus_status").every((args) => !args.forceRefresh),
+    ).toBe(true);
+  } finally {
+    app.unmount();
+    vi.useRealTimers();
+  }
 });

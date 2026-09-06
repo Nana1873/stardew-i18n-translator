@@ -5,6 +5,7 @@ import {
 } from "./resolveTranslation";
 import {
   nexusFindTranslations,
+  nexusStatus,
   type NexusSearchResult,
   type ScannedMod,
   type SkippedComponent,
@@ -143,6 +144,25 @@ export function useNexusSearch(workspaceKey: string) {
       unassignedNames,
       skippedComplete,
     });
+    if (targets.size) {
+      try {
+        // Explicit searches refresh account access once, including cache hits.
+        const status = await nexusStatus(true);
+        if (!current()) return;
+        if (!status.validated)
+          throw new Error(
+            status.error || "Connect a valid Nexus API key in Nexus settings.",
+          );
+      } catch (cause) {
+        if (current())
+          setState((s) => ({
+            ...s,
+            running: false,
+            stoppedReason: String(cause),
+          }));
+        return;
+      }
+    }
     for (const [modId, localNames] of targets) {
       if (!current()) return;
       const entry: NexusSearchEntry = { modId, localNames };

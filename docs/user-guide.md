@@ -36,13 +36,15 @@ API key in Setup or Settings. Choose **Manual / no mod manager** or **Vortex**
 in the installation section of Setup; this remains editable in Settings.
 Select Vortex.exe there when using Vortex. The validated key is
 saved as `NEXUS_API_KEY` in your Windows user environment, outside portable
-`data/`; it does not move with the app. Opening Setup only checks local key
-readiness. **Connect Nexus** or **Replace key** reveals the key field;
-**Connect key** validates and saves it. **Refresh account** checks membership once.
-Account errors appear beside the connection. API usage shows only values last
-reported by Nexus, separately for **Mod data** and **Translation search**. Missing
-values stay unknown; expand the summary for observation times and any reported
-resets. Other apps may also use your account allowance.
+`data/`; it does not move with the app. Enter a key in the password field and use
+**Save changes** in Settings or **Finish** in Setup to validate and save it. A
+saved key appears as a mask; leaving the field untouched keeps it. Cancel leaves
+the saved key unchanged. Opening Setup only checks local readiness. Each explicit
+Nexus search also checks the account, including searches using cached results.
+Account errors appear beside the connection. The results footer shows remaining
+requests last reported by Nexus, separately for **Mod data** and **Translation
+search**. Missing values stay unknown; observation times and reported resets are
+available in the tooltip. Other apps may also use your account allowance.
 
 Use **Find translations on Nexus** to start discovery explicitly. Startup, normal
 scans, rescans, and installed-file checks never contact Nexus, including when
@@ -69,9 +71,9 @@ ZIP, and matching language files deployed through hardlinks. Backups may lag a
 new installation. Missing or conflicting metadata, deleted archives, other archive
 formats, or modified deployed files leave the identity unknown and the download
 available. The translator only reads these files; it does not open Vortex's database.
-Use **Check installed files** after a Vortex deployment, including installations
-started outside the translator. Workspace coverage reaches 100% only when every
-source key has text; nearly complete translations are no longer rounded to 100%.
+Use **Scan** after installations started outside the translator. Workspace
+coverage reaches 100% only when every source key has the required text; nearly
+complete translations are no longer rounded to 100%.
 
 The list shows available likely translations for the scanned mods. All shown
 downloads are included automatically: there are no mod-selection checkboxes.
@@ -86,7 +88,7 @@ page. Search totals use compact counters for checked IDs, mods with downloads,
 confirmed searches without a suitable download, groups without missing text skipped,
 packages without a Nexus ID, exact files already deployed, and failed checks.
 An ID-less component is not counted as unmapped when a package sibling has an ID. Pending or failed checks do not
-count as confirmed searches without a download. **Refresh search** requests
+count as confirmed searches without a download. **Search again** requests
 fresh results.
 Cancellation and API failures preserve your local workspace; bounded searches
 may miss translations.
@@ -112,13 +114,18 @@ results and disk comparisons are available after an action; a ready row has no
 status or details to dismiss. Action failures and ambiguous mappings remain
 visible so they can be resolved without losing completed work.
 
-After installing and deploying in Vortex, use **Check installed files**. This
-local rescan reads actual target-language files separately from saved app work.
+After a handoff, keep the list open while installing and deploying in Vortex.
+For up to two minutes, the app watches local deployment metadata and rescans
+when it changes. Returning to the app with the list open or reopening the list
+also checks installed files. These checks make no Nexus requests. If deployment
+finishes later, return to the list or use **Scan**.
+
+The local rescan reads actual target-language files separately from saved app work.
 It reports disk coverage and differences from saved translations while retaining
-your nonempty drafts. In Vortex mode, startup, **Scan mods**, and **Check installed
-files** also refill cleared, untranslated entries from nonempty installed language
-files. The open editor reloads after a successful scan. Switching mods or running
-a background refresh does not undo Clear; the manual installation workflow keeps
+your nonempty drafts. In Vortex mode, startup, **Scan**, and these installed-file
+checks also refill cleared, untranslated entries from nonempty installed language
+files. The open editor reloads after a successful scan. Switching mods or an
+unrelated background refresh does not undo Clear; the manual installation workflow keeps
 its existing Clear and Export behavior. If Export already removed the language
 file, deploy the translation again in Vortex before scanning.
 Inspect differences before replacing or exporting nonempty text; a recheck

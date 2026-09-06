@@ -130,6 +130,29 @@ fn scan_mods(
     Ok(result)
 }
 
+#[tauri::command(async)]
+fn nexus_deployment_stamp(
+    app: AppHandle,
+    mods_path: String,
+    target_lang: String,
+) -> Option<String> {
+    let config = config_dir(&app).ok()?;
+    let target_lang = language::normalize_target_code(&target_lang).ok()?;
+    configured_vortex_deployment_stamp(Path::new(mods_path.trim()), &target_lang, &config)
+}
+
+fn configured_vortex_deployment_stamp(
+    mods_root: &Path,
+    target_lang: &str,
+    config: &Path,
+) -> Option<String> {
+    let saved = settings::load_checked(config).ok()?;
+    if !matches_vortex_workspace(&saved, mods_root, target_lang) {
+        return None;
+    }
+    vortex_identity::deployment_stamp(mods_root)
+}
+
 fn matches_vortex_workspace(saved: &AppSettings, mods_root: &Path, target_lang: &str) -> bool {
     saved.installation_method == Some(settings::InstallationMethod::Vortex)
         && saved.target_lang.as_deref() == Some(target_lang)
@@ -368,6 +391,35 @@ mod installed_translation_restore_tests {
         let row = &f.rows()[0];
         assert_eq!(row.status, "outdated");
         assert!(!row.token_mismatch_accepted);
+    }
+
+    #[test]
+    fn deployment_stamp_requires_the_configured_vortex_workspace() {
+        let f = Fixture::new();
+        std::fs::write(f.mods.join("vortex.deployment.json"), b"metadata only").unwrap();
+        assert!(configured_vortex_deployment_stamp(&f.mods, "de", &f.config).is_some());
+        assert_eq!(
+            configured_vortex_deployment_stamp(&f.mods, "fr", &f.config),
+            None
+        );
+        let other = f.root.join("OtherMods");
+        std::fs::create_dir_all(&other).unwrap();
+        std::fs::write(other.join("vortex.deployment.json"), b"metadata only").unwrap();
+        assert_eq!(
+            configured_vortex_deployment_stamp(&other, "de", &f.config),
+            None
+        );
+        let mut saved = settings::load_checked(&f.config).unwrap();
+        saved.installation_method = Some(settings::InstallationMethod::Folder);
+        settings::save(&f.config, &saved).unwrap();
+        assert_eq!(
+            configured_vortex_deployment_stamp(&f.mods, "de", &f.config),
+            None
+        );
+        assert_eq!(
+            configured_vortex_deployment_stamp(&f.mods, "de", &f.root.join("NoConfig")),
+            None
+        );
     }
 
     #[test]
@@ -3113,6 +3165,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            nexus_deployment_stamp,
             nexus::nexus_status,
             nexus::pick_vortex_executable,
             nexus::nexus_handoff_to_vortex,

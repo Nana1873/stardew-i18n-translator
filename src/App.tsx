@@ -58,6 +58,7 @@ import {
   previewTranslationZip,
   saveSettings,
   scanMods,
+  nexusDeploymentStamp,
   translateWithCodexCli,
   translateWithLocalAi,
   undoBatchEdit,
@@ -887,7 +888,7 @@ export function App() {
       setScanError(String(error));
       if (!scanDismissedRef.current) setScanDialogOpen(true);
     } finally {
-      if (isCurrentRequest()) setScanning(false);
+      if (generation === scanGenerationRef.current) setScanning(false);
     }
   }
 
@@ -2313,13 +2314,31 @@ export function App() {
             traversalComplete={scan.traversalComplete === true}
             vortexExecutable={settings.vortexExecutable}
             installationMethod={settings.installationMethod}
-            onCheckInstalled={async () => {
-              const result = await runScan(settings, false, () => true, {
+            workspaceKey={nexusWorkspaceKey}
+            recheckBlocked={
+              scanning ||
+              exporting ||
+              checkingExportReadiness ||
+              settingsOpen ||
+              wizardOpen
+            }
+            onDeploymentStamp={() =>
+              nexusDeploymentStamp(settings.modsPath!, settings.targetLang!)
+            }
+            onCheckInstalled={async (current) => {
+              const stillCurrent = () =>
+                current() &&
+                settingsRef.current?.modsPath === settings.modsPath &&
+                settingsRef.current?.targetLang === settings.targetLang &&
+                installationMethodFor(settingsRef.current) === "vortex";
+              if (!stillCurrent()) return;
+              const result = await runScan(settings, false, stillCurrent, {
                 nexusSearch: false,
                 showDiagnostics: false,
                 showExtraKeyDialog: false,
                 restoreInstalledTranslations: true,
               });
+              if (!stillCurrent()) return;
               if (!result)
                 throw new Error("Local scan failed. Check scan diagnostics.");
               if (result.warnings.length) {

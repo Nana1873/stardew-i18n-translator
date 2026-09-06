@@ -189,6 +189,13 @@ export interface VortexHandoff {
   fileId: number;
   status: "handoff-requested";
 }
+/** Metadata-only change hint; a changed stamp requires a fresh installed-file scan. */
+export function nexusDeploymentStamp(
+  modsPath: string,
+  targetLang: string,
+): Promise<string | null> {
+  return invoke("nexus_deployment_stamp", { modsPath, targetLang });
+}
 export function nexusHandoffToVortex(
   modId: number,
   fileId: number,

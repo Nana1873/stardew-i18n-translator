@@ -52,7 +52,7 @@ import {
   shortcutProblem,
 } from "../shortcuts";
 import { useDialogAccessibility } from "../dialogAccessibility";
-import { NexusSetup } from "../nexus/NexusSetup";
+import { NexusSetup, useNexusSetup } from "../nexus/NexusSetup";
 import {
   InstallationSettings,
   installationMethodFor,
@@ -166,6 +166,7 @@ export function SettingsDialog({
     savedAi.defaultEngine === "local" || savedAi.defaultEngine === "codex"
       ? savedAi.defaultEngine
       : null;
+  const nexusConnection = useNexusSetup(onNexusKeySaved);
   const [page, setPage] = useState<SettingsPage>(initialPage);
   const [preferredEngine, setPreferredEngine] = useState<AiEngine | null>(
     savedDefaultEngine,
@@ -539,6 +540,10 @@ export function SettingsDialog({
     setSaving(true);
     setSaveError(null);
     try {
+      if (nexusConnection.key.trim() && !(await nexusConnection.save())) {
+        setPage("nexus");
+        return;
+      }
       await onSave({
         ...settings,
         stardewPath: stardewPath || null,
@@ -669,7 +674,7 @@ export function SettingsDialog({
                 role="tabpanel"
                 aria-label="Nexus Mods"
               >
-                <NexusSetup onKeySaved={onNexusKeySaved} />
+                <NexusSetup connection={nexusConnection} disabled={saving} />
               </section>
             )}
             <section

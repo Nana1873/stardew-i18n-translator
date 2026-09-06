@@ -24,7 +24,7 @@ import {
 import { fileChoices, useNexusFiles } from "./useNexusFiles";
 import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
 
-import { NexusAccountSummary, nexusAccountKind } from "./NexusAccountSummary";
+import { NexusQuotaSummary, nexusAccountKind } from "./NexusAccountSummary";
 
 const quiet = "translator-button translator-button-quiet";
 const primary = "translator-button translator-button-primary";
@@ -132,6 +132,9 @@ export function NexusDialog({
   vortexExecutable,
   installationMethod,
   onCheckInstalled,
+  onDeploymentStamp,
+  recheckBlocked = false,
+  workspaceKey = "",
   skippedComponents = [],
   traversalComplete = false,
   installedNexusTranslations = [],
@@ -139,7 +142,10 @@ export function NexusDialog({
   open?: boolean;
   vortexExecutable?: string | null;
   installationMethod?: "folder" | "vortex";
-  onCheckInstalled?: () => Promise<void>;
+  onCheckInstalled?: (current: () => boolean) => Promise<void>;
+  onDeploymentStamp?: () => Promise<string | null>;
+  recheckBlocked?: boolean;
+  workspaceKey?: string;
   search: NexusSearchState;
   mods: ScannedMod[];
   skippedComponents?: SkippedComponent[];
@@ -161,25 +167,7 @@ export function NexusDialog({
   const method = installationMethod ?? (configuredVortex ? "vortex" : "folder");
   const isVortex = method === "vortex";
   const [account, setAccount] = useState<NexusStatus | null>(null);
-  const [refreshingAccount, setRefreshingAccount] = useState(false);
-  const [accountError, setAccountError] = useState<string | null>(null);
-  const accountGeneration = useRef(0);
   const canDirectImport = nexusAccountKind(account) === "premium";
-  async function refreshAccount() {
-    const request = ++accountGeneration.current;
-    setRefreshingAccount(true);
-    setAccountError(null);
-    try {
-      const next = await nexusStatus(true);
-      if (mounted.current && accountGeneration.current === request)
-        setAccount(next);
-    } catch {
-      if (mounted.current)
-        setAccountError("Account refresh unavailable. Try again later.");
-    } finally {
-      if (mounted.current) setRefreshingAccount(false);
-    }
-  }
 
   const [checking, setChecking] = useState(false);
   const [checkError, setCheckError] = useState<string | null>(null);
@@ -196,15 +184,41 @@ export function NexusDialog({
   const activeRef = useRef<string | null>(null);
   const generation = useRef(0);
   const mounted = useRef(true);
-  const actionContext = useRef(`${targetLang}|${method}`);
+  const context = `${workspaceKey}|${targetLang}|${method}`;
+  const live = useRef({ open, context, onCheckInstalled, onDeploymentStamp });
+  live.current = { open, context, onCheckInstalled, onDeploymentStamp };
+  const actionContext = useRef(context);
+  const [recheckPending, setRecheckPending] = useState(false);
+  const checkInFlight = useRef(false);
+  const [monitor, setMonitor] = useState<{
+    baseline: string | null;
+    until: number;
+  } | null>(null);
   useEffect(() => {
-    const next = `${targetLang}|${method}`;
+    const next = context;
     if (actionContext.current !== next) {
       actionContext.current = next;
       generation.current++;
       setFileSelections({});
+      setRows({});
+      setCheckedAt(null);
+      setCheckError(null);
+      setRecheckPending(false);
+      setMonitor(null);
     }
-  }, [targetLang, method]);
+  }, [context]);
+  const wasOpen = useRef(open);
+  useEffect(() => {
+    if (!open) {
+      generation.current++;
+      stopBatchRef.current = true;
+      setRecheckPending(false);
+      setMonitor(null);
+    } else if (!wasOpen.current && isVortex) {
+      setRecheckPending(true);
+    }
+    wasOpen.current = open;
+  }, [open, isVortex]);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     mounted.current = true;
@@ -252,7 +266,11 @@ export function NexusDialog({
     setActive(key);
     patch(key, { error: undefined });
     const stamp = generation.current;
-    const current = () => stamp === generation.current;
+    const current = () =>
+      mounted.current &&
+      live.current.open &&
+      live.current.context === context &&
+      stamp === generation.current;
     try {
       await work(current);
     } catch (cause) {
@@ -400,6 +418,10 @@ export function NexusDialog({
         status: "Sending to Vortex…",
         choices: undefined,
       });
+      // Capture before launch: deployment can finish before the receipt returns.
+      const baseline =
+        (await live.current.onDeploymentStamp?.().catch(() => null)) ?? null;
+      if (!current()) return;
       const receipt = await nexusHandoffToVortex(candidate.modId, file.fileId);
       if (!current()) return;
       if (receipt.status !== "handoff-requested")
@@ -417,6 +439,10 @@ export function NexusDialog({
         selectedArchive: file,
         completed: false,
       });
+      setMonitor((previous) => ({
+        baseline: previous ? previous.baseline : baseline,
+        until: Date.now() + 120_000,
+      }));
     });
   }
   const handedOffIds = [
@@ -426,20 +452,102 @@ export function NexusDialog({
         .map(([key]) => Number(key.split(":")[0])),
     ),
   ];
-  async function checkInstalled() {
-    if (!onCheckInstalled) return;
-    const stamp = generation.current;
-    setChecking(true);
-    setCheckError(null);
-    try {
-      await onCheckInstalled();
-      if (stamp === generation.current) setCheckedAt(Date.now());
-    } catch (cause) {
-      if (stamp === generation.current) setCheckError(String(cause));
-    } finally {
-      if (stamp === generation.current) setChecking(false);
-    }
-  }
+  // User return/reopen is a fallback even when deployment hints are unavailable.
+  useEffect(() => {
+    if (!open || !isVortex) return;
+    const request = () => {
+      if (!checkInFlight.current) setRecheckPending(true);
+    };
+    const focus = (event: FocusEvent) => {
+      if (!(event.target instanceof Node)) request();
+    };
+    window.addEventListener("focus", focus);
+    const visible = () => {
+      if (document.visibilityState === "visible") request();
+    };
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      window.removeEventListener("focus", focus);
+      document.removeEventListener("visibilitychange", visible);
+    };
+  }, [open, isVortex, context]);
+  useEffect(() => {
+    if (!open || !isVortex || !monitor || !live.current.onDeploymentStamp)
+      return;
+    let cancelled = false;
+    let baseline = monitor.baseline;
+    let timer: number;
+    const poll = async () => {
+      if (cancelled || Date.now() >= monitor.until) return;
+      try {
+        const next = await live.current.onDeploymentStamp?.();
+        if (cancelled || !live.current.open || live.current.context !== context)
+          return;
+        if (next !== undefined && next !== baseline) {
+          baseline = next;
+          setRecheckPending(true);
+        }
+      } catch {
+        /* An unavailable hint is not installation evidence. */
+      }
+      if (!cancelled && Date.now() < monitor.until)
+        timer = window.setTimeout(poll, 3000);
+    };
+    timer = window.setTimeout(poll, 3000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [open, isVortex, context, monitor]);
+  useEffect(() => {
+    if (
+      !recheckPending ||
+      !open ||
+      !isVortex ||
+      recheckBlocked ||
+      active ||
+      batchRunning ||
+      search.running ||
+      checking ||
+      !live.current.onCheckInstalled
+    )
+      return;
+    const timer = window.setTimeout(() => {
+      if (checkInFlight.current) return;
+      const stamp = generation.current;
+      const current = () =>
+        mounted.current &&
+        live.current.open &&
+        live.current.context === context &&
+        stamp === generation.current;
+      checkInFlight.current = true;
+      setRecheckPending(false);
+      setChecking(true);
+      setCheckError(null);
+      void live.current.onCheckInstalled!(current)
+        .then(() => {
+          if (current()) setCheckedAt(Date.now());
+        })
+        .catch((cause) => {
+          if (current()) setCheckError(String(cause));
+        })
+        .finally(() => {
+          checkInFlight.current = false;
+          if (mounted.current) setChecking(false);
+        });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [
+    recheckPending,
+    open,
+    isVortex,
+    context,
+    recheckBlocked,
+    active,
+    batchRunning,
+    search.running,
+    checking,
+  ]);
   function selectedMapping(
     row: RowState,
     choice: MappingChoice,
@@ -455,8 +563,7 @@ export function NexusDialog({
           : undefined,
     };
   }
-  const locked =
-    Boolean(active) || batchRunning || checking || refreshingAccount;
+  const locked = Boolean(active) || batchRunning || checking || recheckBlocked;
   const candidatesFor = (entry: NexusSearchEntry) =>
     [...(entry.result?.candidates ?? [])].sort(
       (a, b) =>
@@ -484,12 +591,11 @@ export function NexusDialog({
   );
   // Only reads the native session snapshot; never validates or sends HTTP here.
   useEffect(() => {
-    if (!open || refreshingAccount) return;
+    if (!open) return;
     let current = true;
-    const request = accountGeneration.current;
     void nexusStatus()
       .then((value) => {
-        if (current && accountGeneration.current === request) setAccount(value);
+        if (current) setAccount(value);
       })
       .catch(() => {});
     return () => {
@@ -498,9 +604,9 @@ export function NexusDialog({
   }, [
     open,
     search.completed,
+    search.running,
     fileMetadata.entries,
     batchRunning,
-    refreshingAccount,
   ]);
   const groups = sources.map((entry) => {
     const candidates = candidatesFor(entry);
@@ -1034,7 +1140,7 @@ export function NexusDialog({
   return (
     <NexusModal
       title={`Nexus translations · ${targetLang}`}
-      busy={locked}
+      busy={Boolean(active) || batchRunning}
       onClose={onClose}
     >
       <div className="nexus-session-summary">
@@ -1045,16 +1151,7 @@ export function NexusDialog({
               : actionStatus || resultStatus}
           </p>
         )}
-        <NexusAccountSummary status={account} />
         <div className="nexus-actions">
-          <button
-            className={quiet}
-            disabled={locked}
-            onClick={() => void refreshAccount()}
-          >
-            {refreshingAccount ? "Refreshing…" : "Refresh account"}
-          </button>
-          {accountError && <p role="alert">{accountError}</p>}
           {(isVortex || canDirectImport) && (
             <button
               className={primary}
@@ -1084,26 +1181,19 @@ export function NexusDialog({
               Stop after current
             </button>
           )}
-          {isVortex && (
-            <button
-              className={quiet}
-              disabled={locked || !onCheckInstalled}
-              onClick={() => void checkInstalled()}
-            >
-              {checking ? "Checking files…" : "Check installed files"}
-            </button>
-          )}
         </div>
         <small className="nexus-muted">
           {isVortex
             ? configuredVortex
-              ? "Vortex uses its own account, which may differ from this API key. Vortex may ask you to confirm a website download. A handoff only sends a request; deploy there, then check files here."
+              ? handedOffIds.length > 0
+                ? "Deploy in Vortex; this list updates when you return."
+                : null
               : "Choose Vortex.exe in installation settings first."
             : canDirectImport
               ? "Imports go to Review. Use the existing Export action when ready."
               : nexusAccountKind(account) === "free"
                 ? "Free account: use each Open Nexus Link below to download manually. Direct ZIP import requires Premium."
-                : "Use Open Nexus Link below for manual downloads, or refresh account details to check Premium import access."}
+                : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}
         </small>
         {checkError && <p role="alert">{checkError}</p>}
       </div>
@@ -1130,7 +1220,9 @@ export function NexusDialog({
         )}
         {!shown.length && !loading && !search.running && (
           <p>
-            {unavailableCount
+            {unavailableCount ||
+            search.stoppedReason ||
+            search.completed < search.total
               ? "No downloadable files could be confirmed."
               : installedGroups > 0
                 ? "Available translation files are already installed."
@@ -1184,7 +1276,7 @@ export function NexusDialog({
           ) : !search.running && search.completed < search.total ? (
             <p role="status">Search incomplete · results are partial.</p>
           ) : null}
-          <div className="nexus-actions">
+          <div className="nexus-actions nexus-footer">
             <button
               className={quiet}
               disabled={locked || search.running}
@@ -1194,7 +1286,7 @@ export function NexusDialog({
                 onSearch({ forceRefresh: true, retainIds: handedOffIds });
               }}
             >
-              Refresh search
+              Search again
             </button>
             <button className={quiet} disabled={locked} onClick={onConfigure}>
               Nexus settings
@@ -1204,11 +1296,14 @@ export function NexusDialog({
                 Cancel search
               </button>
             )}
+            <span className="nexus-footer-quota">
+              <NexusQuotaSummary status={account} />
+            </span>
           </div>
           {unavailableCount > 0 && (
             <>
               <p role="alert">
-                {unavailableCount} translation checks failed. Refresh search or
+                {unavailableCount} translation checks failed. Search again or
                 retry file metadata.
               </p>
               {groups.some((group) => group.errors.length) && (

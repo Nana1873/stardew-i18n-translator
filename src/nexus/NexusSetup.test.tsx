@@ -10,7 +10,16 @@ const invoke = vi.fn();
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (...args: unknown[]) => invoke(...args),
 }));
-import { NexusSetup } from "./NexusSetup";
+import { NexusSetup, useNexusSetup } from "./NexusSetup";
+function Harness() {
+  const connection = useNexusSetup();
+  return (
+    <>
+      <NexusSetup connection={connection} />
+      <button onClick={() => void connection.save()}>Save</button>
+    </>
+  );
+}
 beforeEach(() => {
   invoke.mockReset();
   invoke.mockResolvedValue({
@@ -18,94 +27,78 @@ beforeEach(() => {
     premium: false,
     validated: false,
     accountStatus: "unknown",
-    quota: [],
   });
 });
 
-it("shows a saved connection without an empty key field or automatic validation", async () => {
-  render(<NexusSetup />);
-  await screen.findByText(/Account not checked · Key saved/);
-  expect(invoke).toHaveBeenCalledWith("nexus_status", { forceRefresh: false });
-  expect(screen.queryByLabelText("Nexus API key")).not.toBeInTheDocument();
-  expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
+it("keeps a saved key as an empty password field with a mask placeholder and never submits the mask", async () => {
+  render(<Harness />);
+  await screen.findByText(/Key saved/);
+  const input = screen.getByLabelText("Nexus API key");
+  expect(input).toHaveAttribute("type", "password");
+  expect(input).toHaveAttribute("placeholder", "••••••••");
+  expect(input).toHaveValue("");
   expect(
-    screen.queryByRole("button", { name: /Test/ }),
-  ).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole("button", { name: "Refresh account" }));
-  await waitFor(() =>
-    expect(invoke).toHaveBeenCalledWith("nexus_status", { forceRefresh: true }),
-  );
+    screen.queryByRole("button", { name: /Replace|Refresh|Connect/ }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await act(async () => {});
+  expect(invoke.mock.calls).toEqual([
+    ["nexus_status", { forceRefresh: false }],
+  ]);
 });
 
-it("reveals Replace key only on demand and clears it after connection", async () => {
-  const onKeySaved = vi.fn();
-  render(<NexusSetup onKeySaved={onKeySaved} />);
-  fireEvent.click(await screen.findByRole("button", { name: "Replace key" }));
+it("validates only a typed key on save and clears the input", async () => {
+  render(<Harness />);
   fireEvent.change(screen.getByLabelText("Nexus API key"), {
-    target: { value: "synthetic-test-key" },
+    target: { value: "synthetic-key" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect key" }));
-  await waitFor(() =>
-    expect(screen.queryByLabelText("Nexus API key")).not.toBeInTheDocument(),
-  );
-  expect(invoke).toHaveBeenCalledWith("nexus_save_key", {
-    key: "synthetic-test-key",
-  });
-  expect(onKeySaved).toHaveBeenCalledOnce();
-  fireEvent.click(screen.getByRole("button", { name: "Replace key" }));
-  expect(screen.getByLabelText("Nexus API key")).toHaveValue("");
-  expect(invoke.mock.calls.some(([name]) => name === "save_settings")).toBe(
+  expect(invoke.mock.calls.some(([cmd]) => cmd === "nexus_save_key")).toBe(
     false,
   );
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Nexus API key")).toHaveValue(""),
+  );
+  expect(invoke).toHaveBeenCalledWith("nexus_save_key", {
+    key: "synthetic-key",
+  });
 });
 
-it("does not echo credential-bearing failures", async () => {
+it("preserves saved status and does not echo credential-bearing save failures", async () => {
   invoke.mockImplementation((cmd: string) =>
     cmd === "nexus_save_key"
-      ? Promise.reject(new Error("synthetic-secret"))
-      : Promise.resolve({
-          configured: false,
-          premium: false,
-          validated: false,
-        }),
+      ? Promise.reject(new Error("synthetic-key"))
+      : Promise.resolve({ configured: true, validated: true, premium: true }),
   );
-  render(<NexusSetup />);
-  fireEvent.click(await screen.findByRole("button", { name: "Connect Nexus" }));
+  render(<Harness />);
+  await screen.findByText(/Premium account/);
   fireEvent.change(screen.getByLabelText("Nexus API key"), {
-    target: { value: "synthetic-secret" },
+    target: { value: "synthetic-key" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect key" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
   expect(await screen.findByRole("alert")).not.toHaveTextContent(
-    "synthetic-secret",
+    "synthetic-key",
   );
+  expect(screen.getByText(/Premium account/)).toBeInTheDocument();
 });
 
-it("ignores an initial local snapshot arriving after a successful connection", async () => {
+it("discards the initial local snapshot after saving a new key", async () => {
   let resolveInitial!: (value: unknown) => void;
   invoke.mockImplementation((cmd: string) =>
     cmd === "nexus_status"
       ? new Promise((resolve) => {
           resolveInitial = resolve;
         })
-      : Promise.resolve({
-          configured: true,
-          validated: true,
-          premium: true,
-          accountStatus: "premium",
-        }),
+      : Promise.resolve({ configured: true, validated: true, premium: true }),
   );
-  render(<NexusSetup />);
-  fireEvent.click(screen.getByRole("button", { name: "Connect Nexus" }));
+  render(<Harness />);
   fireEvent.change(screen.getByLabelText("Nexus API key"), {
     target: { value: "synthetic-key" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect key" }));
-  await screen.findByText(/^Premium account/);
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await screen.findByText(/Premium account/);
   await act(async () =>
     resolveInitial({ configured: false, validated: false, premium: false }),
   );
-  expect(screen.getByText(/^Premium account/)).toBeInTheDocument();
-  expect(
-    screen.getByRole("button", { name: "Replace key" }),
-  ).toBeInTheDocument();
+  expect(screen.getByText(/Premium account/)).toBeInTheDocument();
 });

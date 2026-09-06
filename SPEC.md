@@ -168,9 +168,12 @@ never enters portable settings, metadata cache, logs, handoff arguments, or
 response DTOs. Status exposes readiness, Free/Premium/unknown membership, safe
 errors, and nullable response-header quota snapshots by API scope. Display only
 reported values with observation times; do not invent limits or reset times.
-Connecting a key or explicitly refreshing the account validates it; opening
-Setup or the results dialog only reads session status. Raw validation
-responses and signed download URLs remain in the backend.
+Saving a typed key through Setup or Settings validates it before saving. The
+password field never receives the saved secret; an untouched mask preserves it.
+Each explicit Nexus search validates the account once, including cache hits;
+opening Setup or the results dialog only reads session status. Quotas appear as
+a static footer summary, with observation times and reported resets in its
+tooltip. Raw validation responses and signed download URLs remain in the backend.
 
 A saved Folder/Vortex installation method controls the download action. It is
 selected in Setup and editable in Settings; the results dialog has no destination
@@ -191,7 +194,14 @@ installation, deployment, original-source association or Collection membership.
 Batch cancellation stops subsequent requests without undoing earlier handoffs.
 A local installed-files recheck reports disk coverage separately from effective
 app-state coverage and exposes differences without overwriting nonempty drafts.
-In the configured Vortex workspace, startup and explicit local scans refill
+After handoff, observe only deployment-manifest metadata for a bounded period
+while the results dialog is open. Rescan after a change, on returning focus, or
+on reopening the list. Coalesce events and defer checks during scans, exports,
+settings changes, searches and download batches. Closing the dialog or changing
+workspace cancels observation and prevents obsolete checks from updating the UI.
+A metadata change is only a rescan trigger, never installation evidence. These
+checks do not contact Nexus or automatically retry downloads.
+In the configured Vortex workspace, startup, explicit scans and these rechecks refill
 saved empty untranslated entries from nonempty installed target strings. They
 retain the previous source hash and grant no token-mismatch exception. Ordinary
 loads, background refreshes, and Folder scans retain saved Clear values. A

@@ -2,8 +2,10 @@ import { act, renderHook } from "@testing-library/react";
 import { vi } from "vitest";
 import type { NexusSearchResult, ScannedMod } from "../tauri/commands";
 const search = vi.fn();
+const status = vi.fn();
 vi.mock("../tauri/commands", () => ({
   nexusFindTranslations: (...args: unknown[]) => search(...args),
+  nexusStatus: (...args: unknown[]) => status(...args),
 }));
 import { useNexusSearch } from "./useNexusSearch";
 import {
@@ -21,6 +23,68 @@ const result = (modId: number): NexusSearchResult => ({
 });
 beforeEach(() => {
   search.mockReset();
+  status
+    .mockReset()
+    .mockResolvedValue({ configured: true, validated: true, premium: true });
+});
+
+it("validates once per explicit search including cached results, but not empty targets", async () => {
+  search.mockImplementation((id: number) =>
+    Promise.resolve({ ...result(id), cacheStatus: "cached" }),
+  );
+  const hook = renderHook(() => useNexusSearch("mods|de"));
+  expect(status).not.toHaveBeenCalled();
+  await act(() => hook.result.current.start([mod(null)], "de"));
+  expect(status).not.toHaveBeenCalled();
+  await act(() => hook.result.current.start([mod(1), mod(2)], "de"));
+  expect(status.mock.calls).toEqual([[true]]);
+  await act(() =>
+    hook.result.current.start([mod(1)], "de", { forceRefresh: true }),
+  );
+  expect(status.mock.calls).toEqual([[true], [true]]);
+});
+
+it.each(["cancel", "context"])(
+  "does not start discovery after %s during account validation",
+  async (change) => {
+    let finish!: (value: unknown) => void;
+    status.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const hook = renderHook(({ key }) => useNexusSearch(key), {
+      initialProps: { key: "mods|de" },
+    });
+    let pending!: Promise<void>;
+    act(() => {
+      pending = hook.result.current.start([mod(1)], "de");
+    });
+    if (change === "cancel") act(() => hook.result.current.cancel());
+    else hook.rerender({ key: "other|fr" });
+    await act(async () => {
+      finish({ validated: true });
+      await pending;
+    });
+    expect(search).not.toHaveBeenCalled();
+  },
+);
+
+it("stops before cached discovery when account validation reports a rate limit", async () => {
+  status.mockResolvedValue({
+    validated: false,
+    error: "Nexus rate limit reached (HTTP 429).",
+  });
+  const hook = renderHook(() => useNexusSearch("mods|de"));
+  await act(() => hook.result.current.start([mod(1), mod(2)], "de"));
+  expect(search).not.toHaveBeenCalled();
+  expect(status).toHaveBeenCalledOnce();
+  expect(hook.result.current).toMatchObject({
+    running: false,
+    completed: 0,
+    stoppedReason: expect.stringContaining("HTTP 429"),
+  });
 });
 
 it("does not search until requested and searches all distinct positive IDs", async () => {
@@ -93,6 +157,7 @@ it("cancels the queue and ignores an in-flight response", async () => {
   act(() => {
     pending = hook.result.current.start([mod(1), mod(2)], "de");
   });
+  await act(async () => {});
   act(() => hook.result.current.cancel());
   await act(async () => {
     resolve(result(1));
@@ -121,6 +186,7 @@ it("ignores results from a previous folder/language and resets on rescan", async
   act(() => {
     pending = hook.result.current.start([mod(1)], "de");
   });
+  await act(async () => {});
   hook.rerender({ context: "other-mods|fr" });
   await act(async () => {
     resolve(result(1));

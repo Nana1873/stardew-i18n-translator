@@ -1814,3 +1814,76 @@ it("saves the explicitly picked Vortex executable only with Settings Save", asyn
     invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_handoff_to_vortex"),
   ).toBe(false);
 });
+
+it("saves a typed Nexus key through Save changes without leaking it into settings", async () => {
+  const onSave = vi.fn();
+  const onNexusKeySaved = vi.fn();
+  render(
+    <SettingsDialog
+      settings={baseSettings}
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+      onNexusKeySaved={onNexusKeySaved}
+      initialPage="nexus"
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Nexus API key"), {
+    target: { value: "synthetic-key" },
+  });
+  fireEvent.click(screen.getByRole("tab", { name: "Folders & language" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(onSave).toHaveBeenCalledOnce());
+  expect(invokeMock).toHaveBeenCalledWith("nexus_save_key", {
+    key: "synthetic-key",
+  });
+  expect(onNexusKeySaved).toHaveBeenCalledOnce();
+  expect(JSON.stringify(onSave.mock.calls)).not.toContain("synthetic-key");
+});
+it("stops settings save and returns to Nexus when key validation fails", async () => {
+  const fallback = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, args: unknown) =>
+    cmd === "nexus_save_key"
+      ? Promise.reject("synthetic-key")
+      : fallback(cmd, args),
+  );
+  const onSave = vi.fn();
+  render(
+    <SettingsDialog
+      settings={baseSettings}
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+      initialPage="nexus"
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Nexus API key"), {
+    target: { value: "synthetic-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "previous key is kept",
+  );
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+it("discards an unsaved Nexus key on Cancel without touching the saved key", () => {
+  const onClose = vi.fn();
+  render(
+    <SettingsDialog
+      settings={baseSettings}
+      onSave={() => {}}
+      onClose={onClose}
+      onReRunSetup={() => {}}
+      initialPage="nexus"
+    />,
+  );
+  fireEvent.change(screen.getByLabelText("Nexus API key"), {
+    target: { value: "synthetic-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(onClose).toHaveBeenCalledOnce();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === "nexus_save_key")).toBe(
+    false,
+  );
+});

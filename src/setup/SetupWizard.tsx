@@ -24,7 +24,7 @@ import {
 } from "../languages";
 import { useDialogAccessibility } from "../dialogAccessibility";
 
-import { NexusSetup } from "../nexus/NexusSetup";
+import { NexusSetup, useNexusSetup } from "../nexus/NexusSetup";
 import {
   InstallationSettings,
   installationMethodFor,
@@ -57,6 +57,7 @@ export function SetupWizard({
   onCancel,
   onNexusKeySaved,
 }: SetupWizardProps) {
+  const nexusConnection = useNexusSetup(onNexusKeySaved);
   const [installationMethod, setInstallationMethod] = useState(() =>
     installationMethodFor(initial),
   );
@@ -212,6 +213,7 @@ export function SetupWizard({
     setBusy(true);
     setError(null);
     try {
+      if (nexusConnection.key.trim() && !(await nexusConnection.save())) return;
       await onComplete({
         ...initial,
         stardewPath,
@@ -390,7 +392,7 @@ export function SetupWizard({
 
             {step === 4 && (
               <section aria-label="Glossary">
-                <NexusSetup onKeySaved={onNexusKeySaved} />
+                <NexusSetup connection={nexusConnection} disabled={busy} />
                 <StepHeading
                   eyebrow="Step 4 / Optional"
                   title="Add official translation hints"

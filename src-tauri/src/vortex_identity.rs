@@ -39,6 +39,22 @@ pub(crate) fn detect(
     detect_at(root, language, scan, &PathBuf::from(appdata).join("Vortex")).unwrap_or_default()
 }
 
+/// Cheap invalidation hint only. This neither reads the manifest contents nor
+/// proves that a translation is installed; callers must rescan after a change.
+pub(crate) fn deployment_stamp(root: &Path) -> Option<String> {
+    let path = plain_path(&root.join("vortex.deployment.json"))?;
+    let metadata = fs::metadata(path).ok()?;
+    if !metadata.is_file() {
+        return None;
+    }
+    let modified = metadata
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some(format!("{}:{}", modified.as_nanos(), metadata.len()))
+}
+
 // Reject links/reparse points along the entire path, including configured roots.
 fn plain_path(path: &Path) -> Option<PathBuf> {
     if !path.is_absolute() {
@@ -871,6 +887,38 @@ mod tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.base).unwrap();
         }
+    }
+
+    #[test]
+    fn deployment_stamp_tracks_metadata_without_reading_manifest_contents() {
+        let root = crate::test_support::temp_dir("vortex-stamp");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("vortex.deployment.json");
+        assert_eq!(deployment_stamp(&root), None);
+        fs::write(&path, b"not JSON").unwrap();
+        let first_time = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1000);
+        let set_time = |time| {
+            File::options()
+                .write(true)
+                .open(&path)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(time))
+                .unwrap();
+        };
+        set_time(first_time);
+        let first = deployment_stamp(&root).unwrap();
+        assert_eq!(deployment_stamp(&root).as_ref(), Some(&first));
+        fs::write(&path, b"still not JSON").unwrap();
+        set_time(first_time);
+        let resized = deployment_stamp(&root).unwrap();
+        assert_ne!(first, resized);
+        set_time(first_time + std::time::Duration::from_secs(1));
+        assert_ne!(deployment_stamp(&root).unwrap(), resized);
+        fs::remove_file(&path).unwrap();
+        assert_eq!(deployment_stamp(&root), None);
+        fs::create_dir(&path).unwrap();
+        assert_eq!(deployment_stamp(&root), None);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
