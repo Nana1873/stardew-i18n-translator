@@ -1,9 +1,19 @@
 # Nexus and mod-manager workflow proposal
 
-Status: implementation plan checked against `87003a4`, updated 2026-09-06.
+Status: implementation plan with a bounded library/output prototype, updated 2026-09-07.
 [Milestone 6](https://github.com/Nana1873/stardew-i18n-translator/milestone/6)
 groups the remaining work. This document is not a release announcement or a
 claim that the planned private-output workflow is already implemented.
+
+The first prototype implements Vortex-mode Overview with a local library,
+Translator-owned ZIP acquisition/import, and a combined output ZIP for manual
+Vortex import. It uses the configured Mods folder and language, and only
+library-mapped components enter the combined output. It does not yet implement
+profile detection, automatic output handoff, community-update merging, or the
+complete output lifecycle below. The first library import binds use of legacy
+personal work to that Mods folder; cross-folder library operations are rejected
+instead of assuming the legacy state is isolated. Evaluate it with an isolated
+app data directory. RAR/7z and translated-default-only bundles remain unsupported.
 
 ## Intended result
 

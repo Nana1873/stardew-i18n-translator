@@ -87,6 +87,7 @@ import {
 } from "lucide-react";
 import { TARGET_LANGUAGES } from "./languages";
 import { NexusDialog } from "./nexus/NexusDialog";
+import { TranslationLibrary } from "./nexus/TranslationLibrary";
 import { useNexusSearch } from "./nexus/useNexusSearch";
 import { useVortexInventoryRefresh } from "./nexus/useVortexInventoryRefresh";
 import "./nexus/nexus.css";
@@ -2021,6 +2022,91 @@ export function App() {
     (entry) => entry?.id === selectedHistoryId,
   );
 
+  const nexusPanel = scan && settings?.targetLang && (
+    <NexusDialog
+      libraryMode={installationMethodFor(settings) === "vortex"}
+      embedded={installationMethodFor(settings) === "vortex"}
+      key={`${nexusWorkspaceKey}:${nexusSessionRevision}`}
+      open={nexusOpen}
+      onOpenReview={(modId) => {
+        setNexusOpen(false);
+        openMod(modId);
+        setSearch("");
+        setIssuesOnly(false);
+        setStatusFilter("review-needed");
+      }}
+      onOpenMissing={(modId) => {
+        setNexusOpen(false);
+        openMod(modId);
+        setSearch("");
+        setIssuesOnly(false);
+        setStatusFilter("untranslated");
+      }}
+      search={nexus}
+      mods={scan.mods}
+      installedNexusTranslations={scan.installedNexusTranslations}
+      vortexInstalledFiles={scan.vortexInstalledFiles}
+      inventoryRefreshWarning={inventoryRefreshWarning}
+      targetLang={settings.targetLang}
+      skippedComponents={scan.skippedComponents}
+      traversalComplete={scan.traversalComplete === true}
+      nexusIdentityIncomplete={scan.nexusIdentityIncomplete}
+      vortexExecutable={settings.vortexExecutable}
+      installationMethod={settings.installationMethod}
+      workspaceKey={nexusWorkspaceKey}
+      recheckBlocked={
+        scanning ||
+        exporting ||
+        checkingExportReadiness ||
+        settingsOpen ||
+        wizardOpen
+      }
+      onDeploymentStamp={() =>
+        nexusDeploymentStamp(settings.modsPath!, settings.targetLang!)
+      }
+      onCheckInstalled={async (current) => {
+        const stillCurrent = () =>
+          current() &&
+          settingsRef.current?.modsPath === settings.modsPath &&
+          settingsRef.current?.targetLang === settings.targetLang &&
+          installationMethodFor(settingsRef.current) === "vortex";
+        if (!stillCurrent()) return;
+        const result = await runScan(settings, false, stillCurrent, {
+          nexusSearch: false,
+          showDiagnostics: false,
+          restoreInstalledTranslations: true,
+        });
+        if (!stillCurrent()) return;
+        if (!result)
+          throw new Error("Local scan failed. Check scan diagnostics.");
+        if (result.warnings.length) {
+          throw new Error(result.warnings.join("\n"));
+        }
+      }}
+      onSearch={(options) =>
+        void nexus.start(scan.mods, settings.targetLang!, {
+          ...options,
+          skippedComponents: scan.skippedComponents,
+          traversalComplete: scan.traversalComplete === true,
+          nexusIdentityIncomplete: scan.nexusIdentityIncomplete,
+        })
+      }
+      onCancel={nexus.cancel}
+      onClose={() => setNexusOpen(false)}
+      onConfigure={() => {
+        setNexusOpen(false);
+        setSettingsPage("nexus");
+        setSettingsOpen(true);
+      }}
+      onImported={async () => {
+        setReloadToken((value) => value + 1);
+        await runScan(settings, false, () => true, {
+          nexusSearch: false,
+          showDiagnostics: false,
+        });
+      }}
+    />
+  );
   return (
     <div id="stardew-i18n-translator" className="app">
       <div className="translator-window">
@@ -2036,6 +2122,7 @@ export function App() {
           scanEnabled={configured && !scanning && !exporting}
           scanning={scanning}
           onFindTranslations={() => {
+            setView("home");
             setNexusOpen(true);
             if (
               !nexus.running &&
@@ -2078,30 +2165,59 @@ export function App() {
             className="translator-view-panel is-active"
             aria-label="Translation overview"
           >
-            <Dashboard
-              scan={scan}
-              scanning={scanning}
-              lastScanAt={lastScanAt}
-              now={now}
-              languageLine={languageLine}
-              onScan={handleScan}
-              scanEnabled={configured && !scanning && !exporting}
-              onOpenMod={openMod}
-              onBrowse={() => {
-                setView("work");
-              }}
-              lastOpened={lastOpened}
-              onShowScanDetails={scan ? () => openLatestScan(false) : undefined}
-              onOpenOverviewFilter={openOverviewFilter}
-              lastExport={lastSuccessfulExport}
-              onShowLastExport={
-                lastSuccessfulExport
-                  ? () => {
-                      void openFolder(lastSuccessfulExport.folder);
-                    }
-                  : undefined
-              }
-            />
+            {scan &&
+            settings?.targetLang &&
+            installationMethodFor(settings) === "vortex" ? (
+              <TranslationLibrary
+                mods={scan.mods}
+                selectedId={selectedModId}
+                onSelect={setSelectedModId}
+                onOpenMod={openMod}
+                language={settings.targetLang}
+                revision={reloadToken}
+                context={nexusWorkspaceKey}
+                nexusOpen={nexusOpen}
+                onShowLibrary={() => setNexusOpen(false)}
+                onShowNexus={() => setNexusOpen(true)}
+                nexusPanel={nexusPanel}
+                busy={scanning || exporting}
+                onBusy={setExporting}
+                onImported={async () => {
+                  setReloadToken((value) => value + 1);
+                  await runScan(settings, false, () => true, {
+                    nexusSearch: false,
+                    showDiagnostics: false,
+                  });
+                }}
+              />
+            ) : (
+              <Dashboard
+                scan={scan}
+                scanning={scanning}
+                lastScanAt={lastScanAt}
+                now={now}
+                languageLine={languageLine}
+                onScan={handleScan}
+                scanEnabled={configured && !scanning && !exporting}
+                onOpenMod={openMod}
+                onBrowse={() => {
+                  setView("work");
+                }}
+                lastOpened={lastOpened}
+                onShowScanDetails={
+                  scan ? () => openLatestScan(false) : undefined
+                }
+                onOpenOverviewFilter={openOverviewFilter}
+                lastExport={lastSuccessfulExport}
+                onShowLastExport={
+                  lastSuccessfulExport
+                    ? () => {
+                        void openFolder(lastSuccessfulExport.folder);
+                      }
+                    : undefined
+                }
+              />
+            )}
           </section>
         ) : (
           <section
@@ -2317,89 +2433,7 @@ export function App() {
             </div>
           </section>
         )}
-        {scan && settings?.targetLang && (
-          <NexusDialog
-            key={`${nexusWorkspaceKey}:${nexusSessionRevision}`}
-            open={nexusOpen}
-            onOpenReview={(modId) => {
-              setNexusOpen(false);
-              openMod(modId);
-              setSearch("");
-              setIssuesOnly(false);
-              setStatusFilter("review-needed");
-            }}
-            onOpenMissing={(modId) => {
-              setNexusOpen(false);
-              openMod(modId);
-              setSearch("");
-              setIssuesOnly(false);
-              setStatusFilter("untranslated");
-            }}
-            search={nexus}
-            mods={scan.mods}
-            installedNexusTranslations={scan.installedNexusTranslations}
-            vortexInstalledFiles={scan.vortexInstalledFiles}
-            inventoryRefreshWarning={inventoryRefreshWarning}
-            targetLang={settings.targetLang}
-            skippedComponents={scan.skippedComponents}
-            traversalComplete={scan.traversalComplete === true}
-            nexusIdentityIncomplete={scan.nexusIdentityIncomplete}
-            vortexExecutable={settings.vortexExecutable}
-            installationMethod={settings.installationMethod}
-            workspaceKey={nexusWorkspaceKey}
-            recheckBlocked={
-              scanning ||
-              exporting ||
-              checkingExportReadiness ||
-              settingsOpen ||
-              wizardOpen
-            }
-            onDeploymentStamp={() =>
-              nexusDeploymentStamp(settings.modsPath!, settings.targetLang!)
-            }
-            onCheckInstalled={async (current) => {
-              const stillCurrent = () =>
-                current() &&
-                settingsRef.current?.modsPath === settings.modsPath &&
-                settingsRef.current?.targetLang === settings.targetLang &&
-                installationMethodFor(settingsRef.current) === "vortex";
-              if (!stillCurrent()) return;
-              const result = await runScan(settings, false, stillCurrent, {
-                nexusSearch: false,
-                showDiagnostics: false,
-                restoreInstalledTranslations: true,
-              });
-              if (!stillCurrent()) return;
-              if (!result)
-                throw new Error("Local scan failed. Check scan diagnostics.");
-              if (result.warnings.length) {
-                throw new Error(result.warnings.join("\n"));
-              }
-            }}
-            onSearch={(options) =>
-              void nexus.start(scan.mods, settings.targetLang!, {
-                ...options,
-                skippedComponents: scan.skippedComponents,
-                traversalComplete: scan.traversalComplete === true,
-                nexusIdentityIncomplete: scan.nexusIdentityIncomplete,
-              })
-            }
-            onCancel={nexus.cancel}
-            onClose={() => setNexusOpen(false)}
-            onConfigure={() => {
-              setNexusOpen(false);
-              setSettingsPage("nexus");
-              setSettingsOpen(true);
-            }}
-            onImported={async () => {
-              setReloadToken((value) => value + 1);
-              await runScan(settings, false, () => true, {
-                nexusSearch: false,
-                showDiagnostics: false,
-              });
-            }}
-          />
-        )}
+        {installationMethodFor(settings) !== "vortex" && nexusPanel}
         {wizardOpen && (
           <SetupWizard
             initial={settings}

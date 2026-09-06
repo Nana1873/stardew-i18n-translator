@@ -1,6 +1,51 @@
 .nexus-setup {
   margin-bottom: 24px;
 }
+.translation-library-overview {
+  display: grid;
+  grid-template-columns: minmax(240px, 32%) minmax(0, 1fr);
+  gap: 12px;
+}
+.translation-library-pane,
+.translation-library-mods {
+  min-width: 0;
+}
+.translation-library-tabs {
+  display: flex;
+  gap: 8px;
+}
+.translation-library-content,
+.translation-library-output {
+  padding: 14px;
+}
+.translation-library-entry {
+  padding: 10px;
+  border-bottom: 1px solid var(--translator-border);
+  display: grid;
+  gap: 4px;
+}
+.translation-library-entry.is-selected {
+  background: var(--translator-surface-raised);
+  border-left: 3px solid var(--translator-border-strong);
+}
+.translation-library-entry small,
+.translation-library-muted,
+.translation-library-output small {
+  color: var(--translator-muted);
+}
+.translation-library-output {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--translator-border);
+}
+.nexus-embedded {
+  min-width: 0;
+}
+@media (max-width: 760px) {
+  .translation-library-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .nexus-setup p {
   margin: 8px 0;
   overflow-wrap: anywhere;

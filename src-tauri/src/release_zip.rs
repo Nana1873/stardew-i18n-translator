@@ -134,6 +134,20 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
         &request.target_language,
         &request.components,
     )?;
+    write_prepared(prepared, destination, request.overwrite)
+}
+
+fn write_prepared(
+    prepared: PreparedPackage,
+    destination: &Path,
+    overwrite: bool,
+) -> Result<ZipBuildOutcome, String> {
+    if destination.extension().and_then(|v| v.to_str()) != Some("zip") {
+        return Err("The destination must use the .zip extension.".into());
+    }
+    if destination.exists() && !overwrite {
+        return Err("OVERWRITE_REQUIRED".into());
+    }
     if !prepared.preview.problems.is_empty() {
         return Err("Fix every blocking validation problem before building the ZIP.".to_string());
     }
@@ -169,7 +183,7 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
         writer
             .finish()
             .map_err(|error| format!("Could not finalize ZIP: {error}"))?;
-        replace_file(&temp, destination, request.overwrite)
+        replace_file(&temp, destination, overwrite)
     })();
     if write_result.is_err() {
         std::fs::remove_file(&temp).ok();
@@ -489,7 +503,7 @@ fn serialize_json(map: &Map<String, Value>) -> Result<Vec<u8>, String> {
     Ok(body.into_bytes())
 }
 
-fn replace_file(temp: &Path, destination: &Path, overwrite: bool) -> Result<(), String> {
+pub(crate) fn replace_file(temp: &Path, destination: &Path, overwrite: bool) -> Result<(), String> {
     if !destination.exists() {
         return std::fs::rename(temp, destination)
             .map_err(|error| format!("Could not finalize {}: {error}", destination.display()));
@@ -519,6 +533,50 @@ fn sibling(path: &Path, suffix: &str) -> PathBuf {
         .unwrap_or_default();
     name.push(suffix);
     path.with_file_name(name)
+}
+
+pub(crate) fn build_combined(
+    config: &Path,
+    mods: &Path,
+    lang: &str,
+    components: Vec<ZipComponentInput>,
+    destination: &str,
+    overwrite: bool,
+) -> Result<ZipBuildOutcome, String> {
+    let mut combined: Option<PreparedPackage> = None;
+    for component in components {
+        let relative = Path::new(&component.folder_path)
+            .strip_prefix(mods)
+            .map_err(|_| "Component outside Mods folder")?;
+        let package = relative
+            .components()
+            .next()
+            .and_then(|c| c.as_os_str().to_str())
+            .ok_or("Invalid package path")?;
+        let next = prepare(
+            config,
+            mods,
+            package,
+            lang,
+            lang,
+            std::slice::from_ref(&component),
+        )?;
+        if let Some(all) = &mut combined {
+            all.entries.extend(next.entries);
+            all.preview.problems.extend(next.preview.problems);
+            all.preview.total_strings += next.preview.total_strings;
+        } else {
+            combined = Some(next);
+        }
+    }
+    let prepared = combined.ok_or("No output components")?;
+    let mut paths = std::collections::HashSet::new();
+    for entry in &prepared.entries {
+        if !paths.insert(entry.preview.archive_path.to_lowercase()) {
+            return Err("Duplicate output path".into());
+        }
+    }
+    write_prepared(prepared, Path::new(destination), overwrite)
 }
 
 #[cfg(test)]

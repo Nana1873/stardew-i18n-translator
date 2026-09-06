@@ -6,6 +6,7 @@
 mod ai;
 mod batch;
 mod codex_cli;
+mod community_library;
 mod detection;
 mod export;
 mod glossary;
@@ -3217,6 +3218,9 @@ pub fn run() {
             nexus::nexus_download_preflight,
             nexus::nexus_preflight_import,
             nexus::nexus_import_translation,
+            nexus::nexus_pick_archive,
+            community_library::list_community_library,
+            community_library::build_private_output,
             detect_stardew,
             validate_stardew_path,
             default_mods_path,

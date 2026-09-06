@@ -114,6 +114,7 @@ function mount(
     stamp?: () => Promise<string | null>;
     observe?: boolean;
     identityIncomplete?: boolean;
+    libraryMode?: boolean;
     inventory?: { modId: number; fileId: number }[];
   } = {},
 ) {
@@ -140,6 +141,7 @@ function mount(
     onOpenMissing = vi.fn();
   const view = () => (
     <NexusDialog
+      libraryMode={options.libraryMode}
       open={open}
       search={results}
       mods={data}
@@ -276,6 +278,19 @@ function translationRow() {
   openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
+
+it("imports Vortex-mode acquisition into the local library instead of handing off the original archive", async () => {
+  const app = mount({ method: "vortex", libraryMode: true });
+  await download();
+  await waitFor(() => expect(app.onImported).toHaveBeenCalled());
+  expect(commandCalls("nexus_import_translation").length).toBeGreaterThan(0);
+  expect(commandCalls("nexus_import_translation")).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ communityLibrary: true }),
+    ]),
+  );
+  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+});
 async function download() {
   const button = await screen.findByRole("button", {
     name: /^Download (?:& import )?all/,

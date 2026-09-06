@@ -36,6 +36,41 @@ backup and empty-file removal behavior is unchanged.
 
 ## Find translations on Nexus
 
+### Local translation-library prototype
+
+In Vortex mode, Overview now shows mods on the left and the complete local
+translation library on the right. Selecting a mod highlights its library
+entries; **Open Workspace** opens the existing editor. The **Nexus results**
+tab keeps optional discovery separate from already imported translations.
+
+Premium API downloads are imported into the Translator instead of sending
+original translation archives to Vortex. For manual downloads, select the
+matching mod and choose **Import downloaded ZIP**. A single matching locale
+file imports directly; ambiguous files/components require a selection. This
+prototype supports ZIP locale files, not default-language-only bundles or
+RAR/7z imports. Existing personal values are kept; newly imported working
+strings enter Review. Imports refresh the library without a manual rescan.
+
+**Build Stardew Translator Output** creates a combined locale ZIP for
+library-mapped components in the configured Mods folder and target language.
+Save it outside game and staging folders, then import it manually into Vortex.
+Creation does not prove installation or deployment. Folder export and the
+per-package **Build translation ZIP** remain available.
+
+This is a bounded local prototype: it does not detect or switch Vortex profiles,
+perform automatic output handoff, or merge conflicting community updates.
+The first library import pins saved work to the configured Mods folder; changing
+that folder is rejected instead of silently reusing work in another context.
+Use an isolated application/data copy for evaluation.
+
+### Folder import and legacy Nexus implementation notes
+
+The detailed notes below describe the existing folder import and earlier Nexus
+results implementation. Vortex original-archive handoff, installation inventory
+and automatic recheck descriptions are legacy behavior, not controls in the
+current Vortex library prototype. For Vortex, follow the prototype workflow
+above: import inside the Translator, then save the combined output ZIP.
+
 This workflow is currently for local testing. Nexus is optional: configure an
 API key beside the Mods folder and installation method in Setup, or later in
 Settings. Choose **Manual / no mod manager** or **Vortex** in that Setup step;

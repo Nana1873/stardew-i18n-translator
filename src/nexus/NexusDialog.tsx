@@ -79,11 +79,13 @@ const emptyRow = (): RowState => ({
   failures: 0,
 });
 function NexusModal({
+  embedded = false,
   title,
   busy,
   onClose,
   children,
 }: {
+  embedded?: boolean;
   title: string;
   busy: boolean;
   onClose: () => void;
@@ -95,6 +97,12 @@ function NexusModal({
     onEscape: onClose,
     escapeDisabled: busy,
   });
+  if (embedded)
+    return (
+      <section className="nexus-dialog nexus-embedded" aria-label={title}>
+        {children}
+      </section>
+    );
   return (
     <div className="translator-flow-overlay">
       <section
@@ -123,6 +131,8 @@ function NexusModal({
   );
 }
 export function NexusDialog({
+  libraryMode = false,
+  embedded = false,
   open = true,
   search,
   mods,
@@ -147,6 +157,8 @@ export function NexusDialog({
   vortexInstalledFiles = [],
   inventoryRefreshWarning,
 }: {
+  libraryMode?: boolean;
+  embedded?: boolean;
   open?: boolean;
   vortexExecutable?: string | null;
   installationMethod?: "folder" | "vortex";
@@ -177,7 +189,7 @@ export function NexusDialog({
 }) {
   const configuredVortex = vortexExecutable?.trim();
   const method = installationMethod ?? (configuredVortex ? "vortex" : "folder");
-  const isVortex = method === "vortex";
+  const isVortex = method === "vortex" && !libraryMode;
   const [account, setAccount] = useState<NexusStatus | null>(null);
   const canDirectImport = nexusAccountKind(account) === "premium";
 
@@ -314,11 +326,14 @@ export function NexusDialog({
         mapping.modUniqueId;
       patch(key, { status: `Checking ${mapping.archivePath}…` });
       try {
-        const preview = await nexusPreflightImport(mapping);
+        const request = libraryMode
+          ? { ...mapping, communityLibrary: true }
+          : mapping;
+        const preview = await nexusPreflightImport(request);
         if (!current()) return;
         const result =
-          preview.importable > 0
-            ? await nexusImportTranslation(mapping)
+          preview.importable > 0 || libraryMode
+            ? await nexusImportTranslation(request)
             : { ...preview, imported: 0 };
         if (!current()) return;
         saved += result.imported;
@@ -350,7 +365,7 @@ export function NexusDialog({
         }));
       }
     }
-    if (saved > 0 && current()) {
+    if ((saved > 0 || libraryMode) && current()) {
       try {
         await onImported();
       } catch {
@@ -1420,6 +1435,7 @@ export function NexusDialog({
   if (!open) return null;
   return (
     <NexusModal
+      embedded={embedded}
       title={`Nexus translations · ${targetLang}`}
       busy={Boolean(active) || batchRunning}
       onClose={onClose}

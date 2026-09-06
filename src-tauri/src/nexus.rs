@@ -99,6 +99,7 @@ struct Archive {
     created: Instant,
     files: Vec<ArchiveFile>,
     documents: HashMap<String, String>,
+    source_url: Option<String>,
 }
 #[derive(Default)]
 struct Session {
@@ -888,7 +889,10 @@ pub async fn nexus_download_preflight(mod_id: u64, file_id: u64) -> Result<Archi
     }
     let downloaded_bytes = bytes.len();
     let archive_id = format!("{:x}", Sha256::digest(&bytes));
-    let archive = inspect_zip(bytes)?;
+    let mut archive = inspect_zip(bytes)?;
+    archive.source_url = Some(format!(
+        "https://www.nexusmods.com/stardewvalley/mods/{mod_id}?tab=files&file_id={file_id}"
+    ));
     let preview = ArchivePreview {
         archive_id: archive_id.clone(),
         files: archive.files.clone(),
@@ -1018,6 +1022,7 @@ fn inspect_zip(bytes: Vec<u8>) -> Result<Archive, String> {
         return Err("ZIP contains no supported i18n JSON files.".into());
     }
     Ok(Archive {
+        source_url: None,
         created: Instant::now(),
         files,
         documents,
@@ -1098,13 +1103,14 @@ fn analyze(
     }
     Ok((counts, entries))
 }
-fn import_from_config(
+fn import_from_config_mode(
     config: &Path,
     archive_id: &str,
     archive_path: &str,
     mod_unique_id: &str,
     relative_dir: &str,
     save: bool,
+    community_library: bool,
 ) -> Result<ImportCounts, String> {
     let archive = lock()
         .archives
@@ -1177,8 +1183,20 @@ fn import_from_config(
         &snapshot.state,
         relative_dir,
     )?;
+    let mut import_rows = rows.clone();
+    if community_library {
+        for row in &mut import_rows {
+            if !snapshot
+                .state
+                .contains_key(&translations::entry_key(relative_dir, &row.key))
+            {
+                // Installed values are base content, not a personal draft.
+                row.target.clear();
+            }
+        }
+    }
     let (mut counts, entries) = analyze(
-        &rows,
+        &import_rows,
         archive
             .documents
             .get(archive_path)
@@ -1196,6 +1214,7 @@ fn import_from_config(
         archive_path,
         mod_unique_id,
         relative_dir,
+        community_library,
     ))
     .map_err(|_| "Could not bind import context.")?;
     let binding = format!(
@@ -1230,6 +1249,91 @@ fn import_from_config(
             s.preflights.insert(binding_key, (Instant::now(), binding));
         }
     }
+    if community_library {
+        if file.is_default {
+            return Err(
+                "Community library requires a target-language JSON, not default.json.".into(),
+            );
+        }
+        let document: serde_json::Map<String, Value> = serde_json::from_str(
+            archive
+                .documents
+                .get(archive_path)
+                .ok_or("Archive JSON unavailable")?,
+        )
+        .map_err(|e| e.to_string())?;
+        let mut base = translations::ModState::new();
+        // Capture underlying locale once, separately from personal saved work.
+        // Existing library bases are immutable in this prototype; repeated import
+        // cannot replace them with a subsequently deployed generated output.
+        for row in scanner::load_strings_checked(
+            Path::new(&target.default_path),
+            Path::new(&target.target_path),
+            &translations::ModState::new(),
+            relative_dir,
+        )? {
+            if !row.target.trim().is_empty()
+                && tokens::token_differences(&row.source, &row.target).is_empty()
+            {
+                base.insert(
+                    translations::entry_key(relative_dir, &row.key),
+                    translations::StoredString {
+                        target: row.target,
+                        status: "review-needed".into(),
+                        source_hash: translations::source_hash(&row.source),
+                    },
+                );
+            }
+        }
+
+        let mut matched_archive_values = 0;
+        for row in &rows {
+            if let Some(value) = document
+                .get(&row.key)
+                .and_then(Value::as_str)
+                .filter(|v| !v.trim().is_empty())
+            {
+                if !tokens::token_differences(&row.source, value).is_empty() {
+                    continue;
+                }
+                matched_archive_values += 1;
+                base.insert(
+                    translations::entry_key(relative_dir, &row.key),
+                    translations::StoredString {
+                        target: value.into(),
+                        status: "review-needed".into(),
+                        source_hash: translations::source_hash(&row.source),
+                    },
+                );
+            }
+        }
+        if matched_archive_values == 0 {
+            return Err("No valid target-language strings for this component.".into());
+        }
+        if crate::community_library::list(config)?.iter().any(|e| {
+            e.mod_unique_id == mod_unique_id
+                && e.relative_dir == relative_dir
+                && e.archive_id != archive_id
+        }) {
+            return Err(
+                "Community update requires base/personal review; existing base preserved.".into(),
+            );
+        }
+        if save {
+            crate::community_library::store(
+                config,
+                crate::community_library::CommunityLibraryEntry {
+                    mod_unique_id: mod_unique_id.into(),
+                    relative_dir: relative_dir.into(),
+                    archive_path: archive_path.into(),
+                    strings: base.len(),
+                    source_url: archive.source_url.clone(),
+                    archive_id: archive_id.into(),
+                    base,
+                },
+            )?;
+        }
+    }
     if save && !entries.is_empty() {
         let entries = entries
             .into_iter()
@@ -1262,14 +1366,16 @@ pub fn nexus_preflight_import(
     archive_path: String,
     mod_unique_id: String,
     relative_dir: String,
+    community_library: Option<bool>,
 ) -> Result<ImportCounts, String> {
-    import_from_config(
+    import_from_config_mode(
         &crate::config_dir(&app)?,
         &archive_id,
         &archive_path,
         &mod_unique_id,
         &relative_dir,
         false,
+        community_library.unwrap_or(false),
     )
 }
 #[tauri::command]
@@ -1279,14 +1385,16 @@ pub fn nexus_import_translation(
     archive_path: String,
     mod_unique_id: String,
     relative_dir: String,
+    community_library: Option<bool>,
 ) -> Result<ImportCounts, String> {
-    import_from_config(
+    import_from_config_mode(
         &crate::config_dir(&app)?,
         &archive_id,
         &archive_path,
         &mod_unique_id,
         &relative_dir,
         true,
+        community_library.unwrap_or(false),
     )
 }
 
@@ -1472,6 +1580,134 @@ mod tests {
         lock().archives.insert(id.clone(), archive);
         (config, mods, id)
     }
+    #[test]
+    fn community_two_component_output_preserves_base_personal_and_ignores_deployed_output() {
+        let (config, mods, id) = fixture("community-output");
+        std::fs::create_dir_all(mods.join("Second/i18n")).unwrap();
+        std::fs::write(
+            mods.join("Second/manifest.json"),
+            r#"{"Name":"Second","UniqueID":"Second.Mod","Version":"1.0.0","Author":"Fixture"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            mods.join("Second/i18n/default.json"),
+            r#"{"new":"Hello","local":"Keep"}"#,
+        )
+        .unwrap();
+        for uid in ["Example.Mod", "Second.Mod"] {
+            import_from_config_mode(&config, &id, "i18n/de.json", uid, "i18n", false, true)
+                .unwrap();
+            import_from_config_mode(&config, &id, "i18n/de.json", uid, "i18n", true, true).unwrap();
+        }
+        std::fs::create_dir_all(mods.join("Example/nested/i18n")).unwrap();
+        std::fs::write(
+            mods.join("Example/nested/i18n/default.json"),
+            r#"{"new":"Hello","local":"Keep"}"#,
+        )
+        .unwrap();
+        import_from_config_mode(
+            &config,
+            &id,
+            "i18n/de.json",
+            "Example.Mod",
+            "nested/i18n",
+            false,
+            true,
+        )
+        .unwrap();
+        import_from_config_mode(
+            &config,
+            &id,
+            "i18n/de.json",
+            "Example.Mod",
+            "nested/i18n",
+            true,
+            true,
+        )
+        .unwrap();
+        let working = translations::language_root(&config, "de").unwrap();
+        translations::save_one(
+            &working,
+            "Example.Mod",
+            translations::entry_key("i18n", "new"),
+            translations::StoredString {
+                target: "Personal".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+        // Simulate our own previous output without letting it become the new base.
+        std::fs::write(
+            mods.join("Example/i18n/de.json"),
+            r#"{"new":"Previous output","local":"Previous output"}"#,
+        )
+        .unwrap();
+        let destination = config.join("Stardew Translator Output.zip");
+        let built =
+            crate::community_library::build(&config, destination.to_str().unwrap(), false).unwrap();
+        assert_eq!(built.entries, 3);
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&destination).unwrap()).unwrap();
+        let mut body = String::new();
+        zip.by_name("Example/i18n/de.json")
+            .unwrap()
+            .read_to_string(&mut body)
+            .unwrap();
+        let values: Value = serde_json::from_str(&body).unwrap();
+        assert_eq!(values["new"], "Personal");
+        assert_eq!(values["local"], "Overwrite");
+        assert!(zip.by_name("Example/manifest.json").is_err());
+        assert!(zip.by_name("Example/nested/i18n/de.json").is_ok());
+        let good_zip = std::fs::read(&destination).unwrap();
+        translations::save_one(
+            &working,
+            "Example.Mod",
+            translations::entry_key("i18n", "new"),
+            translations::StoredString {
+                target: "Broken {{token}}".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+        assert!(
+            crate::community_library::build(&config, destination.to_str().unwrap(), true).is_err()
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), good_zip);
+        translations::save_one(
+            &working,
+            "Example.Mod",
+            translations::entry_key("i18n", "new"),
+            translations::StoredString {
+                target: "Personal".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+        let library = crate::community_library::list(&config).unwrap();
+        assert_eq!(library.len(), 3);
+        assert_eq!(
+            library[0].base[&translations::entry_key("i18n", "new")].target,
+            "Hallo"
+        );
+        assert!(
+            crate::community_library::build(&config, destination.to_str().unwrap(), false)
+                .unwrap_err()
+                .contains("OVERWRITE_REQUIRED")
+        );
+        crate::community_library::build(&config, destination.to_str().unwrap(), true).unwrap();
+        let other = config.join("OtherMods");
+        std::fs::create_dir_all(&other).unwrap();
+        let mut settings = settings::load_checked(&config).unwrap();
+        settings.mods_path = Some(other.display().to_string());
+        settings::save(&config, &settings).unwrap();
+        assert!(crate::community_library::list(&config).is_err());
+        assert!(
+            crate::community_library::build(&config, destination.to_str().unwrap(), true).is_err()
+        );
+    }
+
     #[test]
     fn native_import_requires_preflight_and_only_writes_review_state() {
         let (config, mods, id) = fixture("nexus-import");
@@ -2578,4 +2814,54 @@ mod status_tests {
             serde_json::to_string(&nexus_status(Some(false)).await.unwrap()).unwrap()
         );
     }
+}
+
+#[cfg(test)]
+fn import_from_config(
+    config: &Path,
+    archive_id: &str,
+    archive_path: &str,
+    mod_unique_id: &str,
+    relative_dir: &str,
+    save: bool,
+) -> Result<ImportCounts, String> {
+    import_from_config_mode(
+        config,
+        archive_id,
+        archive_path,
+        mod_unique_id,
+        relative_dir,
+        save,
+        false,
+    )
+}
+#[tauri::command]
+pub fn nexus_pick_archive(app: AppHandle) -> Result<Option<ArchivePreview>, String> {
+    let Some(file) = app
+        .dialog()
+        .file()
+        .add_filter("Translation ZIP", &["zip"])
+        .blocking_pick_file()
+    else {
+        return Ok(None);
+    };
+    let path = file.into_path().map_err(|e| e.to_string())?;
+    if std::fs::metadata(&path).map_err(|e| e.to_string())?.len() > DOWNLOAD_LIMIT as u64 {
+        return Err("Archive exceeds 64 MiB limit".into());
+    }
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    let archive_id = format!("{:x}", Sha256::digest(&bytes));
+    let archive = inspect_zip(bytes)?;
+    let preview = ArchivePreview {
+        archive_id: archive_id.clone(),
+        files: archive.files.clone(),
+        notice: NOTICE.into(),
+    };
+    let mut session = lock();
+    session.archives.retain(|_, a| a.created.elapsed() < TTL);
+    if session.archives.len() >= 3 {
+        session.archives.clear();
+    }
+    session.archives.insert(archive_id, archive);
+    Ok(Some(preview))
 }

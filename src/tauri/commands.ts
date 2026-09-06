@@ -152,6 +152,7 @@ export interface NexusArchive {
   notice: string;
 }
 export interface NexusImportRequest {
+  communityLibrary?: boolean;
   archiveId: string;
   archivePath: string;
   modUniqueId: string;
@@ -679,6 +680,26 @@ export interface ZipBuildOutcome {
   fileName: string;
   entries: number;
   strings: number;
+}
+export function nexusPickArchive(): Promise<NexusArchive | null> {
+  return invoke("nexus_pick_archive");
+}
+
+export interface CommunityLibraryEntry {
+  modUniqueId: string;
+  relativeDir: string;
+  archivePath: string;
+  strings: number;
+  sourceUrl: string | null;
+}
+export function listCommunityLibrary(): Promise<CommunityLibraryEntry[]> {
+  return invoke("list_community_library");
+}
+export function buildPrivateOutput(
+  destination: string,
+  overwrite = false,
+): Promise<ZipBuildOutcome> {
+  return invoke("build_private_output", { destination, overwrite });
 }
 
 export function previewTranslationZip(
