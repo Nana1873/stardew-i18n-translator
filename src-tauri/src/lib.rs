@@ -130,6 +130,17 @@ fn scan_mods(
     Ok(result)
 }
 
+fn matches_vortex_workspace(saved: &AppSettings, mods_root: &Path, target_lang: &str) -> bool {
+    saved.installation_method == Some(settings::InstallationMethod::Vortex)
+        && saved.target_lang.as_deref() == Some(target_lang)
+        && saved
+            .mods_path
+            .as_deref()
+            .and_then(|path| std::fs::canonicalize(path.trim()).ok())
+            .zip(std::fs::canonicalize(mods_root).ok())
+            .is_some_and(|(configured, requested)| configured == requested)
+}
+
 fn scan_with_installed_translation_restore(
     mods_root: &Path,
     target_lang: &str,
@@ -138,19 +149,11 @@ fn scan_with_installed_translation_restore(
 ) -> Result<ScanResult, String> {
     let mut result = scanner::scan_mods(mods_root, target_lang, config);
     let saved = settings::load_checked(config)?;
-    let same_folder = saved
-        .mods_path
-        .as_deref()
-        .and_then(|path| std::fs::canonicalize(path.trim()).ok())
-        .zip(std::fs::canonicalize(mods_root).ok())
-        .is_some_and(|(configured, requested)| configured == requested);
-    if saved.installation_method != Some(settings::InstallationMethod::Vortex)
-        || !same_folder
-        || saved.target_lang.as_deref() != Some(target_lang)
-    {
+    if !matches_vortex_workspace(&saved, mods_root, target_lang) {
         return Ok(result);
     }
     if !restore_installed_translations {
+        vortex_identity::resolve_original_ids(mods_root, &mut result);
         result.installed_nexus_translations =
             vortex_identity::detect(mods_root, target_lang, &result);
         return Ok(result);
@@ -180,6 +183,7 @@ fn scan_with_installed_translation_restore(
             .warnings
             .push(format!("Installed translation restore failed: {error}")),
     }
+    vortex_identity::resolve_original_ids(mods_root, &mut result);
     result.installed_nexus_translations = vortex_identity::detect(mods_root, target_lang, &result);
     Ok(result)
 }
@@ -188,6 +192,24 @@ fn scan_with_installed_translation_restore(
 mod installed_translation_restore_tests {
     use super::*;
     use translations::{ConditionalSaveOutcome, ModState, StoredString};
+    #[test]
+    fn vortex_identity_enrichment_requires_the_configured_vortex_workspace() {
+        let f = Fixture::new();
+        let mut saved = settings::load_checked(&f.config).unwrap();
+        assert!(matches_vortex_workspace(&saved, &f.mods, "de"));
+        assert!(!matches_vortex_workspace(&saved, &f.mods, "fr"));
+        assert!(!matches_vortex_workspace(&saved, &f.config, "de"));
+        saved.installation_method = Some(settings::InstallationMethod::Folder);
+        assert!(!matches_vortex_workspace(&saved, &f.mods, "de"));
+        settings::save(&f.config, &saved).unwrap();
+        for restore in [false, true] {
+            let scan =
+                scan_with_installed_translation_restore(&f.mods, "de", &f.config, restore).unwrap();
+            assert!(scan.mods.iter().all(
+                |component| component.nexus_id.is_none() && component.nexus_id_source.is_none()
+            ));
+        }
+    }
 
     struct Fixture {
         root: PathBuf,

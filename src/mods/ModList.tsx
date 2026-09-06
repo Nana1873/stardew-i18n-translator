@@ -14,6 +14,7 @@ interface PackageGroup {
   packageId: string;
   mods: ScannedMod[];
   nexusId: number | null;
+  nexusIdSource: ScannedMod["nexusIdSource"];
   totalKeys: number;
   translatedKeys: number;
   noTranslationNeededKeys: number;
@@ -73,10 +74,12 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       (sum, mod) => sum + mod.i18nFiles.length,
       0,
     );
+    const nexusMod = sortedMods.find((mod) => mod.nexusId != null);
     return {
       packageId,
       mods: sortedMods,
-      nexusId: sortedMods.find((mod) => mod.nexusId != null)?.nexusId ?? null,
+      nexusId: nexusMod?.nexusId ?? null,
+      nexusIdSource: nexusMod?.nexusIdSource,
       totalKeys,
       translatedKeys,
       noTranslationNeededKeys,
@@ -504,7 +507,21 @@ function PackageNode({
           </span>
         </strong>
         <span />
-        <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
+        <span
+          className="translator-mod-nexus"
+          title={
+            group.nexusIdSource === "vortex"
+              ? "Nexus ID from Vortex"
+              : undefined
+          }
+          aria-label={
+            group.nexusIdSource === "vortex"
+              ? `Nexus ID ${group.nexusId} from Vortex`
+              : undefined
+          }
+        >
+          {group.nexusId ?? "—"}
+        </span>
         <span className="translator-mod-percent">{percent}%</span>
         <span
           className="translator-mod-progress"
@@ -601,7 +618,14 @@ function ModRow({
         title={
           mod.nexusId == null
             ? "No Nexus Mods link available"
-            : "Open Nexus Mods from the context menu"
+            : mod.nexusIdSource === "vortex"
+              ? "Nexus ID from Vortex"
+              : "Open Nexus Mods from the context menu"
+        }
+        aria-label={
+          mod.nexusId != null && mod.nexusIdSource === "vortex"
+            ? `Nexus ID ${mod.nexusId} from Vortex`
+            : undefined
         }
       >
         {mod.nexusId ?? "—"}

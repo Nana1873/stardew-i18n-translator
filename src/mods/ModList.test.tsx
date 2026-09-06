@@ -598,3 +598,27 @@ it("marks complete package and component bars from exact work counts including b
       .querySelector(".translator-mod-progress"),
   ).toHaveAttribute("data-complete", "false");
 });
+
+it("labels the Vortex origin on the existing package and component Nexus IDs", () => {
+  render(
+    <ModList
+      mods={[
+        mod({
+          uniqueId: "Sample.A",
+          name: "A",
+          packageId: "Bundle",
+          nexusId: 123,
+          nexusIdSource: "vortex",
+        }),
+        mod({ uniqueId: "Sample.B", name: "B", packageId: "Bundle" }),
+      ]}
+      selectedId={null}
+      onSelect={() => {}}
+    />,
+  );
+  expect(
+    screen.getAllByLabelText("Nexus ID 123 from Vortex")[0],
+  ).toHaveAttribute("title", "Nexus ID from Vortex");
+  fireEvent.click(screen.getByRole("treeitem", { name: /Bundle/ }));
+  expect(screen.getAllByLabelText("Nexus ID 123 from Vortex")).toHaveLength(1);
+});

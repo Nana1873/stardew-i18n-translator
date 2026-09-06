@@ -48,7 +48,11 @@ Use **Find translations on Nexus** to start discovery explicitly. Startup, norma
 scans, rescans, and installed-file checks never contact Nexus, including when
 older settings enabled automatic discovery. Searches use Nexus
 update IDs and the selected language, never your local translation text. Shared
-IDs are searched once. Groups with no missing required text on disk are skipped
+IDs are searched once. In Vortex mode, a missing manifest ID may be filled from
+an unambiguous local Vortex deployment of the original mod. Its existing ID cell
+is labelled **Nexus ID from Vortex**. Manifest IDs take precedence; missing or
+conflicting evidence stays unknown. This does not modify manifests or prove
+translation compatibility, download, or installation. Groups with no missing required text on disk are skipped
 by default. Empty sources need no translation text; local coverage lists them
 separately from actual nonempty translation strings. Review drafts alone do not count as installed coverage.
 Coverage is not a quality or compatibility guarantee.

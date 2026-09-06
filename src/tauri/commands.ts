@@ -256,6 +256,7 @@ export interface ScannedMod {
   name: string;
   version: string;
   nexusId: number | null;
+  nexusIdSource?: "manifest" | "vortex" | null;
   packageId: string;
   folderPath: string;
   i18nFiles: ScannedI18nFile[];

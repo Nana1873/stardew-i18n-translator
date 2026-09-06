@@ -95,6 +95,8 @@ pub struct ScannedMod {
     pub name: String,
     pub version: String,
     pub nexus_id: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nexus_id_source: Option<&'static str>,
     /// Top-level Mods subfolder this mod belongs to (the downloaded package).
     pub package_id: String,
     pub folder_path: String,
@@ -664,6 +666,7 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         name,
         version,
         nexus_id,
+        nexus_id_source: nexus_id.map(|_| "manifest"),
         package_id,
         folder_path: dir.display().to_string(),
         i18n_files: Vec::new(),

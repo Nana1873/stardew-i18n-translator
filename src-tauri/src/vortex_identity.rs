@@ -153,6 +153,86 @@ struct VerifiedFile {
     identity: same_file::Handle,
     digest: Vec<u8>,
 }
+struct SourceProof {
+    mod_id: u64,
+    file_id: u64,
+    targets: HashSet<String>,
+}
+
+struct Evidence {
+    root: PathBuf,
+    staging: PathBuf,
+    download_root: PathBuf,
+    manifest_path: PathBuf,
+    backup_path: PathBuf,
+    manifest_bytes: Vec<u8>,
+    backup_bytes: Vec<u8>,
+    manifest: Value,
+    backup: Value,
+}
+impl Evidence {
+    fn read(root: &Path, vortex: &Path) -> Option<Self> {
+        let root = plain_path(root)?;
+        let manifest_path = root.join("vortex.deployment.json");
+        let (manifest_bytes, manifest) = json(&manifest_path)?;
+        if manifest["version"] != 1
+            || manifest["gameId"] != "stardewvalley"
+            || manifest["deploymentMethod"] != "hardlink_activator"
+            || plain_path(Path::new(manifest["targetPath"].as_str()?))? != root
+        {
+            return None;
+        }
+        let staging = plain_path(Path::new(manifest["stagingPath"].as_str()?))?;
+        let backup_path = newest_backup(vortex)?;
+        let (backup_bytes, backup) = json(&backup_path)?;
+        let instance = manifest["instance"].as_str()?;
+        if instance.is_empty() || backup["app"]["instanceId"].as_str()? != instance {
+            return None;
+        }
+        let mods = backup["persistent"]["mods"]["stardewvalley"].as_object()?;
+        let downloads = backup["persistent"]["downloads"]["files"].as_object()?;
+        let download_root =
+            plain_path(Path::new(backup["settings"]["downloads"]["path"].as_str()?))?;
+        let files = manifest["files"].as_array()?;
+        if files.len() > 200_000 || mods.len() > MAX_ENTRIES || downloads.len() > MAX_ENTRIES {
+            return None;
+        }
+        Some(Self {
+            root,
+            staging,
+            download_root,
+            manifest_path,
+            backup_path,
+            manifest_bytes,
+            backup_bytes,
+            manifest,
+            backup,
+        })
+    }
+    fn deployed(&self) -> Option<HashMap<String, &Value>> {
+        let mut deployed = HashMap::new();
+        for file in self.manifest["files"].as_array()? {
+            let rel = relative(file["relPath"].as_str()?)?;
+            let target = match file["target"].as_str() {
+                None | Some("") => rel,
+                Some(prefix) => relative(prefix)?.join(rel),
+            };
+            if deployed.insert(key(&target), file).is_some() {
+                return None;
+            }
+        }
+        Some(deployed)
+    }
+    fn unchanged(&self, vortex: &Path) -> Option<()> {
+        if bounded(&self.manifest_path, MAX_JSON)? != self.manifest_bytes
+            || bounded(&self.backup_path, MAX_JSON)? != self.backup_bytes
+            || newest_backup(vortex)? != self.backup_path
+        {
+            return None;
+        }
+        Some(())
+    }
+}
 
 fn detect_checked(
     root: &Path,
@@ -169,41 +249,13 @@ fn detect_checked(
     {
         return None;
     }
-    let root = plain_path(root)?;
-    let manifest_path = root.join("vortex.deployment.json");
-    let (manifest_bytes, manifest) = json(&manifest_path)?;
-    if manifest["version"] != 1
-        || manifest["gameId"] != "stardewvalley"
-        || manifest["deploymentMethod"] != "hardlink_activator"
-        || plain_path(Path::new(manifest["targetPath"].as_str()?))? != root
-    {
-        return None;
-    }
-    let staging = plain_path(Path::new(manifest["stagingPath"].as_str()?))?;
-    let backup_path = newest_backup(vortex)?;
-    let (backup_bytes, backup) = json(&backup_path)?;
-    let instance = manifest["instance"].as_str()?;
-    if instance.is_empty() || backup["app"]["instanceId"].as_str()? != instance {
-        return None;
-    }
-    let mods = backup["persistent"]["mods"]["stardewvalley"].as_object()?;
-    let downloads = backup["persistent"]["downloads"]["files"].as_object()?;
-    let download_root = plain_path(Path::new(backup["settings"]["downloads"]["path"].as_str()?))?;
-    let files = manifest["files"].as_array()?;
-    if files.len() > 200_000 || mods.len() > MAX_ENTRIES || downloads.len() > MAX_ENTRIES {
-        return None;
-    }
-    let mut deployed = HashMap::new();
-    for file in files {
-        let rel = relative(file["relPath"].as_str()?)?;
-        let target = match file["target"].as_str() {
-            None | Some("") => rel,
-            Some(prefix) => relative(prefix)?.join(rel),
-        };
-        if deployed.insert(key(&target), file).is_some() {
-            return None;
-        }
-    }
+    let evidence = Evidence::read(root, vortex)?;
+    let root = &evidence.root;
+    let staging = &evidence.staging;
+    let download_root = &evidence.download_root;
+    let mods = evidence.backup["persistent"]["mods"]["stardewvalley"].as_object()?;
+    let downloads = evidence.backup["persistent"]["downloads"]["files"].as_object()?;
+    let deployed = evidence.deployed()?;
     let mut targets: HashMap<String, BTreeSet<u64>> = HashMap::new();
     for component in &scan.mods {
         let package_ids: BTreeSet<_> = scan
@@ -223,10 +275,10 @@ fn detect_checked(
         }
         for file in &component.i18n_files {
             let effective = crate::scanner::target_read_path(Path::new(&file.target_path));
-            if let Ok(rel) = effective.strip_prefix(&root) {
+            if let Ok(rel) = effective.strip_prefix(root) {
                 targets.entry(key(rel)).or_default().extend(&ids);
             } else if let Some(effective) = plain_path(&effective) {
-                if let Ok(rel) = effective.strip_prefix(&root) {
+                if let Ok(rel) = effective.strip_prefix(root) {
                     targets.entry(key(rel)).or_default().extend(&ids);
                 }
             }
@@ -244,12 +296,12 @@ fn detect_checked(
     let mut verified_files = Vec::new();
     let mut budget = (256 * 1024 * 1024u64, MAX_EXPANDED);
     for source in sources {
-        if let Some(proofs) = prove_source(
+        if let Some(proof) = prove_source(
             source,
-            language,
-            &root,
-            &staging,
-            &download_root,
+            Some(language),
+            root,
+            staging,
+            download_root,
             mods,
             downloads,
             &deployed,
@@ -257,37 +309,30 @@ fn detect_checked(
             &mut budget,
             &mut verified_files,
         ) {
-            result.extend(proofs);
+            for target in &proof.targets {
+                for source_nexus_id in targets.get(target).into_iter().flatten() {
+                    result.insert(InstalledNexusTranslation {
+                        source_nexus_id: *source_nexus_id,
+                        mod_id: proof.mod_id,
+                        file_id: proof.file_id,
+                    });
+                }
+            }
         }
     }
     before_final_check();
     // Recheck all earlier files after later sources have finished. Retained
     // handles also detect a replacement with identical bytes and new hardlinks.
-    for verified in verified_files {
-        plain_path(&verified.staging)?;
-        if verified.identity != same_file::Handle::from_path(&verified.target).ok()?
-            || verified.identity != same_file::Handle::from_path(&verified.staging).ok()?
-            || Sha256::digest(bounded(&verified.target, MAX_JSON)?).as_slice() != verified.digest
-            || verified.identity != same_file::Handle::from_path(&verified.target).ok()?
-            || verified.identity != same_file::Handle::from_path(&verified.staging).ok()?
-        {
-            return None;
-        }
-    }
+    recheck_files(&verified_files)?;
     // A deployment or backup rotation during this scan invalidates the projection.
-    if bounded(&manifest_path, MAX_JSON)? != manifest_bytes
-        || bounded(&backup_path, MAX_JSON)? != backup_bytes
-        || newest_backup(vortex)? != backup_path
-    {
-        return None;
-    }
+    evidence.unchanged(vortex)?;
     Some(result.into_iter().collect())
 }
 
 #[allow(clippy::too_many_arguments)]
 fn prove_source(
     source: &str,
-    language: &str,
+    language: Option<&str>,
     root: &Path,
     staging: &Path,
     download_root: &Path,
@@ -297,7 +342,7 @@ fn prove_source(
     targets: &HashMap<String, BTreeSet<u64>>,
     budget: &mut (u64, u64),
     verified_files: &mut Vec<VerifiedFile>,
-) -> Option<Vec<InstalledNexusTranslation>> {
+) -> Option<SourceProof> {
     let source_rel = relative(source)?;
     let mut matching = mods
         .values()
@@ -349,7 +394,6 @@ fn prove_source(
     let mut seen = HashSet::new();
     let mut verified_targets = HashSet::new();
     let mut expanded = 0u64;
-    let mut proofs = BTreeSet::new();
     for index in 0..archive.len() {
         let mut file = archive.by_index(index).ok()?;
         let rel = relative(file.name().trim_end_matches('/'))?;
@@ -361,8 +405,12 @@ fn prove_source(
         {
             return None;
         }
-        expanded = expanded.checked_add(file.size())?;
-        budget.1 = budget.1.checked_sub(file.size())?;
+        // Original archives include large assets that are never decompressed.
+        // Keep the existing all-entry expansion cap for translation ZIP proof.
+        if language.is_some() || targets.contains_key(&rel_key) {
+            expanded = expanded.checked_add(file.size())?;
+            budget.1 = budget.1.checked_sub(file.size())?;
+        }
         if expanded > MAX_EXPANDED {
             return None;
         }
@@ -370,9 +418,14 @@ fn prove_source(
             continue;
         }
         let name = rel.file_name()?.to_str()?;
-        let is_language = name.eq_ignore_ascii_case(&format!("{language}.json"))
-            || (language == "pt" && name.eq_ignore_ascii_case("pt-BR.json"));
-        if !is_language {
+        let selected = match language {
+            Some(language) => {
+                name.eq_ignore_ascii_case(&format!("{language}.json"))
+                    || (language == "pt" && name.eq_ignore_ascii_case("pt-BR.json"))
+            }
+            None => targets.contains_key(&rel_key),
+        };
+        if !selected {
             continue;
         }
         // Only direct path-preserving ZIP layouts are supported. No guessed
@@ -416,15 +469,6 @@ fn prove_source(
             digest: Sha256::digest(&content).to_vec(),
         });
         verified_targets.insert(rel_key.clone());
-        if let Some(source_ids) = targets.get(&rel_key) {
-            for source_nexus_id in source_ids {
-                proofs.insert(InstalledNexusTranslation {
-                    source_nexus_id: *source_nexus_id,
-                    mod_id,
-                    file_id,
-                });
-            }
-        }
     }
     // An archive missing another deployed language target must not establish
     // the identity of the entire translation from just one matching component.
@@ -437,10 +481,240 @@ fn prove_source(
             return None;
         }
     }
-    if proofs.is_empty() || bounded(&archive_path, MAX_ARCHIVE)? != archive_bytes {
+    if verified_targets.is_empty() || bounded(&archive_path, MAX_ARCHIVE)? != archive_bytes {
         return None;
     }
-    Some(proofs.into_iter().collect())
+    Some(SourceProof {
+        mod_id,
+        file_id,
+        targets: verified_targets,
+    })
+}
+
+fn recheck_files(verified_files: &[VerifiedFile]) -> Option<()> {
+    for verified in verified_files {
+        plain_path(&verified.staging)?;
+        if verified.identity != same_file::Handle::from_path(&verified.target).ok()?
+            || verified.identity != same_file::Handle::from_path(&verified.staging).ok()?
+            || Sha256::digest(bounded(&verified.target, MAX_JSON)?).as_slice() != verified.digest
+            || verified.identity != same_file::Handle::from_path(&verified.target).ok()?
+            || verified.identity != same_file::Handle::from_path(&verified.staging).ok()?
+        {
+            return None;
+        }
+    }
+    Some(())
+}
+
+pub(crate) fn resolve_original_ids(root: &Path, scan: &mut ScanResult) {
+    let Some(appdata) = std::env::var_os("APPDATA") else {
+        return;
+    };
+    if let Some(ids) =
+        original_ids_checked(root, scan, &PathBuf::from(appdata).join("Vortex"), || {})
+    {
+        for (index, id) in ids {
+            if scan.mods[index].nexus_id.is_none() {
+                scan.mods[index].nexus_id = Some(id);
+                scan.mods[index].nexus_id_source = Some("vortex");
+            }
+        }
+    }
+}
+
+struct OriginalCandidate {
+    index: usize,
+    source: String,
+    paths: HashSet<String>,
+    snapshots: Vec<(PathBuf, Vec<u8>)>,
+}
+
+fn original_candidate(
+    index: usize,
+    component: &crate::scanner::ScannedMod,
+    evidence: &Evidence,
+    deployed: &HashMap<String, &Value>,
+    text_budget: &mut u64,
+) -> Option<OriginalCandidate> {
+    let manifest_path = plain_path(&Path::new(&component.folder_path).join("manifest.json"))?;
+    let manifest_bytes = bounded(&manifest_path, MAX_JSON)?;
+    *text_budget = text_budget.checked_sub(manifest_bytes.len() as u64)?;
+    let manifest =
+        crate::scanner::parse_json_lenient(std::str::from_utf8(&manifest_bytes).ok()?).ok()?;
+    if manifest["UniqueID"].as_str()? != component.unique_id
+        || manifest["Version"].as_str().unwrap_or_default() != component.version
+    {
+        return None;
+    }
+    let update_keys: Vec<_> = manifest["UpdateKeys"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect();
+    if crate::scanner::extract_nexus_id(&update_keys) != component.nexus_id {
+        return None;
+    }
+    let mut snapshots = vec![(manifest_path, manifest_bytes)];
+    for file in &component.i18n_files {
+        let path = plain_path(Path::new(&file.default_path))?;
+        let bytes = bounded(&path, MAX_JSON)?;
+        *text_budget = text_budget.checked_sub(bytes.len() as u64)?;
+        let source =
+            crate::scanner::parse_flat_object(std::str::from_utf8(&bytes).ok()?, &path).ok()?;
+        // Bind the proof to the source inventory actually shown by this scan.
+        if source
+            .keys()
+            .filter(|key| key.as_str() != "$schema")
+            .count()
+            != file.source_hashes.len()
+            || file.source_hashes.iter().any(|entry| {
+                source
+                    .get(&entry.key)
+                    .and_then(Value::as_str)
+                    .is_none_or(|text| crate::translations::source_hash(text) != entry.source_hash)
+            })
+        {
+            return None;
+        }
+        snapshots.push((path, bytes));
+    }
+    if snapshots.len() < 2 {
+        return None;
+    }
+    let mut paths = HashSet::new();
+    let mut sources = BTreeSet::new();
+    for (path, _) in &snapshots {
+        let rel = key(path.strip_prefix(&evidence.root).ok()?);
+        sources.insert(deployed.get(&rel)?["source"].as_str()?.to_owned());
+        if !paths.insert(rel) {
+            return None;
+        }
+    }
+    if sources.len() != 1 {
+        return None;
+    }
+    Some(OriginalCandidate {
+        index,
+        source: sources.into_iter().next()?,
+        paths,
+        snapshots,
+    })
+}
+
+fn original_ids_checked(
+    root: &Path,
+    scan: &ScanResult,
+    vortex: &Path,
+    before_final_check: impl FnOnce(),
+) -> Option<Vec<(usize, u64)>> {
+    if !scan.traversal_complete
+        || scan
+            .skipped_components
+            .iter()
+            .any(|item| item.requires_attention)
+    {
+        return None;
+    }
+    let identified_packages: HashSet<_> = scan
+        .mods
+        .iter()
+        .filter(|component| component.nexus_id.is_some())
+        .map(|component| component.package_id.as_str())
+        .collect();
+    if scan
+        .mods
+        .iter()
+        .all(|component| identified_packages.contains(component.package_id.as_str()))
+    {
+        return Some(Vec::new());
+    }
+    let evidence = Evidence::read(root, vortex)?;
+    let deployed = evidence.deployed()?;
+    let mut candidates = Vec::new();
+    let mut grouped: std::collections::BTreeMap<String, HashMap<String, BTreeSet<u64>>> =
+        std::collections::BTreeMap::new();
+    let mut owners = HashSet::new();
+    let mut text_budget = MAX_EXPANDED;
+    for (index, component) in scan.mods.iter().enumerate().filter(|(_, component)| {
+        component.nexus_id.is_none() && !identified_packages.contains(component.package_id.as_str())
+    }) {
+        let Some(candidate) =
+            original_candidate(index, component, &evidence, &deployed, &mut text_budget)
+        else {
+            continue;
+        };
+        for path in &candidate.paths {
+            if !owners.insert(path.clone()) {
+                return None;
+            }
+            grouped
+                .entry(candidate.source.clone())
+                .or_default()
+                .insert(path.clone(), BTreeSet::new());
+        }
+        candidates.push(candidate);
+    }
+    if grouped.len() > MAX_CANDIDATES {
+        return None;
+    }
+    // Independent from translation ZIP limits: originals contain large assets,
+    // but only selected manifests/default dictionaries are decompressed.
+    let mut budget = (384 * 1024 * 1024u64, MAX_EXPANDED);
+    let mut verified_files = Vec::new();
+    let mut proofs = HashMap::new();
+    for (source, targets) in &grouped {
+        if let Some(proof) = prove_source(
+            source,
+            None,
+            &evidence.root,
+            &evidence.staging,
+            &evidence.download_root,
+            evidence.backup["persistent"]["mods"]["stardewvalley"].as_object()?,
+            evidence.backup["persistent"]["downloads"]["files"].as_object()?,
+            &deployed,
+            targets,
+            &mut budget,
+            &mut verified_files,
+        ) {
+            proofs.insert(source, proof);
+        }
+    }
+    let mut result = Vec::new();
+    for candidate in candidates {
+        let Some(proof) = proofs.get(&candidate.source) else {
+            continue;
+        };
+        if candidate.paths.is_subset(&proof.targets)
+            && candidate
+                .snapshots
+                .iter()
+                .all(|(path, bytes)| bounded(path, MAX_JSON).as_ref() == Some(bytes))
+        {
+            result.push((candidate.index, proof.mod_id));
+        }
+    }
+    let mut package_ids: HashMap<&str, BTreeSet<u64>> = HashMap::new();
+    for component in &scan.mods {
+        if let Some(id) = component.nexus_id {
+            package_ids
+                .entry(&component.package_id)
+                .or_default()
+                .insert(id);
+        }
+    }
+    for (index, id) in &result {
+        package_ids
+            .entry(&scan.mods[*index].package_id)
+            .or_default()
+            .insert(*id);
+    }
+    result.retain(|(index, _)| package_ids[scan.mods[*index].package_id.as_str()].len() == 1);
+    before_final_check();
+    recheck_files(&verified_files)?;
+    evidence.unchanged(vortex)?;
+    Some(result)
 }
 
 #[cfg(test)]
@@ -461,6 +735,51 @@ mod tests {
     }
 
     impl Fixture {
+        fn add_original(&mut self, folder: &str, id: u64) {
+            let source_name = format!("original-{folder}");
+            let manifest = serde_json::to_vec(&json!({"Name":folder,"UniqueID":format!("Test.{folder}"),"Version":"1.0","UpdateKeys":["Nexus:???"]})).unwrap();
+            let source = br#"{"first":"First"}"#;
+            let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
+            for (rel, content) in [
+                (format!("{folder}/manifest.json"), manifest.as_slice()),
+                (format!("{folder}/i18n/default.json"), source.as_slice()),
+            ] {
+                let staged = self.base.join("staging").join(&source_name).join(&rel);
+                let target = self.root.join(&rel);
+                fs::create_dir_all(staged.parent().unwrap()).unwrap();
+                fs::create_dir_all(target.parent().unwrap()).unwrap();
+                fs::write(&staged, content).unwrap();
+                fs::hard_link(staged, target).unwrap();
+                self.manifest["files"]
+                    .as_array_mut()
+                    .unwrap()
+                    .push(json!({"relPath":rel,"source":source_name}));
+                zip.start_file(&rel, zip::write::SimpleFileOptions::default())
+                    .unwrap();
+                zip.write_all(content).unwrap();
+            }
+            let bytes = zip.finish().unwrap().into_inner();
+            let hash = format!("{:x}", md5::compute(&bytes));
+            fs::write(
+                self.base
+                    .join("downloads/stardewvalley")
+                    .join(format!("{}.zip", folder.replace('/', "-"))),
+                bytes,
+            )
+            .unwrap();
+            let mut entry = self.backup["persistent"]["mods"]["stardewvalley"]["entry"].clone();
+            entry["installationPath"] = json!(source_name);
+            entry["archiveId"] = json!(source_name);
+            entry["attributes"]["modId"] = json!(id);
+            entry["attributes"]["fileMD5"] = json!(hash);
+            self.backup["persistent"]["mods"]["stardewvalley"][&source_name] = entry;
+            let mut download = self.backup["persistent"]["downloads"]["files"]["archive"].clone();
+            download["modInfo"]["nexus"]["ids"]["modId"] = json!(id);
+            download["fileMD5"] = json!(hash);
+            download["localPath"] = json!(format!("{}.zip", folder.replace('/', "-")));
+            self.backup["persistent"]["downloads"]["files"][&source_name] = download;
+            self.save();
+        }
         fn new() -> Self {
             let base = crate::test_support::temp_dir("vortex-identity");
             let root = base.join("Mods");
@@ -551,6 +870,176 @@ mod tests {
     impl Drop for Fixture {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.base).unwrap();
+        }
+    }
+
+    #[test]
+    fn original_packages_are_proved_without_using_translation_overlay_ids() {
+        let mut f = Fixture::new();
+        f.add_original("One", 11);
+        f.add_original("Two", 22);
+        f.add_target("One/i18n/de.json", BODY);
+        f.save();
+        let scan = f.scan();
+        let ids = original_ids_checked(&f.root, &scan, &f.vortex, || {}).unwrap();
+        let actual: BTreeSet<_> = ids
+            .iter()
+            .map(|(index, id)| (scan.mods[*index].unique_id.as_str(), *id))
+            .collect();
+        assert_eq!(actual, BTreeSet::from([("Test.One", 11), ("Test.Two", 22)]));
+        let explicit = scan
+            .mods
+            .iter()
+            .find(|item| item.unique_id == "Test.Example")
+            .unwrap();
+        assert_eq!(explicit.nexus_id, Some(100));
+        assert_eq!(explicit.nexus_id_source, Some("manifest"));
+        assert!(!ids.iter().any(|(_, id)| *id == 200));
+    }
+
+    #[test]
+    fn original_proof_rejects_overlay_source_conflicts_missing_and_ambiguous_evidence() {
+        for failure in ["overlay", "missing", "duplicate", "copied", "id-mismatch"] {
+            let mut f = Fixture::new();
+            f.add_original("One", 11);
+            match failure {
+                "overlay" => {
+                    for record in f.manifest["files"].as_array_mut().unwrap() {
+                        if record["relPath"] == "One/i18n/default.json" {
+                            record["source"] = json!("translation");
+                        }
+                    }
+                }
+                "missing" => {
+                    fs::remove_file(f.base.join("downloads/stardewvalley/One.zip")).unwrap()
+                }
+                "duplicate" => {
+                    f.backup["persistent"]["mods"]["stardewvalley"]["duplicate"] =
+                        f.backup["persistent"]["mods"]["stardewvalley"]["original-One"].clone()
+                }
+                "copied" => {
+                    let path = f.root.join("One/manifest.json");
+                    let bytes = fs::read(&path).unwrap();
+                    fs::remove_file(&path).unwrap();
+                    fs::write(path, bytes).unwrap();
+                }
+                _ => {
+                    f.backup["persistent"]["downloads"]["files"]["original-One"]["modInfo"]
+                        ["nexus"]["ids"]["modId"] = json!(99)
+                }
+            }
+            f.save();
+            assert!(
+                original_ids_checked(&f.root, &f.scan(), &f.vortex, || {})
+                    .unwrap_or_default()
+                    .is_empty(),
+                "{failure}"
+            );
+        }
+    }
+
+    #[test]
+    fn original_ids_do_not_introduce_conflicting_package_ids() {
+        let mut f = Fixture::new();
+        f.add_original("One", 11);
+        f.add_original("One/Child", 22);
+        let mut scan = f.scan();
+        assert!(original_ids_checked(&f.root, &scan, &f.vortex, || {})
+            .unwrap()
+            .is_empty());
+        let owner = scan
+            .mods
+            .iter_mut()
+            .find(|component| component.unique_id == "Test.One")
+            .unwrap();
+        owner.nexus_id = Some(99);
+        owner.nexus_id_source = Some("manifest");
+        assert!(original_ids_checked(&f.root, &scan, &f.vortex, || {})
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            scan.mods
+                .iter()
+                .find(|component| component.unique_id == "Test.One")
+                .unwrap()
+                .nexus_id,
+            Some(99)
+        );
+    }
+
+    #[test]
+    fn original_proof_binds_scan_inventory_and_rechecks_deployment_at_the_end() {
+        let mut f = Fixture::new();
+        f.add_original("One", 11);
+        let scan = f.scan();
+        let result = original_ids_checked(&f.root, &scan, &f.vortex, || {
+            fs::write(
+                f.root.join("One/i18n/default.json"),
+                br#"{"first":"Updated"}"#,
+            )
+            .unwrap();
+        });
+        assert!(result.is_none());
+        assert!(original_ids_checked(&f.root, &scan, &f.vortex, || {})
+            .unwrap()
+            .is_empty());
+        for change in ["copy", "backup"] {
+            let mut f = Fixture::new();
+            f.add_original("One", 11);
+            let scan = f.scan();
+            assert!(
+                original_ids_checked(&f.root, &scan, &f.vortex, || {
+                    if change == "copy" {
+                        let path = f.root.join("One/manifest.json");
+                        let bytes = fs::read(&path).unwrap();
+                        fs::remove_file(&path).unwrap();
+                        fs::write(path, bytes).unwrap();
+                    } else {
+                        fs::write(f.vortex.join("temp/state_backups_full/hourly.json"), b"{}")
+                            .unwrap();
+                    }
+                })
+                .is_none(),
+                "{change}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Read-only original-ID proof using real Mods and a fresh temporary scan config"]
+    fn live_original_ids_read_only() {
+        let root = PathBuf::from(
+            std::env::var_os("SIT_VORTEX_SMOKE_MODS").expect("Set SIT_VORTEX_SMOKE_MODS"),
+        );
+        let config = crate::test_support::temp_dir("vortex-original-live");
+        let mut scan = crate::scanner::scan_mods(&root, "de", &config);
+        let started = std::time::Instant::now();
+        resolve_original_ids(&root, &mut scan);
+        println!("original_resolution_ms={}", started.elapsed().as_millis());
+        for component in scan
+            .mods
+            .iter()
+            .filter(|component| component.nexus_id_source == Some("vortex"))
+        {
+            println!(
+                "component={} original_id={}",
+                component.unique_id,
+                component.nexus_id.unwrap()
+            );
+        }
+        for (unique, id) in [
+            ("Lemurkat.EastScarp", 5787),
+            ("FlashShifter.StardewValleyExpandedCP", 3753),
+        ] {
+            assert!(scan
+                .mods
+                .iter()
+                .any(|component| component.unique_id == unique
+                    && component.nexus_id == Some(id)
+                    && component.nexus_id_source == Some("vortex")));
+        }
+        if config.exists() {
+            fs::remove_dir_all(config).unwrap();
         }
     }
 

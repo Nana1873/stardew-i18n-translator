@@ -6,7 +6,10 @@ vi.mock("../tauri/commands", () => ({
   nexusFindTranslations: (...args: unknown[]) => search(...args),
 }));
 import { useNexusSearch } from "./useNexusSearch";
-import { nexusSourceDiskCoverage } from "./resolveTranslation";
+import {
+  nexusSourceComponents,
+  nexusSourceDiskCoverage,
+} from "./resolveTranslation";
 const mod = (id: number | null, name = "Mod") =>
   ({ nexusId: id, name }) as ScannedMod;
 const result = (modId: number): NexusSearchResult => ({
@@ -456,4 +459,30 @@ it("counts genuinely unassigned packages once and includes idless siblings in id
   });
   expect(hook.result.current.entries[0].localNames).toEqual(["Base", "Addon"]);
   expect(search).toHaveBeenCalledTimes(1);
+});
+
+it("uses Vortex original IDs for package search only on explicit start", async () => {
+  search.mockImplementation((id: number) => Promise.resolve(result(id)));
+  const components = [
+    {
+      ...mod(123, "Original"),
+      uniqueId: "Sample.Main",
+      packageId: "Bundle",
+      nexusIdSource: "vortex" as const,
+    },
+    { ...mod(null, "Companion"), uniqueId: "Sample.CP", packageId: "Bundle" },
+    { ...mod(null, "Unknown"), uniqueId: "Sample.Other", packageId: "Other" },
+  ];
+  const hook = renderHook(() => useNexusSearch("mods|de"));
+  expect(search).not.toHaveBeenCalled();
+  await act(() => hook.result.current.start(components, "de"));
+  expect(search.mock.calls).toEqual([[123, "de", false]]);
+  expect(hook.result.current).toMatchObject({ total: 1, noId: 1 });
+  expect(hook.result.current.entries[0].localNames).toEqual([
+    "Original",
+    "Companion",
+  ]);
+  expect(nexusSourceComponents(components, 123)).toEqual(
+    components.slice(0, 2),
+  );
 });
