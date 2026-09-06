@@ -60,7 +60,8 @@ locally. The app has no accounts, analytics, or telemetry.
 
 The Nexus workflow is currently for local testing. It finds likely translations,
 offers Review import or handoff to your configured Vortex, and checks language
-files after you deploy them. Vortex uses its own account; a handoff does not
+files after you deploy them. Vortex's settings control automatic installation;
+otherwise, install the downloads there before deploying. Vortex uses its own account; a handoff does not
 confirm installation or Collection membership. Personal ZIP import into
 **Review** is the default without Vortex and requires Nexus Premium for downloads. The Nexus
 API key stays in your Windows user environment. See

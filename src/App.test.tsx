@@ -544,7 +544,7 @@ describe("App shell", () => {
       } else {
         expect(
           await screen.findByRole("button", {
-            name: "Download & install all with Vortex (1)",
+            name: "Download all with Vortex (1)",
           }),
         ).toBeEnabled();
         expect(
@@ -584,7 +584,7 @@ describe("App shell", () => {
         );
       expect(
         await screen.findByRole("button", {
-          name: "Download & install all with Vortex (1)",
+          name: "Download all with Vortex (1)",
         }),
       ).toBeEnabled();
       expect(
@@ -1099,7 +1099,7 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("button", {
-          name: "Download & install all with Vortex (1)",
+          name: "Download all with Vortex (1)",
         }),
       ).toBeEnabled(),
     );
@@ -1108,7 +1108,7 @@ describe("App shell", () => {
     ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Download & install all with Vortex (1)",
+        name: "Download all with Vortex (1)",
       }),
     );
     await screen.findByText("1 sent to Vortex");
@@ -1241,9 +1241,7 @@ describe("App shell", () => {
         screen.getByRole("button", { name: "Download & import all (1)" }),
       ).toBeEnabled(),
     );
-    expect(
-      screen.queryByRole("button", { name: /Download & install all/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Download all/ })).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Close Nexus translations" }),
     );
@@ -1271,13 +1269,13 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(
         screen.getByRole("button", {
-          name: "Download & install all with Vortex (1)",
+          name: "Download all with Vortex (1)",
         }),
       ).toBeEnabled(),
     );
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Download & install all with Vortex (1)",
+        name: "Download all with Vortex (1)",
       }),
     );
     await screen.findByText("1 sent to Vortex");

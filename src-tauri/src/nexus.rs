@@ -569,12 +569,57 @@ fn language_match(value: &str, lang: &str) -> bool {
     })
 }
 fn normalized(value: &str) -> String {
-    search_name(value)
+    value
         .to_lowercase()
         .split(|c: char| !c.is_alphanumeric())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join(" ")
+}
+fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
+    let source = normalized(&search_name(original));
+    // Keep candidate qualifiers, including parentheses: they may name an add-on.
+    let title = normalized(title);
+    let source: Vec<_> = source.split_whitespace().collect();
+    let title: Vec<_> = title.split_whitespace().collect();
+    if !source.is_empty() && title.len() >= source.len() {
+        for start in 0..=title.len() - source.len() {
+            if title[start..start + source.len()] != source {
+                continue;
+            }
+            let qualifiers: Vec<_> = title[..start]
+                .iter()
+                .chain(&title[start + source.len()..])
+                .copied()
+                .collect();
+            if (qualifiers.contains(&lang) || language_match(&qualifiers.join(" "), lang))
+                && qualifiers.iter().all(|word| {
+                    language_words(lang).contains(word)
+                        || *word == lang
+                        || matches!(*word, "translation" | "translations")
+                        || (lang == "de" && matches!(*word, "ger" | "übersetzung"))
+                        || (lang == "ja" && *word == "jp")
+                        || (lang == "zh"
+                            && matches!(*word, "chs" | "cht" | "simplified" | "traditional"))
+                })
+            {
+                return "possible-original-translation";
+            }
+        }
+    }
+    "possible-addon-or-other-translation"
+}
+
+fn classify_candidates(original: &str, lang: &str, candidates: &mut [Candidate]) {
+    for candidate in candidates.iter_mut() {
+        candidate.relationship_tier = relationship_tier(original, &candidate.name, lang).into();
+    }
+    candidates.sort_by(|a, b| {
+        a.relationship_tier
+            .cmp(&b.relationship_tier)
+            .reverse()
+            .then(b.updated_at.cmp(&a.updated_at))
+    });
 }
 fn search_name(value: &str) -> String {
     // Canonical titles often append aliases such as "(GMCM)". The search
@@ -666,13 +711,6 @@ async fn find_translations(
             if !language_match(&format!("{title} {summary}"), &lang) {
                 continue;
             }
-            let prefix = normalized(&title);
-            let source = normalized(&name);
-            let tier = if prefix == source || prefix.starts_with(&format!("{source} ")) {
-                "possible-original-translation"
-            } else {
-                "possible-addon-or-other-translation"
-            };
             found.insert(
                 id,
                 Candidate {
@@ -681,18 +719,13 @@ async fn find_translations(
                     summary,
                     version: text(row, "version"),
                     updated_at: text(row, "updatedAt"),
-                    relationship_tier: tier.into(),
+                    relationship_tier: String::new(),
                 },
             );
         }
     }
     let mut candidates: Vec<_> = found.into_values().collect();
-    candidates.sort_by(|a, b| {
-        a.relationship_tier
-            .cmp(&b.relationship_tier)
-            .reverse()
-            .then(b.updated_at.cmp(&a.updated_at))
-    });
+    classify_candidates(&name, &lang, &mut candidates);
     limited |= candidates.len() > 30;
     candidates.truncate(30);
     let fetched_at = now_ms();
@@ -1609,6 +1642,7 @@ fn cached_discovery(
     {
         return None;
     }
+    classify_candidates(&result.original_name, lang, &mut result.candidates);
     result.cache_status = "cached".into();
     Some(result)
 }
@@ -1836,8 +1870,9 @@ fn handoff_arguments(mod_id: u64, file_id: u64) -> Result<[String; 2], String> {
     positive(mod_id)?;
     positive(file_id)?;
     Ok([
-        // Vortex v2.6.3 forwards --install to its NXM handler with install=true.
-        "--install".into(),
+        // Let Vortex's download automation handle installation. --install adds
+        // a second install callback that can race with that automation.
+        "--download".into(),
         format!("nxm://stardewvalley/mods/{mod_id}/files/{file_id}"),
     ])
 }
@@ -1850,16 +1885,14 @@ fn request_vortex_handoff(
     let args = handoff_arguments(mod_id, file_id)?;
     let saved = settings::load_checked(config)?;
     if saved.installation_method != Some(settings::InstallationMethod::Vortex) {
-        return Err(
-            "Choose the Vortex workflow in Settings before requesting installation.".into(),
-        );
+        return Err("Choose the Vortex workflow in Settings before requesting a download.".into());
     }
     let configured = saved
         .vortex_executable
-        .ok_or("Configure Vortex.exe in Settings before requesting installation.")?;
+        .ok_or("Configure Vortex.exe in Settings before requesting a download.")?;
     let executable = vortex_path(Path::new(&configured))?;
     launch(&executable, &args)?;
-    log::info!(target: "app", "event=nexus_vortex_handoff_requested mod_id={} file_id={} action=download_install_requested download_confirmed=false install_confirmed=false deployment_confirmed=false", mod_id, file_id);
+    log::info!(target: "app", "event=nexus_vortex_handoff_requested mod_id={} file_id={} action=download_requested download_confirmed=false install_confirmed=false deployment_confirmed=false", mod_id, file_id);
     Ok(VortexHandoff {
         mod_id,
         file_id,
@@ -2020,6 +2053,92 @@ mod workflow_tests {
         }
     }
     #[test]
+    fn candidate_titles_require_only_translation_qualifiers_around_the_full_original() {
+        for (original, title, lang) in [
+            (
+                "Stardew Valley Expanded",
+                "Stardew Valley Expanded - Chinese",
+                "zh",
+            ),
+            (
+                "Ridgeside Village",
+                "Ridgeside Village - Chinese Simplified",
+                "zh",
+            ),
+            ("Ridgeside Village", "[Chinese] Ridgeside Village", "zh"),
+            ("Ridgeside Village", "Ridgeside Village (zh)", "zh"),
+            ("Fishing Assistant 3", "Fishing Assistant 3 - Deutsch", "de"),
+            ("Example", "Example - German Translation", "de"),
+            ("Example (Alias)", "Example - German", "de"),
+        ] {
+            assert_eq!(
+                relationship_tier(original, title, lang),
+                "possible-original-translation",
+                "{title}"
+            );
+        }
+        for title in [
+            "Stardew Valley Expanded Forage Crops and Bushes Chinese",
+            "Stardew Valley Expanded-image translation-Chinese fix",
+            "Stardew Valley Expanded (NPC Adventures) Chinese",
+            "Chinese Stardew Valley Expanded Companion",
+            "Stardew Valley Expanded",
+            "Stardew Valley Expanded - German",
+        ] {
+            assert_eq!(
+                relationship_tier("Stardew Valley Expanded", title, "zh"),
+                "possible-addon-or-other-translation",
+                "{title}"
+            );
+        }
+        for title in [
+            "Ridgeside Village for Mobile Phone-Chinese translation",
+            "Ridgeside Village NPC Adventures Chinese",
+            "Ridgeside Village-image translation-Chinese",
+            "Reimagined Interior for Ridgeside Village - Chinese translation",
+            "Ridgeside Villager Chinese",
+        ] {
+            assert_eq!(
+                relationship_tier("Ridgeside Village", title, "zh"),
+                "possible-addon-or-other-translation",
+                "{title}"
+            );
+        }
+    }
+
+    #[test]
+    fn cached_candidates_are_reclassified_and_ranked_without_rewriting_cache() {
+        let root = crate::test_support::temp_dir("nexus-candidate-cache");
+        let mut value = discovery(1000);
+        value.original_name = "Ridgeside Village".into();
+        value.candidates[0].name = "Ridgeside Village for Mobile Phone-Chinese translation".into();
+        let mut direct = value.candidates[0].clone();
+        direct.mod_id = 21;
+        direct.name = "Ridgeside Village - Chinese".into();
+        direct.updated_at = "2020-01-01".into();
+        direct.relationship_tier = "possible-addon-or-other-translation".into();
+        value.candidates.push(direct);
+        store_discovery(&root, "zh", &value).unwrap();
+        let path = root.join("nexus-discovery-cache.json");
+        let before = std::fs::read(&path).unwrap();
+        let result = cached_discovery(&root, 10, "zh", 1001, false).unwrap();
+        assert_eq!(result.candidates.len(), 2);
+        assert_eq!(result.candidates[0].mod_id, 21);
+        assert_eq!(
+            result.candidates[0].relationship_tier,
+            "possible-original-translation"
+        );
+        assert_eq!(result.candidates[1].mod_id, 20);
+        assert_eq!(
+            result.candidates[1].relationship_tier,
+            "possible-addon-or-other-translation"
+        );
+        assert_eq!(result.fetched_at, value.fetched_at);
+        assert_eq!(result.expires_at, value.expires_at);
+        assert_eq!(result.cache_status, "cached");
+        assert_eq!(std::fs::read(path).unwrap(), before);
+    }
+    #[test]
     fn metadata_cache_survives_restart_and_is_scoped_and_expiring() {
         let root = crate::test_support::temp_dir("nexus-persistent-cache");
         store_discovery(&root, "de", &discovery(1000)).unwrap();
@@ -2081,7 +2200,10 @@ mod workflow_tests {
         let (root, executable) = configured_vortex();
         let receipt = request_vortex_handoff(&root, 10, 20, |path, args| {
             assert_eq!(path, executable.canonicalize().unwrap());
-            assert_eq!(args, &["--install", "nxm://stardewvalley/mods/10/files/20"]);
+            assert_eq!(
+                args,
+                &["--download", "nxm://stardewvalley/mods/10/files/20"]
+            );
             let command = vortex_command(path, args);
             assert_eq!(
                 command.get_args().collect::<Vec<_>>(),
@@ -2131,7 +2253,7 @@ mod workflow_tests {
         .unwrap_err();
         assert_eq!(
             error,
-            "Choose the Vortex workflow in Settings before requesting installation."
+            "Choose the Vortex workflow in Settings before requesting a download."
         );
         assert_eq!(
             settings::load_checked(&root).unwrap().vortex_executable,
@@ -2150,7 +2272,7 @@ mod workflow_tests {
         )
         .unwrap();
         let receipt = request_vortex_handoff(&root, 10, 20, |_, args| {
-            assert_eq!(args[0], "--install");
+            assert_eq!(args[0], "--download");
             Ok(())
         })
         .unwrap();

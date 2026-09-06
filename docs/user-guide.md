@@ -102,7 +102,11 @@ awaiting a version choice stay in the list without blocking other downloads.
 Choose their version when ready to include them in a later batch.
 File metadata loads before the download action. When more than one current
 version or variant is available, choose it directly in the row's dropdown.
-Single-file results need no choice. The file IDs shown by this list are the
+Single-file results with a direct title match need no choice. **Other match**
+results may translate a related mod and require an explicit choice, even for a
+single file; check their Nexus page first. They never become an automatic
+fallback when the original mod's translation has no suitable file.
+The file IDs shown by this list are the
 ones used by the batch action; nothing downloads merely by opening the list.
 The newest suitable file is a selection hint, not proof that it matches your
 installed mod. Search metadata is cached locally for 24 hours.
@@ -122,8 +126,10 @@ opening of multiple tabs. Premium enables direct ZIP import.
 
 The supported batch action processes the list using the installation method saved in
 Setup/Settings. There is no Vortex/Review switch in the results dialog. Manual
-mode imports into the translator's Review; Vortex mode requests download and
-installation through Vortex. The app passes the chosen numeric
+mode imports into the translator's Review; **Download all with Vortex** sends
+the chosen files to Vortex. Its own settings control automatic installation;
+if automatic installation is disabled, install the downloads there, then deploy.
+The app passes the chosen numeric
 Nexus mod/file references to the configured Vortex executable without passing
 its API key. Vortex uses its own account, which may differ from the translator's
 key, and may ask for website confirmation. It handles download requirements,

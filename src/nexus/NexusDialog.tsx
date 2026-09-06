@@ -783,10 +783,12 @@ export function NexusDialog({
     const options = allOptions.filter(
       (option) => !recordedOptions.includes(option),
     );
-    // Only the best-ranked candidate may supply a default. Variants need explicit selection.
+    // Only a positively classified direct match may supply a default.
     const preferred = allOptions.find(
       (option) =>
-        option.candidate.modId === candidates[0]?.modId && option.recommended,
+        option.candidate.modId === candidates[0]?.modId &&
+        option.candidate.relationshipTier === "possible-original-translation" &&
+        option.recommended,
     );
     const explicit = fileSelections[entry.modId];
     const value =
@@ -804,7 +806,10 @@ export function NexusDialog({
             )
           ? ""
           : allOptions.length === 1
-            ? (options[0]?.value ?? "")
+            ? options[0]?.candidate.relationshipTier ===
+              "possible-original-translation"
+              ? options[0].value
+              : ""
             : options.some((option) => option.value === preferred?.value)
               ? preferred!.value
               : "";
@@ -1061,7 +1066,12 @@ export function NexusDialog({
                 {group.options.length > 0 &&
                 (group.options.length > 1 ||
                   !selected ||
-                  group.evidence.length > 0) ? (
+                  group.evidence.length > 0 ||
+                  group.options.some(
+                    (option) =>
+                      option.candidate.relationshipTier !==
+                      "possible-original-translation",
+                  )) ? (
                   <select
                     aria-label={`Translation file for ${sourceName}`}
                     title={
@@ -1084,7 +1094,15 @@ export function NexusDialog({
                         : "Choose translation version…"}
                     </option>
                     {group.candidates.map((item) => (
-                      <optgroup key={item.modId} label={item.name}>
+                      <optgroup
+                        key={item.modId}
+                        label={
+                          item.relationshipTier ===
+                          "possible-original-translation"
+                            ? item.name
+                            : `Other match: ${item.name}`
+                        }
+                      >
                         {group.options
                           .filter(
                             (option) => option.candidate.modId === item.modId,
@@ -1096,7 +1114,6 @@ export function NexusDialog({
                                 option.file.version,
                                 option.file.uploadedAt,
                               )}
-                              {option.recommended ? " · recommended" : ""}
                             </option>
                           ))}
                       </optgroup>
@@ -1130,6 +1147,14 @@ export function NexusDialog({
                       .join("; ")}
                   </small>
                 )}
+                {selected &&
+                  selected.candidate.relationshipTier !==
+                    "possible-original-translation" && (
+                    <small>
+                      This may translate a related mod rather than the installed
+                      original.
+                    </small>
+                  )}
                 {!selected && !group.evidence.length && (
                   <small>
                     Choose a version to include this mod in the download.
@@ -1425,9 +1450,7 @@ export function NexusDialog({
               }
               onClick={() => void downloadAll()}
             >
-              {isVortex
-                ? "Download & install all with Vortex"
-                : "Download & import all"}{" "}
+              {isVortex ? "Download all with Vortex" : "Download & import all"}{" "}
               ({pendingDownloads})
             </button>
           )}
@@ -1455,8 +1478,8 @@ export function NexusDialog({
           {isVortex
             ? configuredVortex
               ? handedOffIds.length > 0
-                ? "Deploy in Vortex; this list updates when you return."
-                : null
+                ? "Install and deploy in Vortex; this list updates when you return."
+                : "Vortex handles installation according to your settings."
               : "Choose Vortex.exe in installation settings first."
             : canDirectImport
               ? "Imports go to Review. Use the existing Export action when ready."

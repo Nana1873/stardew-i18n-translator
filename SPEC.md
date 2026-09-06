@@ -159,8 +159,13 @@ Searches support cancellation and discard results from obsolete workspace or
 language contexts. Local metadata caching is scoped by Nexus ID and language,
 expires after 24 hours, exposes freshness, and supports forced refresh. Reapply
 current scan coverage when using cached results. Missing IDs, API failures and
-incomplete results do not break scanning. Matches and newest-file selection are
-heuristics, not compatibility or completeness guarantees.
+incomplete results do not break scanning. Automatic file selection requires a
+conservative match to the original mod's full title with only language or
+translation markers around it. Additional subjects, including parenthesized
+add-on names, remain other matches requiring explicit selection. Reclassify
+valid cached results using the same rules without another API request. Matches
+and newest-file selection remain heuristics, not compatibility or completeness
+guarantees; the UI does not label files as recommended.
 
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It
@@ -185,14 +190,19 @@ other selected downloads.
 Folder direct ZIP import requires Premium. Free/unknown Folder users use the
 existing per-result website links; never open multiple tabs automatically.
 File metadata loads before confirmation; multiple current versions or variants
-are selectable inline, while a unique file needs no further choice. The batch
+are selectable inline, while a unique file for a direct title match needs no
+further choice. An other/unknown match requires explicit selection even if it
+has only one file. A direct candidate without an eligible file never supplies
+an automatic fallback from an other match. The batch
 uses those exact mod/file IDs and does not silently resolve a different version.
 Legacy configurations with a Vortex executable retain that experimental default;
 other existing users retain Folder. An explicit Folder choice wins over a saved
 executable path. No mod manager is required for personal import.
 The Vortex action hands chosen numeric Nexus mod/file references to an
-explicitly configured Vortex executable to request download and installation.
-Vortex uses its own account. Process
+explicitly configured Vortex executable with the supported `--download` NXM
+argument. Installation follows Vortex's own automation settings; users install
+there when automation is disabled. Do not add a forced `--install` request that
+can race Vortex's automatic installation path. Vortex uses its own account. Process
 launch success is reported only as a handoff request, never as download,
 installation, deployment, original-source association or Collection membership.
 Batch cancellation stops subsequent requests without undoing earlier handoffs.
