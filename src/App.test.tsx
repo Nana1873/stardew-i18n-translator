@@ -4398,7 +4398,7 @@ describe("App shell", () => {
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
 
-  it("opens the scan dialog when an automatic scan finds extra target keys", async () => {
+  it("keeps extra target keys quiet on automatic scans and available in latest scan", async () => {
     mockConfigured({
       ...EMPTY_SCAN,
       extraKeys: [
@@ -4412,9 +4412,14 @@ describe("App shell", () => {
     });
     render(<App />);
 
-    expect(
-      await screen.findByRole("dialog", { name: "Scan" }),
-    ).toHaveTextContent("removed-key");
+    const latest = await screen.findByRole("button", { name: /Latest scan:/ });
+    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    fireEvent.click(latest);
+    const summary = await screen.findByText(
+      "1 translation entry without matching English source",
+    );
+    expect(summary.closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("removed-key")).not.toBeVisible();
   });
 
   it("opens the scan dialog when an automatic scan fails", async () => {

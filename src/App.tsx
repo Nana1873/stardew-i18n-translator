@@ -760,7 +760,6 @@ export function App() {
       // useful on manual scans, but noisy during a deliberate settings change.
       await runScan(next, false, () => true, {
         clearExisting: true,
-        showExtraKeyDialog: false,
       });
     }
   }
@@ -781,7 +780,6 @@ export function App() {
     isActive: () => boolean = () => true,
     options: {
       clearExisting?: boolean;
-      showExtraKeyDialog?: boolean;
       preserveSelection?: boolean;
       showDiagnostics?: boolean;
     } = {},
@@ -843,9 +841,7 @@ export function App() {
             (result.skippedComponents?.some(
               (component) => component.requiresAttention,
             ) ??
-              false) ||
-            (options.showExtraKeyDialog !== false &&
-              (result.extraKeys?.length ?? 0) > 0),
+              false),
         );
       }
     } catch (error) {
@@ -1875,7 +1871,6 @@ export function App() {
       if (settings) {
         void runScan(settings, false, () => true, {
           preserveSelection: true,
-          showExtraKeyDialog: false,
           showDiagnostics: false,
         });
       }
