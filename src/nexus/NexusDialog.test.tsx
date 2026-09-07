@@ -545,6 +545,270 @@ async function download() {
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
 }
+it.each([
+  [false, false],
+  [true, false],
+  [false, true],
+])(
+  "imports main plus another page's exact optional component, with reload, retry=%s and main-completes-optional=%s",
+  async (failOnce, mainCompletesOptional) => {
+    const retryExpected = failOnce;
+    let sourceMods = [
+      {
+        ...mods[0],
+        uniqueId: "cp",
+        name: "Stardew Valley Expanded",
+        totalKeys: 11341,
+        translatedKeys: 0,
+      },
+      {
+        ...mods[0],
+        uniqueId: "frontier",
+        name: "Frontier Farm",
+        packageId: "Frontier",
+        totalKeys: 69,
+        translatedKeys: 0,
+      },
+      {
+        ...mods[0],
+        uniqueId: "fields",
+        name: "Grampleton Fields",
+        packageId: "Fields",
+        totalKeys: 1,
+        translatedKeys: 0,
+      },
+    ];
+    const imported = new Set<string>();
+    const original = invoke.getMockImplementation()!;
+    const results = {
+      ...search,
+      entries: [
+        {
+          ...search.entries[1],
+          result: {
+            ...search.entries[1].result,
+            candidates: [
+              { ...candidate, modId: 50589, name: "Newest main" },
+              { ...candidate, modId: 17019, name: "Older translation" },
+            ],
+          },
+        },
+      ],
+    };
+    invoke.mockImplementation(
+      (command: string, args?: Record<string, unknown>) => {
+        if (command === "nexus_list_files")
+          return Promise.resolve(
+            args?.modId === 50589
+              ? [{ ...file, fileId: 178957, uploadedAt: "2026-09-01" }]
+              : [
+                  { ...file, fileId: 7, uploadedAt: "2025-07-04" },
+                  {
+                    ...file,
+                    fileId: 136261,
+                    name: "Frontier Farm - German",
+                    fileName: "Frontier Farm - German.zip",
+                    category: "OPTIONAL",
+                  },
+                  {
+                    ...file,
+                    fileId: 8,
+                    name: "Grandpa's Farm - German",
+                    category: "OPTIONAL",
+                  },
+                  {
+                    ...file,
+                    fileId: 9,
+                    name: "Immersive Farm 2 - German",
+                    category: "OPTIONAL",
+                  },
+                ],
+          );
+        if (command === "nexus_download_preflight") {
+          if (args?.fileId === 136261 && failOnce) {
+            failOnce = false;
+            return Promise.reject(
+              new Error("Temporary optional download failure"),
+            );
+          }
+          return Promise.resolve({
+            ...archive,
+            archiveId: String(args?.fileId),
+          });
+        }
+        if (command === "nexus_resolve_archive")
+          return Promise.resolve({
+            mappings: [
+              {
+                archiveId: args?.archiveId,
+                archivePath: "Component/i18n/de.json",
+                modUniqueId: args?.archiveId === "136261" ? "frontier" : "cp",
+                relativeDir: "i18n",
+              },
+              ...(args?.archiveId === "136261" || mainCompletesOptional
+                ? [
+                    {
+                      archiveId: args?.archiveId,
+                      archivePath: "Extra/i18n/de.json",
+                      modUniqueId:
+                        args?.archiveId === "136261" ? "cp" : "frontier",
+                      relativeDir: "i18n",
+                    },
+                  ]
+                : []),
+            ],
+            unresolved: [],
+          });
+        if (command === "nexus_import_translation") {
+          imported.add(String(args?.modUniqueId));
+          return Promise.resolve({ ...counts, imported: 1 });
+        }
+        if (command === "list_community_library")
+          return Promise.resolve(
+            [...imported].map((modUniqueId) => ({
+              modUniqueId,
+              relativeDir: "i18n",
+              archivePath: "Component/i18n/de.json",
+              strings: 1,
+              sourceUrl:
+                modUniqueId === "frontier" && !mainCompletesOptional
+                  ? "https://www.nexusmods.com/stardewvalley/mods/17019?tab=files&file_id=136261"
+                  : "https://www.nexusmods.com/stardewvalley/mods/50589?tab=files&file_id=178957",
+            })),
+          );
+        return original(command, args);
+      },
+    );
+    const app = mount({
+      method: "vortex",
+      libraryMode: true,
+      mods: sourceMods,
+      search: results,
+    });
+    app.onImported.mockImplementation(async () => {
+      sourceMods = sourceMods.map((mod) =>
+        imported.has(mod.uniqueId)
+          ? { ...mod, translatedKeys: mod.totalKeys }
+          : mod,
+      );
+      app.setMods(sourceMods);
+    });
+    await waitFor(() =>
+      expect(screen.getByRole("combobox")).toHaveValue("50589:178957"),
+    );
+    await screen.findByRole("button", { name: "Download & import all (2)" });
+    expect(
+      screen.getByRole("button", { name: "Import Frontier Farm" }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Import (Grandpa|Immersive)/ }),
+    ).toBeNull();
+    await download();
+    await waitFor(() =>
+      expect(commandCalls("nexus_download_preflight")).toHaveLength(
+        mainCompletesOptional ? 1 : 2,
+      ),
+    );
+    if (retryExpected) {
+      await screen.findByText(/Temporary optional download failure/);
+      fireEvent.click(
+        await screen.findByRole("button", { name: "Retry Frontier Farm" }),
+      );
+    }
+    await waitFor(() => expect(imported.has("frontier")).toBe(true));
+    await screen.findByText(
+      "Working translation: 11410/11411 strings · 1 missing",
+    );
+    expect(commandCalls("nexus_download_preflight")[0]).toEqual({
+      modId: 50589,
+      fileId: 178957,
+    });
+    if (!mainCompletesOptional)
+      expect(commandCalls("nexus_download_preflight")[1]).toEqual({
+        modId: 17019,
+        fileId: 136261,
+      });
+    expect(
+      commandCalls("nexus_import_translation").map(
+        (request) => request.modUniqueId,
+      ),
+    ).toEqual(["cp", "frontier"]);
+    expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+    app.unmount();
+    mount({
+      method: "vortex",
+      libraryMode: true,
+      mods: sourceMods,
+      search: results,
+    });
+    await screen.findByText(
+      "Working translation: 11410/11411 strings · 1 missing",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Import Frontier Farm" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+  },
+);
+it("links free users to the supplemental file's own Nexus page", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(
+    (command: string, args?: Record<string, unknown>) => {
+      if (command === "nexus_status")
+        return Promise.resolve({
+          configured: true,
+          validated: true,
+          premium: false,
+        });
+      if (command === "nexus_list_files")
+        return Promise.resolve(
+          args?.modId === 30342
+            ? [file]
+            : [
+                { ...file, uploadedAt: "2025-01-01" },
+                {
+                  ...file,
+                  fileId: 136261,
+                  name: "Frontier Farm - German",
+                  category: "OPTIONAL",
+                },
+              ],
+        );
+      return original(command, args);
+    },
+  );
+  mount({
+    method: "vortex",
+    libraryMode: true,
+    mods: [{ ...mods[0], name: "Frontier Farm" }],
+    search: {
+      ...search,
+      entries: [
+        {
+          ...search.entries[1],
+          result: {
+            ...search.entries[1].result,
+            candidates: [candidate, { ...candidate, modId: 17019 }],
+          },
+        },
+      ],
+    },
+  });
+  expect(
+    await screen.findByRole("button", { name: "Import Frontier Farm" }),
+  ).toBeDisabled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open Nexus files for Frontier Farm" }),
+  );
+  await waitFor(() =>
+    expect(commandCalls("open_url")).toEqual([
+      {
+        url: "https://www.nexusmods.com/stardewvalley/mods/17019?tab=files&file_id=136261",
+      },
+    ]),
+  );
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+});
 it("shows complete SVE main components and absent optional text without a false import retry", async () => {
   const sourceMods = [
     {

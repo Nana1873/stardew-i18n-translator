@@ -28,6 +28,7 @@ import {
   nexusSourceComponents,
 } from "./resolveTranslation";
 import { useNexusFiles } from "./useNexusFiles";
+import { supplementalFiles } from "./supplementalFiles";
 import { deriveNexusResult, nexusCandidates } from "./resultState";
 import type { NexusSearchEntry, NexusSearchState } from "./useNexusSearch";
 
@@ -52,6 +53,7 @@ type MappingChoice = ReturnType<
   typeof resolveArchiveTranslations
 >["choices"][number];
 interface RowState {
+  linkError?: string;
   unresolved?: { archivePath: string; reason: string }[];
   status?: string;
   intent?: "vortex" | "review";
@@ -202,6 +204,9 @@ export function NexusDialog({
   const [checkedAt, setCheckedAt] = useState<number | null>(null);
   const [linkErrors, setLinkErrors] = useState<Record<number, string>>({});
   const [rows, setRows] = useState<Record<string, RowState>>({});
+  const [supplementSelections, setSupplementSelections] = useState<
+    Record<string, string>
+  >({});
   const [fileSelections, setFileSelections] = useState<Record<number, string>>(
     {},
   );
@@ -213,8 +218,14 @@ export function NexusDialog({
   const generation = useRef(0);
   const mounted = useRef(true);
   const context = `${workspaceKey}|${targetLang}|${method}`;
-  const live = useRef({ open, context, onCheckInstalled, onDeploymentStamp });
-  live.current = { open, context, onCheckInstalled, onDeploymentStamp };
+  const live = useRef({
+    open,
+    context,
+    onCheckInstalled,
+    onDeploymentStamp,
+    mods,
+  });
+  live.current = { open, context, onCheckInstalled, onDeploymentStamp, mods };
   const actionContext = useRef(context);
   const [recheckPending, setRecheckPending] = useState<string | null>(null);
   const [presentationContext, setPresentationContext] = useState<string | null>(
@@ -236,6 +247,7 @@ export function NexusDialog({
       actionContext.current = next;
       generation.current++;
       setFileSelections({});
+      setSupplementSelections({});
       setRows({});
       setCheckedAt(null);
       setCheckError(null);
@@ -387,6 +399,7 @@ export function NexusDialog({
     candidate: NexusCandidate,
     file: NexusFile,
     current: () => boolean,
+    componentId?: string,
   ) {
     patch(key, {
       status: `Downloading ${file.fileName}…`,
@@ -403,7 +416,9 @@ export function NexusDialog({
     const archive = await nexusDownloadPreflight(candidate.modId, file.fileId);
     if (!current()) return;
     const nativeResolution =
-      libraryMode || archive.files.some((file) => !file.isDefault)
+      libraryMode ||
+      componentId ||
+      archive.files.some((file) => !file.isDefault)
         ? await nexusResolveArchive(
             archive.archiveId,
             nexusSourceComponents(
@@ -414,14 +429,24 @@ export function NexusDialog({
           )
         : null;
     if (!current()) return;
+    if (componentId && !nativeResolution)
+      throw new Error(
+        "The additional archive could not be matched safely. No text was imported.",
+      );
     const resolved = nativeResolution
       ? {
-          mappings: nativeResolution.mappings,
+          mappings: nativeResolution.mappings.filter(
+            (mapping) => !componentId || mapping.modUniqueId === componentId,
+          ),
           choices: [],
           rejected: nativeResolution.unresolved.length,
           reason: "",
         }
       : resolveArchiveTranslations(archive, sourceId, mods, targetLang);
+    if (componentId && !resolved.mappings.length)
+      throw new Error(
+        "No safe translation match for the selected component. No text was imported.",
+      );
     patch(key, (row) => ({
       ...row,
       archive,
@@ -453,6 +478,7 @@ export function NexusDialog({
     sourceId: number,
     candidate: NexusCandidate,
     file: NexusFile,
+    componentId?: string,
   ) {
     await run(key, async (current) => {
       if (!/\.(zip|rar|7z)$/i.test(file.fileName))
@@ -466,7 +492,14 @@ export function NexusDialog({
         throw new Error(
           "Direct import requires Nexus Premium. Open Nexus files for a manual download.",
         );
-      await downloadAndImport(key, sourceId, candidate, file, current);
+      await downloadAndImport(
+        key,
+        sourceId,
+        candidate,
+        file,
+        current,
+        componentId,
+      );
     });
   }
   async function requestHandoff(
@@ -919,8 +952,49 @@ export function NexusDialog({
             ? components.map((component) => component.uniqueId)
             : [],
         };
+      const additional =
+        !isVortex && !sourceUnknown
+          ? supplementalFiles(
+              packageComponents,
+              result.candidates.map((candidate) => ({
+                candidate,
+                files: fileMetadata.entries[candidate.modId]?.files ?? [],
+              })),
+              targetLang,
+            ).flatMap((supplement) => {
+              const selectionKey = `${entry.modId}:${supplement.component.uniqueId}`;
+              const option =
+                supplement.options.find(
+                  (option) =>
+                    option.value === supplementSelections[selectionKey],
+                ) ?? supplement.options[0];
+              if (
+                option.value === selected?.value ||
+                importedSources.some(
+                  (saved) =>
+                    saved.modUniqueId === supplement.component.uniqueId &&
+                    sourceUrls(saved).includes(
+                      `https://www.nexusmods.com/stardewvalley/mods/${option.candidate.modId}?tab=files&file_id=${option.file.fileId}`,
+                    ),
+                )
+              )
+                return [];
+              const key = `${entry.modId}:${option.value}`;
+              return [
+                {
+                  ...supplement,
+                  selected: option,
+                  selectionKey,
+                  key,
+                  row: rows[key] ?? emptyRow(),
+                },
+              ];
+            })
+          : [];
       return {
         ...result,
+        additional,
+        supplementComponentId: undefined as string | undefined,
         key,
         row: acquired ? { ...row, completed: true } : row,
         acquired,
@@ -1029,7 +1103,7 @@ export function NexusDialog({
       !group.selected && !group.evidence.length && !group.inventory.length,
   ).length;
   const skippedComplete = scanIncomplete ? 0 : (search.skippedComplete ?? 0);
-  const pending = shown.filter(
+  const mainPending = shown.filter(
     (group) =>
       !importStatusUnknown &&
       group.selected &&
@@ -1038,6 +1112,27 @@ export function NexusDialog({
       !group.row.choices?.length &&
       !group.row.error,
   );
+  const pending = [
+    ...mainPending,
+    ...shown.flatMap((group) =>
+      group.additional
+        .filter(
+          (item) =>
+            !importStatusUnknown &&
+            !item.row.completed &&
+            !item.row.error &&
+            !item.row.choices?.length,
+        )
+        .map((item) => ({
+          ...group,
+          key: item.key,
+          selected: item.selected,
+          row: item.row,
+          acquired: false,
+          supplementComponentId: item.component.uniqueId,
+        })),
+    ),
+  ];
   const pendingDownloads = isVortex
     ? new Set(pending.map((group) => group.selected!.value)).size
     : pending.length;
@@ -1054,6 +1149,7 @@ export function NexusDialog({
         ? [
             {
               key: group.key,
+              supplementComponentId: group.supplementComponentId,
               sourceId: group.entry.modId,
               candidate: { ...group.selected.candidate },
               file: { ...group.selected.file },
@@ -1069,6 +1165,19 @@ export function NexusDialog({
       const sent = new Set<string>();
       for (const item of snapshot) {
         if (stamp !== generation.current || stopBatchRef.current) break;
+        const component = item.supplementComponentId
+          ? live.current.mods.find(
+              (mod) => mod.uniqueId === item.supplementComponentId,
+            )
+          : undefined;
+        if (
+          component &&
+          (component.statusCounts?.untranslated ??
+            component.totalKeys -
+              component.translatedKeys -
+              (component.noTranslationNeededKeys ?? 0)) === 0
+        )
+          continue;
         if (isVortex) {
           const target = `${item.candidate.modId}:${item.file.fileId}`;
           if (sent.has(target)) continue;
@@ -1078,7 +1187,13 @@ export function NexusDialog({
             .map((group) => ({ key: group.key, sourceId: group.entry.modId }));
           await requestHandoff(item.key, origins, item.candidate, item.file);
         } else {
-          await startReview(item.key, item.sourceId, item.candidate, item.file);
+          await startReview(
+            item.key,
+            item.sourceId,
+            item.candidate,
+            item.file,
+            item.supplementComponentId,
+          );
         }
       }
     } finally {
@@ -1421,6 +1536,101 @@ export function NexusDialog({
                 Open Nexus Link
               </button>
             </div>
+            {group.additional.map((item) => (
+              <div key={item.selectionKey}>
+                <small>Additional translation · {item.component.name}</small>
+                {item.options.length > 1 ? (
+                  <select
+                    aria-label={`Translation version for ${item.component.name}`}
+                    disabled={locked}
+                    value={item.selected.value}
+                    onChange={(event) =>
+                      setSupplementSelections((previous) => ({
+                        ...previous,
+                        [item.selectionKey]: event.target.value,
+                      }))
+                    }
+                  >
+                    {item.options.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.candidate.name} ·{" "}
+                        {metadataLine(
+                          option.file.version,
+                          option.file.uploadedAt,
+                        )}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <small>
+                    {metadataLine(
+                      item.selected.file.version,
+                      item.selected.file.uploadedAt,
+                    )}
+                  </small>
+                )}
+                {!item.row.completed ||
+                item.row.error ||
+                item.row.unresolved?.length ? (
+                  <button
+                    className={quiet}
+                    disabled={locked || importStatusUnknown || !canDirectImport}
+                    onClick={() =>
+                      void startReview(
+                        item.key,
+                        sourceId,
+                        item.selected.candidate,
+                        item.selected.file,
+                        item.component.uniqueId,
+                      )
+                    }
+                  >
+                    {item.row.error || item.row.completed ? "Retry" : "Import"}{" "}
+                    {item.component.name}
+                  </button>
+                ) : (
+                  <small>Import checked</small>
+                )}
+                <button
+                  className={quiet}
+                  disabled={locked}
+                  onClick={() => {
+                    patch(item.key, { linkError: undefined });
+                    void openUrl(
+                      `https://www.nexusmods.com/stardewvalley/mods/${item.selected.candidate.modId}?tab=files&file_id=${item.selected.file.fileId}`,
+                    ).catch((cause) => {
+                      if (mounted.current)
+                        patch(item.key, {
+                          linkError: `Could not open Nexus files: ${String(cause)}`,
+                        });
+                    });
+                  }}
+                  aria-label={`Open Nexus files for ${item.component.name}`}
+                >
+                  Nexus files
+                </button>
+                {item.row.linkError && (
+                  <small role="alert">{item.row.linkError}</small>
+                )}
+                {item.row.status && (
+                  <small role="status">{item.row.status}</small>
+                )}
+                {item.row.error && <small role="alert">{item.row.error}</small>}
+                {item.row.details.length > 0 && (
+                  <details>
+                    <summary>{item.component.name} import details</summary>
+                    {item.row.details.map((detail, index) => (
+                      <p key={index}>{detail}</p>
+                    ))}
+                    {item.row.unresolved?.map((unresolved, index) => (
+                      <p key={index}>
+                        {unresolved.archivePath}: {unresolved.reason}
+                      </p>
+                    ))}
+                  </details>
+                )}
+              </div>
+            ))}
             {linkErrors[sourceId] && (
               <p role="alert">
                 Could not open Nexus Link: {linkErrors[sourceId]}
@@ -1950,12 +2160,7 @@ export function NexusDialog({
               {[
                 [`${search.completed}/${search.total}`, "IDs checked"],
                 [
-                  acquisitionResults.filter(
-                    (group) =>
-                      group.options.length > 0 &&
-                      !group.row.handoff &&
-                      !group.row.completed,
-                  ).length,
+                  new Set(pending.map((group) => group.entry.modId)).size,
                   "Mods with downloads",
                 ],
                 [noDownloadIds.size, "No suitable download found"],

@@ -2595,10 +2595,11 @@ mod tests {
             if std::env::var_os("NEXUS_COMPAT_COPY_IMPORT").is_some() {
                 let copies = output.join("Mods");
                 for component in scan.mods.iter().filter(|component| {
-                    resolved
-                        .mappings
-                        .iter()
-                        .any(|m| m.mod_unique_id == component.unique_id)
+                    component.nexus_id == Some(original)
+                        || resolved
+                            .mappings
+                            .iter()
+                            .any(|m| m.mod_unique_id == component.unique_id)
                 }) {
                     let source_folder = Path::new(&component.folder_path);
                     let folder = copies.join(source_folder.strip_prefix(&mods).unwrap());
@@ -2649,6 +2650,58 @@ mod tests {
                         true,
                     );
                     copy_imports.push(json!({"component":mapping.mod_unique_id,"unit":mapping.relative_dir,"result":result}));
+                }
+                if let Ok(extra) = std::env::var("NEXUS_COMPAT_SUPPLEMENT") {
+                    crate::community_library::build(
+                        &config,
+                        &output.join("before-supplement.zip").display().to_string(),
+                        true,
+                    )
+                    .unwrap();
+                    let (page, file) = extra.split_once(':').unwrap();
+                    let extra =
+                        nexus_download_preflight(page.parse().unwrap(), file.parse().unwrap())
+                            .await
+                            .unwrap();
+                    let archive = lock().archives.get(&extra.archive_id).unwrap().clone();
+                    let copied_scan = scanner::scan_mods(&copies, "de", &config);
+                    let mappings = resolve_archive_components_with_hints(
+                        &extra.archive_id,
+                        &archive,
+                        &copied_scan.mods,
+                        "de",
+                        &hints,
+                    );
+                    assert!(mappings.unresolved.is_empty());
+                    for mapping in &mappings.mappings {
+                        import_from_config_mode(
+                            &config,
+                            &mapping.archive_id,
+                            &mapping.archive_path,
+                            &mapping.mod_unique_id,
+                            &mapping.relative_dir,
+                            false,
+                            true,
+                        )
+                        .unwrap();
+                        let imported = import_from_config_mode(
+                            &config,
+                            &mapping.archive_id,
+                            &mapping.archive_path,
+                            &mapping.mod_unique_id,
+                            &mapping.relative_dir,
+                            true,
+                            true,
+                        )
+                        .unwrap();
+                        copy_imports.push(json!({"supplement":true,"component":mapping.mod_unique_id,"unit":mapping.relative_dir,"result":{"Ok":imported}}));
+                    }
+                    let final_scan = scanner::scan_mods(&copies, "de", &config);
+                    std::fs::write(
+                        output.join("final-scan.json"),
+                        serde_json::to_vec_pretty(&final_scan).unwrap(),
+                    )
+                    .unwrap();
                 }
                 let built = crate::community_library::build(
                     &config,

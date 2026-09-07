@@ -170,6 +170,8 @@ on that page; a newer file from another page does not replace it automatically.
 You can choose another available version in the dropdown;
 a single available file needs no extra choice. **Other match** results may
 translate a related mod, so check their Nexus page before downloading.
+Optional downloads on other original-translation pages can supplement installed components with missing text when their full component name matches unambiguously. The selected main translation stays unchanged. These additions are included in **Download & import all**; each also has its own import action and Nexus files link for manual download. Uninstalled components, ambiguous names, completed text and previously imported files are not offered. Native import checks still apply, and supplemental imports are limited to the named component.
+
 Pages without an eligible file show the reason instead of an empty choice;
 their Nexus files page remains available under **Details**.
 Nexus page titles, versions and dates identify the choices; archive names are
