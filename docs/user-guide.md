@@ -31,7 +31,8 @@ tokens, and matching glossary terms help retain the meaning and formatting.
 - **Save** accepts the current translation and closes the editor.
 - **Save & next** accepts it and opens the next string.
 - **Keep original** copies the English source as an intentional translation.
-- **Clear** empties the field; save it to return the string to Open.
+- **Clear** empties the field; save it to return a nonempty source to Open.
+  A blank source with a blank target remains Done.
 
 For Review entries, the save actions are called **Approve suggestion** and
 **Approve & next**. Changed entries use **Keep translation** or **Save update**
@@ -47,12 +48,17 @@ and dialogue commands when translating the surrounding words.
 
 ## Understand status and validation
 
-| Workspace filter | Meaning                                                                                                                                |
-| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| **Open**         | No nonempty translation is available.                                                                                                  |
-| **Changed**      | The English source changed since the saved translation.                                                                                |
-| **Review**       | A live AI suggestion or external LLM result has not been accepted.                                                                     |
-| **Done**         | A translation was saved/accepted for this source, or a nonempty existing translation file was loaded without an overriding saved edit. |
+| Workspace filter | Meaning                                                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Open**         | The source needs translation text, but no nonempty translation is available.                                                                                        |
+| **Changed**      | The English source changed since the saved translation.                                                                                                             |
+| **Review**       | A live AI suggestion or external LLM result has not been accepted.                                                                                                  |
+| **Done**         | The source and target are blank, a translation was saved/accepted for this source, or an existing nonempty translation was loaded without an overriding saved edit. |
+
+A blank English source with a blank target needs no translation text and counts
+as Done. This is not a saved approval: if a mod update adds source text, the entry
+becomes Open again. Coverage reaches 100% and turns green only when every required
+string is covered.
 
 Existing `<language>.json` files are taken as translated when scanned; this is
 different from importing an external LLM batch, which creates Review entries.
@@ -101,8 +107,6 @@ translate game assets, replace your chosen language pack, or guarantee that an
 AI model will use the right wording. Matching terms also accompany AI requests;
 see [data sent to AI](ai.md#data-and-privacy).
 
-A blank English source with a blank target needs no translation text and counts as done. It is not a saved approval: if a mod update adds source text, the entry becomes Open again. Coverage reaches 100% and turns green only when every required string is covered.
-
 ## Export translation files
 
 Choose **Export…** for the current mod or all scanned mods. The confirmation
@@ -121,8 +125,9 @@ backup. Ordinary failures partway through a multi-file export roll back the
 affected targets and backups. See [backup recovery](troubleshooting.md#recovering-a-backup)
 if you need to restore an earlier file.
 
-Portuguese export uses `pt.json`; an existing `pt-BR.json` is accepted on import
-and backed up when normalized during export.
+For flat locale files, Portuguese export uses `i18n/pt.json`; an existing
+`i18n/pt-BR.json` is accepted on import and backed up when normalized during
+export. Split document names such as `i18n/de/pt.json` are kept literally.
 
 For a combined locale-only archive, choose **Export… > Build Stardew Translator Output**. Its preview includes all scanned components with effective target-language values in the configured Mods folder. Each included locale combines the existing target values for current source keys with saved overrides, using the same validation rules. Changed and Review values are included with warnings and retain their status. Choose a ZIP destination and confirm replacement if that file exists. The output preserves mod-relative folders; it contains no mod assets or manifests and does not install anything. Existing per-mod JSON export and package ZIP actions remain available.
 
