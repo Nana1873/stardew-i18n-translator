@@ -584,6 +584,20 @@ fn preview_translation_zip(
 }
 
 #[tauri::command]
+fn preview_stardew_translator_output(app: AppHandle) -> Result<release_zip::ZipPreview, String> {
+    release_zip::preview_output(&config_dir(&app)?)
+}
+
+#[tauri::command]
+fn build_stardew_translator_output(
+    app: AppHandle,
+    destination: String,
+    overwrite: bool,
+) -> Result<release_zip::ZipBuildOutcome, String> {
+    release_zip::build_output(&config_dir(&app)?, Path::new(&destination), overwrite)
+}
+
+#[tauri::command]
 fn pick_translation_zip_destination(
     app: AppHandle,
     default_file_name: String,
@@ -2637,6 +2651,8 @@ pub fn run() {
             preview_translation_zip,
             pick_translation_zip_destination,
             build_translation_zip,
+            preview_stardew_translator_output,
+            build_stardew_translator_output,
             export_llm_batch,
             pick_llm_batch_destination,
             export_llm_batch_to_path,

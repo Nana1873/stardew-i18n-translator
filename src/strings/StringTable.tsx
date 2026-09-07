@@ -19,6 +19,12 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  derivedStringStatus,
+  noTranslationNeeded,
+  isBlankText,
+} from "./status";
+import { coveragePercent } from "../coverage";
+import {
   ArrowDown,
   ArrowUp,
   CircleCheck,
@@ -104,7 +110,7 @@ const utf8Encoder = new TextEncoder();
 
 function isLiveAiSourceEligible(source: string): boolean {
   return (
-    source.length > 0 &&
+    !isBlankText(source) &&
     !source.includes("\0") &&
     utf8Encoder.encode(source).byteLength <= MAX_LIVE_AI_SOURCE_BYTES
   );
@@ -211,11 +217,13 @@ export interface StringTableProps {
   onCountsChange?: (
     translatedKeys: number,
     byStatus: Record<StringStatus, number>,
+    noTranslationNeededKeys: number,
   ) => void;
   onModCountsChange?: (
     modId: string,
     translatedKeys: number,
     byStatus: Record<StringStatus, number>,
+    noTranslationNeededKeys: number,
   ) => void;
   onVisibleSummaryChange?: (summary: StringTableSummary) => void;
   onBulkApplied?: (entry: OperationHistoryEntry) => void;
@@ -299,7 +307,12 @@ function sortField(row: Row, col: SortCol): string {
 }
 
 function countTranslated(rows: Row[]): number {
-  return rows.filter((row) => row.target.trim() !== "").length;
+  return rows.filter((row) => !isBlankText(row.target)).length;
+}
+
+function countNoTranslationNeeded(rows: Row[]): number {
+  return rows.filter((row) => noTranslationNeeded(row.source, row.target))
+    .length;
 }
 
 function countByStatus(rows: Row[]): Record<StringStatus, number> {
@@ -596,8 +609,10 @@ export function StringTable({
       const modRows = next.filter((row) => row.modUniqueId === modId);
       const translated = countTranslated(modRows);
       const byStatus = countByStatus(modRows);
-      onModCountsChange?.(modId, translated, byStatus);
-      if (mod?.uniqueId === modId) onCountsChange?.(translated, byStatus);
+      const noTextNeeded = countNoTranslationNeeded(modRows);
+      onModCountsChange?.(modId, translated, byStatus, noTextNeeded);
+      if (mod?.uniqueId === modId)
+        onCountsChange?.(translated, byStatus, noTextNeeded);
     }
   }
 
@@ -630,6 +645,7 @@ export function StringTable({
           for (const row of fileRows) {
             loaded.push({
               ...row,
+              status: derivedStringStatus(row.source, row.target, row.status),
               modUniqueId: candidate.uniqueId,
               modName: candidate.name,
               packageId: candidate.packageId,
@@ -691,7 +707,7 @@ export function StringTable({
       if (identityFilterSet && !identityFilterSet.has(identity)) return;
       if (
         effectiveStatus === "has-value"
-          ? row.target.trim().length === 0
+          ? isBlankText(row.target)
           : effectiveStatus !== "all" && row.status !== effectiveStatus
       ) {
         return;
@@ -1287,6 +1303,7 @@ export function StringTable({
     const index = rowIndex.get(identity);
     const row = index === undefined ? undefined : data[index];
     if (!row) return;
+    if (isBlankText(target)) nextStatus = "untranslated";
     await saveString(
       row.modUniqueId,
       row.file,
@@ -1302,7 +1319,7 @@ export function StringTable({
         ? {
             ...candidate,
             target,
-            status: nextStatus,
+            status: derivedStringStatus(candidate.source, target, nextStatus),
             tokenMismatchAccepted,
           }
         : candidate,
@@ -1333,7 +1350,7 @@ export function StringTable({
         const target =
           write === "clear" ? "" : write === "source" ? row.source : row.target;
         const status: StringStatus =
-          nextStatus === "translated" && target.trim() === ""
+          nextStatus === "translated" && isBlankText(target)
             ? "untranslated"
             : nextStatus;
         const tokenMismatchAccepted =
@@ -1343,7 +1360,7 @@ export function StringTable({
       .filter(
         ({ row, target, status, tokenMismatchAccepted }) =>
           row.target !== target ||
-          row.status !== status ||
+          row.status !== derivedStringStatus(row.source, target, status) ||
           row.tokenMismatchAccepted !== tokenMismatchAccepted,
       );
     if (planned.length === 0) {
@@ -1405,7 +1422,7 @@ export function StringTable({
         return {
           ...row,
           target: change.target,
-          status: change.status,
+          status: derivedStringStatus(row.source, change.target, change.status),
           tokenMismatchAccepted: change.tokenMismatchAccepted,
         };
       });
@@ -1425,7 +1442,11 @@ export function StringTable({
           return {
             ...row,
             target: change.target,
-            status: change.status,
+            status: derivedStringStatus(
+              row.source,
+              change.target,
+              change.status,
+            ),
             tokenMismatchAccepted: change.tokenMismatchAccepted,
           };
         });
@@ -1852,9 +1873,9 @@ export function StringTable({
         ? mod.packageId
         : null
       : headerContext;
-  const workingTranslated = countTranslated(data);
-  const workingProgress =
-    data.length > 0 ? Math.round((workingTranslated / data.length) * 100) : 0;
+  const noTextNeeded = countNoTranslationNeeded(data);
+  const workingTranslated = countTranslated(data) + noTextNeeded;
+  const workingProgress = coveragePercent(workingTranslated, data.length);
   const suppliedHeaderMeta =
     typeof headerMeta === "string"
       ? [headerMeta]
@@ -1867,10 +1888,11 @@ export function StringTable({
       ? String(workingTranslated) +
         " / " +
         String(data.length) +
-        " translated · " +
+        (noTextNeeded ? " covered · " : " translated · ") +
         String(workingProgress) +
         "%"
       : "No translatable strings",
+    ...(noTextNeeded ? [`${noTextNeeded} need no translation text`] : []),
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
   const gridStyle = {
@@ -2004,7 +2026,13 @@ export function StringTable({
               <span key={String(index) + "-" + item}>{item}</span>
             ))}
             {data.length > 0 && (
-              <span className="translator-progress-inline" aria-hidden="true">
+              <span
+                className="translator-progress-inline"
+                data-complete={
+                  data.length > 0 && workingTranslated >= data.length
+                }
+                aria-hidden="true"
+              >
                 <span style={{ width: String(workingProgress) + "%" }} />
               </span>
             )}
@@ -3000,7 +3028,9 @@ function RowView({
   const issues = rowValidationIssues(row);
   const severity = worstSeverity(issues);
   const displayStatus = DISPLAY_STATUS[row.status];
-  const statusHelp = STATUS_HELP[row.status];
+  const statusHelp = noTranslationNeeded(row.source, row.target)
+    ? "The source is empty; no translation text is needed."
+    : STATUS_HELP[row.status];
   const issueHelp = issues.map((issue) => issue.message).join(" ");
   const matchesSearch = (value: string, metadata = false) =>
     Boolean(
@@ -3131,7 +3161,7 @@ function RowView({
             className="translator-cell-clip"
             title={fileOverflow.title}
           >
-            {row.file}
+            {row.file.replace("/@split/", "/")}
           </span>
         </span>
       )}

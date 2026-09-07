@@ -96,6 +96,7 @@ struct PreparedEntry {
 struct PreparedPackage {
     preview: ZipPreview,
     entries: Vec<PreparedEntry>,
+    source_checks: Vec<(PathBuf, String)>,
 }
 
 pub fn preview(
@@ -134,6 +135,26 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
         &request.target_language,
         &request.components,
     )?;
+    write_prepared(prepared, destination, request.overwrite)
+}
+
+fn write_prepared(
+    prepared: PreparedPackage,
+    destination: &Path,
+    overwrite: bool,
+) -> Result<ZipBuildOutcome, String> {
+    if destination.extension().and_then(|value| value.to_str()) != Some("zip") {
+        return Err("The destination must use the .zip extension.".to_string());
+    }
+    if destination.exists() && !overwrite {
+        return Err("OVERWRITE_REQUIRED".to_string());
+    }
+    let mut paths = std::collections::HashSet::new();
+    for entry in &prepared.entries {
+        if !paths.insert(entry.preview.archive_path.to_lowercase()) {
+            return Err("Duplicate translation ZIP output path.".into());
+        }
+    }
     if !prepared.preview.problems.is_empty() {
         return Err("Fix every blocking validation problem before building the ZIP.".to_string());
     }
@@ -169,7 +190,16 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
         writer
             .finish()
             .map_err(|error| format!("Could not finalize ZIP: {error}"))?;
-        replace_file(&temp, destination, request.overwrite)
+        for (path, expected) in &prepared.source_checks {
+            let current = crate::input_limits::read_json_text(path)?;
+            if translations::source_hash(&current) != *expected {
+                return Err(
+                    "A source file changed while preparing the output. Scan again and retry."
+                        .into(),
+                );
+            }
+        }
+        replace_file(&temp, destination, overwrite)
     })();
     if write_result.is_err() {
         std::fs::remove_file(&temp).ok();
@@ -237,7 +267,20 @@ fn prepare(
         let state = translations::load(config_dir, &component.unique_id)?;
         let mut component_entries = 0;
         for file in &component.files {
-            let relative_i18n = Path::new(&file.relative_dir);
+            let output_unit = if let Some((root, _)) = file.relative_dir.split_once("/@split/") {
+                let target =
+                    scanner::split_target_path(Path::new(&file.default_path), &target_lang)?;
+                format!(
+                    "{root}/@split/{}",
+                    target
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .ok_or("Invalid split target filename.")?
+                )
+            } else {
+                file.relative_dir.clone()
+            };
+            let relative_i18n = Path::new(&output_unit);
             validate_relative_path(relative_i18n)?;
             let rows = scanner::load_strings_checked(
                 Path::new(&file.default_path),
@@ -349,7 +392,208 @@ fn prepare(
         total_strings,
         total_source_strings,
     };
-    Ok(PreparedPackage { preview, entries })
+    Ok(PreparedPackage {
+        preview,
+        entries,
+        source_checks: Vec::new(),
+    })
+}
+
+pub(crate) fn preview_output(config: &Path) -> Result<ZipPreview, String> {
+    Ok(prepare_output(config)?.preview)
+}
+
+pub(crate) fn build_output(
+    config: &Path,
+    destination: &Path,
+    overwrite: bool,
+) -> Result<ZipBuildOutcome, String> {
+    let settings = crate::settings::load_checked(config)?;
+    let (mods, _) = output_context(&settings)?;
+    let mut existing_parent = destination
+        .parent()
+        .ok_or("Choose an output destination folder.")?;
+    while !existing_parent.exists() {
+        existing_parent = existing_parent
+            .parent()
+            .ok_or("Choose an existing output destination folder.")?;
+    }
+    let parent = std::fs::canonicalize(existing_parent)
+        .map_err(|e| format!("Could not inspect output folder: {e}"))?;
+    for protected in std::iter::once(mods).chain(settings.stardew_path.map(PathBuf::from)) {
+        let protected = std::fs::canonicalize(protected)
+            .map_err(|e| format!("Could not inspect game folder: {e}"))?;
+        if parent.starts_with(protected) {
+            return Err("Save Stardew Translator Output outside the game and Mods folders.".into());
+        }
+    }
+    if std::fs::symlink_metadata(destination)
+        .is_ok_and(|metadata| !metadata.is_file() || metadata.file_type().is_symlink())
+    {
+        return Err("The output destination must be a regular ZIP file.".into());
+    }
+    write_prepared(prepare_output(config)?, destination, overwrite)
+}
+
+fn output_context(settings: &crate::settings::AppSettings) -> Result<(PathBuf, String), String> {
+    let mods = settings
+        .mods_path
+        .as_ref()
+        .map(PathBuf::from)
+        .or_else(|| {
+            settings
+                .stardew_path
+                .as_ref()
+                .map(|path| crate::detection::mods_path_for(Path::new(path)))
+        })
+        .ok_or("Configure the Mods folder before exporting Stardew Translator Output.")?;
+    let language = crate::language::normalize_target_code(
+        settings
+            .target_lang
+            .as_deref()
+            .ok_or("Choose a target language before exporting.")?,
+    )?;
+    Ok((mods, language))
+}
+
+fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
+    let (mods, language) = output_context(&crate::settings::load_checked(config)?)?;
+    let scan = scanner::scan_mods(&mods, &language, config);
+    if !scan.traversal_complete
+        || scan
+            .skipped_components
+            .iter()
+            .any(|item| item.requires_attention)
+    {
+        return Err("Resolve scan errors before exporting Stardew Translator Output.".into());
+    }
+    let working = translations::language_root(config, &language)?;
+    let mut prepared = PreparedPackage {
+        preview: ZipPreview {
+            package_name: "Stardew Translator Output".into(),
+            selected_version: String::new(), version_source: String::new(), version_conflicts: Vec::new(),
+            default_file_name: format!("Stardew Translator Output - {language}.zip"),
+            target_lang: language.clone(), target_language: language.clone(),
+            entries: Vec::new(), omitted_components: Vec::new(),
+            warnings: vec!["Includes current local translations across the scanned mods, with saved working translations taking priority. Untranslated and obsolete keys are omitted.".into()],
+            problems: Vec::new(), total_strings: 0, total_source_strings: 0,
+        },
+        entries: Vec::new(), source_checks: Vec::new(),
+    };
+    let mut identities = std::collections::HashSet::new();
+    let mut paths = std::collections::HashSet::new();
+    for component in scan.mods {
+        if !identities.insert(component.unique_id.to_lowercase()) {
+            return Err("Ambiguous component identity in the current scan.".into());
+        }
+        let state = translations::load(&working, &component.unique_id)?;
+        let mut component_entries = 0;
+        for file in component.i18n_files {
+            let input = ExportFileInput {
+                relative_dir: file.relative_dir.clone(),
+                default_path: file.default_path.clone(),
+                target_path: file.target_path.clone(),
+            };
+            crate::export::validate_paths(&mods, &language, std::slice::from_ref(&input))?;
+            let relative_target = Path::new(&file.target_path)
+                .strip_prefix(&mods)
+                .map_err(|_| "Output path is outside the Mods folder.")?;
+            let mut parts = Vec::new();
+            append_parts(&mut parts, relative_target)?;
+            let archive_path = parts.join("/");
+            validate_archive_path(&archive_path)?;
+            if !paths.insert(archive_path.to_lowercase()) {
+                return Err("Duplicate translation ZIP output path.".into());
+            }
+            let source_path = Path::new(&file.default_path);
+            let source_text = crate::input_limits::read_json_text(source_path)?;
+            let rows = scanner::load_strings_checked(
+                source_path,
+                Path::new(&file.target_path),
+                &state,
+                &file.relative_dir,
+            )?;
+            prepared.source_checks.push((
+                source_path.to_path_buf(),
+                translations::source_hash(&source_text),
+            ));
+            let mut output = Map::new();
+            let mut review_needed = 0;
+            let mut source_count = 0;
+            for row in rows {
+                if row.source.trim().is_empty() {
+                    continue;
+                }
+                source_count += 1;
+                if row.target.trim().is_empty() {
+                    continue;
+                }
+                let reason = if row.status == "outdated" {
+                    Some("Source changed since this translation was saved. Review and save it again.".to_owned())
+                } else if !row.token_mismatch_accepted
+                    && !tokens::token_differences(&row.source, &row.target).is_empty()
+                {
+                    Some(
+                        "Protected-token mismatch. Review the translation before exporting."
+                            .to_owned(),
+                    )
+                } else {
+                    None
+                };
+                if let Some(reason) = reason {
+                    prepared.preview.problems.push(ZipProblem {
+                        mod_unique_id: component.unique_id.clone(),
+                        mod_name: component.name.clone(),
+                        relative_dir: file.relative_dir.clone(),
+                        key: row.key,
+                        reason,
+                    });
+                    continue;
+                }
+                if row.status == "review-needed" {
+                    review_needed += 1;
+                }
+                output.insert(row.key, Value::String(row.target));
+            }
+            if output.is_empty() {
+                continue;
+            }
+            prepared.preview.total_source_strings += source_count;
+            prepared.preview.total_strings += output.len();
+            if review_needed > 0 {
+                prepared.preview.warnings.push(format!(
+                    "{} contains {review_needed} unreviewed AI suggestion(s).",
+                    component.name
+                ));
+            }
+            let preview = ZipEntryPreview {
+                mod_name: component.name.clone(),
+                mod_version: component.version.clone(),
+                archive_path,
+                strings: output.len(),
+                total_source_strings: source_count,
+                outdated: 0,
+                review_needed,
+            };
+            prepared.entries.push(PreparedEntry {
+                preview,
+                body: serialize_json(&output)?,
+            });
+            component_entries += 1;
+        }
+        if component_entries == 0 {
+            prepared.preview.omitted_components.push(component.name);
+        }
+    }
+    prepared
+        .entries
+        .sort_by(|a, b| a.preview.archive_path.cmp(&b.preview.archive_path));
+    prepared.preview.entries = prepared
+        .entries
+        .iter()
+        .map(|entry| entry.preview.clone())
+        .collect();
+    Ok(prepared)
 }
 
 fn select_version(
@@ -426,8 +670,18 @@ fn archive_path(
 ) -> Result<String, String> {
     let mut parts = vec![package_name.to_string()];
     append_parts(&mut parts, component)?;
-    append_parts(&mut parts, relative_i18n)?;
-    parts.push(format!("{target_lang}.json"));
+    let unit = relative_i18n.to_string_lossy().replace('\\', "/");
+    if let Some((root, name)) = unit.split_once("/@split/") {
+        append_parts(&mut parts, Path::new(root))?;
+        if name.contains('/') {
+            return Err("Invalid split translation filename.".into());
+        }
+        parts.push(target_lang.to_owned());
+        parts.push(name.to_owned());
+    } else {
+        append_parts(&mut parts, relative_i18n)?;
+        parts.push(format!("{target_lang}.json"));
+    }
     let path = parts.join("/");
     validate_archive_path(&path)?;
     Ok(path)
@@ -566,6 +820,349 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    fn output_fixture(label: &str) -> (PathBuf, PathBuf, PathBuf) {
+        let root = crate::test_support::temp_dir(label);
+        let config = root.join("data");
+        let mods = root.join("Mods");
+        std::fs::create_dir_all(&mods).unwrap();
+        crate::settings::save(
+            &config,
+            &crate::settings::AppSettings {
+                mods_path: Some(mods.display().to_string()),
+                target_lang: Some("de".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        (root, config, mods)
+    }
+
+    fn output_component(mods: &Path, folder: &str, id: &str, source: &str) -> PathBuf {
+        let path = mods.join(folder);
+        write(&path.join("manifest.json"), &serde_json::json!({"Name": id, "Author": "Fixture", "Version": "1.0.0", "Description": "Fixture", "UniqueID": id, "ContentPackFor": {"UniqueID": "Pathoschild.ContentPatcher"}}).to_string());
+        write(&path.join("i18n/default.json"), source);
+        path
+    }
+
+    fn output_state(
+        config: &Path,
+        id: &str,
+        unit: &str,
+        key: &str,
+        source: &str,
+        target: &str,
+        status: &str,
+    ) {
+        let working = translations::language_root(config, "de").unwrap();
+        translations::save_one(
+            &working,
+            id,
+            translations::entry_key(unit, key),
+            translations::StoredString {
+                source_hash: translations::source_hash(source),
+                target: target.into(),
+                status: status.into(),
+            },
+        )
+        .unwrap();
+    }
+
+    fn zip_documents(path: &Path) -> std::collections::BTreeMap<String, Value> {
+        let mut zip = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
+        let mut result = std::collections::BTreeMap::new();
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).unwrap();
+            let mut body = String::new();
+            entry.read_to_string(&mut body).unwrap();
+            result.insert(
+                entry.name().to_owned(),
+                serde_json::from_str(&body).unwrap(),
+            );
+        }
+        result
+    }
+
+    #[test]
+    fn output_preserves_local_values_and_saved_overrides_at_actual_mod_paths() {
+        let (root, config, mods) = output_fixture("output-saved-only");
+        let first = output_component(
+            &mods,
+            "Pack/[CP] First",
+            "Fixture.First",
+            r#"{"manual":"Hello @","ai":"Goodbye","import":"Thanks","blank":"","deployed":"On disk only"}"#,
+        );
+        write(
+            &first.join("i18n/de.json"),
+            r#"{"manual":"Old @","deployed":"Keep local translation","obsolete":"Omit orphan"}"#,
+        );
+        write(&first.join("mod.dll"), "not an assembly");
+        write(&first.join("assets/map.png"), "not an asset");
+        output_state(
+            &config,
+            "Fixture.First",
+            "i18n",
+            "manual",
+            "Hello @",
+            "Hallo @",
+            "translated",
+        );
+        output_state(
+            &config,
+            "Fixture.First",
+            "i18n",
+            "ai",
+            "Goodbye",
+            "Tschüss",
+            "review-needed",
+        );
+        output_state(
+            &config,
+            "Fixture.First",
+            "i18n",
+            "import",
+            "Thanks",
+            "Danke",
+            "translated",
+        );
+        output_state(
+            &config,
+            "Fixture.First",
+            "i18n",
+            "blank",
+            "",
+            "Old invalid saved value",
+            "translated",
+        );
+        let second = output_component(&mods, "Second", "Fixture.Second", r#"{"keep":"Same"}"#);
+        output_state(
+            &config,
+            "Fixture.Second",
+            "i18n",
+            "keep",
+            "Same",
+            "Same",
+            "translated",
+        );
+        let disk = output_component(&mods, "DiskOnly", "Fixture.Disk", r#"{"hello":"Hello"}"#);
+        write(&disk.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        output_component(
+            &mods,
+            "Untranslated",
+            "Fixture.Empty",
+            r#"{"missing":"Never copy source"}"#,
+        );
+        let destination = root.join("output.zip");
+        let preview = preview_output(&config).unwrap();
+        assert_eq!(preview.total_strings, 6);
+        assert_eq!(
+            preview
+                .entries
+                .iter()
+                .map(|entry| entry.review_needed)
+                .sum::<usize>(),
+            1
+        );
+        assert!(preview.problems.is_empty());
+        build_output(&config, &destination, false).unwrap();
+        let documents = zip_documents(&destination);
+        assert_eq!(documents.len(), 3);
+        assert_eq!(
+            documents["Pack/[CP] First/i18n/de.json"],
+            serde_json::json!({"manual":"Hallo @","ai":"Tschüss","import":"Danke","deployed":"Keep local translation"})
+        );
+        assert_eq!(
+            documents["Second/i18n/de.json"],
+            serde_json::json!({"keep":"Same"})
+        );
+        assert!(!second.join("i18n/de.json").exists());
+        assert_eq!(
+            documents["DiskOnly/i18n/de.json"],
+            serde_json::json!({"hello":"Hallo"})
+        );
+        assert!(!documents
+            .keys()
+            .any(|path| path.starts_with("Untranslated/")));
+        assert!(std::fs::read_to_string(first.join("i18n/de.json"))
+            .unwrap()
+            .contains("Omit orphan"));
+    }
+
+    #[test]
+    fn output_preserves_resolved_split_locale_filename() {
+        let (root, config, mods) = output_fixture("output-split");
+        let path = output_component(&mods, "Split", "Fixture.Split", "{}");
+        std::fs::remove_file(path.join("i18n/default.json")).unwrap();
+        write(
+            &path.join("i18n/default/Dialogue.json"),
+            r#"{"hello":"Hello"}"#,
+        );
+        write(
+            &path.join("i18n/de/GermanDialogue.json"),
+            r#"{"hello":"Old"}"#,
+        );
+        output_state(
+            &config,
+            "Fixture.Split",
+            "i18n/@split/Dialogue.json",
+            "hello",
+            "Hello",
+            "Hallo",
+            "translated",
+        );
+        let destination = root.join("output.zip");
+        build_output(&config, &destination, false).unwrap();
+        assert_eq!(
+            zip_documents(&destination),
+            std::collections::BTreeMap::from([(
+                "Split/i18n/de/GermanDialogue.json".into(),
+                serde_json::json!({"hello":"Hallo"})
+            )])
+        );
+        let single = root.join("single.zip");
+        build(
+            &translations::language_root(&config, "de").unwrap(),
+            &ZipBuildRequest {
+                mods_path: mods.display().to_string(),
+                package_name: "Split".into(),
+                target_lang: "de".into(),
+                target_language: "German".into(),
+                components: vec![ZipComponentInput {
+                    unique_id: "Fixture.Split".into(),
+                    name: "Split".into(),
+                    version: "1.0.0".into(),
+                    folder_path: path.display().to_string(),
+                    files: vec![ExportFileInput {
+                        relative_dir: "i18n/@split/Dialogue.json".into(),
+                        default_path: path
+                            .join("i18n/default/Dialogue.json")
+                            .display()
+                            .to_string(),
+                        target_path: path
+                            .join("i18n/de/GermanDialogue.json")
+                            .display()
+                            .to_string(),
+                    }],
+                }],
+                destination: single.display().to_string(),
+                overwrite: false,
+            },
+        )
+        .unwrap();
+        assert_eq!(zip_documents(&single), zip_documents(&destination));
+    }
+
+    #[test]
+    fn output_rejects_case_insensitive_collisions_before_replacing_artifact() {
+        let (root, config, mods) = output_fixture("output-collision");
+        for name in ["First", "Second"] {
+            let path = output_component(&mods, name, name, r#"{"hello":"Hello"}"#);
+            write(&path.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        }
+        let mut prepared = prepare_output(&config).unwrap();
+        prepared.entries[1].preview.archive_path =
+            prepared.entries[0].preview.archive_path.to_uppercase();
+        let destination = root.join("output.zip");
+        write(&destination, "prior artifact");
+        assert!(write_prepared(prepared, &destination, true).is_err());
+        assert_eq!(std::fs::read(destination).unwrap(), b"prior artifact");
+    }
+
+    #[test]
+    fn output_blocks_invalid_and_stale_work_without_replacing_prior_artifact() {
+        let (root, config, mods) = output_fixture("output-blocked");
+        output_component(
+            &mods,
+            "Example",
+            "Fixture.Example",
+            r#"{"hello":"Hello @","changed":"New"}"#,
+        );
+        output_state(
+            &config,
+            "Fixture.Example",
+            "i18n",
+            "hello",
+            "Hello @",
+            "Hallo",
+            "translated",
+        );
+        output_state(
+            &config,
+            "Fixture.Example",
+            "i18n",
+            "changed",
+            "Old",
+            "Alt",
+            "translated",
+        );
+        let destination = root.join("output.zip");
+        write(&destination, "prior artifact");
+        let preview = preview_output(&config).unwrap();
+        assert_eq!(preview.problems.len(), 2);
+        assert!(build_output(&config, &destination, true).is_err());
+        assert_eq!(std::fs::read(&destination).unwrap(), b"prior artifact");
+        assert!(!sibling(&destination, ".tmp").exists());
+    }
+
+    #[test]
+    fn output_respects_current_explicit_token_acceptance_and_rechecks_sources() {
+        let (root, config, mods) = output_fixture("output-accepted-current");
+        let component = output_component(
+            &mods,
+            "Example",
+            "Fixture.Example",
+            r#"{"hello":"Hello @"}"#,
+        );
+        output_state(
+            &config,
+            "Fixture.Example",
+            "i18n",
+            "hello",
+            "Hello @",
+            "Hallo",
+            translations::TOKEN_MISMATCH_ACCEPTED_STATUS,
+        );
+        let destination = root.join("output.zip");
+        build_output(&config, &destination, false).unwrap();
+        let prior = std::fs::read(&destination).unwrap();
+        let prepared = prepare_output(&config).unwrap();
+        write(
+            &component.join("i18n/default.json"),
+            r#"{"hello":"Changed @"}"#,
+        );
+        assert!(write_prepared(prepared, &destination, true)
+            .unwrap_err()
+            .contains("changed"));
+        assert_eq!(std::fs::read(&destination).unwrap(), prior);
+        assert!(!sibling(&destination, ".tmp").exists());
+        assert_eq!(preview_output(&config).unwrap().problems.len(), 1);
+    }
+
+    #[test]
+    fn output_refuses_game_destination_and_ambiguous_components() {
+        let (root, config, mods) = output_fixture("output-paths");
+        output_component(&mods, "Example", "Fixture.Example", r#"{"hello":"Hello"}"#);
+        output_state(
+            &config,
+            "Fixture.Example",
+            "i18n",
+            "hello",
+            "Hello",
+            "Hallo",
+            "translated",
+        );
+        assert!(build_output(&config, &mods.join("output.zip"), false)
+            .unwrap_err()
+            .contains("outside"));
+        assert!(!mods.join("output.zip").exists());
+        output_component(
+            &mods,
+            "Duplicate",
+            "Fixture.Example",
+            r#"{"hello":"Hello"}"#,
+        );
+        assert!(build_output(&config, &root.join("output.zip"), false).is_err());
     }
 
     fn request(

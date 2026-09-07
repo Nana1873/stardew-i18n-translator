@@ -1058,3 +1058,32 @@ describe("StringEditor", () => {
     );
   });
 });
+
+it.each(["", " ", "\t\r\n", "\u00a0"])(
+  "shows blank source/target as Done without saving an exemption: %j",
+  async (blank) => {
+    const app = renderEditor({
+      source: blank,
+      target: blank,
+      status: "untranslated",
+    });
+    expect(screen.getByText("Done")).toBeInTheDocument();
+    expect(
+      screen.queryByText("Key is present but empty"),
+    ).not.toBeInTheDocument();
+    expect(app.onSave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() =>
+      expect(app.onSave).toHaveBeenCalledWith(blank, "untranslated", false),
+    );
+  },
+);
+
+it.each(["translated", "outdated", "review-needed"] as const)(
+  "shows new source text with blank target as Open despite previous %s",
+  (status) => {
+    renderEditor({ source: "New title", target: "", status });
+    expect(screen.getByText("Open")).toBeInTheDocument();
+    expect(screen.queryByText("Done")).not.toBeInTheDocument();
+  },
+);

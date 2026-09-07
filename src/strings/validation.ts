@@ -9,11 +9,12 @@
  * a dropped second `$b` is caught too.
  *  - token-missing    (error)   a source token is absent (or under-represented)
  *  - token-added      (error)   the target has more of a token than the source
- *  - empty-target     (warning) the key is present in the target file but empty
+ *  - empty-target     (warning) the target key is blank while the source has text
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
  *  - escape-suspicious   (warning) literal JSON-style escapes differ
  */
+import { isBlankText, noTranslationNeeded } from "./status";
 import {
   describeToken,
   extractProtectedTokens,
@@ -87,6 +88,8 @@ export function validate(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
+  if (noTranslationNeeded(source, target)) return issues;
+
   if (target.length > 0) {
     const sourceTokens = tokenCounts(source);
     const targetTokens = tokenCounts(target);
@@ -131,7 +134,8 @@ export function validate(
         message: "Literal escape sequences differ from the original",
       });
     }
-  } else if (targetPresent) {
+  }
+  if (targetPresent && isBlankText(target) && !isBlankText(source)) {
     issues.push({
       ruleId: "empty-target",
       severity: "warning",

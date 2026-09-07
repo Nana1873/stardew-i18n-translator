@@ -441,6 +441,26 @@ describe("StringTable workbench", () => {
     expect(screen.getByText("scanned just now")).toBeVisible();
   });
 
+  it("does not round one missing string up to a complete workbench", async () => {
+    invokeMock.mockImplementation((command: string) =>
+      Promise.resolve(
+        command === "load_strings"
+          ? Array.from({ length: 200 }, (_, index) => ({
+              key: `key-${index}`,
+              source: "Source",
+              target: index === 199 ? "" : "Translation",
+              targetPresent: index !== 199,
+              status: index === 199 ? "untranslated" : "translated",
+            }))
+          : null,
+      ),
+    );
+    render(<StringTable mod={MOD} />);
+    expect(
+      await screen.findByText("199 / 200 translated · 99.5%"),
+    ).toBeVisible();
+  });
+
   it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
     const onOpenMod = vi.fn();
     render(
@@ -1441,6 +1461,7 @@ describe("StringTable workbench", () => {
       "a.b",
       3,
       expect.objectContaining({ translated: 2, outdated: 1 }),
+      0,
     );
   });
 
@@ -1492,6 +1513,7 @@ describe("StringTable workbench", () => {
       "a.b",
       3,
       expect.objectContaining({ translated: 2, outdated: 1 }),
+      0,
     );
   });
 
@@ -1908,7 +1930,7 @@ describe("StringTable workbench", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: /5 selected/ }));
     expect(
-      screen.getByText("5 Open/Changed exportable · 2 AI-ready"),
+      screen.getByText("4 Open/Changed exportable · 2 AI-ready"),
     ).toBeVisible();
     fireEvent.click(
       screen.getByRole("menuitem", { name: /Export selection as LLM batch/ }),
@@ -1919,13 +1941,12 @@ describe("StringTable workbench", () => {
       source: string;
     }>;
     expect(exportedItems.map((item) => item.key)).toEqual([
-      "empty",
       "nul",
       "oversized",
       "boundary",
       "valid",
     ]);
-    expect(exportedItems[0]?.source).toBe("");
+    expect(exportedItems.some((item) => item.key === "empty")).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: /5 selected/ }));
     fireEvent.click(
@@ -2617,4 +2638,143 @@ describe("StringTable workbench", () => {
       height: "178px",
     });
   });
+});
+
+it("derives blank source status and reopens it after a source update, retaining personal Review", async () => {
+  const blank = {
+    ...ROWS["a.b"][0],
+    key: "blank",
+    source: " \t\r\n\u00a0",
+    target: "",
+    status: "untranslated",
+  };
+  const personal = {
+    ...blank,
+    key: "personal",
+    target: "My text",
+    status: "review-needed",
+  };
+  installBackendRows({ "a.b": [blank, personal] });
+  const onModCountsChange = vi.fn();
+  const view = render(
+    <StringTable mod={MOD} onModCountsChange={onModCountsChange} />,
+  );
+  await screen.findByText("blank");
+  expect(rowFor("blank")).toHaveAttribute("data-status", "translated");
+  expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
+  expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
+    "data-complete",
+    "true",
+  );
+  expect(screen.getByText("1 need no translation text")).toBeInTheDocument();
+  expect(onModCountsChange).toHaveBeenLastCalledWith(
+    "a.b",
+    1,
+    expect.objectContaining({ translated: 1, "review-needed": 1 }),
+    1,
+  );
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
+    false,
+  );
+
+  installBackendRows({
+    "a.b": [{ ...blank, source: "New title", status: "translated" }, personal],
+  });
+  view.rerender(
+    <StringTable
+      mod={MOD}
+      onModCountsChange={onModCountsChange}
+      reloadToken={1}
+    />,
+  );
+  await waitFor(() =>
+    expect(rowFor("blank")).toHaveAttribute("data-status", "untranslated"),
+  );
+  expect(onModCountsChange).toHaveBeenLastCalledWith(
+    "a.b",
+    1,
+    expect.objectContaining({ untranslated: 1, "review-needed": 1 }),
+    0,
+  );
+  expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
+    "data-complete",
+    "false",
+  );
+  expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
+});
+
+it("reports both working counters after clearing a personal target on a blank source", async () => {
+  installBackendRows({
+    "a.b": [{ ...ROWS["a.b"][0], source: "", target: "My text" }],
+  });
+  const onModCountsChange = vi.fn();
+  render(<StringTable mod={MOD} onModCountsChange={onModCountsChange} />);
+  await screen.findByText("greeting");
+  fireEvent.doubleClick(rowFor("greeting"));
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(onModCountsChange).toHaveBeenLastCalledWith(
+      "a.b",
+      0,
+      expect.objectContaining({ translated: 1, untranslated: 0 }),
+      1,
+    ),
+  );
+  expect(invokeMock).toHaveBeenCalledWith(
+    "save_string",
+    expect.objectContaining({ target: "", status: "untranslated" }),
+  );
+  expect(rowFor("greeting")).toHaveAttribute("data-status", "translated");
+  expect(screen.getByText("1 / 1 covered · 100%")).toBeInTheDocument();
+});
+
+it("does not save an exemption or create undo history for Done on an already blank pair", async () => {
+  installBackendRows({
+    "a.b": [
+      { ...ROWS["a.b"][0], source: "", target: "", status: "untranslated" },
+    ],
+  });
+  const onNotify = vi.fn();
+  render(<StringTable mod={MOD} onNotify={onNotify} />);
+  await screen.findByText("greeting");
+  fireEvent.click(
+    screen.getByRole("checkbox", { name: "Select all visible strings" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+  fireEvent.click(screen.getByRole("menuitem", { name: "Mark as done" }));
+  await waitFor(() =>
+    expect(onNotify).toHaveBeenCalledWith(
+      "No selected strings needed a change.",
+      "info",
+    ),
+  );
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
+    false,
+  );
+});
+
+it("counts NEL as no-work and BOM as physical text without overlap", async () => {
+  installBackendRows({
+    "a.b": [
+      { ...ROWS["a.b"][0], key: "nel", source: "\u0085", target: "\u0085" },
+      { ...ROWS["a.b"][0], key: "bom", source: "", target: "\uFEFF" },
+    ],
+  });
+  const onModCountsChange = vi.fn();
+  render(<StringTable mod={MOD} onModCountsChange={onModCountsChange} />);
+  await screen.findByText("nel");
+  expect(onModCountsChange).toHaveBeenLastCalledWith(
+    "a.b",
+    1,
+    expect.objectContaining({ translated: 2 }),
+    1,
+  );
+  expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
+    false,
+  );
 });

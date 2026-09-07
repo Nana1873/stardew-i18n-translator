@@ -45,3 +45,22 @@ export function statusTint(hex: string, alpha: number): string {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
+
+/** Unicode White_Space matches Rust str::trim, including NEL but excluding BOM. */
+export function isBlankText(text: string): boolean {
+  return /^\p{White_Space}*$/u.test(text);
+}
+
+/** This is derived from the current text, never a saved exemption. */
+export function noTranslationNeeded(source: string, target: string): boolean {
+  return isBlankText(source) && isBlankText(target);
+}
+
+export function derivedStringStatus(
+  source: string,
+  target: string,
+  status: StringStatus,
+): StringStatus {
+  if (!isBlankText(target)) return status;
+  return noTranslationNeeded(source, target) ? "translated" : "untranslated";
+}

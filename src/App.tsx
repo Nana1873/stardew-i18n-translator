@@ -5,6 +5,7 @@
  * right = string table. The Setup Wizard opens on first launch and via
  * Settings. Scans run in the Rust backend and populate the workspace.
  */
+import { workingCoveredKeys } from "./coverage";
 import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
@@ -37,6 +38,8 @@ import {
   type ZipComponentInput,
   type ZipPreview,
   buildTranslationZip,
+  buildStardewTranslatorOutput,
+  previewStardewTranslatorOutput,
   cancelAiRun,
   codexCliStatus,
   exportAllMods,
@@ -138,7 +141,7 @@ function countInProgressPackages(mods: ScannedMod[]): number {
       translatedKeys: 0,
     };
     current.totalKeys += mod.totalKeys;
-    current.translatedKeys += mod.translatedKeys;
+    current.translatedKeys += workingCoveredKeys(mod);
     totals.set(mod.packageId, current);
   }
 
@@ -317,11 +320,14 @@ export function App() {
   const latestResultButtonRef = useRef<HTMLButtonElement>(null);
   const resultToggleButtonRef = useRef<HTMLButtonElement>(null);
   const [zipPreview, setZipPreview] = useState<ZipPreview | null>(null);
+  const zipPreviewRequest = useRef(0);
   const [zipError, setZipError] = useState<string | null>(null);
   const [zipBuilding, setZipBuilding] = useState(false);
   const [zipContext, setZipContext] = useState<{
     packageName: string;
     components: ZipComponentInput[];
+    combined?: boolean;
+    settingsKey?: string;
   } | null>(null);
   const [zipOverwrite, setZipOverwrite] = useState<{
     destination: string;
@@ -994,6 +1000,7 @@ export function App() {
     modId: string,
     translatedKeys: number,
     statusCounts: Record<StringStatus, number>,
+    noTranslationNeededKeys: number,
   ) {
     setScan((prev) => {
       if (!prev) return prev;
@@ -1002,16 +1009,19 @@ export function App() {
         mods: prev.mods.map((mod) => {
           if (mod.uniqueId !== modId) return mod;
           const progress =
-            mod.totalKeys > 0 ? translatedKeys / mod.totalKeys : 0;
+            mod.totalKeys > 0
+              ? (translatedKeys + noTranslationNeededKeys) / mod.totalKeys
+              : 0;
           const status =
             mod.totalKeys === 0
               ? "none"
-              : translatedKeys >= mod.totalKeys
+              : translatedKeys + noTranslationNeededKeys >= mod.totalKeys
                 ? "translated"
                 : "untranslated";
           return {
             ...mod,
             translatedKeys,
+            noTranslationNeededKeys,
             progress,
             status,
             statusCounts,
@@ -1218,6 +1228,7 @@ export function App() {
   }
 
   async function requestTranslationZip() {
+    zipPreviewRequest.current++;
     if (!selectedMod || !settings?.modsPath || !settings.targetLang) return;
     const packageName = selectedMod.packageId;
     const components = zipComponents(packageName);
@@ -1238,6 +1249,38 @@ export function App() {
     } catch (error) {
       logFrontendError("previewTranslationZip", String(error));
       setZipError(String(error));
+    }
+  }
+
+  async function requestTranslatorOutput() {
+    if (!settings?.modsPath || !settings.targetLang || zipBuilding) return;
+    const settingsKey = JSON.stringify([
+      settings.modsPath,
+      settings.targetLang,
+    ]);
+    const request = ++zipPreviewRequest.current;
+    setLastZipRelease(null);
+    setZipContext({
+      packageName: "Stardew Translator Output",
+      components: [],
+      combined: true,
+      settingsKey,
+    });
+    setZipPreview(null);
+    setZipError(null);
+    try {
+      const preview = await previewStardewTranslatorOutput();
+      if (request !== zipPreviewRequest.current) return;
+      if (
+        JSON.stringify([
+          settingsRef.current?.modsPath,
+          settingsRef.current?.targetLang,
+        ]) !== settingsKey
+      )
+        return;
+      setZipPreview(preview);
+    } catch (error) {
+      if (request === zipPreviewRequest.current) setZipError(String(error));
     }
   }
 
@@ -1300,7 +1343,7 @@ export function App() {
   }
 
   function showZipOutcome(outcome: ZipBuildOutcome, version: string) {
-    if (zipPreview) {
+    if (zipPreview && !zipContext?.combined) {
       setLastZipRelease({
         preview: zipPreview,
         initialVersion: version,
@@ -1335,15 +1378,28 @@ export function App() {
     setZipBuilding(true);
     setZipError(null);
     try {
-      const outcome = await buildTranslationZip(
-        settings.modsPath,
-        zipContext.packageName,
-        settings.targetLang,
-        languageLabel,
-        zipContext.components,
-        destination,
-        overwrite,
-      );
+      if (
+        zipContext.combined &&
+        zipContext.settingsKey !==
+          JSON.stringify([
+            settingsRef.current?.modsPath,
+            settingsRef.current?.targetLang,
+          ])
+      )
+        throw new Error(
+          "Translation settings changed. Open the output preview again.",
+        );
+      const outcome = zipContext.combined
+        ? await buildStardewTranslatorOutput(destination, overwrite)
+        : await buildTranslationZip(
+            settings.modsPath,
+            zipContext.packageName,
+            settings.targetLang,
+            languageLabel,
+            zipContext.components,
+            destination,
+            overwrite,
+          );
       showZipOutcome(outcome, version);
     } catch (error) {
       if (String(error).includes("OVERWRITE_REQUIRED")) {
@@ -1466,7 +1522,7 @@ export function App() {
         newFiles: newFiles.length,
         mods: null,
         willWrite: mod.translatedKeys,
-        openOmitted: Math.max(0, mod.totalKeys - mod.translatedKeys),
+        openOmitted: Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
         changedIncluded: mod.statusCounts?.outdated ?? null,
         reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
         acceptedMismatches: preflight.acceptedMismatches,
@@ -1516,7 +1572,8 @@ export function App() {
         mods: affected.length,
         willWrite: affected.reduce((sum, mod) => sum + mod.translatedKeys, 0),
         openOmitted: affected.reduce(
-          (sum, mod) => sum + Math.max(0, mod.totalKeys - mod.translatedKeys),
+          (sum, mod) =>
+            sum + Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
           0,
         ),
         changedIncluded: statusCountsKnown
@@ -1973,6 +2030,13 @@ export function App() {
           checkingExportReadiness={checkingExportReadiness}
           onBuildZip={() => void requestTranslationZip()}
           buildZipEnabled={Boolean(selectedMod) && !zipBuilding && !exporting}
+          onBuildOutput={() => void requestTranslatorOutput()}
+          outputEnabled={
+            Boolean(scan?.mods.length) &&
+            !zipBuilding &&
+            !exporting &&
+            !scanning
+          }
           onReleaseNotes={() => void requestReleaseNotes()}
           releaseNotesEnabled={Boolean(selectedMod) && !exporting}
           onImportBatch={() => void handleImportBatch()}
@@ -2387,6 +2451,7 @@ export function App() {
           <TranslationZipDialog
             key={zipPreview?.defaultFileName ?? "loading"}
             preview={zipPreview}
+            combined={zipContext?.combined}
             componentCount={zipContext?.components.length ?? null}
             error={zipError}
             building={zipBuilding}
@@ -2396,6 +2461,7 @@ export function App() {
               void chooseZipDestination(version, fileName)
             }
             onClose={() => {
+              zipPreviewRequest.current++;
               setZipPreview(null);
               setZipError(null);
               setZipContext(null);
@@ -2584,6 +2650,8 @@ function AppToolbar({
   checkingExportReadiness,
   onBuildZip,
   buildZipEnabled,
+  onBuildOutput,
+  outputEnabled,
   onReleaseNotes,
   releaseNotesEnabled,
   onImportBatch,
@@ -2608,6 +2676,8 @@ function AppToolbar({
   checkingExportReadiness: boolean;
   onBuildZip: () => void;
   buildZipEnabled: boolean;
+  onBuildOutput: () => void;
+  outputEnabled: boolean;
   onReleaseNotes: () => void;
   releaseNotesEnabled: boolean;
   onImportBatch: () => void;
@@ -2753,8 +2823,12 @@ function AppToolbar({
               }
             }}
             disabled={
-              !(exportEnabled || exportAllEnabled || buildZipEnabled) ||
-              exporting
+              !(
+                exportEnabled ||
+                exportAllEnabled ||
+                buildZipEnabled ||
+                outputEnabled
+              ) || exporting
             }
           >
             <Upload aria-hidden />
@@ -2782,6 +2856,17 @@ function AppToolbar({
                 }
               }}
             >
+              <span className="translator-popover-note" role="presentation">
+                JSON files
+              </span>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                <Folders aria-hidden /> Export all mods …
+              </button>
               <button
                 type="button"
                 role="menuitem"
@@ -2791,14 +2876,29 @@ function AppToolbar({
                 <FolderUp aria-hidden /> Export current mod
               </button>
               <div className="translator-popover-divider" role="separator" />
+              <span className="translator-popover-note" role="presentation">
+                ZIP archives
+              </span>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => run(onBuildZip)}
                 disabled={!buildZipEnabled}
               >
-                <Archive aria-hidden /> Build translation ZIP
+                <Archive aria-hidden /> Build translation ZIP · current mod
               </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onBuildOutput)}
+                disabled={!outputEnabled}
+              >
+                <Archive aria-hidden /> Build Stardew Translator Output
+              </button>
+              <div className="translator-popover-divider" role="separator" />
+              <span className="translator-popover-note" role="presentation">
+                Tools
+              </span>
               <button
                 type="button"
                 role="menuitem"
@@ -2806,18 +2906,6 @@ function AppToolbar({
                 disabled={!releaseNotesEnabled}
               >
                 <NotebookPen aria-hidden /> Translation notes
-              </button>
-              <div className="translator-popover-divider" role="separator" />
-              <span className="translator-popover-note" role="presentation">
-                Advanced
-              </span>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => run(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                <Folders aria-hidden /> Export all mods …
               </button>
             </div>
           )}

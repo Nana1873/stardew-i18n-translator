@@ -2717,7 +2717,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
 
     await screen.findByText("Test Mod/i18n/de.json");
     expect(
@@ -2764,6 +2767,121 @@ describe("App shell", () => {
         name: "Operation result",
       }),
     ).toBeInTheDocument();
+  });
+  it("builds the combined local output through preview, overwrite confirmation and the existing result tray", async () => {
+    const preview = {
+      packageName: "Stardew Translator Output",
+      selectedVersion: "",
+      versionSource: "",
+      versionConflicts: [],
+      defaultFileName: "Stardew Translator Output - de.zip",
+      targetLang: "de",
+      targetLanguage: "German",
+      entries: [
+        {
+          modName: "Manual mod",
+          modVersion: "1",
+          archivePath: "Manual mod/i18n/de.json",
+          strings: 1,
+          totalSourceStrings: 1,
+          outdated: 0,
+          reviewNeeded: 0,
+        },
+        {
+          modName: "AI mod",
+          modVersion: "2",
+          archivePath: "AI mod/i18n/de.json",
+          strings: 1,
+          totalSourceStrings: 1,
+          outdated: 0,
+          reviewNeeded: 1,
+        },
+      ],
+      omittedComponents: [],
+      warnings: [],
+      problems: [],
+      totalStrings: 2,
+      totalSourceStrings: 2,
+    };
+    invokeMock.mockImplementation(
+      (cmd: string, args?: { overwrite?: boolean }) => {
+        if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+        if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+        if (cmd === "load_strings") return Promise.resolve([]);
+        if (cmd === "preview_stardew_translator_output")
+          return Promise.resolve(preview);
+        if (cmd === "pick_translation_zip_destination")
+          return Promise.resolve("C:/output/combined.zip");
+        if (cmd === "build_stardew_translator_output")
+          return args?.overwrite
+            ? Promise.resolve({
+                path: "C:/output/combined.zip",
+                folder: "C:/output",
+                fileName: "combined.zip",
+                entries: 2,
+                strings: 2,
+              })
+            : Promise.reject("OVERWRITE_REQUIRED");
+        return Promise.resolve(null);
+      },
+    );
+    render(<App />);
+    openWorkspace();
+    await screen.findAllByText("Test Mod");
+    chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+    await screen.findByText("AI mod/i18n/de.json");
+    const dialog = screen.getByRole("dialog", {
+      name: "Build Stardew Translator Output",
+    });
+    expect(within(dialog).queryByLabelText("Package version")).toBeNull();
+    expect(
+      within(dialog).queryByRole("button", { name: "Translation notes" }),
+    ).toBeNull();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Choose save location …" }),
+    );
+    await screen.findByRole("dialog", { name: "Confirm ZIP overwrite" });
+    fireEvent.click(screen.getByRole("button", { name: "Replace ZIP" }));
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(result).toHaveTextContent("ZIP created");
+    expect(invokeMock).toHaveBeenCalledWith("build_stardew_translator_output", {
+      destination: "C:/output/combined.zip",
+      overwrite: true,
+    });
+    expect(
+      invokeMock.mock.calls.some(
+        ([command]) => command === "build_translation_zip",
+      ),
+    ).toBe(false);
+  });
+  it("does not reopen a cancelled combined output preview when its scan finishes", async () => {
+    const pending = deferred<unknown>();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_stardew_translator_output") return pending.promise;
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+    await screen.findAllByText("Test Mod");
+    chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+    fireEvent.click(screen.getByRole("button", { name: "Close ZIP preview" }));
+    await act(async () => {
+      pending.resolve({ packageName: "Late output" });
+      await pending.promise;
+    });
+    expect(
+      screen.queryByRole("dialog", { name: "Build Stardew Translator Output" }),
+    ).toBeNull();
+    expect(
+      invokeMock.mock.calls.some(
+        ([command]) => command === "pick_translation_zip_destination",
+      ),
+    ).toBe(false);
   });
 
   it("keeps the LLM dialog after native Save cancellation and reports a later export", async () => {
@@ -3008,7 +3126,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
     await screen.findByLabelText("Package version");
     const zipDialog = screen.getByRole("dialog", {
       name: "Build translation ZIP",
@@ -3078,7 +3199,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
     const problems = await screen.findByRole("list", {
       name: "Blocking ZIP problems",
     });
@@ -3146,7 +3270,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Build translation ZIP");
+    chooseToolbarAction(
+      "Export actions",
+      "Build translation ZIP · current mod",
+    );
     await screen.findByLabelText("Package version");
     const chooseLocation = await screen.findByRole("button", {
       name: "Choose save location …",
@@ -3203,24 +3330,33 @@ describe("App shell", () => {
     const currentExport = screen.getByRole("menuitem", {
       name: "Export current mod",
     });
-    await waitFor(() => expect(currentExport).toHaveFocus());
+    await waitFor(() =>
+      expect(
+        screen.getByRole("menuitem", { name: "Export all mods …" }),
+      ).toHaveFocus(),
+    );
     expect(currentExport).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: "Export all mods …" }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("menuitem", { name: "Build translation ZIP" }),
+      screen.getByRole("menuitem", {
+        name: "Build translation ZIP · current mod",
+      }),
     ).toBeEnabled();
     expect(
       screen.getByRole("menuitem", { name: "Translation notes" }),
     ).toBeEnabled();
     expect(screen.getByRole("menu", { name: "Export" })).toHaveTextContent(
+      "JSON files",
+    );
+    expect(screen.getByRole("menu", { name: "Export" })).not.toHaveTextContent(
       "Advanced",
     );
 
     fireEvent.keyDown(currentExport, { key: "End" });
     expect(
-      screen.getByRole("menuitem", { name: "Export all mods …" }),
+      screen.getByRole("menuitem", { name: "Translation notes" }),
     ).toHaveFocus();
     const allExport = screen.getByRole("menuitem", {
       name: "Export all mods …",
@@ -3234,7 +3370,7 @@ describe("App shell", () => {
     fireEvent.keyDown(exportButton, { key: "ArrowDown" });
     await waitFor(() =>
       expect(
-        screen.getByRole("menuitem", { name: "Export current mod" }),
+        screen.getByRole("menuitem", { name: "Export all mods …" }),
       ).toHaveFocus(),
     );
 
@@ -4480,4 +4616,56 @@ describe("App shell", () => {
     fireEvent.click(close);
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
+});
+
+it("keeps App work progress and export eligibility coherent after clearing a personal blank-source target", async () => {
+  const scan = exportScan(true);
+  mockConfigured(scan);
+  const original = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+    if (cmd === "load_strings")
+      return Promise.resolve([
+        {
+          key: "blank",
+          source: "",
+          target: "Personal",
+          targetPresent: true,
+          status: "translated",
+          tokenMismatchAccepted: false,
+        },
+      ]);
+    return original(cmd, ...args);
+  });
+  render(<App />);
+  openWorkspace();
+  await screen.findByText("blank");
+  fireEvent.doubleClick(screen.getByText("blank"));
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "German translation" }),
+    { target: { value: "" } },
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(screen.getByRole("treeitem", { name: /Test Mod/ })).toHaveAttribute(
+      "data-mod-progress",
+      "1 / 1 · 100%",
+    ),
+  );
+  expect(screen.getByText("1 / 1 covered · 100%")).toBeInTheDocument();
+  chooseToolbarAction("Export actions", "Export current mod");
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Confirm export overwrite",
+  });
+  const eligible =
+    within(confirmation).getByText("currently eligible").parentElement;
+  const open = within(confirmation).getByText("currently open").parentElement;
+  expect(eligible).toHaveTextContent("0");
+  expect(open).toHaveTextContent("0");
+  expect(
+    invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
+  ).toHaveLength(1);
+  expect(invokeMock).toHaveBeenCalledWith(
+    "save_string",
+    expect.objectContaining({ target: "", status: "untranslated" }),
+  );
 });

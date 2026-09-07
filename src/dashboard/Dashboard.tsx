@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, FileCheck2, GitCompareArrows } from "lucide-react";
 import type { ScanResult, ScannedMod } from "../tauri/commands";
+import { coveragePercent, workingCoveredKeys } from "../coverage";
 
 export type OverviewFilter = "has-value" | "translated" | "untranslated";
 
@@ -104,9 +105,12 @@ export function Dashboard({
   const withKeys = mods.filter((mod) => mod.totalKeys > 0);
   const totalKeys = withKeys.reduce((sum, mod) => sum + mod.totalKeys, 0);
   const withText = withKeys.reduce((sum, mod) => sum + mod.translatedKeys, 0);
-  const open = Math.max(0, totalKeys - withText);
-  const withTextPct =
-    totalKeys > 0 ? Math.round((withText / totalKeys) * 100) : 0;
+  const noTextNeeded = withKeys.reduce(
+    (sum, mod) => sum + (mod.noTranslationNeededKeys ?? 0),
+    0,
+  );
+  const open = Math.max(0, totalKeys - withText - noTextNeeded);
+  const withTextPct = coveragePercent(withText, totalKeys);
   const openPct = totalKeys > 0 ? Math.round((open / totalKeys) * 100) : 0;
   const allStatusesKnown =
     scan != null && withKeys.every((mod) => mod.statusCounts != null);
@@ -119,9 +123,7 @@ export function Dashboard({
   const reviewedPct =
     reviewedCurrent == null
       ? null
-      : totalKeys > 0
-        ? Math.round((reviewedCurrent / totalKeys) * 100)
-        : 0;
+      : coveragePercent(reviewedCurrent, totalKeys);
   const recent = withKeys
     .filter((mod) => Number.isFinite(lastOpened[mod.uniqueId]))
     .sort((a, b) => lastOpened[b.uniqueId] - lastOpened[a.uniqueId])
@@ -254,7 +256,9 @@ export function Dashboard({
           }
           disabled={reviewedCurrent == null && !scanEnabled}
         >
-          <span>Reviewed &amp; current</span>
+          <span>
+            {noTextNeeded ? "Done for current source" : "Reviewed & current"}
+          </span>
           <strong>
             {reviewedCurrent == null
               ? scan
@@ -267,7 +271,9 @@ export function Dashboard({
               ? scan
                 ? "Run a scan to calculate current status"
                 : "Scan the Mods folder to calculate current status"
-              : "Done for the current English source"}
+              : noTextNeeded
+                ? `${count(noTextNeeded)} empty sources need no translation text`
+                : "Done for the current English source"}
           </small>
         </button>
         <button
@@ -424,7 +430,7 @@ function RecentRow({
   onShowStatusHelp: (target: HTMLElement, text: string) => void;
   onHideStatusHelp: () => void;
 }) {
-  const openCount = Math.max(0, mod.totalKeys - mod.translatedKeys);
+  const openCount = Math.max(0, mod.totalKeys - workingCoveredKeys(mod));
   const changed = mod.statusCounts?.outdated ?? 0;
   const status =
     changed > 0
@@ -448,7 +454,9 @@ function RecentRow({
           : {
               className: "translator-state is-ready",
               label: "Done",
-              help: `The ${targetLanguage} translation was explicitly saved or accepted for the current English source.`,
+              help: mod.noTranslationNeededKeys
+                ? `${mod.noTranslationNeededKeys} empty sources need no translation text; other values are done for the current source.`
+                : `The ${targetLanguage} translation was explicitly saved or accepted for the current English source.`,
             };
 
   return (
@@ -463,7 +471,7 @@ function RecentRow({
         </button>
       </td>
       <td>
-        {count(mod.translatedKeys)} / {count(mod.totalKeys)}
+        {count(workingCoveredKeys(mod))} / {count(mod.totalKeys)}
       </td>
       <td>
         <time
