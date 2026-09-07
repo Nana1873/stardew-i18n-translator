@@ -291,7 +291,7 @@ it("keeps coverage in collapsed details without workspace navigation", async () 
   ).toBeNull();
   expect(
     screen.getByText(
-      "Translations from Nexus Mods may be incomplete and need further editing.",
+      "Downloaded translations may be outdated or incomplete and need further editing.",
     ),
   ).toBeVisible();
   fireEvent.click(translationRow().getByText("Details"));

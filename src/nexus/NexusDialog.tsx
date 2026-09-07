@@ -2066,7 +2066,7 @@ export function NexusDialog({
                     : "Vortex handles installation according to your settings."
                   : "Choose Vortex.exe in installation settings first."
                 : canDirectImport
-                  ? "Translations from Nexus Mods may be incomplete and need further editing."
+                  ? "Downloaded translations may be outdated or incomplete and need further editing."
                   : nexusAccountKind(account) === "free"
                     ? "Free account: use each Open Nexus Link below to download manually. Direct archive import requires Premium."
                     : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}
