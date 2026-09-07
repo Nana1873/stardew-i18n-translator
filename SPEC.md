@@ -198,13 +198,13 @@ current scan coverage when using cached results. Missing IDs, API failures and
 incomplete results do not break scanning. Candidate ranking uses a conservative
 match to the original mod's identity, including shared parenthetical
 context and reordered title words. Language labels and neutral connecting words
-do not establish a different mod; additional subjects, including parenthesized
+and German correction qualifiers do not establish a different mod; additional subjects, including parenthesized
 add-on names, remain labelled as other matches. Reclassify
 valid cached results using the same rules without another API request. Matches
 and newest-file selection remain heuristics, not compatibility or completeness
 guarantees; the UI does not label files as recommended.
 
-Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. Unmatched target-language files are reported without assigning them to the representative component. Row coverage names its actual components; after mapping it uses those mapped component IDs.
+Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage names its actual components; after mapping it uses those mapped component IDs.
 
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It

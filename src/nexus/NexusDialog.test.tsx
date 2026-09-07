@@ -278,6 +278,45 @@ function translationRow() {
   openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
+it("explains a candidate without eligible ZIP files instead of an empty optgroup", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, args?: { modId?: number }) =>
+    command === "nexus_list_files"
+      ? Promise.resolve(
+          args?.modId === 45820
+            ? [{ ...file, fileId: 999, fileName: "new.rar" }]
+            : [file, { ...file, fileId: 8, uploadedAt: "2025-01-01" }],
+        )
+      : original(command, args),
+  );
+  mount({
+    method: "folder",
+    search: {
+      ...search,
+      entries: [
+        {
+          ...search.entries[1],
+          result: {
+            ...search.entries[1].result,
+            candidates: [
+              { ...candidate, modId: 45820, name: "New page" },
+              candidate,
+            ],
+          },
+        },
+      ],
+    },
+  });
+  const explanation = await screen.findByRole("option", {
+    name: "No ZIP available. Direct import supports ZIP archives.",
+  });
+  expect(explanation).toBeDisabled();
+  expect(
+    [...document.querySelectorAll("optgroup")].every(
+      (group) => group.children.length > 0,
+    ),
+  ).toBe(true);
+});
 
 it("imports Vortex-mode acquisition into the local library instead of handing off the original archive", async () => {
   const app = mount({ method: "vortex", libraryMode: true });

@@ -51,6 +51,11 @@ For a manually downloaded translation, select its mod in Workspace and choose
 **Import … → Import downloaded translation ZIP…**. ZIP locale files are matched against all installed components. Every unambiguous match imports automatically; unmatched target-language files are listed without guessing a component. ZIP locale files
 are supported; default-language-only bundles and RAR/7z imports are not.
 
+The scanner currently requires a component's `i18n/default.json`. Components
+using split source files such as `i18n/Default/Dialogue.json` and `Events.json`
+are not yet available for translation import; an installed component can therefore
+remain unmatched even when its archive is readable.
+
 The **Export …** menu lists all-mod and current-mod JSON exports first, followed by ZIP archives and translation-note tools.
 
 **Export … → Build Stardew Translator Output** creates one locale ZIP containing
@@ -164,6 +169,8 @@ on that page; a newer file from another page does not replace it automatically.
 You can choose another available version in the dropdown;
 a single available file needs no extra choice. **Other match** results may
 translate a related mod, so check their Nexus page before downloading.
+Pages without an eligible file show the reason instead of an empty choice;
+their Nexus files page remains available under **Details**.
 Nexus page titles, versions and dates identify the choices; archive names are
 available under **Details**. Already installed files are not downloaded again
 automatically, and an installed newest file does not cause an older file to be

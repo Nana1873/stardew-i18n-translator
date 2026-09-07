@@ -20,6 +20,7 @@ export function ManualTranslationImport({
   onComplete,
   format = "zip",
   communityLibrary = true,
+  sourceModIds,
 }: {
   mod: ScannedMod | undefined;
   language: string;
@@ -31,6 +32,7 @@ export function ManualTranslationImport({
   onComplete?: () => void;
   format?: "zip" | "json";
   communityLibrary?: boolean;
+  sourceModIds?: string[];
 }) {
   const [choices, setChoices] = useState<NexusImportRequest[]>([]);
   const [selection, setSelection] = useState(0);
@@ -84,7 +86,10 @@ export function ManualTranslationImport({
         : nexusPickArchive());
       if (!archive || currentContext.current !== stamp) return;
       if (format === "zip") {
-        const resolved = await nexusResolveArchive(archive.archiveId);
+        const resolved = await nexusResolveArchive(
+          archive.archiveId,
+          sourceModIds ?? [mod.uniqueId],
+        );
         if (currentContext.current !== stamp) return;
         const problems = resolved.unresolved.map(
           (item) => `${item.archivePath}: ${item.reason}`,

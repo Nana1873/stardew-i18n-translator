@@ -2705,6 +2705,17 @@ export function App() {
                 : "Import translations downloaded manually from Nexus Mods or another source."}
             </p>
             <ManualTranslationImport
+              sourceModIds={scan?.mods
+                .filter(
+                  (component) =>
+                    component.uniqueId === selectedMod.uniqueId ||
+                    (selectedMod.packageId &&
+                      component.packageId === selectedMod.packageId) ||
+                    (selectedMod.nexusId != null &&
+                      selectedMod.nexusId > 0 &&
+                      component.nexusId === selectedMod.nexusId),
+                )
+                .map((component) => component.uniqueId)}
               key={`${nexusWorkspaceKey}:${selectedMod.uniqueId}`}
               mod={selectedMod}
               language={settings.targetLang}

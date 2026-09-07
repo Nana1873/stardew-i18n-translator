@@ -96,6 +96,30 @@ export function deriveNexusResult(input: NexusResultInput) {
         item.fileId === option.file.fileId,
     ),
   );
+  const unavailableCandidates = candidates
+    .filter(
+      (candidate) =>
+        !allOptions.some(
+          (option) => option.candidate.modId === candidate.modId,
+        ),
+    )
+    .map((candidate) => {
+      const metadata = fileMetadata[candidate.modId];
+      const files = metadata?.files ?? [];
+      const reason = !metadata
+        ? "Loading file details…"
+        : metadata.error
+          ? "File details unavailable. Retry metadata refresh."
+          : !files.length
+            ? "No files returned by Nexus."
+            : !allowArchives &&
+                files.every(
+                  (file) => !file.fileName.toLowerCase().endsWith(".zip"),
+                )
+              ? "No ZIP available. Direct import supports ZIP archives."
+              : `No current ${allowArchives ? "archive" : "ZIP"} matches the selected language.`;
+      return { candidate, reason };
+    });
   const options = allOptions.filter(
     (option) => !recordedOptions.includes(option),
   );
@@ -163,6 +187,7 @@ export function deriveNexusResult(input: NexusResultInput) {
     problem: evidence.some((item) => item.state === "missing_dictionary"),
     allOptions,
     recordedOptions,
+    unavailableCandidates,
     options,
     preferred,
     value,

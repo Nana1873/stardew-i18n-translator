@@ -587,7 +587,7 @@ fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
             || joined_translation_label(word)
             || word == lang
             || matches!(word, "translation" | "translations")
-            || (lang == "de" && matches!(word, "ger" | "übersetzung"))
+            || (lang == "de" && matches!(word, "ger" | "übersetzung" | "korrektur" | "korrekturen"))
             || (lang == "ja" && word == "jp")
             || (lang == "zh" && matches!(word, "chs" | "cht" | "simplified" | "traditional"))
     };
@@ -1255,13 +1255,13 @@ fn import_from_config_mode(
                 "Community library requires a target-language JSON, not default.json.".into(),
             );
         }
-        let document: serde_json::Map<String, Value> = serde_json::from_str(
+        let document = scanner::parse_flat_object(
             archive
                 .documents
                 .get(archive_path)
                 .ok_or("Archive JSON unavailable")?,
-        )
-        .map_err(|e| e.to_string())?;
+            Path::new("selected archive JSON"),
+        )?;
         let mut base = translations::ModState::new();
         // Capture underlying locale once, separately from personal saved work.
         // Existing library bases are immutable in this prototype; repeated import
@@ -1775,7 +1775,8 @@ mod tests {
             std::fs::write(root.join("manifest.json"), serde_json::json!({"Name":folder,"UniqueID":uid,"Version":"1.0.0","Author":"Fixture","UpdateKeys":["Nexus:3753"]}).to_string()).unwrap();
             std::fs::write(root.join("i18n/default.json"), r#"{"hello":"Hello"}"#).unwrap();
         }
-        let scan = scanner::scan_mods(&mods, "de", &config);
+        let mut scan = scanner::scan_mods(&mods, "de", &config);
+        crate::vortex_identity::resolve_original_ids(&mods, &mut scan);
         let archive = inspect_zip(zip_bytes(&[
             (
                 "Stardew Valley Expanded/Stardew Valley Expanded Code/i18n/de.json",
@@ -1881,7 +1882,8 @@ mod tests {
             &serde_json::to_string(&keys).unwrap(),
         )]))
         .unwrap();
-        let scan = scanner::scan_mods(&mods, "de", &config);
+        let mut scan = scanner::scan_mods(&mods, "de", &config);
+        crate::vortex_identity::resolve_original_ids(&mods, &mut scan);
         assert_eq!(
             resolve_archive_components("alias", &archive, &scan.mods, "de").mappings[0]
                 .mod_unique_id,
@@ -1895,6 +1897,46 @@ mod tests {
         assert!(resolve_archive_components("tiny", &tiny, &scan.mods, "de")
             .mappings
             .is_empty());
+        let root_archive = inspect_zip(zip_bytes(&[(
+            "i18n/de.json",
+            &serde_json::to_string(&keys).unwrap(),
+        )]))
+        .unwrap();
+        assert!(
+            resolve_archive_components("root", &root_archive, &scan.mods, "de")
+                .mappings
+                .is_empty()
+        );
+        assert_eq!(
+            resolve_archive_components_with_hints(
+                "root",
+                &root_archive,
+                &scan.mods,
+                "de",
+                &["Fixture.Fishing".into()]
+            )
+            .mappings
+            .len(),
+            1
+        );
+        assert!(resolve_archive_components_with_hints(
+            "root",
+            &root_archive,
+            &scan.mods,
+            "de",
+            &["Example.Mod".into()]
+        )
+        .mappings
+        .is_empty());
+        assert!(resolve_archive_components_with_hints(
+            "tiny",
+            &tiny,
+            &scan.mods,
+            "de",
+            &["Fixture.Fishing".into()]
+        )
+        .mappings
+        .is_empty());
         let second = mods.join("FishingAssistant2");
         std::fs::create_dir_all(second.join("i18n")).unwrap();
         std::fs::write(second.join("manifest.json"), r#"{"Name":"Other version","UniqueID":"Fixture.OtherFishing","Version":"2.0.0","Author":"Fixture"}"#).unwrap();
@@ -1903,12 +1945,141 @@ mod tests {
             serde_json::to_vec(&keys).unwrap(),
         )
         .unwrap();
-        let scan = scanner::scan_mods(&mods, "de", &config);
+        let mut scan = scanner::scan_mods(&mods, "de", &config);
+        crate::vortex_identity::resolve_original_ids(&mods, &mut scan);
         assert!(
             resolve_archive_components("conflict", &archive, &scan.mods, "de")
                 .mappings
                 .is_empty()
         );
+        assert!(resolve_archive_components_with_hints(
+            "ambiguous",
+            &root_archive,
+            &scan.mods,
+            "de",
+            &["Fixture.Fishing".into(), "Fixture.OtherFishing".into()]
+        )
+        .mappings
+        .is_empty());
+        let low_overlap = inspect_zip(zip_bytes(&[("i18n/de.json", r#"{"unrelated.long.key1":"x","unrelated.long.key2":"x","unrelated.long.key3":"x","unrelated.long.key4":"x","unrelated.long.key5":"x","unrelated.long.key6":"x","unrelated.long.key7":"x","unrelated.long.key8":"x"}"#)])).unwrap();
+        assert!(resolve_archive_components_with_hints(
+            "low",
+            &low_overlap,
+            &scan.mods,
+            "de",
+            &["Fixture.Fishing".into()]
+        )
+        .mappings
+        .is_empty());
+        for key in [
+            "config.option.enabled",
+            "config.option.description",
+            "config.option.language",
+            "config.option.tooltip",
+        ] {
+            assert!(!substantive_archive_key(key));
+        }
+    }
+
+    #[test]
+    fn correction_translation_title_keeps_addon_boundaries() {
+        assert_eq!(
+            relationship_tier(
+                "Stardew Valley Expanded",
+                "Stardew Valley Expanded (German) (Korrektur)",
+                "de"
+            ),
+            "possible-original-translation"
+        );
+        assert_eq!(
+            relationship_tier(
+                "Stardew Valley Expanded",
+                "Stardew Valley Expanded Fishing Addon German Korrektur",
+                "de"
+            ),
+            "possible-addon-or-other-translation"
+        );
+    }
+
+    #[test]
+    fn community_zip_import_accepts_bom_and_jsonc_without_losing_personal_work() {
+        for (label, body) in [
+            (
+                "bom-zip",
+                "\u{feff}{\"new\":\"Hallo\",\"local\":\"Replacement\"}",
+            ),
+            (
+                "jsonc-zip",
+                "{/* note */ new: \"Hallo\", // note\n local: \"Replacement\",}",
+            ),
+        ] {
+            let (config, _mods, id) = fixture(label);
+            let working = translations::language_root(&config, "de").unwrap();
+            let personal = translations::StoredString {
+                target: "Personal".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Keep"),
+            };
+            translations::save_one(
+                &working,
+                "Example.Mod",
+                translations::entry_key("i18n", "local"),
+                personal.clone(),
+            )
+            .unwrap();
+            lock().archives.insert(
+                id.clone(),
+                inspect_zip(zip_bytes(&[("i18n/de.json", body)])).unwrap(),
+            );
+            import_from_config_mode(
+                &config,
+                &id,
+                "i18n/de.json",
+                "Example.Mod",
+                "i18n",
+                false,
+                true,
+            )
+            .unwrap();
+            let imported = import_from_config_mode(
+                &config,
+                &id,
+                "i18n/de.json",
+                "Example.Mod",
+                "i18n",
+                true,
+                true,
+            )
+            .unwrap();
+            assert_eq!(imported.imported, 1);
+            let saved = translations::load(&working, "Example.Mod").unwrap();
+            assert_eq!(
+                saved[&translations::entry_key("i18n", "new")].status,
+                "translated"
+            );
+            assert_eq!(saved[&translations::entry_key("i18n", "local")], personal);
+            let before =
+                serde_json::to_value(crate::community_library::list(&config).unwrap()).unwrap();
+            lock().archives.insert(
+                id.clone(),
+                inspect_zip(zip_bytes(&[("i18n/de.json", "{broken")])).unwrap(),
+            );
+            assert!(import_from_config_mode(
+                &config,
+                &id,
+                "i18n/de.json",
+                "Example.Mod",
+                "i18n",
+                true,
+                true
+            )
+            .is_err());
+            assert_eq!(
+                serde_json::to_value(crate::community_library::list(&config).unwrap()).unwrap(),
+                before
+            );
+            assert_eq!(translations::load(&working, "Example.Mod").unwrap(), saved);
+        }
     }
 
     #[test]
@@ -1993,6 +2164,96 @@ mod tests {
             import_from_config(&config, &id, "i18n/de.json", "Example.Mod", "i18n", false).is_err()
         );
     }
+    #[tokio::test]
+    #[ignore = "Explicit authorized real-archive compatibility check; game files read-only"]
+    async fn live_reported_archive_compatibility() {
+        let mods =
+            PathBuf::from(std::env::var("NEXUS_COMPAT_MODS").expect("Set read-only Mods input"));
+        let output = PathBuf::from(
+            std::env::var("NEXUS_COMPAT_OUTPUT").expect("Set ignored temporary output"),
+        );
+        std::fs::create_dir_all(&output).unwrap();
+        let config = output.join("data");
+        settings::save(
+            &config,
+            &settings::AppSettings {
+                mods_path: Some(mods.display().to_string()),
+                target_lang: Some("de".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let mut scan = scanner::scan_mods(&mods, "de", &config);
+        crate::vortex_identity::resolve_original_ids(&mods, &mut scan);
+        let mut reports = Vec::new();
+        for (id, original) in [
+            (32713, 10770),
+            (28622, 20606),
+            (18752, 10384),
+            (15138, 5787),
+        ] {
+            if std::env::var("NEXUS_COMPAT_ONLY").is_ok_and(|value| value != id.to_string()) {
+                continue;
+            }
+            let mut files = match nexus_list_files(id).await {
+                Ok(v) => v,
+                Err(e) => {
+                    reports.push(json!({"modId":id,"error":e}));
+                    continue;
+                }
+            };
+            files.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
+            let Some(file) = files.iter().find(|f| {
+                f.file_name.to_lowercase().ends_with(".zip")
+                    && !matches!(
+                        f.category.to_lowercase().as_str(),
+                        "archived" | "old_version" | "old version"
+                    )
+            }) else {
+                reports.push(json!({"modId":id,"error":"No current ZIP"}));
+                continue;
+            };
+            let preview = match nexus_download_preflight(id, file.file_id).await {
+                Ok(v) => v,
+                Err(e) => {
+                    reports.push(json!({"modId":id,"error":e}));
+                    continue;
+                }
+            };
+            let archive = lock().archives.get(&preview.archive_id).unwrap().clone();
+            let packages: Vec<_> = scan
+                .mods
+                .iter()
+                .filter(|m| m.nexus_id == Some(original) && !m.package_id.is_empty())
+                .map(|m| &m.package_id)
+                .collect();
+            let hints: Vec<String> = scan
+                .mods
+                .iter()
+                .filter(|m| {
+                    m.nexus_id == Some(original)
+                        || (!m.package_id.is_empty() && packages.contains(&&m.package_id))
+                })
+                .map(|m| m.unique_id.clone())
+                .collect();
+            let resolved = resolve_archive_components_with_hints(
+                &preview.archive_id,
+                &archive,
+                &scan.mods,
+                "de",
+                &hints,
+            );
+            let parsed: Vec<_> = archive.files.iter().filter(|f| f.path.to_lowercase().ends_with("/de.json")).map(|f| {
+                let body = &archive.documents[&f.path];
+                match scanner::parse_flat_object(body,Path::new("archive locale")) {Ok(map)=>json!({"path":f.path,"keys":map.len(),"bom":body.starts_with('\u{feff}')}),Err(e)=>json!({"path":f.path,"error":e})}
+            }).collect();
+            reports.push(json!({"modId":id,"fileId":file.file_id,"version":file.version,"hints":hints,"parsed":parsed,"resolution":resolved}));
+        }
+        let report = serde_json::to_string_pretty(&reports).unwrap();
+        std::fs::write(output.join("report.json"), &report).unwrap();
+        println!("{report}");
+    }
+
     #[tokio::test]
     #[ignore = "Explicit opt-in live Nexus API/Premium ZIP smoke; never writes game files"]
     async fn live_native_nexus_smoke() {
@@ -3058,11 +3319,46 @@ pub struct ArchiveResolution {
     unresolved: Vec<UnresolvedArchiveMapping>,
 }
 
+fn substantive_archive_key(key: &str) -> bool {
+    let tail = key
+        .rsplit(['.', '/', '_'])
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    key.len() >= 12
+        && !matches!(
+            tail.as_str(),
+            "title"
+                | "description"
+                | "enabled"
+                | "disabled"
+                | "language"
+                | "name"
+                | "value"
+                | "default"
+                | "cancel"
+                | "confirm"
+                | "save"
+                | "reset"
+                | "tooltip"
+        )
+}
+
 fn resolve_archive_components(
     archive_id: &str,
     archive: &Archive,
     mods: &[scanner::ScannedMod],
     lang: &str,
+) -> ArchiveResolution {
+    resolve_archive_components_with_hints(archive_id, archive, mods, lang, &[])
+}
+
+fn resolve_archive_components_with_hints(
+    archive_id: &str,
+    archive: &Archive,
+    mods: &[scanner::ScannedMod],
+    lang: &str,
+    source_mod_ids: &[String],
 ) -> ArchiveResolution {
     let mut result = ArchiveResolution {
         mappings: Vec::new(),
@@ -3180,7 +3476,52 @@ fn resolve_archive_components(
                                 keys.iter().filter(|key| source.contains_key(*key)).count();
                             let substantive = keys
                                 .iter()
-                                .filter(|key| key.len() >= 12 && source.contains_key(*key))
+                                .filter(|key| {
+                                    substantive_archive_key(key) && source.contains_key(*key)
+                                })
+                                .count();
+                            if matched * 100 >= keys.len() * 90 && substantive >= 8 {
+                                candidates.push((component, i18n));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if candidates.is_empty() && file.manifest_unique_id.is_none() && !source_mod_ids.is_empty()
+        {
+            let keys: HashSet<String> = archive
+                .documents
+                .get(&file.path)
+                .and_then(|body| scanner::parse_flat_object(body, Path::new("archive locale")).ok())
+                .map(|map| {
+                    map.keys()
+                        .filter(|k| k.as_str() != "$schema")
+                        .cloned()
+                        .collect()
+                })
+                .unwrap_or_default();
+            if keys.len() >= 8 {
+                for component in mods.iter().filter(|m| {
+                    source_mod_ids
+                        .iter()
+                        .any(|id| id.eq_ignore_ascii_case(&m.unique_id))
+                }) {
+                    for i18n in &component.i18n_files {
+                        if let Some(source) = std::fs::read_to_string(&i18n.default_path)
+                            .ok()
+                            .and_then(|body| {
+                                scanner::parse_flat_object(&body, Path::new(&i18n.default_path))
+                                    .ok()
+                            })
+                        {
+                            let matched =
+                                keys.iter().filter(|key| source.contains_key(*key)).count();
+                            let substantive = keys
+                                .iter()
+                                .filter(|key| {
+                                    substantive_archive_key(key) && source.contains_key(*key)
+                                })
                                 .count();
                             if matched * 100 >= keys.len() * 90 && substantive >= 8 {
                                 candidates.push((component, i18n));
@@ -3230,6 +3571,7 @@ fn resolve_archive_components(
 pub fn nexus_resolve_archive(
     app: AppHandle,
     archive_id: String,
+    source_mod_ids: Option<Vec<String>>,
 ) -> Result<ArchiveResolution, String> {
     let archive = lock()
         .archives
@@ -3250,12 +3592,23 @@ pub fn nexus_resolve_archive(
     if !scan.traversal_complete {
         return Err("Scan traversal is incomplete; automatic mapping is unavailable.".into());
     }
-    Ok(resolve_archive_components(
-        &archive_id,
-        &archive,
-        &scan.mods,
-        &lang,
-    ))
+    let hints = source_mod_ids.unwrap_or_default();
+    if hints.is_empty() {
+        Ok(resolve_archive_components(
+            &archive_id,
+            &archive,
+            &scan.mods,
+            &lang,
+        ))
+    } else {
+        Ok(resolve_archive_components_with_hints(
+            &archive_id,
+            &archive,
+            &scan.mods,
+            &lang,
+            &hints,
+        ))
+    }
 }
 
 fn inspect_locale_json(

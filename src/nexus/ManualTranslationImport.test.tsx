@@ -60,5 +60,9 @@ it("imports all secure ZIP components before closing and leaves unmatched files 
   ).toEqual(["Code", "Content"]);
   await waitFor(() => expect(imported).toHaveBeenCalledOnce());
   expect(complete).not.toHaveBeenCalled();
+  expect(invoke).toHaveBeenCalledWith("nexus_resolve_archive", {
+    archiveId: "bundle",
+    sourceModIds: ["Frontier"],
+  });
   expect(screen.queryByRole("combobox")).toBeNull();
 });

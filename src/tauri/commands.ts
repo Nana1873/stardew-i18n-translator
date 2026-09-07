@@ -693,8 +693,9 @@ export interface NexusArchiveResolution {
 }
 export function nexusResolveArchive(
   archiveId: string,
+  sourceModIds?: string[],
 ): Promise<NexusArchiveResolution> {
-  return invoke("nexus_resolve_archive", { archiveId });
+  return invoke("nexus_resolve_archive", { archiveId, sourceModIds });
 }
 
 export interface CommunityLibraryEntry {

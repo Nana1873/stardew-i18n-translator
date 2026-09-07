@@ -397,7 +397,12 @@ export function NexusDialog({
     if (!current()) return;
     const nativeResolution =
       libraryMode || archive.files.some((file) => !file.isDefault)
-        ? await nexusResolveArchive(archive.archiveId)
+        ? await nexusResolveArchive(
+            archive.archiveId,
+            nexusSourceComponents(mods, sourceId).map(
+              (component) => component.uniqueId,
+            ),
+          )
         : null;
     if (!current()) return;
     const resolved = nativeResolution
@@ -1243,6 +1248,15 @@ export function NexusDialog({
                             : `Other match: ${item.name}`
                         }
                       >
+                        {!group.options.some(
+                          (option) => option.candidate.modId === item.modId,
+                        ) && (
+                          <option disabled value={`unavailable:${item.modId}`}>
+                            {group.unavailableCandidates.find(
+                              (value) => value.candidate.modId === item.modId,
+                            )?.reason ?? "This file is already installed."}
+                          </option>
+                        )}
                         {group.options
                           .filter(
                             (option) => option.candidate.modId === item.modId,
@@ -1340,6 +1354,7 @@ export function NexusDialog({
               </>
             )}
             {(displayFile ||
+              group.unavailableCandidates.length > 0 ||
               unidentifiedEvidence.length > 0 ||
               group.inventory.length > 0 ||
               row.handoff ||
@@ -1398,6 +1413,28 @@ export function NexusDialog({
                 )}
                 {candidate?.summary && <p>{candidate.summary}</p>}
                 {row.notice && <p>{row.notice}</p>}
+                {group.unavailableCandidates.map(
+                  ({ candidate: unavailable, reason }) => (
+                    <p key={unavailable.modId}>
+                      {unavailable.name}: {reason}{" "}
+                      <button
+                        className={quiet}
+                        onClick={() =>
+                          void openUrl(
+                            `https://www.nexusmods.com/stardewvalley/mods/${unavailable.modId}?tab=files`,
+                          ).catch((error) =>
+                            setLinkErrors((previous) => ({
+                              ...previous,
+                              [sourceId]: String(error),
+                            })),
+                          )
+                        }
+                      >
+                        Open Nexus files
+                      </button>
+                    </p>
+                  ),
+                )}
                 {row.unresolved?.map((item) => (
                   <p key={item.archivePath}>
                     {item.archivePath}: {item.reason}

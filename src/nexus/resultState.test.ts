@@ -55,6 +55,40 @@ function input(overrides: Partial<NexusResultInput> = {}): NexusResultInput {
   };
 }
 describe("Nexus result selection", () => {
+  it("selects the newer correction page once it has the original-translation tier", () => {
+    const fixture = input();
+    fixture.entry.result!.candidates = [
+      {
+        ...candidate(10),
+        name: "Stardew Valley Expanded - German Translation",
+      },
+      {
+        ...candidate(45820),
+        name: "Stardew Valley Expanded (German) (Korrektur)",
+      },
+    ];
+    fixture.fileMetadata = {
+      10: { files: [file(100, "2025-07-04")] },
+      45820: { files: [file(200, "2026-05-19")] },
+    };
+    expect(deriveNexusResult(fixture).value).toBe("45820:200");
+  });
+  it("explains unavailable ZIP candidates without overriding supported defaults", () => {
+    const result = deriveNexusResult(
+      input({
+        allowArchives: false,
+        fileMetadata: {
+          10: { files: [file(100, "2025-07-04")] },
+          20: { files: [{ ...file(200, "2026-05-19"), fileName: "de.rar" }] },
+        },
+      }),
+    );
+    expect(result.value).toBe("10:100");
+    expect(result.unavailableCandidates[0]).toMatchObject({
+      candidate: { modId: 20 },
+      reason: "No ZIP available. Direct import supports ZIP archives.",
+    });
+  });
   it("recommends the latest suitable file when nothing is installed", () => {
     expect(deriveNexusResult(input()).value).toBe("20:200");
   });
