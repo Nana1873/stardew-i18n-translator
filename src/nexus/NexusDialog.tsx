@@ -1722,6 +1722,35 @@ export function NexusDialog({
               <details>
                 <summary>Details</summary>
                 {coverageDetails}
+                {libraryMode &&
+                  group.acquired &&
+                  selected &&
+                  !displayedScanIncomplete &&
+                  workingKnown &&
+                  workingCovered < workingTotal && (
+                    <>
+                      <button
+                        className={quiet}
+                        disabled={
+                          locked || importStatusUnknown || !canDirectImport
+                        }
+                        onClick={() =>
+                          void startReview(
+                            key,
+                            sourceId,
+                            selected.candidate,
+                            selected.file,
+                          )
+                        }
+                      >
+                        Re-import translation
+                      </button>
+                      <small>
+                        Downloads this selected archive again. Existing saved
+                        text is kept.
+                      </small>
+                    </>
+                  )}
                 {!selected && unidentifiedEvidence.length > 0 && (
                   <small>
                     {unidentifiedEvidence

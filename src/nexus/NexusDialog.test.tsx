@@ -519,6 +519,84 @@ it("remembers an imported Nexus file across reopening while offering missing str
     ),
   ).toBeInTheDocument();
 });
+it.each(["import", "context", "free"])(
+  "explicitly reimports a saved archive with %s guards",
+  async (mode) => {
+    const original = invoke.getMockImplementation()!;
+    let finish!: (value: NexusArchive) => void;
+    invoke.mockImplementation((command: string, ...args: unknown[]) => {
+      if (command === "nexus_list_files")
+        return Promise.resolve([
+          file,
+          { ...file, fileId: 8, uploadedAt: "2025-01-01" },
+        ]);
+      if (command === "list_community_library")
+        return Promise.resolve([
+          {
+            modUniqueId: "sample.mod",
+            relativeDir: "i18n",
+            archivePath: "i18n/de.json",
+            strings: 2,
+            sourceUrl:
+              "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files&file_id=7",
+          },
+        ]);
+      if (command === "nexus_status" && mode === "free")
+        return Promise.resolve({
+          configured: true,
+          validated: true,
+          premium: false,
+        });
+      if (command === "nexus_download_preflight")
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      return original(command, ...args);
+    });
+    const app = mount({ method: "vortex", libraryMode: true });
+    let action = await screen.findByRole("button", {
+      name: "Re-import translation",
+    });
+    fireEvent.change(screen.getByRole("combobox"), { target: { value: "" } });
+    expect(
+      screen.queryByRole("button", { name: "Re-import translation" }),
+    ).toBeNull();
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "30342:7" },
+    });
+    action = screen.getByRole("button", { name: "Re-import translation" });
+    expect(action).not.toBeVisible();
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    fireEvent.click(translationRow().getByText("Details"));
+    if (mode === "free") {
+      expect(action).toBeDisabled();
+      return;
+    }
+    fireEvent.click(action);
+    await waitFor(() =>
+      expect(commandCalls("nexus_download_preflight")).toEqual([
+        { modId: 30342, fileId: 7 },
+      ]),
+    );
+    expect(
+      screen.getByRole("progressbar", { name: "Translation action progress" }),
+    ).not.toHaveAttribute("value");
+    if (mode === "context") app.setContext("other-root", "fr");
+    await act(async () => finish(archive));
+    if (mode === "context") {
+      expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+    } else {
+      await waitFor(() =>
+        expect(commandCalls("nexus_import_translation")).toHaveLength(1),
+      );
+      expect(screen.getByText(/1 existing values kept/)).toBeInTheDocument();
+      app.setMods([{ ...mods[0], translatedKeys: 3 }]);
+      expect(
+        screen.queryByRole("button", { name: "Re-import translation" }),
+      ).toBeNull();
+    }
+  },
+);
 it("keeps whole-package coverage for a partial receipt and allows an explicit recheck", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((command: string, ...args: unknown[]) =>
