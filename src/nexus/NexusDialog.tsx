@@ -148,7 +148,6 @@ export function NexusDialog({
   onClose,
   onConfigure,
   onImported,
-  onOpenReview,
   onOpenMissing,
   vortexExecutable,
   installationMethod,
@@ -210,7 +209,16 @@ export function NexusDialog({
   const [fileSelections, setFileSelections] = useState<Record<number, string>>(
     {},
   );
+  const [batchProgress, setBatchProgress] = useState<{
+    completed: number;
+    total: number;
+    keys: string[];
+    stopped?: boolean;
+  } | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
+  useEffect(() => {
+    if (search.running) setBatchProgress(null);
+  }, [search.running]);
   const batchRef = useRef(false);
   const stopBatchRef = useRef(false);
   const [active, setActive] = useState<string | null>(null);
@@ -249,6 +257,7 @@ export function NexusDialog({
       setFileSelections({});
       setSupplementSelections({});
       setRows({});
+      setBatchProgress(null);
       setCheckedAt(null);
       setCheckError(null);
       setRecheckPending(null);
@@ -309,6 +318,7 @@ export function NexusDialog({
   ) {
     if (activeRef.current) return;
     activeRef.current = key;
+    if (!batchRef.current) setBatchProgress(null);
     setActive(key);
     patch(key, { error: undefined });
     const stamp = generation.current;
@@ -1161,6 +1171,11 @@ export function NexusDialog({
     batchRef.current = true;
     stopBatchRef.current = false;
     setBatchRunning(true);
+    setBatchProgress({
+      completed: 0,
+      total: snapshot.length,
+      keys: snapshot.map((item) => item.key),
+    });
     try {
       const sent = new Set<string>();
       for (const item of snapshot) {
@@ -1176,11 +1191,20 @@ export function NexusDialog({
             component.totalKeys -
               component.translatedKeys -
               (component.noTranslationNeededKeys ?? 0)) === 0
-        )
+        ) {
+          setBatchProgress((previous) =>
+            previous ? { ...previous, total: previous.total - 1 } : previous,
+          );
           continue;
+        }
         if (isVortex) {
           const target = `${item.candidate.modId}:${item.file.fileId}`;
-          if (sent.has(target)) continue;
+          if (sent.has(target)) {
+            setBatchProgress((previous) =>
+              previous ? { ...previous, total: previous.total - 1 } : previous,
+            );
+            continue;
+          }
           sent.add(target);
           const origins = groups
             .filter((group) => group.selected?.value === target)
@@ -1195,10 +1219,20 @@ export function NexusDialog({
             item.supplementComponentId,
           );
         }
+        if (stamp === generation.current)
+          setBatchProgress((previous) =>
+            previous
+              ? { ...previous, completed: previous.completed + 1 }
+              : previous,
+          );
       }
     } finally {
       batchRef.current = false;
       if (mounted.current) setBatchRunning(false);
+      if (mounted.current && stamp === generation.current)
+        setBatchProgress((previous) =>
+          previous ? { ...previous, stopped: stopBatchRef.current } : previous,
+        );
     }
   }
   function renderRow(group: (typeof groups)[number]) {
@@ -1291,6 +1325,65 @@ export function NexusDialog({
               (mod.noTranslationNeededKeys ?? 0),
           )) > 0,
     );
+    const coverageDetails = (
+      <>
+        {group.acquired && (
+          <small>
+            Already imported ·{" "}
+            {displayedScanIncomplete || !workingKnown ? (
+              "package coverage unavailable"
+            ) : (
+              <>
+                {missingComponents.reduce(
+                  (sum, component) =>
+                    sum +
+                    (component.statusCounts?.untranslated ??
+                      Math.max(
+                        0,
+                        component.totalKeys -
+                          component.translatedKeys -
+                          (component.noTranslationNeededKeys ?? 0),
+                      )),
+                  0,
+                )}{" "}
+                strings still missing across installed components
+              </>
+            )}
+          </small>
+        )}
+        {displayedComponents.length > 0 && (
+          <small>
+            Components:{" "}
+            {displayedComponents
+              .map((component) => {
+                if (!group.acquired || displayedScanIncomplete || !workingKnown)
+                  return component.name;
+                const missing =
+                  component.statusCounts?.untranslated ??
+                  Math.max(
+                    0,
+                    component.totalKeys -
+                      component.translatedKeys -
+                      (component.noTranslationNeededKeys ?? 0),
+                  );
+                return `${component.name} (${missing ? `${missing} missing` : "complete"})`;
+              })
+              .join(", ")}
+          </small>
+        )}
+        <small>
+          {libraryMode || row.modIds.length > 0
+            ? !displayedScanIncomplete && workingKnown
+              ? `Working translation: ${workingCovered}/${workingTotal} strings · ${Math.max(0, workingTotal - workingCovered)} missing`
+              : "Working translation coverage unavailable: scan incomplete."
+            : disk
+              ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
+              : group.sourceUnknown
+                ? "Local translation coverage unavailable: scan incomplete."
+                : "Local translation coverage unavailable"}
+        </small>
+      </>
+    );
     return (
       <Fragment key={sourceId}>
         <tr aria-label={sourceName}>
@@ -1318,71 +1411,13 @@ export function NexusDialog({
                 Sent to Vortex · installation and deployment unconfirmed
               </small>
             )}
-            {group.acquired && (
-              <small>
-                Already imported ·{" "}
-                {displayedScanIncomplete || !workingKnown ? (
-                  "package coverage unavailable"
-                ) : (
-                  <>
-                    {missingComponents.reduce(
-                      (sum, component) =>
-                        sum +
-                        (component.statusCounts?.untranslated ??
-                          Math.max(
-                            0,
-                            component.totalKeys -
-                              component.translatedKeys -
-                              (component.noTranslationNeededKeys ?? 0),
-                          )),
-                      0,
-                    )}{" "}
-                    strings still missing across installed components
-                  </>
-                )}
-              </small>
-            )}
+            {group.acquired && <small>Already imported</small>}
             {!group.evidence.length && group.inventory.length > 0 && (
               <small>
                 Deployment not verified. Check Vortex, then recheck installed
                 files.
               </small>
             )}
-            {displayedComponents.length > 0 && (
-              <small>
-                Components:{" "}
-                {displayedComponents
-                  .map((component) => {
-                    if (
-                      !group.acquired ||
-                      displayedScanIncomplete ||
-                      !workingKnown
-                    )
-                      return component.name;
-                    const missing =
-                      component.statusCounts?.untranslated ??
-                      Math.max(
-                        0,
-                        component.totalKeys -
-                          component.translatedKeys -
-                          (component.noTranslationNeededKeys ?? 0),
-                      );
-                    return `${component.name} (${missing ? `${missing} missing` : "complete"})`;
-                  })
-                  .join(", ")}
-              </small>
-            )}
-            <small>
-              {libraryMode || row.modIds.length > 0
-                ? !displayedScanIncomplete && workingKnown
-                  ? `Working translation: ${workingCovered}/${workingTotal} strings · ${Math.max(0, workingTotal - workingCovered)} missing`
-                  : "Working translation coverage unavailable: scan incomplete."
-                : disk
-                  ? `Local translation: ${disk.covered}/${disk.total} strings${disk.noTextNeeded ? ` · ${disk.noTextNeeded} need no translation text` : ""} · ${disk.missing} missing`
-                  : group.sourceUnknown
-                    ? "Local translation coverage unavailable: scan incomplete."
-                    : "Local translation coverage unavailable"}
-            </small>
             {row.unresolved && row.unresolved.length > 0 && (
               <small>
                 Could not match {row.unresolved.length} translation{" "}
@@ -1668,7 +1703,8 @@ export function NexusDialog({
                   Recheck import
                 </button>
               )}
-            {(displayFile ||
+            {(displayedComponents.length > 0 ||
+              displayFile ||
               group.unavailableCandidates.length > 0 ||
               unidentifiedEvidence.length > 0 ||
               group.inventory.length > 0 ||
@@ -1680,6 +1716,7 @@ export function NexusDialog({
               row.details.length > 0) && (
               <details>
                 <summary>Details</summary>
+                {coverageDetails}
                 {!selected && unidentifiedEvidence.length > 0 && (
                   <small>
                     {unidentifiedEvidence
@@ -1758,22 +1795,6 @@ export function NexusDialog({
                 {row.details.map((detail, index) => (
                   <p key={index}>{detail}</p>
                 ))}
-                {row.modIds.map(
-                  (id) =>
-                    onOpenReview && (
-                      <button
-                        className={quiet}
-                        key={id}
-                        disabled={locked}
-                        onClick={() => onOpenReview(id)}
-                      >
-                        Open imported strings
-                        {row.modIds.length > 1
-                          ? ` · ${mods.find((mod) => mod.uniqueId === id)?.name ?? id}`
-                          : ""}
-                      </button>
-                    ),
-                )}
               </details>
             )}
           </td>
@@ -1974,9 +1995,7 @@ export function NexusDialog({
               errors and scan again; verified mods remain available.
             </p>
           )}
-          {(actionStatus || resultStatus) && (
-            <p role="status">{actionStatus || resultStatus}</p>
-          )}
+          {!active && resultStatus && <p role="status">{resultStatus}</p>}
           {libraryMode &&
             importedState.context === importedContext &&
             importedState.error && <p role="alert">{importedState.error}</p>}
@@ -2024,6 +2043,9 @@ export function NexusDialog({
                 className={quiet}
                 onClick={() => {
                   stopBatchRef.current = true;
+                  setBatchProgress((previous) =>
+                    previous ? { ...previous, stopped: true } : previous,
+                  );
                 }}
               >
                 Stop after current
@@ -2039,7 +2061,7 @@ export function NexusDialog({
                     : "Vortex handles installation according to your settings."
                   : "Choose Vortex.exe in installation settings first."
                 : canDirectImport
-                  ? "Valid imports are marked Done. Use the existing Export action when ready."
+                  ? "Translations from Nexus Mods may be incomplete and need further editing."
                   : nexusAccountKind(account) === "free"
                     ? "Free account: use each Open Nexus Link below to download manually. Direct archive import requires Premium."
                     : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}
@@ -2048,14 +2070,68 @@ export function NexusDialog({
           {checkError && <p role="alert">{checkError}</p>}
         </div>
       )}
+      {(search.running || loading || active || batchProgress) && (
+        <div className="nexus-progress">
+          {search.running ? (
+            <>
+              <div role="status">
+                Finding translations · {search.completed}/{search.total} IDs
+                checked
+              </div>
+              <progress
+                aria-label="Nexus search progress"
+                max={Math.max(1, search.total)}
+                value={search.total > 0 ? search.completed : undefined}
+              />
+            </>
+          ) : loading ? (
+            <>
+              <div role="status">Loading translation versions…</div>
+              <progress aria-label="Translation file metadata progress" />
+            </>
+          ) : batchProgress ? (
+            <>
+              <div role="status">
+                {batchRunning
+                  ? batchProgress.stopped
+                    ? "Stopping after current file"
+                    : "Importing translations"
+                  : batchProgress.stopped
+                    ? "Stopped after current file"
+                    : batchProgress.keys.some(
+                          (key) => rows[key]?.error || rows[key]?.failures,
+                        )
+                      ? "Batch finished with errors"
+                      : batchProgress.keys.some(
+                            (key) =>
+                              rows[key]?.unresolved?.length ||
+                              rows[key]?.choices?.length,
+                          )
+                        ? "Batch finished · some files need attention"
+                        : "Batch finished"}{" "}
+                · {batchProgress.completed}/{batchProgress.total} files
+                processed
+              </div>
+              <progress
+                aria-label="Translation batch progress"
+                max={Math.max(1, batchProgress.total)}
+                value={batchProgress.completed}
+              />
+              {active && (
+                <small>{actionStatus ?? "Preparing translation import…"}</small>
+              )}
+            </>
+          ) : (
+            <>
+              <div role="status">
+                {actionStatus ?? "Preparing translation import…"}
+              </div>
+              <progress aria-label="Translation action progress" />
+            </>
+          )}
+        </div>
+      )}
       <div className="nexus-dialog-body">
-        {(loading || search.running) && (
-          <p role="status">
-            {loading
-              ? "Loading translation versions…"
-              : "Finding translations…"}
-          </p>
-        )}
         {!resolvingInstalled && acquisitionResults.length > 0 && (
           <section aria-label="Available translations">
             <h3>

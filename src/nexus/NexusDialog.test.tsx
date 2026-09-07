@@ -279,6 +279,49 @@ function translationRow() {
   openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
+it("keeps coverage in collapsed details and only offers the missing-text workspace action", async () => {
+  mount({ method: "folder", libraryMode: true });
+  await screen.findByRole("row", { name: "Canonical title" });
+  const coverage = await screen.findByText(
+    "Working translation: 0/3 strings · 3 missing",
+  );
+  expect(coverage).not.toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: /Open imported strings/ }),
+  ).toBeNull();
+  expect(
+    screen.getByText(
+      "Translations from Nexus Mods may be incomplete and need further editing.",
+    ),
+  ).toBeVisible();
+  fireEvent.click(translationRow().getByText("Details"));
+  expect(coverage).toBeVisible();
+});
+it("shows checked IDs then indeterminate file metadata until versions are ready", async () => {
+  let finish!: (value: NexusFile[]) => void;
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_list_files"
+      ? new Promise((resolve) => {
+          finish = resolve;
+        })
+      : original(cmd, ...args),
+  );
+  const app = mount({
+    search: { ...search, running: true, completed: 1, total: 3 },
+  });
+  expect(
+    screen.getByRole("progressbar", { name: "Nexus search progress" }),
+  ).toHaveAttribute("value", "1");
+  app.setSearch({ ...search, running: false });
+  expect(
+    screen.getByRole("progressbar", {
+      name: "Translation file metadata progress",
+    }),
+  ).not.toHaveAttribute("value");
+  await act(async () => finish([file]));
+  await waitFor(() => expect(screen.queryByRole("progressbar")).toBeNull());
+});
 it("explains a candidate without eligible archives instead of an empty optgroup", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((command: string, args?: { modId?: number }) =>
@@ -349,13 +392,13 @@ it("retains mapped working coverage when only an unrelated source has a scan err
   ]);
   expect(
     screen.getByText("Working translation: 0/3 strings · 3 missing"),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   app.setTraversal(false);
   expect(
     screen.getByText(
       "Working translation coverage unavailable: scan incomplete.",
     ),
-  ).toBeVisible();
+  ).toBeInTheDocument();
 });
 it.each(["folder", "vortex"] as const)(
   "imports all native component matches without source-page filtering in %s mode",
@@ -401,7 +444,7 @@ it.each(["folder", "vortex"] as const)(
     expect(
       await screen.findByText(/Could not match 1 translation file/),
     ).toBeVisible();
-    expect(screen.getByText("Components: Local mod")).toBeVisible();
+    expect(screen.getByText("Components: Local mod")).toBeInTheDocument();
   },
 );
 it("imports every safe segment mapping from the same archive document", async () => {
@@ -473,7 +516,7 @@ it("remembers an imported Nexus file across reopening while offering missing str
     screen.getByText(
       "Working translation coverage unavailable: scan incomplete.",
     ),
-  ).toBeVisible();
+  ).toBeInTheDocument();
 });
 it("keeps whole-package coverage for a partial receipt and allows an explicit recheck", async () => {
   const original = invoke.getMockImplementation()!;
@@ -517,8 +560,10 @@ it("keeps whole-package coverage for a partial receipt and allows an explicit re
   );
   expect(
     screen.getByText("Working translation: 23/103 strings · 80 missing"),
-  ).toBeVisible();
-  expect(screen.getByText(/^Components: Local mod .*Core /)).toBeVisible();
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText(/^Components: Local mod .*Core /),
+  ).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
   expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Recheck import" }));
@@ -883,10 +928,10 @@ it("shows complete SVE main components and absent optional text without a false 
     screen.getByText(
       "Components: SVE CP (complete), SVE Code (complete), Grampleton Fields (1 missing), Frontier Farm (69 missing)",
     ),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(
     screen.getByText("Working translation: 11341/11411 strings · 70 missing"),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "Recheck import" })).toBeNull();
   expect(
     screen.queryByText(/some translation files are not imported/),
@@ -1100,10 +1145,10 @@ it("uses reclassified Remastered metadata without adding related translation pac
   );
   expect(
     screen.getByText("Working translation: 11751/11753 strings · 2 missing"),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(
     screen.getByText(/^Components: Scarp 0.*Scarp 1.*Scarp 2.*Scarp 3/),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   app.setSearch({
     ...search,
     entries: [
@@ -1128,10 +1173,10 @@ it("uses reclassified Remastered metadata without adding related translation pac
   );
   expect(
     screen.getByText("Working translation: 11751/11753 strings · 2 missing"),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(
     screen.getByText(/^Components: Scarp 0.*Scarp 1.*Scarp 2.*Scarp 3/),
-  ).toBeVisible();
+  ).toBeInTheDocument();
 });
 it("selects newer Remastered RAR despite an acquired classic page and recognizes supplemental receipts", async () => {
   const original = invoke.getMockImplementation()!;
@@ -1378,7 +1423,7 @@ it("restores SVE scope from receipts through a complete 44-ID search after resta
     );
     expect(
       screen.getByText(/^Components: Frontier Farm .*SVE CP .*SVE Code /),
-    ).toBeVisible();
+    ).toBeInTheDocument();
     expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
     app.unmount();
   }
@@ -1482,7 +1527,7 @@ it("hides completed saved text and restores new source gaps while retaining unav
   ).toBeInTheDocument();
   expect(
     screen.getByText("Working translation: 3/4 strings · 1 missing"),
-  ).toBeVisible();
+  ).toBeInTheDocument();
   expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
 });
 it("can recheck an external installation before any handoff without refreshing Nexus", async () => {
@@ -1935,6 +1980,23 @@ const twoSources: NexusSearchState = {
     },
   ],
 };
+it("reports processed files without claiming success when batch downloads fail", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((cmd: string, ...args: unknown[]) =>
+    cmd === "nexus_download_preflight"
+      ? Promise.reject(new Error("Download unavailable"))
+      : original(cmd, ...args),
+  );
+  mount({ search: twoSources, method: "folder" });
+  await download();
+  expect(
+    await screen.findByText(/Batch finished with errors.*2\/2 files processed/),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("progressbar", { name: "Translation batch progress" }),
+  ).toHaveAttribute("value", "2");
+  expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+});
 it.each(["stop", "unmount", "method"])(
   "stops remaining batch actions after %s",
   async (mode) => {
@@ -1952,6 +2014,12 @@ it.each(["stop", "unmount", "method"])(
     await waitFor(() =>
       expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1),
     );
+    expect(
+      screen.getByRole("progressbar", { name: "Translation batch progress" }),
+    ).toHaveAttribute("value", "0");
+    expect(
+      screen.getByRole("progressbar", { name: "Translation batch progress" }),
+    ).toHaveAttribute("max", "2");
     if (mode === "unmount") app.unmount();
     else if (mode === "method") app.setMethod("folder");
     else
@@ -1961,6 +2029,19 @@ it.each(["stop", "unmount", "method"])(
     await act(async () => finish({ status: "handoff-requested" }));
     expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(1);
     expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    if (mode === "stop") {
+      expect(
+        screen.getByText(/Stopped after current file.*1\/2 files processed/),
+      ).toBeVisible();
+      expect(
+        screen.getByRole("progressbar", { name: "Translation batch progress" }),
+      ).toHaveAttribute("value", "1");
+    } else if (mode === "method")
+      expect(
+        screen.queryByRole("progressbar", {
+          name: "Translation batch progress",
+        }),
+      ).toBeNull();
   },
 );
 it("reloads eligible versions on method change and discards an invalid prior 7z selection", async () => {

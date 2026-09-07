@@ -58,6 +58,22 @@
   min-height: 0;
   padding: 10px 20px 16px;
 }
+.nexus-progress {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--translator-border);
+}
+.nexus-progress progress {
+  display: block;
+  width: 100%;
+  height: 10px;
+  margin: 8px 0;
+  accent-color: var(--translator-brand);
+}
+.nexus-progress small {
+  display: block;
+  overflow-wrap: anywhere;
+}
 .nexus-actions {
   display: flex;
   flex-wrap: wrap;
