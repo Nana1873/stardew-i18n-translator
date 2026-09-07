@@ -148,7 +148,6 @@ export function NexusDialog({
   onClose,
   onConfigure,
   onImported,
-  onOpenMissing,
   vortexExecutable,
   installationMethod,
   onCheckInstalled,
@@ -232,8 +231,16 @@ export function NexusDialog({
     onCheckInstalled,
     onDeploymentStamp,
     mods,
+    rows,
   });
-  live.current = { open, context, onCheckInstalled, onDeploymentStamp, mods };
+  live.current = {
+    open,
+    context,
+    onCheckInstalled,
+    onDeploymentStamp,
+    mods,
+    rows,
+  };
   const actionContext = useRef(context);
   const [recheckPending, setRecheckPending] = useState<string | null>(null);
   const [presentationContext, setPresentationContext] = useState<string | null>(
@@ -374,7 +381,7 @@ export function NexusDialog({
               : row.modIds,
           details: [
             ...row.details,
-            `${name} / ${mapping.relativeDir.replace("/@split/", "/")}: ${result.imported} imported, ${result.conflicts} kept, ${result.tokenInvalid} token errors (${mapping.archivePath}). ${result.matched} matching, ${result.missing} missing, ${result.extra} extra, ${result.empty} empty, ${result.sourceEqual} source-identical.`,
+            `${name} / ${mapping.relativeDir.replace("/@split/", "/")}: ${result.imported} imported, ${result.conflicts} kept, ${result.tokenInvalid} skipped by token checks (${mapping.archivePath}). ${result.matched} matching, ${result.missing} missing, ${result.extra} extra, ${result.empty} empty, ${result.sourceEqual} source-identical.`,
           ],
         }));
       } catch (cause) {
@@ -963,9 +970,13 @@ export function NexusDialog({
             : [],
         };
       const additional =
-        !isVortex && !sourceUnknown
+        !isVortex && !sourceUnknown && packageComponents.length > 1
           ? supplementalFiles(
-              packageComponents,
+              packageComponents.filter(
+                (component) =>
+                  !recordedComponents.includes(component.uniqueId) &&
+                  !row.modIds.includes(component.uniqueId),
+              ),
               result.candidates.map((candidate) => ({
                 candidate,
                 files: fileMetadata.entries[candidate.modId]?.files ?? [],
@@ -1093,6 +1104,10 @@ export function NexusDialog({
   const allHandoffsRechecked =
     checkedAt != null &&
     actionRows.every((row) => !row.handoff || checkedAt >= row.handoff.at);
+  const failedArchives = actionRows.filter(
+    (row) => row.error || row.failures,
+  ).length;
+  const skippedTexts = actionRows.reduce((sum, row) => sum + row.invalid, 0);
   const resultStatus = [
     handoffCount
       ? `${handoffCount} sent to Vortex${allHandoffsRechecked ? " · files rechecked" : ""}`
@@ -1103,7 +1118,12 @@ export function NexusDialog({
     actionRows.some((row) => row.choices?.length)
       ? "Confirm matching text"
       : "",
-    actionRows.some((row) => row.error) ? "Action failed" : "",
+    failedArchives
+      ? `${failedArchives} ${failedArchives === 1 ? "archive could" : "archives could"} not be fully imported; see file details`
+      : "",
+    skippedTexts
+      ? `${skippedTexts} ${skippedTexts === 1 ? "text" : "texts"} skipped by token checks`
+      : "",
   ]
     .filter(Boolean)
     .join(" · ");
@@ -1185,12 +1205,20 @@ export function NexusDialog({
               (mod) => mod.uniqueId === item.supplementComponentId,
             )
           : undefined;
+        const primaryKey = groups.find(
+          (group) => group.entry.modId === item.sourceId,
+        )?.key;
+        const alreadyMapped =
+          component &&
+          primaryKey &&
+          live.current.rows[primaryKey]?.modIds.includes(component.uniqueId);
         if (
           component &&
-          (component.statusCounts?.untranslated ??
-            component.totalKeys -
-              component.translatedKeys -
-              (component.noTranslationNeededKeys ?? 0)) === 0
+          (alreadyMapped ||
+            (component.statusCounts?.untranslated ??
+              component.totalKeys -
+                component.translatedKeys -
+                (component.noTranslationNeededKeys ?? 0)) === 0)
         ) {
           setBatchProgress((previous) =>
             previous ? { ...previous, total: previous.total - 1 } : previous,
@@ -1431,24 +1459,6 @@ export function NexusDialog({
                 it is missing from this installation.
               </small>
             )}
-            {!group.problem &&
-              (group.acquired ||
-                row.modIds.length > 0 ||
-                group.evidence.length > 0 ||
-                group.inventory.length > 0) &&
-              missingComponents.length > 0 &&
-              onOpenMissing &&
-              missingComponents.map((component) => (
-                <button
-                  key={component.uniqueId}
-                  className={quiet}
-                  disabled={locked}
-                  onClick={() => onOpenMissing(component.uniqueId)}
-                >
-                  Open missing strings
-                  {missingComponents.length > 1 ? ` · ${component.name}` : ""}
-                </button>
-              ))}
           </td>
           <td>
             <div className="nexus-file-link">
@@ -1604,66 +1614,61 @@ export function NexusDialog({
                     )}
                   </small>
                 )}
-                {!item.row.completed ||
-                item.row.error ||
-                item.row.unresolved?.length ? (
+                <details>
+                  <summary>{item.component.name} details</summary>
+                  {Boolean(item.row.error || item.row.unresolved?.length) && (
+                    <button
+                      className={quiet}
+                      disabled={
+                        locked || importStatusUnknown || !canDirectImport
+                      }
+                      onClick={() =>
+                        void startReview(
+                          item.key,
+                          sourceId,
+                          item.selected.candidate,
+                          item.selected.file,
+                          item.component.uniqueId,
+                        )
+                      }
+                    >
+                      Retry {item.component.name}
+                    </button>
+                  )}
                   <button
                     className={quiet}
-                    disabled={locked || importStatusUnknown || !canDirectImport}
-                    onClick={() =>
-                      void startReview(
-                        item.key,
-                        sourceId,
-                        item.selected.candidate,
-                        item.selected.file,
-                        item.component.uniqueId,
-                      )
-                    }
+                    disabled={locked}
+                    onClick={() => {
+                      patch(item.key, { linkError: undefined });
+                      void openUrl(
+                        `https://www.nexusmods.com/stardewvalley/mods/${item.selected.candidate.modId}?tab=files&file_id=${item.selected.file.fileId}`,
+                      ).catch((cause) => {
+                        if (mounted.current)
+                          patch(item.key, {
+                            linkError: `Could not open Nexus files: ${String(cause)}`,
+                          });
+                      });
+                    }}
+                    aria-label={`Open Nexus files for ${item.component.name}`}
                   >
-                    {item.row.error || item.row.completed ? "Retry" : "Import"}{" "}
-                    {item.component.name}
+                    Nexus files
                   </button>
-                ) : (
-                  <small>Import checked</small>
-                )}
-                <button
-                  className={quiet}
-                  disabled={locked}
-                  onClick={() => {
-                    patch(item.key, { linkError: undefined });
-                    void openUrl(
-                      `https://www.nexusmods.com/stardewvalley/mods/${item.selected.candidate.modId}?tab=files&file_id=${item.selected.file.fileId}`,
-                    ).catch((cause) => {
-                      if (mounted.current)
-                        patch(item.key, {
-                          linkError: `Could not open Nexus files: ${String(cause)}`,
-                        });
-                    });
-                  }}
-                  aria-label={`Open Nexus files for ${item.component.name}`}
-                >
-                  Nexus files
-                </button>
-                {item.row.linkError && (
-                  <small role="alert">{item.row.linkError}</small>
-                )}
+                  {item.row.linkError && (
+                    <small role="alert">{item.row.linkError}</small>
+                  )}
+                  {item.row.details.map((detail, index) => (
+                    <p key={index}>{detail}</p>
+                  ))}
+                  {item.row.unresolved?.map((unresolved, index) => (
+                    <p key={index}>
+                      {unresolved.archivePath}: {unresolved.reason}
+                    </p>
+                  ))}
+                </details>
                 {item.row.status && (
                   <small role="status">{item.row.status}</small>
                 )}
                 {item.row.error && <small role="alert">{item.row.error}</small>}
-                {item.row.details.length > 0 && (
-                  <details>
-                    <summary>{item.component.name} import details</summary>
-                    {item.row.details.map((detail, index) => (
-                      <p key={index}>{detail}</p>
-                    ))}
-                    {item.row.unresolved?.map((unresolved, index) => (
-                      <p key={index}>
-                        {unresolved.archivePath}: {unresolved.reason}
-                      </p>
-                    ))}
-                  </details>
-                )}
               </div>
             ))}
             {linkErrors[sourceId] && (
@@ -1758,8 +1763,8 @@ export function NexusDialog({
                     {row.imported > 0
                       ? `${row.imported} imported as Done in this attempt`
                       : "No new strings added"}{" "}
-                    · {row.kept} existing values kept · {row.invalid} token
-                    errors
+                    · {row.kept} existing values kept · {row.invalid} skipped by
+                    token checks
                     {row.failures ? ` · ${row.failures} failed` : ""}
                   </p>
                 )}
@@ -2101,7 +2106,7 @@ export function NexusDialog({
                     : batchProgress.keys.some(
                           (key) => rows[key]?.error || rows[key]?.failures,
                         )
-                      ? "Batch finished with errors"
+                      ? `Batch finished · ${batchProgress.keys.filter((key) => rows[key]?.error || rows[key]?.failures).length} ${batchProgress.keys.filter((key) => rows[key]?.error || rows[key]?.failures).length === 1 ? "archive needs" : "archives need"} attention`
                       : batchProgress.keys.some(
                             (key) =>
                               rows[key]?.unresolved?.length ||

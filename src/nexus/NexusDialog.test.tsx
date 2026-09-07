@@ -279,7 +279,7 @@ function translationRow() {
   openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
-it("keeps coverage in collapsed details and only offers the missing-text workspace action", async () => {
+it("keeps coverage in collapsed details without workspace navigation", async () => {
   mount({ method: "folder", libraryMode: true });
   await screen.findByRole("row", { name: "Canonical title" });
   const coverage = await screen.findByText(
@@ -497,8 +497,9 @@ it("remembers an imported Nexus file across reopening while offering missing str
     "Already imported · 3 strings still missing across installed components",
   );
   expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Open missing strings" }));
-  expect(app.onOpenMissing).toHaveBeenCalledWith("sample.mod");
+  expect(
+    screen.queryByRole("button", { name: /Open missing strings/ }),
+  ).toBeNull();
   invoke.mockImplementation((command: string, ...args: unknown[]) =>
     command === "list_community_library"
       ? Promise.reject(new Error("Store unavailable"))
@@ -733,7 +734,12 @@ it.each([
     app.onImported.mockImplementation(async () => {
       sourceMods = sourceMods.map((mod) =>
         imported.has(mod.uniqueId)
-          ? { ...mod, translatedKeys: mod.totalKeys }
+          ? {
+              ...mod,
+              translatedKeys:
+                mod.totalKeys -
+                (mainCompletesOptional && mod.uniqueId === "frontier" ? 1 : 0),
+            }
           : mod,
       );
       app.setMods(sourceMods);
@@ -743,8 +749,8 @@ it.each([
     );
     await screen.findByRole("button", { name: "Download & import all (2)" });
     expect(
-      screen.getByRole("button", { name: "Import Frontier Farm" }),
-    ).toBeVisible();
+      screen.queryByRole("button", { name: "Import Frontier Farm" }),
+    ).toBeNull();
     expect(
       screen.queryByRole("button", { name: /Import (Grandpa|Immersive)/ }),
     ).toBeNull();
@@ -756,13 +762,16 @@ it.each([
     );
     if (retryExpected) {
       await screen.findByText(/Temporary optional download failure/);
+      fireEvent.click(screen.getByText("Frontier Farm details"));
       fireEvent.click(
         await screen.findByRole("button", { name: "Retry Frontier Farm" }),
       );
     }
     await waitFor(() => expect(imported.has("frontier")).toBe(true));
     await screen.findByText(
-      "Working translation: 11410/11411 strings · 1 missing",
+      mainCompletesOptional
+        ? "Working translation: 11409/11411 strings · 2 missing"
+        : "Working translation: 11410/11411 strings · 1 missing",
     );
     expect(commandCalls("nexus_download_preflight")[0]).toEqual({
       modId: 50589,
@@ -787,7 +796,9 @@ it.each([
       search: results,
     });
     await screen.findByText(
-      "Working translation: 11410/11411 strings · 1 missing",
+      mainCompletesOptional
+        ? "Working translation: 11409/11411 strings · 2 missing"
+        : "Working translation: 11410/11411 strings · 1 missing",
     );
     expect(
       screen.queryByRole("button", { name: "Import Frontier Farm" }),
@@ -825,7 +836,10 @@ it("links free users to the supplemental file's own Nexus page", async () => {
   mount({
     method: "vortex",
     libraryMode: true,
-    mods: [{ ...mods[0], name: "Frontier Farm" }],
+    mods: [
+      { ...mods[0], name: "Frontier Farm" },
+      { ...mods[0], uniqueId: "main", name: "Main component" },
+    ],
     search: {
       ...search,
       entries: [
@@ -839,9 +853,13 @@ it("links free users to the supplemental file's own Nexus page", async () => {
       ],
     },
   });
+  const details = await screen.findByText("Frontier Farm details");
   expect(
-    await screen.findByRole("button", { name: "Import Frontier Farm" }),
-  ).toBeDisabled();
+    screen.getByRole("button", {
+      name: "Open Nexus files for Frontier Farm",
+    }),
+  ).not.toBeVisible();
+  fireEvent.click(details);
   fireEvent.click(
     screen.getByRole("button", { name: "Open Nexus files for Frontier Farm" }),
   );
@@ -853,6 +871,49 @@ it("links free users to the supplemental file's own Nexus page", async () => {
     ]),
   );
   expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+});
+it("does not treat an older single-component OPTIONAL archive as a supplement", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(
+    (command: string, args?: Record<string, unknown>) =>
+      command === "nexus_list_files"
+        ? Promise.resolve(
+            args?.modId === 32713
+              ? [{ ...file, fileId: 128572, uploadedAt: "2025-03-28" }]
+              : [
+                  {
+                    ...file,
+                    fileId: 106034,
+                    name: "Lurking in the Dark German",
+                    category: "OPTIONAL",
+                    uploadedAt: "2024-07-06",
+                  },
+                ],
+          )
+        : original(command, args),
+  );
+  mount({
+    method: "folder",
+    libraryMode: true,
+    mods: [{ ...mods[0], name: "Lurking in the Dark" }],
+    search: {
+      ...search,
+      entries: [
+        {
+          ...search.entries[1],
+          result: {
+            ...search.entries[1].result,
+            candidates: [
+              { ...candidate, modId: 32713 },
+              { ...candidate, modId: 25866 },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  await screen.findByRole("button", { name: "Download & import all (1)" });
+  expect(screen.queryByText(/Additional translation/)).toBeNull();
 });
 it("shows complete SVE main components and absent optional text without a false import retry", async () => {
   const sourceMods = [
@@ -1319,7 +1380,7 @@ it("replaces attempt counts and details when rechecking the same archive", async
   );
   expect(
     screen.getByText(
-      "1 imported as Done in this attempt · 1 existing values kept · 1 token errors",
+      "1 imported as Done in this attempt · 1 existing values kept · 1 skipped by token checks",
     ),
   ).toBeInTheDocument();
   expect(
@@ -1740,7 +1801,7 @@ it("routes an explicit folder installation to Review even if Vortex is configure
   expect(
     invoke.mock.calls.some(([cmd]) => /export|save_settings/.test(cmd)),
   ).toBe(false);
-  expect(screen.getByText("1 imported as Done")).toBeInTheDocument();
+  expect(screen.getByText(/^1 imported as Done(?: ·|$)/)).toBeInTheDocument();
 });
 it("defaults legacy installations without Vortex to folder import", async () => {
   const app = mount({ executable: null });
@@ -1923,7 +1984,7 @@ it("shows zero new strings without saving when preflight finds no importable str
   );
   mount({ method: "folder" });
   await download();
-  await screen.findByText("0 imported as Done");
+  await screen.findByText(/^0 imported as Done(?: ·|$)/);
   expect(commandCalls("nexus_import_translation")).toHaveLength(0);
 });
 it("rechecks local disk without refreshing metadata or losing drafts and receipts", async () => {
@@ -1990,12 +2051,34 @@ it("reports processed files without claiming success when batch downloads fail",
   mount({ search: twoSources, method: "folder" });
   await download();
   expect(
-    await screen.findByText(/Batch finished with errors.*2\/2 files processed/),
+    await screen.findByText(
+      /Batch finished.*2 archives need attention.*2\/2 files processed/,
+    ),
   ).toBeVisible();
   expect(
     screen.getByRole("progressbar", { name: "Translation batch progress" }),
   ).toHaveAttribute("value", "2");
   expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+});
+it("preserves successful imports and separates rejected tokens from one failed archive", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(
+    (command: string, args?: Record<string, unknown>) =>
+      command === "nexus_download_preflight" && args?.modId === 999
+        ? Promise.reject(new Error("No safe translation match"))
+        : original(command, args),
+  );
+  mount({ search: twoSources, method: "folder" });
+  await download();
+  expect(
+    await screen.findByText(
+      "1 imported as Done · 1 archive could not be fully imported; see file details · 1 text skipped by token checks",
+    ),
+  ).toBeVisible();
+  expect(screen.queryByText(/Action failed/)).toBeNull();
+  expect(
+    screen.getByText(/Batch finished.*1 archive needs attention/),
+  ).toBeVisible();
 });
 it.each(["stop", "unmount", "method"])(
   "stops remaining batch actions after %s",
@@ -2656,7 +2739,7 @@ it("imports shared archive mappings separately for each original in Review", asy
     mods: sharedArchiveMods,
   });
   await download();
-  await screen.findByText("2 imported as Done");
+  await screen.findByText(/^2 imported as Done(?: ·|$)/);
   expect(commandCalls("nexus_download_preflight")).toHaveLength(2);
   expect(
     commandCalls("nexus_import_translation").map((call) => call.modUniqueId),
@@ -3186,25 +3269,6 @@ it.each([{ files: [] }, { files: [file] }])(
     }
   },
 );
-
-it("opens missing strings only for one unambiguous component with untranslated working text", async () => {
-  const app = mount({ installed: [installedFile] });
-  await screen.findByText("Translation installed");
-  openInstalledResults();
-  fireEvent.click(
-    await screen.findByRole("button", { name: "Open missing strings" }),
-  );
-  expect(app.onOpenMissing).toHaveBeenCalledWith("sample.mod");
-  expect(app.onOpenReview).not.toHaveBeenCalled();
-  app.setMods([{ ...mods[0], translatedKeys: 3 }]);
-  expect(
-    screen.queryByRole("button", { name: "Open missing strings" }),
-  ).toBeNull();
-  app.setMods([mods[0], { ...mods[0], uniqueId: "component.two" }]);
-  expect(
-    screen.queryByRole("button", { name: "Open missing strings" }),
-  ).toBeNull();
-});
 
 it("keeps unknown coverage distinct from completeness for installed evidence", async () => {
   const app = mount({ installed: [installedFile] });
@@ -3893,17 +3957,8 @@ it("collapses installed inventory while keeping honest deployment context and co
   ).toBeNull();
   fireEvent.click(summary);
   expect(screen.getByText(/Deployment not verified/)).toBeVisible();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Open missing strings · Local mod" }),
-  );
-  fireEvent.click(
-    screen.getByRole("button", {
-      name: "Open missing strings · Second component",
-    }),
-  );
-  expect(app.onOpenMissing.mock.calls).toEqual([
-    ["sample.mod"],
-    ["component.two"],
-  ]);
+  expect(
+    screen.queryByRole("button", { name: /Open missing strings/ }),
+  ).toBeNull();
   expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
 });
