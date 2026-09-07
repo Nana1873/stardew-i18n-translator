@@ -8,14 +8,17 @@ claim that the planned private-output workflow is already implemented.
 The prototype keeps the original Overview and Workspace. Community storage is
 an internal implementation detail, not another screen or a panel in Overview.
 The existing Nexus dialog provides translation acquisition/import; the existing
-Import and Export menus provide manual language JSON/ZIP import and combined output ZIP creation
+Import and Export menus provide manual language JSON/archive import and combined output ZIP creation
 for manual Vortex import. It uses the configured Mods folder and language, and only
 library-mapped components enter the combined output. It does not yet implement
-profile detection, automatic output handoff, community-update merging, or the
+profile detection, automatic output handoff, replacement of conflicting community text, or the
 complete output lifecycle below. The first library import binds use of legacy
 personal work to that Mods folder; cross-folder library operations are rejected
 instead of assuming the legacy state is isolated. Evaluate it with an isolated
-app data directory. RAR/7z and translated-default-only bundles remain unsupported.
+app data directory. RAR/7z import uses the bounded Windows system archive reader;
+unavailable or incompatible readers report an error rather than selecting an older
+ZIP. New archive imports can add missing values while retaining existing community
+and personal text. Translated-default-only bundles remain unsupported.
 
 ## Intended result
 

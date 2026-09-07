@@ -20,6 +20,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 import { NexusDialog } from "./NexusDialog";
 import type { NexusSearchState } from "./useNexusSearch";
+import { useNexusSearch } from "./useNexusSearch";
 const counts = {
   matched: 3,
   missing: 2,
@@ -278,13 +279,13 @@ function translationRow() {
   openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
-it("explains a candidate without eligible ZIP files instead of an empty optgroup", async () => {
+it("explains a candidate without eligible archives instead of an empty optgroup", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((command: string, args?: { modId?: number }) =>
     command === "nexus_list_files"
       ? Promise.resolve(
           args?.modId === 45820
-            ? [{ ...file, fileId: 999, fileName: "new.rar" }]
+            ? [{ ...file, fileId: 999, fileName: "new.tar" }]
             : [file, { ...file, fileId: 8, uploadedAt: "2025-01-01" }],
         )
       : original(command, args),
@@ -308,7 +309,7 @@ it("explains a candidate without eligible ZIP files instead of an empty optgroup
     },
   });
   const explanation = await screen.findByRole("option", {
-    name: "No ZIP available. Direct import supports ZIP archives.",
+    name: "No supported archive available. Import supports ZIP, RAR and 7z.",
   });
   expect(explanation).toBeDisabled();
   expect(
@@ -400,7 +401,7 @@ it.each(["folder", "vortex"] as const)(
     expect(
       await screen.findByText(/Could not match 1 translation file/),
     ).toBeVisible();
-    expect(screen.getByText("Components: Local mod")).toBeVisible();
+    expect(screen.getByText("Components: Local mod, Other mod")).toBeVisible();
   },
 );
 it("imports every safe segment mapping from the same archive document", async () => {
@@ -544,6 +545,262 @@ async function download() {
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
 }
+it("selects newer Remastered RAR despite an acquired classic page and recognizes supplemental receipts", async () => {
+  const original = invoke.getMockImplementation()!;
+  let supplemented = false;
+  invoke.mockImplementation((command: string, args?: { modId?: number }) => {
+    if (command === "nexus_list_files")
+      return Promise.resolve([
+        {
+          ...file,
+          fileId: args?.modId === 50527 ? 8 : 7,
+          fileName:
+            args?.modId === 50527 ? "EastScarp-Remastered.rar" : "classic.zip",
+          uploadedAt: args?.modId === 50527 ? "2026-09-01" : "2023-11-10",
+        },
+      ]);
+    if (command === "list_community_library")
+      return Promise.resolve([
+        {
+          modUniqueId: "sample.mod",
+          relativeDir: "i18n",
+          archivePath: "old/i18n/de.json",
+          strings: 1,
+          sourceUrl:
+            "https://www.nexusmods.com/stardewvalley/mods/15138?tab=files&file_id=7",
+          sources: supplemented
+            ? [
+                {
+                  archiveId: "new",
+                  archivePath: "new/i18n/de.json",
+                  sourceUrl:
+                    "https://www.nexusmods.com/stardewvalley/mods/50527?tab=files&file_id=8",
+                },
+              ]
+            : [],
+        },
+      ]);
+    return original(command, args);
+  });
+  const app = mount({
+    method: "vortex",
+    libraryMode: true,
+    search: {
+      ...search,
+      entries: [
+        {
+          ...search.entries[1],
+          result: {
+            ...search.entries[1].result,
+            candidates: [
+              { ...candidate, modId: 15138, name: "East Scarp - German" },
+              {
+                ...candidate,
+                modId: 50527,
+                name: "East Scarp Remastered - Deutsch",
+              },
+            ],
+          },
+        },
+      ],
+    },
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("combobox")).toHaveValue("50527:8"),
+  );
+  expect(screen.getByRole("button", { name: /Download .*all/ })).toBeEnabled();
+  supplemented = true;
+  app.setMods([...mods]);
+  await screen.findByText(
+    "Already imported · 3 strings still missing in package",
+  );
+  expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+  fireEvent.change(screen.getByRole("combobox"), {
+    target: { value: "15138:7" },
+  });
+  app.setMods([...mods]);
+  expect(screen.getByRole("combobox")).toHaveValue("15138:7");
+});
+it.each(["rar", "7z"])(
+  "keeps the newest %s selected when its reader reports an error",
+  async (extension) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "nexus_list_files"
+        ? Promise.resolve([
+            file,
+            {
+              ...file,
+              fileId: 8,
+              fileName: `translation.${extension}`,
+              uploadedAt: "2026-09-01",
+            },
+          ])
+        : command === "nexus_download_preflight"
+          ? Promise.reject(new Error("Windows archive reader unavailable"))
+          : original(command, ...args),
+    );
+    mount({ method: "vortex", libraryMode: true });
+    await download();
+    await screen.findByText(/Windows archive reader unavailable/);
+    expect(commandCalls("nexus_download_preflight")).toEqual([
+      { modId: 30342, fileId: 8 },
+    ]);
+    expect(commandCalls("nexus_import_translation")).toHaveLength(0);
+  },
+);
+it("replaces attempt counts and details when rechecking the same archive", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "nexus_resolve_archive"
+      ? Promise.resolve({
+          mappings: [
+            {
+              archiveId: "archive",
+              archivePath: "Component/i18n/de.json",
+              modUniqueId: "sample.mod",
+              relativeDir: "i18n/@split/Dialogue.json",
+            },
+          ],
+          unresolved: [
+            { archivePath: "Other/i18n/de.json", reason: "No safe match" },
+          ],
+        })
+      : original(command, ...args),
+  );
+  mount({ method: "vortex", libraryMode: true });
+  await download();
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Recheck import" }),
+    ).not.toBeDisabled(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Recheck import" }));
+  await waitFor(() =>
+    expect(commandCalls("nexus_import_translation")).toHaveLength(2),
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole("button", { name: "Recheck import" }),
+    ).not.toBeDisabled(),
+  );
+  expect(
+    screen.getByText(
+      "1 imported as Done in this attempt · 1 existing values kept · 1 token errors",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    screen.getAllByText(/Local mod \/ i18n\/Dialogue.json: 1 imported/),
+  ).toHaveLength(1);
+  expect(document.body.textContent).not.toContain("@split");
+});
+it("restores SVE scope from receipts through a complete 44-ID search after restart", async () => {
+  const sourceMods = [
+    {
+      ...mods[0],
+      uniqueId: "flashshifter.FrontierFarm",
+      name: "Frontier Farm",
+      nexusId: 3753,
+      packageId: "Frontier Farm",
+      totalKeys: 69,
+    },
+    {
+      ...mods[0],
+      uniqueId: "FlashShifter.StardewValleyExpandedCP",
+      name: "SVE CP",
+      nexusId: null,
+      packageId: "Stardew Valley Expanded",
+      totalKeys: 11317,
+      translatedKeys: 11311,
+    },
+    {
+      ...mods[0],
+      uniqueId: "FlashShifter.SVECode",
+      name: "SVE Code",
+      nexusId: null,
+      packageId: "Stardew Valley Expanded",
+      totalKeys: 24,
+    },
+    ...Array.from({ length: 43 }, (_, i) => ({
+      ...mods[0],
+      uniqueId: `other.${i}`,
+      name: `Other ${i}`,
+      nexusId: 100 + i,
+      packageId: `other.${i}`,
+    })),
+  ];
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, args?: { modId?: number }) => {
+    if (command === "nexus_find_translations")
+      return Promise.resolve({
+        modId: args!.modId,
+        originalName:
+          args!.modId === 3753 ? "Stardew Valley Expanded" : "Other",
+        candidates:
+          args!.modId === 3753 ? [{ ...candidate, modId: 45820 }] : [],
+        limited: false,
+        notice: "",
+      });
+    if (command === "list_community_library")
+      return Promise.resolve([
+        {
+          modUniqueId: "FlashShifter.StardewValleyExpandedCP",
+          relativeDir: "i18n",
+          archivePath: "SVE/i18n/de.json",
+          strings: 11311,
+          sourceUrl:
+            "https://www.nexusmods.com/stardewvalley/mods/45820?tab=files&file_id=7",
+        },
+      ]);
+    return original(command, args);
+  });
+  function Harness() {
+    const state = useNexusSearch("fixture");
+    return (
+      <>
+        <button
+          onClick={() =>
+            void state.start(sourceMods, "de", { traversalComplete: true })
+          }
+        >
+          Search fixture
+        </button>
+        <NexusDialog
+          libraryMode
+          installationMethod="vortex"
+          search={state}
+          mods={sourceMods}
+          targetLang="de"
+          traversalComplete
+          onSearch={() => {}}
+          onCancel={() => {}}
+          onClose={() => {}}
+          onConfigure={() => {}}
+          onImported={async () => {}}
+        />
+      </>
+    );
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    const app = render(<Harness />);
+    fireEvent.click(screen.getByText("Search fixture"));
+    await screen.findByText("44/44");
+    await screen.findByText(
+      "Working translation: 11311/11410 strings · 99 missing",
+    );
+    expect(
+      screen.getByText("Components: Frontier Farm, SVE CP, SVE Code"),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        /Imported from this archive: 1 of 3 installed components/,
+      ),
+    ).toBeVisible();
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    app.unmount();
+  }
+  expect(commandCalls("nexus_find_translations")).toHaveLength(88);
+});
 beforeEach(() => {
   archive = {
     archiveId: "archive",
@@ -613,31 +870,43 @@ it("loads only candidate metadata before any action, without selection checkboxe
     { url: "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files" },
   ]);
 });
-it("shows exact local coverage even when saved translations are complete", async () => {
-  mount({
-    mods: [
-      {
-        ...mods[0],
-        totalKeys: 1000,
-        translatedKeys: 1000,
-        diskTranslatedKeys: 999,
-      },
-    ],
-  });
+it("hides completed saved text and restores new source gaps while retaining unavailable rows", async () => {
+  const app = mount({ method: "vortex", libraryMode: true });
   await screen.findByRole("row", { name: "Canonical title" });
+  app.setMods([
+    {
+      ...mods[0],
+      translatedKeys: 3,
+      statusCounts: {
+        untranslated: 0,
+        translated: 0,
+        outdated: 0,
+        "review-needed": 3,
+      },
+    },
+  ]);
+  await screen.findByText("No missing translation text in the checked mods.");
+  expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+  app.setTraversal(false);
   expect(
-    translationRow().getByText(
-      "Local translation: 999/1000 strings · 1 missing",
-    ),
+    screen.getByRole("row", { name: "Canonical title" }),
   ).toBeInTheDocument();
-  expect(screen.queryByText(/100%|1000\/1000/)).not.toBeInTheDocument();
-  expect(commandCalls("nexus_handoff_to_vortex")).toHaveLength(0);
+  app.setMods([{ ...mods[0], totalKeys: 4, translatedKeys: 3 }]);
+  app.setTraversal(true);
+  expect(
+    screen.getByRole("row", { name: "Canonical title" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByText("Working translation: 3/4 strings · 1 missing"),
+  ).toBeVisible();
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
 });
 it("can recheck an external installation before any handoff without refreshing Nexus", async () => {
   const app = mount();
   await screen.findByRole("row", { name: "Canonical title" });
   app.onCheckInstalled.mockImplementation(async () => {
-    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }]);
+    app.setMods([{ ...mods[0], translatedKeys: 3, diskTranslatedKeys: 3 }]);
   });
   await app.changeDeployment();
   await waitFor(() => expect(app.onCheckInstalled).toHaveBeenCalledOnce());
@@ -1056,7 +1325,10 @@ it.each([false, undefined])(
     await download();
     await screen.findByText("1 sent to Vortex");
     app.setTraversal(traversal);
-    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
+    app.setMods([
+      { ...mods[0], translatedKeys: 3, diskTranslatedKeys: 3 },
+      mods[1],
+    ]);
     await app.changeDeployment();
     await screen.findByText("1 sent to Vortex · files rechecked");
     fireEvent.click(translationRow().getByText("Details"));
@@ -1582,7 +1854,10 @@ it("removes fully covered handoffs from downloads and retained search IDs while 
   await download();
   await screen.findByText("1 sent to Vortex");
   app.onCheckInstalled.mockImplementation(async () =>
-    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]),
+    app.setMods([
+      { ...mods[0], translatedKeys: 3, diskTranslatedKeys: 3 },
+      mods[1],
+    ]),
   );
   await app.changeDeployment();
   expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
@@ -1869,7 +2144,10 @@ it("withholds initial offers and holds reopened results through settling and the
     await advance(250);
     expect(app.onCheckInstalled).toHaveBeenCalledOnce();
     expectInstalledPresentationPending();
-    app.setMods([{ ...mods[0], diskTranslatedKeys: 3 }, mods[1]]);
+    app.setMods([
+      { ...mods[0], translatedKeys: 3, diskTranslatedKeys: 3 },
+      mods[1],
+    ]);
     expectInstalledPresentationPending();
     await act(async () => finishScan());
     expect(screen.queryByText("Checking installed translations…")).toBeNull();
@@ -2699,7 +2977,11 @@ it.each([0, 69])(
       ),
     ).toBeInTheDocument();
     app.setMods(
-      restored.map((mod) => ({ ...mod, diskTranslatedKeys: mod.totalKeys })),
+      restored.map((mod) => ({
+        ...mod,
+        translatedKeys: mod.totalKeys,
+        diskTranslatedKeys: mod.totalKeys,
+      })),
     );
     expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
     expect(

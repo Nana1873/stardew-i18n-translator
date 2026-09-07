@@ -23,7 +23,7 @@ a matching language mod for use in-game.
 The app does not install, activate, or update mods; manage profiles or Git
 repositories; or publish translations automatically. Optional Nexus API
 discovery supports explicit Vortex download handoff and personal
-translation import. Valid locale/translation ZIP imports are marked Done; external LLM imports remain Review. Vortex manages installation and deployment.
+translation import. Valid locale/translation archive imports are marked Done; external LLM imports remain Review. Vortex manages installation and deployment.
 It may open a browser link from a positive `Nexus:<id>` update key. It is not
 a general editor for Content Patcher, `Data/*.json`, or XNB files. Additional
 game-content reads are limited to the glossary sources described below.
@@ -210,7 +210,7 @@ valid cached results using the same rules without another API request. Matches
 and newest-file selection remain heuristics, not compatibility or completeness
 guarantees; the UI does not label files as recommended.
 
-Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage always includes all verified installed package components, independently of the imported archive subset. An import receipt prevents automatic repeat acquisition, not a claim of complete package translation. Partial imports expose an explicit recheck for newly supported components or segments; the normal preflight and saved-edit protections still apply.
+Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage always includes all verified installed package components, independently of the imported archive subset. Native mappings and persisted import receipts extend the source scope to their exact component identities and package siblings without inventing Nexus IDs. Rechecking replaces the previous attempt counters and details. Nexus acquisition results exclude verified packages with zero missing working strings, including saved manual or AI text without requiring Review completion. Missing strings introduced by source updates return after scanning; unavailable coverage is never treated as complete. An import receipt prevents automatic repeat acquisition, not a claim of complete package translation. Partial imports expose an explicit recheck for newly supported components or segments; the normal preflight and saved-edit protections still apply.
 
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It
@@ -232,7 +232,7 @@ selected in Setup and editable in Settings; the results dialog has no destinatio
 toggle or per-mod selection checkboxes. A supported batch processes the currently
 selected files. Opening the list or changing a version does not start a download;
 the batch action confirms the displayed selections.
-Folder direct ZIP import requires Premium. Free/unknown Folder users use the
+Folder direct archive import requires Premium. Free/unknown Folder users use the
 existing per-result website links; never open multiple tabs automatically.
 File metadata loads before confirmation. For an uninstalled group, default to
 the newest eligible file by upload date, preferring original-mod matches over
@@ -312,7 +312,7 @@ This limited ZIP check does not verify active profiles or Collection tracking an
 does not open or modify a live Vortex database.
 
 The Review destination provides personal import. The explicit action downloads a
-ZIP through the official Premium API, runs native read-only preflight, and saves
+archive through the official Premium API, runs native read-only preflight, and saves
 eligible text as Review. Ambiguous files/destinations require a choice;
 translated `default.json` requires confirmation. Archives stay in memory behind
 an opaque session ID and are not installed or extracted into Mods. Import

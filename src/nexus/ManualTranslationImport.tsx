@@ -134,7 +134,7 @@ export function ManualTranslationImport({
         setSelection(0);
       } else
         setMessage(
-          `No ${language}.json file matches this selected component. Choose the matching mod or a locale ZIP. Default-language files are not imported automatically.`,
+          `No ${language}.json file matches this selected component. Choose the matching mod or a translation archive. Default-language files are not imported automatically.`,
         );
     } catch (cause) {
       if (currentContext.current === stamp) setMessage(String(cause));
@@ -154,7 +154,7 @@ export function ManualTranslationImport({
           ? "Importing…"
           : format === "json"
             ? "Choose language JSON…"
-            : "Choose translation ZIP…"}
+            : "Choose translation archive…"}
       </button>
       <small>
         {format === "zip"
@@ -174,7 +174,8 @@ export function ManualTranslationImport({
             >
               {choices.map((choice, index) => (
                 <option key={index} value={index}>
-                  {choice.archivePath} → {choice.relativeDir}
+                  {choice.archivePath} →{" "}
+                  {choice.relativeDir.replace("/@split/", "/")}
                 </option>
               ))}
             </select>

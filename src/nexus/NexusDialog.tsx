@@ -352,7 +352,7 @@ export function NexusDialog({
               : row.modIds,
           details: [
             ...row.details,
-            `${name} / ${mapping.relativeDir}: ${result.imported} imported, ${result.conflicts} kept, ${result.tokenInvalid} token errors (${mapping.archivePath}). ${result.matched} matching, ${result.missing} missing, ${result.extra} extra, ${result.empty} empty, ${result.sourceEqual} source-identical.`,
+            `${name} / ${mapping.relativeDir.replace("/@split/", "/")}: ${result.imported} imported, ${result.conflicts} kept, ${result.tokenInvalid} token errors (${mapping.archivePath}). ${result.matched} matching, ${result.missing} missing, ${result.extra} extra, ${result.empty} empty, ${result.sourceEqual} source-identical.`,
           ],
         }));
       } catch (cause) {
@@ -362,7 +362,7 @@ export function NexusDialog({
           failures: row.failures + 1,
           details: [
             ...row.details,
-            `${name} / ${mapping.relativeDir}: ${String(cause)}`,
+            `${name} / ${mapping.relativeDir.replace("/@split/", "/")}: ${String(cause)}`,
           ],
           error:
             "Some text could not be imported. Completed imports were kept; see details.",
@@ -392,6 +392,13 @@ export function NexusDialog({
       status: `Downloading ${file.fileName}…`,
       choices: undefined,
       completed: false,
+      imported: 0,
+      kept: 0,
+      invalid: 0,
+      failures: 0,
+      details: [],
+      unresolved: undefined,
+      notice: undefined,
     });
     const archive = await nexusDownloadPreflight(candidate.modId, file.fileId);
     if (!current()) return;
@@ -399,9 +406,11 @@ export function NexusDialog({
       libraryMode || archive.files.some((file) => !file.isDefault)
         ? await nexusResolveArchive(
             archive.archiveId,
-            nexusSourceComponents(mods, sourceId).map(
-              (component) => component.uniqueId,
-            ),
+            nexusSourceComponents(
+              mods,
+              sourceId,
+              knownComponents(sourceId),
+            ).map((component) => component.uniqueId),
           )
         : null;
     if (!current()) return;
@@ -446,9 +455,9 @@ export function NexusDialog({
     file: NexusFile,
   ) {
     await run(key, async (current) => {
-      if (!file.fileName.toLowerCase().endsWith(".zip"))
+      if (!/\.(zip|rar|7z)$/i.test(file.fileName))
         throw new Error(
-          "The selected archive is not a ZIP. Translation import requires ZIP; the selected file was not replaced.",
+          "Translation import supports ZIP, RAR and 7z archives; the selected file was not replaced.",
         );
       patch(key, { intent: "review", status: "Checking download access…" });
       const status = await nexusStatus();
@@ -769,22 +778,6 @@ export function NexusDialog({
     fileMetadata.entries,
     batchRunning,
   ]);
-  const results = search.entries.map((entry) =>
-    deriveNexusResult({
-      entry,
-      mods,
-      skippedComponents,
-      traversalComplete,
-      nexusIdentityIncomplete,
-      isVortex,
-      installedNexusTranslations,
-      vortexInstalledFiles,
-      fileMetadata: fileMetadata.entries,
-      targetLang,
-      allowArchives: isVortex || !canDirectImport,
-      explicitSelection: fileSelections[entry.modId],
-    }),
-  );
   const [importedState, setImportedState] = useState<{
     context: string;
     entries: CommunityLibraryEntry[];
@@ -826,6 +819,52 @@ export function NexusDialog({
       current = false;
     };
   }, [open, libraryMode, importedContext, mods]);
+  function sourceUrls(saved: CommunityLibraryEntry) {
+    return [
+      saved.sourceUrl,
+      ...(saved.sources ?? []).map((source) => source.sourceUrl),
+    ];
+  }
+  function knownComponents(sourceId: number) {
+    const candidates =
+      search.entries.find((entry) => entry.modId === sourceId)?.result
+        ?.candidates ?? [];
+    return [
+      ...new Set([
+        ...importedSources
+          .filter((saved) =>
+            candidates.some((candidate) =>
+              sourceUrls(saved).some((url) =>
+                url?.startsWith(
+                  `https://www.nexusmods.com/stardewvalley/mods/${candidate.modId}?tab=files&file_id=`,
+                ),
+              ),
+            ),
+          )
+          .map((saved) => saved.modUniqueId),
+        ...Object.entries(rows)
+          .filter(([key]) => key.startsWith(`${sourceId}:`))
+          .flatMap(([, row]) => row.modIds),
+      ]),
+    ];
+  }
+  const results = search.entries.map((entry) =>
+    deriveNexusResult({
+      entry,
+      mods,
+      knownComponentIds: knownComponents(entry.modId),
+      skippedComponents,
+      traversalComplete,
+      nexusIdentityIncomplete,
+      isVortex,
+      installedNexusTranslations,
+      vortexInstalledFiles,
+      fileMetadata: fileMetadata.entries,
+      targetLang,
+      allowArchives: isVortex || !canDirectImport,
+      explicitSelection: fileSelections[entry.modId],
+    }),
+  );
   const coveredIds = new Set(
     results
       .filter((result) => result.covered)
@@ -842,9 +881,15 @@ export function NexusDialog({
         ? `https://www.nexusmods.com/stardewvalley/mods/${selected.candidate.modId}?tab=files&file_id=${selected.file.fileId}`
         : null;
       const recordedComponents = importedSources
-        .filter((saved) => archiveSource && saved.sourceUrl === archiveSource)
+        .filter(
+          (saved) => archiveSource && sourceUrls(saved).includes(archiveSource),
+        )
         .map((saved) => saved.modUniqueId);
-      const packageComponents = nexusSourceComponents(mods, entry.modId);
+      const packageComponents = nexusSourceComponents(
+        mods,
+        entry.modId,
+        knownComponents(entry.modId),
+      );
       const components = recordedComponents.length
         ? mods.filter((mod) => recordedComponents.includes(mod.uniqueId))
         : packageComponents;
@@ -885,7 +930,7 @@ export function NexusDialog({
                   (saved) =>
                     saved.modUniqueId === component.uniqueId &&
                     saved.relativeDir === directory.relativeDir &&
-                    saved.sourceUrl === archiveSource,
+                    sourceUrls(saved).includes(archiveSource),
                 ),
             ),
           ),
@@ -1069,13 +1114,18 @@ export function NexusDialog({
       skippedComponents,
       traversalComplete,
       nexusIdentityIncomplete,
+      knownComponents(sourceId),
     );
     const baseline = row.handoff?.before;
     const rechecked = Boolean(
       row.handoff && checkedAt && checkedAt >= row.handoff.at,
     );
     const version = mods.find((mod) => mod.nexusId === sourceId)?.version;
-    const displayedComponents = nexusSourceComponents(mods, sourceId);
+    const displayedComponents = nexusSourceComponents(
+      mods,
+      sourceId,
+      knownComponents(sourceId),
+    );
     const workingTotal = displayedComponents.reduce(
       (sum, component) => sum + component.totalKeys,
       0,
@@ -1096,6 +1146,7 @@ export function NexusDialog({
         skippedComponents,
         traversalComplete,
         nexusIdentityIncomplete,
+        knownComponents(sourceId),
       ),
     );
     const workingCovered = displayedComponents.reduce(
@@ -1440,7 +1491,7 @@ export function NexusDialog({
                 {(row.completed || row.imported > 0) && (
                   <p>
                     {row.imported > 0
-                      ? `${row.imported} imported as Done this session`
+                      ? `${row.imported} imported as Done in this attempt`
                       : "No new strings added"}{" "}
                     · {row.kept} existing values kept · {row.invalid} token
                     errors
@@ -1507,7 +1558,8 @@ export function NexusDialog({
                   {expired ? (
                     <>
                       <p role="alert">
-                        The temporary ZIP expired. Download again to import it.
+                        The temporary archive expired. Download again to import
+                        it.
                       </p>
                       {file && (
                         <button
@@ -1562,7 +1614,11 @@ export function NexusDialog({
                                             mod.uniqueId ===
                                             mapping.modUniqueId,
                                         )?.name ?? mapping.modUniqueId}{" "}
-                                        / {mapping.relativeDir}
+                                        /{" "}
+                                        {mapping.relativeDir.replace(
+                                          "/@split/",
+                                          "/",
+                                        )}
                                       </option>
                                     ),
                                   )}
@@ -1628,7 +1684,7 @@ export function NexusDialog({
                               Date.now() - row.downloadedAt >= 15 * 60_000
                             )
                               throw new Error(
-                                "The temporary ZIP expired. Download again.",
+                                "The temporary archive expired. Download again.",
                               );
                             const mappings = row.choices!.flatMap(
                               (choice, index) => {
@@ -1757,7 +1813,7 @@ export function NexusDialog({
                 : canDirectImport
                   ? "Valid imports are marked Done. Use the existing Export action when ready."
                   : nexusAccountKind(account) === "free"
-                    ? "Free account: use each Open Nexus Link below to download manually. Direct ZIP import requires Premium."
+                    ? "Free account: use each Open Nexus Link below to download manually. Direct archive import requires Premium."
                     : "Use Open Nexus Link below for manual downloads, or Search again to check import access."}
             </small>
           )}
@@ -1851,7 +1907,8 @@ export function NexusDialog({
                   ? "No downloadable files could be confirmed."
                   : installedGroups > 0
                     ? "Available translation files are already installed."
-                    : coveredIds.size > 0
+                    : coveredIds.size > 0 ||
+                        (search.total === 0 && skippedComplete > 0)
                       ? "No missing translation text in the checked mods."
                       : "No suitable translation downloads found."}
             </p>

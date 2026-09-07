@@ -4,6 +4,14 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunitySource {
+    pub archive_id: String,
+    pub archive_path: String,
+    pub source_url: Option<String>,
+}
+
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommunityLibraryEntry {
@@ -14,6 +22,8 @@ pub struct CommunityLibraryEntry {
     pub source_url: Option<String>,
     pub archive_id: String,
     pub base: translations::ModState,
+    #[serde(default)]
+    pub sources: Vec<CommunitySource>,
 }
 
 pub(crate) fn context(config: &Path) -> Result<(PathBuf, String, PathBuf), String> {
@@ -64,13 +74,44 @@ pub(crate) fn store(config: &Path, entry: CommunityLibraryEntry) -> Result<(), S
         .map_err(|_| "Library busy")?;
     let (_, _, path) = context(config)?;
     let mut entries = list(config)?;
-    if let Some(old) = entries.iter().find(|old| {
+    let mut entry = entry;
+    if let Some(index) = entries.iter().position(|old| {
         old.mod_unique_id == entry.mod_unique_id && old.relative_dir == entry.relative_dir
     }) {
-        if old.archive_id == entry.archive_id {
-            return Ok(());
+        let old = &entries[index];
+        let incoming_source = CommunitySource {
+            archive_id: entry.archive_id.clone(),
+            archive_path: entry.archive_path.clone(),
+            source_url: entry.source_url.clone(),
+        };
+        let mut sources = old.sources.clone();
+        if sources.is_empty() {
+            sources.push(CommunitySource {
+                archive_id: old.archive_id.clone(),
+                archive_path: old.archive_path.clone(),
+                source_url: old.source_url.clone(),
+            });
         }
-        return Err("This component already has a community base. Updating it requires base/personal conflict review, which is not yet supported in this prototype.".into());
+        if !sources.contains(&incoming_source) {
+            sources.push(incoming_source);
+        }
+        let mut base = if old.archive_id == entry.archive_id {
+            old.base.clone()
+        } else {
+            entry.base.clone()
+        };
+        if old.archive_id == entry.archive_id {
+            base.extend(entry.base);
+        } else {
+            base.extend(old.base.clone());
+        }
+        entry.base = base;
+        entry.strings = entry.base.len();
+        entry.archive_id = old.archive_id.clone();
+        entry.archive_path = old.archive_path.clone();
+        entry.source_url = old.source_url.clone();
+        entry.sources = sources;
+        entries.remove(index);
     }
     let (mods, _, _) = context(config)?;
     let identity = format!(
@@ -79,6 +120,13 @@ pub(crate) fn store(config: &Path, entry: CommunityLibraryEntry) -> Result<(), S
     );
     std::fs::write(config.join("community-work-context.json"), identity)
         .map_err(|e| e.to_string())?;
+    if entry.sources.is_empty() {
+        entry.sources.push(CommunitySource {
+            archive_id: entry.archive_id.clone(),
+            archive_path: entry.archive_path.clone(),
+            source_url: entry.source_url.clone(),
+        });
+    }
     entries.push(entry);
     std::fs::create_dir_all(path.parent().ok_or("Invalid library path")?)
         .map_err(|e| e.to_string())?;

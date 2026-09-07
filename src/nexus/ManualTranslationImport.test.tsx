@@ -50,7 +50,7 @@ it("imports all secure ZIP components before closing and leaves unmatched files 
     />,
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Choose translation ZIP…" }),
+    screen.getByRole("button", { name: "Choose translation archive…" }),
   );
   await screen.findByText(/2 imports completed. 1 files need attention/);
   expect(

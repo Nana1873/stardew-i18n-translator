@@ -6,6 +6,7 @@ import type {
 } from "../tauri/commands";
 import {
   nexusSourceDiskCoverage,
+  nexusSourceWorkingComplete,
   nexusSourceScanIncomplete,
   translationFileOptions,
 } from "./resolveTranslation";
@@ -24,6 +25,7 @@ export function nexusCandidates(entry: NexusSearchEntry) {
 export interface NexusResultInput {
   entry: NexusSearchEntry;
   mods: ScannedMod[];
+  knownComponentIds?: string[];
   skippedComponents: SkippedComponent[];
   traversalComplete: boolean;
   nexusIdentityIncomplete: boolean;
@@ -56,6 +58,7 @@ export function deriveNexusResult(input: NexusResultInput) {
     skippedComponents,
     traversalComplete,
     nexusIdentityIncomplete,
+    input.knownComponentIds,
   );
   const coverage = nexusSourceDiskCoverage(
     mods,
@@ -63,6 +66,7 @@ export function deriveNexusResult(input: NexusResultInput) {
     skippedComponents,
     traversalComplete,
     nexusIdentityIncomplete,
+    input.knownComponentIds,
   );
   const candidates = nexusCandidates(entry);
   // Exact inventory is useful even when the scan cannot prove source coverage.
@@ -113,11 +117,9 @@ export function deriveNexusResult(input: NexusResultInput) {
           : !files.length
             ? "No files returned by Nexus."
             : !allowArchives &&
-                files.every(
-                  (file) => !file.fileName.toLowerCase().endsWith(".zip"),
-                )
-              ? "No ZIP available. Direct import supports ZIP archives."
-              : `No current ${allowArchives ? "archive" : "ZIP"} matches the selected language.`;
+                files.every((file) => !/\.(zip|rar|7z)$/i.test(file.fileName))
+              ? "No supported archive available. Import supports ZIP, RAR and 7z."
+              : `No current archive matches the selected language.`;
       return { candidate, reason };
     });
   const options = allOptions.filter(
@@ -176,7 +178,14 @@ export function deriveNexusResult(input: NexusResultInput) {
     entry,
     sourceUnknown,
     coverage,
-    covered: coverage?.complete ?? false,
+    covered: nexusSourceWorkingComplete(
+      mods,
+      entry.modId,
+      skippedComponents,
+      traversalComplete,
+      nexusIdentityIncomplete,
+      input.knownComponentIds,
+    ),
     candidates,
     inventory,
     evidence,

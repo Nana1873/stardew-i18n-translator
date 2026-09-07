@@ -443,12 +443,12 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Import actions" }));
     fireEvent.click(
       screen.getByRole("menuitem", {
-        name: "Import downloaded translation ZIP…",
+        name: "Import downloaded translation archive…",
       }),
     );
     expect(
       await screen.findByRole("dialog", {
-        name: "Import downloaded translation ZIP",
+        name: "Import downloaded translation archive",
       }),
     ).toBeVisible();
     await waitFor(() =>
@@ -499,7 +499,7 @@ describe("App shell", () => {
       ).toEqual([
         " Import language JSON…",
         " Import LLM batch",
-        " Import downloaded translation ZIP…",
+        " Import downloaded translation archive…",
       ]);
       expect(
         within(menu)
@@ -782,6 +782,7 @@ describe("App shell", () => {
     scanned.traversalComplete = true;
     scanned.mods[0].nexusId = 10;
     scanned.mods[0].translatedKeys = 0;
+    scanned.mods[0].statusCounts!.untranslated = scanned.mods[0].totalKeys;
     mockConfigured(scanned);
     const fallback = invokeMock.getMockImplementation()!;
     const manualSearch = deferred<unknown>();
@@ -864,6 +865,7 @@ describe("App shell", () => {
     scanned.traversalComplete = true;
     scanned.mods[0].nexusId = 10;
     scanned.mods[0].translatedKeys = 0;
+    scanned.mods[0].statusCounts!.untranslated = scanned.mods[0].totalKeys;
     mockConfigured(scanned);
     render(<App />);
     await waitFor(() =>
@@ -909,7 +911,12 @@ describe("App shell", () => {
   it("uses the saved installation method and applies Settings changes without restarting or rescanning", async () => {
     const scanned = exportScan(false);
     scanned.traversalComplete = true;
-    Object.assign(scanned.mods[0], { nexusId: 10, diskTranslatedKeys: 0 });
+    Object.assign(scanned.mods[0], {
+      nexusId: 10,
+      diskTranslatedKeys: 0,
+      translatedKeys: 0,
+    });
+    scanned.mods[0].statusCounts!.untranslated = scanned.mods[0].totalKeys;
     mockConfigured(scanned);
     const original = invokeMock.getMockImplementation()!;
     invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {

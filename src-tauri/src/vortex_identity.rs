@@ -901,7 +901,7 @@ pub(crate) fn resolve_original_ids(root: &Path, scan: &mut ScanResult) {
         return;
     };
     if let Some(identity) =
-        original_identity_checked(root, scan, &PathBuf::from(appdata).join("Vortex"), || {})
+        original_identity_checked(root, scan, &PathBuf::from(&appdata).join("Vortex"), || {})
     {
         scan.nexus_identity_incomplete |= identity.incomplete;
         for (index, id) in identity.ids {
@@ -911,6 +911,79 @@ pub(crate) fn resolve_original_ids(root: &Path, scan: &mut ScanResult) {
             }
         }
     }
+    if let Some(ids) = metadata_search_ids(root, scan, &PathBuf::from(appdata).join("Vortex")) {
+        for (index, id) in ids {
+            if scan.mods[index].nexus_id.is_none() {
+                scan.mods[index].nexus_id = Some(id);
+                scan.mods[index].nexus_id_source = Some("vortex");
+            }
+        }
+    }
+}
+
+/// Search attribution only: the deployed manifest/source hardlinks identify the
+/// installed Nexus package even when its original archive isn't ZIP-readable.
+/// This does not establish installed translation status or archive compatibility.
+fn metadata_search_ids(root: &Path, scan: &ScanResult, vortex: &Path) -> Option<Vec<(usize, u64)>> {
+    let evidence = Evidence::read(root, vortex)?;
+    let deployed = evidence.deployed()?;
+    let mods = evidence.backup["persistent"]["mods"]["stardewvalley"].as_object()?;
+    let mut result = Vec::new();
+    let mut budget = MAX_EXPANDED;
+    for (index, component) in scan
+        .mods
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.nexus_id.is_none())
+    {
+        let Some(candidate) =
+            original_candidate(index, component, &evidence, &deployed, &mut budget)
+        else {
+            continue;
+        };
+        let Some(source_rel) = relative(&candidate.source) else {
+            continue;
+        };
+        let matching: Vec<_> = mods
+            .values()
+            .filter(|m| m["installationPath"].as_str() == Some(&candidate.source))
+            .collect();
+        let [installed] = matching.as_slice() else {
+            continue;
+        };
+        let attr = &installed["attributes"];
+        let Some(id) = positive(&attr["modId"]) else {
+            continue;
+        };
+        if !scan
+            .mods
+            .iter()
+            .any(|m| m.nexus_id == Some(id) && m.nexus_id_source == Some("manifest"))
+        {
+            continue;
+        }
+
+        if installed["state"] != "installed"
+            || attr["source"] != "nexus"
+            || attr["downloadGame"] != "stardewvalley"
+        {
+            continue;
+        }
+        let valid = candidate.snapshots.iter().all(|(path, bytes)| {
+            let Ok(rel) = path.strip_prefix(&evidence.root) else {
+                return false;
+            };
+            let staging = evidence.staging.join(&source_rel).join(rel);
+            plain_path(&staging).is_some()
+                && same_file::is_same_file(path, &staging).unwrap_or(false)
+                && bounded(path, MAX_JSON).as_ref() == Some(bytes)
+        });
+        if valid {
+            result.push((index, id));
+        }
+    }
+    evidence.unchanged(vortex)?;
+    Some(result)
 }
 
 struct OriginalCandidate {
@@ -1442,6 +1515,29 @@ mod tests {
         fs::create_dir(&path).unwrap();
         assert_eq!(deployment_stamp(&root), None);
         fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn metadata_search_requires_original_manifest_anchor_not_translation_package_alone() {
+        let mut fixture = Fixture::new();
+        fixture.add_original("Missing", 3753);
+        let mut scan = fixture.scan();
+        assert!(metadata_search_ids(&fixture.root, &scan, &fixture.vortex)
+            .unwrap()
+            .is_empty());
+        let mut anchor = scan.mods[0].clone();
+        anchor.unique_id = "Test.Anchor".into();
+        anchor.nexus_id = Some(3753);
+        anchor.nexus_id_source = Some("manifest");
+        scan.mods.push(anchor);
+        assert_eq!(
+            metadata_search_ids(&fixture.root, &scan, &fixture.vortex).unwrap(),
+            vec![(0, 3753)]
+        );
+        scan.mods.last_mut().unwrap().nexus_id = Some(999);
+        assert!(metadata_search_ids(&fixture.root, &scan, &fixture.vortex)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]

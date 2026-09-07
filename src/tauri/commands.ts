@@ -699,6 +699,11 @@ export function nexusResolveArchive(
 }
 
 export interface CommunityLibraryEntry {
+  sources?: {
+    archiveId: string;
+    archivePath: string;
+    sourceUrl: string | null;
+  }[];
   modUniqueId: string;
   relativeDir: string;
   archivePath: string;

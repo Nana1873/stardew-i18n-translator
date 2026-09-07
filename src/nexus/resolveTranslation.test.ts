@@ -64,21 +64,34 @@ describe("ZIP selection", () => {
     });
   });
 
-  it("offers manager-supported formats only in the Vortex workflow", () => {
+  it("offers ZIP, RAR and 7z for direct imports without an older ZIP fallback", () => {
     const zip = file();
     const rar = file({ fileId: 2, fileName: "translation.rar" });
-    expect(translationFileOptions([zip, rar], "de", "review")).toEqual([zip]);
+    expect(translationFileOptions([zip, rar], "de", "review")).toEqual([
+      rar,
+      zip,
+    ]);
+    expect(selectTranslationFile([zip, rar], "de", "review")).toMatchObject({
+      file: rar,
+    });
+    expect(
+      selectTranslationFile(
+        [zip, file({ fileId: 3, fileName: "translation.7z" })],
+        "de",
+        "review",
+      ),
+    ).toMatchObject({ file: { fileId: 3 } });
     expect(translationFileOptions([zip, rar], "de", "vortex")).toHaveLength(2);
   });
 
-  it("selects a sole suitable ZIP and ignores removed, incompatible language and non-ZIP files", () => {
+  it("selects a sole suitable ZIP and ignores removed, incompatible language and unsupported formats", () => {
     const selected = file();
     expect(
       selectTranslationFile(
         [
           file({ fileId: 2, name: "Russian Translation" }),
           file({ fileId: 3, category: "OLD_VERSION" }),
-          file({ fileId: 4, fileName: "translation.7z" }),
+          file({ fileId: 4, fileName: "translation.tar" }),
           selected,
         ],
         "de",
@@ -144,7 +157,7 @@ describe("ZIP selection", () => {
           file({ ...newer, category: "OLD_VERSION" }),
           file({ ...newer, category: "ARCHIVED" }),
           file({ ...newer, name: "German Mobile Translation" }),
-          file({ ...newer, fileName: "translation.rar" }),
+          file({ ...newer, fileName: "translation.tar" }),
         ],
         "de",
         "review",
@@ -171,7 +184,7 @@ describe("ZIP selection", () => {
       selectTranslationFile([file({ name: "French Translation" })], "de").kind,
     ).toBe("unavailable");
     expect(
-      selectTranslationFile([file({ fileName: "translation.rar" })], "de").kind,
+      selectTranslationFile([file({ fileName: "translation.tar" })], "de").kind,
     ).toBe("unavailable");
   });
 });

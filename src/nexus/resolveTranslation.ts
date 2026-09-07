@@ -75,12 +75,7 @@ export function translationFileOptions(
 ): NexusFile[] {
   const target = locale(targetLang);
   const eligible = files.filter((file) => {
-    if (
-      !(purpose === "vortex"
-        ? /\.(zip|7z|rar)$/i.test(file.fileName)
-        : file.fileName.toLowerCase().endsWith(".zip")) ||
-      file.fileId <= 0
-    )
+    if (!/\.(zip|7z|rar)$/i.test(file.fileName) || file.fileId <= 0)
       return false;
     const category = (file.category ?? "").toUpperCase().replace(/[ -]/g, "_");
     if (
@@ -131,7 +126,7 @@ export function selectTranslationFile(
       reason:
         purpose === "vortex"
           ? "No current archive suitable for this language. Check the Nexus files page."
-          : "No current ZIP suitable for this language. Open the Nexus files page for other formats or versions.",
+          : "No current ZIP, RAR or 7z suitable for this language. Check the Nexus files page.",
     };
   return {
     kind: "selected",
@@ -139,7 +134,7 @@ export function selectTranslationFile(
     reason:
       purpose === "vortex"
         ? "Newest suitable current archive; install and deploy in Vortex."
-        : "Newest suitable current ZIP; translation contents will be checked before import.",
+        : "Newest suitable current archive; translation contents will be checked before import.",
   };
 }
 function pathParts(value: string): string[] | null {
@@ -163,14 +158,21 @@ function destination(request: NexusImportRequest): string {
 export function nexusSourceComponents(
   mods: ScannedMod[],
   sourceNexusId: number,
+  knownComponentIds: string[] = [],
 ): ScannedMod[] {
   const packages = new Set(
     mods
-      .filter((mod) => mod.nexusId === sourceNexusId && mod.packageId)
+      .filter(
+        (mod) =>
+          (mod.nexusId === sourceNexusId ||
+            knownComponentIds.includes(mod.uniqueId)) &&
+          mod.packageId,
+      )
       .map((mod) => mod.packageId),
   );
   return mods.filter(
     (mod) =>
+      knownComponentIds.includes(mod.uniqueId) ||
       mod.nexusId === sourceNexusId ||
       (!!mod.packageId && packages.has(mod.packageId)),
   );
@@ -183,9 +185,14 @@ export function nexusSourceScanIncomplete(
   skipped: SkippedComponent[] = [],
   traversalComplete = false,
   nexusIdentityIncomplete = false,
+  knownComponentIds: string[] = [],
 ) {
   if (!traversalComplete || nexusIdentityIncomplete) return true;
-  const components = nexusSourceComponents(mods, sourceNexusId);
+  const components = nexusSourceComponents(
+    mods,
+    sourceNexusId,
+    knownComponentIds,
+  );
   if (!components.length) return true;
   const validId = (id: number | null | undefined): id is number =>
     Number.isSafeInteger(id) && (id ?? 0) > 0;
@@ -245,6 +252,45 @@ export function nexusSourceScanIncomplete(
   );
 }
 
+/** Acquisition is unnecessary when saved working text has no missing entries. */
+export function nexusSourceWorkingComplete(
+  mods: ScannedMod[],
+  sourceNexusId: number,
+  skipped: SkippedComponent[] = [],
+  traversalComplete = false,
+  nexusIdentityIncomplete = false,
+  knownComponentIds: string[] = [],
+) {
+  const components = nexusSourceComponents(
+    mods,
+    sourceNexusId,
+    knownComponentIds,
+  );
+  return (
+    !nexusSourceScanIncomplete(
+      mods,
+      sourceNexusId,
+      skipped,
+      traversalComplete,
+      nexusIdentityIncomplete,
+      knownComponentIds,
+    ) &&
+    components.length > 0 &&
+    components.every(
+      (mod) =>
+        Number.isFinite(mod.totalKeys) &&
+        Number.isFinite(mod.translatedKeys) &&
+        (mod.statusCounts?.untranslated ??
+          Math.max(
+            0,
+            mod.totalKeys -
+              mod.translatedKeys -
+              (mod.noTranslationNeededKeys ?? 0),
+          )) === 0,
+    )
+  );
+}
+
 /** Disk-only evidence; saved drafts/Review must never prove deployment. */
 export function nexusSourceDiskCoverage(
   mods: ScannedMod[],
@@ -252,8 +298,13 @@ export function nexusSourceDiskCoverage(
   skipped: SkippedComponent[] = [],
   traversalComplete = false,
   nexusIdentityIncomplete = false,
+  knownComponentIds: string[] = [],
 ) {
-  const components = nexusSourceComponents(mods, sourceNexusId);
+  const components = nexusSourceComponents(
+    mods,
+    sourceNexusId,
+    knownComponentIds,
+  );
   if (
     nexusSourceScanIncomplete(
       mods,
@@ -261,6 +312,7 @@ export function nexusSourceDiskCoverage(
       skipped,
       traversalComplete,
       nexusIdentityIncomplete,
+      knownComponentIds,
     ) ||
     components.some(
       (mod) =>

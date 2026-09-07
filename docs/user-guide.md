@@ -43,13 +43,12 @@ translations. In Vortex mode, downloaded translations are imported into the
 Translator instead of sending original archives to Vortex. Valid imported values are marked **Done**; existing personal values are kept. **Open missing strings** leads to the
 existing Workspace for manual or AI-assisted editing. Already imported Nexus files
 are remembered separately from translation completeness, so an incomplete archive
-does not require downloading again. Package coverage includes every installed component, even when the archive translated only a subset. **Recheck import** retries a partial archive when more components can be matched; existing saved edits are kept.
+does not require downloading again. The results list only mods with missing working text. Fully verified completed mods disappear after saving; new missing source strings bring them back after a scan and search. Incomplete scans remain visible. Package coverage includes every verified installed component, even when the archive translated only a subset. Saved import identities also retain package siblings whose manifests have no usable Nexus ID. **Recheck import** retries a partial archive when more components can be matched; existing saved edits are kept.
 
-The **Import …** menu groups language JSON and LLM batches under **JSON files**, and downloaded translations under **ZIP archives**. To import a standalone locale file, select its mod and choose **Import language JSON…**. Choose the matching component when the mod has multiple i18n directories. The filename must match the configured language (for example, `de.json`). Valid locale and translation ZIP values are marked **Done**; external LLM batches remain **Review**.
+The **Import …** menu groups language JSON and LLM batches under **JSON files**, and downloaded translations under **Translation archives**. To import a standalone locale file, select its mod and choose **Import language JSON…**. Choose the matching component when the mod has multiple i18n directories. The filename must match the configured language (for example, `de.json`). Valid locale and translation archive values are marked **Done**; external LLM batches remain **Review**.
 
 For a manually downloaded translation, select its mod in Workspace and choose
-**Import … → Import downloaded translation ZIP…**. ZIP locale files are matched against all installed components. Every unambiguous match imports automatically; unmatched target-language files are listed without guessing a component. ZIP locale files
-are supported; default-language-only bundles and RAR/7z imports are not.
+**Import … → Import downloaded translation archive…**. Archive locale files are matched against all installed components. Every unambiguous match imports automatically; unmatched target-language files are listed without guessing a component. ZIP, RAR and 7z imports are supported. RAR/7z use the Windows system archive reader; if it is unavailable or cannot read a file, the import reports that error without selecting an older ZIP. Default-language-only bundles are not imported automatically.
 
 Split sources such as `i18n/Default/Dialogue.json` and `Events.json` are supported.
 A single archive language file can supply multiple source segments when the
@@ -67,8 +66,8 @@ Vortex. Creation does not prove installation or deployment. Existing folder expo
 and per-package **Build translation ZIP** remain available.
 
 This prototype retains imported text and source identity internally, not a permanent
-copy of downloaded ZIPs. It does not detect or switch Vortex profiles, automatically
-hand off output, or merge conflicting community updates. The first import pins saved
+copy of downloaded archives. It does not detect or switch Vortex profiles, automatically
+hand off output, or replace conflicting community text. A newer archive can add missing valid values while retaining existing community values and saved personal edits; this is not a full update replacement. The first import pins saved
 work to the configured Mods folder; changing that folder is rejected instead of
 silently reusing work in another context. Use an isolated application/data copy for
 evaluation.
@@ -192,7 +191,7 @@ may miss translations.
 
 For Folder users with Free or unknown membership, use each row's **Open Nexus Link**
 for a manual website download. There is no failing batch action or automatic
-opening of multiple tabs. Premium enables direct ZIP import.
+opening of multiple tabs. Premium enables direct archive import.
 
 The supported batch action processes the list using the installation method saved in
 Setup/Settings. There is no Vortex/Review switch in the results dialog. Manual
@@ -245,7 +244,7 @@ With the **Manual / no mod manager** installation method, the download action
 imports eligible translations as Done. Rows are processed one at a time;
 stopping keeps completed imports and prevents further rows from starting.
 This action downloads
-a selected ZIP through the official Nexus API and requires Nexus Premium.
+a selected archive through the official Nexus API and requires Nexus Premium.
 Unambiguous language files are checked and imported; ambiguous files or component
 mappings require a choice. A translated `default.json` requires confirmation
 that it contains the target language. Nonempty local text is preserved, token

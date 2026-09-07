@@ -850,14 +850,12 @@ pub async fn nexus_download_preflight(mod_id: u64, file_id: u64) -> Result<Archi
     if number(&metadata["file_id"]) != Some(file_id) {
         return Err("Nexus file identity mismatch.".into());
     }
-    if !text(&metadata, "file_name")
-        .to_lowercase()
-        .ends_with(".zip")
-    {
-        return Err(
-            "This local build supports ZIP translation archives only. RAR and 7z are unsupported."
-                .into(),
-        );
+    if ![".zip", ".rar", ".7z"].iter().any(|extension| {
+        text(&metadata, "file_name")
+            .to_lowercase()
+            .ends_with(extension)
+    }) {
+        return Err("Supported translation archives: ZIP, RAR, and 7z.".into());
     }
     let expected = number(&metadata["size_in_bytes"]);
     if expected.is_some_and(|n| n > DOWNLOAD_LIMIT as u64) {
@@ -889,7 +887,7 @@ pub async fn nexus_download_preflight(mod_id: u64, file_id: u64) -> Result<Archi
     }
     let downloaded_bytes = bytes.len();
     let archive_id = format!("{:x}", Sha256::digest(&bytes));
-    let mut archive = inspect_zip(bytes)?;
+    let mut archive = inspect_archive(bytes)?;
     archive.source_url = Some(format!(
         "https://www.nexusmods.com/stardewvalley/mods/{mod_id}?tab=files&file_id={file_id}"
     ));
@@ -921,6 +919,31 @@ fn safe_archive_path(path: &str) -> Result<String, String> {
     }
     Ok(path)
 }
+fn archive_locale_filename(path: &str) -> String {
+    let normalized = path.replace('\\', "/").to_lowercase();
+    let parts: Vec<_> = normalized.split('/').collect();
+    if parts.len() >= 3 && parts[parts.len() - 3] == "i18n" {
+        format!("{}.json", parts[parts.len() - 2])
+    } else {
+        parts.last().copied().unwrap_or_default().to_string()
+    }
+}
+
+fn inspect_archive(bytes: Vec<u8>) -> Result<Archive, String> {
+    if bytes.starts_with(b"PK") {
+        return inspect_zip(bytes);
+    }
+    let entries = crate::archive_reader::read_archive(&bytes)?;
+    let mut writer = zip::ZipWriter::new(Cursor::new(Vec::new()));
+    for (name, body) in entries {
+        writer
+            .start_file(name, zip::write::SimpleFileOptions::default())
+            .map_err(|e| e.to_string())?;
+        std::io::Write::write_all(&mut writer, &body).map_err(|e| e.to_string())?;
+    }
+    inspect_zip(writer.finish().map_err(|e| e.to_string())?.into_inner())
+}
+
 fn inspect_zip(bytes: Vec<u8>) -> Result<Archive, String> {
     let mut zip = zip::ZipArchive::new(Cursor::new(bytes))
         .map_err(|_| "Unsupported or invalid ZIP archive.")?;
@@ -948,7 +971,8 @@ fn inspect_zip(bytes: Vec<u8>) -> Result<Archive, String> {
         if entry.is_dir() || !lower.ends_with(".json") {
             continue;
         }
-        let is_i18n = lower.split('/').rev().nth(1) == Some("i18n")
+        let is_i18n = (lower.split('/').rev().nth(1) == Some("i18n")
+            || lower.split('/').rev().nth(2) == Some("i18n"))
             && !lower.starts_with("assets/i18n/")
             && !lower.contains("/assets/i18n/");
         if !is_i18n && !lower.ends_with("manifest.json") {
@@ -996,7 +1020,9 @@ fn inspect_zip(bytes: Vec<u8>) -> Result<Archive, String> {
     let mut files = Vec::new();
     for path in documents.keys() {
         let lower = path.to_lowercase();
-        if lower.split('/').rev().nth(1) != Some("i18n") {
+        if lower.split('/').rev().nth(1) != Some("i18n")
+            && lower.split('/').rev().nth(2) != Some("i18n")
+        {
             continue;
         }
         let mut parent = path.rsplit_once('/').map(|(p, _)| p).unwrap_or("");
@@ -1014,7 +1040,7 @@ fn inspect_zip(bytes: Vec<u8>) -> Result<Archive, String> {
         files.push(ArchiveFile {
             path: path.clone(),
             manifest_unique_id: uid,
-            is_default: lower.ends_with("/default.json"),
+            is_default: archive_locale_filename(&lower) == "default.json",
         });
     }
     files.sort_by(|a, b| a.path.cmp(&b.path));
@@ -1139,11 +1165,7 @@ fn import_from_config_mode(
             .as_deref()
             .ok_or("Choose a target language.")?,
     )?;
-    let filename = archive_path
-        .rsplit('/')
-        .next()
-        .unwrap_or_default()
-        .to_lowercase();
+    let filename = archive_locale_filename(archive_path);
     if !file.is_default
         && filename != format!("{lang}.json")
         && !(lang == "pt" && filename == "pt-br.json")
@@ -1262,7 +1284,15 @@ fn import_from_config_mode(
                 .ok_or("Archive JSON unavailable")?,
             Path::new("selected archive JSON"),
         )?;
-        let mut base = translations::ModState::new();
+        let existing_base = crate::community_library::list(config)?
+            .into_iter()
+            .find(|entry| {
+                entry.mod_unique_id == mod_unique_id && entry.relative_dir == relative_dir
+            });
+        let mut base = existing_base
+            .as_ref()
+            .map(|entry| entry.base.clone())
+            .unwrap_or_default();
         // Capture underlying locale once, separately from personal saved work.
         // Existing library bases are immutable in this prototype; repeated import
         // cannot replace them with a subsequently deployed generated output.
@@ -1272,7 +1302,8 @@ fn import_from_config_mode(
             &translations::ModState::new(),
             relative_dir,
         )? {
-            if !row.target.trim().is_empty()
+            if existing_base.is_none()
+                && !row.target.trim().is_empty()
                 && tokens::token_differences(&row.source, &row.target).is_empty()
             {
                 base.insert(
@@ -1310,19 +1341,11 @@ fn import_from_config_mode(
         if matched_archive_values == 0 {
             return Err("No valid target-language strings for this component.".into());
         }
-        if crate::community_library::list(config)?.iter().any(|e| {
-            e.mod_unique_id == mod_unique_id
-                && e.relative_dir == relative_dir
-                && e.archive_id != archive_id
-        }) {
-            return Err(
-                "Community update requires base/personal review; existing base preserved.".into(),
-            );
-        }
         if save {
             crate::community_library::store(
                 config,
                 crate::community_library::CommunityLibraryEntry {
+                    sources: Vec::new(),
                     mod_unique_id: mod_unique_id.into(),
                     relative_dir: relative_dir.into(),
                     archive_path: archive_path.into(),
@@ -1599,6 +1622,17 @@ mod tests {
         let resolution =
             resolve_archive_components_with_hints(&id, &archive, &scan.mods, "de", &[]);
         assert_eq!(resolution.mappings.len(), 2);
+        let split_archive = inspect_zip(zip_bytes(&[
+            ("Example/i18n/de/Dialogue.json", r#"{"new":"Hallo"}"#),
+            ("Example/i18n/de/Events.json", r#"{"local":"Behalten"}"#),
+            ("Example/i18n/default/Dialogue.json", r#"{"new":"Hello"}"#),
+        ]))
+        .unwrap();
+        lock().archives.insert(id.clone(), split_archive.clone());
+        let resolution =
+            resolve_archive_components_with_hints(&id, &split_archive, &scan.mods, "de", &[]);
+        assert_eq!(resolution.mappings.len(), 2);
+        assert!(resolution.unresolved.is_empty());
         for m in &resolution.mappings {
             import_from_config_mode(
                 &config,
@@ -1661,6 +1695,155 @@ mod tests {
                 .outdated,
             1
         );
+    }
+
+    #[test]
+    fn disjoint_archive_files_merge_one_library_base_without_losing_personal_work() {
+        let (config, mods, id) = fixture("disjoint-library");
+        translations::save_one(
+            &translations::language_root(&config, "de").unwrap(),
+            "Example.Mod",
+            translations::entry_key("i18n", "local"),
+            translations::StoredString {
+                target: "Existing".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Keep"),
+            },
+        )
+        .unwrap();
+        let archive = inspect_zip(zip_bytes(&[
+            ("first/Example/i18n/de.json", r#"{"new":"Hallo"}"#),
+            ("second/Example/i18n/de.json", r#"{"local":"Behalten"}"#),
+        ]))
+        .unwrap();
+        lock().archives.insert(id.clone(), archive.clone());
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        let result = resolve_archive_components_with_hints(&id, &archive, &scan.mods, "de", &[]);
+        assert_eq!(result.mappings.len(), 2);
+        for m in &result.mappings {
+            import_from_config_mode(
+                &config,
+                &id,
+                &m.archive_path,
+                &m.mod_unique_id,
+                &m.relative_dir,
+                false,
+                true,
+            )
+            .unwrap();
+            import_from_config_mode(
+                &config,
+                &id,
+                &m.archive_path,
+                &m.mod_unique_id,
+                &m.relative_dir,
+                true,
+                true,
+            )
+            .unwrap();
+        }
+        let entries = crate::community_library::list(&config).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].base[&translations::entry_key("i18n", "new")].target,
+            "Hallo"
+        );
+        assert_eq!(
+            entries[0].base[&translations::entry_key("i18n", "local")].target,
+            "Behalten"
+        );
+        let state = translations::load(
+            &translations::language_root(&config, "de").unwrap(),
+            "Example.Mod",
+        )
+        .unwrap();
+        assert_eq!(
+            state[&translations::entry_key("i18n", "local")].target,
+            "Existing"
+        );
+        let dest = config.join("merged.zip");
+        crate::community_library::build(&config, &dest.display().to_string(), false).unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(dest).unwrap()).unwrap();
+        let values: serde_json::Value = serde_json::from_reader(zip.by_index(0).unwrap()).unwrap();
+        assert_eq!(values["new"], "Hallo");
+        assert_eq!(values["local"], "Existing");
+    }
+
+    #[test]
+    fn newer_archive_adds_missing_values_and_tracks_sources_without_replacing_work() {
+        let (config, mods, id) = fixture("supplement-library");
+        std::fs::write(
+            mods.join("Example/i18n/default.json"),
+            r#"{"new":"Hello","local":"Keep","added":"Added"}"#,
+        )
+        .unwrap();
+        import_from_config_mode(
+            &config,
+            &id,
+            "i18n/de.json",
+            "Example.Mod",
+            "i18n",
+            false,
+            true,
+        )
+        .unwrap();
+        import_from_config_mode(
+            &config,
+            &id,
+            "i18n/de.json",
+            "Example.Mod",
+            "i18n",
+            true,
+            true,
+        )
+        .unwrap();
+        let newer = format!("{id}-new");
+        lock().archives.insert(
+            newer.clone(),
+            inspect_zip(zip_bytes(&[(
+                "i18n/de.json",
+                r#"{"new":"Changed translation","local":"Changed local","added":"Neu"}"#,
+            )]))
+            .unwrap(),
+        );
+        import_from_config_mode(
+            &config,
+            &newer,
+            "i18n/de.json",
+            "Example.Mod",
+            "i18n",
+            false,
+            true,
+        )
+        .unwrap();
+        let imported = import_from_config_mode(
+            &config,
+            &newer,
+            "i18n/de.json",
+            "Example.Mod",
+            "i18n",
+            true,
+            true,
+        )
+        .unwrap();
+        assert_eq!(imported.imported, 1);
+        let library = crate::community_library::list(&config).unwrap();
+        assert_eq!(library[0].archive_id, id);
+        assert_eq!(library[0].sources.len(), 2);
+        assert_eq!(
+            library[0].base[&translations::entry_key("i18n", "new")].target,
+            "Hallo"
+        );
+        assert_eq!(
+            library[0].base[&translations::entry_key("i18n", "added")].target,
+            "Neu"
+        );
+        let dest = config.join("supplement.zip");
+        crate::community_library::build(&config, &dest.display().to_string(), false).unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(dest).unwrap()).unwrap();
+        let values: serde_json::Value = serde_json::from_reader(zip.by_index(0).unwrap()).unwrap();
+        assert_eq!(values["new"], "Hallo");
+        assert_eq!(values["added"], "Neu");
     }
 
     #[test]
@@ -1924,8 +2107,25 @@ mod tests {
             ),
         ]))
         .unwrap();
-        assert!(
+        assert_eq!(
             resolve_archive_components("dup", &duplicate, &scan.mods, "de")
+                .mappings
+                .len(),
+            2
+        );
+        let conflicting = inspect_zip(zip_bytes(&[
+            (
+                "first/Stardew Valley Expanded Code/i18n/de.json",
+                r#"{"hello":"Hallo"}"#,
+            ),
+            (
+                "second/Stardew Valley Expanded Code/i18n/de.json",
+                r#"{"hello":"Different"}"#,
+            ),
+        ]))
+        .unwrap();
+        assert!(
+            resolve_archive_components("conflict", &conflicting, &scan.mods, "de")
                 .mappings
                 .is_empty()
         );
@@ -2268,17 +2468,51 @@ mod tests {
         .unwrap();
         let mut scan = scanner::scan_mods(&mods, "de", &config);
         crate::vortex_identity::resolve_original_ids(&mods, &mut scan);
-        std::fs::write(output.join("scan-summary.json"), serde_json::to_vec_pretty(&json!({"components":scan.mods.iter().filter(|m| m.name.to_lowercase().contains("scarp") || m.name.to_lowercase().contains("ridgeside")).collect::<Vec<_>>(),"skipped":scan.skipped_components})).unwrap()).unwrap();
+        std::fs::write(output.join("scan-summary.json"), serde_json::to_vec_pretty(&json!({"components":scan.mods.iter().filter(|m| m.name.to_lowercase().contains("scarp") || m.name.to_lowercase().contains("ridgeside") || m.name.to_lowercase().contains("expanded") || m.name.to_lowercase().contains("frontier")).collect::<Vec<_>>(),"skipped":scan.skipped_components})).unwrap()).unwrap();
         let mut reports = Vec::new();
         for (id, original) in [
             (32713, 10770),
             (28622, 20606),
             (18752, 10384),
             (15138, 5787),
+            (45820, 3753),
         ] {
             if std::env::var("NEXUS_COMPAT_ONLY").is_ok_and(|value| value != id.to_string()) {
                 continue;
             }
+            let id = if id == 15138 && std::env::var_os("NEXUS_COMPAT_REMASTERED").is_some() {
+                let discovered = find_translations(&config, 5787, "de", true).await.unwrap();
+                std::fs::write(
+                    output.join("discovery.json"),
+                    serde_json::to_vec_pretty(&discovered).unwrap(),
+                )
+                .unwrap();
+                discovered
+                    .candidates
+                    .iter()
+                    .find(|c| {
+                        c.name.to_lowercase().contains("remastered")
+                            && c.name.to_lowercase().contains("deutsch")
+                    })
+                    .expect("Remastered German candidate")
+                    .mod_id
+            } else if id == 45820 {
+                let discovered = find_translations(&config, 3753, "de", true).await.unwrap();
+                std::fs::write(
+                    output.join("discovery.json"),
+                    serde_json::to_vec_pretty(&discovered).unwrap(),
+                )
+                .unwrap();
+                discovered
+                    .candidates
+                    .iter()
+                    .filter(|c| c.relationship_tier == "possible-original-translation")
+                    .max_by(|a, b| a.updated_at.cmp(&b.updated_at))
+                    .expect("German SVE candidate")
+                    .mod_id
+            } else {
+                id
+            };
             let mut files = match nexus_list_files(id).await {
                 Ok(v) => v,
                 Err(e) => {
@@ -2288,7 +2522,9 @@ mod tests {
             };
             files.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
             let Some(file) = files.iter().find(|f| {
-                f.file_name.to_lowercase().ends_with(".zip")
+                [".zip", ".rar", ".7z"]
+                    .iter()
+                    .any(|extension| f.file_name.to_lowercase().ends_with(extension))
                     && !matches!(
                         f.category.to_lowercase().as_str(),
                         "archived" | "old_version" | "old version"
@@ -2311,6 +2547,34 @@ mod tests {
                 .filter(|m| m.nexus_id == Some(original) && !m.package_id.is_empty())
                 .map(|m| &m.package_id)
                 .collect();
+            let mut overlap = Vec::new();
+            for (index, a) in archive.files.iter().enumerate() {
+                for b in archive.files.iter().skip(index + 1) {
+                    let left = scanner::parse_flat_object(
+                        &archive.documents[&a.path],
+                        Path::new("locale"),
+                    )
+                    .unwrap_or_default();
+                    let right = scanner::parse_flat_object(
+                        &archive.documents[&b.path],
+                        Path::new("locale"),
+                    )
+                    .unwrap_or_default();
+                    let common = left.keys().filter(|key| right.contains_key(*key)).count();
+                    let differing = left
+                        .iter()
+                        .filter(|(key, value)| right.get(*key).is_some_and(|other| other != *value))
+                        .count();
+                    overlap.push(
+                        json!({"left":a.path,"right":b.path,"common":common,"differing":differing}),
+                    );
+                }
+            }
+            std::fs::write(
+                output.join("overlap.json"),
+                serde_json::to_vec_pretty(&overlap).unwrap(),
+            )
+            .unwrap();
             let hints: Vec<String> = scan
                 .mods
                 .iter()
@@ -2330,7 +2594,12 @@ mod tests {
             let mut copy_imports = Vec::new();
             if std::env::var_os("NEXUS_COMPAT_COPY_IMPORT").is_some() {
                 let copies = output.join("Mods");
-                for component in &scan.mods {
+                for component in scan.mods.iter().filter(|component| {
+                    resolved
+                        .mappings
+                        .iter()
+                        .any(|m| m.mod_unique_id == component.unique_id)
+                }) {
                     let source_folder = Path::new(&component.folder_path);
                     let folder = copies.join(source_folder.strip_prefix(&mods).unwrap());
                     std::fs::create_dir_all(&folder).unwrap();
@@ -3515,18 +3784,12 @@ fn resolve_archive_components_with_hints(
         unresolved: Vec::new(),
     };
     let has_target_locale = archive.files.iter().any(|file| {
-        let filename = file
-            .path
-            .rsplit('/')
-            .next()
-            .unwrap_or_default()
-            .to_lowercase();
-        !file.is_default
-            && (filename == format!("{lang}.json") || (lang == "pt" && filename == "pt-br.json"))
+        let name = archive_locale_filename(&file.path);
+        name == format!("{lang}.json") || (lang == "pt" && name == "pt-br.json")
     });
     for file in &archive.files {
         let path = file.path.replace('\\', "/").to_lowercase();
-        let filename = path.rsplit('/').next().unwrap_or_default();
+        let filename = archive_locale_filename(&path);
         if file.is_default
             || (filename != format!("{lang}.json") && !(lang == "pt" && filename == "pt-br.json"))
         {
@@ -3539,6 +3802,11 @@ fn resolve_archive_components_with_hints(
             continue;
         }
         let parent = path.rsplit_once('/').map(|(p, _)| p).unwrap_or_default();
+        let parent = if path.split('/').rev().nth(2) == Some("i18n") {
+            parent.rsplit_once('/').map(|(p, _)| p).unwrap_or(parent)
+        } else {
+            parent
+        };
         let mut candidates: Vec<_> = mods
             .iter()
             .flat_map(|component| {
@@ -3750,18 +4018,57 @@ fn resolve_archive_components_with_hints(
             });
         }
     }
-    let mut counts = HashMap::new();
+    let mut destinations: HashMap<(String, String), Vec<&ResolvedArchiveMapping>> = HashMap::new();
     for mapping in &result.mappings {
-        *counts
+        destinations
             .entry((
                 mapping.mod_unique_id.to_lowercase(),
                 mapping.relative_dir.to_lowercase(),
             ))
-            .or_insert(0) += 1;
+            .or_default()
+            .push(mapping);
+    }
+    let mut conflicting = HashSet::new();
+    for (destination, mappings) in destinations {
+        if mappings.len() < 2 {
+            continue;
+        }
+        let Some(source) = mods
+            .iter()
+            .find(|m| m.unique_id.eq_ignore_ascii_case(&destination.0))
+            .and_then(|m| {
+                m.i18n_files
+                    .iter()
+                    .find(|f| f.relative_dir.eq_ignore_ascii_case(&destination.1))
+            })
+            .and_then(|f| scanner::read_object_checked(Path::new(&f.default_path)).ok())
+        else {
+            conflicting.insert(destination);
+            continue;
+        };
+        let mut contributions = HashMap::new();
+        for mapping in mappings {
+            let values = archive
+                .documents
+                .get(&mapping.archive_path)
+                .and_then(|body| scanner::parse_flat_object(body, Path::new("archive locale")).ok())
+                .unwrap_or_default();
+            for (key, value) in values.iter().filter(|(key, value)| {
+                source.contains_key(*key)
+                    && value.as_str().is_some_and(|text| !text.trim().is_empty())
+            }) {
+                if contributions
+                    .insert(key.clone(), value.clone())
+                    .is_some_and(|old| old != *value)
+                {
+                    conflicting.insert(destination.clone());
+                }
+            }
+        }
     }
     result.mappings.retain(|mapping| {
-        if counts[&(mapping.mod_unique_id.to_lowercase(), mapping.relative_dir.to_lowercase())] == 1 {true} else {
-            result.unresolved.push(UnresolvedArchiveMapping {archive_path: mapping.archive_path.clone(), reason: "Multiple archive files target the same installed locale; no automatic winner selected.".into()});false
+        if !conflicting.contains(&(mapping.mod_unique_id.to_lowercase(),mapping.relative_dir.to_lowercase())) { true } else {
+            result.unresolved.push(UnresolvedArchiveMapping {archive_path:mapping.archive_path.clone(),reason:"Archive files contain conflicting translations for the same source key; no automatic winner selected.".into()}); false
         }
     });
     result
@@ -3899,7 +4206,7 @@ pub fn nexus_pick_archive(app: AppHandle) -> Result<Option<ArchivePreview>, Stri
     let Some(file) = app
         .dialog()
         .file()
-        .add_filter("Translation ZIP", &["zip"])
+        .add_filter("Translation archive", &["zip", "rar", "7z"])
         .blocking_pick_file()
     else {
         return Ok(None);
@@ -3910,7 +4217,7 @@ pub fn nexus_pick_archive(app: AppHandle) -> Result<Option<ArchivePreview>, Stri
     }
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
     let archive_id = format!("{:x}", Sha256::digest(&bytes));
-    let archive = inspect_zip(bytes)?;
+    let archive = inspect_archive(bytes)?;
     let preview = ArchivePreview {
         archive_id: archive_id.clone(),
         files: archive.files.clone(),

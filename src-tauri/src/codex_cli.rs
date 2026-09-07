@@ -327,7 +327,7 @@ fn app_server_args() -> [OsString; 2] {
 }
 
 #[cfg(windows)]
-mod windows_process {
+pub(crate) mod windows_process {
     use std::ffi::{c_void, OsStr, OsString};
     use std::fs::File;
     use std::io::{Read, Write};
@@ -350,7 +350,7 @@ mod windows_process {
     use windows_sys::Win32::System::JobObjects::{
         CreateJobObjectW, JobObjectExtendedLimitInformation, SetInformationJobObject,
         TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
     };
     use windows_sys::Win32::System::Pipes::CreatePipe;
     use windows_sys::Win32::System::Threading::{
@@ -414,6 +414,27 @@ mod windows_process {
 
         fn raw(&self) -> HANDLE {
             raw_handle(&self.0)
+        }
+
+        fn limit_archive_memory(&self) -> Result<(), String> {
+            let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+            information.BasicLimitInformation.LimitFlags =
+                JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
+            information.ProcessMemoryLimit = 256 * 1024 * 1024;
+            // SAFETY: this job and correctly sized information remain live. The
+            // archive process is still suspended, before reading untrusted data.
+            if unsafe {
+                SetInformationJobObject(
+                    self.raw(),
+                    JobObjectExtendedLimitInformation,
+                    std::ptr::from_ref(&information).cast(),
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                )
+            } == 0
+            {
+                return Err("Could not limit archive reader memory.".into());
+            }
+            Ok(())
         }
 
         fn terminate(&self) {
@@ -724,6 +745,7 @@ mod windows_process {
         job: Job,
         process: OwnedHandle,
         thread: Option<OwnedHandle>,
+        wait_on_drop: bool,
     }
 
     struct ProcessIo {
@@ -802,6 +824,7 @@ mod windows_process {
                     job,
                     process,
                     thread: Some(thread),
+                    wait_on_drop: false,
                 },
                 ProcessIo {
                     stdin: handle_file(stdin),
@@ -864,7 +887,11 @@ mod windows_process {
 
     impl Drop for SuspendedProcess {
         fn drop(&mut self) {
-            self.job.terminate();
+            if self.wait_on_drop {
+                self.terminate_tree_and_wait();
+            } else {
+                self.job.terminate();
+            }
         }
     }
 
@@ -1117,6 +1144,74 @@ mod windows_process {
         Failed(String),
     }
 
+    /// Read binary archive output using the existing suspended, isolated job.
+    /// The Codex runner keeps its own memory policy and text-output behavior.
+    pub(crate) fn run_archive(
+        executable: &Path,
+        args: &[OsString],
+        working_dir: &Path,
+        timeout: Duration,
+        output_limit: usize,
+    ) -> Result<Vec<u8>, String> {
+        let started = Instant::now();
+        let (mut process, io) = SuspendedProcess::spawn(executable, args, working_dir)
+            .map_err(|_| "Windows archive reader is unavailable. Update Windows or use Nexus/Vortex to obtain the translation manually.")?;
+        process.wait_on_drop = true;
+        process.job.limit_archive_memory()?;
+        drop(io.stdin);
+        let stdout_budget = Arc::new(OutputBudget::new(output_limit));
+        let stderr_budget = Arc::new(OutputBudget::new(64 * 1024));
+        let failed = Arc::new(AtomicBool::new(false));
+        let stdout = start_reader(
+            "stdout",
+            io.stdout,
+            Arc::clone(&stdout_budget),
+            Arc::clone(&failed),
+            None,
+        )?;
+        let stderr = start_reader(
+            "stderr",
+            io.stderr,
+            Arc::clone(&stderr_budget),
+            Arc::clone(&failed),
+            None,
+        )?;
+        let end = match process.resume() {
+            Err(error) => Err(error),
+            Ok(()) => loop {
+                if started.elapsed() >= timeout {
+                    break Err("Archive reader timed out.".to_owned());
+                }
+                if stdout_budget.overflowed.load(Ordering::Acquire)
+                    || stderr_budget.overflowed.load(Ordering::Acquire)
+                {
+                    break Err("Archive reader output exceeds its size limit.".to_owned());
+                }
+                if failed.load(Ordering::Acquire) {
+                    break Err("Could not read archive output.".to_owned());
+                }
+                match process.poll() {
+                    Ok(Some(code)) => break Ok(code),
+                    Ok(None) => std::thread::sleep(POLL_INTERVAL),
+                    Err(error) => break Err(error),
+                }
+            },
+        };
+        process.terminate_tree_and_wait();
+        let stdout = receive_capture(stdout, "archive stdout");
+        let stderr = receive_capture(stderr, "archive stderr");
+        let code = end?;
+        if stdout_budget.overflowed.load(Ordering::Acquire)
+            || stderr_budget.overflowed.load(Ordering::Acquire)
+        {
+            return Err("Archive reader output exceeds its size limit.".into());
+        }
+        if code != 0 || !stderr?.is_empty() {
+            return Err("Windows could not read this archive. Encrypted, multipart, damaged, or unsupported archives cannot be imported; update Windows or use Nexus/Vortex to obtain the translation manually.".into());
+        }
+        stdout
+    }
+
     pub(super) fn run(
         executable: &Path,
         args: &[OsString],
@@ -1311,6 +1406,36 @@ mod windows_process {
     mod executable_resolution_tests {
         use super::super::TempRunDir;
         use super::*;
+
+        #[test]
+        fn archive_memory_limit_does_not_change_default_codex_jobs() {
+            use windows_sys::Win32::System::JobObjects::QueryInformationJobObject;
+            let default_job = Job::create().unwrap();
+            let archive_job = Job::create().unwrap();
+            archive_job.limit_archive_memory().unwrap();
+            for (job, expected) in [(&default_job, 0), (&archive_job, 256 * 1024 * 1024)] {
+                let mut information = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+                // SAFETY: job and sized output buffer remain valid for this call.
+                assert_ne!(
+                    unsafe {
+                        QueryInformationJobObject(
+                            job.raw(),
+                            JobObjectExtendedLimitInformation,
+                            std::ptr::from_mut(&mut information).cast(),
+                            size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                            null_mut(),
+                        )
+                    },
+                    0
+                );
+                assert_eq!(information.ProcessMemoryLimit, expected);
+                assert_eq!(
+                    information.BasicLimitInformation.LimitFlags & JOB_OBJECT_LIMIT_PROCESS_MEMORY
+                        != 0,
+                    expected != 0
+                );
+            }
+        }
 
         fn create_test_executable(path: &Path) -> PathBuf {
             std::fs::create_dir_all(path.parent().expect("test executable should have a parent"))

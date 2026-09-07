@@ -295,8 +295,8 @@ it("does not use rounded progress or call zero-key/unknown-count groups fully co
       { traversalComplete: true },
     ),
   );
-  expect(search).toHaveBeenCalledTimes(3);
-  expect(hook.result.current.skippedComplete).toBe(0);
+  expect(search).toHaveBeenCalledTimes(2);
+  expect(hook.result.current.skippedComplete).toBe(1);
 });
 
 it("includes no-ID package companions before skipping a fully covered primary component", async () => {
@@ -400,7 +400,7 @@ it("resets skipped coverage on folder/language change and explicit rescan", asyn
   });
 });
 
-it("searches Review-only coverage and forwards explicit cache refresh and collection options", async () => {
+it("skips complete working text and forwards explicit cache refresh and collection options", async () => {
   search.mockImplementation((id: number) => Promise.resolve(result(id)));
   const hook = renderHook(() => useNexusSearch("mods|de"));
   const reviewed = {
@@ -415,7 +415,7 @@ it("searches Review-only coverage and forwards explicit cache refresh and collec
       traversalComplete: true,
     }),
   );
-  expect(search.mock.calls).toEqual([[1, "de", false]]);
+  expect(search.mock.calls).toEqual([]);
   search.mockClear();
   await act(() =>
     hook.result.current.start([complete], "de", {
@@ -482,6 +482,7 @@ it.each([
       packageId: "sample",
       uniqueId: "sample.mod",
       totalKeys: 10,
+      translatedKeys: 10,
       diskTranslatedKeys: 10,
     };
     await act(() =>

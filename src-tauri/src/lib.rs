@@ -4,6 +4,7 @@
 //! i18n import/export, glossary extraction, and direct AI integrations.
 
 mod ai;
+mod archive_reader;
 mod batch;
 mod codex_cli;
 mod community_library;

@@ -2689,7 +2689,7 @@ export function App() {
             title={
               manualImportFormat === "json"
                 ? "Import language JSON"
-                : "Import downloaded translation ZIP"
+                : "Import downloaded translation archive"
             }
             busy={exporting}
             onClose={() => setManualImportOpen(false)}
@@ -2697,7 +2697,7 @@ export function App() {
             <h2>
               {manualImportFormat === "json"
                 ? "Import language JSON"
-                : "Import downloaded translation ZIP"}
+                : "Import downloaded translation archive"}
             </h2>
             <p>
               {manualImportFormat === "json"
@@ -3153,7 +3153,7 @@ function AppToolbar({
               </button>
               <div className="translator-popover-divider" role="separator" />
               <span className="translator-popover-note" role="presentation">
-                ZIP archives
+                Translation archives
               </span>
               <button
                 type="button"
@@ -3163,7 +3163,7 @@ function AppToolbar({
                   onImportTranslation();
                 }}
               >
-                <Archive aria-hidden /> Import downloaded translation ZIP…
+                <Archive aria-hidden /> Import downloaded translation archive…
               </button>
             </div>
           )}

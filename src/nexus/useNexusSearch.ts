@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
   nexusSourceComponents,
-  nexusSourceDiskCoverage,
+  nexusSourceWorkingComplete,
 } from "./resolveTranslation";
 import {
   nexusFindTranslations,
@@ -75,13 +75,13 @@ export function nexusSearchTargets(
     if (
       !includeComplete &&
       !retainIds.includes(id) &&
-      nexusSourceDiskCoverage(
+      nexusSourceWorkingComplete(
         mods,
         id,
         skippedComponents,
         traversalComplete,
         nexusIdentityIncomplete,
-      )?.complete
+      )
     ) {
       targets.delete(id);
       skippedComplete++;

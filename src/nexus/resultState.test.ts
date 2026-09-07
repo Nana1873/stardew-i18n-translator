@@ -73,20 +73,21 @@ describe("Nexus result selection", () => {
     };
     expect(deriveNexusResult(fixture).value).toBe("45820:200");
   });
-  it("explains unavailable ZIP candidates without overriding supported defaults", () => {
+  it("explains unavailable archive candidates without overriding supported defaults", () => {
     const result = deriveNexusResult(
       input({
         allowArchives: false,
         fileMetadata: {
           10: { files: [file(100, "2025-07-04")] },
-          20: { files: [{ ...file(200, "2026-05-19"), fileName: "de.rar" }] },
+          20: { files: [{ ...file(200, "2026-05-19"), fileName: "de.tar" }] },
         },
       }),
     );
     expect(result.value).toBe("10:100");
     expect(result.unavailableCandidates[0]).toMatchObject({
       candidate: { modId: 20 },
-      reason: "No ZIP available. Direct import supports ZIP archives.",
+      reason:
+        "No supported archive available. Import supports ZIP, RAR and 7z.",
     });
   });
   it("recommends the latest suitable file when nothing is installed", () => {
