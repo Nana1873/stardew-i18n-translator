@@ -577,6 +577,41 @@ fn normalized(value: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
 }
+// Unknown subtitles (especially named NPCs/add-ons) remain part of identity.
+fn descriptive_title_core(value: &str) -> Option<String> {
+    let (core, suffix) = value
+        .split_once(" - ")
+        .or_else(|| value.split_once(" – "))
+        .or_else(|| value.split_once(" — "))?;
+    let identity = normalized(core);
+    if identity.split_whitespace().count() < 2 || identity.len() < 10 {
+        return None;
+    }
+    let suffix = normalized(suffix);
+    let words: Vec<_> = suffix.split_whitespace().collect();
+    (words.contains(&"map")
+        && words.iter().any(|word| matches!(*word, "npc" | "npcs"))
+        && words.iter().all(|word| {
+            matches!(
+                *word,
+                "expanded" | "map" | "for" | "custom" | "npc" | "npcs"
+            )
+        }))
+    .then(|| core.trim().to_owned())
+}
+
+fn discovery_searches(original: &str, lang: &str) -> Vec<String> {
+    let title = search_name(original);
+    let mut searches = vec![title.clone()];
+    if let Some(word) = language_words(lang).first() {
+        searches.push(format!("{title} {word}"));
+    }
+    if let Some(core) = descriptive_title_core(original) {
+        searches.push(core);
+    }
+    searches
+}
+
 fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
     let joined_translation_label = |word: &str| {
         word.strip_suffix("translation")
@@ -638,6 +673,9 @@ fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
             .all(|word| translation_qualifier(word) || matches!(*word, "a" | "new" | "for"))
     {
         return "possible-original-translation";
+    }
+    if let Some(core) = descriptive_title_core(original) {
+        return relationship_tier(&core, &title.join(" "), lang);
     }
     "possible-addon-or-other-translation"
 }
@@ -719,11 +757,7 @@ async fn find_translations(
     let query="query Search($filter:ModsFilter,$offset:Int,$count:Int){mods(filter:$filter,sort:[{updatedAt:{direction:DESC}}],offset:$offset,count:$count){totalCount nodes{modId gameId name summary updatedAt version}}}";
     let mut found = HashMap::new();
     let mut limited = false;
-    let search_title = search_name(&name);
-    let mut searches = vec![search_title.clone()];
-    if let Some(word) = language_words(&lang).first() {
-        searches.push(format!("{search_title} {word}"));
-    }
+    let searches = discovery_searches(&name, &lang);
     for search in searches {
         let data=request(&key,"/v2/graphql",Some(json!({"query":query,"variables":{"filter":{"gameDomainName":[{"op":"EQUALS","value":"stardewvalley"}],"nameStemmed":[{"op":"MATCHES","value":search}]},"offset":0,"count":30}}))).await?;
         let page = &data["data"]["mods"];
@@ -2813,9 +2847,20 @@ fn read_discovery_cache(config: &Path) -> DiscoveryCache {
         if bytes.len() > CACHE_LIMIT {
             return None;
         }
-        let cache: DiscoveryCache = serde_json::from_slice(&bytes).ok()?;
-        (cache.schema == 1 && cache.game == "stardewvalley" && cache.entries.len() <= 512)
-            .then_some(cache)
+        let mut cache: DiscoveryCache = serde_json::from_slice(&bytes).ok()?;
+        if !matches!(cache.schema, 1 | 2)
+            || cache.game != "stardewvalley"
+            || cache.entries.len() > 512
+        {
+            return None;
+        }
+        if cache.schema == 1 {
+            // Only these old queries omitted the now-supported title core.
+            cache
+                .entries
+                .retain(|_, entry| descriptive_title_core(&entry.original_name).is_none());
+        }
+        Some(cache)
     };
     read().unwrap_or_default()
 }
@@ -2862,7 +2907,7 @@ fn metadata_text(value: &str) -> String {
 fn store_discovery(config: &Path, lang: &str, result: &Discovery) -> Result<(), String> {
     let _guard = cache_guard().lock().unwrap_or_else(|p| p.into_inner());
     let mut cache = read_discovery_cache(config);
-    cache.schema = 1;
+    cache.schema = 2;
     cache.game = "stardewvalley".into();
     cache
         .entries
@@ -3351,6 +3396,105 @@ mod workflow_tests {
         println!(
             "Captured discovery {}: fresh and cache both rank 50527 first; named add-ons excluded",
             value.mod_id
+        );
+    }
+
+    #[test]
+    fn descriptive_map_subtitles_allow_bounded_discovery_without_addon_promotion() {
+        for core in ["Downhill Project", "Hilltown Stories"] {
+            let original = format!("{core} - Expanded Map for Custom NPCs");
+            assert_eq!(discovery_searches(&original, "de").last().unwrap(), core);
+            assert_eq!(discovery_searches(&original, "de").len(), 3);
+            for title in [format!("{core} - Deutsch"), format!("{original} - German")] {
+                assert_eq!(
+                    relationship_tier(&original, &title, "de"),
+                    "possible-original-translation"
+                );
+            }
+            for title in [
+                format!("{core} Portraits German"),
+                format!("{core} NPC Rodney German"),
+                format!("{core} Compatibility Patch Deutsch"),
+            ] {
+                assert_eq!(
+                    relationship_tier(&original, &title, "de"),
+                    "possible-addon-or-other-translation"
+                );
+            }
+        }
+        for title in [
+            "Map - Expanded Map for Custom NPCs",
+            "Farm - Expanded Map for Custom NPCs",
+            "East Scarp - NPC Rodney",
+            "Example Mod - Expanded Map for Custom NPC Rodney",
+        ] {
+            assert!(descriptive_title_core(title).is_none());
+            assert_eq!(discovery_searches(title, "de").len(), 2);
+        }
+    }
+
+    #[test]
+    fn old_title_core_cache_is_refreshed_without_discarding_other_titles() {
+        let config = crate::test_support::temp_dir("title-core-cache");
+        std::fs::create_dir_all(&config).unwrap();
+        let mut affected = discovery(1000);
+        affected.original_name = "Downhill Project - Expanded Map for Custom NPCs".into();
+        let mut unaffected = affected.clone();
+        unaffected.mod_id += 1;
+        unaffected.original_name = "Ordinary Mod".into();
+        let cache = DiscoveryCache {
+            schema: 1,
+            game: "stardewvalley".into(),
+            entries: HashMap::from([
+                (cache_key(affected.mod_id, "de"), affected),
+                (cache_key(unaffected.mod_id, "de"), unaffected.clone()),
+            ]),
+        };
+        std::fs::write(
+            config.join("nexus-discovery-cache.json"),
+            serde_json::to_vec(&cache).unwrap(),
+        )
+        .unwrap();
+        let loaded = read_discovery_cache(&config);
+        assert_eq!(loaded.entries.len(), 1);
+        assert!(loaded
+            .entries
+            .contains_key(&cache_key(unaffected.mod_id, "de")));
+    }
+
+    #[tokio::test]
+    #[ignore = "Authorized metadata-only Nexus proof; requires explicit IDs and temporary output"]
+    async fn live_discovery_metadata_only() {
+        let id = std::env::var("NEXUS_NATIVE_LIVE_MOD_ID")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let expected: u64 = std::env::var("NEXUS_DISCOVERY_EXPECTED_CANDIDATE")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let output = PathBuf::from(std::env::var("NEXUS_DISCOVERY_OUTPUT").unwrap());
+        std::fs::create_dir_all(&output).unwrap();
+        let result = find_translations(&output, id, "de", true).await.unwrap();
+        let candidate = result
+            .candidates
+            .iter()
+            .find(|c| c.mod_id == expected)
+            .expect("Expected candidate discovered");
+        assert_eq!(candidate.relationship_tier, "possible-original-translation");
+        std::fs::write(
+            output.join("native-discovery.json"),
+            serde_json::to_vec_pretty(&result).unwrap(),
+        )
+        .unwrap();
+        let cached = find_translations(&output, id, "de", false).await.unwrap();
+        assert_eq!(cached.cache_status, "cached");
+        assert!(cached.candidates.iter().any(
+            |c| c.mod_id == expected && c.relationship_tier == "possible-original-translation"
+        ));
+        println!(
+            "Fresh/cached metadata proof: original {id}, candidate {expected}, {} candidates",
+            result.candidates.len()
         );
     }
 
