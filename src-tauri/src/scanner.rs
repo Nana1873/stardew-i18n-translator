@@ -38,6 +38,8 @@ pub struct ScannedI18nFile {
     pub total_keys: usize,
     /// Source keys with a non-empty value in the target `<lang>.json`.
     pub translated_keys: usize,
+    /// Blank source/working-target pairs need no translation, without a saved exemption.
+    pub no_translation_needed_keys: usize,
     /// Source keys whose saved status is an unreviewed AI suggestion
     /// (`review-needed`) — feeds the dashboard review queue.
     pub review_needed: usize,
@@ -94,6 +96,7 @@ pub struct ScannedMod {
     /// Aggregates across all i18n files.
     pub total_keys: usize,
     pub translated_keys: usize,
+    pub no_translation_needed_keys: usize,
     /// Unreviewed AI suggestions across all i18n files (dashboard queue).
     pub review_needed: usize,
     /// Current per-status string counts across all i18n files.
@@ -127,9 +130,7 @@ pub struct ScanResult {
     /// failed. A bounded or otherwise incomplete directory traversal also
     /// leaves this unavailable.
     pub source_deltas: Option<ScanDeltas>,
-    /// Internal completeness signal for derived scan data. This is deliberately
-    /// not part of the frontend contract; `source_deltas` is the user-visible
-    /// availability state.
+    /// Internal completeness signal for derived scan data and export preflight.
     #[serde(skip)]
     pub(crate) traversal_complete: bool,
 }
@@ -439,38 +440,42 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            match build_i18n_file(&owner, i18n_dir, mods_path, target_lang, state) {
-                Ok((file, status_counts)) => {
-                    let diagnostics = extra_target_keys(
-                        &scanned.name,
-                        &file.relative_dir,
-                        Path::new(&file.default_path),
-                        Path::new(&file.target_path),
-                        mods_path,
-                    );
-                    match diagnostics {
-                        Ok(diagnostics) => {
-                            extra_keys.extend(diagnostics);
-                            scanned.status_counts.merge(&status_counts);
-                            scanned.i18n_files.push(file);
-                        }
-                        Err(error) => {
-                            skipped_components.push(skipped_i18n_component(
-                                scanned,
-                                i18n_dir,
-                                mods_path,
-                                safe_skip_reason(&error, mods_path),
-                            ));
+            for unit in i18n_units(i18n_dir, mods_path).unwrap_or_else(|error| vec![Err(error)]) {
+                match unit
+                    .and_then(|unit| build_i18n_file(&owner, &unit, mods_path, target_lang, state))
+                {
+                    Ok((file, status_counts)) => {
+                        let diagnostics = extra_target_keys(
+                            &scanned.name,
+                            &file.relative_dir,
+                            Path::new(&file.default_path),
+                            Path::new(&file.target_path),
+                            mods_path,
+                        );
+                        match diagnostics {
+                            Ok(diagnostics) => {
+                                extra_keys.extend(diagnostics);
+                                scanned.status_counts.merge(&status_counts);
+                                scanned.i18n_files.push(file);
+                            }
+                            Err(error) => {
+                                skipped_components.push(skipped_i18n_component(
+                                    scanned,
+                                    i18n_dir,
+                                    mods_path,
+                                    safe_skip_reason(&error, mods_path),
+                                ));
+                            }
                         }
                     }
-                }
-                Err(error) => {
-                    skipped_components.push(skipped_i18n_component(
-                        scanned,
-                        i18n_dir,
-                        mods_path,
-                        safe_skip_reason(&error, mods_path),
-                    ));
+                    Err(error) => {
+                        skipped_components.push(skipped_i18n_component(
+                            scanned,
+                            i18n_dir,
+                            mods_path,
+                            safe_skip_reason(&error, mods_path),
+                        ));
+                    }
                 }
             }
         }
@@ -488,9 +493,15 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             .sort_by(|a, b| a.relative_dir.cmp(&b.relative_dir));
         scanned.total_keys = scanned.i18n_files.iter().map(|f| f.total_keys).sum();
         scanned.translated_keys = scanned.i18n_files.iter().map(|f| f.translated_keys).sum();
+        scanned.no_translation_needed_keys = scanned
+            .i18n_files
+            .iter()
+            .map(|file| file.no_translation_needed_keys)
+            .sum();
         scanned.review_needed = scanned.i18n_files.iter().map(|f| f.review_needed).sum();
-        scanned.progress = progress_of(scanned.total_keys, scanned.translated_keys);
-        scanned.status = derive_status(scanned.total_keys, scanned.translated_keys).to_string();
+        let completed_work = scanned.translated_keys + scanned.no_translation_needed_keys;
+        scanned.progress = progress_of(scanned.total_keys, completed_work);
+        scanned.status = derive_status(scanned.total_keys, completed_work).to_string();
     }
 
     // Exclude community language packs: such a pack ships its own `i18n/`
@@ -532,6 +543,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     let file_count = result_mods.iter().map(|m| m.i18n_files.len()).sum();
     ScanResult {
         mod_count,
+
         file_count,
         mods: result_mods,
         warnings,
@@ -635,6 +647,7 @@ fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<Scanne
         i18n_files: Vec::new(),
         total_keys: 0,
         translated_keys: 0,
+        no_translation_needed_keys: 0,
         review_needed: 0,
         status_counts: StatusCounts::default(),
         progress: 0.0,
@@ -865,8 +878,23 @@ fn resolve_string(
         // now an explicit identical translation ("Keep original"). An empty
         // stored target takes the *current* source text — that pair can't be
         // stale, so it skips the outdated check below.
-        if stored.status == "not-translatable" && stored.target.trim().is_empty() {
+        // Preserve legacy Keep original except where its baseline proves the
+        // original was exactly empty: a new source is then new translation work.
+        if stored.status == "not-translatable"
+            && stored.target.trim().is_empty()
+            && stored.source_hash != translations::source_hash("")
+        {
             return (source_text.to_string(), "translated".to_string());
+        }
+        // Empty work is derived from the current source, never a permanent Done
+        // exemption. A later nonempty source reopens even an old saved Done row.
+        if stored.target.trim().is_empty() {
+            let status = if source_text.trim().is_empty() {
+                "translated"
+            } else {
+                "untranslated"
+            };
+            return (stored.target.clone(), status.to_string());
         }
         let status = normalize_status(&stored.status);
         // A `translated` or (AI-suggested) `review-needed` string goes stale when
@@ -881,7 +909,7 @@ fn resolve_string(
         return (stored.target.clone(), status);
     }
     let imported_text = imported.map(value_to_text).unwrap_or_default();
-    let status = if imported_text.trim().is_empty() {
+    let status = if imported_text.trim().is_empty() && !source_text.trim().is_empty() {
         "untranslated"
     } else {
         "translated"
@@ -962,7 +990,10 @@ pub(crate) fn read_object_checked(path: &Path) -> Result<serde_json::Map<String,
     parse_flat_object(&body, path)
 }
 
-fn parse_flat_object(text: &str, path: &Path) -> Result<serde_json::Map<String, Value>, String> {
+pub(crate) fn parse_flat_object(
+    text: &str,
+    path: &Path,
+) -> Result<serde_json::Map<String, Value>, String> {
     let value = parse_json_lenient(text)
         .map_err(|error| format!("Invalid JSON in {}: {error}", path.display()))?;
     let object = value
@@ -994,11 +1025,7 @@ pub(crate) fn read_target_object_checked(
 }
 
 pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
-    let is_portuguese = target_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"));
-    if is_portuguese {
+    if is_flat_portuguese_target(target_path) {
         let fallback = target_path.with_file_name("pt-BR.json");
         if fallback.is_file() {
             return fallback;
@@ -1008,6 +1035,19 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
         return target_path.to_path_buf();
     }
     target_path.to_path_buf()
+}
+
+/// Locale aliases apply to top-level locale files, never to the arbitrary
+/// document names inside a split locale folder.
+pub(crate) fn is_flat_portuguese_target(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"))
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
 }
 
 /// (total source keys, source keys with a non-empty **working** target — saved
@@ -1022,10 +1062,24 @@ fn count_keys(
     relative_dir: &str,
 ) -> (usize, usize, usize) {
     inspect_keys_checked(default_path, target_path, None, state, relative_dir)
-        .map(|(total, translated, status_counts, _)| {
-            (total, translated, status_counts.review_needed)
+        .map(|inspection| {
+            (
+                inspection.total,
+                inspection.translated,
+                inspection.status_counts.review_needed,
+            )
         })
         .unwrap_or((0, 0, 0))
+}
+
+struct KeyInspection {
+    total: usize,
+    translated: usize,
+
+    no_translation_needed: usize,
+
+    status_counts: StatusCounts,
+    source_hashes: Vec<SourceKeyHash>,
 }
 
 fn inspect_keys_checked(
@@ -1034,7 +1088,7 @@ fn inspect_keys_checked(
     allowed_root: Option<&Path>,
     state: &ModState,
     relative_dir: &str,
-) -> Result<(usize, usize, StatusCounts, Vec<SourceKeyHash>), String> {
+) -> Result<KeyInspection, String> {
     let source = match allowed_root {
         Some(root) => read_object_within_root(default_path, root, "source")?,
         None => read_object_checked(default_path)?,
@@ -1048,33 +1102,18 @@ fn inspect_keys_checked(
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
         .count();
-    let translated = source
-        .keys()
-        .filter(|key| !is_ignored_i18n_key(key))
-        .filter(|key| {
-            match state.get(&translations::entry_key(relative_dir, key)) {
-                // Legacy not-translatable counts as handled even without target
-                // text — it resolves to keep-original (source text) on load.
-                Some(stored) => {
-                    stored.status == "not-translatable" || !stored.target.trim().is_empty()
-                }
-                None => target
-                    .get(key)
-                    .and_then(Value::as_str)
-                    .is_some_and(|value| !value.trim().is_empty()),
-            }
-        })
-        .count();
+    let mut translated = 0;
+    let mut no_translation_needed = 0;
     let mut status_counts = StatusCounts::default();
     for (key, value) in source.iter().filter(|(key, _)| !is_ignored_i18n_key(key)) {
-        let status = resolve_string(
-            value.as_str().unwrap_or_default(),
-            target.get(key),
-            state,
-            relative_dir,
-            key,
-        )
-        .1;
+        let source_text = value.as_str().unwrap_or_default();
+        let (working_target, status) =
+            resolve_string(source_text, target.get(key), state, relative_dir, key);
+        if !working_target.trim().is_empty() {
+            translated += 1;
+        } else if source_text.trim().is_empty() {
+            no_translation_needed += 1;
+        }
         status_counts.record(&status);
     }
     let source_hashes = source
@@ -1085,7 +1124,15 @@ fn inspect_keys_checked(
             source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
         })
         .collect();
-    Ok((total, translated, status_counts, source_hashes))
+    Ok(KeyInspection {
+        total,
+        translated,
+
+        no_translation_needed,
+
+        status_counts,
+        source_hashes,
+    })
 }
 
 fn read_target_object_within_root(
@@ -1176,6 +1223,130 @@ fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
         })
 }
 
+pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf, String> {
+    let root = source
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("Invalid split source")?;
+    let target = root.join(language);
+    let keys: HashSet<_> = read_object_checked(source)?
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .map(|k| folded_key(k))
+        .collect();
+    let mut matches = Vec::new();
+    let mut all_source_keys = None;
+    if target.is_dir() {
+        for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if !path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+            {
+                continue;
+            }
+            let values = read_object_within_root(&path, root, "target")?;
+            let existing: Vec<_> = values
+                .keys()
+                .filter(|k| !is_ignored_i18n_key(k))
+                .map(|k| folded_key(k))
+                .collect();
+            if existing.iter().any(|k| keys.contains(k)) {
+                if existing.iter().any(|k| !keys.contains(k)) {
+                    // Removed keys have no current source owner and remain
+                    // informational orphans. Only keys owned by another source
+                    // document make this target ambiguous.
+                    let known_keys = if let Some(ref known) = all_source_keys {
+                        known
+                    } else {
+                        let mut known = HashSet::new();
+                        for entry in
+                            std::fs::read_dir(source.parent().ok_or("Invalid split source")?)
+                                .map_err(|e| e.to_string())?
+                        {
+                            let path = entry.map_err(|e| e.to_string())?.path();
+                            if !path
+                                .extension()
+                                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+                            {
+                                continue;
+                            }
+                            known.extend(
+                                read_object_within_root(&path, root, "source")?
+                                    .keys()
+                                    .filter(|key| !is_ignored_i18n_key(key))
+                                    .map(|key| folded_key(key)),
+                            );
+                        }
+                        all_source_keys.insert(known)
+                    };
+                    if existing
+                        .iter()
+                        .any(|key| !keys.contains(key) && known_keys.contains(key))
+                    {
+                        return Err("Existing locale document combines multiple source segments; automatic export is ambiguous.".into());
+                    }
+                }
+                matches.push(path);
+            }
+        }
+    }
+    match matches.len() {
+        0 => {
+            let path=target.join(source.file_name().ok_or("Invalid split source")?);
+            if path.exists() { return Err("Target filename is occupied by a different source segment.".into()); }
+            Ok(path)
+        },
+        1 => Ok(matches.remove(0)),
+        _ => Err("Existing locale keys are spread across multiple documents; automatic export is ambiguous.".into()),
+    }
+}
+
+/// SMAPI merges immediate locale-directory JSON files into one namespace.
+/// Reject duplicate source keys instead of inventing a filesystem-order winner.
+fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, String> {
+    let split = dir.join("default");
+    if !split.is_dir() {
+        return Ok(vec![Ok(dir.to_path_buf())]);
+    }
+    if std::fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .any(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|v| v.eq_ignore_ascii_case("json"))
+        })
+    {
+        return Err(
+            "Mixed top-level and language-folder translations are not supported by SMAPI.".into(),
+        );
+    }
+    let mut files: Vec<_> = std::fs::read_dir(&split)
+        .map_err(|e| e.to_string())?
+        .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()?;
+    files.retain(|p| {
+        p.extension()
+            .is_some_and(|v| v.eq_ignore_ascii_case("json"))
+    });
+    files.sort();
+    let mut keys = HashSet::new();
+    for file in &files {
+        for key in read_object_within_root(file, root, "source")?
+            .keys()
+            .filter(|key| !is_ignored_i18n_key(key))
+        {
+            if !keys.insert(folded_key(key)) {
+                return Err("Duplicate source key across language-folder documents.".into());
+            }
+        }
+    }
+    Ok(files.into_iter().map(Ok).collect())
+}
+
 fn build_i18n_file(
     mod_dir: &Path,
     i18n_dir: &Path,
@@ -1183,33 +1354,57 @@ fn build_i18n_file(
     target_lang: &str,
     state: &ModState,
 ) -> Result<(ScannedI18nFile, StatusCounts), String> {
-    let relative_dir = i18n_dir
+    let split = i18n_dir.is_file();
+    let source_dir = if split {
+        i18n_dir
+            .parent()
+            .and_then(Path::parent)
+            .ok_or("Invalid split source")?
+    } else {
+        i18n_dir
+    };
+    let mut relative_dir = source_dir
         .strip_prefix(mod_dir)
         .map_err(|_| "i18n folder is outside its mod folder".to_string())?
         .to_str()
         .ok_or_else(|| "i18n path is not valid Unicode".to_string())?
         .replace('\\', "/");
-    let default_path = i18n_dir.join("default.json");
-    let target_path = i18n_dir.join(format!("{target_lang}.json"));
-    let (total_keys, translated_keys, status_counts, source_hashes) = inspect_keys_checked(
+    let (default_path, target_path) = if split {
+        let name = i18n_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid split filename")?;
+        relative_dir = format!("{relative_dir}/@split/{name}");
+        (
+            i18n_dir.to_path_buf(),
+            split_target_path(i18n_dir, target_lang)?,
+        )
+    } else {
+        (
+            i18n_dir.join("default.json"),
+            i18n_dir.join(format!("{target_lang}.json")),
+        )
+    };
+    let inspection = inspect_keys_checked(
         &default_path,
         &target_path,
         Some(mods_path),
         state,
         &relative_dir,
     )?;
-    let review_needed = status_counts.review_needed;
+    let review_needed = inspection.status_counts.review_needed;
     let file = ScannedI18nFile {
         target_exists: target_read_path(&target_path).is_file(),
         default_path: default_path.display().to_string(),
         target_path: target_path.display().to_string(),
         relative_dir,
-        total_keys,
-        translated_keys,
+        total_keys: inspection.total,
+        translated_keys: inspection.translated,
+        no_translation_needed_keys: inspection.no_translation_needed,
         review_needed,
-        source_hashes,
+        source_hashes: inspection.source_hashes,
     };
-    Ok((file, status_counts))
+    Ok((file, inspection.status_counts))
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
@@ -1354,7 +1549,7 @@ fn collect_bounded(
                             false
                         }
                     };
-                    if safe_default {
+                    if safe_default || path.join("default").is_dir() {
                         i18n_dirs.push(path);
                     }
                     continue; // no mods nested inside an i18n folder
@@ -2742,5 +2937,466 @@ mod tests {
                 cp.total_keys, cp.translated_keys, cp.status
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod blank_source_tests {
+    use super::*;
+    use serde_json::json;
+    use std::fs;
+
+    struct Fixture {
+        base: PathBuf,
+        mods: PathBuf,
+        config: PathBuf,
+        source: PathBuf,
+        target: PathBuf,
+    }
+    impl Fixture {
+        fn new(source: &str, target: Option<&str>) -> Self {
+            let base = crate::test_support::temp_dir("blank-source");
+            let mods = base.join("Mods");
+            let folder = mods.join("Example");
+            let source_path = folder.join("i18n/default.json");
+            let target_path = folder.join("i18n/de.json");
+            fs::create_dir_all(source_path.parent().unwrap()).unwrap();
+            fs::write(
+                folder.join("manifest.json"),
+                br#"{"UniqueID":"test.blank","Name":"Example"}"#,
+            )
+            .unwrap();
+            fs::write(
+                &source_path,
+                serde_json::to_vec(&json!({"key":source})).unwrap(),
+            )
+            .unwrap();
+            if let Some(target) = target {
+                fs::write(
+                    &target_path,
+                    serde_json::to_vec(&json!({"key":target})).unwrap(),
+                )
+                .unwrap();
+            }
+            Self {
+                config: base.join("config"),
+                base,
+                mods,
+                source: source_path,
+                target: target_path,
+            }
+        }
+        fn state_root(&self) -> PathBuf {
+            translations::language_root(&self.config, "de").unwrap()
+        }
+        fn scan(&self) -> ScanResult {
+            scan_mods(&self.mods, "de", &self.config)
+        }
+        fn rows(&self) -> Vec<StringRow> {
+            let state = translations::load(&self.state_root(), "test.blank").unwrap();
+            load_strings_checked(&self.source, &self.target, &state, "i18n").unwrap()
+        }
+        fn save(&self, source: &str, target: &str, status: &str) {
+            translations::save_one(
+                &self.state_root(),
+                "test.blank",
+                translations::entry_key("i18n", "key"),
+                translations::StoredString {
+                    target: target.into(),
+                    status: status.into(),
+                    source_hash: translations::source_hash(source),
+                },
+            )
+            .unwrap();
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            fs::remove_dir_all(&self.base).unwrap();
+        }
+    }
+
+    #[test]
+    fn blank_pairs_reopen_after_source_update_and_reload_without_saving_exemptions() {
+        // Unicode White_Space matches the frontend predicate: NEL is blank;
+        // FEFF is text (unlike JavaScript's built-in String.trim).
+        for source in ["", "   ", "\t\r\n", "\u{a0}", "\u{85}"] {
+            for target in [
+                None,
+                Some(""),
+                Some(" \t\r\n"),
+                Some("\u{a0}"),
+                Some("\u{85}"),
+            ] {
+                for status in [
+                    None,
+                    Some("untranslated"),
+                    Some("translated"),
+                    Some("review-needed"),
+                ] {
+                    let f = Fixture::new(source, target);
+                    if let Some(status) = status {
+                        f.save(source, target.unwrap_or_default(), status);
+                    }
+                    let before_state = translations::load(&f.state_root(), "test.blank").unwrap();
+                    let before_source = fs::read(&f.source).unwrap();
+                    let before_target = fs::read(&f.target).ok();
+                    let mut scan = f.scan();
+                    let row = &f.rows()[0];
+                    assert_eq!(row.status, "translated");
+                    assert_eq!(row.source, source);
+                    assert_eq!(row.target, target.unwrap_or_default());
+                    assert_eq!(row.target_present, target.is_some());
+                    let component = &scan.mods[0];
+                    assert_eq!(
+                        (
+                            component.total_keys,
+                            component.translated_keys,
+                            component.no_translation_needed_keys
+                        ),
+                        (1, 0, 1)
+                    );
+
+                    assert_eq!(component.i18n_files[0].target_exists, target.is_some());
+                    assert_eq!(component.status_counts.untranslated, 0);
+                    assert_eq!(component.status_counts.translated, 1);
+                    assert_eq!(component.progress, 1.0);
+                    assert!(imported_baselines(&f.rows(), &before_state, "i18n").is_empty());
+                    assert_eq!(fs::read(&f.source).unwrap(), before_source);
+                    assert_eq!(fs::read(&f.target).ok(), before_target);
+                    crate::scan_snapshot::apply(&mut scan, &f.mods, &f.config).unwrap();
+                    fs::write(&f.source, br#"{"key":"Now needs translation"}"#).unwrap();
+                    // Reload all persisted state, as a fresh application process does.
+                    let mut updated = f.scan();
+                    crate::scan_snapshot::apply(&mut updated, &f.mods, &f.config).unwrap();
+                    assert_eq!(updated.source_deltas.as_ref().unwrap().sources_changed, 1);
+                    assert_eq!(updated.source_deltas.as_ref().unwrap().strings_added, 0);
+                    let component = &updated.mods[0];
+                    assert_eq!(f.rows()[0].status, "untranslated");
+                    assert_eq!(component.status_counts.untranslated, 1);
+                    assert_eq!(component.status_counts.outdated, 0);
+                    assert_eq!(component.no_translation_needed_keys, 0);
+
+                    assert_eq!(component.progress, 0.0);
+                    assert_eq!(
+                        translations::load(&f.state_root(), "test.blank").unwrap(),
+                        before_state
+                    );
+                    assert_eq!(fs::read(&f.target).ok(), before_target);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn feff_is_text_in_status_and_work_counts() {
+        let f = Fixture::new("\u{feff}", Some(""));
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert_eq!(f.scan().mods[0].no_translation_needed_keys, 0);
+
+        f.save("\u{feff}", "", "translated");
+        fs::write(&f.source, br#"{"key":"New text"}"#).unwrap();
+        assert_eq!(f.rows()[0].status, "untranslated");
+        let f = Fixture::new("", Some("\u{feff}"));
+        let scan = f.scan();
+        assert_eq!(f.rows()[0].target, "\u{feff}");
+        assert_eq!(f.rows()[0].status, "translated");
+        assert_eq!(
+            (
+                scan.mods[0].translated_keys,
+                scan.mods[0].no_translation_needed_keys
+            ),
+            (1, 0)
+        );
+    }
+
+    #[test]
+    fn personal_text_retains_review_and_source_hash_changes_with_empty_source() {
+        for status in ["translated", "review-needed", "untranslated"] {
+            let f = Fixture::new("", Some(""));
+            f.save("", " Personal text ", status);
+            let scan = f.scan();
+            assert_eq!(f.rows()[0].status, status);
+            assert_eq!(
+                (
+                    scan.mods[0].translated_keys,
+                    scan.mods[0].no_translation_needed_keys
+                ),
+                (1, 0)
+            );
+
+            fs::write(&f.source, br#"{"key":"Changed source"}"#).unwrap();
+            let row = &f.rows()[0];
+            assert_eq!(row.target, " Personal text ");
+            assert_eq!(
+                row.status,
+                if status == "untranslated" {
+                    "untranslated"
+                } else {
+                    "outdated"
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn exactly_empty_legacy_baseline_reopens_counts_and_export_without_copying_source() {
+        let f = Fixture::new("", Some(""));
+        f.save("", "", "not-translatable");
+        assert_eq!(f.rows()[0].status, "translated");
+        fs::write(&f.source, br#"{"key":"New source"}"#).unwrap();
+        let scan = f.scan();
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert_eq!(f.rows()[0].target, "");
+        assert_eq!(scan.mods[0].translated_keys, 0);
+        assert_eq!(scan.mods[0].no_translation_needed_keys, 0);
+        assert_eq!(scan.mods[0].status_counts.untranslated, 1);
+        let result = crate::export::export_mod(
+            &f.state_root(),
+            "test.blank",
+            &[crate::export::ExportFileInput {
+                relative_dir: "i18n".into(),
+                default_path: f.source.display().to_string(),
+                target_path: f.target.display().to_string(),
+            }],
+        )
+        .unwrap();
+        assert_eq!(result.total_written_keys, 0);
+        assert_eq!(result.total_untranslated, 1);
+        assert!(!f.target.exists());
+        assert!(f.target.with_file_name("de.json.bak").exists());
+        // Other historical baselines still mean the explicit legacy Keep original.
+        f.save("Previous text", "", "not-translatable");
+        assert_eq!(f.rows()[0].target, "New source");
+        assert_eq!(f.rows()[0].status, "translated");
+        assert_eq!(f.scan().mods[0].translated_keys, 1);
+    }
+
+    #[test]
+    fn clear_keeps_work_untranslated() {
+        let f = Fixture::new("Normal source", Some("Installed translation"));
+        f.save("Normal source", "", "untranslated");
+        let scan = f.scan();
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert_eq!(
+            (
+                scan.mods[0].translated_keys,
+                scan.mods[0].no_translation_needed_keys
+            ),
+            (0, 0)
+        );
+
+        assert_eq!(scan.mods[0].progress, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod split_locale_tests {
+    use super::*;
+    #[test]
+    fn split_units_roundtrip_through_batch_working_state_and_folder_export() {
+        let root = crate::test_support::temp_dir("split-working-roundtrip");
+        let mods = root.join("Mods");
+        let folder = mods.join("Example");
+        let config = root.join("data");
+        std::fs::create_dir_all(folder.join("i18n/default")).unwrap();
+        std::fs::write(
+            folder.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Split"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            folder.join("i18n/default/Dialogue.json"),
+            r#"{"hello":"Hello @"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            folder.join("i18n/default/Events.json"),
+            r#"{"start":"Start"}"#,
+        )
+        .unwrap();
+        let scan = scan_mods(&mods, "de", &config);
+        let files = &scan.mods[0].i18n_files;
+        let mut rows_by_dir = HashMap::new();
+        let mut ai_rows = Vec::new();
+        let mut items = Vec::new();
+        for file in files {
+            let rows = load_strings_checked(
+                Path::new(&file.default_path),
+                Path::new(&file.target_path),
+                &ModState::new(),
+                &file.relative_dir,
+            )
+            .unwrap();
+            for row in &rows {
+                ai_rows.push(crate::ai::AiScopeRow {
+                    identity: crate::ai::AiStringIdentity {
+                        mod_unique_id: "Example.Split".into(),
+                        relative_dir: file.relative_dir.clone(),
+                        key: row.key.clone(),
+                    },
+                    source: row.source.clone(),
+                    section: row.section.clone(),
+                    status: row.status.clone(),
+                    default_path: PathBuf::from(&file.default_path),
+                    target_path: PathBuf::from(&file.target_path),
+                    expected_stored: None,
+                    expected_revision: 0,
+                });
+                items.push(crate::batch::BatchExportItem {
+                    relative_dir: file.relative_dir.clone(),
+                    key: row.key.clone(),
+                    source: row.source.clone(),
+                });
+            }
+            rows_by_dir.insert(file.relative_dir.clone(), rows);
+        }
+        let request = crate::ai::AiTranslationRequest {
+            run_id: "split-test".into(),
+            scope: crate::ai::AiScope::Selected,
+            identities: ai_rows.iter().map(|row| row.identity.clone()).collect(),
+            include_open: true,
+            include_changed: true,
+        };
+        crate::ai::validate_request_shape(&request).unwrap();
+        assert_eq!(
+            crate::ai::resolve_scope(&request, &ai_rows).unwrap().len(),
+            2
+        );
+        let mut batch = crate::batch::build_batch("Example.Split", "de", &items);
+        for item in &items {
+            batch["files"][&item.relative_dir][&item.key] =
+                serde_json::json!(if item.key == "hello" {
+                    "Hallo @"
+                } else {
+                    "Los"
+                });
+        }
+        let prepared =
+            crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir).unwrap();
+        assert_eq!(prepared.summary.imported, 2);
+        let working = translations::language_root(&config, "de").unwrap();
+        translations::save_many(&working, "Example.Split", prepared.entries).unwrap();
+        let rescanned = scan_mods(&mods, "de", &config);
+        assert_eq!(rescanned.mods[0].review_needed, 2);
+        assert_eq!(
+            files.iter().map(|f| &f.relative_dir).collect::<Vec<_>>(),
+            rescanned.mods[0]
+                .i18n_files
+                .iter()
+                .map(|f| &f.relative_dir)
+                .collect::<Vec<_>>()
+        );
+        let inputs: Vec<_> = rescanned.mods[0]
+            .i18n_files
+            .iter()
+            .map(|f| crate::export::ExportFileInput {
+                relative_dir: f.relative_dir.clone(),
+                default_path: f.default_path.clone(),
+                target_path: f.target_path.clone(),
+            })
+            .collect();
+        crate::export::validate_paths(&mods, "de", &inputs).unwrap();
+        let exported = crate::export::export_mod(&working, "Example.Split", &inputs).unwrap();
+        assert_eq!(exported.total_written_keys, 2);
+        assert!(!folder.join("i18n/de.json").exists());
+        assert_eq!(
+            read_object_checked(&folder.join("i18n/de/Dialogue.json")).unwrap()["hello"],
+            "Hallo @"
+        );
+        std::fs::write(
+            folder.join("i18n/default/Dialogue.json"),
+            r#"{"hello":"Changed @"}"#,
+        )
+        .unwrap();
+        let changed = scan_mods(&mods, "de", &config);
+        assert_eq!(changed.mods[0].status_counts.outdated, 1);
+        let state = translations::load(&working, "Example.Split").unwrap();
+        let file = changed.mods[0]
+            .i18n_files
+            .iter()
+            .find(|f| f.relative_dir.ends_with("Dialogue.json"))
+            .unwrap();
+        rows_by_dir.insert(
+            file.relative_dir.clone(),
+            load_strings_checked(
+                Path::new(&file.default_path),
+                Path::new(&file.target_path),
+                &state,
+                &file.relative_dir,
+            )
+            .unwrap(),
+        );
+        assert!(crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir).is_err());
+    }
+
+    #[test]
+    fn split_sources_have_stable_units_and_existing_target_membership() {
+        let root = crate::test_support::temp_dir("split-locales");
+        let moddir = root.join("Mods/Example");
+        std::fs::create_dir_all(moddir.join("i18n/default")).unwrap();
+        std::fs::create_dir_all(moddir.join("i18n/de")).unwrap();
+        std::fs::write(
+            moddir.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Split","Version":"1.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Dialogue.json"),
+            r#"{"dialogue.hello":"Hello"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Events.json"),
+            r#"{"event.start":"Start"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Other.json"),
+            r#"{"dialogue.hello":"Hallo"}"#,
+        )
+        .unwrap();
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert_eq!(scan.mods.len(), 1);
+        let files = &scan.mods[0].i18n_files;
+        assert_eq!(files.len(), 2);
+        let dialogue = files
+            .iter()
+            .find(|f| f.relative_dir.ends_with("Dialogue.json"))
+            .unwrap();
+        assert!(dialogue.target_path.ends_with("Other.json"));
+        assert_eq!(dialogue.total_keys, 1);
+        let inputs: Vec<_> = files
+            .iter()
+            .map(|f| crate::export::ExportFileInput {
+                relative_dir: f.relative_dir.clone(),
+                default_path: f.default_path.clone(),
+                target_path: f.target_path.clone(),
+            })
+            .collect();
+        crate::export::validate_paths(&root.join("Mods"), "de", &inputs).unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Events.json"),
+            r#"{"unrelated.key":"Elsewhere"}"#,
+        )
+        .unwrap();
+        assert!(
+            split_target_path(&moddir.join("i18n/default/Events.json"), "de")
+                .unwrap_err()
+                .contains("occupied")
+        );
+        std::fs::remove_file(moddir.join("i18n/de/Events.json")).unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Events.json"),
+            r#"{"dialogue.hello":"Duplicate"}"#,
+        )
+        .unwrap();
+        assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
+            .mods
+            .is_empty());
+        std::fs::write(moddir.join("i18n/default.json"), "{}").unwrap();
+        assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
+            .mods
+            .is_empty());
     }
 }

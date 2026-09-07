@@ -15,7 +15,7 @@ Manual translation, validation, and export work offline without a glossary or
 AI backend.
 
 Translation targets are standard `<mod>/i18n/default.json` source files and
-`<mod>/i18n/<lang>.json` target files. The source is normally English. The app
+`<mod>/i18n/<lang>.json` target files, plus split `i18n/default/*.json` and `i18n/<lang>/*.json` locale folders with unambiguous source-key membership. The source is normally English. The app
 supports built-in and curated custom-language targets; custom targets require
 a matching language mod for use in-game.
 
@@ -24,6 +24,8 @@ or Git repositories; use the Nexus API; or publish translations automatically.
 It may open a browser link from a positive `Nexus:<id>` update key. It is not
 a general editor for Content Patcher, `Data/*.json`, or XNB files. The narrowly
 scoped glossary reads below are the only additional content sources.
+
+Blank source/target pairs need no text and are derived as Done without persisting an approval. Newly populated sources reopen them. Working coverage counts these pairs separately from nonempty translated values and reserves 100% for exact completion.
 
 ## Scanning and Source Changes
 
@@ -102,13 +104,15 @@ Export is explicit and applies to the current mod or all scanned mods:
   visible `.json.bak` backups and atomic replacement. If a later write fails,
   restore earlier targets to their pre-export state.
 
-Portuguese imports prefer `pt-BR.json`; successful exports canonicalize to
-`pt.json`, backing up and removing the fallback. Existing targets, including
+Flat Portuguese imports prefer `i18n/pt-BR.json`; successful exports canonicalize to
+`i18n/pt.json`, backing up and removing the fallback. Split document names are
+literal and do not trigger this language-filename migration. Existing targets, including
 omitted orphan keys, remain recoverable from their export backup.
 
 Translation ZIPs contain only generated target-language i18n files and preserve
 the package's component folders. Publication notes use the same package data.
 Results retain the actual destination and filename for **Show in folder**.
+**Build Stardew Translator Output** previews and writes one locale-only ZIP for all scanned components with effective target-language values in the configured Mods folder. Each included locale combines existing target values for current source keys with saved overrides. Like package ZIPs, it includes token-valid Changed and Review values with warnings without approving them. It reuses export validation, existing destination/overwrite behavior and the result tray. No Nexus, community-library, mod-manager or deployment state is required.
 
 ## External LLM Batches
 

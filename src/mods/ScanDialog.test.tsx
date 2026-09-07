@@ -285,7 +285,7 @@ describe("ScanDialog", () => {
       />,
     );
     expect(
-      screen.getByText(/1 translation entry has no matching English source/),
+      screen.getByText(/1 translation entry without matching English source/),
     ).toBeInTheDocument();
     expect(screen.getByText("Example Mod")).toBeInTheDocument();
     expect(screen.getByText("i18n/de.json")).toBeInTheDocument();
@@ -295,15 +295,26 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Not found in English source")).toBeInTheDocument();
     expect(screen.getByText("removed-key")).toBeInTheDocument();
     expect(
-      screen.getByText(/not in the mod's English source file \(default.json\)/),
+      screen.getByText(
+        /not in the local English source \(default.json or default\/\*.json\)/,
+      ),
     ).toBeInTheDocument();
-    expect(screen.getByText(/removed or renamed/)).toBeInTheDocument();
+    expect(screen.queryByText(/SMAPI ignores them/)).toBeNull();
     expect(
       screen.getByText(/do not count toward progress/i),
     ).toBeInTheDocument();
-    expect(screen.getByText(/No action is required/)).toBeInTheDocument();
+    const information = screen
+      .getByText(/1 translation entry without matching English source/)
+      .closest("details");
+    expect(information).not.toHaveAttribute("open");
+    expect(screen.getByText("removed-key")).not.toBeVisible();
+    fireEvent.click(
+      screen.getByText(/1 translation entry without matching English source/),
+    );
+    fireEvent.click(screen.getByText("i18n/de.json"));
+    expect(screen.getByText("removed-key")).toBeVisible();
     expect(
-      screen.getByText(/retains the original file in its backup/),
+      screen.getByText(/Folder exports retain the original file in a backup/),
     ).toBeInTheDocument();
     expect(document.querySelector("[data-scan-diagnostics]")).not.toHaveClass(
       "is-warning",
@@ -338,9 +349,14 @@ describe("ScanDialog", () => {
     ).toBeInTheDocument();
     expect(diagnostics).toHaveTextContent("1 component skipped");
     expect(
-      screen.getByText(/1 translation entry has no matching English source/),
+      screen.getByText(/1 translation entry without matching English source/),
     ).toBeInTheDocument();
-    expect(diagnostics?.querySelectorAll(":scope > section")).toHaveLength(2);
+    expect(diagnostics?.querySelectorAll(":scope > section")).toHaveLength(1);
+    const summary = screen.getByText(
+      /1 translation entry without matching English source/,
+    );
+    expect(diagnostics).not.toContainElement(summary);
+    expect(summary.closest("details")).not.toHaveAttribute("open");
   });
 
   it("groups many unmatched entries by translation file and keeps them collapsed", () => {

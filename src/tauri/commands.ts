@@ -113,6 +113,8 @@ export interface ScannedI18nFile {
   targetExists: boolean;
   totalKeys: number;
   translatedKeys: number;
+  /** Blank source and target pairs which need no translation text. */
+  noTranslationNeededKeys?: number;
   /** Source keys whose saved status is an unreviewed AI suggestion. */
   reviewNeeded: number;
 }
@@ -127,6 +129,8 @@ export interface ScannedMod {
   i18nFiles: ScannedI18nFile[];
   totalKeys: number;
   translatedKeys: number;
+  /** Blank source and target pairs which need no translation text. */
+  noTranslationNeededKeys?: number;
   /** Unreviewed AI suggestions across all i18n files (dashboard queue). */
   reviewNeeded: number;
   /** 0–1. */
@@ -507,6 +511,15 @@ export function previewTranslationZip(
     targetLanguage,
     components,
   });
+}
+export function previewStardewTranslatorOutput(): Promise<ZipPreview> {
+  return invoke("preview_stardew_translator_output");
+}
+export function buildStardewTranslatorOutput(
+  destination: string,
+  overwrite: boolean,
+): Promise<ZipBuildOutcome> {
+  return invoke("build_stardew_translator_output", { destination, overwrite });
 }
 
 export function pickTranslationZipDestination(

@@ -8,6 +8,7 @@ import {
 } from "react";
 import { ExternalLink, FolderOpen, SearchX } from "lucide-react";
 import { type ScannedMod, openModFolder, openUrl } from "../tauri/commands";
+import { coveragePercent, workingCoveredKeys } from "../coverage";
 
 interface PackageGroup {
   packageId: string;
@@ -15,6 +16,7 @@ interface PackageGroup {
   nexusId: number | null;
   totalKeys: number;
   translatedKeys: number;
+  noTranslationNeededKeys: number;
   reviewNeeded: number;
   fileCount: number;
   progress: number;
@@ -59,6 +61,10 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       (sum, mod) => sum + mod.translatedKeys,
       0,
     );
+    const noTranslationNeededKeys = sortedMods.reduce(
+      (sum, mod) => sum + (mod.noTranslationNeededKeys ?? 0),
+      0,
+    );
     const reviewNeeded = sortedMods.reduce(
       (sum, mod) => sum + mod.reviewNeeded,
       0,
@@ -73,22 +79,21 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
       nexusId: sortedMods.find((mod) => mod.nexusId != null)?.nexusId ?? null,
       totalKeys,
       translatedKeys,
+      noTranslationNeededKeys,
       reviewNeeded,
       fileCount,
-      progress: totalKeys > 0 ? translatedKeys / totalKeys : 0,
+      progress:
+        totalKeys > 0
+          ? (translatedKeys + noTranslationNeededKeys) / totalKeys
+          : 0,
     };
   }).sort((a, b) => byName(groupLabel(a), groupLabel(b)));
 }
 
-function progressStyle(progress: number): CSSProperties {
+function progressStyle(percent: number): CSSProperties {
   return {
-    "--translator-progress": `${Math.round(progress * 100)}%`,
+    "--translator-progress": `${percent}%`,
   } as CSSProperties;
-}
-
-function progressState(progress: number): string | undefined {
-  const percent = Math.round(progress * 100);
-  return percent > 0 && percent < 20 ? "warning" : undefined;
 }
 
 export function ModList({
@@ -475,7 +480,7 @@ function PackageNode({
   ) => void;
   menuOpenId: string | null;
 }) {
-  const percent = Math.round(group.progress * 100);
+  const percent = coveragePercent(workingCoveredKeys(group), group.totalKeys);
   return (
     <>
       <button
@@ -485,7 +490,7 @@ function PackageNode({
         tabIndex={tabStop ? 0 : -1}
         data-tree-id={`package:${group.packageId}`}
         aria-expanded={expanded}
-        title={`${group.translatedKeys.toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} translated, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
+        title={`${workingCoveredKeys(group).toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} ${group.noTranslationNeededKeys ? "covered" : "translated"}${group.noTranslationNeededKeys ? ` (${group.noTranslationNeededKeys} need no translation text)` : ""}, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
         onClick={onToggle}
       >
         <strong>
@@ -501,8 +506,14 @@ function PackageNode({
         <span />
         <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
         <span className="translator-mod-percent">{percent}%</span>
-        <span className="translator-mod-progress" aria-hidden="true">
-          <span style={progressStyle(group.progress)} />
+        <span
+          className="translator-mod-progress"
+          data-complete={
+            group.totalKeys > 0 && workingCoveredKeys(group) >= group.totalKeys
+          }
+          aria-hidden="true"
+        >
+          <span style={progressStyle(percent)} />
         </span>
       </button>
       {expanded &&
@@ -550,7 +561,7 @@ function ModRow({
   menuOpen: boolean;
 }) {
   const selected = mod.uniqueId === selectedId;
-  const percent = Math.round(mod.progress * 100);
+  const percent = coveragePercent(workingCoveredKeys(mod), mod.totalKeys);
   const multipleSources = mod.i18nFiles.length > 1;
   return (
     <div
@@ -560,9 +571,8 @@ function ModRow({
       tabIndex={tabStop ? 0 : -1}
       data-tree-id={treeId}
       data-mod-id={mod.uniqueId}
-      data-mod-progress={`${mod.translatedKeys} / ${mod.totalKeys} · ${percent}%`}
-      data-progress-state={progressState(mod.progress)}
-      title={`${mod.name} · ${mod.translatedKeys.toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} translated · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
+      data-mod-progress={`${workingCoveredKeys(mod)} / ${mod.totalKeys} · ${percent}%`}
+      title={`${mod.name} · ${workingCoveredKeys(mod).toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} ${mod.noTranslationNeededKeys ? "covered" : "translated"}${mod.noTranslationNeededKeys ? ` (${mod.noTranslationNeededKeys} need no translation text)` : ""} · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
       onClick={() => onSelect(mod.uniqueId)}
       onContextMenu={(event) => onContextMenu(mod, event, event.currentTarget)}
     >
@@ -585,7 +595,9 @@ function ModRow({
           </span>
         )}
       </span>
-      <span className="translator-mod-version">{mod.version || "—"}</span>
+      <span className="translator-mod-version" title={mod.version || undefined}>
+        {mod.version || "—"}
+      </span>
       <span
         className="translator-mod-nexus"
         title={
@@ -599,8 +611,14 @@ function ModRow({
       <span className="translator-mod-percent">
         {mod.totalKeys > 0 ? `${percent}%` : "—"}
       </span>
-      <span className="translator-mod-progress" aria-hidden="true">
-        <span style={progressStyle(mod.progress)} />
+      <span
+        className="translator-mod-progress"
+        data-complete={
+          mod.totalKeys > 0 && workingCoveredKeys(mod) >= mod.totalKeys
+        }
+        aria-hidden="true"
+      >
+        <span style={progressStyle(percent)} />
       </span>
       <button
         type="button"

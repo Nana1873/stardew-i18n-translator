@@ -12,6 +12,7 @@ function safeFileName(value: string): string {
 
 export function TranslationZipDialog({
   preview,
+  combined = false,
   componentCount,
   error,
   building,
@@ -21,6 +22,7 @@ export function TranslationZipDialog({
   onClose,
 }: {
   preview: ZipPreview | null;
+  combined?: boolean;
   componentCount: number | null;
   error: string | null;
   building: boolean;
@@ -34,15 +36,21 @@ export function TranslationZipDialog({
   const fileName = useMemo(
     () =>
       preview
-        ? safeFileName(
-            `${preview.packageName} - ${version} - ${preview.targetLanguage} (${preview.targetLang}).zip`,
-          )
+        ? combined
+          ? preview.defaultFileName
+          : safeFileName(
+              `${preview.packageName} - ${version} - ${preview.targetLanguage} (${preview.targetLang}).zip`,
+            )
         : "",
-    [preview, version],
+    [preview, version, combined],
   );
   const blocked = Boolean(preview?.problems.length);
   const empty = preview?.entries.length === 0;
-  const hasVersionConflicts = Boolean(preview?.versionConflicts.length);
+  const hasVersionConflicts =
+    !combined && Boolean(preview?.versionConflicts.length);
+  const title = combined
+    ? "Build Stardew Translator Output"
+    : "Build translation ZIP";
   const versionReady = !hasVersionConflicts || versionConfirmed;
   const dialogRef = useRef<HTMLElement>(null);
   const { onDialogKeyDown } = useDialogAccessibility({
@@ -59,22 +67,24 @@ export function TranslationZipDialog({
         role="dialog"
         aria-modal="true"
         aria-busy={building}
-        aria-label="Build translation ZIP"
+        aria-label={title}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">Build translation ZIP</h2>
+            <h2 className="translator-heading">{title}</h2>
             <div className="translator-kicker">
-              {preview
-                ? `${preview.packageName} · ${
-                    componentCount == null
-                      ? "component count unavailable"
-                      : componentCount === 1
-                        ? "single mod"
-                        : `package with ${componentCount} components`
-                  }`
-                : "Preparing package preview"}
+              {combined
+                ? "Locale files from the configured Mods folder"
+                : preview
+                  ? `${preview.packageName} · ${
+                      componentCount == null
+                        ? "component count unavailable"
+                        : componentCount === 1
+                          ? "single mod"
+                          : `package with ${componentCount} components`
+                    }`
+                  : "Preparing package preview"}
             </div>
           </div>
           <button
@@ -98,27 +108,31 @@ export function TranslationZipDialog({
           {preview && (
             <>
               <div className="translator-flow-fields">
-                <label className="translator-flow-field">
-                  Package version
-                  <input
-                    value={version}
-                    disabled={building}
-                    onChange={(event) => {
-                      setVersion(event.target.value);
-                      setVersionConfirmed(false);
-                    }}
-                  />
-                </label>
+                {!combined && (
+                  <label className="translator-flow-field">
+                    Package version
+                    <input
+                      value={version}
+                      disabled={building}
+                      onChange={(event) => {
+                        setVersion(event.target.value);
+                        setVersionConfirmed(false);
+                      }}
+                    />
+                  </label>
+                )}
                 <label className="translator-flow-field">
                   Archive name
                   <input value={fileName} readOnly />
                 </label>
               </div>
 
-              <p className="translator-kicker">
-                Version selected from <strong>{preview.versionSource}</strong>.
-                The native save dialog lets you edit the final filename.
-              </p>
+              {!combined && (
+                <p className="translator-kicker">
+                  Version selected from <strong>{preview.versionSource}</strong>
+                  . The native save dialog lets you edit the final filename.
+                </p>
+              )}
 
               {hasVersionConflicts && (
                 <label className="translator-flow-callout is-warning translator-confirm-line">
@@ -227,7 +241,8 @@ export function TranslationZipDialog({
 
               <p className="translator-kicker">
                 {preview.totalStrings} of {preview.totalSourceStrings} source
-                strings will be included from the real package preview.
+                strings will be included from the{" "}
+                {combined ? "Mods folder" : "package"} preview.
               </p>
             </>
           )}
@@ -242,14 +257,16 @@ export function TranslationZipDialog({
           >
             Cancel
           </button>
-          <button
-            className="translator-button translator-button-quiet"
-            type="button"
-            disabled={!preview || building || !version.trim()}
-            onClick={() => onReleaseNotes(version.trim(), fileName)}
-          >
-            Translation notes
-          </button>
+          {!combined && (
+            <button
+              className="translator-button translator-button-quiet"
+              type="button"
+              disabled={!preview || building || !version.trim()}
+              onClick={() => onReleaseNotes(version.trim(), fileName)}
+            >
+              Translation notes
+            </button>
+          )}
           <button
             className="translator-button translator-button-primary"
             type="button"
@@ -258,7 +275,7 @@ export function TranslationZipDialog({
               blocked ||
               empty ||
               building ||
-              !version.trim() ||
+              (!combined && !version.trim()) ||
               !versionReady
             }
             onClick={() => onBuild(version.trim(), fileName)}

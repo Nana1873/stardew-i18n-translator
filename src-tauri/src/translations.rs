@@ -437,6 +437,38 @@ pub fn save_many(
     )
 }
 
+/// Adopt disk translations only while their entries remain untracked. A loader
+/// may have read its candidates before another command saved a manual edit.
+pub(crate) fn adopt_imported_baselines(
+    config_dir: &Path,
+    unique_id: &str,
+    entries: Vec<(String, StoredString)>,
+) -> Result<(), String> {
+    if entries.is_empty() {
+        return Ok(());
+    }
+    let mut session = write_guard()
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let mut state = load(config_dir, unique_id)?;
+    let mut touched_keys = Vec::new();
+    for (key, entry) in entries {
+        if let std::collections::hash_map::Entry::Vacant(slot) = state.entry(key) {
+            touched_keys.push(slot.key().clone());
+            slot.insert(entry);
+        }
+    }
+    if touched_keys.is_empty() {
+        return Ok(());
+    }
+    write_state(
+        &state_path(config_dir, unique_id),
+        &state,
+        &mut session,
+        &touched_keys,
+    )
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct ReversibleModEdit {
     pub mod_unique_id: String,
@@ -1224,6 +1256,75 @@ mod tests {
         assert_eq!(state.len(), 50);
         assert_eq!(state.get(&entry_key("i18n", "k7")).unwrap().target, "v7");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn delayed_imported_baselines_preserve_newer_manual_values_and_clears() {
+        let dir = crate::test_support::temp_dir("delayed-imported-baselines");
+        std::fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("default.json");
+        let target = dir.join("de.json");
+        std::fs::write(
+            &source,
+            r#"{"edited":"Hello","cleared":"Hello","new":"Hello"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &target,
+            r#"{"edited":"Imported","cleared":"Imported","new":"New baseline"}"#,
+        )
+        .unwrap();
+        let config = dir.join("state");
+        let (read_tx, read_rx) = std::sync::mpsc::channel();
+        let (resume_tx, resume_rx) = std::sync::mpsc::channel();
+        let pending_config = config.clone();
+        let pending = std::thread::spawn(move || {
+            let state = load(&pending_config, "Fixture.Mod").unwrap();
+            let rows =
+                crate::scanner::load_strings_checked(&source, &target, &state, "i18n").unwrap();
+            let candidates = crate::scanner::imported_baselines(&rows, &state, "i18n");
+            read_tx.send(()).unwrap();
+            resume_rx.recv().unwrap();
+            adopt_imported_baselines(&pending_config, "Fixture.Mod", candidates).unwrap();
+        });
+        read_rx.recv().unwrap();
+        let manual = vec![
+            (entry_key("i18n", "edited"), entry("My newer translation")),
+            (
+                entry_key("i18n", "cleared"),
+                StoredString {
+                    status: "untranslated".into(),
+                    ..entry("")
+                },
+            ),
+        ];
+        save_many(&config, "Fixture.Mod", manual.clone()).unwrap();
+        resume_tx.send(()).unwrap();
+        pending.join().unwrap();
+        let state = load(&config, "Fixture.Mod").unwrap();
+        for (key, value) in manual {
+            assert_eq!(state[&key], value);
+        }
+        assert_eq!(state[&entry_key("i18n", "new")], entry("New baseline"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn repeated_imported_baselines_do_not_write_backups_or_invalidate_undo() {
+        let dir = crate::test_support::temp_dir("imported-baselines-idempotent");
+        let key = entry_key("i18n", "hello");
+        let candidates = vec![(key.clone(), entry("Imported"))];
+        adopt_imported_baselines(&dir, "Fixture.Mod", candidates.clone()).unwrap();
+        let before = load_snapshot(&dir, "Fixture.Mod").unwrap();
+        let path = state_path(&dir, "Fixture.Mod");
+        let body = std::fs::read(&path).unwrap();
+        adopt_imported_baselines(&dir, "Fixture.Mod", candidates).unwrap();
+        let after = load_snapshot(&dir, "Fixture.Mod").unwrap();
+        assert_eq!(after.entry_revision(&key), before.entry_revision(&key));
+        assert_eq!(std::fs::read(&path).unwrap(), body);
+        assert!(!sibling(&path, ".bak").exists());
+        assert!(!sibling(&path, ".tmp").exists());
+        std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]

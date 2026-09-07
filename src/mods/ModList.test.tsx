@@ -35,6 +35,18 @@ function mod(partial: Partial<ScannedMod> & { uniqueId: string }): ScannedMod {
 }
 
 describe("ModList", () => {
+  it("keeps a long version available in its tooltip without changing the version cell", () => {
+    const version = "3.0.11-remastered-community-preview";
+    render(
+      <ModList
+        mods={[mod({ uniqueId: "long", version })]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByTitle(version)).toHaveClass("translator-mod-version");
+    expect(screen.getByTitle(version)).toHaveTextContent(version);
+  });
   it("renders a single-component package as one flat row", () => {
     render(
       <ModList
@@ -152,6 +164,59 @@ describe("ModList", () => {
     expect(fill).not.toBeNull();
     expect(fill!.style.getPropertyValue("--translator-progress")).toBe("50%");
     expect(screen.getByText("50%")).toBeInTheDocument();
+    expect(fill!.parentElement).toHaveAttribute("data-complete", "false");
+  });
+
+  it("keeps a nearly complete package and its incomplete component below 100 percent", () => {
+    render(
+      <ModList
+        mods={[
+          mod({
+            uniqueId: "a",
+            name: "Almost",
+            packageId: "Bundle",
+            totalKeys: 999,
+            translatedKeys: 998,
+            progress: 998 / 999,
+          }),
+          mod({
+            uniqueId: "b",
+            name: "Complete",
+            packageId: "Bundle",
+            totalKeys: 1,
+            translatedKeys: 1,
+            progress: 1,
+          }),
+        ]}
+        selectedId={null}
+        onSelect={() => {}}
+      />,
+    );
+    expect(screen.getByRole("treeitem", { name: /Bundle/ })).toHaveTextContent(
+      "99.9%",
+    );
+    expect(screen.getByRole("treeitem", { name: /Almost/ })).toHaveAttribute(
+      "data-mod-progress",
+      "998 / 999 · 99.9%",
+    );
+    expect(
+      screen.getByRole("treeitem", { name: /Complete/ }),
+    ).toHaveTextContent("100%");
+    expect(
+      screen
+        .getByRole("treeitem", { name: /Bundle/ })
+        .querySelector(".translator-mod-progress"),
+    ).toHaveAttribute("data-complete", "false");
+    expect(
+      screen
+        .getByRole("treeitem", { name: /Almost/ })
+        .querySelector(".translator-mod-progress"),
+    ).toHaveAttribute("data-complete", "false");
+    expect(
+      screen
+        .getByRole("treeitem", { name: /Complete/ })
+        .querySelector(".translator-mod-progress"),
+    ).toHaveAttribute("data-complete", "true");
   });
 
   it("sorts packages alphabetically by name", () => {
@@ -486,4 +551,62 @@ describe("ModList", () => {
     expect(packageRow).toHaveAttribute("aria-expanded", "true");
     expect(screen.getAllByRole("treeitem")).toHaveLength(4);
   });
+});
+
+it("includes no-text-needed work in progress without claiming translated strings", () => {
+  render(
+    <ModList
+      mods={[
+        mod({
+          uniqueId: "blank",
+          totalKeys: 2,
+          translatedKeys: 1,
+          noTranslationNeededKeys: 1,
+          progress: 1,
+        }),
+      ]}
+      selectedId={null}
+      onSelect={vi.fn()}
+    />,
+  );
+  const item = screen.getByRole("treeitem", { name: /blank/ });
+  expect(item).toHaveAttribute("data-mod-progress", "2 / 2 · 100%");
+  expect(item.getAttribute("title")).toContain("1 need no translation text");
+});
+
+it("marks complete package and component bars from exact work counts including blank sources", () => {
+  render(
+    <ModList
+      mods={[
+        mod({
+          uniqueId: "text",
+          packageId: "Bundle",
+          totalKeys: 1,
+          translatedKeys: 1,
+        }),
+        mod({
+          uniqueId: "blank",
+          packageId: "Bundle",
+          totalKeys: 12,
+          translatedKeys: 0,
+          noTranslationNeededKeys: 12,
+        }),
+        mod({ uniqueId: "empty", totalKeys: 0 }),
+      ]}
+      selectedId={null}
+      onSelect={vi.fn()}
+    />,
+  );
+  for (const name of [/Bundle/, /text/, /blank/]) {
+    expect(
+      screen
+        .getByRole("treeitem", { name })
+        .querySelector(".translator-mod-progress"),
+    ).toHaveAttribute("data-complete", "true");
+  }
+  expect(
+    screen
+      .getByRole("treeitem", { name: /empty/ })
+      .querySelector(".translator-mod-progress"),
+  ).toHaveAttribute("data-complete", "false");
 });

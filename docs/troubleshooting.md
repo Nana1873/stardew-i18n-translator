@@ -95,7 +95,14 @@ Include the app version from **Settings > About**, what you expected, what
 happened, and a few steps to reproduce it. A screenshot or small synthetic
 example is helpful; a short report is enough.
 
-Logs can be opened from **Settings > About**. General diagnostic entries can
+Logs can be opened from **Settings > About**. With diagnostic logging enabled,
+scan, string loading, import and export operations record paired start/finish
+entries with an operation ID, duration and outcome. Counts help identify the
+work involved; the operation summaries do not include translation text or full
+dictionaries. Preparation failures are recorded too. When reporting a problem,
+include the entries for the affected operation ID.
+
+General diagnostic entries can
 contain local paths, so remove private information before attaching them.
 Never include credentials, Codex authentication files, or a full copy of your
 game or Mods folder.

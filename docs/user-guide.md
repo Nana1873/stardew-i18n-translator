@@ -101,6 +101,8 @@ translate game assets, replace your chosen language pack, or guarantee that an
 AI model will use the right wording. Matching terms also accompany AI requests;
 see [data sent to AI](ai.md#data-and-privacy).
 
+A blank English source with a blank target needs no translation text and counts as done. It is not a saved approval: if a mod update adds source text, the entry becomes Open again. Coverage reaches 100% and turns green only when every required string is covered.
+
 ## Export translation files
 
 Choose **Export…** for the current mod or all scanned mods. The confirmation
@@ -121,6 +123,10 @@ if you need to restore an earlier file.
 
 Portuguese export uses `pt.json`; an existing `pt-BR.json` is accepted on import
 and backed up when normalized during export.
+
+For a combined locale-only archive, choose **Export… > Build Stardew Translator Output**. Its preview includes all scanned components with effective target-language values in the configured Mods folder. Each included locale combines the existing target values for current source keys with saved overrides, using the same validation rules. Changed and Review values are included with warnings and retain their status. Choose a ZIP destination and confirm replacement if that file exists. The output preserves mod-relative folders; it contains no mod assets or manifests and does not install anything. Existing per-mod JSON export and package ZIP actions remain available.
+
+Split locale folders such as `i18n/default/Dialogue.json` and `i18n/de/Dialogue.json` are also supported. Source keys identify the matching target segment, even when filenames differ. Ambiguous or mixed layouts are reported rather than guessed.
 
 ## Share a translation
 

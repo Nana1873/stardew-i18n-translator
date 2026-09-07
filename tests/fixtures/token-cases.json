@@ -136,6 +136,246 @@
     {
       "value": "Price tag 100% plain",
       "tokens": []
+    },
+    {
+      "value": "$hHello $hBonjour $action $query $help",
+      "tokens": ["$h", "$h", "$action", "$query", "$help"]
+    },
+    {
+      "value": "$query FLAG#Yes#$action AddMail Current Flag received|No#$b#Later",
+      "tokens": [
+        "$query",
+        "#",
+        "#$action AddMail Current Flag received|",
+        "#$b#"
+      ]
+    },
+    {
+      "value": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3\" Portraits/Test",
+      "tokens": [
+        "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"\" Portraits/Test",
+        "@",
+        "$3"
+      ]
+    },
+    {
+      "value": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \\\"Hello @ $3\\\" Portraits/Test",
+      "tokens": [
+        "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \\\"\\\" Portraits/Test",
+        "@",
+        "$3"
+      ]
+    },
+    {
+      "value": "#$action Other.Command NPC \"a|b\"#",
+      "tokens": ["#$action Other.Command NPC \"a|b\"#"]
+    },
+    {
+      "value": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#",
+      "tokens": [
+        "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"",
+        "#"
+      ]
+    },
+    {
+      "value": "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\"",
+      "tokens": [
+        "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\""
+      ]
+    }
+  ],
+  "comparisons": [
+    {
+      "name": "quoted BETAS translation key cannot be translated",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Verlassend\"#",
+      "blocked": true
+    },
+    {
+      "name": "escaped quoted terminal BETAS translation key remains protected",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\"",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Verlassend\\\"",
+      "blocked": true
+    },
+    {
+      "name": "BETAS root asset translation key cannot be replaced with prose",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Example.Dialogue:Farewell\"",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"See you tomorrow\"",
+      "blocked": true
+    },
+    {
+      "name": "unchanged BETAS lookup key permits surrounding prose translation",
+      "source": "Goodbye!#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#See you!",
+      "target": "Tschuess!#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#Bis bald!",
+      "blocked": false
+    },
+    {
+      "name": "BETAS message with colon prose stays translatable",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Remember: bring your tools.\"#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Denk daran: bring deine Werkzeuge mit.\"#",
+      "blocked": false
+    },
+    {
+      "name": "BETAS literal URL is not a runtime translation key",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"https://example.com/help\"#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"https://example.com/hilfe\"#",
+      "blocked": false
+    },
+    {
+      "name": "portrait followed by uppercase prose",
+      "source": "$hHello $hAgain",
+      "target": "$hHallo $hWieder",
+      "blocked": false
+    },
+    {
+      "name": "portrait change remains blocked",
+      "source": "$hHello",
+      "target": "$sHallo",
+      "blocked": true
+    },
+    {
+      "name": "numeric portrait change remains blocked",
+      "source": "$27Hello",
+      "target": "$28Hallo",
+      "blocked": true
+    },
+    {
+      "name": "query else prose",
+      "source": "$query FLAG#Yes#$action AddMail Current Flag received|No#$b#Later",
+      "target": "$query FLAG#Yes#$action AddMail Current Flag received|Nein#$b#Later",
+      "blocked": false
+    },
+    {
+      "name": "query action argument",
+      "source": "$query FLAG#Yes#$action AddMail Current Flag received|No#$b#Later",
+      "target": "$query FLAG#Yes#$action AddMail Current Other received|No#$b#Later",
+      "blocked": true
+    },
+    {
+      "name": "query action mode",
+      "source": "$query FLAG#Yes#$action AddMail Current Flag received|No#$b#Later",
+      "target": "$query FLAG#Yes#$action AddMail Current Flag all|No#$b#Later",
+      "blocked": true
+    },
+    {
+      "name": "query already in else opaque action",
+      "source": "$query FLAG#Yes|No#$action Other.Command a|secret#",
+      "target": "$query FLAG#Yes|No#$action Other.Command a|changed#",
+      "blocked": true
+    },
+    {
+      "name": "known message prose",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hallo @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "blocked": false
+    },
+    {
+      "name": "npc",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Other \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "portrait",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Other 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "control",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 2 true#",
+      "blocked": true
+    },
+    {
+      "name": "action",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.Other.Command Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "embedded portrait",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $5 {{name}} [74]\" Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "embedded name",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello  $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "embedded CP",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{other}} [74]\" Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "embedded item",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [75]\" Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "broken close",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74] Portraits/Test 1 true#",
+      "blocked": true
+    },
+    {
+      "name": "unknown quoted arguments",
+      "source": "#$action Other.Command NPC \"hello\"#",
+      "target": "#$action Other.Command NPC \"hallo\"#",
+      "blocked": true
+    },
+    {
+      "name": "unknown quoted pipe",
+      "source": "#$action Other.Command NPC \"a|b\"#",
+      "target": "#$action Other.Command NPC \"a|c\"#",
+      "blocked": true
+    },
+    {
+      "name": "required placeholder",
+      "source": "Hello {0}",
+      "target": "Hallo",
+      "blocked": true
+    },
+    {
+      "name": "player substitution",
+      "source": "Hello farmer",
+      "target": "Hallo @",
+      "blocked": true
+    },
+    {
+      "name": "opaque complex message $action AddMoney 500",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"$action AddMoney 500\" Portraits/Test#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"$action AddMoney 999\" Portraits/Test#",
+      "blocked": true
+    },
+    {
+      "name": "opaque complex message $query FLAG#Yes|No",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"$query FLAG#Yes|No\" Portraits/Test#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"$query OTHER#Yes|No\" Portraits/Test#",
+      "blocked": true
+    },
+    {
+      "name": "opaque complex message $v EventId",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"$v EventId\" Portraits/Test#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"$v OtherId\" Portraits/Test#",
+      "blocked": true
+    },
+    {
+      "name": "opaque complex message %noturn",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"%noturn\" Portraits/Test#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"%revealtaste\" Portraits/Test#",
+      "blocked": true
+    },
+    {
+      "name": "ambiguous escaped inner quote remains opaque",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"Hello \\\"word#tail\" Portraits/Test#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"Hallo \\\"word#tail\" Portraits/Test#",
+      "blocked": true
     }
   ]
 }

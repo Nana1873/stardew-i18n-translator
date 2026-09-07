@@ -77,6 +77,12 @@ export function extractProtectedTokens(value: string): string[] {
       continue;
     }
 
+    const action = readBetasMessage(value, offset);
+    if (action) {
+      tokens.push(...action.tokens);
+      offset = action.end;
+      continue;
+    }
     const token =
       readContentPatcherToken(value, offset) ??
       readMailCommand(value, offset) ??
@@ -278,6 +284,54 @@ function readMailCommand(value: string, offset: number): Token | null {
   return end >= 0 ? token(value, offset, end + 2) : null;
 }
 
+// BETAS DialogueBox argument 2 accepts prose or a runtime translation key.
+// NPC and remaining arguments stay literal; complex messages stay opaque.
+function readBetasMessage(
+  value: string,
+  offset: number,
+): { end: number; tokens: string[] } | null {
+  const prefix = "#$action Spiderbuttons.BETAS_DialogueBox ";
+  if (!value.startsWith(prefix, offset)) return null;
+  let cursor = offset + prefix.length;
+  const npcStart = cursor;
+  while (cursor < value.length && !/[\s#"]/.test(value[cursor])) cursor++;
+  if (cursor === npcStart) return null;
+  while (value[cursor] === " ") cursor++;
+  const escapedQuote = String.fromCharCode(92, 34);
+  const quote = value.startsWith(escapedQuote, cursor)
+    ? escapedQuote
+    : value[cursor] === '"'
+      ? '"'
+      : null;
+  if (!quote) return null;
+  const start = cursor + quote.length;
+  const close = value.indexOf(quote, start);
+  if (close < 0) return null;
+  const body = value.slice(start, close);
+  // Only the verified simple message subset is transparent. Argument-bearing
+  // dialogue commands need their own grammar; keep the whole action opaque.
+  if (/[\\"%]/.test(body) || /\$(?![0-9])/.test(body)) return null;
+  const next = value.indexOf("#", close + quote.length);
+  const end = next < 0 ? value.length : next;
+  const suffix = value.slice(close + quote.length, end);
+  if (/["|]/.test(suffix)) return null;
+  // A quoted asset:key still resolves at runtime. Preserve its whole action,
+  // including terminal actions without a closing #. URLs remain ordinary text.
+  if (
+    /^[^\p{White_Space}:]+:[^\p{White_Space}:]+$/u.test(body) &&
+    !body.includes("://")
+  ) {
+    return { end, tokens: [value.slice(offset, end)] };
+  }
+  return {
+    end,
+    tokens: [
+      value.slice(offset, start) + value.slice(close, end),
+      ...extractProtectedTokens(body),
+    ],
+  };
+}
+
 function readDialogueBreak(value: string, offset: number): Token | null {
   if (!value.startsWith("#$", offset)) return null;
 
@@ -293,6 +347,20 @@ function readDialogueBreak(value: string, offset: number): Token | null {
     return token(value, offset, command.end + 1);
   }
 
+  // Only the first unquoted query branch separator may end action arguments.
+  // A later pipe in an opaque action is not another branch delimiter.
+  if (value.startsWith("#$action ", offset) && value.startsWith("$query ")) {
+    const pipe = value.indexOf("|", offset + 2),
+      hash = value.indexOf("#", offset + 2);
+    if (
+      pipe >= 0 &&
+      value.indexOf("|") === pipe &&
+      !value.slice(0, offset).includes('"') &&
+      (hash < 0 || pipe < hash) &&
+      !value.slice(offset, pipe).includes('"')
+    )
+      return token(value, offset, pipe + 1);
+  }
   const end = value.indexOf("#", offset + 2);
   if (end < 0) return null;
 
@@ -465,6 +533,8 @@ function readSimpleDialogueCommand(
   value: string,
   offset: number,
 ): Token | null {
+  if (value.startsWith("$h", offset) && /[A-Z]/.test(value[offset + 2] ?? ""))
+    return token(value, offset, offset + 2);
   const match = simpleDialogueCommandPattern.exec(value.slice(offset));
   return match ? token(value, offset, offset + match[0].length) : null;
 }

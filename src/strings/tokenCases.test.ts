@@ -6,6 +6,7 @@
  * skip rule disagree. Add new cases to the fixture, never to one suite only.
  */
 import fixture from "../../tests/fixtures/token-cases.json";
+import { validate } from "./validation";
 import { extractProtectedTokens } from "./protectedTokens";
 
 describe("shared token fixture (TS ↔ Rust parity)", () => {
@@ -19,3 +20,13 @@ describe("shared token fixture (TS ↔ Rust parity)", () => {
     });
   }
 });
+
+for (const testCase of fixture.comparisons) {
+  it(testCase.name, () => {
+    const blocked = validate(testCase.source, testCase.target, true).some(
+      (issue) =>
+        issue.ruleId === "token-missing" || issue.ruleId === "token-added",
+    );
+    expect(blocked).toBe(testCase.blocked);
+  });
+}

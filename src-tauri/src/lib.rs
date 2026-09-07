@@ -14,6 +14,7 @@ mod lang_pack;
 mod language;
 mod llm;
 mod operation_history;
+mod operation_log;
 mod release_zip;
 mod scan_snapshot;
 mod scanner;
@@ -87,35 +88,53 @@ fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, 
 
 #[tauri::command(async)]
 fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<ScanResult, String> {
-    let target_lang = language::normalize_target_code(&target_lang)?;
-    let config = config_dir(&app)?;
-    let mods_root = PathBuf::from(mods_path.trim());
-    if !mods_root.is_dir() {
-        return Err(format!(
-            "The selected Mods folder {} is unavailable.",
-            mods_root.display()
-        ));
-    }
-    let mut result = scanner::scan_mods(&mods_root, &target_lang, &config);
-    if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
-        log::warn!(target: "app", "Could not update source-change scan baseline: {error}");
-        result.warnings.push(format!(
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "scan_mods",
+        || {
+            let target_lang = language::normalize_target_code(&target_lang)?;
+            let config = config_dir(&app)?;
+            let mods_root = PathBuf::from(mods_path.trim());
+            if !mods_root.is_dir() {
+                return Err(format!(
+                    "The selected Mods folder {} is unavailable.",
+                    mods_root.display()
+                ));
+            }
+            let mut result = scanner::scan_mods(&mods_root, &target_lang, &config);
+            if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
+                log::warn!(target: "app", "Could not update source-change scan baseline: {error}");
+                result.warnings.push(format!(
             "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
         ));
-    }
-    if let Some((warning_count, skipped_count)) = scan_warning_counts(&result) {
-        log::warn!(
-            target: "app",
-            "scan_mods({target_lang}): {warning_count} warning(s), {skipped_count} skipped component(s)"
-        );
-    }
-    log::info!(
-        target: "app",
-        "scan_mods({target_lang}): {} mods, {} i18n files",
-        result.mod_count,
-        result.file_count
-    );
-    Ok(result)
+            }
+            if let Some((warning_count, skipped_count)) = scan_warning_counts(&result) {
+                log::warn!(
+                    target: "app",
+                    "scan_mods({target_lang}): {warning_count} warning(s), {skipped_count} skipped component(s)"
+                );
+            }
+            log::info!(
+                target: "app",
+                "scan_mods({target_lang}): {} mods, {} i18n files",
+                result.mod_count,
+                result.file_count
+            );
+            Ok(result)
+        },
+        |r| {
+            Summary::new(
+                if r.traversal_complete {
+                    Outcome::Success
+                } else {
+                    Outcome::Partial
+                },
+                r.mod_count,
+                r.file_count,
+                r.warnings.len(),
+            )
+        },
+    )
 }
 
 #[cfg(test)]
@@ -166,7 +185,7 @@ mod scan_logging_tests {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_strings(
     app: AppHandle,
     mod_unique_id: String,
@@ -174,25 +193,30 @@ fn load_strings(
     default_path: String,
     target_path: String,
 ) -> Result<Vec<scanner::StringRow>, String> {
-    let config = translation_config_dir(&app)?;
-    // A corrupted state file is surfaced to the user (instead of silently
-    // showing everything untranslated and inviting an overwrite).
-    let state = translations::load(&config, &mod_unique_id)?;
-    let rows = scanner::load_strings_checked(
-        Path::new(&default_path),
-        Path::new(&target_path),
-        &state,
-        &relative_dir,
-    )?;
-    // Adopt pre-existing <lang>.json translations the user never saved so they
-    // gain a source-hash baseline — without one they could never be flagged
-    // `outdated` when the mod's English source later changes. Idempotent: once
-    // adopted, the keys are in `state` and subsequent opens persist nothing.
-    let baselines = scanner::imported_baselines(&rows, &state, &relative_dir);
-    if !baselines.is_empty() {
-        translations::save_many(&config, &mod_unique_id, baselines)?;
-    }
-    Ok(rows)
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "load_strings",
+        || {
+            let config = translation_config_dir(&app)?;
+            // A corrupted state file is surfaced to the user (instead of silently
+            // showing everything untranslated and inviting an overwrite).
+            let state = translations::load(&config, &mod_unique_id)?;
+            let rows = scanner::load_strings_checked(
+                Path::new(&default_path),
+                Path::new(&target_path),
+                &state,
+                &relative_dir,
+            )?;
+            // Adopt pre-existing <lang>.json translations the user never saved so they
+            // gain a source-hash baseline — without one they could never be flagged
+            // `outdated` when the mod's English source later changes. Idempotent: once
+            // adopted, the keys are in `state` and subsequent opens persist nothing.
+            let baselines = scanner::imported_baselines(&rows, &state, &relative_dir);
+            translations::adopt_imported_baselines(&config, &mod_unique_id, baselines)?;
+            Ok(rows)
+        },
+        |r| Summary::new(Outcome::Success, r.len(), 1, 0),
+    )
 }
 
 #[tauri::command]
@@ -326,7 +350,7 @@ fn operation_file_location(path: &str) -> (Option<String>, Option<String>) {
 /// completed file operation into a reported failure. A poisoned in-memory
 /// history lock is therefore logged and the real backend result still wins.
 fn remember_operation(
-    history: &State<'_, operation_history::OperationHistoryState>,
+    history: &operation_history::OperationHistoryState,
     operation: operation_history::CompletedOperation,
 ) {
     if let Err(error) = history.record(operation) {
@@ -350,76 +374,137 @@ fn compact_export_warnings(skipped: &[export::SkippedKey]) -> Vec<String> {
     warnings
 }
 
-#[tauri::command]
+// Async export commands may overlap; their temporary files and rollback paths must not.
+static EXPORT_WRITE: Mutex<()> = Mutex::new(());
+
+fn export_write_guard() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    EXPORT_WRITE.try_lock().map_err(|error| match error {
+        std::sync::TryLockError::WouldBlock => {
+            "An export or settings update is already running. Wait for it to finish and try again."
+                .to_string()
+        }
+        std::sync::TryLockError::Poisoned(_) => {
+            "A previous export or settings update panicked. Restart the app before trying again."
+                .to_string()
+        }
+    })
+}
+
+#[cfg(test)]
+mod export_dispatch_tests {
+    #[test]
+    fn concurrent_export_is_rejected_and_completion_releases_the_guard() {
+        let guard = super::export_write_guard().unwrap();
+        let competing = std::thread::spawn(|| super::export_write_guard().is_err());
+        assert!(competing.join().unwrap());
+        drop(guard);
+        assert!(super::export_write_guard().is_ok());
+        let failed_export = || -> Result<(), String> {
+            let _guard = super::export_write_guard()?;
+            Err("fixture write failure".into())
+        };
+        assert!(failed_export().is_err());
+        assert!(super::export_write_guard().is_ok());
+    }
+}
+
+#[tauri::command(async)]
 fn preview_export(
     app: AppHandle,
     mods: Vec<export::ExportModInput>,
 ) -> Result<export::ExportPreflight, String> {
-    let config = config_dir(&app)?;
-    let settings = settings::load_checked(&config)?;
-    let mods_root = settings
-        .mods_path
-        .map(PathBuf::from)
-        .or_else(|| {
-            settings
-                .stardew_path
-                .as_deref()
-                .map(|path| detection::mods_path_for(Path::new(path)))
-        })
-        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
-    let target_lang = settings
-        .target_lang
-        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
-    let target_lang = language::normalize_target_code(&target_lang)?;
-    let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
-    let files = mods
-        .iter()
-        .flat_map(|request| request.files.iter().cloned())
-        .collect::<Vec<_>>();
-    export::validate_paths(&mods_root, &target_lang, &files)?;
-    export::preview_export(&translations::language_root(&config, &target_lang)?, &mods)
-        .inspect_err(|error| log::error!(target: "app", "preview_export failed: {error}"))
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "preview_export",
+        || {
+            let config = config_dir(&app)?;
+            let settings = settings::load_checked(&config)?;
+            let mods_root = settings
+                .mods_path
+                .map(PathBuf::from)
+                .or_else(|| {
+                    settings
+                        .stardew_path
+                        .as_deref()
+                        .map(|path| detection::mods_path_for(Path::new(path)))
+                })
+                .ok_or_else(|| {
+                    "Configure the Stardew Valley Mods folder before exporting.".to_string()
+                })?;
+            let target_lang = settings.target_lang.ok_or_else(|| {
+                "Choose a target language before exporting translations.".to_string()
+            })?;
+            let target_lang = language::normalize_target_code(&target_lang)?;
+            let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
+            let files = mods
+                .iter()
+                .flat_map(|request| request.files.iter().cloned())
+                .collect::<Vec<_>>();
+            export::validate_paths(&mods_root, &target_lang, &files)?;
+            export::preview_export(&translations::language_root(&config, &target_lang)?, &mods)
+                .inspect_err(|error| log::error!(target: "app", "preview_export failed: {error}"))
+        },
+        |r| {
+            Summary::new(
+                if r.blocking_problem.is_some() {
+                    Outcome::Blocked
+                } else {
+                    Outcome::Success
+                },
+                0,
+                0,
+                usize::from(r.blocking_problem.is_some()),
+            )
+        },
+    )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_mod(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<export::ExportResult, String> {
-    let config = config_dir(&app)?;
-    let settings = settings::load_checked(&config)?;
-    let mods_root = settings
-        .mods_path
-        .map(PathBuf::from)
-        .or_else(|| {
-            settings
-                .stardew_path
-                .as_deref()
-                .map(|path| detection::mods_path_for(Path::new(path)))
-        })
-        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
-    let target_lang = settings
-        .target_lang
-        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
-    let target_lang = language::normalize_target_code(&target_lang)?;
-    let mut resolved = export::resolve_scan_inputs(
-        &mods_root,
-        &target_lang,
-        &config,
-        &[export::ExportModInput {
-            mod_unique_id,
-            mod_name: String::new(),
-            files,
-        }],
-    )?;
-    let resolved = resolved
-        .pop()
-        .ok_or_else(|| "Refusing export: no component was selected.".to_string())?;
-    export::validate_paths(&mods_root, &target_lang, &resolved.files)?;
-    let translation_config = translations::language_root(&config, &target_lang)?;
-    let result = export::export_mod(
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "export_mod",
+        || {
+            let _export_guard = export_write_guard()?;
+            let config = config_dir(&app)?;
+            let settings = settings::load_checked(&config)?;
+            let mods_root = settings
+                .mods_path
+                .map(PathBuf::from)
+                .or_else(|| {
+                    settings
+                        .stardew_path
+                        .as_deref()
+                        .map(|path| detection::mods_path_for(Path::new(path)))
+                })
+                .ok_or_else(|| {
+                    "Configure the Stardew Valley Mods folder before exporting.".to_string()
+                })?;
+            let target_lang = settings.target_lang.ok_or_else(|| {
+                "Choose a target language before exporting translations.".to_string()
+            })?;
+            let target_lang = language::normalize_target_code(&target_lang)?;
+            let mut resolved = export::resolve_scan_inputs(
+                &mods_root,
+                &target_lang,
+                &config,
+                &[export::ExportModInput {
+                    mod_unique_id,
+                    mod_name: String::new(),
+                    files,
+                }],
+            )?;
+            let resolved = resolved
+                .pop()
+                .ok_or_else(|| "Refusing export: no component was selected.".to_string())?;
+            export::validate_paths(&mods_root, &target_lang, &resolved.files)?;
+            let translation_config = translations::language_root(&config, &target_lang)?;
+            let result = export::export_mod(
         &translation_config,
         &resolved.mod_unique_id,
         &resolved.files,
@@ -427,143 +512,179 @@ fn export_mod(
     .inspect_err(|error| {
         log::error!(target: "app", "export_mod({}) failed: {error}", resolved.mod_unique_id)
     })?;
-    let changed_files = result
-        .files
-        .iter()
-        .filter(|file| file.written || file.removed)
-        .collect::<Vec<_>>();
-    let (path, file_name) = if changed_files.len() == 1 {
-        operation_file_location(&changed_files[0].target_path)
-    } else {
-        (Some(mods_root.display().to_string()), None)
-    };
-    remember_operation(
-        &history,
-        operation_history::CompletedOperation {
-            kind: operation_history::OperationKind::Export,
-            outcome: if result.blocked {
-                operation_history::OperationOutcome::Blocked
-            } else if !result.skipped.is_empty()
-                || result.total_outdated > 0
-                || result.total_review_needed > 0
-                || result.total_orphan_keys > 0
-            {
-                operation_history::OperationOutcome::Warning
+            let changed_files = result
+                .files
+                .iter()
+                .filter(|file| file.written || file.removed)
+                .collect::<Vec<_>>();
+            let (path, file_name) = if changed_files.len() == 1 {
+                operation_file_location(&changed_files[0].target_path)
             } else {
-                operation_history::OperationOutcome::Success
-            },
-            title: "Translation export completed".to_string(),
-            summary: if result.blocked {
-                "Export was blocked before any target file changed.".to_string()
-            } else {
-                format!(
-                    "{} target files written and {} removed.",
-                    result.files_written, result.files_removed
-                )
-            },
-            item_count: result.total_written_keys,
-            path,
-            file_name,
-            warnings: compact_export_warnings(&result.skipped),
-            details: vec![
-                operation_detail("Component", &resolved.mod_unique_id),
-                operation_detail("Strings written", result.total_written_keys),
-                operation_detail("Open strings omitted", result.total_untranslated),
-                operation_detail("Changed strings included", result.total_outdated),
-                operation_detail("Review strings included", result.total_review_needed),
-                operation_detail(
-                    "Entries without English source omitted",
-                    result.total_orphan_keys,
-                ),
-            ],
+                (Some(mods_root.display().to_string()), None)
+            };
+            remember_operation(
+                &history,
+                operation_history::CompletedOperation {
+                    kind: operation_history::OperationKind::Export,
+                    outcome: if result.blocked {
+                        operation_history::OperationOutcome::Blocked
+                    } else if !result.skipped.is_empty()
+                        || result.total_outdated > 0
+                        || result.total_review_needed > 0
+                        || result.total_orphan_keys > 0
+                    {
+                        operation_history::OperationOutcome::Warning
+                    } else {
+                        operation_history::OperationOutcome::Success
+                    },
+                    title: "Translation export completed".to_string(),
+                    summary: if result.blocked {
+                        "Export was blocked before any target file changed.".to_string()
+                    } else {
+                        format!(
+                            "{} target files written and {} removed.",
+                            result.files_written, result.files_removed
+                        )
+                    },
+                    item_count: result.total_written_keys,
+                    path,
+                    file_name,
+                    warnings: compact_export_warnings(&result.skipped),
+                    details: vec![
+                        operation_detail("Component", &resolved.mod_unique_id),
+                        operation_detail("Strings written", result.total_written_keys),
+                        operation_detail("Open strings omitted", result.total_untranslated),
+                        operation_detail("Changed strings included", result.total_outdated),
+                        operation_detail("Review strings included", result.total_review_needed),
+                        operation_detail(
+                            "Entries without English source omitted",
+                            result.total_orphan_keys,
+                        ),
+                    ],
+                },
+            );
+            Ok(result)
         },
-    );
-    Ok(result)
+        |r| {
+            Summary::new(
+                if r.blocked {
+                    Outcome::Blocked
+                } else {
+                    Outcome::Success
+                },
+                r.total_written_keys,
+                r.files_written,
+                r.skipped.len(),
+            )
+        },
+    )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_all_mods(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mods: Vec<export::ExportModInput>,
 ) -> Result<export::ExportAllResult, String> {
-    let config = config_dir(&app)?;
-    let settings = settings::load_checked(&config)?;
-    let mods_root = settings
-        .mods_path
-        .map(PathBuf::from)
-        .or_else(|| {
-            settings
-                .stardew_path
-                .as_deref()
-                .map(|path| detection::mods_path_for(Path::new(path)))
-        })
-        .ok_or_else(|| "Configure the Stardew Valley Mods folder before exporting.".to_string())?;
-    let target_lang = settings
-        .target_lang
-        .ok_or_else(|| "Choose a target language before exporting translations.".to_string())?;
-    let target_lang = language::normalize_target_code(&target_lang)?;
-    let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
-    let files = mods
-        .iter()
-        .flat_map(|request| request.files.iter().cloned())
-        .collect::<Vec<_>>();
-    // Validate in one pass so duplicate targets are rejected across mod groups,
-    // not only within each individual group.
-    export::validate_paths(&mods_root, &target_lang, &files)?;
-    let translation_config = translations::language_root(&config, &target_lang)?;
-    let result = export::export_all_mods(&translation_config, &mods)
-        .inspect_err(|error| log::error!(target: "app", "export_all_mods failed: {error}"))?;
-    let skipped = result
-        .mods
-        .iter()
-        .flat_map(|item| item.result.skipped.iter().cloned())
-        .collect::<Vec<_>>();
-    remember_operation(
-        &history,
-        operation_history::CompletedOperation {
-            kind: operation_history::OperationKind::Export,
-            outcome: if result.blocked {
-                operation_history::OperationOutcome::Blocked
-            } else if !skipped.is_empty()
-                || result.total_outdated > 0
-                || result.total_review_needed > 0
-                || result.total_orphan_keys > 0
-            {
-                operation_history::OperationOutcome::Warning
-            } else {
-                operation_history::OperationOutcome::Success
-            },
-            title: "All-mod export completed".to_string(),
-            summary: if result.blocked {
-                "Export was blocked before any target file changed.".to_string()
-            } else {
-                format!(
-                    "{} components changed; {} target files written and {} removed.",
-                    result.mods_changed, result.files_written, result.files_removed
-                )
-            },
-            item_count: result.total_written_keys,
-            path: Some(mods_root.display().to_string()),
-            file_name: None,
-            warnings: compact_export_warnings(&skipped),
-            details: vec![
-                operation_detail("Components changed", result.mods_changed),
-                operation_detail("Strings written", result.total_written_keys),
-                operation_detail("Open strings omitted", result.total_untranslated),
-                operation_detail("Changed strings included", result.total_outdated),
-                operation_detail("Review strings included", result.total_review_needed),
-                operation_detail(
-                    "Entries without English source omitted",
-                    result.total_orphan_keys,
-                ),
-            ],
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "export_all_mods",
+        || {
+            let _export_guard = export_write_guard()?;
+            let config = config_dir(&app)?;
+            let settings = settings::load_checked(&config)?;
+            let mods_root = settings
+                .mods_path
+                .map(PathBuf::from)
+                .or_else(|| {
+                    settings
+                        .stardew_path
+                        .as_deref()
+                        .map(|path| detection::mods_path_for(Path::new(path)))
+                })
+                .ok_or_else(|| {
+                    "Configure the Stardew Valley Mods folder before exporting.".to_string()
+                })?;
+            let target_lang = settings.target_lang.ok_or_else(|| {
+                "Choose a target language before exporting translations.".to_string()
+            })?;
+            let target_lang = language::normalize_target_code(&target_lang)?;
+            let mods = export::resolve_scan_inputs(&mods_root, &target_lang, &config, &mods)?;
+            let files = mods
+                .iter()
+                .flat_map(|request| request.files.iter().cloned())
+                .collect::<Vec<_>>();
+            // Validate in one pass so duplicate targets are rejected across mod groups,
+            // not only within each individual group.
+            export::validate_paths(&mods_root, &target_lang, &files)?;
+            let translation_config = translations::language_root(&config, &target_lang)?;
+            let result = export::export_all_mods(&translation_config, &mods).inspect_err(
+                |error| log::error!(target: "app", "export_all_mods failed: {error}"),
+            )?;
+            let skipped = result
+                .mods
+                .iter()
+                .flat_map(|item| item.result.skipped.iter().cloned())
+                .collect::<Vec<_>>();
+            remember_operation(
+                &history,
+                operation_history::CompletedOperation {
+                    kind: operation_history::OperationKind::Export,
+                    outcome: if result.blocked {
+                        operation_history::OperationOutcome::Blocked
+                    } else if !skipped.is_empty()
+                        || result.total_outdated > 0
+                        || result.total_review_needed > 0
+                        || result.total_orphan_keys > 0
+                    {
+                        operation_history::OperationOutcome::Warning
+                    } else {
+                        operation_history::OperationOutcome::Success
+                    },
+                    title: "All-mod export completed".to_string(),
+                    summary: if result.blocked {
+                        "Export was blocked before any target file changed.".to_string()
+                    } else {
+                        format!(
+                            "{} components changed; {} target files written and {} removed.",
+                            result.mods_changed, result.files_written, result.files_removed
+                        )
+                    },
+                    item_count: result.total_written_keys,
+                    path: Some(mods_root.display().to_string()),
+                    file_name: None,
+                    warnings: compact_export_warnings(&skipped),
+                    details: vec![
+                        operation_detail("Components changed", result.mods_changed),
+                        operation_detail("Strings written", result.total_written_keys),
+                        operation_detail("Open strings omitted", result.total_untranslated),
+                        operation_detail("Changed strings included", result.total_outdated),
+                        operation_detail("Review strings included", result.total_review_needed),
+                        operation_detail(
+                            "Entries without English source omitted",
+                            result.total_orphan_keys,
+                        ),
+                    ],
+                },
+            );
+            Ok(result)
         },
-    );
-    Ok(result)
+        |r| {
+            Summary::new(
+                if r.blocked {
+                    Outcome::Blocked
+                } else {
+                    Outcome::Success
+                },
+                r.total_written_keys,
+                r.files_written,
+                usize::from(r.blocked),
+            )
+        },
+    )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn preview_translation_zip(
     app: AppHandle,
     mods_path: String,
@@ -572,15 +693,116 @@ fn preview_translation_zip(
     target_language: String,
     components: Vec<release_zip::ZipComponentInput>,
 ) -> Result<release_zip::ZipPreview, String> {
-    let target_lang = language::normalize_target_code(&target_lang)?;
-    release_zip::preview(
-        &translation_config_dir(&app)?,
-        Path::new(&mods_path),
-        &package_name,
-        &target_lang,
-        &target_language,
-        &components,
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "preview_translation_zip",
+        || {
+            let target_lang = language::normalize_target_code(&target_lang)?;
+            release_zip::preview(
+                &translation_config_dir(&app)?,
+                Path::new(&mods_path),
+                &package_name,
+                &target_lang,
+                &target_language,
+                &components,
+            )
+        },
+        |r| {
+            Summary::new(
+                if r.problems.is_empty() {
+                    Outcome::Success
+                } else {
+                    Outcome::Blocked
+                },
+                r.total_strings,
+                r.entries.len(),
+                r.problems.len(),
+            )
+        },
     )
+}
+
+#[tauri::command(async)]
+fn preview_stardew_translator_output(app: AppHandle) -> Result<release_zip::ZipPreview, String> {
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "preview_stardew_translator_output",
+        || release_zip::preview_output(&config_dir(&app)?),
+        |r| {
+            Summary::new(
+                if r.problems.is_empty() {
+                    Outcome::Success
+                } else {
+                    Outcome::Blocked
+                },
+                r.total_strings,
+                r.entries.len(),
+                r.problems.len(),
+            )
+        },
+    )
+}
+
+#[tauri::command(async)]
+fn build_stardew_translator_output(
+    app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
+    destination: String,
+    overwrite: bool,
+) -> Result<release_zip::ZipBuildOutcome, String> {
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "build_stardew_translator_output",
+        || {
+            let _export_guard = export_write_guard()?;
+            build_output_with_history(
+                &config_dir(&app)?,
+                &history,
+                Path::new(&destination),
+                overwrite,
+            )
+        },
+        |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
+    )
+}
+
+fn build_output_with_history(
+    config: &Path,
+    history: &operation_history::OperationHistoryState,
+    destination: &Path,
+    overwrite: bool,
+) -> Result<release_zip::ZipBuildOutcome, String> {
+    let result = release_zip::build_output(config, destination, overwrite)?;
+    remember_zip_operation(history, &result, "Stardew Translator Output created");
+    Ok(result)
+}
+
+fn remember_zip_operation(
+    history: &operation_history::OperationHistoryState,
+    result: &release_zip::ZipBuildOutcome,
+    title: &str,
+) {
+    remember_operation(
+        history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Zip,
+            outcome: operation_history::OperationOutcome::Success,
+            title: title.to_string(),
+            summary: format!(
+                "{} strings packaged in {} archive entries.",
+                result.strings, result.entries
+            ),
+            item_count: result.strings,
+            path: Some(result.path.clone()),
+            file_name: Some(result.file_name.clone()),
+            warnings: Vec::new(),
+            details: vec![
+                operation_detail("Destination folder", &result.folder),
+                operation_detail("Archive entries", result.entries),
+                operation_detail("Strings", result.strings),
+            ],
+        },
+    );
 }
 
 #[tauri::command]
@@ -604,36 +826,24 @@ fn pick_translation_zip_destination(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn build_translation_zip(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mut request: release_zip::ZipBuildRequest,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
-    request.target_lang = language::normalize_target_code(&request.target_lang)?;
-    let result = release_zip::build(&translation_config_dir(&app)?, &request)?;
-    remember_operation(
-        &history,
-        operation_history::CompletedOperation {
-            kind: operation_history::OperationKind::Zip,
-            outcome: operation_history::OperationOutcome::Success,
-            title: "Translation ZIP created".to_string(),
-            summary: format!(
-                "{} strings packaged in {} archive entries.",
-                result.strings, result.entries
-            ),
-            item_count: result.strings,
-            path: Some(result.path.clone()),
-            file_name: Some(result.file_name.clone()),
-            warnings: Vec::new(),
-            details: vec![
-                operation_detail("Destination folder", &result.folder),
-                operation_detail("Archive entries", result.entries),
-                operation_detail("Strings", result.strings),
-            ],
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "build_translation_zip",
+        || {
+            let _export_guard = export_write_guard()?;
+            request.target_lang = language::normalize_target_code(&request.target_lang)?;
+            let result = release_zip::build(&translation_config_dir(&app)?, &request)?;
+            remember_zip_operation(&history, &result, "Translation ZIP created");
+            Ok(result)
         },
-    );
-    Ok(result)
+        |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
+    )
 }
 
 /// Outcome of an external LLM batch export: where the file landed and what
@@ -821,23 +1031,33 @@ fn import_llm_batch(
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<Option<batch::ImportSummary>, String> {
-    let picked = app
-        .dialog()
-        .file()
-        .set_title("Import LLM translation result")
-        .add_filter("JSON", &["json"])
-        .blocking_pick_file();
-    let Some(picked) = picked else {
-        return Ok(None);
-    };
-    let source = picked
-        .into_path()
-        .map_err(|error| format!("Could not read the selected path: {error}"))?;
-    let summary = import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).inspect_err(
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "import_llm_batch",
+        || {
+            let picked = app
+                .dialog()
+                .file()
+                .set_title("Import LLM translation result")
+                .add_filter("JSON", &["json"])
+                .blocking_pick_file();
+            let Some(picked) = picked else {
+                return Ok(None);
+            };
+            let source = picked
+                .into_path()
+                .map_err(|error| format!("Could not read the selected path: {error}"))?;
+            let summary = import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).inspect_err(
         |error| log::error!(target: "app", "import_llm_batch({mod_unique_id}) failed: {error}"),
     )?;
-    remember_llm_batch_import(&history, &summary, &source, &mod_unique_id);
-    Ok(Some(summary))
+            remember_llm_batch_import(&history, &summary, &source, &mod_unique_id);
+            Ok(Some(summary))
+        },
+        |r| match r {
+            Some(r) => Summary::new(Outcome::Success, r.imported, 0, r.unmatched),
+            None => Summary::new(Outcome::Cancelled, 0, 0, 0),
+        },
+    )
 }
 
 /// Pick an external LLM result without importing it. The caller can use the
@@ -955,8 +1175,12 @@ fn preflight_llm_batch_path(
     files: Vec<export::ExportFileInput>,
     path: String,
 ) -> Result<batch::ImportPreflight, String> {
-    let context = load_llm_batch_context(&app, &mod_unique_id, &files, Path::new(&path))?;
-    batch::preflight_batch(
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "preflight_llm_batch_path",
+        || {
+            let context = load_llm_batch_context(&app, &mod_unique_id, &files, Path::new(&path))?;
+            batch::preflight_batch(
         &context.parsed,
         &mod_unique_id,
         &context.target_lang,
@@ -965,6 +1189,20 @@ fn preflight_llm_batch_path(
     .inspect_err(|error| {
         log::error!(target: "app", "preflight_llm_batch_path({mod_unique_id}) failed: {error}")
     })
+        },
+        |r| {
+            Summary::new(
+                if r.ready {
+                    Outcome::Success
+                } else {
+                    Outcome::Blocked
+                },
+                r.importable,
+                0,
+                r.protected_token_issues.len(),
+            )
+        },
+    )
 }
 
 fn import_llm_batch_from_path(
@@ -998,13 +1236,20 @@ fn import_llm_batch_path(
     files: Vec<export::ExportFileInput>,
     path: String,
 ) -> Result<batch::ImportSummary, String> {
-    let source = Path::new(&path);
-    let summary =
+    use operation_log::{Outcome, Summary};
+    operation_log::run(
+        "import_llm_batch_path",
+        || {
+            let source = Path::new(&path);
+            let summary =
         import_llm_batch_from_path(&app, &mod_unique_id, &files, source).inspect_err(|error| {
             log::error!(target: "app", "import_llm_batch_path({mod_unique_id}) failed: {error}")
         })?;
-    remember_llm_batch_import(&history, &summary, source, &mod_unique_id);
-    Ok(summary)
+            remember_llm_batch_import(&history, &summary, source, &mod_unique_id);
+            Ok(summary)
+        },
+        |r| Summary::new(Outcome::Success, r.imported, 0, r.unmatched),
+    )
 }
 
 /// The Mods folder to scan for community language packs: the user's configured
@@ -2485,6 +2730,7 @@ fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
+    let _export_guard = export_write_guard()?;
     settings::save(&config_dir(&app)?, &settings)?;
     apply_diagnostic_logging(settings.diagnostic_logging);
     Ok(())
@@ -2637,6 +2883,8 @@ pub fn run() {
             preview_translation_zip,
             pick_translation_zip_destination,
             build_translation_zip,
+            preview_stardew_translator_output,
+            build_stardew_translator_output,
             export_llm_batch,
             pick_llm_batch_destination,
             export_llm_batch_to_path,
@@ -2685,6 +2933,88 @@ pub(crate) mod test_support {
         let mut dir = std::env::temp_dir();
         dir.push(format!("sit-test-{tag}-{nanos}-{seq}"));
         dir
+    }
+}
+
+#[cfg(test)]
+mod output_history_tests {
+    use super::*;
+
+    #[test]
+    fn combined_build_records_its_own_result_and_only_success_invalidates_undo() {
+        let root = test_support::temp_dir("combined-output-history");
+        let config = root.join("data");
+        let mods = root.join("Mods");
+        let component = mods.join("Example");
+        std::fs::create_dir_all(component.join("i18n")).unwrap();
+        std::fs::write(
+            component.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Fixture.Example"}"#,
+        )
+        .unwrap();
+        std::fs::write(component.join("i18n/default.json"), r#"{"hello":"Hello"}"#).unwrap();
+        settings::save(
+            &config,
+            &AppSettings {
+                mods_path: Some(mods.display().to_string()),
+                target_lang: Some("de".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let history = operation_history::OperationHistoryState::default();
+        let previous = release_zip::ZipBuildOutcome {
+            path: root.join("previous.zip").display().to_string(),
+            folder: root.display().to_string(),
+            file_name: "previous.zip".into(),
+            entries: 2,
+            strings: 10,
+        };
+        remember_zip_operation(&history, &previous, "Translation ZIP created");
+        let prior_entry = history.list().unwrap()[0].clone();
+        let working = translations::language_root(&config, "de").unwrap();
+        let batch = history
+            .apply_reversible_batch_groups(
+                &working,
+                "Manual batch".into(),
+                vec![(
+                    "Fixture.Example".into(),
+                    vec![(
+                        translations::entry_key("i18n", "hello"),
+                        translations::StoredString {
+                            target: "Hallo".into(),
+                            status: "translated".into(),
+                            source_hash: translations::source_hash("Hello"),
+                        },
+                    )],
+                )],
+            )
+            .unwrap();
+        let destination = root.join("combined.zip");
+        std::fs::write(&destination, "existing archive").unwrap();
+        assert_eq!(
+            build_output_with_history(&config, &history, &destination, false).unwrap_err(),
+            "OVERWRITE_REQUIRED"
+        );
+        let after_failure = history.list().unwrap();
+        assert_eq!(after_failure.len(), 2);
+        assert_eq!(after_failure[0].id, batch.id);
+        assert!(after_failure[0].can_undo);
+        assert_eq!(std::fs::read(&destination).unwrap(), b"existing archive");
+
+        let result = build_output_with_history(&config, &history, &destination, true).unwrap();
+        let entries = history.list().unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_ne!(entries[0].id, prior_entry.id);
+        assert_eq!(entries[0].kind, operation_history::OperationKind::Zip);
+        assert_eq!(entries[0].path.as_deref(), Some(result.path.as_str()));
+        assert_eq!(entries[0].file_name.as_deref(), Some("combined.zip"));
+        assert_eq!(entries[0].item_count, 1);
+        assert_eq!(entries[2].id, prior_entry.id);
+        assert_eq!(entries[2].path, prior_entry.path);
+        assert!(!entries[1].can_undo);
+        assert!(history.undo_reversible_batch(&working, &batch.id).is_err());
+        std::fs::remove_dir_all(root).ok();
     }
 }
 

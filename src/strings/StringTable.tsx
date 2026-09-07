@@ -19,6 +19,12 @@ import {
 } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
+  derivedStringStatus,
+  noTranslationNeeded,
+  isBlankText,
+} from "./status";
+import { coveragePercent } from "../coverage";
+import {
   ArrowDown,
   ArrowUp,
   CircleCheck,
@@ -104,7 +110,7 @@ const utf8Encoder = new TextEncoder();
 
 function isLiveAiSourceEligible(source: string): boolean {
   return (
-    source.length > 0 &&
+    !isBlankText(source) &&
     !source.includes("\0") &&
     utf8Encoder.encode(source).byteLength <= MAX_LIVE_AI_SOURCE_BYTES
   );
@@ -211,11 +217,13 @@ export interface StringTableProps {
   onCountsChange?: (
     translatedKeys: number,
     byStatus: Record<StringStatus, number>,
+    noTranslationNeededKeys: number,
   ) => void;
   onModCountsChange?: (
     modId: string,
     translatedKeys: number,
     byStatus: Record<StringStatus, number>,
+    noTranslationNeededKeys: number,
   ) => void;
   onVisibleSummaryChange?: (summary: StringTableSummary) => void;
   onBulkApplied?: (entry: OperationHistoryEntry) => void;
@@ -299,7 +307,12 @@ function sortField(row: Row, col: SortCol): string {
 }
 
 function countTranslated(rows: Row[]): number {
-  return rows.filter((row) => row.target.trim() !== "").length;
+  return rows.filter((row) => !isBlankText(row.target)).length;
+}
+
+function countNoTranslationNeeded(rows: Row[]): number {
+  return rows.filter((row) => noTranslationNeeded(row.source, row.target))
+    .length;
 }
 
 function countByStatus(rows: Row[]): Record<StringStatus, number> {
@@ -317,13 +330,93 @@ function rowHasIssues(row: Row): boolean {
   return rowValidationIssues(row).length > 0;
 }
 
+/** Rows are replaced, never mutated, after an edit. Weak keys therefore make
+ * validation reusable across counts, filters, and virtual rows while letting
+ * stale scan/edit results be collected without explicit cache management. */
+const validationIssuesByRow = new WeakMap<Row, ReturnType<typeof validate>>();
+
 function rowValidationIssues(row: Row) {
-  const issues = validate(row.source, row.target, row.targetPresent);
-  if (!row.tokenMismatchAccepted) return issues;
-  return issues.filter(
-    (issue) =>
-      issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
+  let issues = validationIssuesByRow.get(row);
+  if (!issues) {
+    const validated = validate(row.source, row.target, row.targetPresent);
+    issues = row.tokenMismatchAccepted
+      ? validated.filter(
+          (issue) =>
+            issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
+        )
+      : validated;
+    validationIssuesByRow.set(row, issues);
+  }
+  return issues;
+}
+
+type SearchField = "key" | "source" | "target" | "mod" | "file";
+type RowSearchForms = Partial<Record<SearchField, string[]>>;
+
+/** The locale is part of the cache key because Turkish and custom language
+ * casing can differ from Unicode default casing. Row keys are weak and edited
+ * rows are new objects, so old search text cannot survive an edit. */
+const searchFormsByRow = new WeakMap<Row, Map<string, RowSearchForms>>();
+
+function cachedSearchFieldForms(
+  row: Row,
+  field: SearchField,
+  locale?: string,
+): string[] {
+  const localeKey = locale ?? "";
+  let byLocale = searchFormsByRow.get(row);
+  if (!byLocale) {
+    byLocale = new Map();
+    searchFormsByRow.set(row, byLocale);
+  }
+  let fields = byLocale.get(localeKey);
+  if (!fields) {
+    fields = {};
+    byLocale.set(localeKey, fields);
+  }
+  let forms = fields[field];
+  if (!forms) {
+    const value =
+      field === "mod" ? row.modName : field === "file" ? row.file : row[field];
+    forms = searchForms(value, locale);
+    fields[field] = forms;
+  }
+  return forms;
+}
+
+function searchFormMatches(candidates: string[], needles: string[]): boolean {
+  return candidates.some((candidate) =>
+    needles.some((needle) => candidate.includes(needle)),
   );
+}
+
+function rowMatchesSearch(
+  row: Row,
+  needles: string[],
+  locale: string | undefined,
+  includeMetadata: boolean,
+): boolean {
+  return (
+    searchFormMatches(cachedSearchFieldForms(row, "key", locale), needles) ||
+    searchFormMatches(cachedSearchFieldForms(row, "source", locale), needles) ||
+    searchFormMatches(cachedSearchFieldForms(row, "target", locale), needles) ||
+    (includeMetadata &&
+      (searchFormMatches(cachedSearchFieldForms(row, "mod", locale), needles) ||
+        searchFormMatches(
+          cachedSearchFieldForms(row, "file", locale),
+          needles,
+        )))
+  );
+}
+
+function searchFieldMatches(
+  row: Row,
+  field: SearchField,
+  needles: string[],
+  locale?: string,
+): boolean {
+  if (needles.length === 0) return false;
+  return searchFormMatches(cachedSearchFieldForms(row, field, locale), needles);
 }
 
 function searchForms(value: string, locale?: string): string[] {
@@ -337,14 +430,6 @@ function searchForms(value: string, locale?: string): string[] {
     }
   }
   return [...new Set(forms)];
-}
-
-function searchMatches(value: string, query: string, locale?: string): boolean {
-  if (!query) return false;
-  const needles = searchForms(query, locale);
-  return searchForms(value, locale).some((candidate) =>
-    needles.some((needle) => candidate.includes(needle)),
-  );
 }
 
 function preservesNativeTextSelection(target: EventTarget | null): boolean {
@@ -592,12 +677,48 @@ export function StringTable({
 
   function reportCounts(next: Row[], changedModIds?: Set<string>) {
     const ids = changedModIds ?? new Set(next.map((row) => row.modUniqueId));
+    const counts = new Map<
+      string,
+      {
+        translated: number;
+        byStatus: Record<StringStatus, number>;
+        noTextNeeded: number;
+      }
+    >();
     for (const modId of ids) {
-      const modRows = next.filter((row) => row.modUniqueId === modId);
-      const translated = countTranslated(modRows);
-      const byStatus = countByStatus(modRows);
-      onModCountsChange?.(modId, translated, byStatus);
-      if (mod?.uniqueId === modId) onCountsChange?.(translated, byStatus);
+      counts.set(modId, {
+        translated: 0,
+        byStatus: {
+          untranslated: 0,
+          translated: 0,
+          outdated: 0,
+          "review-needed": 0,
+        },
+        noTextNeeded: 0,
+      });
+    }
+    for (const row of next) {
+      const current = counts.get(row.modUniqueId);
+      if (!current) continue;
+      if (!isBlankText(row.target)) current.translated += 1;
+      current.byStatus[row.status] += 1;
+      if (noTranslationNeeded(row.source, row.target)) {
+        current.noTextNeeded += 1;
+      }
+    }
+    for (const [modId, current] of counts) {
+      onModCountsChange?.(
+        modId,
+        current.translated,
+        current.byStatus,
+        current.noTextNeeded,
+      );
+      if (mod?.uniqueId === modId)
+        onCountsChange?.(
+          current.translated,
+          current.byStatus,
+          current.noTextNeeded,
+        );
     }
   }
 
@@ -630,6 +751,7 @@ export function StringTable({
           for (const row of fileRows) {
             loaded.push({
               ...row,
+              status: derivedStringStatus(row.source, row.target, row.status),
               modUniqueId: candidate.uniqueId,
               modName: candidate.name,
               packageId: candidate.packageId,
@@ -683,29 +805,37 @@ export function StringTable({
         : null,
     [identityFilter],
   );
+  const trimmedSearch = effectiveSearch.trim();
+  const searchNeedles = useMemo(
+    () =>
+      trimmedSearch.length > 0
+        ? searchForms(trimmedSearch, targetLanguageCode)
+        : [],
+    [trimmedSearch, targetLanguageCode],
+  );
   const visible = useMemo(() => {
-    const query = effectiveSearch.trim();
     const filtered: Array<{ row: Row; identity: string; index: number }> = [];
     data.forEach((row, index) => {
       const identity = identityOf(row);
       if (identityFilterSet && !identityFilterSet.has(identity)) return;
       if (
         effectiveStatus === "has-value"
-          ? row.target.trim().length === 0
+          ? isBlankText(row.target)
           : effectiveStatus !== "all" && row.status !== effectiveStatus
       ) {
         return;
       }
       if (effectiveIssuesOnly && !rowHasIssues(row)) return;
-      if (query) {
-        const fields = [row.key, row.source, row.target];
-        if (effectiveScope === "all") fields.push(row.modName, row.file);
-        if (
-          !fields.some((field) =>
-            searchMatches(field, query, targetLanguageCode),
-          )
+      if (
+        searchNeedles.length > 0 &&
+        !rowMatchesSearch(
+          row,
+          searchNeedles,
+          targetLanguageCode,
+          effectiveScope === "all",
         )
-          return;
+      ) {
+        return;
       }
       filtered.push({ row, identity, index });
     });
@@ -724,7 +854,7 @@ export function StringTable({
     return filtered.map((entry, pos) => ({ ...entry, pos }));
   }, [
     data,
-    effectiveSearch,
+    searchNeedles,
     effectiveStatus,
     effectiveIssuesOnly,
     effectiveScope,
@@ -1287,6 +1417,7 @@ export function StringTable({
     const index = rowIndex.get(identity);
     const row = index === undefined ? undefined : data[index];
     if (!row) return;
+    if (isBlankText(target)) nextStatus = "untranslated";
     await saveString(
       row.modUniqueId,
       row.file,
@@ -1302,7 +1433,7 @@ export function StringTable({
         ? {
             ...candidate,
             target,
-            status: nextStatus,
+            status: derivedStringStatus(candidate.source, target, nextStatus),
             tokenMismatchAccepted,
           }
         : candidate,
@@ -1333,7 +1464,7 @@ export function StringTable({
         const target =
           write === "clear" ? "" : write === "source" ? row.source : row.target;
         const status: StringStatus =
-          nextStatus === "translated" && target.trim() === ""
+          nextStatus === "translated" && isBlankText(target)
             ? "untranslated"
             : nextStatus;
         const tokenMismatchAccepted =
@@ -1343,7 +1474,7 @@ export function StringTable({
       .filter(
         ({ row, target, status, tokenMismatchAccepted }) =>
           row.target !== target ||
-          row.status !== status ||
+          row.status !== derivedStringStatus(row.source, target, status) ||
           row.tokenMismatchAccepted !== tokenMismatchAccepted,
       );
     if (planned.length === 0) {
@@ -1405,7 +1536,7 @@ export function StringTable({
         return {
           ...row,
           target: change.target,
-          status: change.status,
+          status: derivedStringStatus(row.source, change.target, change.status),
           tokenMismatchAccepted: change.tokenMismatchAccepted,
         };
       });
@@ -1425,7 +1556,11 @@ export function StringTable({
           return {
             ...row,
             target: change.target,
-            status: change.status,
+            status: derivedStringStatus(
+              row.source,
+              change.target,
+              change.status,
+            ),
             tokenMismatchAccepted: change.tokenMismatchAccepted,
           };
         });
@@ -1852,9 +1987,9 @@ export function StringTable({
         ? mod.packageId
         : null
       : headerContext;
-  const workingTranslated = countTranslated(data);
-  const workingProgress =
-    data.length > 0 ? Math.round((workingTranslated / data.length) * 100) : 0;
+  const noTextNeeded = countNoTranslationNeeded(data);
+  const workingTranslated = countTranslated(data) + noTextNeeded;
+  const workingProgress = coveragePercent(workingTranslated, data.length);
   const suppliedHeaderMeta =
     typeof headerMeta === "string"
       ? [headerMeta]
@@ -1867,10 +2002,11 @@ export function StringTable({
       ? String(workingTranslated) +
         " / " +
         String(data.length) +
-        " translated · " +
+        (noTextNeeded ? " covered · " : " translated · ") +
         String(workingProgress) +
         "%"
       : "No translatable strings",
+    ...(noTextNeeded ? [`${noTextNeeded} need no translation text`] : []),
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
   const gridStyle = {
@@ -2004,7 +2140,13 @@ export function StringTable({
               <span key={String(index) + "-" + item}>{item}</span>
             ))}
             {data.length > 0 && (
-              <span className="translator-progress-inline" aria-hidden="true">
+              <span
+                className="translator-progress-inline"
+                data-complete={
+                  data.length > 0 && workingTranslated >= data.length
+                }
+                aria-hidden="true"
+              >
                 <span style={{ width: String(workingProgress) + "%" }} />
               </span>
             )}
@@ -2439,7 +2581,7 @@ export function StringTable({
                       dataIndex={entry.index}
                       showMod={showModColumn}
                       showFile={showFileColumn}
-                      searchQuery={effectiveSearch.trim()}
+                      searchNeedles={searchNeedles}
                       searchLocale={targetLanguageCode}
                       searchAllMetadata={effectiveScope === "all"}
                       translationColumnLabel={translationColumnLabel}
@@ -2946,7 +3088,7 @@ interface RowViewProps {
   dataIndex: number;
   showMod: boolean;
   showFile: boolean;
-  searchQuery: string;
+  searchNeedles: string[];
   searchLocale?: string;
   searchAllMetadata: boolean;
   translationColumnLabel: string;
@@ -2975,7 +3117,7 @@ function RowView({
   dataIndex,
   showMod,
   showFile,
-  searchQuery,
+  searchNeedles,
   searchLocale,
   searchAllMetadata,
   translationColumnLabel,
@@ -3000,19 +3142,18 @@ function RowView({
   const issues = rowValidationIssues(row);
   const severity = worstSeverity(issues);
   const displayStatus = DISPLAY_STATUS[row.status];
-  const statusHelp = STATUS_HELP[row.status];
+  const statusHelp = noTranslationNeeded(row.source, row.target)
+    ? "The source is empty; no translation text is needed."
+    : STATUS_HELP[row.status];
   const issueHelp = issues.map((issue) => issue.message).join(" ");
-  const matchesSearch = (value: string, metadata = false) =>
-    Boolean(
-      searchQuery &&
-      (!metadata || searchAllMetadata) &&
-      searchMatches(value, searchQuery, searchLocale),
-    );
-  const modMatches = matchesSearch(row.modName, true);
-  const fileMatches = matchesSearch(row.file, true);
-  const keyMatches = matchesSearch(row.key);
-  const sourceMatches = matchesSearch(row.source);
-  const targetMatches = matchesSearch(row.target);
+  const matchesSearch = (field: SearchField, metadata = false) =>
+    (!metadata || searchAllMetadata) &&
+    searchFieldMatches(row, field, searchNeedles, searchLocale);
+  const modMatches = matchesSearch("mod", true);
+  const fileMatches = matchesSearch("file", true);
+  const keyMatches = matchesSearch("key");
+  const sourceMatches = matchesSearch("source");
+  const targetMatches = matchesSearch("target");
   const modOverflow = useOverflowTitle<HTMLSpanElement>(
     row.modName,
     gridTemplateColumns,
@@ -3131,7 +3272,7 @@ function RowView({
             className="translator-cell-clip"
             title={fileOverflow.title}
           >
-            {row.file}
+            {row.file.replace("/@split/", "/")}
           </span>
         </span>
       )}

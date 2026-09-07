@@ -325,8 +325,9 @@ pub(crate) fn validate_request_shape(request: &AiTranslationRequest) -> Result<(
 }
 
 fn row_is_included(request: &AiTranslationRequest, row: &AiScopeRow) -> bool {
-    (request.include_open && row.status == "untranslated")
-        || (request.include_changed && row.status == "outdated")
+    !row.source.trim().is_empty()
+        && ((request.include_open && row.status == "untranslated")
+            || (request.include_changed && row.status == "outdated"))
 }
 
 pub(crate) fn resolve_scope(
@@ -371,7 +372,7 @@ fn validate_resolved_items(items: &[AiScopeRow]) -> Result<(), String> {
     }
     let mut total_bytes = 0usize;
     for item in items {
-        if item.source.is_empty() || item.source.contains('\0') {
+        if item.source.trim().is_empty() || item.source.contains('\0') {
             return Err(
                 "A current source string cannot be sent to live AI translation.".to_string(),
             );
@@ -449,7 +450,9 @@ fn source_group_indices(rows: &[AiScopeRow]) -> Vec<usize> {
 }
 
 fn context_source(row: &AiScopeRow) -> Option<AiContextSource> {
-    (!row.source.is_empty() && !row.source.contains('\0') && row.source.len() <= MAX_SOURCE_BYTES)
+    (!row.source.trim().is_empty()
+        && !row.source.contains('\0')
+        && row.source.len() <= MAX_SOURCE_BYTES)
         .then(|| AiContextSource {
             source: row.source.clone(),
         })
@@ -1053,6 +1056,28 @@ mod tests {
                 "{removed_scope} must not remain a live-AI scope"
             );
         }
+    }
+
+    #[test]
+    fn blank_sources_are_not_translation_candidates_or_context() {
+        let rows = rows(
+            "mod.a",
+            &[
+                ("empty", "", "untranslated"),
+                ("spaces", " \t\r\n\u{a0}", "outdated"),
+                ("text", "Needs translation", "untranslated"),
+            ],
+        );
+        let request = request(
+            AiScope::Selected,
+            rows.iter().map(|row| row.identity.clone()).collect(),
+        );
+        let resolved = resolve_scope(&request, &rows).unwrap();
+        assert_eq!(resolved.len(), 1);
+        assert_eq!(resolved[0].identity.key, "text");
+        assert!(context_source(&rows[0]).is_none());
+        assert!(context_source(&rows[1]).is_none());
+        assert!(validate_resolved_items(&rows[..2]).is_err());
     }
 
     #[test]
