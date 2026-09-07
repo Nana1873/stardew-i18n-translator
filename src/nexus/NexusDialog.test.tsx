@@ -352,7 +352,7 @@ it("retains mapped working coverage when only an unrelated source has a scan err
   app.setTraversal(false);
   expect(
     screen.getByText(
-      "Local translation coverage unavailable: scan incomplete.",
+      "Working translation coverage unavailable: scan incomplete.",
     ),
   ).toBeVisible();
 });
@@ -400,9 +400,38 @@ it.each(["folder", "vortex"] as const)(
     expect(
       await screen.findByText(/Could not match 1 translation file/),
     ).toBeVisible();
-    expect(screen.getByText("Components: Local mod, Other mod")).toBeVisible();
+    expect(screen.getByText("Components: Local mod")).toBeVisible();
   },
 );
+it("imports every safe segment mapping from the same archive document", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "nexus_resolve_archive"
+      ? Promise.resolve({
+          mappings: [
+            "i18n/@split/Dialogue.json",
+            "i18n/@split/Events.json",
+          ].map((relativeDir) => ({
+            archiveId: "archive",
+            archivePath: "Old/i18n/de.json",
+            modUniqueId: "sample.mod",
+            relativeDir,
+          })),
+          unresolved: [],
+        })
+      : original(command, ...args),
+  );
+  mount({ method: "vortex", libraryMode: true });
+  await download();
+  await waitFor(() =>
+    expect(commandCalls("nexus_import_translation")).toHaveLength(2),
+  );
+  expect(
+    commandCalls("nexus_import_translation").map(
+      (request) => request.relativeDir,
+    ),
+  ).toEqual(["i18n/@split/Dialogue.json", "i18n/@split/Events.json"]);
+});
 it("remembers an imported Nexus file across reopening while offering missing strings", async () => {
   const original = invoke.getMockImplementation()!;
   invoke.mockImplementation((command: string, ...args: unknown[]) =>
@@ -420,7 +449,9 @@ it("remembers an imported Nexus file across reopening while offering missing str
       : original(command, ...args),
   );
   const app = mount({ method: "vortex", libraryMode: true });
-  await screen.findByText("Already imported · 3 strings still missing");
+  await screen.findByText(
+    "Already imported · 3 strings still missing in package",
+  );
   expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open missing strings" }));
   expect(app.onOpenMissing).toHaveBeenCalledWith("sample.mod");
@@ -431,9 +462,68 @@ it("remembers an imported Nexus file across reopening while offering missing str
   );
   app.setOpen(false);
   app.setOpen(true);
-  await screen.findByText("Already imported · 3 strings still missing");
+  await screen.findByText(
+    "Already imported · 3 strings still missing in package",
+  );
   await screen.findByText(/Saved import status is unavailable/);
   expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+  app.setTraversal(false);
+  expect(
+    screen.getByText(
+      "Working translation coverage unavailable: scan incomplete.",
+    ),
+  ).toBeVisible();
+});
+it("keeps whole-package coverage for a partial receipt and allows an explicit recheck", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.resolve([
+          {
+            modUniqueId: "sample.mod",
+            relativeDir: "i18n",
+            archivePath: "i18n/de.json",
+            strings: 3,
+            sourceUrl:
+              "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files&file_id=7",
+          },
+        ])
+      : original(command, ...args),
+  );
+  mount({
+    method: "vortex",
+    libraryMode: true,
+    mods: [
+      {
+        ...mods[0],
+        translatedKeys: 3,
+        i18nFiles: [
+          { relativeDir: "i18n" },
+          { relativeDir: "i18n/@split/Dialogue.json" },
+        ],
+      } as ScannedMod,
+      {
+        ...mods[0],
+        uniqueId: "sample.core",
+        name: "Core",
+        totalKeys: 100,
+        translatedKeys: 20,
+      },
+    ],
+  });
+  await screen.findByText(
+    "Already imported · 80 strings still missing in package",
+  );
+  expect(
+    screen.getByText("Working translation: 23/103 strings · 80 missing"),
+  ).toBeVisible();
+  expect(screen.getByText("Components: Local mod, Core")).toBeVisible();
+  expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Recheck import" }));
+  await waitFor(() =>
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(1),
+  );
 });
 it("does not offer a repeat download when saved import status cannot be read", async () => {
   const original = invoke.getMockImplementation()!;

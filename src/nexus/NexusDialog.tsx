@@ -844,24 +844,12 @@ export function NexusDialog({
       const recordedComponents = importedSources
         .filter((saved) => archiveSource && saved.sourceUrl === archiveSource)
         .map((saved) => saved.modUniqueId);
+      const packageComponents = nexusSourceComponents(mods, entry.modId);
       const components = recordedComponents.length
         ? mods.filter((mod) => recordedComponents.includes(mod.uniqueId))
-        : nexusSourceComponents(mods, entry.modId);
+        : packageComponents;
       const acquired =
-        libraryMode &&
-        Boolean(selected) &&
-        components.length > 0 &&
-        components.every((component) =>
-          component.i18nFiles.every((directory) =>
-            importedSources.some(
-              (saved) =>
-                saved.modUniqueId === component.uniqueId &&
-                saved.relativeDir === directory.relativeDir &&
-                saved.sourceUrl ===
-                  `https://www.nexusmods.com/stardewvalley/mods/${selected!.candidate.modId}?tab=files&file_id=${selected!.file.fileId}`,
-            ),
-          ),
-        );
+        libraryMode && Boolean(selected) && recordedComponents.length > 0;
       const key = selected
         ? `${entry.modId}:${selected.value}`
         : `${entry.modId}:pending`;
@@ -883,6 +871,24 @@ export function NexusDialog({
         key,
         row: acquired ? { ...row, completed: true } : row,
         acquired,
+        importedComponents: packageComponents
+          .filter((component) =>
+            recordedComponents.includes(component.uniqueId),
+          )
+          .map((component) => component.uniqueId),
+        partialArchive:
+          acquired &&
+          packageComponents.some((component) =>
+            component.i18nFiles.some(
+              (directory) =>
+                !importedSources.some(
+                  (saved) =>
+                    saved.modUniqueId === component.uniqueId &&
+                    saved.relativeDir === directory.relativeDir &&
+                    saved.sourceUrl === archiveSource,
+                ),
+            ),
+          ),
       };
     });
   const shown = groups.filter(
@@ -1069,9 +1075,7 @@ export function NexusDialog({
       row.handoff && checkedAt && checkedAt >= row.handoff.at,
     );
     const version = mods.find((mod) => mod.nexusId === sourceId)?.version;
-    const displayedComponents = row.modIds.length
-      ? mods.filter((mod) => row.modIds.includes(mod.uniqueId))
-      : nexusSourceComponents(mods, sourceId);
+    const displayedComponents = nexusSourceComponents(mods, sourceId);
     const workingTotal = displayedComponents.reduce(
       (sum, component) => sum + component.totalKeys,
       0,
@@ -1141,19 +1145,33 @@ export function NexusDialog({
             {group.acquired && (
               <small>
                 Already imported ·{" "}
-                {missingComponents.reduce(
-                  (sum, component) =>
-                    sum +
-                    (component.statusCounts?.untranslated ??
-                      Math.max(
-                        0,
-                        component.totalKeys -
-                          component.translatedKeys -
-                          (component.noTranslationNeededKeys ?? 0),
-                      )),
-                  0,
-                )}{" "}
-                strings still missing
+                {displayedScanIncomplete || !workingKnown ? (
+                  "package coverage unavailable"
+                ) : (
+                  <>
+                    {missingComponents.reduce(
+                      (sum, component) =>
+                        sum +
+                        (component.statusCounts?.untranslated ??
+                          Math.max(
+                            0,
+                            component.totalKeys -
+                              component.translatedKeys -
+                              (component.noTranslationNeededKeys ?? 0),
+                          )),
+                      0,
+                    )}{" "}
+                    strings still missing in package
+                  </>
+                )}
+              </small>
+            )}
+            {group.acquired && group.partialArchive && (
+              <small>
+                Imported from this archive: {group.importedComponents.length} of{" "}
+                {displayedComponents.length} installed components; some
+                translation files are not imported. Recheck import to retry
+                matching; saved edits are kept.
               </small>
             )}
             {!group.evidence.length && group.inventory.length > 0 && (
@@ -1171,7 +1189,7 @@ export function NexusDialog({
               </small>
             )}
             <small>
-              {row.modIds.length > 0
+              {libraryMode || row.modIds.length > 0
                 ? !displayedScanIncomplete && workingKnown
                   ? `Working translation: ${workingCovered}/${workingTotal} strings · ${Math.max(0, workingTotal - workingCovered)} missing`
                   : "Working translation coverage unavailable: scan incomplete."
@@ -1353,6 +1371,24 @@ export function NexusDialog({
                 )}
               </>
             )}
+            {libraryMode &&
+              selected &&
+              (group.partialArchive || (row.unresolved?.length ?? 0) > 0) && (
+                <button
+                  className={quiet}
+                  disabled={locked || importStatusUnknown || !canDirectImport}
+                  onClick={() =>
+                    void startReview(
+                      key,
+                      sourceId,
+                      selected.candidate,
+                      selected.file,
+                    )
+                  }
+                >
+                  Recheck import
+                </button>
+              )}
             {(displayFile ||
               group.unavailableCandidates.length > 0 ||
               unidentifiedEvidence.length > 0 ||

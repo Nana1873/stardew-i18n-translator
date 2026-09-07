@@ -52,7 +52,7 @@ it("imports all secure ZIP components before closing and leaves unmatched files 
   fireEvent.click(
     screen.getByRole("button", { name: "Choose translation ZIP…" }),
   );
-  await screen.findByText(/2 components imported. 1 files need attention/);
+  await screen.findByText(/2 imports completed. 1 files need attention/);
   expect(
     invoke.mock.calls
       .filter(([cmd]) => cmd === "nexus_import_translation")

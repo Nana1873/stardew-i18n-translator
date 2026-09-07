@@ -174,6 +174,45 @@ pub fn validate_paths(
     for file in files {
         let default_path = Path::new(&file.default_path);
         let target_path = Path::new(&file.target_path);
+        if let Some((relative_root, name)) = file.relative_dir.split_once("/@split/") {
+            if name.contains(['/', '\\']) || !name.to_ascii_lowercase().ends_with(".json") {
+                return Err("Invalid split translation identity".into());
+            }
+            let source = std::fs::canonicalize(default_path).map_err(|e| e.to_string())?;
+            let parent = source.parent().ok_or("Invalid split source")?;
+            let i18n = parent.parent().ok_or("Invalid split source")?;
+            if !source.is_file()
+                || !source.starts_with(&canonical_root)
+                || !file_name_is(parent, "default")
+                || !file_name_is(i18n, "i18n")
+                || !file_name_is(&source, name)
+                || relative_root.is_empty()
+            {
+                return Err("Invalid split translation source".into());
+            }
+            let expected = scanner::split_target_path(&source, target_lang)?;
+            let actual_parent = validate_target_location(target_path, &canonical_root)?;
+            let expected_parent = validate_target_location(&expected, &canonical_root)?;
+            if actual_parent != expected_parent || target_path.file_name() != expected.file_name() {
+                return Err("Invalid split translation target".into());
+            }
+            for variant in target_variants(target_path) {
+                validate_target_location(&variant, &canonical_root)?;
+                validate_target_location(&sibling(&variant, ".bak"), &canonical_root)?;
+            }
+            if !targets.insert(
+                actual_parent.join(
+                    target_path
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .ok_or("Invalid split target filename")?
+                        .to_lowercase(),
+                ),
+            ) {
+                return Err("Duplicate split translation target".into());
+            }
+            continue;
+        }
         if !file_name_is(default_path, "default.json") {
             return Err(format!(
                 "Refusing export: {} is not a default.json source file.",
@@ -372,12 +411,25 @@ fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBu
     let directory = path
         .parent()
         .ok_or_else(|| format!("Invalid export target path: {}", path.display()))?;
-    let canonical_directory = std::fs::canonicalize(directory).map_err(|error| {
-        format!(
-            "Could not validate export target directory {}: {error}",
-            directory.display()
-        )
-    })?;
+    let canonical_directory = std::fs::canonicalize(directory)
+        .or_else(|error| {
+            if error.kind() == std::io::ErrorKind::NotFound {
+                let parent = directory
+                    .parent()
+                    .ok_or_else(|| std::io::Error::other("Missing target parent"))?;
+                let name = directory
+                    .file_name()
+                    .ok_or_else(|| std::io::Error::other("Invalid target directory"))?;
+                return std::fs::canonicalize(parent).map(|p| p.join(name));
+            }
+            Err(error)
+        })
+        .map_err(|error| {
+            format!(
+                "Could not validate export target directory {}: {error}",
+                directory.display()
+            )
+        })?;
     if !canonical_directory.starts_with(canonical_root) {
         return Err(format!(
             "Refusing export outside the configured Mods folder: {}",

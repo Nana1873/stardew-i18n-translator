@@ -147,7 +147,8 @@ pub(crate) fn build(
             .iter()
             .find(|f| f.relative_dir == entry.relative_dir)
             .ok_or("A library i18n path is missing from the current scan.")?;
-        let mut state = entry.base.clone();
+        let mut state = translations::load(&temp, &entry.mod_unique_id)?;
+        state.extend(entry.base.clone());
         state.extend(translations::load(&working, &entry.mod_unique_id)?);
         translations::save_many(&temp, &entry.mod_unique_id, state.into_iter().collect())?;
         components.push(crate::release_zip::ZipComponentInput {

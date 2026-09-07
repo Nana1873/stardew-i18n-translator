@@ -251,7 +251,20 @@ fn prepare(
         let state = translations::load(config_dir, &component.unique_id)?;
         let mut component_entries = 0;
         for file in &component.files {
-            let relative_i18n = Path::new(&file.relative_dir);
+            let output_unit = if let Some((root, _)) = file.relative_dir.split_once("/@split/") {
+                let target =
+                    scanner::split_target_path(Path::new(&file.default_path), &target_lang)?;
+                format!(
+                    "{root}/@split/{}",
+                    target
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .ok_or("Invalid split target")?
+                )
+            } else {
+                file.relative_dir.clone()
+            };
+            let relative_i18n = Path::new(&output_unit);
             validate_relative_path(relative_i18n)?;
             let rows = scanner::load_strings_checked(
                 Path::new(&file.default_path),
@@ -440,8 +453,18 @@ fn archive_path(
 ) -> Result<String, String> {
     let mut parts = vec![package_name.to_string()];
     append_parts(&mut parts, component)?;
-    append_parts(&mut parts, relative_i18n)?;
-    parts.push(format!("{target_lang}.json"));
+    let unit = relative_i18n.to_string_lossy().replace('\\', "/");
+    if let Some((root, name)) = unit.split_once("/@split/") {
+        append_parts(&mut parts, Path::new(root))?;
+        parts.push(target_lang.to_string());
+        if name.contains('/') {
+            return Err("Invalid split translation filename".into());
+        }
+        parts.push(name.to_string());
+    } else {
+        append_parts(&mut parts, relative_i18n)?;
+        parts.push(format!("{target_lang}.json"));
+    }
     let path = parts.join("/");
     validate_archive_path(&path)?;
     Ok(path)

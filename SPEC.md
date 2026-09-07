@@ -15,7 +15,8 @@ Manual translation, validation, and export work offline without a glossary or
 AI backend.
 
 Translation targets are standard `<mod>/i18n/default.json` source files and
-`<mod>/i18n/<lang>.json` target files. The source is normally English. The app
+`<mod>/i18n/<lang>.json` target files, or SMAPI's split
+`<mod>/i18n/default/*.json` and `<mod>/i18n/<lang>/*.json` layout. The source is normally English. The app
 supports built-in and curated custom-language targets; custom targets require
 a matching language mod for use in-game.
 
@@ -34,6 +35,11 @@ game-content reads are limited to the glossary sources described below.
   Mods folder.
 - Accept relaxed mod JSON, but require source and target dictionaries to be
   flat string objects. Preserve source key order for display and export.
+- Split sources use stable source-file identities. Keys share one component
+  namespace; duplicate source keys and mixed root-file/folder layouts are rejected.
+  Existing target filenames are resolved by unique key membership. Exports retain
+  the language-folder layout and never emit internal segment identity markers.
+  Ambiguous target documents spanning source segments remain blocked locally.
 - Import existing targets using SMAPI-compatible case-insensitive, trimmed key
   matching. Extra target keys are informational: they do not count toward
   progress or block export, and a rewritten target omits them. Show them in a
@@ -204,7 +210,7 @@ valid cached results using the same rules without another API request. Matches
 and newest-file selection remain heuristics, not compatibility or completeness
 guarantees; the UI does not label files as recommended.
 
-Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage names its actual components; after mapping it uses those mapped component IDs.
+Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage always includes all verified installed package components, independently of the imported archive subset. An import receipt prevents automatic repeat acquisition, not a claim of complete package translation. Partial imports expose an explicit recheck for newly supported components or segments; the normal preflight and saved-edit protections still apply.
 
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It

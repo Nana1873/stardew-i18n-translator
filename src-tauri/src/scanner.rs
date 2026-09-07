@@ -539,38 +539,42 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            match build_i18n_file(&owner, i18n_dir, mods_path, target_lang, state) {
-                Ok((file, status_counts)) => {
-                    let diagnostics = extra_target_keys(
-                        &scanned.name,
-                        &file.relative_dir,
-                        Path::new(&file.default_path),
-                        Path::new(&file.target_path),
-                        mods_path,
-                    );
-                    match diagnostics {
-                        Ok(diagnostics) => {
-                            extra_keys.extend(diagnostics);
-                            scanned.status_counts.merge(&status_counts);
-                            scanned.i18n_files.push(file);
-                        }
-                        Err(error) => {
-                            skipped_components.push(skipped_i18n_component(
-                                scanned,
-                                i18n_dir,
-                                mods_path,
-                                safe_skip_reason(&error, mods_path),
-                            ));
+            for unit in i18n_units(i18n_dir, mods_path).unwrap_or_else(|error| vec![Err(error)]) {
+                match unit
+                    .and_then(|unit| build_i18n_file(&owner, &unit, mods_path, target_lang, state))
+                {
+                    Ok((file, status_counts)) => {
+                        let diagnostics = extra_target_keys(
+                            &scanned.name,
+                            &file.relative_dir,
+                            Path::new(&file.default_path),
+                            Path::new(&file.target_path),
+                            mods_path,
+                        );
+                        match diagnostics {
+                            Ok(diagnostics) => {
+                                extra_keys.extend(diagnostics);
+                                scanned.status_counts.merge(&status_counts);
+                                scanned.i18n_files.push(file);
+                            }
+                            Err(error) => {
+                                skipped_components.push(skipped_i18n_component(
+                                    scanned,
+                                    i18n_dir,
+                                    mods_path,
+                                    safe_skip_reason(&error, mods_path),
+                                ));
+                            }
                         }
                     }
-                }
-                Err(error) => {
-                    skipped_components.push(skipped_i18n_component(
-                        scanned,
-                        i18n_dir,
-                        mods_path,
-                        safe_skip_reason(&error, mods_path),
-                    ));
+                    Err(error) => {
+                        skipped_components.push(skipped_i18n_component(
+                            scanned,
+                            i18n_dir,
+                            mods_path,
+                            safe_skip_reason(&error, mods_path),
+                        ));
+                    }
                 }
             }
         }
@@ -1427,6 +1431,96 @@ fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
         })
 }
 
+pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf, String> {
+    let root = source
+        .parent()
+        .and_then(Path::parent)
+        .ok_or("Invalid split source")?;
+    let target = root.join(language);
+    let keys: HashSet<_> = read_object_checked(source)?
+        .keys()
+        .map(|k| folded_key(k))
+        .collect();
+    let mut matches = Vec::new();
+    if target.is_dir() {
+        for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+            if !path
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+            {
+                continue;
+            }
+            let values = read_object_within_root(&path, root, "target")?;
+            let existing: Vec<_> = values
+                .keys()
+                .filter(|k| !is_ignored_i18n_key(k))
+                .map(|k| folded_key(k))
+                .collect();
+            if existing.iter().any(|k| keys.contains(k)) {
+                if existing.iter().any(|k| !keys.contains(k)) {
+                    return Err("Existing locale document combines multiple source segments; automatic export is ambiguous.".into());
+                }
+                matches.push(path);
+            }
+        }
+    }
+    match matches.len() {
+        0 => {
+            let path=target.join(source.file_name().ok_or("Invalid split source")?);
+            if path.exists() { return Err("Target filename is occupied by a different source segment.".into()); }
+            Ok(path)
+        },
+        1 => Ok(matches.remove(0)),
+        _ => Err("Existing locale keys are spread across multiple documents; automatic export is ambiguous.".into()),
+    }
+}
+
+/// SMAPI merges immediate locale-directory JSON files into one namespace.
+/// Reject duplicate source keys instead of inventing a filesystem-order winner.
+fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, String> {
+    let split = dir.join("default");
+    if !split.is_dir() {
+        return Ok(vec![Ok(dir.to_path_buf())]);
+    }
+    if std::fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .any(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|v| v.eq_ignore_ascii_case("json"))
+        })
+    {
+        return Err(
+            "Mixed top-level and language-folder translations are not supported by SMAPI.".into(),
+        );
+    }
+    let mut files: Vec<_> = std::fs::read_dir(&split)
+        .map_err(|e| e.to_string())?
+        .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
+        .collect::<Result<_, _>>()?;
+    files.retain(|p| {
+        p.extension()
+            .is_some_and(|v| v.eq_ignore_ascii_case("json"))
+    });
+    files.sort();
+    let mut keys = HashSet::new();
+    for file in &files {
+        for key in read_object_within_root(file, root, "source")?
+            .keys()
+            .filter(|key| !is_ignored_i18n_key(key))
+        {
+            if !keys.insert(folded_key(key)) {
+                return Err("Duplicate source key across language-folder documents.".into());
+            }
+        }
+    }
+    Ok(files.into_iter().map(Ok).collect())
+}
+
 fn build_i18n_file(
     mod_dir: &Path,
     i18n_dir: &Path,
@@ -1434,14 +1528,37 @@ fn build_i18n_file(
     target_lang: &str,
     state: &ModState,
 ) -> Result<(ScannedI18nFile, StatusCounts), String> {
-    let relative_dir = i18n_dir
+    let split = i18n_dir.is_file();
+    let source_dir = if split {
+        i18n_dir
+            .parent()
+            .and_then(Path::parent)
+            .ok_or("Invalid split source")?
+    } else {
+        i18n_dir
+    };
+    let mut relative_dir = source_dir
         .strip_prefix(mod_dir)
         .map_err(|_| "i18n folder is outside its mod folder".to_string())?
         .to_str()
         .ok_or_else(|| "i18n path is not valid Unicode".to_string())?
         .replace('\\', "/");
-    let default_path = i18n_dir.join("default.json");
-    let target_path = i18n_dir.join(format!("{target_lang}.json"));
+    let (default_path, target_path) = if split {
+        let name = i18n_dir
+            .file_name()
+            .and_then(|n| n.to_str())
+            .ok_or("Invalid split filename")?;
+        relative_dir = format!("{relative_dir}/@split/{name}");
+        (
+            i18n_dir.to_path_buf(),
+            split_target_path(i18n_dir, target_lang)?,
+        )
+    } else {
+        (
+            i18n_dir.join("default.json"),
+            i18n_dir.join(format!("{target_lang}.json")),
+        )
+    };
     let inspection = inspect_keys_checked(
         &default_path,
         &target_path,
@@ -1609,7 +1726,7 @@ fn collect_bounded(
                             false
                         }
                     };
-                    if safe_default {
+                    if safe_default || path.join("default").is_dir() {
                         i18n_dirs.push(path);
                     }
                     continue; // no mods nested inside an i18n folder
@@ -3433,5 +3550,79 @@ mod blank_source_tests {
             (1, 0)
         );
         assert_eq!(scan.mods[0].progress, 0.0);
+    }
+}
+
+#[cfg(test)]
+mod split_locale_tests {
+    use super::*;
+    #[test]
+    fn split_sources_have_stable_units_and_existing_target_membership() {
+        let root = crate::test_support::temp_dir("split-locales");
+        let moddir = root.join("Mods/Example");
+        std::fs::create_dir_all(moddir.join("i18n/default")).unwrap();
+        std::fs::create_dir_all(moddir.join("i18n/de")).unwrap();
+        std::fs::write(
+            moddir.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Split","Version":"1.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Dialogue.json"),
+            r#"{"dialogue.hello":"Hello"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Events.json"),
+            r#"{"event.start":"Start"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Other.json"),
+            r#"{"dialogue.hello":"Hallo"}"#,
+        )
+        .unwrap();
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert_eq!(scan.mods.len(), 1);
+        let files = &scan.mods[0].i18n_files;
+        assert_eq!(files.len(), 2);
+        let dialogue = files
+            .iter()
+            .find(|f| f.relative_dir.ends_with("Dialogue.json"))
+            .unwrap();
+        assert!(dialogue.target_path.ends_with("Other.json"));
+        assert_eq!(dialogue.total_keys, 1);
+        let inputs: Vec<_> = files
+            .iter()
+            .map(|f| crate::export::ExportFileInput {
+                relative_dir: f.relative_dir.clone(),
+                default_path: f.default_path.clone(),
+                target_path: f.target_path.clone(),
+            })
+            .collect();
+        crate::export::validate_paths(&root.join("Mods"), "de", &inputs).unwrap();
+        std::fs::write(
+            moddir.join("i18n/de/Events.json"),
+            r#"{"unrelated.key":"Elsewhere"}"#,
+        )
+        .unwrap();
+        assert!(
+            split_target_path(&moddir.join("i18n/default/Events.json"), "de")
+                .unwrap_err()
+                .contains("occupied")
+        );
+        std::fs::remove_file(moddir.join("i18n/de/Events.json")).unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Events.json"),
+            r#"{"dialogue.hello":"Duplicate"}"#,
+        )
+        .unwrap();
+        assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
+            .mods
+            .is_empty());
+        std::fs::write(moddir.join("i18n/default.json"), "{}").unwrap();
+        assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
+            .mods
+            .is_empty());
     }
 }

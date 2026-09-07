@@ -1581,6 +1581,89 @@ mod tests {
         (config, mods, id)
     }
     #[test]
+    fn split_dictionary_import_exports_segments_and_marks_source_edits_outdated() {
+        let (config, mods, id) = fixture("split-lifecycle");
+        let i18n = mods.join("Example/i18n");
+        std::fs::remove_file(i18n.join("default.json")).unwrap();
+        std::fs::remove_file(i18n.join("de.json")).unwrap();
+        std::fs::create_dir_all(i18n.join("default")).unwrap();
+        std::fs::write(i18n.join("default/Dialogue.json"), r#"{"new":"Hello"}"#).unwrap();
+        std::fs::write(i18n.join("default/Events.json"), r#"{"local":"Keep"}"#).unwrap();
+        let archive = inspect_zip(zip_bytes(&[(
+            "Example/i18n/de.json",
+            r#"{"new":"Hallo","local":"Behalten"}"#,
+        )]))
+        .unwrap();
+        lock().archives.insert(id.clone(), archive.clone());
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        let resolution =
+            resolve_archive_components_with_hints(&id, &archive, &scan.mods, "de", &[]);
+        assert_eq!(resolution.mappings.len(), 2);
+        for m in &resolution.mappings {
+            import_from_config_mode(
+                &config,
+                &id,
+                &m.archive_path,
+                &m.mod_unique_id,
+                &m.relative_dir,
+                false,
+                true,
+            )
+            .unwrap();
+            assert_eq!(
+                import_from_config_mode(
+                    &config,
+                    &id,
+                    &m.archive_path,
+                    &m.mod_unique_id,
+                    &m.relative_dir,
+                    true,
+                    true
+                )
+                .unwrap()
+                .imported,
+                1
+            );
+        }
+        let output = config.join("split.zip");
+        crate::community_library::build(&config, &output.display().to_string(), false).unwrap();
+        let mut zip = zip::ZipArchive::new(std::fs::File::open(&output).unwrap()).unwrap();
+        assert_eq!(zip.len(), 2);
+        for index in 0..zip.len() {
+            let file = zip.by_index(index).unwrap();
+            assert!(file.name().contains("/i18n/de/"));
+            assert!(!file.name().contains("@split"));
+        }
+        let fresh = scanner::scan_mods(&mods, "de", &config);
+        assert_eq!(fresh.mods[0].status_counts.translated, 2);
+        let inputs: Vec<_> = fresh.mods[0]
+            .i18n_files
+            .iter()
+            .map(|f| crate::export::ExportFileInput {
+                relative_dir: f.relative_dir.clone(),
+                default_path: f.default_path.clone(),
+                target_path: f.target_path.clone(),
+            })
+            .collect();
+        crate::export::validate_paths(&mods, "de", &inputs).unwrap();
+        let working = translations::language_root(&config, "de").unwrap();
+        assert!(
+            !crate::export::export_mod(&working, "Example.Mod", &inputs)
+                .unwrap()
+                .blocked
+        );
+        assert!(i18n.join("de/Dialogue.json").is_file());
+        assert!(!i18n.join("de.json").exists());
+        std::fs::write(i18n.join("default/Dialogue.json"), r#"{"new":"Changed"}"#).unwrap();
+        assert_eq!(
+            scanner::scan_mods(&mods, "de", &config).mods[0]
+                .status_counts
+                .outdated,
+            1
+        );
+    }
+
+    #[test]
     fn community_two_component_output_preserves_base_personal_and_ignores_deployed_output() {
         let (config, mods, id) = fixture("community-output");
         std::fs::create_dir_all(mods.join("Second/i18n")).unwrap();
@@ -2185,6 +2268,7 @@ mod tests {
         .unwrap();
         let mut scan = scanner::scan_mods(&mods, "de", &config);
         crate::vortex_identity::resolve_original_ids(&mods, &mut scan);
+        std::fs::write(output.join("scan-summary.json"), serde_json::to_vec_pretty(&json!({"components":scan.mods.iter().filter(|m| m.name.to_lowercase().contains("scarp") || m.name.to_lowercase().contains("ridgeside")).collect::<Vec<_>>(),"skipped":scan.skipped_components})).unwrap()).unwrap();
         let mut reports = Vec::new();
         for (id, original) in [
             (32713, 10770),
@@ -2243,6 +2327,72 @@ mod tests {
                 "de",
                 &hints,
             );
+            let mut copy_imports = Vec::new();
+            if std::env::var_os("NEXUS_COMPAT_COPY_IMPORT").is_some() {
+                let copies = output.join("Mods");
+                for component in &scan.mods {
+                    let source_folder = Path::new(&component.folder_path);
+                    let folder = copies.join(source_folder.strip_prefix(&mods).unwrap());
+                    std::fs::create_dir_all(&folder).unwrap();
+                    std::fs::copy(
+                        source_folder.join("manifest.json"),
+                        folder.join("manifest.json"),
+                    )
+                    .unwrap();
+                    for unit in &component.i18n_files {
+                        for source in [&unit.default_path, &unit.target_path] {
+                            let source = Path::new(source);
+                            if source.is_file() {
+                                let dest = copies.join(source.strip_prefix(&mods).unwrap());
+                                std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+                                std::fs::copy(source, dest).unwrap();
+                            }
+                        }
+                    }
+                }
+                settings::save(
+                    &config,
+                    &settings::AppSettings {
+                        mods_path: Some(copies.display().to_string()),
+                        target_lang: Some("de".into()),
+                        ..Default::default()
+                    },
+                )
+                .unwrap();
+                for mapping in &resolved.mappings {
+                    import_from_config_mode(
+                        &config,
+                        &mapping.archive_id,
+                        &mapping.archive_path,
+                        &mapping.mod_unique_id,
+                        &mapping.relative_dir,
+                        false,
+                        true,
+                    )
+                    .unwrap();
+                    let result = import_from_config_mode(
+                        &config,
+                        &mapping.archive_id,
+                        &mapping.archive_path,
+                        &mapping.mod_unique_id,
+                        &mapping.relative_dir,
+                        true,
+                        true,
+                    );
+                    copy_imports.push(json!({"component":mapping.mod_unique_id,"unit":mapping.relative_dir,"result":result}));
+                }
+                let built = crate::community_library::build(
+                    &config,
+                    &output.join("output.zip").display().to_string(),
+                    true,
+                );
+                std::fs::write(
+                    output.join("copy-import.json"),
+                    serde_json::to_vec_pretty(&json!({"imports":copy_imports,"build":built}))
+                        .unwrap(),
+                )
+                .unwrap();
+            }
             let parsed: Vec<_> = archive.files.iter().filter(|f| f.path.to_lowercase().ends_with("/de.json")).map(|f| {
                 let body = &archive.documents[&f.path];
                 match scanner::parse_flat_object(body,Path::new("archive locale")) {Ok(map)=>json!({"path":f.path,"keys":map.len(),"bom":body.starts_with('\u{feff}')}),Err(e)=>json!({"path":f.path,"error":e})}
@@ -3400,7 +3550,13 @@ fn resolve_archive_components_with_hints(
                     .unwrap_or_default()
                     .to_lowercase();
                 component.i18n_files.iter().filter_map(move |i18n| {
-                    let relative = i18n.relative_dir.replace('\\', "/").to_lowercase();
+                    let relative = i18n
+                        .relative_dir
+                        .split("/@split/")
+                        .next()
+                        .unwrap_or(&i18n.relative_dir)
+                        .replace('\\', "/")
+                        .to_lowercase();
                     let suffix = format!("{name}/{relative}");
                     let identity_matches = match &file.manifest_unique_id {
                         Some(uid) => uid.eq_ignore_ascii_case(&component.unique_id),
@@ -3455,7 +3611,13 @@ fn resolve_archive_components_with_hints(
                         continue;
                     }
                     for i18n in &component.i18n_files {
-                        let relative = i18n.relative_dir.replace('\\', "/").to_lowercase();
+                        let relative = i18n
+                            .relative_dir
+                            .split("/@split/")
+                            .next()
+                            .unwrap_or(&i18n.relative_dir)
+                            .replace('\\', "/")
+                            .to_lowercase();
                         let prefix = parent
                             .strip_suffix(&format!("/{relative}"))
                             .unwrap_or_default();
@@ -3507,29 +3669,67 @@ fn resolve_archive_components_with_hints(
                         .iter()
                         .any(|id| id.eq_ignore_ascii_case(&m.unique_id))
                 }) {
-                    for i18n in &component.i18n_files {
-                        if let Some(source) = std::fs::read_to_string(&i18n.default_path)
-                            .ok()
-                            .and_then(|body| {
-                                scanner::parse_flat_object(&body, Path::new(&i18n.default_path))
-                                    .ok()
-                            })
-                        {
-                            let matched =
-                                keys.iter().filter(|key| source.contains_key(*key)).count();
-                            let substantive = keys
+                    let sources: Vec<_> = component
+                        .i18n_files
+                        .iter()
+                        .filter_map(|i| {
+                            scanner::read_object_checked(Path::new(&i.default_path))
+                                .ok()
+                                .map(|source| (i, source))
+                        })
+                        .collect();
+                    let combined: HashSet<_> = sources
+                        .iter()
+                        .flat_map(|(_, source)| source.keys())
+                        .collect();
+                    let matched = keys.iter().filter(|key| combined.contains(key)).count();
+                    let substantive = keys
+                        .iter()
+                        .filter(|key| substantive_archive_key(key) && combined.contains(key))
+                        .count();
+                    if matched * 100 >= keys.len() * 90 && substantive >= 8 {
+                        candidates.extend(
+                            sources
                                 .iter()
-                                .filter(|key| {
-                                    substantive_archive_key(key) && source.contains_key(*key)
+                                .filter(|(_, source)| {
+                                    keys.iter().any(|key| source.contains_key(key))
                                 })
-                                .count();
-                            if matched * 100 >= keys.len() * 90 && substantive >= 8 {
-                                candidates.push((component, i18n));
-                            }
-                        }
+                                .map(|(i, _)| (component, *i)),
+                        );
                     }
                 }
             }
+        }
+        let one_component = candidates.first().is_some_and(|(first, _)| {
+            candidates
+                .iter()
+                .all(|(m, _)| m.unique_id == first.unique_id)
+        });
+        if one_component
+            && candidates
+                .iter()
+                .all(|(_, i)| i.relative_dir.contains("/@split/"))
+        {
+            for (component, i18n) in &candidates {
+                let source =
+                    scanner::read_object_checked(Path::new(&i18n.default_path)).unwrap_or_default();
+                let incoming = archive
+                    .documents
+                    .get(&file.path)
+                    .and_then(|body| {
+                        scanner::parse_flat_object(body, Path::new("archive locale")).ok()
+                    })
+                    .unwrap_or_default();
+                if source.keys().any(|key| incoming.contains_key(key)) {
+                    result.mappings.push(ResolvedArchiveMapping {
+                        archive_id: archive_id.into(),
+                        archive_path: file.path.clone(),
+                        mod_unique_id: component.unique_id.clone(),
+                        relative_dir: i18n.relative_dir.clone(),
+                    });
+                }
+            }
+            continue;
         }
         if let [(component, i18n)] = candidates.as_slice() {
             result.mappings.push(ResolvedArchiveMapping {

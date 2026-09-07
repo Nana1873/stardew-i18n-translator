@@ -108,7 +108,7 @@ export function ManualTranslationImport({
         if (saved) await onImported();
         if (problems.length)
           setMessage(
-            `${saved} components imported. ${problems.length} files need attention: ${problems.join("; ")}`,
+            `${saved} imports completed. ${problems.length} files need attention: ${problems.join("; ")}`,
           );
         else if (saved) onComplete?.();
         else setMessage("No matching installed components were found.");

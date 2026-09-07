@@ -15,8 +15,8 @@ Setup prefills it from the detected or selected game folder. Vortex users also
 need this path: scan the game's deployed Mods folder, not Vortex's staging or
 downloads folder. Deploy changes in Vortex before scanning them here.
 
-The scan reads standard `i18n/default.json` sources and existing target-language
-files. Multi-part packages are grouped in the mod list. Mods that do not use
+The scan reads standard `i18n/default.json` sources or split `i18n/default/*.json`
+sources and existing target-language files. Multi-part packages are grouped in the mod list. Mods that do not use
 standard SMAPI i18n files cannot be translated here.
 
 **Overview** shows scan totals and recently opened mods. Open **Workspace** and
@@ -43,7 +43,7 @@ translations. In Vortex mode, downloaded translations are imported into the
 Translator instead of sending original archives to Vortex. Valid imported values are marked **Done**; existing personal values are kept. **Open missing strings** leads to the
 existing Workspace for manual or AI-assisted editing. Already imported Nexus files
 are remembered separately from translation completeness, so an incomplete archive
-does not require downloading again.
+does not require downloading again. Package coverage includes every installed component, even when the archive translated only a subset. **Recheck import** retries a partial archive when more components can be matched; existing saved edits are kept.
 
 The **Import …** menu groups language JSON and LLM batches under **JSON files**, and downloaded translations under **ZIP archives**. To import a standalone locale file, select its mod and choose **Import language JSON…**. Choose the matching component when the mod has multiple i18n directories. The filename must match the configured language (for example, `de.json`). Valid locale and translation ZIP values are marked **Done**; external LLM batches remain **Review**.
 
@@ -51,10 +51,12 @@ For a manually downloaded translation, select its mod in Workspace and choose
 **Import … → Import downloaded translation ZIP…**. ZIP locale files are matched against all installed components. Every unambiguous match imports automatically; unmatched target-language files are listed without guessing a component. ZIP locale files
 are supported; default-language-only bundles and RAR/7z imports are not.
 
-The scanner currently requires a component's `i18n/default.json`. Components
-using split source files such as `i18n/Default/Dialogue.json` and `Events.json`
-are not yet available for translation import; an installed component can therefore
-remain unmatched even when its archive is readable.
+Split sources such as `i18n/Default/Dialogue.json` and `Events.json` are supported.
+A single archive language file can supply multiple source segments when the
+component and keys match unambiguously. Exports preserve the language-folder
+layout, including existing target filenames when safely matched. Duplicate keys,
+competing archive files, or existing target files spanning multiple source
+segments need attention; the app does not guess or emit overlapping dictionaries.
 
 The **Export …** menu lists all-mod and current-mod JSON exports first, followed by ZIP archives and translation-note tools.
 
