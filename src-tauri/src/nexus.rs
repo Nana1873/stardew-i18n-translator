@@ -586,7 +586,7 @@ fn relationship_tier(original: &str, title: &str, lang: &str) -> &'static str {
         language_words(lang).contains(&word)
             || joined_translation_label(word)
             || word == lang
-            || matches!(word, "translation" | "translations")
+            || matches!(word, "translation" | "translations" | "remastered")
             || (lang == "de" && matches!(word, "ger" | "übersetzung" | "korrektur" | "korrekturen"))
             || (lang == "ja" && word == "jp")
             || (lang == "zh" && matches!(word, "chs" | "cht" | "simplified" | "traditional"))
@@ -3202,6 +3202,105 @@ mod workflow_tests {
             cache_status: "fresh".into(),
         }
     }
+    #[test]
+    fn edition_translation_titles_reclassify_fresh_and_cached_without_promoting_subject_addons() {
+        let mut value = discovery(1000);
+        value.mod_id = 5787;
+        value.original_name = "East Scarp".into();
+        value.candidates = [
+            (15138, "East Scarp - German", "2023-11-10"),
+            (50527, "East Scarp Remastered - Deutsch", "2026-08-16"),
+            (
+                11,
+                "Eli and Dylan - Custom NPCs for East Scarp - Deutsch",
+                "2026-09-01",
+            ),
+            (
+                12,
+                "Creative Differences - NPC Rodney (East Scarp) - Deutsch",
+                "2026-09-01",
+            ),
+            (
+                13,
+                "Fievel Goes East Scarp - Hat Mouse NPC - German Deutsch",
+                "2026-09-01",
+            ),
+            (
+                14,
+                "East Scarp Remastered Fishing Addon - Deutsch",
+                "2026-09-01",
+            ),
+        ]
+        .into_iter()
+        .map(|(mod_id, name, updated_at)| Candidate {
+            mod_id,
+            name: name.into(),
+            summary: String::new(),
+            version: "1".into(),
+            updated_at: updated_at.into(),
+            relationship_tier: "possible-addon-or-other-translation".into(),
+        })
+        .collect();
+        let config = crate::test_support::temp_dir("edition-cache");
+        store_discovery(&config, "de", &value).unwrap();
+        let cached = cached_discovery(&config, 5787, "de", 1001, false).unwrap();
+        classify_candidates(&value.original_name, "de", &mut value.candidates);
+        for candidates in [&value.candidates, &cached.candidates] {
+            let original: Vec<_> = candidates
+                .iter()
+                .filter(|c| c.relationship_tier == "possible-original-translation")
+                .map(|c| c.mod_id)
+                .collect();
+            assert_eq!(original, vec![50527, 15138]);
+        }
+        assert_eq!(
+            relationship_tier("Example Town", "Example Town Remastered - French", "fr"),
+            "possible-original-translation"
+        );
+        assert_eq!(
+            relationship_tier(
+                "East Scarp",
+                "East Scarp Remastered NPC Rodney German",
+                "de"
+            ),
+            "possible-addon-or-other-translation"
+        );
+        assert_eq!(
+            relationship_tier("East Scarp Remastered", "East Scarp - German", "de"),
+            "possible-addon-or-other-translation"
+        );
+        assert_eq!(
+            relationship_tier("East Scarp", "Remastered - Deutsch", "de"),
+            "possible-addon-or-other-translation"
+        );
+    }
+
+    #[test]
+    #[ignore = "Explicit local captured Nexus discovery classification proof"]
+    fn captured_discovery_reclassifies_cached_edition_candidate() {
+        let path = std::env::var("NEXUS_CAPTURED_DISCOVERY").expect("Set captured discovery JSON");
+        let mut value: Discovery = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let config = crate::test_support::temp_dir("captured-edition");
+        store_discovery(&config, "de", &value).unwrap();
+        let cached =
+            cached_discovery(&config, value.mod_id, "de", value.fetched_at + 1, false).unwrap();
+        classify_candidates(&value.original_name, "de", &mut value.candidates);
+        for candidates in [&value.candidates, &cached.candidates] {
+            let matching: Vec<_> = candidates
+                .iter()
+                .filter(|c| c.relationship_tier == "possible-original-translation")
+                .collect();
+            assert_eq!(matching[0].mod_id, 50527);
+            assert!(matching.iter().all(|c| !c.name.contains("Rodney")
+                && !c.name.contains("Eli and Dylan")
+                && !c.name.contains("Fievel")));
+        }
+        println!(
+            "Captured discovery {}: fresh and cache both rank 50527 first; named add-ons excluded",
+            value.mod_id
+        );
+    }
+
     #[test]
     fn candidate_titles_require_only_translation_qualifiers_around_the_full_original() {
         for (original, title, lang) in [

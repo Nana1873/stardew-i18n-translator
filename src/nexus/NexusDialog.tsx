@@ -826,9 +826,13 @@ export function NexusDialog({
     ];
   }
   function knownComponents(sourceId: number) {
-    const candidates =
+    const candidates = (
       search.entries.find((entry) => entry.modId === sourceId)?.result
-        ?.candidates ?? [];
+        ?.candidates ?? []
+    ).filter(
+      (candidate) =>
+        candidate.relationshipTier === "possible-original-translation",
+    );
     return [
       ...new Set([
         ...importedSources
@@ -843,7 +847,11 @@ export function NexusDialog({
           )
           .map((saved) => saved.modUniqueId),
         ...Object.entries(rows)
-          .filter(([key]) => key.startsWith(`${sourceId}:`))
+          .filter(([key]) =>
+            candidates.some((candidate) =>
+              key.startsWith(`${sourceId}:${candidate.modId}:`),
+            ),
+          )
           .flatMap(([, row]) => row.modIds),
       ]),
     ];
@@ -921,18 +929,20 @@ export function NexusDialog({
             recordedComponents.includes(component.uniqueId),
           )
           .map((component) => component.uniqueId),
-        partialArchive:
+        retryNewUnits:
           acquired &&
-          packageComponents.some((component) =>
-            component.i18nFiles.some(
-              (directory) =>
-                !importedSources.some(
-                  (saved) =>
-                    saved.modUniqueId === component.uniqueId &&
-                    saved.relativeDir === directory.relativeDir &&
-                    sourceUrls(saved).includes(archiveSource),
-                ),
-            ),
+          packageComponents.some(
+            (component) =>
+              recordedComponents.includes(component.uniqueId) &&
+              component.i18nFiles.some(
+                (directory) =>
+                  !importedSources.some(
+                    (saved) =>
+                      saved.modUniqueId === component.uniqueId &&
+                      saved.relativeDir === directory.relativeDir &&
+                      sourceUrls(saved).includes(archiveSource),
+                  ),
+              ),
           ),
       };
     });
@@ -1190,7 +1200,7 @@ export function NexusDialog({
             )}
             {row.handoff && (
               <small className="nexus-handoff-status">
-                Sent to Vortex � installation and deployment unconfirmed
+                Sent to Vortex · installation and deployment unconfirmed
               </small>
             )}
             {group.acquired && (
@@ -1212,17 +1222,9 @@ export function NexusDialog({
                           )),
                       0,
                     )}{" "}
-                    strings still missing in package
+                    strings still missing across installed components
                   </>
                 )}
-              </small>
-            )}
-            {group.acquired && group.partialArchive && (
-              <small>
-                Imported from this archive: {group.importedComponents.length} of{" "}
-                {displayedComponents.length} installed components; some
-                translation files are not imported. Recheck import to retry
-                matching; saved edits are kept.
               </small>
             )}
             {!group.evidence.length && group.inventory.length > 0 && (
@@ -1235,7 +1237,23 @@ export function NexusDialog({
               <small>
                 Components:{" "}
                 {displayedComponents
-                  .map((component) => component.name)
+                  .map((component) => {
+                    if (
+                      !group.acquired ||
+                      displayedScanIncomplete ||
+                      !workingKnown
+                    )
+                      return component.name;
+                    const missing =
+                      component.statusCounts?.untranslated ??
+                      Math.max(
+                        0,
+                        component.totalKeys -
+                          component.translatedKeys -
+                          (component.noTranslationNeededKeys ?? 0),
+                      );
+                    return `${component.name} (${missing ? `${missing} missing` : "complete"})`;
+                  })
                   .join(", ")}
               </small>
             )}
@@ -1278,7 +1296,7 @@ export function NexusDialog({
                   onClick={() => onOpenMissing(component.uniqueId)}
                 >
                   Open missing strings
-                  {missingComponents.length > 1 ? ` � ${component.name}` : ""}
+                  {missingComponents.length > 1 ? ` · ${component.name}` : ""}
                 </button>
               ))}
           </td>
@@ -1424,7 +1442,7 @@ export function NexusDialog({
             )}
             {libraryMode &&
               selected &&
-              (group.partialArchive || (row.unresolved?.length ?? 0) > 0) && (
+              (group.retryNewUnits || (row.unresolved?.length ?? 0) > 0) && (
                 <button
                   className={quiet}
                   disabled={locked || importStatusUnknown || !canDirectImport}

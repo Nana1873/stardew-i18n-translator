@@ -401,7 +401,7 @@ it.each(["folder", "vortex"] as const)(
     expect(
       await screen.findByText(/Could not match 1 translation file/),
     ).toBeVisible();
-    expect(screen.getByText("Components: Local mod, Other mod")).toBeVisible();
+    expect(screen.getByText("Components: Local mod")).toBeVisible();
   },
 );
 it("imports every safe segment mapping from the same archive document", async () => {
@@ -451,7 +451,7 @@ it("remembers an imported Nexus file across reopening while offering missing str
   );
   const app = mount({ method: "vortex", libraryMode: true });
   await screen.findByText(
-    "Already imported · 3 strings still missing in package",
+    "Already imported · 3 strings still missing across installed components",
   );
   expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Open missing strings" }));
@@ -464,7 +464,7 @@ it("remembers an imported Nexus file across reopening while offering missing str
   app.setOpen(false);
   app.setOpen(true);
   await screen.findByText(
-    "Already imported · 3 strings still missing in package",
+    "Already imported · 3 strings still missing across installed components",
   );
   await screen.findByText(/Saved import status is unavailable/);
   expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
@@ -513,12 +513,12 @@ it("keeps whole-package coverage for a partial receipt and allows an explicit re
     ],
   });
   await screen.findByText(
-    "Already imported · 80 strings still missing in package",
+    "Already imported · 80 strings still missing across installed components",
   );
   expect(
     screen.getByText("Working translation: 23/103 strings · 80 missing"),
   ).toBeVisible();
-  expect(screen.getByText("Components: Local mod, Core")).toBeVisible();
+  expect(screen.getByText(/^Components: Local mod .*Core /)).toBeVisible();
   expect(screen.queryByRole("button", { name: /^Download .*all/ })).toBeNull();
   expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
   fireEvent.click(screen.getByRole("button", { name: "Recheck import" }));
@@ -545,6 +545,330 @@ async function download() {
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
 }
+it("shows complete SVE main components and absent optional text without a false import retry", async () => {
+  const sourceMods = [
+    {
+      ...mods[0],
+      uniqueId: "cp",
+      name: "SVE CP",
+      totalKeys: 11317,
+      translatedKeys: 11317,
+    },
+    {
+      ...mods[0],
+      uniqueId: "code",
+      name: "SVE Code",
+      totalKeys: 24,
+      translatedKeys: 24,
+    },
+    {
+      ...mods[0],
+      uniqueId: "fields",
+      name: "Grampleton Fields",
+      packageId: "fields",
+      totalKeys: 1,
+      translatedKeys: 0,
+    },
+    {
+      ...mods[0],
+      uniqueId: "frontier",
+      name: "Frontier Farm",
+      packageId: "frontier",
+      totalKeys: 69,
+      translatedKeys: 0,
+    },
+  ];
+  let imported = false;
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) => {
+    if (command === "nexus_resolve_archive")
+      return Promise.resolve({
+        mappings: ["cp", "code"].map((modUniqueId) => ({
+          archiveId: "archive",
+          archivePath: `${modUniqueId}/i18n/de.json`,
+          modUniqueId,
+          relativeDir: "i18n",
+        })),
+        unresolved: [],
+      });
+    if (command === "list_community_library")
+      return Promise.resolve(
+        imported
+          ? ["cp", "code"].map((modUniqueId) => ({
+              modUniqueId,
+              relativeDir: "i18n",
+              archivePath: `${modUniqueId}/i18n/de.json`,
+              strings: 1,
+              sourceUrl:
+                "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files&file_id=7",
+            }))
+          : [],
+      );
+    return original(command, ...args);
+  });
+  const app = mount({ method: "vortex", libraryMode: true, mods: sourceMods });
+  app.onImported.mockImplementation(async () => {
+    imported = true;
+    app.setMods([...sourceMods]);
+  });
+  await download();
+  await screen.findByText(
+    "Already imported · 70 strings still missing across installed components",
+  );
+  expect(
+    screen.getByText(
+      "Components: SVE CP (complete), SVE Code (complete), Grampleton Fields (1 missing), Frontier Farm (69 missing)",
+    ),
+  ).toBeVisible();
+  expect(
+    screen.getByText("Working translation: 11341/11411 strings · 70 missing"),
+  ).toBeVisible();
+  expect(screen.queryByRole("button", { name: "Recheck import" })).toBeNull();
+  expect(
+    screen.queryByText(/some translation files are not imported/),
+  ).toBeNull();
+});
+it("keeps Leilani's eleven gaps in its own row instead of adding them to Ridgeside's six", async () => {
+  const sourceMods = [
+    ...[17522, 25, 212].map((totalKeys, index) => ({
+      ...mods[0],
+      uniqueId: `rsv.${index}`,
+      name: `RSV ${index}`,
+      packageId: "Ridgeside Village",
+      nexusId: index === 1 ? 7286 : null,
+      totalKeys,
+      translatedKeys: totalKeys - (index === 0 ? 6 : 0),
+    })),
+    {
+      ...mods[0],
+      uniqueId: "leilani",
+      name: "Leilani",
+      packageId: "Leilani",
+      nexusId: 31000,
+      totalKeys: 185,
+      translatedKeys: 174,
+    },
+  ];
+  const base = {
+    ...candidate,
+    modId: 20792,
+    name: "Ridgeside Village - German Translation",
+  };
+  const addon = {
+    ...candidate,
+    modId: 41000,
+    name: "Leilani (Ridgeside Village) - German translation",
+  };
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.resolve(
+          [
+            ["rsv.0", 20792],
+            ["leilani", 41000],
+          ].map(([modUniqueId, id]) => ({
+            modUniqueId,
+            relativeDir: "i18n",
+            archivePath: "i18n/de.json",
+            strings: 1,
+            sourceUrl: `https://www.nexusmods.com/stardewvalley/mods/${id}?tab=files&file_id=7`,
+          })),
+        )
+      : original(command, ...args),
+  );
+  mount({
+    method: "vortex",
+    libraryMode: true,
+    mods: sourceMods,
+    search: {
+      ...search,
+      entries: [
+        {
+          modId: 7286,
+          localNames: ["RSV"],
+          result: {
+            ...search.entries[1].result,
+            modId: 7286,
+            originalName: "Ridgeside Village",
+            candidates: [
+              base,
+              {
+                ...addon,
+                relationshipTier: "possible-addon-or-other-translation",
+              },
+            ],
+          },
+        },
+        {
+          modId: 31000,
+          localNames: ["Leilani"],
+          result: {
+            ...search.entries[1].result,
+            modId: 31000,
+            originalName: "Leilani",
+            candidates: [addon],
+          },
+        },
+      ],
+    },
+  });
+  await screen.findByText(
+    "Working translation: 17753/17759 strings · 6 missing",
+  );
+  await screen.findByText("Working translation: 174/185 strings · 11 missing");
+  expect(
+    within(screen.getByRole("row", { name: "Ridgeside Village" })).getByText(
+      /^Components:/,
+    ),
+  ).not.toHaveTextContent("Leilani");
+  expect(screen.getByRole("row", { name: "Leilani" })).toBeInTheDocument();
+});
+it("uses reclassified Remastered metadata without adding related translation packages to East Scarp", async () => {
+  const original = invoke.getMockImplementation()!;
+  const candidates = [
+    {
+      ...candidate,
+      modId: 15138,
+      name: "East Scarp - German",
+      updatedAt: "2023-11-10",
+    },
+    {
+      ...candidate,
+      modId: 50527,
+      name: "East Scarp Remastered - Deutsch",
+      updatedAt: "2026-09-01",
+      relationshipTier: "possible-addon-or-other-translation" as const,
+    },
+    {
+      ...candidate,
+      modId: 60001,
+      name: "Creative Differences - NPC Rodney (East Scarp) - Deutsch",
+      relationshipTier: "possible-addon-or-other-translation" as const,
+    },
+    {
+      ...candidate,
+      modId: 60002,
+      name: "Eli and Dylan - Custom NPCs for East Scarp - Deutsch",
+      relationshipTier: "possible-addon-or-other-translation" as const,
+    },
+  ];
+  const entry = {
+    ...search.entries[1],
+    result: {
+      ...search.entries[1].result,
+      originalName: "East Scarp",
+      candidates,
+    },
+  };
+  const sourceMods = [
+    ...[11021, 727, 4, 1].map((totalKeys, index) => ({
+      ...mods[0],
+      uniqueId: `scarp.${index}`,
+      name: `Scarp ${index}`,
+      packageId: "East Scarp",
+      nexusId: index === 1 ? 1 : null,
+      totalKeys,
+      translatedKeys: totalKeys - (index === 0 ? 2 : 0),
+    })),
+    {
+      ...mods[0],
+      uniqueId: "rodney",
+      name: "Rodney",
+      packageId: "Rodney",
+      nexusId: null,
+      totalKeys: 4000,
+      translatedKeys: 4000,
+    },
+    {
+      ...mods[0],
+      uniqueId: "eli",
+      name: "Eli and Dylan",
+      packageId: "Eli",
+      nexusId: null,
+      totalKeys: 1824,
+      translatedKeys: 1820,
+    },
+  ];
+  sourceMods.push({
+    ...mods[0],
+    uniqueId: "foreign",
+    name: "Foreign mod",
+    nexusId: 42,
+    packageId: "Foreign",
+    totalKeys: 9000,
+  });
+  invoke.mockImplementation((command: string, args?: { modId?: number }) => {
+    if (command === "nexus_list_files")
+      return Promise.resolve([
+        {
+          ...file,
+          fileId: args?.modId === 50527 ? 8 : 7,
+          fileName:
+            args?.modId === 50527 ? "remastered.rar" : "translation.zip",
+          uploadedAt: args?.modId === 50527 ? "2026-09-01" : "2023-11-10",
+        },
+      ]);
+    if (command === "list_community_library")
+      return Promise.resolve(
+        [
+          ["scarp.1", 15138],
+          ["rodney", 60001],
+          ["eli", 60002],
+          ["foreign", 50527],
+        ].map(([modUniqueId, id]) => ({
+          modUniqueId,
+          relativeDir: "i18n",
+          archivePath: "i18n/de.json",
+          strings: 1,
+          sourceUrl: `https://www.nexusmods.com/stardewvalley/mods/${id}?tab=files&file_id=7`,
+        })),
+      );
+    return original(command, args);
+  });
+  const app = mount({
+    method: "vortex",
+    libraryMode: true,
+    mods: sourceMods,
+    search: { ...search, entries: [entry] },
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("combobox")).toHaveValue("15138:7"),
+  );
+  expect(
+    screen.getByText("Working translation: 11751/11753 strings · 2 missing"),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/^Components: Scarp 0.*Scarp 1.*Scarp 2.*Scarp 3/),
+  ).toBeVisible();
+  app.setSearch({
+    ...search,
+    entries: [
+      {
+        ...entry,
+        result: {
+          ...entry.result,
+          candidates: candidates.map((item) =>
+            item.modId === 50527
+              ? {
+                  ...item,
+                  relationshipTier: "possible-original-translation" as const,
+                }
+              : item,
+          ),
+        },
+      },
+    ],
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("combobox")).toHaveValue("50527:8"),
+  );
+  expect(
+    screen.getByText("Working translation: 11751/11753 strings · 2 missing"),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/^Components: Scarp 0.*Scarp 1.*Scarp 2.*Scarp 3/),
+  ).toBeVisible();
+});
 it("selects newer Remastered RAR despite an acquired classic page and recognizes supplemental receipts", async () => {
   const original = invoke.getMockImplementation()!;
   let supplemented = false;
@@ -612,7 +936,7 @@ it("selects newer Remastered RAR despite an acquired classic page and recognizes
   supplemented = true;
   app.setMods([...mods]);
   await screen.findByText(
-    "Already imported · 3 strings still missing in package",
+    "Already imported · 3 strings still missing across installed components",
   );
   expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
   fireEvent.change(screen.getByRole("combobox"), {
@@ -789,12 +1113,7 @@ it("restores SVE scope from receipts through a complete 44-ID search after resta
       "Working translation: 11311/11410 strings · 99 missing",
     );
     expect(
-      screen.getByText("Components: Frontier Farm, SVE CP, SVE Code"),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        /Imported from this archive: 1 of 3 installed components/,
-      ),
+      screen.getByText(/^Components: Frontier Farm .*SVE CP .*SVE Code /),
     ).toBeVisible();
     expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
     app.unmount();
@@ -3230,11 +3549,11 @@ it("collapses installed inventory while keeping honest deployment context and co
   fireEvent.click(summary);
   expect(screen.getByText(/Deployment not verified/)).toBeVisible();
   fireEvent.click(
-    screen.getByRole("button", { name: "Open missing strings � Local mod" }),
+    screen.getByRole("button", { name: "Open missing strings · Local mod" }),
   );
   fireEvent.click(
     screen.getByRole("button", {
-      name: "Open missing strings � Second component",
+      name: "Open missing strings · Second component",
     }),
   );
   expect(app.onOpenMissing.mock.calls).toEqual([

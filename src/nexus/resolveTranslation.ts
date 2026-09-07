@@ -162,19 +162,30 @@ export function nexusSourceComponents(
 ): ScannedMod[] {
   const packages = new Set(
     mods
+      .filter((mod) => mod.nexusId === sourceNexusId)
+      .map((mod) => mod.packageId)
+      .filter(Boolean),
+  );
+  const compatibleIdentity = (mod: ScannedMod) =>
+    !(Number.isSafeInteger(mod.nexusId) && (mod.nexusId ?? 0) > 0) ||
+    mod.nexusId === sourceNexusId;
+  const knownPackages = new Set(
+    mods
       .filter(
         (mod) =>
-          (mod.nexusId === sourceNexusId ||
-            knownComponentIds.includes(mod.uniqueId)) &&
+          compatibleIdentity(mod) &&
+          knownComponentIds.includes(mod.uniqueId) &&
           mod.packageId,
       )
       .map((mod) => mod.packageId),
   );
   return mods.filter(
     (mod) =>
-      knownComponentIds.includes(mod.uniqueId) ||
       mod.nexusId === sourceNexusId ||
-      (!!mod.packageId && packages.has(mod.packageId)),
+      (!!mod.packageId && packages.has(mod.packageId)) ||
+      (compatibleIdentity(mod) &&
+        (knownComponentIds.includes(mod.uniqueId) ||
+          (!!mod.packageId && knownPackages.has(mod.packageId)))),
   );
 }
 
