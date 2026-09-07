@@ -47,6 +47,11 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             continue;
         }
 
+        if let Some((end, action_tokens)) = read_betas_message(chars, offset) {
+            tokens.extend(action_tokens);
+            offset = end;
+            continue;
+        }
         let end = read_content_patcher(chars, offset)
             .or_else(|| read_mail_command(chars, offset))
             .or_else(|| read_dialogue_break(chars, offset))
@@ -362,6 +367,62 @@ fn read_mail_command(chars: &[char], offset: usize) -> Option<usize> {
     find_sub(chars, offset, "%%").map(|i| i + 2)
 }
 
+/// Only BETAS DialogueBox's documented message argument is prose. Ambiguous
+/// quoting/nested actions fall back to the original opaque command protection.
+// BETAS DialogueBox argument 2 is display text; preserve all control arguments.
+// Ambiguous quotes and nested commands retain the existing opaque fallback.
+fn read_betas_message(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
+    let prefix = "#$action Spiderbuttons.BETAS_DialogueBox ";
+    if !starts_with(chars, offset, prefix) {
+        return None;
+    }
+    let mut cursor = offset + prefix.chars().count();
+    let npc_start = cursor;
+    while chars
+        .get(cursor)
+        .is_some_and(|c| !c.is_whitespace() && *c != '#' && *c != '"')
+    {
+        cursor += 1;
+    }
+    if cursor == npc_start {
+        return None;
+    }
+    while chars.get(cursor) == Some(&' ') {
+        cursor += 1;
+    }
+    let quote = if starts_with(chars, cursor, "\\\"") {
+        "\\\""
+    } else if chars.get(cursor) == Some(&'"') {
+        "\""
+    } else {
+        return None;
+    };
+    let width = quote.chars().count();
+    let start = cursor + width;
+    let close = find_sub(chars, start, quote)?;
+    let body = &chars[start..close];
+    // Keep complex/argument-bearing message commands opaque until their
+    // grammar is supported; numeric portraits and ordinary tokens are safe.
+    if body.iter().any(|c| matches!(c, '%' | '\\' | '"'))
+        || body
+            .iter()
+            .enumerate()
+            .any(|(i, c)| *c == '$' && !body.get(i + 1).is_some_and(char::is_ascii_digit))
+    {
+        return None;
+    }
+    let end = find_char(chars, close + width, '#').unwrap_or(chars.len());
+    let suffix = &chars[close + width..end];
+    if suffix.iter().any(|c| *c == '"' || *c == '|') {
+        return None;
+    }
+    let mut raw: String = chars[offset..start].iter().collect();
+    raw.extend(chars[close..end].iter());
+    let mut result = vec![raw];
+    result.extend(extract_chars(body));
+    Some((end, result))
+}
+
 fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
     if !starts_with(chars, offset, "#$") {
         return None;
@@ -383,6 +444,21 @@ fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
         }
     }
 
+    // Only the first unquoted query branch pipe may end action arguments.
+    // Later pipes inside opaque actions remain protected.
+    if starts_with(chars, offset, "#$action ") && starts_with(chars, 0, "$query ") {
+        if let Some(pipe) = find_char(chars, offset + 2, '|') {
+            let end = find_char(chars, offset + 2, '#').unwrap_or(chars.len());
+            let header = &chars[offset..pipe];
+            if pipe < end
+                && find_char(chars, 0, '|') == Some(pipe)
+                && !chars[..offset].contains(&'"')
+                && !header.contains(&'"')
+            {
+                return Some(pipe + 1);
+            }
+        }
+    }
     find_char(chars, offset + 2, '#').map(|i| i + 1)
 }
 
@@ -577,6 +653,11 @@ fn read_positional(chars: &[char], offset: usize) -> Option<usize> {
 fn read_simple_dialogue(chars: &[char], offset: usize) -> Option<usize> {
     if chars.get(offset) != Some(&'$') {
         return None;
+    }
+    if starts_with(chars, offset, "$h")
+        && chars.get(offset + 2).is_some_and(char::is_ascii_uppercase)
+    {
+        return Some(offset + 2);
     }
     let mut j = offset + 1;
     if j < chars.len() && chars[j].is_ascii_alphabetic() {
@@ -901,6 +982,19 @@ mod tests {
     fn shared_fixture_cases_match() {
         let body = include_str!("../../tests/fixtures/token-cases.json");
         let parsed: serde_json::Value = serde_json::from_str(body).unwrap();
+        for case in parsed["comparisons"].as_array().unwrap() {
+            let blocked = !token_differences(
+                case["source"].as_str().unwrap(),
+                case["target"].as_str().unwrap(),
+            )
+            .is_empty();
+            assert_eq!(
+                blocked,
+                case["blocked"].as_bool().unwrap(),
+                "{}",
+                case["name"]
+            );
+        }
         let cases = parsed["cases"].as_array().expect("fixture has cases");
         assert!(cases.len() >= 10, "fixture should stay comprehensive");
         for case in cases {
