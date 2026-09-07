@@ -3,9 +3,11 @@ import { vi } from "vitest";
 import type { NexusSearchResult, ScannedMod } from "../tauri/commands";
 const search = vi.fn();
 const status = vi.fn();
+const library = vi.fn();
 vi.mock("../tauri/commands", () => ({
   nexusFindTranslations: (...args: unknown[]) => search(...args),
   nexusStatus: (...args: unknown[]) => status(...args),
+  listCommunityLibrary: (...args: unknown[]) => library(...args),
 }));
 import { useNexusSearch } from "./useNexusSearch";
 import {
@@ -23,9 +25,52 @@ const result = (modId: number): NexusSearchResult => ({
 });
 beforeEach(() => {
   search.mockReset();
+  library.mockReset().mockResolvedValue([]);
   status
     .mockReset()
     .mockResolvedValue({ configured: true, validated: true, premium: true });
+});
+it("checks complete groups with saved imports during explicit update searches", async () => {
+  search.mockImplementation((id: number) => Promise.resolve(result(id)));
+  library.mockResolvedValue([{ modUniqueId: "saved" }]);
+  const hook = renderHook(() => useNexusSearch("mods|de"));
+  const completeMods = [
+    { ...mod(1), uniqueId: "saved", totalKeys: 3, translatedKeys: 3 },
+    { ...mod(2), uniqueId: "manual-only", totalKeys: 3, translatedKeys: 3 },
+  ] as ScannedMod[];
+  await act(() =>
+    hook.result.current.start(completeMods, "de", {
+      retainImported: true,
+      traversalComplete: true,
+    }),
+  );
+  expect(search.mock.calls.map(([id]) => id)).toEqual([1]);
+  expect(hook.result.current.skippedComplete).toBe(1);
+});
+it("cancels before discovery when saved import lookup belongs to an old context", async () => {
+  let finish!: (value: unknown[]) => void;
+  library.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const hook = renderHook(({ key }) => useNexusSearch(key), {
+    initialProps: { key: "mods|de" },
+  });
+  let pending!: Promise<void>;
+  act(() => {
+    pending = hook.result.current.start([mod(1)], "de", {
+      retainImported: true,
+    });
+  });
+  expect(hook.result.current.running).toBe(true);
+  hook.rerender({ key: "mods|fr" });
+  await act(async () => {
+    finish([]);
+    await pending;
+  });
+  expect(search).not.toHaveBeenCalled();
 });
 
 it("validates once per explicit search including cached results, but not empty targets", async () => {

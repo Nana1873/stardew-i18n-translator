@@ -156,13 +156,18 @@ The Nexus workflow is in local testing; it is not a registered production
 integration. Discovery is explicitly user-started. Startup, normal scans,
 rescans, and installed-file checks never contact Nexus, even with legacy
 automatic-search settings.
-Search once per positive Nexus ID and target language. By default, skip a group
-only when it has source keys and all associated components with source keys,
-including package siblings without an ID, have no missing required text on
-disk. Blank sources with blank or absent disk targets need no translation text;
-count them separately from physically present nonempty target strings. Use exact counts, not rounded progress. An explicit option includes covered
-groups for Collection curation. Saved Review/Changed text is not disk coverage;
-coverage does not imply quality approval.
+Search once per positive Nexus ID and target language. Explicit searches retain
+known imported groups to check eligible file updates, including at complete working
+coverage. Other fully covered groups may be skipped; unknown scans never establish
+completeness. No background polling or automatic downloads are performed.
+Successful whole-archive attempts are tracked by exact Nexus page/file identity in
+the current Mods/language context and hidden by default regardless of missing strings
+or token skips. **Show already imported** restores details and deliberate reimport,
+including for fully translated mods. New eligible files and relevant unimported
+supplements remain visible. Failed, unresolved and legacy unknown attempts stay
+visible; a component receipt alone does not prove whole-archive success.
+Blank sources need no translation text. Use exact coverage counts, not rounded
+progress, and do not treat coverage as quality approval.
 
 Track Vortex's installed file inventory separately from deployment and coverage.
 Bind exact Nexus mod/file IDs to matching installed and finished-download records,
@@ -210,7 +215,7 @@ valid cached results using the same rules without another API request. Matches
 and newest-file selection remain heuristics, not compatibility or completeness
 guarantees; the UI does not label files as recommended.
 
-Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage always includes all verified installed package components, independently of the imported archive subset. Native mappings and persisted import receipts from original-mod translation candidates extend the source scope to their exact component identities and package siblings without inventing Nexus IDs; unrelated candidate receipts and explicit conflicting Nexus IDs do not expand this scope. Rechecking replaces the previous attempt counters and details. Optional files from confirmed original-translation candidates can supplement an installed component with missing text through an exact full-name metadata match. The newest main selection is preserved; the batch includes supplemental files, skipping components completed by the main import. Supplemental native mappings are restricted to the named component, and their Nexus file links remain available for manual download. Ambiguous names and uninstalled or already imported components are excluded. Nexus acquisition results exclude verified packages with zero missing working strings, including saved manual or AI text without requiring Review completion. Missing strings introduced by source updates return after scanning; unavailable coverage is never treated as complete. An import receipt prevents automatic repeat acquisition, not a claim of complete package translation. Partial imports expose an explicit recheck for newly supported components or segments; the normal preflight and saved-edit protections still apply.
+Archive locale mapping uses a fresh native scan across installed components, not the representative Nexus row. Unambiguous manifest or component-path matches import automatically through existing preflight and conditional-save checks. If identity is absent, known source components can constrain a unique match with strong source-key evidence; conflicting manifest identities are never overridden. Unmatched target-language files are reported without assigning them to the representative component. Row coverage always includes all verified installed package components, independently of the imported archive subset. Native mappings and persisted import receipts from original-mod translation candidates extend the source scope to their exact component identities and package siblings without inventing Nexus IDs; unrelated candidate receipts and explicit conflicting Nexus IDs do not expand this scope. Rechecking replaces the previous attempt counters and details. Optional files from confirmed original-translation candidates can supplement an installed component through an exact full-name metadata match. The newest main selection is preserved; the batch includes supplemental files, skipping components already mapped by the main import. Supplemental native mappings are restricted to the named component, and their Nexus file links remain available for manual download. Ambiguous names and uninstalled components are excluded. Successfully imported exact files are hidden by default; newer eligible files and unimported relevant supplements remain visible even with complete working text. Show already imported restores successful archives for inspection and explicit reimport. Unknown or unresolved attempts stay visible. An import receipt prevents automatic repeat acquisition, not a claim of complete package translation. Partial imports expose an explicit recheck for newly supported components or segments; the normal preflight and saved-edit protections still apply.
 
 Only official Nexus APIs are used. The key is saved to the Windows user
 environment as `NEXUS_API_KEY`, preferred over an inherited process value. It

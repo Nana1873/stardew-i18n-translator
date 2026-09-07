@@ -4,6 +4,10 @@ import {
   nexusStatus,
   nexusResolveArchive,
   listCommunityLibrary,
+  listCommunityImportAttempts,
+  beginCommunityImportAttempt,
+  finishCommunityImportAttempt,
+  type CommunityImportAttempt,
   type CommunityLibraryEntry,
   nexusHandoffToVortex,
   nexusListFiles,
@@ -215,6 +219,8 @@ export function NexusDialog({
     stopped?: boolean;
   } | null>(null);
   const [batchRunning, setBatchRunning] = useState(false);
+  const [showAlreadyImported, setShowAlreadyImported] = useState(false);
+  const [attemptRevision, setAttemptRevision] = useState(0);
   useEffect(() => {
     if (search.running) setBatchProgress(null);
   }, [search.running]);
@@ -265,6 +271,7 @@ export function NexusDialog({
       setSupplementSelections({});
       setRows({});
       setBatchProgress(null);
+      setShowAlreadyImported(false);
       setCheckedAt(null);
       setCheckError(null);
       setRecheckPending(null);
@@ -352,6 +359,7 @@ export function NexusDialog({
     current: () => boolean,
   ) {
     let saved = 0;
+    let succeeded = true;
     for (const mapping of mappings) {
       if (!current()) return;
       const name =
@@ -386,6 +394,7 @@ export function NexusDialog({
         }));
       } catch (cause) {
         if (!current()) return;
+        succeeded = false;
         patch(key, (row) => ({
           ...row,
           failures: row.failures + 1,
@@ -402,6 +411,7 @@ export function NexusDialog({
       try {
         await onImported();
       } catch {
+        succeeded = false;
         if (current())
           patch(key, {
             error:
@@ -409,6 +419,7 @@ export function NexusDialog({
           });
       }
     }
+    return succeeded && current();
   }
   async function downloadAndImport(
     key: string,
@@ -430,6 +441,10 @@ export function NexusDialog({
       unresolved: undefined,
       notice: undefined,
     });
+    const attemptId = libraryMode
+      ? await beginCommunityImportAttempt(candidate.modId, file.fileId)
+      : null;
+    if (!current()) return;
     const archive = await nexusDownloadPreflight(candidate.modId, file.fileId);
     if (!current()) return;
     const nativeResolution =
@@ -486,7 +501,34 @@ export function NexusDialog({
         `Downloaded ${file.fileName}; ${archive.files.length} JSON files inspected. ${resolved.rejected} unmatched entries.`,
       ],
     }));
-    await importMappings(key, resolved.mappings, current);
+    const imported = await importMappings(key, resolved.mappings, current);
+    if (current() && attemptId) {
+      const complete = Boolean(
+        imported &&
+        resolved.mappings.length &&
+        !resolved.choices.length &&
+        !resolved.rejected &&
+        (!nativeResolution ||
+          nativeResolution.mappings.length === resolved.mappings.length),
+      );
+      await finishCommunityImportAttempt(attemptId, complete);
+      if (!current()) return;
+      setAttemptRevision((revision) => revision + 1);
+      const sourceUrl = `https://www.nexusmods.com/stardewvalley/mods/${candidate.modId}?tab=files&file_id=${file.fileId}`;
+      setImportedState((previous) =>
+        previous.context === importedContext
+          ? {
+              ...previous,
+              attempts: [
+                ...previous.attempts.filter(
+                  (attempt) => attempt.sourceUrl !== sourceUrl,
+                ),
+                { sourceUrl, complete },
+              ],
+            }
+          : previous,
+      );
+    }
     if (current()) patch(key, { completed: true });
   }
 
@@ -831,9 +873,10 @@ export function NexusDialog({
   const [importedState, setImportedState] = useState<{
     context: string;
     entries: CommunityLibraryEntry[];
+    attempts: CommunityImportAttempt[];
     verified: boolean;
     error?: string;
-  }>({ context: "", entries: [], verified: false });
+  }>({ context: "", entries: [], attempts: [], verified: false });
   const importedContext = `${workspaceKey}|${targetLang}`;
   const importedSources =
     importedState.context === importedContext ? importedState.entries : [];
@@ -843,14 +886,15 @@ export function NexusDialog({
   useEffect(() => {
     if (!open || !libraryMode) return;
     let current = true;
-    void listCommunityLibrary()
-      .then((entries) => {
-        if (!Array.isArray(entries))
+    void Promise.all([listCommunityLibrary(), listCommunityImportAttempts()])
+      .then(([entries, attempts]) => {
+        if (!Array.isArray(entries) || !Array.isArray(attempts))
           throw new Error("Invalid saved import status");
         if (current)
           setImportedState({
             context: importedContext,
             entries,
+            attempts,
             verified: true,
           });
       })
@@ -860,6 +904,8 @@ export function NexusDialog({
             context: importedContext,
             entries:
               previous.context === importedContext ? previous.entries : [],
+            attempts:
+              previous.context === importedContext ? previous.attempts : [],
             verified: previous.context === importedContext && previous.verified,
             error:
               "Saved import status is unavailable. Reopen Nexus results to retry.",
@@ -868,7 +914,7 @@ export function NexusDialog({
     return () => {
       current = false;
     };
-  }, [open, libraryMode, importedContext, mods]);
+  }, [open, libraryMode, importedContext, mods, attemptRevision]);
   function sourceUrls(saved: CommunityLibraryEntry) {
     return [
       saved.sourceUrl,
@@ -925,13 +971,14 @@ export function NexusDialog({
   );
   const coveredIds = new Set(
     results
-      .filter((result) => result.covered)
+      .filter((result) => !libraryMode && result.covered)
       .map((result) => result.entry.modId),
   );
   const groups = results
     .filter(
       (result) =>
-        !result.covered && (result.candidates.length || result.evidence.length),
+        (libraryMode || !result.covered) &&
+        (result.candidates.length || result.evidence.length),
     )
     .map((result) => {
       const { entry, selected, sourceUnknown } = result;
@@ -952,7 +999,13 @@ export function NexusDialog({
         ? mods.filter((mod) => recordedComponents.includes(mod.uniqueId))
         : packageComponents;
       const acquired =
-        libraryMode && Boolean(selected) && recordedComponents.length > 0;
+        libraryMode &&
+        Boolean(selected) &&
+        (recordedComponents.length > 0 ||
+          importedState.attempts.some(
+            (attempt) =>
+              attempt.sourceUrl === archiveSource && attempt.complete,
+          ));
       const key = selected
         ? `${entry.modId}:${selected.value}`
         : `${entry.modId}:pending`;
@@ -982,6 +1035,7 @@ export function NexusDialog({
                 files: fileMetadata.entries[candidate.modId]?.files ?? [],
               })),
               targetLang,
+              libraryMode,
             ).flatMap((supplement) => {
               const selectionKey = `${entry.modId}:${supplement.component.uniqueId}`;
               const option =
@@ -989,15 +1043,19 @@ export function NexusDialog({
                   (option) =>
                     option.value === supplementSelections[selectionKey],
                 ) ?? supplement.options[0];
+              const completedAttempt =
+                importedState.context === importedContext &&
+                !importedState.error &&
+                importedState.attempts.some(
+                  (attempt) =>
+                    attempt.complete &&
+                    attempt.sourceUrl ===
+                      `https://www.nexusmods.com/stardewvalley/mods/${option.candidate.modId}?tab=files&file_id=${option.file.fileId}`,
+                ) &&
+                !rows[`${entry.modId}:${option.value}`]?.error;
               if (
                 option.value === selected?.value ||
-                importedSources.some(
-                  (saved) =>
-                    saved.modUniqueId === supplement.component.uniqueId &&
-                    sourceUrls(saved).includes(
-                      `https://www.nexusmods.com/stardewvalley/mods/${option.candidate.modId}?tab=files&file_id=${option.file.fileId}`,
-                    ),
-                )
+                (completedAttempt && !showAlreadyImported)
               )
                 return [];
               const key = `${entry.modId}:${option.value}`;
@@ -1007,6 +1065,16 @@ export function NexusDialog({
                   selected: option,
                   selectionKey,
                   key,
+                  acquired:
+                    completedAttempt ||
+                    importedSources.some(
+                      (saved) =>
+                        saved.modUniqueId === supplement.component.uniqueId &&
+                        sourceUrls(saved).includes(
+                          `https://www.nexusmods.com/stardewvalley/mods/${option.candidate.modId}?tab=files&file_id=${option.file.fileId}`,
+                        ),
+                    ),
+                  importComplete: completedAttempt,
                   row: rows[key] ?? emptyRow(),
                 },
               ];
@@ -1019,6 +1087,21 @@ export function NexusDialog({
         key,
         row: acquired ? { ...row, completed: true } : row,
         acquired,
+        importComplete:
+          libraryMode &&
+          !importStatusUnknown &&
+          !importedState.error &&
+          Boolean(
+            archiveSource &&
+            importedState.attempts.some(
+              (attempt) =>
+                attempt.sourceUrl === archiveSource && attempt.complete,
+            ),
+          ) &&
+          !row.error &&
+          !row.failures &&
+          !row.unresolved?.length &&
+          !row.choices?.length,
         importedComponents: packageComponents
           .filter((component) =>
             recordedComponents.includes(component.uniqueId),
@@ -1043,10 +1126,18 @@ export function NexusDialog({
     });
   const shown = groups.filter(
     (group) =>
-      group.options.length > 0 ||
-      group.evidence.length > 0 ||
-      group.inventory.length > 0,
+      (showAlreadyImported ||
+        !group.importComplete ||
+        group.additional.some((item) => !item.importComplete)) &&
+      (group.options.length > 0 ||
+        group.evidence.length > 0 ||
+        group.inventory.length > 0),
   );
+  const alreadyImportedCount = groups.filter(
+    (group) =>
+      group.importComplete &&
+      !group.additional.some((item) => !item.importComplete),
+  ).length;
   const failedIds = new Set([
     ...search.entries
       .filter((entry) => entry.error)
@@ -1149,6 +1240,7 @@ export function NexusDialog({
         .filter(
           (item) =>
             !importStatusUnknown &&
+            !item.acquired &&
             !item.row.completed &&
             !item.row.error &&
             !item.row.choices?.length,
@@ -1215,10 +1307,11 @@ export function NexusDialog({
         if (
           component &&
           (alreadyMapped ||
-            (component.statusCounts?.untranslated ??
-              component.totalKeys -
-                component.translatedKeys -
-                (component.noTranslationNeededKeys ?? 0)) === 0)
+            (!libraryMode &&
+              (component.statusCounts?.untranslated ??
+                component.totalKeys -
+                  component.translatedKeys -
+                  (component.noTranslationNeededKeys ?? 0)) === 0))
         ) {
           setBatchProgress((previous) =>
             previous ? { ...previous, total: previous.total - 1 } : previous,
@@ -1616,7 +1709,11 @@ export function NexusDialog({
                 )}
                 <details>
                   <summary>{item.component.name} details</summary>
-                  {Boolean(item.row.error || item.row.unresolved?.length) && (
+                  {Boolean(
+                    item.acquired ||
+                    item.row.error ||
+                    item.row.unresolved?.length,
+                  ) && (
                     <button
                       className={quiet}
                       disabled={
@@ -1632,7 +1729,8 @@ export function NexusDialog({
                         )
                       }
                     >
-                      Retry {item.component.name}
+                      {item.acquired ? "Re-import" : "Retry"}{" "}
+                      {item.component.name}
                     </button>
                   )}
                   <button
@@ -1683,7 +1781,16 @@ export function NexusDialog({
                   <button
                     className={quiet}
                     disabled={locked}
-                    onClick={() => void downloadAll([group])}
+                    onClick={() =>
+                      libraryMode && group.acquired
+                        ? void startReview(
+                            key,
+                            sourceId,
+                            selected.candidate,
+                            selected.file,
+                          )
+                        : void downloadAll([group])
+                    }
                   >
                     Retry
                   </button>
@@ -1726,8 +1833,7 @@ export function NexusDialog({
                   group.acquired &&
                   selected &&
                   !displayedScanIncomplete &&
-                  workingKnown &&
-                  workingCovered < workingTotal && (
+                  workingKnown && (
                     <>
                       <button
                         className={quiet}
@@ -2166,6 +2272,17 @@ export function NexusDialog({
         </div>
       )}
       <div className="nexus-dialog-body">
+        {libraryMode && (
+          <label className="nexus-checkbox">
+            <input
+              type="checkbox"
+              disabled={locked}
+              checked={showAlreadyImported}
+              onChange={(event) => setShowAlreadyImported(event.target.checked)}
+            />
+            Show already imported
+          </label>
+        )}
         {!resolvingInstalled && acquisitionResults.length > 0 && (
           <section aria-label="Available translations">
             <h3>
@@ -2243,12 +2360,14 @@ export function NexusDialog({
                     search.stoppedReason ||
                     search.completed < search.total
                   ? "No downloadable files could be confirmed."
-                  : installedGroups > 0
-                    ? "Available translation files are already installed."
-                    : coveredIds.size > 0 ||
-                        (search.total === 0 && skippedComplete > 0)
-                      ? "No missing translation text in the checked mods."
-                      : "No suitable translation downloads found."}
+                  : alreadyImportedCount > 0
+                    ? "No new translation files. Enable Show already imported to inspect or re-import saved archives."
+                    : installedGroups > 0
+                      ? "Available translation files are already installed."
+                      : coveredIds.size > 0 ||
+                          (search.total === 0 && skippedComplete > 0)
+                        ? "No missing translation text in the checked mods."
+                        : "No suitable translation downloads found."}
             </p>
           )}
         <section
@@ -2275,7 +2394,10 @@ export function NexusDialog({
                 ],
                 [noDownloadIds.size, "No suitable download found"],
                 [
-                  skippedComplete + coveredIds.size + installedGroups,
+                  skippedComplete +
+                    coveredIds.size +
+                    installedGroups +
+                    alreadyImportedCount,
                   "No new download needed",
                 ],
                 [search.noId, "Mods without Nexus ID"],
@@ -2288,7 +2410,7 @@ export function NexusDialog({
                     label === "No new download needed"
                       ? scanIncomplete
                         ? "Verified mods only; some scan results are unavailable"
-                        : `${skippedComplete + coveredIds.size} mods with no missing text; ${installedGroups} installed translations with no new file selected; text gaps may remain`
+                        : `${alreadyImportedCount} successfully imported archives; ${installedGroups} installed translations with no new file selected; text gaps may remain`
                       : undefined
                   }
                 >

@@ -6,6 +6,7 @@ import {
 import {
   nexusFindTranslations,
   nexusStatus,
+  listCommunityLibrary,
   type NexusSearchResult,
   type ScannedMod,
   type SkippedComponent,
@@ -130,16 +131,40 @@ export function useNexusSearch(workspaceKey: string) {
       skippedComponents?: SkippedComponent[];
       traversalComplete?: boolean;
       nexusIdentityIncomplete?: boolean;
+      retainImported?: boolean;
     } = {},
   ) {
     const run = ++generation.current;
     const key = context.current;
     const current = () => generation.current === run && context.current === key;
+    const retainIds = [...(options.retainIds ?? [])];
+    let includeComplete = options.includeComplete;
+    if (options.retainImported) {
+      setState({ ...emptyState(), running: true });
+      try {
+        const saved = await listCommunityLibrary();
+        if (!current()) return;
+        const importedIds = new Set(saved.map((entry) => entry.modUniqueId));
+        for (const mod of mods) {
+          if (
+            mod.nexusId &&
+            nexusSourceComponents(mods, mod.nexusId).some((component) =>
+              importedIds.has(component.uniqueId),
+            )
+          )
+            retainIds.push(mod.nexusId);
+        }
+      } catch {
+        if (!current()) return;
+        // Unknown saved state cannot establish that a complete group has no updates.
+        includeComplete = true;
+      }
+    }
     const { targets, noId, unassignedNames, skippedComplete } =
       nexusSearchTargets(
         mods,
-        options.includeComplete,
-        options.retainIds,
+        includeComplete,
+        retainIds,
         options.skippedComponents,
         options.traversalComplete,
         options.nexusIdentityIncomplete,

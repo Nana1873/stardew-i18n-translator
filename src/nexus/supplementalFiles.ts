@@ -12,6 +12,7 @@ export function supplementalFiles(
   components: ScannedMod[],
   pages: { candidate: NexusCandidate; files: NexusFile[] }[],
   language: string,
+  includeComplete = false,
 ) {
   const matches = new Map<
     string,
@@ -41,7 +42,8 @@ export function supplementalFiles(
         component.totalKeys -
           component.translatedKeys -
           (component.noTranslationNeededKeys ?? 0);
-      if (!Number.isFinite(missing) || missing <= 0) continue;
+      if (!Number.isFinite(missing) || (!includeComplete && missing <= 0))
+        continue;
       const group = matches.get(component.uniqueId) ?? {
         component,
         options: [],

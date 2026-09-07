@@ -713,6 +713,27 @@ export interface CommunityLibraryEntry {
 export function listCommunityLibrary(): Promise<CommunityLibraryEntry[]> {
   return invoke("list_community_library");
 }
+export interface CommunityImportAttempt {
+  sourceUrl: string;
+  complete: boolean;
+}
+export function listCommunityImportAttempts(): Promise<
+  CommunityImportAttempt[]
+> {
+  return invoke("list_community_import_attempts");
+}
+export function beginCommunityImportAttempt(
+  modId: number,
+  fileId: number,
+): Promise<string> {
+  return invoke("begin_community_import_attempt", { modId, fileId });
+}
+export function finishCommunityImportAttempt(
+  attemptId: string,
+  complete: boolean,
+): Promise<void> {
+  return invoke("finish_community_import_attempt", { attemptId, complete });
+}
 export function buildPrivateOutput(
   destination: string,
   overwrite = false,

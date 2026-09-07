@@ -279,6 +279,235 @@ function translationRow() {
   openInstalledResults();
   return within(screen.getByRole("row", { name: "Canonical title" }));
 }
+const importedUrl =
+  "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files&file_id=7";
+const savedEntry = {
+  modUniqueId: "sample.mod",
+  relativeDir: "i18n",
+  archivePath: "i18n/de.json",
+  strings: 2,
+  sourceUrl: importedUrl,
+};
+it.each([0, 3])(
+  "hides a verified imported archive with %s working values and restores it through the toggle",
+  async (translatedKeys) => {
+    const original = invoke.getMockImplementation()!;
+    let sameContext = true;
+    invoke.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "list_community_library"
+        ? Promise.resolve(sameContext ? [savedEntry] : [])
+        : command === "list_community_import_attempts"
+          ? Promise.resolve(
+              sameContext ? [{ sourceUrl: importedUrl, complete: true }] : [],
+            )
+          : original(command, ...args),
+    );
+    const app = mount({
+      method: "vortex",
+      libraryMode: true,
+      mods: [{ ...mods[0], translatedKeys }],
+    });
+    await screen.findByText(/No new translation files/);
+    expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
+    const toggle = screen.getByRole("checkbox", {
+      name: "Show already imported",
+    });
+    expect(toggle).not.toBeChecked();
+    fireEvent.click(toggle);
+    expect(screen.getByRole("row", { name: "Canonical title" })).toBeVisible();
+    fireEvent.click(translationRow().getByText("Details"));
+    expect(
+      screen.getByRole("button", { name: "Re-import translation" }),
+    ).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+    expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+    sameContext = false;
+    app.setContext("other", "fr");
+    expect(toggle).not.toBeChecked();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Re-import translation" }),
+      ).toBeNull(),
+    );
+  },
+);
+it("shows a newer exact file at 100 percent working coverage", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.resolve([savedEntry])
+      : command === "list_community_import_attempts"
+        ? Promise.resolve([{ sourceUrl: importedUrl, complete: true }])
+        : command === "nexus_list_files"
+          ? Promise.resolve([
+              file,
+              { ...file, fileId: 8, uploadedAt: "2026-08-01" },
+            ])
+          : original(command, ...args),
+  );
+  mount({
+    method: "vortex",
+    libraryMode: true,
+    mods: [{ ...mods[0], translatedKeys: 3 }],
+  });
+  await waitFor(() =>
+    expect(screen.getByRole("combobox")).toHaveValue("30342:8"),
+  );
+  expect(
+    screen.getByRole("button", { name: "Download & import all (1)" }),
+  ).toBeEnabled();
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+});
+it.each([false, undefined])(
+  "keeps incomplete or legacy attempt %s visible without automatic reacquisition",
+  async (complete) => {
+    const original = invoke.getMockImplementation()!;
+    invoke.mockImplementation((command: string, ...args: unknown[]) =>
+      command === "list_community_library"
+        ? Promise.resolve([savedEntry])
+        : command === "list_community_import_attempts"
+          ? Promise.resolve(
+              complete === undefined
+                ? []
+                : [{ sourceUrl: importedUrl, complete }],
+            )
+          : original(command, ...args),
+    );
+    mount({ method: "vortex", libraryMode: true });
+    await screen.findByText("Already imported");
+    expect(screen.getByRole("row", { name: "Canonical title" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+  },
+);
+it.each([false, true, "unresolved"])(
+  "persists archive completion only after every mapping succeeds (failure=%s)",
+  async (fails) => {
+    const original = invoke.getMockImplementation()!;
+    let attempts: { sourceUrl: string; complete: boolean }[] = [];
+    invoke.mockImplementation(
+      (command: string, args?: Record<string, unknown>) => {
+        if (command === "begin_community_import_attempt") {
+          attempts = [{ sourceUrl: importedUrl, complete: false }];
+          return Promise.resolve("attempt");
+        }
+        if (command === "finish_community_import_attempt") {
+          attempts = [
+            { sourceUrl: importedUrl, complete: Boolean(args?.complete) },
+          ];
+          return Promise.resolve();
+        }
+        if (command === "list_community_import_attempts")
+          return Promise.resolve(attempts);
+        if (command === "nexus_resolve_archive" && fails === "unresolved")
+          return Promise.resolve({
+            mappings: [
+              {
+                archiveId: "archive",
+                archivePath: "i18n/de.json",
+                modUniqueId: "sample.mod",
+                relativeDir: "i18n",
+              },
+            ],
+            unresolved: [
+              { archivePath: "Other/de.json", reason: "Unknown component" },
+            ],
+          });
+        if (command === "nexus_import_translation" && fails === true)
+          return Promise.reject(new Error("Save failed"));
+        return original(command, args);
+      },
+    );
+    mount({ method: "vortex", libraryMode: true });
+    await download();
+    await waitFor(() =>
+      expect(commandCalls("finish_community_import_attempt")).toEqual([
+        { attemptId: "attempt", complete: !fails },
+      ]),
+    );
+    if (fails)
+      expect(
+        screen.getByRole("row", { name: "Canonical title" }),
+      ).toBeVisible();
+    else {
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("row", { name: "Canonical title" }),
+        ).toBeNull(),
+      );
+      expect(screen.getByText(/1 text skipped by token checks/)).toBeVisible();
+      fireEvent.click(
+        screen.getByRole("checkbox", { name: "Show already imported" }),
+      );
+      expect(
+        screen.getByRole("row", { name: "Canonical title" }),
+      ).toBeVisible();
+    }
+  },
+);
+it("offers an unimported supplement while the main archive and all working text are complete", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation((command: string, ...args: unknown[]) =>
+    command === "list_community_library"
+      ? Promise.resolve([
+          savedEntry,
+          {
+            ...savedEntry,
+            modUniqueId: "frontier",
+            sourceUrl: importedUrl.replace("file_id=7", "file_id=8"),
+          },
+        ])
+      : command === "list_community_import_attempts"
+        ? Promise.resolve([
+            { sourceUrl: importedUrl, complete: true },
+            {
+              sourceUrl: importedUrl.replace("file_id=7", "file_id=8"),
+              complete: true,
+            },
+          ])
+        : command === "nexus_list_files"
+          ? Promise.resolve([
+              file,
+              {
+                ...file,
+                fileId: 8,
+                category: "OPTIONAL",
+                name: "Frontier Farm German",
+                uploadedAt: "2025-01-01",
+              },
+              {
+                ...file,
+                fileId: 9,
+                uploadedAt: "2025-12-01",
+                category: "OPTIONAL",
+                name: "Frontier Farm German",
+              },
+            ])
+          : original(command, ...args),
+  );
+  mount({
+    method: "vortex",
+    libraryMode: true,
+    mods: [
+      { ...mods[0], translatedKeys: 3 },
+      {
+        ...mods[0],
+        uniqueId: "frontier",
+        name: "Frontier Farm",
+        translatedKeys: 3,
+      },
+    ],
+  });
+  await screen.findByRole("button", { name: "Download & import all (1)" });
+  expect(
+    screen.getByText("Additional translation · Frontier Farm"),
+  ).toBeVisible();
+  expect(
+    screen.getByRole("combobox", {
+      name: "Translation version for Frontier Farm",
+    }),
+  ).toHaveValue("30342:9");
+  expect(commandCalls("nexus_download_preflight")).toHaveLength(0);
+});
 it("keeps coverage in collapsed details without workspace navigation", async () => {
   mount({ method: "folder", libraryMode: true });
   await screen.findByRole("row", { name: "Canonical title" });
@@ -593,7 +822,7 @@ it.each(["import", "context", "free"])(
       app.setMods([{ ...mods[0], translatedKeys: 3 }]);
       expect(
         screen.queryByRole("button", { name: "Re-import translation" }),
-      ).toBeNull();
+      ).toBeInTheDocument();
     }
   },
 );
@@ -1585,6 +1814,7 @@ beforeEach(() => {
     (cmd: string, args?: { modId?: number; fileId?: number }) => {
       if (cmd === "nexus_list_files") return Promise.resolve([file]);
       if (cmd === "list_community_library") return Promise.resolve([]);
+      if (cmd === "list_community_import_attempts") return Promise.resolve([]);
       if (cmd === "nexus_status")
         return Promise.resolve({
           configured: true,
@@ -1637,7 +1867,7 @@ it("loads only candidate metadata before any action, without selection checkboxe
     { url: "https://www.nexusmods.com/stardewvalley/mods/30342?tab=files" },
   ]);
 });
-it("hides completed saved text and restores new source gaps while retaining unavailable rows", async () => {
+it("keeps an unimported file available at complete working coverage and with new gaps", async () => {
   const app = mount({ method: "vortex", libraryMode: true });
   await screen.findByRole("row", { name: "Canonical title" });
   app.setMods([
@@ -1652,9 +1882,12 @@ it("hides completed saved text and restores new source gaps while retaining unav
       },
     },
   ]);
-  await screen.findByText("No missing translation text in the checked mods.");
-  expect(screen.queryByRole("row", { name: "Canonical title" })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Download .*all/ })).toBeNull();
+  expect(
+    screen.getByRole("row", { name: "Canonical title" }),
+  ).toBeInTheDocument();
+  expect(
+    screen.getByRole("button", { name: /Download .*all/ }),
+  ).toBeInTheDocument();
   app.setTraversal(false);
   expect(
     screen.getByRole("row", { name: "Canonical title" }),

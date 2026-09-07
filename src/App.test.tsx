@@ -24,7 +24,10 @@ let fileDropHandler:
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: (cmd: string, args?: unknown) => {
     const mocked = invokeMock(cmd, args);
-    if (cmd === "list_community_library")
+    if (
+      cmd === "list_community_library" ||
+      cmd === "list_community_import_attempts"
+    )
       return Promise.resolve(mocked).then((value) => value ?? []);
     if (cmd === "nexus_deployment_stamp")
       return Promise.resolve(mocked).then((value) => value ?? deploymentStamp);

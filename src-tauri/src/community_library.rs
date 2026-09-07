@@ -2,7 +2,8 @@ use crate::{language, scanner, settings, translations};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 #[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -24,6 +25,135 @@ pub struct CommunityLibraryEntry {
     pub base: translations::ModState,
     #[serde(default)]
     pub sources: Vec<CommunitySource>,
+}
+
+// Attempts live beside the accepted entries in the same context-scoped document.
+// A locale receipt alone never proves that an entire archive was processed.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommunityImportAttempt {
+    pub source_url: String,
+    pub complete: bool,
+    attempt_id: String,
+}
+
+#[derive(Default, Serialize, Deserialize)]
+struct LibraryDocument {
+    entries: Vec<CommunityLibraryEntry>,
+    #[serde(default)]
+    attempts: Vec<CommunityImportAttempt>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum StoredLibrary {
+    Document(LibraryDocument),
+    Legacy(Vec<CommunityLibraryEntry>),
+}
+
+static LIBRARY_LOCK: Mutex<()> = Mutex::new(());
+static ATTEMPT_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+fn read_document(path: &Path) -> Result<LibraryDocument, String> {
+    if !path.exists() {
+        return Ok(LibraryDocument::default());
+    }
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    match serde_json::from_slice(&bytes)
+        .map_err(|e| format!("Community library is unreadable: {e}"))?
+    {
+        StoredLibrary::Document(document) => Ok(document),
+        StoredLibrary::Legacy(entries) => Ok(LibraryDocument {
+            entries,
+            attempts: vec![],
+        }),
+    }
+}
+
+fn write_document(path: &Path, document: &LibraryDocument) -> Result<(), String> {
+    std::fs::create_dir_all(path.parent().ok_or("Invalid library path")?)
+        .map_err(|e| e.to_string())?;
+    let temp = path.with_extension("json.tmp");
+    std::fs::write(
+        &temp,
+        serde_json::to_vec_pretty(document).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    crate::release_zip::replace_file(&temp, path, true)
+}
+
+pub(crate) fn begin_attempt(config: &Path, mod_id: u64, file_id: u64) -> Result<String, String> {
+    if mod_id == 0 || file_id == 0 {
+        return Err("Invalid Nexus file identity.".into());
+    }
+    let _guard = LIBRARY_LOCK.lock().map_err(|_| "Library busy")?;
+    let (_, _, path) = context(config)?;
+    let mut document = read_document(&path)?;
+    let source_url = format!(
+        "https://www.nexusmods.com/stardewvalley/mods/{mod_id}?tab=files&file_id={file_id}"
+    );
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
+    let sequence = ATTEMPT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let attempt_id = format!(
+        "{:x}",
+        Sha256::digest(format!("{}:{source_url}:{stamp}:{sequence}", path.display()).as_bytes())
+    );
+    document
+        .attempts
+        .retain(|attempt| attempt.source_url != source_url);
+    document.attempts.push(CommunityImportAttempt {
+        source_url,
+        complete: false,
+        attempt_id: attempt_id.clone(),
+    });
+    write_document(&path, &document)?;
+    Ok(attempt_id)
+}
+
+pub(crate) fn finish_attempt(
+    config: &Path,
+    attempt_id: &str,
+    complete: bool,
+) -> Result<(), String> {
+    let _guard = LIBRARY_LOCK.lock().map_err(|_| "Library busy")?;
+    let (_, _, path) = context(config)?;
+    let mut document = read_document(&path)?;
+    let attempt = document
+        .attempts
+        .iter_mut()
+        .find(|attempt| attempt.attempt_id == attempt_id)
+        .ok_or("Import context or attempt changed. Retry the archive in the current workspace.")?;
+    attempt.complete = complete;
+    write_document(&path, &document)
+}
+
+#[tauri::command]
+pub fn begin_community_import_attempt(
+    app: tauri::AppHandle,
+    mod_id: u64,
+    file_id: u64,
+) -> Result<String, String> {
+    begin_attempt(&crate::config_dir(&app)?, mod_id, file_id)
+}
+
+#[tauri::command]
+pub fn finish_community_import_attempt(
+    app: tauri::AppHandle,
+    attempt_id: String,
+    complete: bool,
+) -> Result<(), String> {
+    finish_attempt(&crate::config_dir(&app)?, &attempt_id, complete)
+}
+
+#[tauri::command]
+pub fn list_community_import_attempts(
+    app: tauri::AppHandle,
+) -> Result<Vec<CommunityImportAttempt>, String> {
+    let (_, _, path) = context(&crate::config_dir(&app)?)?;
+    Ok(read_document(&path)?.attempts)
 }
 
 pub(crate) fn context(config: &Path) -> Result<(PathBuf, String, PathBuf), String> {
@@ -59,21 +189,14 @@ pub(crate) fn context(config: &Path) -> Result<(PathBuf, String, PathBuf), Strin
 
 pub(crate) fn list(config: &Path) -> Result<Vec<CommunityLibraryEntry>, String> {
     let (_, _, path) = context(config)?;
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-    serde_json::from_slice(&bytes).map_err(|e| format!("Community library is unreadable: {e}"))
+    Ok(read_document(&path)?.entries)
 }
 
 pub(crate) fn store(config: &Path, entry: CommunityLibraryEntry) -> Result<(), String> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    let _guard = LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .map_err(|_| "Library busy")?;
+    let _guard = LIBRARY_LOCK.lock().map_err(|_| "Library busy")?;
     let (_, _, path) = context(config)?;
-    let mut entries = list(config)?;
+    let mut document = read_document(&path)?;
+    let entries = &mut document.entries;
     let mut entry = entry;
     if let Some(index) = entries.iter().position(|old| {
         old.mod_unique_id == entry.mod_unique_id && old.relative_dir == entry.relative_dir
@@ -128,15 +251,7 @@ pub(crate) fn store(config: &Path, entry: CommunityLibraryEntry) -> Result<(), S
         });
     }
     entries.push(entry);
-    std::fs::create_dir_all(path.parent().ok_or("Invalid library path")?)
-        .map_err(|e| e.to_string())?;
-    let temp = path.with_extension("json.tmp");
-    std::fs::write(
-        &temp,
-        serde_json::to_vec_pretty(&entries).map_err(|e| e.to_string())?,
-    )
-    .map_err(|e| e.to_string())?;
-    crate::release_zip::replace_file(&temp, &path, true)
+    write_document(&path, &document)
 }
 
 #[tauri::command]
@@ -213,4 +328,116 @@ pub(crate) fn build(
     }
     // Never use deployed locale files here: they may be our previous output.
     crate::release_zip::build_combined(&temp, &mods, &lang, components, destination, overwrite)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fixture(label: &str) -> (PathBuf, settings::AppSettings) {
+        let config = crate::test_support::temp_dir(label);
+        let mods = config.join("Mods");
+        std::fs::create_dir_all(&mods).unwrap();
+        let saved = settings::AppSettings {
+            mods_path: Some(mods.display().to_string()),
+            target_lang: Some("de".into()),
+            ..Default::default()
+        };
+        settings::save(&config, &saved).unwrap();
+        (config, saved)
+    }
+
+    fn entry() -> CommunityLibraryEntry {
+        CommunityLibraryEntry {
+            mod_unique_id: "Example.Mod".into(),
+            relative_dir: "i18n".into(),
+            archive_path: "Example/i18n/de.json".into(),
+            strings: 0,
+            source_url: Some(
+                "https://www.nexusmods.com/stardewvalley/mods/123?tab=files&file_id=456".into(),
+            ),
+            archive_id: "archive".into(),
+            base: Default::default(),
+            sources: vec![],
+        }
+    }
+
+    #[test]
+    fn legacy_receipts_stay_unknown_and_migration_preserves_entries() {
+        let (config, _) = fixture("community-attempt-migrate");
+        let (_, _, path) = context(&config).unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, serde_json::to_vec(&vec![entry()]).unwrap()).unwrap();
+        assert!(read_document(&path).unwrap().attempts.is_empty());
+        let original = serde_json::to_value(list(&config).unwrap()).unwrap();
+        let attempt = begin_attempt(&config, 123, 456).unwrap();
+        assert!(!read_document(&path).unwrap().attempts[0].complete);
+        finish_attempt(&config, &attempt, true).unwrap();
+        assert!(read_document(&path).unwrap().attempts[0].complete);
+        assert_eq!(
+            serde_json::to_value(list(&config).unwrap()).unwrap(),
+            original
+        );
+    }
+
+    #[test]
+    fn latest_attempt_and_exact_file_identity_survive_restart_and_locale_changes() {
+        let (config, mut saved) = fixture("community-attempt-scope");
+        let first = begin_attempt(&config, 123, 456).unwrap();
+        finish_attempt(&config, &first, true).unwrap();
+        let retry = begin_attempt(&config, 123, 456).unwrap();
+        assert!(finish_attempt(&config, &first, true).is_err());
+        let newer = begin_attempt(&config, 123, 457).unwrap();
+        finish_attempt(&config, &newer, true).unwrap();
+        let (_, _, path) = context(&config).unwrap();
+        let attempts = read_document(&path).unwrap().attempts;
+        assert_eq!(attempts.len(), 2);
+        assert!(!attempts[0].complete);
+        assert!(attempts[1].complete);
+        saved.target_lang = Some("fr".into());
+        settings::save(&config, &saved).unwrap();
+        assert!(finish_attempt(&config, &retry, true).is_err());
+        let (_, _, other) = context(&config).unwrap();
+        assert!(read_document(&other).unwrap().attempts.is_empty());
+        saved.target_lang = Some("de".into());
+        let original_mods = saved.mods_path.clone();
+        let other_mods = config.join("OtherMods");
+        std::fs::create_dir_all(&other_mods).unwrap();
+        saved.mods_path = Some(other_mods.display().to_string());
+        settings::save(&config, &saved).unwrap();
+        assert!(finish_attempt(&config, &retry, true).is_err());
+        saved.mods_path = original_mods;
+        settings::save(&config, &saved).unwrap();
+        finish_attempt(&config, &retry, false).unwrap();
+        assert!(!read_document(&path).unwrap().attempts[0].complete);
+    }
+
+    #[test]
+    fn entry_store_preserves_attempt_and_attempt_does_not_touch_personal_state() {
+        let (config, _) = fixture("community-attempt-preserve");
+        let working = translations::language_root(&config, "de").unwrap();
+        translations::save_one(
+            &working,
+            "Example.Mod",
+            "key".into(),
+            translations::StoredString {
+                target: "Personal edit".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Original"),
+            },
+        )
+        .unwrap();
+        let personal = translations::load(&working, "Example.Mod").unwrap();
+        let attempt = begin_attempt(&config, 123, 456).unwrap();
+        store(&config, entry()).unwrap();
+        finish_attempt(&config, &attempt, true).unwrap();
+        let (_, _, path) = context(&config).unwrap();
+        let document = read_document(&path).unwrap();
+        assert_eq!(document.entries.len(), 1);
+        assert!(document.attempts[0].complete);
+        assert_eq!(
+            serde_json::to_value(translations::load(&working, "Example.Mod").unwrap()).unwrap(),
+            serde_json::to_value(personal).unwrap()
+        );
+    }
 }

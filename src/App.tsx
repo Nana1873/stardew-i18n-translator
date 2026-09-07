@@ -2165,6 +2165,7 @@ export function App() {
       onSearch={(options) =>
         void nexus.start(scan.mods, settings.targetLang!, {
           ...options,
+          retainImported: true,
           skippedComponents: scan.skippedComponents,
           traversalComplete: scan.traversalComplete === true,
           nexusIdentityIncomplete: scan.nexusIdentityIncomplete,
@@ -2209,6 +2210,7 @@ export function App() {
               settings?.targetLang
             )
               void nexus.start(scan.mods, settings.targetLang, {
+                retainImported: true,
                 skippedComponents: scan.skippedComponents,
                 traversalComplete: scan.traversalComplete === true,
                 nexusIdentityIncomplete: scan.nexusIdentityIncomplete,
