@@ -367,10 +367,8 @@ fn read_mail_command(chars: &[char], offset: usize) -> Option<usize> {
     find_sub(chars, offset, "%%").map(|i| i + 2)
 }
 
-/// Only BETAS DialogueBox's documented message argument is prose. Ambiguous
-/// quoting/nested actions fall back to the original opaque command protection.
-// BETAS DialogueBox argument 2 is display text; preserve all control arguments.
-// Ambiguous quotes and nested commands retain the existing opaque fallback.
+/// BETAS DialogueBox argument 2 accepts prose or a runtime translation key.
+/// NPC and remaining arguments stay literal; complex messages stay opaque.
 fn read_betas_message(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
     let prefix = "#$action Spiderbuttons.BETAS_DialogueBox ";
     if !starts_with(chars, offset, prefix) {
@@ -415,6 +413,18 @@ fn read_betas_message(chars: &[char], offset: usize) -> Option<(usize, Vec<Strin
     let suffix = &chars[close + width..end];
     if suffix.iter().any(|c| *c == '"' || *c == '|') {
         return None;
+    }
+    // A quoted asset:key still resolves at runtime. Preserve its whole action,
+    // including terminal actions without a closing #. URLs remain ordinary text.
+    let is_lookup_key = body.iter().position(|c| *c == ':').is_some_and(|colon| {
+        colon > 0
+            && colon + 1 < body.len()
+            && !body.iter().any(|c| c.is_whitespace())
+            && !body[colon + 1..].contains(&':')
+            && !starts_with(body, colon, "://")
+    });
+    if is_lookup_key {
+        return Some((end, vec![chars[offset..end].iter().collect()]));
     }
     let mut raw: String = chars[offset..start].iter().collect();
     raw.extend(chars[close..end].iter());

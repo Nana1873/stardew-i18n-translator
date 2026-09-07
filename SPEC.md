@@ -104,14 +104,15 @@ Export is explicit and applies to the current mod or all scanned mods:
   visible `.json.bak` backups and atomic replacement. If a later write fails,
   restore earlier targets to their pre-export state.
 
-Portuguese imports prefer `pt-BR.json`; successful exports canonicalize to
-`pt.json`, backing up and removing the fallback. Existing targets, including
+Flat Portuguese imports prefer `i18n/pt-BR.json`; successful exports canonicalize to
+`i18n/pt.json`, backing up and removing the fallback. Split document names are
+literal and do not trigger this language-filename migration. Existing targets, including
 omitted orphan keys, remain recoverable from their export backup.
 
 Translation ZIPs contain only generated target-language i18n files and preserve
 the package's component folders. Publication notes use the same package data.
 Results retain the actual destination and filename for **Show in folder**.
-**Build Stardew Translator Output** previews and writes one locale-only ZIP for all scanned components with effective target-language values in the configured Mods folder. Each included locale combines existing target values for current source keys with saved overrides. It reuses export validation, existing destination/overwrite behavior and the result tray. No Nexus, community-library, mod-manager or deployment state is required.
+**Build Stardew Translator Output** previews and writes one locale-only ZIP for all scanned components with effective target-language values in the configured Mods folder. Each included locale combines existing target values for current source keys with saved overrides. Like package ZIPs, it includes token-valid Changed and Review values with warnings without approving them. It reuses export validation, existing destination/overwrite behavior and the result tray. No Nexus, community-library, mod-manager or deployment state is required.
 
 ## External LLM Batches
 

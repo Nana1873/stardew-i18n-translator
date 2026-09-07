@@ -1025,11 +1025,7 @@ pub(crate) fn read_target_object_checked(
 }
 
 pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
-    let is_portuguese = target_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"));
-    if is_portuguese {
+    if is_flat_portuguese_target(target_path) {
         let fallback = target_path.with_file_name("pt-BR.json");
         if fallback.is_file() {
             return fallback;
@@ -1039,6 +1035,19 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
         return target_path.to_path_buf();
     }
     target_path.to_path_buf()
+}
+
+/// Locale aliases apply to top-level locale files, never to the arbitrary
+/// document names inside a split locale folder.
+pub(crate) fn is_flat_portuguese_target(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"))
+        && path
+            .parent()
+            .and_then(Path::file_name)
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
 }
 
 /// (total source keys, source keys with a non-empty **working** target — saved
@@ -1222,9 +1231,11 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
     let target = root.join(language);
     let keys: HashSet<_> = read_object_checked(source)?
         .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
         .map(|k| folded_key(k))
         .collect();
     let mut matches = Vec::new();
+    let mut all_source_keys = None;
     if target.is_dir() {
         for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
             let path = entry.map_err(|e| e.to_string())?.path();
@@ -1242,7 +1253,39 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                 .collect();
             if existing.iter().any(|k| keys.contains(k)) {
                 if existing.iter().any(|k| !keys.contains(k)) {
-                    return Err("Existing locale document combines multiple source segments; automatic export is ambiguous.".into());
+                    // Removed keys have no current source owner and remain
+                    // informational orphans. Only keys owned by another source
+                    // document make this target ambiguous.
+                    let known_keys = if let Some(ref known) = all_source_keys {
+                        known
+                    } else {
+                        let mut known = HashSet::new();
+                        for entry in
+                            std::fs::read_dir(source.parent().ok_or("Invalid split source")?)
+                                .map_err(|e| e.to_string())?
+                        {
+                            let path = entry.map_err(|e| e.to_string())?.path();
+                            if !path
+                                .extension()
+                                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+                            {
+                                continue;
+                            }
+                            known.extend(
+                                read_object_within_root(&path, root, "source")?
+                                    .keys()
+                                    .filter(|key| !is_ignored_i18n_key(key))
+                                    .map(|key| folded_key(key)),
+                            );
+                        }
+                        all_source_keys.insert(known)
+                    };
+                    if existing
+                        .iter()
+                        .any(|key| !keys.contains(key) && known_keys.contains(key))
+                    {
+                        return Err("Existing locale document combines multiple source segments; automatic export is ambiguous.".into());
+                    }
                 }
                 matches.push(path);
             }

@@ -680,13 +680,17 @@ export function App() {
       !loaded ||
       !workspaceHydratedRef.current ||
       !current ||
+      exporting ||
+      zipBuilding ||
       (setupComplete(current) && !scan)
     ) {
       return;
     }
-    const timer = window.setTimeout(() => {
+    let active = true;
+    let timer: number;
+    async function saveWorkspace() {
       const latest = settingsRef.current;
-      if (!latest) return;
+      if (!active || !latest) return;
       const workspace = {
         selectedModId,
         modSearch: modQuery,
@@ -704,16 +708,41 @@ export function App() {
         return;
       }
       const next = { ...latest, workspace };
-      settingsRef.current = next;
-      setSettings(next);
-      void saveSettings(next).catch((error) =>
-        logFrontendError("saveWorkspace", String(error)),
-      );
-    }, 350);
-    return () => window.clearTimeout(timer);
+      try {
+        await saveSettings(next);
+        if (!active) return;
+        if (settingsRef.current !== latest) {
+          timer = window.setTimeout(() => void saveWorkspace(), 350);
+          return;
+        }
+        settingsRef.current = next;
+        setSettings(next);
+      } catch (error) {
+        if (!active) return;
+        if (
+          String(error).includes(
+            "An export or settings update is already running.",
+          )
+        ) {
+          timer = window.setTimeout(() => void saveWorkspace(), 350);
+        } else {
+          logFrontendError("saveWorkspace", String(error));
+        }
+      }
+    }
+    timer = window.setTimeout(() => void saveWorkspace(), 350);
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
   }, [
     loaded,
     scan,
+    exporting,
+    zipBuilding,
+    settings?.modsPath,
+    settings?.targetLang,
+    settings?.stardewPath,
     selectedModId,
     modQuery,
     search,
@@ -1224,8 +1253,12 @@ export function App() {
   }
 
   async function requestTranslationZip() {
-    zipPreviewRequest.current++;
     if (!selectedMod || !settings?.modsPath || !settings.targetLang) return;
+    const request = ++zipPreviewRequest.current;
+    const isCurrentRequest = () =>
+      request === zipPreviewRequest.current &&
+      settingsRef.current?.modsPath === settings.modsPath &&
+      settingsRef.current?.targetLang === settings.targetLang;
     const packageName = selectedMod.packageId;
     const components = zipComponents(packageName);
     setLastZipRelease(null);
@@ -1233,16 +1266,16 @@ export function App() {
     setZipPreview(null);
     setZipError(null);
     try {
-      setZipPreview(
-        await previewTranslationZip(
-          settings.modsPath,
-          packageName,
-          settings.targetLang,
-          languageLabel,
-          components,
-        ),
+      const preview = await previewTranslationZip(
+        settings.modsPath,
+        packageName,
+        settings.targetLang,
+        languageLabel,
+        components,
       );
+      if (isCurrentRequest()) setZipPreview(preview);
     } catch (error) {
+      if (!isCurrentRequest()) return;
       logFrontendError("previewTranslationZip", String(error));
       setZipError(String(error));
     }

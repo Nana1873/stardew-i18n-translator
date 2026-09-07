@@ -241,7 +241,8 @@ export function TranslationZipDialog({
 
               <p className="translator-kicker">
                 {preview.totalStrings} of {preview.totalSourceStrings} source
-                strings will be included from the real package preview.
+                strings will be included from the{" "}
+                {combined ? "Mods folder" : "package"} preview.
               </p>
             </>
           )}

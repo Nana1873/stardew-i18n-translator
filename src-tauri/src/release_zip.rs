@@ -519,6 +519,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             ));
             let mut output = Map::new();
             let mut review_needed = 0;
+            let mut outdated = 0;
             let mut source_count = 0;
             for row in rows {
                 if row.source.trim().is_empty() {
@@ -528,9 +529,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 if row.target.trim().is_empty() {
                     continue;
                 }
-                let reason = if row.status == "outdated" {
-                    Some("Source changed since this translation was saved. Review and save it again.".to_owned())
-                } else if !row.token_mismatch_accepted
+                let reason = if !row.token_mismatch_accepted
                     && !tokens::token_differences(&row.source, &row.target).is_empty()
                 {
                     Some(
@@ -553,6 +552,9 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 if row.status == "review-needed" {
                     review_needed += 1;
                 }
+                if row.status == "outdated" {
+                    outdated += 1;
+                }
                 output.insert(row.key, Value::String(row.target));
             }
             if output.is_empty() {
@@ -560,6 +562,12 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             }
             prepared.preview.total_source_strings += source_count;
             prepared.preview.total_strings += output.len();
+            if outdated > 0 {
+                prepared.preview.warnings.push(format!(
+                    "{} contains {outdated} outdated translation(s).",
+                    component.name
+                ));
+            }
             if review_needed > 0 {
                 prepared.preview.warnings.push(format!(
                     "{} contains {review_needed} unreviewed AI suggestion(s).",
@@ -572,7 +580,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 archive_path,
                 strings: output.len(),
                 total_source_strings: source_count,
-                outdated: 0,
+                outdated,
                 review_needed,
             };
             prepared.entries.push(PreparedEntry {
@@ -1070,7 +1078,7 @@ mod tests {
     }
 
     #[test]
-    fn output_blocks_invalid_and_stale_work_without_replacing_prior_artifact() {
+    fn output_blocks_token_errors_without_replacing_prior_artifact() {
         let (root, config, mods) = output_fixture("output-blocked");
         output_component(
             &mods,
@@ -1099,10 +1107,65 @@ mod tests {
         let destination = root.join("output.zip");
         write(&destination, "prior artifact");
         let preview = preview_output(&config).unwrap();
-        assert_eq!(preview.problems.len(), 2);
+        assert_eq!(preview.problems.len(), 1);
+        assert_eq!(preview.problems[0].key, "hello");
+        assert_eq!(preview.entries[0].outdated, 1);
         assert!(build_output(&config, &destination, true).is_err());
         assert_eq!(std::fs::read(&destination).unwrap(), b"prior artifact");
         assert!(!sibling(&destination, ".tmp").exists());
+    }
+
+    #[test]
+    fn output_includes_changed_and_review_values_with_warnings_without_approving_them() {
+        let (root, config, mods) = output_fixture("output-changed-warning");
+        output_component(
+            &mods,
+            "Example",
+            "Fixture.Example",
+            r#"{"changed":"Hello again @","review":"Goodbye"}"#,
+        );
+        output_state(
+            &config,
+            "Fixture.Example",
+            "i18n",
+            "changed",
+            "Hello @",
+            "Hallo @",
+            "translated",
+        );
+        output_state(
+            &config,
+            "Fixture.Example",
+            "i18n",
+            "review",
+            "Goodbye",
+            "Tschüss",
+            "review-needed",
+        );
+        let working = translations::language_root(&config, "de").unwrap();
+        let before = translations::load(&working, "Fixture.Example").unwrap();
+        let preview = preview_output(&config).unwrap();
+        assert!(preview.problems.is_empty());
+        assert_eq!(preview.entries[0].outdated, 1);
+        assert_eq!(preview.entries[0].review_needed, 1);
+        assert!(preview
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("1 outdated")));
+        assert!(preview
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("1 unreviewed")));
+        let destination = root.join("output.zip");
+        build_output(&config, &destination, false).unwrap();
+        assert_eq!(
+            zip_documents(&destination)["Example/i18n/de.json"],
+            serde_json::json!({"changed":"Hallo @", "review":"Tschüss"})
+        );
+        assert_eq!(
+            translations::load(&working, "Fixture.Example").unwrap(),
+            before
+        );
     }
 
     #[test]

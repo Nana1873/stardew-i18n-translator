@@ -8,8 +8,19 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Added
+
+- Build Stardew Translator Output combines existing local translations and saved
+  edits from all scanned mods into one locale-only ZIP.
+- Scan, edit and export split locale folders such as `i18n/default/Dialogue.json`
+  and `i18n/de/Dialogue.json`, including new language folders and obsolete keys.
+
 ### Changed
 
+- Blank source/target pairs count as complete without a saved approval and reopen
+  when source text is added. Progress reaches 100% only at exact completion.
+- Keep unmatched translation keys in optional scan details without interrupting
+  clean startup scans.
 - Record operation IDs, durations, outcomes and counts for scan, string loading,
   import and export diagnostics, including failures during preparation.
 - Reuse validation and search data for unchanged editor rows and calculate mod
@@ -20,6 +31,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- Preserve runtime lookup keys while allowing translatable prose in supported
+  dialogue commands, using matching frontend and backend token checks.
+- Prevent delayed string loads from replacing newer manual edits, retain pending
+  workspace settings during exports, and keep ZIP previews and result history
+  bound to the correct operation.
+- Treat split document filenames literally so names such as `pt.json` cannot
+  trigger Portuguese locale migration or remove another split document.
 - Portable packaging and release preflight now reject executables with a
   missing or mismatched embedded product version.
 

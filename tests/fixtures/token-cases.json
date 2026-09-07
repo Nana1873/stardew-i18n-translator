@@ -169,9 +169,58 @@
     {
       "value": "#$action Other.Command NPC \"a|b\"#",
       "tokens": ["#$action Other.Command NPC \"a|b\"#"]
+    },
+    {
+      "value": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#",
+      "tokens": [
+        "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"",
+        "#"
+      ]
+    },
+    {
+      "value": "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\"",
+      "tokens": [
+        "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\""
+      ]
     }
   ],
   "comparisons": [
+    {
+      "name": "quoted BETAS translation key cannot be translated",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Verlassend\"#",
+      "blocked": true
+    },
+    {
+      "name": "escaped quoted terminal BETAS translation key remains protected",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\"",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Verlassend\\\"",
+      "blocked": true
+    },
+    {
+      "name": "BETAS root asset translation key cannot be replaced with prose",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Example.Dialogue:Farewell\"",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"See you tomorrow\"",
+      "blocked": true
+    },
+    {
+      "name": "unchanged BETAS lookup key permits surrounding prose translation",
+      "source": "Goodbye!#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#See you!",
+      "target": "Tschuess!#$action Spiderbuttons.BETAS_DialogueBox Haley \"Characters/Dialogue/Haley:Resort_Leaving\"#Bis bald!",
+      "blocked": false
+    },
+    {
+      "name": "BETAS message with colon prose stays translatable",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Remember: bring your tools.\"#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"Denk daran: bring deine Werkzeuge mit.\"#",
+      "blocked": false
+    },
+    {
+      "name": "BETAS literal URL is not a runtime translation key",
+      "source": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"https://example.com/help\"#",
+      "target": "#$action Spiderbuttons.BETAS_DialogueBox Haley \"https://example.com/hilfe\"#",
+      "blocked": false
+    },
     {
       "name": "portrait followed by uppercase prose",
       "source": "$hHello $hAgain",

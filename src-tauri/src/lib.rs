@@ -212,9 +212,7 @@ fn load_strings(
             // `outdated` when the mod's English source later changes. Idempotent: once
             // adopted, the keys are in `state` and subsequent opens persist nothing.
             let baselines = scanner::imported_baselines(&rows, &state, &relative_dir);
-            if !baselines.is_empty() {
-                translations::save_many(&config, &mod_unique_id, baselines)?;
-            }
+            translations::adopt_imported_baselines(&config, &mod_unique_id, baselines)?;
             Ok(rows)
         },
         |r| Summary::new(Outcome::Success, r.len(), 1, 0),
@@ -352,7 +350,7 @@ fn operation_file_location(path: &str) -> (Option<String>, Option<String>) {
 /// completed file operation into a reported failure. A poisoned in-memory
 /// history lock is therefore logged and the real backend result still wins.
 fn remember_operation(
-    history: &State<'_, operation_history::OperationHistoryState>,
+    history: &operation_history::OperationHistoryState,
     operation: operation_history::CompletedOperation,
 ) {
     if let Err(error) = history.record(operation) {
@@ -748,6 +746,7 @@ fn preview_stardew_translator_output(app: AppHandle) -> Result<release_zip::ZipP
 #[tauri::command(async)]
 fn build_stardew_translator_output(
     app: AppHandle,
+    history: State<'_, operation_history::OperationHistoryState>,
     destination: String,
     overwrite: bool,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
@@ -756,10 +755,54 @@ fn build_stardew_translator_output(
         "build_stardew_translator_output",
         || {
             let _export_guard = export_write_guard()?;
-            release_zip::build_output(&config_dir(&app)?, Path::new(&destination), overwrite)
+            build_output_with_history(
+                &config_dir(&app)?,
+                &history,
+                Path::new(&destination),
+                overwrite,
+            )
         },
         |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
     )
+}
+
+fn build_output_with_history(
+    config: &Path,
+    history: &operation_history::OperationHistoryState,
+    destination: &Path,
+    overwrite: bool,
+) -> Result<release_zip::ZipBuildOutcome, String> {
+    let result = release_zip::build_output(config, destination, overwrite)?;
+    remember_zip_operation(history, &result, "Stardew Translator Output created");
+    Ok(result)
+}
+
+fn remember_zip_operation(
+    history: &operation_history::OperationHistoryState,
+    result: &release_zip::ZipBuildOutcome,
+    title: &str,
+) {
+    remember_operation(
+        history,
+        operation_history::CompletedOperation {
+            kind: operation_history::OperationKind::Zip,
+            outcome: operation_history::OperationOutcome::Success,
+            title: title.to_string(),
+            summary: format!(
+                "{} strings packaged in {} archive entries.",
+                result.strings, result.entries
+            ),
+            item_count: result.strings,
+            path: Some(result.path.clone()),
+            file_name: Some(result.file_name.clone()),
+            warnings: Vec::new(),
+            details: vec![
+                operation_detail("Destination folder", &result.folder),
+                operation_detail("Archive entries", result.entries),
+                operation_detail("Strings", result.strings),
+            ],
+        },
+    );
 }
 
 #[tauri::command]
@@ -796,27 +839,7 @@ fn build_translation_zip(
             let _export_guard = export_write_guard()?;
             request.target_lang = language::normalize_target_code(&request.target_lang)?;
             let result = release_zip::build(&translation_config_dir(&app)?, &request)?;
-            remember_operation(
-                &history,
-                operation_history::CompletedOperation {
-                    kind: operation_history::OperationKind::Zip,
-                    outcome: operation_history::OperationOutcome::Success,
-                    title: "Translation ZIP created".to_string(),
-                    summary: format!(
-                        "{} strings packaged in {} archive entries.",
-                        result.strings, result.entries
-                    ),
-                    item_count: result.strings,
-                    path: Some(result.path.clone()),
-                    file_name: Some(result.file_name.clone()),
-                    warnings: Vec::new(),
-                    details: vec![
-                        operation_detail("Destination folder", &result.folder),
-                        operation_detail("Archive entries", result.entries),
-                        operation_detail("Strings", result.strings),
-                    ],
-                },
-            );
+            remember_zip_operation(&history, &result, "Translation ZIP created");
             Ok(result)
         },
         |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
@@ -2910,6 +2933,88 @@ pub(crate) mod test_support {
         let mut dir = std::env::temp_dir();
         dir.push(format!("sit-test-{tag}-{nanos}-{seq}"));
         dir
+    }
+}
+
+#[cfg(test)]
+mod output_history_tests {
+    use super::*;
+
+    #[test]
+    fn combined_build_records_its_own_result_and_only_success_invalidates_undo() {
+        let root = test_support::temp_dir("combined-output-history");
+        let config = root.join("data");
+        let mods = root.join("Mods");
+        let component = mods.join("Example");
+        std::fs::create_dir_all(component.join("i18n")).unwrap();
+        std::fs::write(
+            component.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Fixture.Example"}"#,
+        )
+        .unwrap();
+        std::fs::write(component.join("i18n/default.json"), r#"{"hello":"Hello"}"#).unwrap();
+        settings::save(
+            &config,
+            &AppSettings {
+                mods_path: Some(mods.display().to_string()),
+                target_lang: Some("de".into()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let history = operation_history::OperationHistoryState::default();
+        let previous = release_zip::ZipBuildOutcome {
+            path: root.join("previous.zip").display().to_string(),
+            folder: root.display().to_string(),
+            file_name: "previous.zip".into(),
+            entries: 2,
+            strings: 10,
+        };
+        remember_zip_operation(&history, &previous, "Translation ZIP created");
+        let prior_entry = history.list().unwrap()[0].clone();
+        let working = translations::language_root(&config, "de").unwrap();
+        let batch = history
+            .apply_reversible_batch_groups(
+                &working,
+                "Manual batch".into(),
+                vec![(
+                    "Fixture.Example".into(),
+                    vec![(
+                        translations::entry_key("i18n", "hello"),
+                        translations::StoredString {
+                            target: "Hallo".into(),
+                            status: "translated".into(),
+                            source_hash: translations::source_hash("Hello"),
+                        },
+                    )],
+                )],
+            )
+            .unwrap();
+        let destination = root.join("combined.zip");
+        std::fs::write(&destination, "existing archive").unwrap();
+        assert_eq!(
+            build_output_with_history(&config, &history, &destination, false).unwrap_err(),
+            "OVERWRITE_REQUIRED"
+        );
+        let after_failure = history.list().unwrap();
+        assert_eq!(after_failure.len(), 2);
+        assert_eq!(after_failure[0].id, batch.id);
+        assert!(after_failure[0].can_undo);
+        assert_eq!(std::fs::read(&destination).unwrap(), b"existing archive");
+
+        let result = build_output_with_history(&config, &history, &destination, true).unwrap();
+        let entries = history.list().unwrap();
+        assert_eq!(entries.len(), 3);
+        assert_ne!(entries[0].id, prior_entry.id);
+        assert_eq!(entries[0].kind, operation_history::OperationKind::Zip);
+        assert_eq!(entries[0].path.as_deref(), Some(result.path.as_str()));
+        assert_eq!(entries[0].file_name.as_deref(), Some("combined.zip"));
+        assert_eq!(entries[0].item_count, 1);
+        assert_eq!(entries[2].id, prior_entry.id);
+        assert_eq!(entries[2].path, prior_entry.path);
+        assert!(!entries[1].can_undo);
+        assert!(history.undo_reversible_batch(&working, &batch.id).is_err());
+        std::fs::remove_dir_all(root).ok();
     }
 }
 

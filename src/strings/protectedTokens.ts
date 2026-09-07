@@ -284,8 +284,8 @@ function readMailCommand(value: string, offset: number): Token | null {
   return end >= 0 ? token(value, offset, end + 2) : null;
 }
 
-// BETAS DialogueBox argument 2 is display text; NPC and remaining arguments
-// stay literal. Nested commands and ambiguous quoting use the opaque fallback.
+// BETAS DialogueBox argument 2 accepts prose or a runtime translation key.
+// NPC and remaining arguments stay literal; complex messages stay opaque.
 function readBetasMessage(
   value: string,
   offset: number,
@@ -315,6 +315,14 @@ function readBetasMessage(
   const end = next < 0 ? value.length : next;
   const suffix = value.slice(close + quote.length, end);
   if (/["|]/.test(suffix)) return null;
+  // A quoted asset:key still resolves at runtime. Preserve its whole action,
+  // including terminal actions without a closing #. URLs remain ordinary text.
+  if (
+    /^[^\p{White_Space}:]+:[^\p{White_Space}:]+$/u.test(body) &&
+    !body.includes("://")
+  ) {
+    return { end, tokens: [value.slice(offset, end)] };
+  }
   return {
     end,
     tokens: [

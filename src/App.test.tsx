@@ -81,12 +81,14 @@ vi.mock("@tanstack/react-virtual", () => ({
 import { App } from "./App";
 import type {
   AiRunResult,
+  AppSettings,
   ExportPreflight,
   Glossary,
   LlmImportPreflight,
   OperationHistoryEntry,
   OperationKind,
   ScanResult,
+  ZipPreview,
 } from "./tauri/commands";
 
 const CONFIGURED = {
@@ -96,6 +98,43 @@ const CONFIGURED = {
   targetLang: "de",
   diagnosticLogging: true,
 };
+
+function combinedOutputPreview(): ZipPreview {
+  return {
+    packageName: "Stardew Translator Output",
+    selectedVersion: "",
+    versionSource: "",
+    versionConflicts: [],
+    defaultFileName: "Stardew Translator Output - de.zip",
+    targetLang: "de",
+    targetLanguage: "German",
+    entries: [
+      {
+        modName: "Manual mod",
+        modVersion: "1",
+        archivePath: "Manual mod/i18n/de.json",
+        strings: 1,
+        totalSourceStrings: 1,
+        outdated: 0,
+        reviewNeeded: 0,
+      },
+      {
+        modName: "AI mod",
+        modVersion: "2",
+        archivePath: "AI mod/i18n/de.json",
+        strings: 1,
+        totalSourceStrings: 1,
+        outdated: 0,
+        reviewNeeded: 1,
+      },
+    ],
+    omittedComponents: [],
+    warnings: [],
+    problems: [],
+    totalStrings: 2,
+    totalSourceStrings: 2,
+  };
+}
 
 function historyEntry(
   kind: OperationKind,
@@ -353,10 +392,12 @@ function openWorkspace() {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((next) => {
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((next, fail) => {
     resolve = next;
+    reject = fail;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 describe("App shell", () => {
@@ -2769,40 +2810,14 @@ describe("App shell", () => {
     ).toBeInTheDocument();
   });
   it("builds the combined local output through preview, overwrite confirmation and the existing result tray", async () => {
-    const preview = {
-      packageName: "Stardew Translator Output",
-      selectedVersion: "",
-      versionSource: "",
-      versionConflicts: [],
-      defaultFileName: "Stardew Translator Output - de.zip",
-      targetLang: "de",
-      targetLanguage: "German",
-      entries: [
-        {
-          modName: "Manual mod",
-          modVersion: "1",
-          archivePath: "Manual mod/i18n/de.json",
-          strings: 1,
-          totalSourceStrings: 1,
-          outdated: 0,
-          reviewNeeded: 0,
-        },
-        {
-          modName: "AI mod",
-          modVersion: "2",
-          archivePath: "AI mod/i18n/de.json",
-          strings: 1,
-          totalSourceStrings: 1,
-          outdated: 0,
-          reviewNeeded: 1,
-        },
-      ],
-      omittedComponents: [],
-      warnings: [],
-      problems: [],
-      totalStrings: 2,
-      totalSourceStrings: 2,
-    };
+    const preview = combinedOutputPreview();
+    const previousZip = historyEntry("zip", {
+      id: "previous-zip",
+      title: "Previous package ZIP",
+      path: "C:/output/previous.zip",
+      fileName: "previous.zip",
+    });
+    backendHistory = [previousZip];
     invokeMock.mockImplementation(
       (cmd: string, args?: { overwrite?: boolean }) => {
         if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
@@ -2812,16 +2827,25 @@ describe("App shell", () => {
           return Promise.resolve(preview);
         if (cmd === "pick_translation_zip_destination")
           return Promise.resolve("C:/output/combined.zip");
-        if (cmd === "build_stardew_translator_output")
-          return args?.overwrite
-            ? Promise.resolve({
-                path: "C:/output/combined.zip",
-                folder: "C:/output",
-                fileName: "combined.zip",
-                entries: 2,
-                strings: 2,
-              })
-            : Promise.reject("OVERWRITE_REQUIRED");
+        if (cmd === "build_stardew_translator_output") {
+          if (!args?.overwrite) return Promise.reject("OVERWRITE_REQUIRED");
+          backendHistory = [
+            historyEntry("zip", {
+              id: "combined-zip",
+              title: "Stardew Translator Output created",
+              path: "C:/output/combined.zip",
+              fileName: "combined.zip",
+            }),
+            previousZip,
+          ];
+          return Promise.resolve({
+            path: "C:/output/combined.zip",
+            folder: "C:/output",
+            fileName: "combined.zip",
+            entries: 2,
+            strings: 2,
+          });
+        }
         return Promise.resolve(null);
       },
     );
@@ -2855,7 +2879,222 @@ describe("App shell", () => {
         ([command]) => command === "build_translation_zip",
       ),
     ).toBe(false);
+    const history = within(result).getByRole("combobox", {
+      name: "Recent operation results",
+    });
+    expect(history).toHaveValue("combined-zip");
+    fireEvent.change(history, { target: { value: "previous-zip" } });
+    expect(result).toHaveTextContent("previous.zip");
+    expect(result).not.toHaveTextContent("combined.zip");
+    fireEvent.change(history, { target: { value: "combined-zip" } });
+    expect(result).toHaveTextContent("combined.zip");
   });
+
+  it("persists a pending workspace change after a combined ZIP finishes", async () => {
+    const build = deferred<unknown>();
+    let exporting = false;
+    let persistedSearch = "";
+    let rejectedSaves = 0;
+    mockConfigured(exportScan(false));
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(
+      (cmd: string, args?: { settings: AppSettings }) => {
+        if (cmd === "save_settings") {
+          if (exporting) {
+            rejectedSaves++;
+            return Promise.reject(
+              "An export or settings update is already running. Wait for it to finish and try again.",
+            );
+          }
+          persistedSearch = args?.settings.workspace?.modSearch ?? "";
+          return Promise.resolve(null);
+        }
+        if (cmd === "preview_stardew_translator_output")
+          return Promise.resolve(combinedOutputPreview());
+        if (cmd === "pick_translation_zip_destination")
+          return Promise.resolve("C:/output/combined.zip");
+        if (cmd === "build_stardew_translator_output") {
+          exporting = true;
+          return build.promise;
+        }
+        return original(cmd, args);
+      },
+    );
+    render(<App />);
+    openWorkspace();
+    await screen.findAllByText("Test Mod");
+    fireEvent.change(screen.getByRole("searchbox", { name: "Filter mods" }), {
+      target: { value: "Test" },
+    });
+    chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+    await screen.findByText("AI mod/i18n/de.json");
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose save location …" }),
+    );
+    await waitFor(() => expect(exporting).toBe(true));
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    expect(rejectedSaves).toBe(0);
+    await act(async () => {
+      exporting = false;
+      build.resolve({
+        path: "C:/output/combined.zip",
+        folder: "C:/output",
+        fileName: "combined.zip",
+        entries: 2,
+        strings: 2,
+      });
+      await build.promise;
+    });
+    await waitFor(() => expect(persistedSearch).toBe("Test"));
+  });
+
+  it("retries a busy workspace save using the newest view and language", async () => {
+    const saved: AppSettings[] = [];
+    let busy = true;
+    mockConfigured(exportScan(false));
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation(
+      (cmd: string, args?: { settings: AppSettings }) => {
+        if (cmd === "save_settings") {
+          const next = args!.settings;
+          if (busy)
+            return Promise.reject(
+              "An export or settings update is already running. Wait for it to finish and try again.",
+            );
+          saved.push(next);
+          return Promise.resolve(null);
+        }
+        return original(cmd, args);
+      },
+    );
+    render(<App />);
+    openWorkspace();
+    await screen.findAllByText("Test Mod");
+    const filter = screen.getByRole("searchbox", { name: "Filter mods" });
+    fireEvent.change(filter, { target: { value: "Old search" } });
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("save_settings", {
+        settings: expect.objectContaining({
+          workspace: expect.objectContaining({ modSearch: "Old search" }),
+        }),
+      }),
+    );
+    fireEvent.change(filter, { target: { value: "Test" } });
+    busy = false;
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+    await waitFor(() =>
+      expect(saved.at(-1)).toEqual(
+        expect.objectContaining({
+          targetLang: "fr",
+          workspace: expect.objectContaining({ modSearch: "Test" }),
+        }),
+      ),
+    );
+    expect(saved.every((entry) => entry.targetLang === "fr")).toBe(true);
+    expect(
+      saved.some((entry) => entry.workspace?.modSearch === "Old search"),
+    ).toBe(false);
+  });
+
+  it("retries a transiently busy workspace save and cancels pending retries on unmount", async () => {
+    let attempts = 0;
+    let busy = true;
+    mockConfigured(exportScan(false));
+    const original = invokeMock.getMockImplementation()!;
+    invokeMock.mockImplementation((cmd: string, ...args: unknown[]) => {
+      if (cmd === "save_settings") {
+        attempts++;
+        return busy
+          ? Promise.reject(
+              "An export or settings update is already running. Wait for it to finish and try again.",
+            )
+          : Promise.resolve(null);
+      }
+      return original(cmd, ...args);
+    });
+    const view = render(<App />);
+    openWorkspace();
+    await screen.findAllByText("Test Mod");
+    const filter = screen.getByRole("searchbox", { name: "Filter mods" });
+    fireEvent.change(filter, { target: { value: "Test" } });
+    await waitFor(() => expect(attempts).toBe(1));
+    busy = false;
+    await waitFor(() => expect(attempts).toBe(2));
+    busy = true;
+    fireEvent.change(filter, { target: { value: "Pending" } });
+    await waitFor(() => expect(attempts).toBe(3));
+    view.unmount();
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 450));
+    });
+    expect(attempts).toBe(3);
+  });
+
+  it.each(["success", "error"])(
+    "ignores a cancelled package preview's late %s while combined output is open",
+    async (outcome) => {
+      const pending = deferred<ZipPreview>();
+      const preview = combinedOutputPreview();
+      invokeMock.mockImplementation((cmd: string) => {
+        if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+        if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+        if (cmd === "load_strings") return Promise.resolve([]);
+        if (cmd === "preview_translation_zip") return pending.promise;
+        if (cmd === "preview_stardew_translator_output")
+          return Promise.resolve(preview);
+        return Promise.resolve(null);
+      });
+      render(<App />);
+      openWorkspace();
+      await screen.findAllByText("Test Mod");
+      chooseToolbarAction(
+        "Export actions",
+        "Build translation ZIP · current mod",
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Close ZIP preview" }),
+      );
+      chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+      await screen.findByText("AI mod/i18n/de.json");
+      await act(async () => {
+        if (outcome === "success") {
+          pending.resolve({
+            ...preview,
+            defaultFileName: "Old package.zip",
+            entries: [
+              {
+                ...preview.entries[0],
+                archivePath: "Old package/i18n/de.json",
+              },
+            ],
+          });
+        } else {
+          pending.reject("Old package preview failed");
+        }
+        await pending.promise.catch(() => undefined);
+      });
+      const dialog = screen.getByRole("dialog", {
+        name: "Build Stardew Translator Output",
+      });
+      expect(within(dialog).getByLabelText("Archive name")).toHaveValue(
+        preview.defaultFileName,
+      );
+      expect(within(dialog).getByText("AI mod/i18n/de.json")).toBeVisible();
+      expect(dialog).not.toHaveTextContent("Old package");
+      expect(
+        within(dialog).getByRole("button", { name: "Choose save location …" }),
+      ).toBeEnabled();
+    },
+  );
   it("does not reopen a cancelled combined output preview when its scan finishes", async () => {
     const pending = deferred<unknown>();
     invokeMock.mockImplementation((cmd: string) => {

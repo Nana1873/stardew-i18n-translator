@@ -362,7 +362,7 @@ fn export_file_bindings(files: &[ExportFileInput]) -> Option<Vec<(String, String
         .map(|file| {
             let default = std::fs::canonicalize(&file.default_path).ok()?;
             let target = Path::new(&file.target_path);
-            let target_parent = std::fs::canonicalize(target.parent()?).ok()?;
+            let target_parent = canonical_target_directory(target).ok()?;
             let target_name = target.file_name()?.to_string_lossy().to_lowercase();
             Some((
                 file.relative_dir.replace('\\', "/"),
@@ -408,12 +408,30 @@ fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBu
             ));
         }
     }
+    let canonical_directory = canonical_target_directory(path)?;
+    if !canonical_directory.starts_with(canonical_root) {
+        return Err(format!(
+            "Refusing export outside the configured Mods folder: {}",
+            path.display()
+        ));
+    }
+    Ok(canonical_directory)
+}
+
+/// Normalize an existing target directory, or one missing locale folder below
+/// an existing i18n directory, without creating anything during preflight.
+fn canonical_target_directory(path: &Path) -> Result<PathBuf, String> {
     let directory = path
         .parent()
         .ok_or_else(|| format!("Invalid export target path: {}", path.display()))?;
-    let canonical_directory = std::fs::canonicalize(directory)
+    std::fs::canonicalize(directory)
         .or_else(|error| {
             if error.kind() == std::io::ErrorKind::NotFound {
+                // A dangling directory link is not a missing locale folder.
+                match std::fs::symlink_metadata(directory) {
+                    Err(missing) if missing.kind() == std::io::ErrorKind::NotFound => {}
+                    _ => return Err(error),
+                }
                 let parent = directory
                     .parent()
                     .ok_or_else(|| std::io::Error::other("Missing target parent"))?;
@@ -429,14 +447,7 @@ fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBu
                 "Could not validate export target directory {}: {error}",
                 directory.display()
             )
-        })?;
-    if !canonical_directory.starts_with(canonical_root) {
-        return Err(format!(
-            "Refusing export outside the configured Mods folder: {}",
-            path.display()
-        ));
-    }
-    Ok(canonical_directory)
+        })
 }
 
 /// Export every i18n file of one mod. Returns a per-file + aggregate summary.
@@ -786,14 +797,8 @@ fn write_target(target_path: &Path, body: &str) -> Result<bool, String> {
     Ok(backed_up)
 }
 
-fn is_portuguese_target(path: &Path) -> bool {
-    path.file_name()
-        .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"))
-}
-
 fn target_variants(target_path: &Path) -> Vec<PathBuf> {
-    if is_portuguese_target(target_path) {
+    if scanner::is_flat_portuguese_target(target_path) {
         vec![
             target_path.to_path_buf(),
             target_path.with_file_name("pt-BR.json"),
@@ -804,7 +809,7 @@ fn target_variants(target_path: &Path) -> Vec<PathBuf> {
 }
 
 fn validate_portuguese_variants(target_path: &Path) -> Result<(), String> {
-    if is_portuguese_target(target_path) {
+    if scanner::is_flat_portuguese_target(target_path) {
         for path in target_variants(target_path)
             .into_iter()
             .filter(|path| path.is_file())
@@ -1019,6 +1024,250 @@ mod tests {
                 target_path: i18n.join("de.json").display().to_string(),
             }],
         }
+    }
+
+    fn scanned_split_request(mods: &Path, config: &Path) -> ExportModInput {
+        let scan = scanner::scan_mods(mods, "de", config);
+        assert!(
+            scan.skipped_components.is_empty(),
+            "{:?}",
+            scan.skipped_components
+        );
+        assert_eq!(scan.mods.len(), 1);
+        let component = &scan.mods[0];
+        ExportModInput {
+            mod_unique_id: component.unique_id.clone(),
+            mod_name: component.name.clone(),
+            files: component
+                .i18n_files
+                .iter()
+                .map(|file| ExportFileInput {
+                    relative_dir: file.relative_dir.clone(),
+                    default_path: file.default_path.clone(),
+                    target_path: file.target_path.clone(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn split_first_export_resolves_missing_locale_directory_without_preflight_writes() {
+        for all_mods in [false, true] {
+            let root = crate::test_support::temp_dir("export-split-first");
+            let mods = root.join("Mods");
+            let config = root.join("data");
+            let component = mods.join("Example");
+            write(
+                &component.join("manifest.json"),
+                r#"{"Name":"Example","UniqueID":"Example.Split"}"#,
+            );
+            write(
+                &component.join("i18n/default/Dialogue.json"),
+                r#"{"hello":"Hello"}"#,
+            );
+            let working = translations::language_root(&config, "de").unwrap();
+            translations::save_one(
+                &working,
+                "Example.Split",
+                translations::entry_key("i18n/@split/Dialogue.json", "hello"),
+                translations::StoredString {
+                    target: "Hallo".into(),
+                    status: "translated".into(),
+                    source_hash: translations::source_hash("Hello"),
+                },
+            )
+            .unwrap();
+            let request = scanned_split_request(&mods, &config);
+            let resolved = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap();
+            validate_paths(&mods, "de", &resolved[0].files).unwrap();
+            assert!(preview_export(&working, &resolved)
+                .unwrap()
+                .blocking_problem
+                .is_none());
+            assert!(
+                !component.join("i18n/de").exists(),
+                "preflight must not create the locale directory"
+            );
+            if all_mods {
+                assert_eq!(
+                    export_all_mods(&working, &resolved)
+                        .unwrap()
+                        .total_written_keys,
+                    1
+                );
+            } else {
+                assert_eq!(
+                    export_mod(&working, "Example.Split", &resolved[0].files)
+                        .unwrap()
+                        .total_written_keys,
+                    1
+                );
+            }
+            assert_eq!(
+                scanner::read_object_checked(&component.join("i18n/de/Dialogue.json")).unwrap()
+                    ["hello"],
+                "Hallo"
+            );
+            assert!(!component.join("i18n/de/Dialogue.json.bak").exists());
+            assert_eq!(
+                scanner::read_object_checked(&component.join("i18n/default/Dialogue.json"))
+                    .unwrap()["hello"],
+                "Hello"
+            );
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
+    fn split_portuguese_document_names_are_literal_through_export_and_clear() {
+        let root = crate::test_support::temp_dir("export-split-literal-names");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let component = mods.join("Example");
+        write(
+            &component.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Split"}"#,
+        );
+        write(
+            &component.join("i18n/default/pt.json"),
+            r#"{"first":"First"}"#,
+        );
+        write(
+            &component.join("i18n/default/pt-BR.json"),
+            r#"{"second":"Second"}"#,
+        );
+        let first = component.join("i18n/de/pt.json");
+        let second = component.join("i18n/de/pt-BR.json");
+        write(&first, r#"{"first":"Erste"}"#);
+        write(&second, r#"{"second":"Zweite"}"#);
+        let first_original = std::fs::read(&first).unwrap();
+        let second_original = std::fs::read(&second).unwrap();
+        assert_eq!(
+            scanner::scan_mods(&mods, "de", &config).mods[0].translated_keys,
+            2
+        );
+        let request = scanned_split_request(&mods, &config);
+        let resolved = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap();
+        validate_paths(&mods, "de", &resolved[0].files).unwrap();
+        let working = translations::language_root(&config, "de").unwrap();
+        assert!(preview_export(&working, &resolved)
+            .unwrap()
+            .blocking_problem
+            .is_none());
+        let exported = export_all_mods(&working, &resolved).unwrap();
+        assert_eq!(
+            (exported.total_written_keys, exported.files_removed),
+            (2, 0)
+        );
+        assert_eq!(
+            scanner::read_object_checked(&first).unwrap()["first"],
+            "Erste"
+        );
+        assert_eq!(
+            scanner::read_object_checked(&second).unwrap()["second"],
+            "Zweite"
+        );
+        assert_eq!(
+            std::fs::read(sibling(&first, ".bak")).unwrap(),
+            first_original
+        );
+        assert_eq!(
+            std::fs::read(sibling(&second, ".bak")).unwrap(),
+            second_original
+        );
+
+        // Clearing one document must never remove its similarly named sibling.
+        let second_exported = std::fs::read(&second).unwrap();
+        translations::save_one(
+            &working,
+            "Example.Split",
+            translations::entry_key("i18n/@split/pt.json", "first"),
+            translations::StoredString {
+                target: String::new(),
+                status: "untranslated".into(),
+                source_hash: translations::source_hash("First"),
+            },
+        )
+        .unwrap();
+        let request = scanned_split_request(&mods, &config);
+        let resolved = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap();
+        validate_paths(&mods, "de", &resolved[0].files).unwrap();
+        let exported = export_all_mods(&working, &resolved).unwrap();
+        assert_eq!(
+            (exported.total_written_keys, exported.files_removed),
+            (1, 1)
+        );
+        assert!(!first.exists());
+        assert_eq!(std::fs::read(&second).unwrap(), second_exported);
+        assert_eq!(
+            scanner::read_object_checked(&sibling(&first, ".bak")).unwrap()["first"],
+            "Erste"
+        );
+        assert_eq!(
+            scanner::scan_mods(&mods, "de", &config).mods[0].total_keys,
+            2
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn split_orphan_keys_are_reported_and_backed_up_without_hiding_the_component() {
+        let root = crate::test_support::temp_dir("export-split-orphans");
+        let mods = root.join("Mods");
+        let config = root.join("data");
+        let component = mods.join("Example");
+        write(
+            &component.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Split"}"#,
+        );
+        write(
+            &component.join("i18n/default/Dialogue.json"),
+            r#"{"hello":"Hello"}"#,
+        );
+        write(
+            &component.join("i18n/default/Events.json"),
+            r#"{"start":"Start"}"#,
+        );
+        let target = component.join("i18n/de/GermanDialogue.json");
+        write(&target, r#"{"hello":"Hallo","removed":"Old translation"}"#);
+        let original = std::fs::read(&target).unwrap();
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        assert_eq!(scan.extra_keys.len(), 1);
+        let request = scanned_split_request(&mods, &config);
+        let resolved = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap();
+        validate_paths(&mods, "de", &resolved[0].files).unwrap();
+        let working = translations::language_root(&config, "de").unwrap();
+        assert!(preview_export(&working, &resolved)
+            .unwrap()
+            .blocking_problem
+            .is_none());
+        assert_eq!(std::fs::read(&target).unwrap(), original);
+        let result = export_all_mods(&working, &resolved).unwrap();
+        assert_eq!(
+            (result.total_written_keys, result.total_orphan_keys),
+            (1, 1)
+        );
+        assert_eq!(std::fs::read(sibling(&target, ".bak")).unwrap(), original);
+        assert_eq!(
+            scanner::read_object_checked(&target).unwrap(),
+            serde_json::json!({"hello":"Hallo"})
+                .as_object()
+                .unwrap()
+                .clone()
+        );
+
+        // An actual key from another current source segment still blocks export.
+        write(
+            &target,
+            r#"{"hello":"Hallo","start":"Los","removed":"Old translation"}"#,
+        );
+        assert!(
+            scanner::split_target_path(&component.join("i18n/default/Dialogue.json"), "de")
+                .unwrap_err()
+                .contains("ambiguous")
+        );
+        assert!(resolve_scan_inputs(&mods, "de", &config, &resolved).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
