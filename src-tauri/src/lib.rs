@@ -166,7 +166,7 @@ mod scan_logging_tests {
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn load_strings(
     app: AppHandle,
     mod_unique_id: String,
@@ -350,7 +350,41 @@ fn compact_export_warnings(skipped: &[export::SkippedKey]) -> Vec<String> {
     warnings
 }
 
-#[tauri::command]
+// Async export commands may overlap; their temporary files and rollback paths must not.
+static EXPORT_WRITE: Mutex<()> = Mutex::new(());
+
+fn export_write_guard() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    EXPORT_WRITE.try_lock().map_err(|error| match error {
+        std::sync::TryLockError::WouldBlock => {
+            "An export or settings update is already running. Wait for it to finish and try again."
+                .to_string()
+        }
+        std::sync::TryLockError::Poisoned(_) => {
+            "A previous export or settings update panicked. Restart the app before trying again."
+                .to_string()
+        }
+    })
+}
+
+#[cfg(test)]
+mod export_dispatch_tests {
+    #[test]
+    fn concurrent_export_is_rejected_and_completion_releases_the_guard() {
+        let guard = super::export_write_guard().unwrap();
+        let competing = std::thread::spawn(|| super::export_write_guard().is_err());
+        assert!(competing.join().unwrap());
+        drop(guard);
+        assert!(super::export_write_guard().is_ok());
+        let failed_export = || -> Result<(), String> {
+            let _guard = super::export_write_guard()?;
+            Err("fixture write failure".into())
+        };
+        assert!(failed_export().is_err());
+        assert!(super::export_write_guard().is_ok());
+    }
+}
+
+#[tauri::command(async)]
 fn preview_export(
     app: AppHandle,
     mods: Vec<export::ExportModInput>,
@@ -381,13 +415,14 @@ fn preview_export(
         .inspect_err(|error| log::error!(target: "app", "preview_export failed: {error}"))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_mod(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
 ) -> Result<export::ExportResult, String> {
+    let _export_guard = export_write_guard()?;
     let config = config_dir(&app)?;
     let settings = settings::load_checked(&config)?;
     let mods_root = settings
@@ -481,12 +516,13 @@ fn export_mod(
     Ok(result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn export_all_mods(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mods: Vec<export::ExportModInput>,
 ) -> Result<export::ExportAllResult, String> {
+    let _export_guard = export_write_guard()?;
     let config = config_dir(&app)?;
     let settings = settings::load_checked(&config)?;
     let mods_root = settings
@@ -563,7 +599,7 @@ fn export_all_mods(
     Ok(result)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn preview_translation_zip(
     app: AppHandle,
     mods_path: String,
@@ -583,17 +619,18 @@ fn preview_translation_zip(
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn preview_stardew_translator_output(app: AppHandle) -> Result<release_zip::ZipPreview, String> {
     release_zip::preview_output(&config_dir(&app)?)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn build_stardew_translator_output(
     app: AppHandle,
     destination: String,
     overwrite: bool,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
+    let _export_guard = export_write_guard()?;
     release_zip::build_output(&config_dir(&app)?, Path::new(&destination), overwrite)
 }
 
@@ -618,12 +655,13 @@ fn pick_translation_zip_destination(
     }
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 fn build_translation_zip(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mut request: release_zip::ZipBuildRequest,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
+    let _export_guard = export_write_guard()?;
     request.target_lang = language::normalize_target_code(&request.target_lang)?;
     let result = release_zip::build(&translation_config_dir(&app)?, &request)?;
     remember_operation(
@@ -2499,6 +2537,7 @@ fn load_settings(app: AppHandle) -> Result<AppSettings, String> {
 
 #[tauri::command]
 fn save_settings(app: AppHandle, settings: AppSettings) -> Result<(), String> {
+    let _export_guard = export_write_guard()?;
     settings::save(&config_dir(&app)?, &settings)?;
     apply_diagnostic_logging(settings.diagnostic_logging);
     Ok(())

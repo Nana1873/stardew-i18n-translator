@@ -10,6 +10,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Reuse validation and search data for unchanged editor rows and calculate mod
+  counts in one pass. Run string loading and export operations asynchronously
+  to keep the interface responsive during native file work.
 - Reorganized user and contributor documentation, including clearer portable
   update instructions and release preparation steps.
 

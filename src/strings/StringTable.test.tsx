@@ -772,6 +772,39 @@ describe("StringTable workbench", () => {
     ).toHaveClass("is-search-match");
   });
 
+  it("falls back to Unicode casing for an unsupported custom locale", async () => {
+    render(<StringTable mod={MOD} targetLanguageCode="mod_custom" />);
+    await screen.findByText("greeting");
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+      { target: { value: "HELLO" } },
+    );
+
+    expect(screen.getByText("greeting")).toBeVisible();
+    expect(
+      rowFor("greeting").querySelector('[data-search-field="source"]'),
+    ).toHaveClass("is-search-match");
+  });
+
+  it("reindexes a replacement row after its translation is edited", async () => {
+    installBackendRows({ "a.b": [ROWS["a.b"][0]] });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    const search = screen.getByRole("searchbox", { name: "Search strings" });
+
+    fireEvent.change(search, { target: { value: "Hallo" } });
+    fireEvent.doubleClick(rowFor("greeting"));
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Servus" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(screen.queryByText("greeting")).toBeNull());
+    fireEvent.change(search, { target: { value: "Servus" } });
+    expect(await screen.findByText("greeting")).toBeVisible();
+  });
+
   it("clears selection when search, filters, scope, or sort changes", async () => {
     render(<StringTable mod={MOD} mods={[MOD, OTHER_MOD]} />);
     await screen.findByText("greeting");
@@ -964,6 +997,22 @@ describe("StringTable workbench", () => {
         },
       ],
     });
+  });
+
+  it("refreshes cached validation after a batch replaces an invalid row", async () => {
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("token");
+    fireEvent.click(
+      screen.getByRole("button", { name: /^Validation issues 1/ }),
+    );
+    expect(screen.getByText("token")).toBeVisible();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
+    fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
+    fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
+    await waitFor(() => expect(screen.queryByText("token")).toBeNull());
+    expect(
+      screen.queryByRole("button", { name: /^Validation issues 1/ }),
+    ).toBeNull();
   });
 
   it("shows status help on filter focus or status-badge pointer only", async () => {
