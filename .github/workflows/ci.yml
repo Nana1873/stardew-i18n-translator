@@ -59,6 +59,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm test:desktop:guards # Offline evidence validation; no desktop launch.
 
   rust:
     needs: changes

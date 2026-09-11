@@ -1,6 +1,14 @@
 param(
     [ValidateSet('none', 'assertion', 'exit')][string]$FailureProbe = 'none',
-    [string]$ReleaseZip
+    [string]$ReleaseZip,
+    [switch]$ReleaseCases,
+    [switch]$Layout,
+    [switch]$Stress,
+    [ValidateSet('none', 'local', 'codex', 'both')][string]$LiveAi = 'none',
+    [string]$LocalUrl = 'http://127.0.0.1:1234/v1',
+    [string]$LocalModel,
+    [string]$CodexModel,
+    [ValidateSet(0, 96, 120, 144, 192)][int]$ExpectedDpi = 0
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -30,6 +38,11 @@ try {
     $start.RedirectStandardError = $true
     $start.EnvironmentVariables['SIT_E2E_RUN_DIR'] = $runRoot
     $start.EnvironmentVariables['SIT_E2E_FAILURE_PROBE'] = $FailureProbe
+    $start.EnvironmentVariables['SIT_E2E_OPTIONS'] = (@{
+        releaseCases = [bool]$ReleaseCases; layout = [bool]$Layout; stress = [bool]$Stress
+        liveAi = $LiveAi; localUrl = $LocalUrl; localModel = $LocalModel
+        codexModel = $CodexModel; expectedDpi = $ExpectedDpi
+    } | ConvertTo-Json -Compress)
     if ($ReleaseZip) {
         $start.EnvironmentVariables['SIT_E2E_RELEASE_ZIP'] = (Resolve-Path -LiteralPath $ReleaseZip -ErrorAction Stop).Path
     } else {

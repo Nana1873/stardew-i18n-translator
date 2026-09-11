@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][int]$AppProcessId,
     [Parameter(Mandatory = $true)][string]$Executable,
-    [Parameter(Mandatory = $true)][ValidateSet('pick', 'save', 'cancel', 'close', 'inspect')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('pick', 'save', 'cancel', 'close', 'inspect', 'metrics')][string]$Action,
     [string]$Title,
     [string]$Path
 )
@@ -18,6 +18,9 @@ public static class DesktopNative {
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr handle);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint pid);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern IntPtr GetWindowDpiAwarenessContext(IntPtr handle);
+    [DllImport("user32.dll")] public static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr handle);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr handle, int id);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr handle, StringBuilder name, int count);
@@ -51,6 +54,25 @@ public static class DesktopNative {
 $app = Get-Process -Id $AppProcessId -ErrorAction Stop
 if (![string]::Equals($app.Path, [IO.Path]::GetFullPath($Executable), [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Refusing to operate on a process outside this test application.'
+}
+if ($Action -eq 'metrics') {
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while ($app.MainWindowHandle -eq [IntPtr]::Zero) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'No application window for native DPI measurement.' }
+        Start-Sleep -Milliseconds 100
+        $app.Refresh()
+    }
+    $dpi = [DesktopNative]::GetDpiForWindow($app.MainWindowHandle)
+    if (!$dpi) { throw 'Native DPI measurement failed.' }
+    @{
+        dpi = $dpi
+        awareness = [DesktopNative]::GetAwarenessFromDpiAwarenessContext([DesktopNative]::GetWindowDpiAwarenessContext($app.MainWindowHandle))
+        workingSetBytes = $app.WorkingSet64
+        privateBytes = $app.PrivateMemorySize64
+        cpuSeconds = $app.TotalProcessorTime.TotalSeconds
+        handles = $app.HandleCount
+    } | ConvertTo-Json -Compress
+    exit 0
 }
 if ($Action -eq 'close') {
     if (!$app.CloseMainWindow()) { throw 'The application did not accept its normal window-close request.' }

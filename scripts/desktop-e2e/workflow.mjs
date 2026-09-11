@@ -17,6 +17,8 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { Builder, By, Key, until } from "selenium-webdriver";
 import { xnbDictionary } from "./fixtures.mjs";
+import { releaseCases } from "./release-cases.mjs";
+import { advancedCases } from "./advanced-cases.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
 // releasing the handshake. Direct invocation must not start an unowned app.
@@ -27,7 +29,7 @@ const permission = await Promise.race([
 ]);
 input.close();
 assert.equal(
-  permission,
+  permission.replace(/^\uFEFF/, ""), // Windows PowerShell can prepend a UTF-8 BOM.
   "go",
   "Use pnpm test:desktop (the process supervisor).",
 );
@@ -61,6 +63,7 @@ const imported = {
 };
 const expectedExport = { ...imported, greeting: edited };
 const events = createWriteStream(join(artifacts, "steps.log"));
+const options = JSON.parse(process.env.SIT_E2E_OPTIONS || "{}");
 let driver;
 let driverProcess;
 let appPid;
@@ -70,6 +73,7 @@ const evidence = {
   passed: false,
   steps: [],
   startedAt: new Date().toISOString(),
+  requested: options,
   host: {
     platform: process.platform,
     architecture: process.arch,
@@ -209,14 +213,38 @@ const browseFolder = (label) =>
     `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse..."]`,
   );
 async function element(locator) {
-  const found = await driver.wait(until.elementLocated(locator), 30000);
-  await driver.wait(until.elementIsVisible(found), 30000);
-  return found;
+  return driver.wait(
+    async () => {
+      try {
+        for (const found of await driver.findElements(locator)) {
+          if (await found.isDisplayed()) return found;
+        }
+      } catch (error) {
+        if (error.name !== "StaleElementReferenceError") throw error;
+      }
+      return false;
+    },
+    30000,
+    `Visible element: ${locator}`,
+  );
 }
 async function click(locator) {
-  const found = await element(locator);
-  await driver.wait(until.elementIsEnabled(found), 30000);
-  await found.click();
+  await driver.wait(
+    async () => {
+      try {
+        const found = await element(locator);
+        if (!(await found.isEnabled())) return false;
+        await found.click();
+        return true;
+      } catch (error) {
+        // A replaced node has not received the click. Re-find it by its selector.
+        if (error.name !== "StaleElementReferenceError") throw error;
+        return false;
+      }
+    },
+    30000,
+    `Enabled control: ${locator}`,
+  );
 }
 async function fill(locator, value) {
   const found = await element(locator);
@@ -274,14 +302,23 @@ async function freePort() {
   return port;
 }
 let endpoint;
-async function launch() {
+async function launch(renderScale) {
   driver = await new Builder()
     .usingServer(endpoint)
     .withCapabilities({
       browserName: "wry",
       "tauri:options": {
         application: exe,
-        webviewOptions: { userDataFolder: join(runtime, "webview") },
+        webviewOptions: {
+          userDataFolder: join(runtime, "webview"),
+          ...(renderScale
+            ? {
+                additionalBrowserArguments: [
+                  `force-device-scale-factor=${renderScale}`,
+                ],
+              }
+            : {}),
+        },
       },
     })
     .build();
@@ -292,6 +329,15 @@ async function launch() {
   assert.equal(capabilities.get("browserName"), "webview2");
   appPid = capabilities.get("goog:processID");
   assert.ok(Number.isInteger(appPid));
+  const display = JSON.parse(await native("metrics"));
+  evidence.displays ??= [];
+  evidence.displays.push({ ...display, renderScale: renderScale ?? null });
+  if (options.expectedDpi)
+    assert.equal(
+      display.dpi,
+      options.expectedDpi,
+      "Native Windows DPI does not match the requested configuration.",
+    );
   evidence.appPids ??= [];
   evidence.appPids.push(appPid);
   evidence.webviewVersion = capabilities.get("browserVersion");
@@ -992,6 +1038,47 @@ try {
     await click(css('[aria-label="Close editor"]'));
     await closeNormally();
   });
+  const helpers = {
+    driver: () => driver,
+    launch,
+    closeNormally,
+    native,
+    step,
+    waitFor,
+    click,
+    css,
+    button,
+    row,
+    element,
+    fill,
+    absent,
+    screenshot,
+    openEntry,
+    saveEntry,
+    json,
+    exists,
+    hash,
+    archive,
+    runtime,
+    artifacts,
+    data,
+    mods,
+    game,
+    repo,
+    expectedExport,
+    resumed,
+    batchTranslation,
+    chooseBatch,
+    evidence,
+    options,
+  };
+  if (options.releaseCases) await releaseCases(helpers);
+  if (
+    options.layout ||
+    options.stress ||
+    (options.liveAi !== "none" && options.liveAi)
+  )
+    await advancedCases(helpers);
   assert.deepEqual(await json(join(i18n, "default.json")), source);
   assert.equal(
     hash(await readFile(evidence.releaseZip.path)),

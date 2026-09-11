@@ -26,7 +26,8 @@ corepack pnpm dev
 
 `corepack pnpm dev:web` starts the Vite frontend for browser work, but native
 dialogs, scanning, and file operations require the Tauri desktop app. No real
-game installation, AI service, or Codex login is needed for automated tests.
+game installation, AI service, or Codex login is needed for the default automated
+tests. The explicit live-engine release profile requires both real engines.
 
 ## Source Map
 
@@ -101,10 +102,22 @@ profile, and synthetic inputs; its runtime and processes are cleaned up even on
 failure. Logs, screenshots, output, ZIP/EXE hashes, and cleanup evidence remain
 under ignored `target/desktop-e2e/runs/`.
 
-This covers the specified functional workflow, not visual layout, DPI/focus
-quality, other native interactions, or untested features. Those still require
-an appropriate desktop/visual check or Computer Use; requested user-test gates
-remain in effect. See the focused
+For broader release acceptance, prepare a loaded local model and an authenticated
+Codex CLI, then run:
+
+```powershell
+corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip" -LocalModel "loaded-model-id" -ExpectedDpi 96
+```
+
+This adds split/multi-mod output, both live engines through Review/export/restart,
+20,000-string load checks and measured layout at four WebView rendering scales.
+Live Codex calls consume the CLI account's quota; only synthetic text is sent.
+Native DPI is measured separately: rendering emulation cannot approve missing
+Windows configurations. The [release acceptance guide](docs/testing/release-acceptance.md)
+explains prerequisites, exact coverage, native DPI matrix validation and remaining
+visual review. Screenshot review can be done without Computer Use; changed visual
+properties and explicitly requested installation tests still need their own proof.
+See the focused
 [desktop test guide](docs/testing/desktop-e2e.md) for exact coverage, diagnostics,
 failure probes and limitations. The suite is local-only until its interactive
 Windows requirements are verified on a CI runner.
