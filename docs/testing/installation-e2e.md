@@ -84,6 +84,10 @@ the external download page and installing WebView2 are not covered. General
 appearance, accessibility and translation quality also need separate judgment
 when relevant to a change.
 
+These environment checks are optional, not additional mandatory release gates
+for the existing portable distribution. Reassess their relevance when changing
+runtime requirements, packaging, code signing or the dependency startup guidance.
+
 A clean-Windows run requires a configured disposable VM or
 [Windows Sandbox](https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-install).
 Sandbox requires administrator setup and may require a restart. This repository

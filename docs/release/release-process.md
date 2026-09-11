@@ -123,8 +123,10 @@ falls back to GitHub-generated notes. It never combines both.
 
    The extended profile includes the [portable installation/upgrade test](../testing/installation-e2e.md).
    It can replace the corresponding manual check when that is the maintainer's
-   chosen acceptance scope. A clean-Windows or download/security-prompt check
-   requires separate evidence; neither is implied by this host-based test.
+   chosen acceptance scope. Clean-Windows, download/security-prompt and WebView2
+   installation checks are optional environment checks, not additional mandatory
+   release gates. If requested or relevant to a change, they require separate
+   evidence; none is implied by this host-based test.
 
 6. Run the release preflight from the same clean, current `main` checkout:
 
