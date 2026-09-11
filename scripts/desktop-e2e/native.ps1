@@ -7,6 +7,14 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$runsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'target/desktop-e2e/runs')).TrimEnd('\') + '\'
+$runRoot = [IO.Path]::GetFullPath($env:SIT_E2E_RUN_DIR)
+$testRuntime = [IO.Path]::GetFullPath((Join-Path $runRoot 'runtime')).TrimEnd('\') + '\'
+if (!$runRoot.StartsWith($runsRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    ![IO.Path]::GetFullPath($Executable).StartsWith($testRuntime, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Native helpers require an executable in the supervisor-owned runtime.'
+}
 Add-Type @'
 using System;
 using System.Text;
@@ -98,7 +106,7 @@ while ($dialog -eq [IntPtr]::Zero) {
 $savePath = $Action -eq 'save' -or ($Action -eq 'cancel' -and $Path)
 if ($Action -eq 'pick' -or $savePath) {
     if (![IO.Path]::IsPathRooted($Path)) { throw 'Picker input must be an absolute fixture path.' }
-    $fixtureRoot = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Executable))) + '\'
+    $fixtureRoot = $testRuntime
     if (![IO.Path]::GetFullPath($Path).StartsWith($fixtureRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Picker input must stay inside this test runtime.' }
     if ($Action -eq 'pick' -and !(Test-Path -LiteralPath $Path)) { throw 'Open picker input must exist.' }
     if ($savePath -and ((Test-Path -LiteralPath $Path) -or !(Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($Path)) -PathType Container))) {

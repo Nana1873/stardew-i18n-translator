@@ -110,7 +110,11 @@ corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_
 ```
 
 This adds split/multi-mod output, both live engines through Review/export/restart,
-20,000-string load checks and measured layout at four WebView rendering scales.
+20,000-string load checks, layout checks and portable installation/upgrade tests.
+For installation/upgrade alone, use `corepack pnpm test:desktop:install` with the
+same `-ReleaseZip`. It needs the pinned previous ZIP (downloaded automatically,
+or supplied with `-UpgradeFromZip`), but no AI service. See the
+[installation test guide](docs/testing/installation-e2e.md) for coverage and limits.
 Live Codex calls consume the CLI account's quota; only synthetic text is sent.
 The native Windows DPI matrix is optional and is not a release requirement;
 untested configurations are not counted as passed. The

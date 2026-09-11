@@ -10,9 +10,12 @@ function reports() {
       executableSha256: "b".repeat(64),
       requested: { expectedDpi: dpi },
       displays: [{ dpi, awareness: 2, renderScale: null }],
+      installation: { passed: true },
       steps: [
         "release-combined-output-preserves-paths-and-statuses",
         "stress-20000-strings-edit-rescan-export-restart",
+        "install-native-startup-and-runtime-guidance",
+        "install-updated-edit-export-and-restart",
         ...[1, 1.25, 1.5, 2].map((scale) => `layout-render-scale-${scale}`),
         ...["local", "codex"].map(
           (engine) => `live-${engine}-translate-review-export-restart`,
@@ -29,6 +32,22 @@ function reports() {
 }
 test("accepts matching complete native configurations", () =>
   assert.equal(checkMatrix(reports(), hash).passed, true));
+test("rejects missing installation or upgrade coverage", () => {
+  const input = reports();
+  delete input[0].result.installation;
+  assert.throws(
+    () => checkMatrix(input, hash),
+    /installation\/upgrade evidence/,
+  );
+  const other = reports();
+  other[0].result.steps = other[0].result.steps.filter(
+    (name) => !name.startsWith("install-"),
+  );
+  assert.throws(
+    () => checkMatrix(other, hash),
+    /installation\/upgrade evidence/,
+  );
+});
 test("rendering emulation cannot replace native DPI", () => {
   const input = reports();
   input[1].result.displays[0].renderScale = 1.25;

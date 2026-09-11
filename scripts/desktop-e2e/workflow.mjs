@@ -19,6 +19,7 @@ import { Builder, By, Key, until } from "selenium-webdriver";
 import { xnbDictionary } from "./fixtures.mjs";
 import { releaseCases } from "./release-cases.mjs";
 import { advancedCases } from "./advanced-cases.mjs";
+import { installCases } from "./install-cases.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
 // releasing the handshake. Direct invocation must not start an unowned app.
@@ -41,6 +42,7 @@ assert.ok(
 const runtime = join(artifacts, "runtime");
 const appDir = join(runtime, "app");
 const exe = join(appDir, "stardew-i18n-translator.exe");
+let activeExe = exe;
 const data = join(appDir, "data");
 const game = join(runtime, "game");
 // Deliberately differs from game/Mods: the test must actually choose this folder.
@@ -170,7 +172,7 @@ async function native(action, title, path) {
     "-AppProcessId",
     String(appPid),
     "-Executable",
-    exe,
+    activeExe,
     "-Action",
     action,
   ];
@@ -302,13 +304,15 @@ async function freePort() {
   return port;
 }
 let endpoint;
-async function launch(renderScale) {
+async function launch(renderScale, application = exe) {
+  assert.ok(resolve(application).startsWith(runtime + "\\"));
+  activeExe = application;
   driver = await new Builder()
     .usingServer(endpoint)
     .withCapabilities({
       browserName: "wry",
       "tauri:options": {
-        application: exe,
+        application,
         webviewOptions: {
           userDataFolder: join(runtime, "webview"),
           ...(renderScale
@@ -340,6 +344,12 @@ async function launch(renderScale) {
     );
   evidence.appPids ??= [];
   evidence.appPids.push(appPid);
+  evidence.launches ??= [];
+  evidence.launches.push({
+    pid: appPid,
+    application,
+    sha256: hash(await readFile(application)),
+  });
   evidence.webviewVersion = capabilities.get("browserVersion");
   assert.equal(
     evidence.webviewVersion,
@@ -368,6 +378,12 @@ async function closeNormally() {
 }
 try {
   assert.equal(process.platform, "win32", "Desktop E2E requires Windows x64.");
+  if (process.env.SIT_E2E_FAILURE_PROBE === "upgrade-exit")
+    assert.ok(options.install, "The upgrade-exit probe requires -Install.");
+  assert.ok(
+    !options.upgradeFromZip || options.install,
+    "-UpgradeFromZip requires -Install.",
+  );
   const tools = await json(
     join(repo, "target/desktop-e2e/tools/installed.json"),
   );
@@ -1071,6 +1087,9 @@ try {
     chooseBatch,
     evidence,
     options,
+    run,
+    browseFolder,
+    exe,
   };
   if (options.releaseCases) await releaseCases(helpers);
   if (
@@ -1079,6 +1098,7 @@ try {
     (options.liveAi !== "none" && options.liveAi)
   )
     await advancedCases(helpers);
+  if (options.install) await installCases(helpers);
   assert.deepEqual(await json(join(i18n, "default.json")), source);
   assert.equal(
     hash(await readFile(evidence.releaseZip.path)),

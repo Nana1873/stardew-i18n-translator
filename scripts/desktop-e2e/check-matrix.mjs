@@ -40,6 +40,12 @@ export function checkMatrix(reports, zipHash) {
       result.steps?.includes("stress-20000-strings-edit-rescan-export-restart"),
       "Stress evidence is missing.",
     );
+    assert.ok(
+      result.installation?.passed === true &&
+        result.steps?.includes("install-native-startup-and-runtime-guidance") &&
+        result.steps?.includes("install-updated-edit-export-and-restart"),
+      "Portable installation/upgrade evidence is missing.",
+    );
     for (const scale of [1, 1.25, 1.5, 2])
       assert.ok(
         result.steps?.includes(`layout-render-scale-${scale}`),

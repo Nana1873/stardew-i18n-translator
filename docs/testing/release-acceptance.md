@@ -37,8 +37,12 @@ not skips or successful acceptance. Never use a fake response server as evidence
 for the live-engine profile. The default `test:desktop` still needs neither engine.
 
 To isolate a failing capability, use `test:desktop` with `-ReleaseCases`,
-`-Layout`, `-Stress`, or `-LiveAi local|codex|both` plus the relevant parameters.
+`-Layout`, `-Stress`, `-Install`, or `-LiveAi local|codex|both` plus the relevant parameters.
 A diagnostic subset does not approve the full release profile.
+
+The release profile also includes the [portable installation and upgrade tests](installation-e2e.md).
+They download a hash-pinned previous release, or accept the matching local ZIP
+with `-UpgradeFromZip`, and run both real executables against generated work.
 
 ## Additional functional evidence
 
@@ -104,8 +108,8 @@ Validate an explicitly requested matrix against the exact same ZIP:
 corepack pnpm test:desktop:matrix <release.zip> <run-at-96-dpi> <run-at-120-dpi> <run-at-144-dpi> <run-at-192-dpi>
 ```
 
-This command fails unless each run passed its release, layout, stress and both
-live-engine stages, cleaned up successfully, used the same ZIP/EXE hashes, and
+This command fails unless each run passed its release, installation/upgrade,
+layout, stress and both live-engine stages, cleaned up successfully, used the same ZIP/EXE hashes, and
 the required native DPI values were explicitly requested and measured without
 rendering emulation. Duplicate runs or missing configurations cannot satisfy it.
 Evidence is a test record, not a cryptographically signed attestation.
@@ -120,16 +124,14 @@ monitor transition, native dialog appearance, or full accessibility. Review chan
 UI screenshots and exercise a changed uncovered property as needed; Computer Use
 is optional. Screenshots are evidence for review, not automatic visual approval.
 
-Portable ZIP extraction, first launch with empty app data, saving and restart are
-already automated. This is not a clean-Windows installation test: the host already
-has WebView2 and development dependencies. The suite also does not perform an
-old-version-to-new-version upgrade or test browser-download/security prompts.
-Those properties need separate evidence when requested; a synthetic upgrade can
-be automated without writing to the maintainer's real installation.
+Portable first launch, native missing-runtime guidance and the documented upgrade
+procedure are automated; see the installation guide for exact coverage. They can
+replace the corresponding manual portable-installation check. They do not test a
+fresh Windows guest, browser-download/security prompts or installing WebView2.
 
-Any explicitly requested personal installation/upgrade test remains a separate
-gate until the maintainer changes that requirement. It is not intrinsically a
-manual requirement for every release. Omitting the optional native DPI matrix
+Any explicitly requested personal test remains a separate gate unless the
+maintainer replaces it with the covered automated checks. A personal test is not
+intrinsically required for every release. Omitting the optional native DPI matrix
 does not block the listed functional acceptance.
 The [release process](../release/release-process.md) still governs the exact tested
 artifact and publication. No native desktop CI coverage is claimed here.

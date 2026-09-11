@@ -1,9 +1,11 @@
 param(
-    [ValidateSet('none', 'assertion', 'exit')][string]$FailureProbe = 'none',
+    [ValidateSet('none', 'assertion', 'exit', 'upgrade-exit')][string]$FailureProbe = 'none',
     [string]$ReleaseZip,
     [switch]$ReleaseCases,
     [switch]$Layout,
     [switch]$Stress,
+    [switch]$Install,
+    [string]$UpgradeFromZip,
     [ValidateSet('none', 'local', 'codex', 'both')][string]$LiveAi = 'none',
     [string]$LocalUrl = 'http://127.0.0.1:1234/v1',
     [string]$LocalModel,
@@ -42,6 +44,7 @@ try {
         releaseCases = [bool]$ReleaseCases; layout = [bool]$Layout; stress = [bool]$Stress
         liveAi = $LiveAi; localUrl = $LocalUrl; localModel = $LocalModel
         codexModel = $CodexModel; expectedDpi = $ExpectedDpi
+        install = [bool]$Install; upgradeFromZip = $UpgradeFromZip
     } | ConvertTo-Json -Compress)
     if ($ReleaseZip) {
         $start.EnvironmentVariables['SIT_E2E_RELEASE_ZIP'] = (Resolve-Path -LiteralPath $ReleaseZip -ErrorAction Stop).Path
@@ -102,17 +105,24 @@ try {
         $child.Dispose()
     }
     # Preserve backend diagnostics even when Node exits before its own finally.
-    $appLogs = Join-Path $runtimeRoot 'app/data/logs'
-    if (Test-Path -LiteralPath $appLogs) {
-        try {
-            $savedLogs = Join-Path $runRoot 'app-logs'
-            New-Item -ItemType Directory -Force -Path $savedLogs | Out-Null
-            Get-ChildItem -LiteralPath $appLogs -File | ForEach-Object {
-                Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $savedLogs $_.Name) -Force
+    foreach ($logLocation in @{
+        'app-logs' = 'app/data/logs'
+        'previous-app-logs' = 'previous version/runtime/app/data/logs'
+        'updated-app-logs' = 'updated version/runtime/app/data/logs'
+        'startup-app-logs' = 'startup/runtime/app/data/logs'
+    }.GetEnumerator()) {
+        $appLogs = Join-Path $runtimeRoot $logLocation.Value
+        if (Test-Path -LiteralPath $appLogs) {
+            try {
+                $savedLogs = Join-Path $runRoot $logLocation.Key
+                New-Item -ItemType Directory -Force -Path $savedLogs | Out-Null
+                Get-ChildItem -LiteralPath $appLogs -File | ForEach-Object {
+                    Copy-Item -LiteralPath $_.FullName -Destination (Join-Path $savedLogs $_.Name) -Force
+                }
+            } catch {
+                Write-Warning "Could not preserve backend logs: $_"
+                $result = 1
             }
-        } catch {
-            Write-Warning "Could not preserve backend logs: $_"
-            $result = 1
         }
     }
     # Delete only this generated runtime directory, never a caller-supplied path.
