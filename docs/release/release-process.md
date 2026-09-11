@@ -95,9 +95,24 @@ falls back to GitHub-generated notes. It never combines both.
    A matching version does not establish which commit built an executable, so
    do not reuse an earlier build just because it has the same version.
 
-5. Extract the ZIP and do a practical smoke test when the release changes
-   startup, persistence, scanning, editing, glossary handling, or export. Use
-   synthetic fixtures or temporary copies for every action that writes files.
+5. Test the actual ZIP when the release changes startup, persistence, scanning,
+   editing, glossary handling, or export. The
+   [automated Windows desktop workflow](../testing/desktop-e2e.md) validates and
+   extracts it, runs the real app/backend with synthetic inputs, and retains its
+   ZIP/EXE hashes:
+
+   ```powershell
+   corepack pnpm test:desktop:setup # Once; repeat after WebView2 updates.
+   corepack pnpm test:desktop -ReleaseZip src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip
+   ```
+
+   A passing run supplies functional evidence only for the guide's listed
+   workflows. Review changed UI visually and exercise changed capabilities
+   outside that coverage, using synthetic fixtures or temporary copies for
+   writes. Computer Use is one option for those checks, not a mandatory tool.
+   Screenshots alone are not visual approval, and any explicitly requested
+   user-test step remains required. Publish the same ZIP whose hash was tested;
+   a pass for a different executable or archive cannot approve this artifact.
 
 6. Run the release preflight from the same clean, current `main` checkout:
 
