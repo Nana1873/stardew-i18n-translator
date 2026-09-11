@@ -106,15 +106,16 @@ For broader release acceptance, prepare a loaded local model and an authenticate
 Codex CLI, then run:
 
 ```powershell
-corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip" -LocalModel "loaded-model-id" -ExpectedDpi 96
+corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip" -LocalModel "loaded-model-id"
 ```
 
 This adds split/multi-mod output, both live engines through Review/export/restart,
 20,000-string load checks and measured layout at four WebView rendering scales.
 Live Codex calls consume the CLI account's quota; only synthetic text is sent.
-Native DPI is measured separately: rendering emulation cannot approve missing
-Windows configurations. The [release acceptance guide](docs/testing/release-acceptance.md)
-explains prerequisites, exact coverage, native DPI matrix validation and remaining
+The native Windows DPI matrix is optional and is not a release requirement;
+untested configurations are not counted as passed. The
+[release acceptance guide](docs/testing/release-acceptance.md)
+explains prerequisites, exact coverage, optional DPI diagnostics and remaining
 visual review. Screenshot review can be done without Computer Use; changed visual
 properties and explicitly requested installation tests still need their own proof.
 See the focused

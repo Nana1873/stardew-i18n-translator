@@ -117,8 +117,9 @@ falls back to GitHub-generated notes. It never combines both.
    For live-engine, split/multi-mod output, load and scaling coverage, use the
    [extended acceptance profile](../testing/release-acceptance.md). It requires
    real Local AI and Codex CLI, and distinguishes WebView rendering checks from
-   measured native Windows DPI configurations. Missing requested capabilities or
-   DPI runs remain incomplete acceptance; a green subset does not replace them.
+   measured native Windows DPI configurations. The native DPI matrix is optional,
+   not a release requirement. Missing explicitly requested capabilities remain
+   incomplete acceptance; a green subset does not replace them.
 
 6. Run the release preflight from the same clean, current `main` checkout:
 

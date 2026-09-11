@@ -26,7 +26,7 @@ For example, an already installed LM Studio model can be prepared with its
 ```powershell
 lms server start --bind 127.0.0.1
 lms load <installed-model-key> --identifier translator-e2e --context-length 4096 --ttl 1800
-corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip" -LocalModel translator-e2e -ExpectedDpi 96
+corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip" -LocalModel translator-e2e
 lms unload translator-e2e
 ```
 
@@ -75,7 +75,13 @@ model services are not killed. Normal logs, screenshots, exports, model provenan
 timing, `layout.json`, `stress.json`, `result.json` and `cleanup.json` stay in the
 printed ignored `target/desktop-e2e/runs/` directory after runtime cleanup.
 
-## Native Windows DPI and the complete matrix
+## Optional native Windows DPI diagnostics
+
+The native DPI matrix is not a release requirement. The default release profile
+runs on the current desktop and retains the inexpensive WebView layout checks.
+Unexercised native configurations remain untested, not passed. Use the optional
+matrix below only when investigating a DPI issue or explicitly accepting that
+capability; no additional Windows environments are required for ordinary releases.
 
 Windows DPI affects native window frames/dialogs and monitor transitions as well
 as WebView content. Microsoft documents [per-monitor DPI behavior](https://learn.microsoft.com/en-us/windows/win32/hidpi/high-dpi-desktop-application-development-on-windows)
@@ -88,11 +94,11 @@ The four additional WebView scales use Microsoft's
 [browser argument capability](https://learn.microsoft.com/en-us/microsoft-edge/webdriver/capabilities-edge-options#webviewoptions-object).
 They test rendering/layout, **not a Windows DPI change**. The test never changes
 the user's display settings, logs them out, or installs a virtual display driver.
-Run the profile on appropriately configured interactive Windows test desktops
+For this optional matrix, run the profile on configured interactive test desktops
 with `-ExpectedDpi` set to each actual value. A dedicated VM/test machine can
 provide those environments; this repository does not provision one.
 
-Validate the collected run directories against the exact same ZIP:
+Validate an explicitly requested matrix against the exact same ZIP:
 
 ```powershell
 corepack pnpm test:desktop:matrix <release.zip> <run-at-96-dpi> <run-at-120-dpi> <run-at-144-dpi> <run-at-192-dpi>
@@ -107,16 +113,23 @@ Run `corepack pnpm test:desktop:guards` after changing this evidence check.
 
 ## What still needs judgment
 
-A complete passing matrix can replace the **listed functional checks**. It cannot
+A passing release profile can replace the **listed functional checks**. It cannot
 establish general translation quality, every model/service/authentication failure,
 live cancellation/retry/partial-result behavior, long-duration stability, every
 monitor transition, native dialog appearance, or full accessibility. Review changed
 UI screenshots and exercise a changed uncovered property as needed; Computer Use
 is optional. Screenshots are evidence for review, not automatic visual approval.
 
-The explicitly requested personal installation/upgrade test remains required.
-It is possible for that to be the maintainer's only manual step when the other
-required checks have been automated or independently reviewed. A green run on
-one host must not silently make that claim for missing native DPI configurations.
+Portable ZIP extraction, first launch with empty app data, saving and restart are
+already automated. This is not a clean-Windows installation test: the host already
+has WebView2 and development dependencies. The suite also does not perform an
+old-version-to-new-version upgrade or test browser-download/security prompts.
+Those properties need separate evidence when requested; a synthetic upgrade can
+be automated without writing to the maintainer's real installation.
+
+Any explicitly requested personal installation/upgrade test remains a separate
+gate until the maintainer changes that requirement. It is not intrinsically a
+manual requirement for every release. Omitting the optional native DPI matrix
+does not block the listed functional acceptance.
 The [release process](../release/release-process.md) still governs the exact tested
 artifact and publication. No native desktop CI coverage is claimed here.
