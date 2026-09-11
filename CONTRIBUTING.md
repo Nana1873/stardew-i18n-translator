@@ -75,6 +75,40 @@ Token extraction has hand-synced TypeScript and Rust implementations. Add shared
 cases to [tests/fixtures/token-cases.json](tests/fixtures/token-cases.json) and run
 both suites when changing those rules; see the [fixture guide](tests/fixtures/README.md).
 
+### Windows desktop end-to-end tests
+
+With the development prerequisites above and an unlocked Windows desktop, run:
+
+```powershell
+corepack pnpm test:desktop:setup # Once; repeat after WebView2 updates.
+corepack pnpm test:desktop
+```
+
+Setup installs the pinned Tauri driver and matching Microsoft Edge WebDriver.
+The test freshly builds and packages the app, validates the ZIP layout/version,
+and runs its extracted EXE. It covers setup/native pickers, scan/edit/batch-JSON import,
+token warnings, export cancellation/replacement/backups, translation ZIP creation,
+offline LLM batch export/import/rejection/Review approval, synthetic XNB glossary
+extraction/hints, and normal restart with portable-state recovery. To test an
+already built release artifact, without rebuilding it:
+
+```powershell
+corepack pnpm test:desktop -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip"
+```
+
+Use the matching checkout version. Every run isolates the EXE, settings, WebView
+profile, and synthetic inputs; its runtime and processes are cleaned up even on
+failure. Logs, screenshots, output, ZIP/EXE hashes, and cleanup evidence remain
+under ignored `target/desktop-e2e/runs/`.
+
+This covers the specified functional workflow, not visual layout, DPI/focus
+quality, other native interactions, or untested features. Those still require
+an appropriate desktop/visual check or Computer Use; requested user-test gates
+remain in effect. See the focused
+[desktop test guide](docs/testing/desktop-e2e.md) for exact coverage, diagnostics,
+failure probes and limitations. The suite is local-only until its interactive
+Windows requirements are verified on a CI runner.
+
 ## Safe Test Data
 
 Treat real Stardew Valley and Mods folders as read-only test inputs. Use synthetic
