@@ -1,12 +1,20 @@
 param(
     [Parameter(Mandatory = $true)][int]$AppProcessId,
     [Parameter(Mandatory = $true)][string]$Executable,
-    [Parameter(Mandatory = $true)][ValidateSet('pick', 'save', 'cancel', 'close', 'inspect')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('pick', 'save', 'cancel', 'close', 'inspect', 'metrics')][string]$Action,
     [string]$Title,
     [string]$Path
 )
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+$runsRoot = [IO.Path]::GetFullPath((Join-Path $repoRoot 'target/desktop-e2e/runs')).TrimEnd('\') + '\'
+$runRoot = [IO.Path]::GetFullPath($env:SIT_E2E_RUN_DIR)
+$testRuntime = [IO.Path]::GetFullPath((Join-Path $runRoot 'runtime')).TrimEnd('\') + '\'
+if (!$runRoot.StartsWith($runsRoot, [StringComparison]::OrdinalIgnoreCase) -or
+    ![IO.Path]::GetFullPath($Executable).StartsWith($testRuntime, [StringComparison]::OrdinalIgnoreCase)) {
+    throw 'Native helpers require an executable in the supervisor-owned runtime.'
+}
 Add-Type @'
 using System;
 using System.Text;
@@ -18,6 +26,9 @@ public static class DesktopNative {
     [DllImport("user32.dll")] public static extern int GetDlgCtrlID(IntPtr handle);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr handle, out uint pid);
     [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr handle);
+    [DllImport("user32.dll")] public static extern IntPtr GetWindowDpiAwarenessContext(IntPtr handle);
+    [DllImport("user32.dll")] public static extern int GetAwarenessFromDpiAwarenessContext(IntPtr context);
     [DllImport("user32.dll")] public static extern bool IsWindowEnabled(IntPtr handle);
     [DllImport("user32.dll")] public static extern IntPtr GetDlgItem(IntPtr handle, int id);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr handle, StringBuilder name, int count);
@@ -52,6 +63,25 @@ $app = Get-Process -Id $AppProcessId -ErrorAction Stop
 if (![string]::Equals($app.Path, [IO.Path]::GetFullPath($Executable), [StringComparison]::OrdinalIgnoreCase)) {
     throw 'Refusing to operate on a process outside this test application.'
 }
+if ($Action -eq 'metrics') {
+    $deadline = [DateTime]::UtcNow.AddSeconds(10)
+    while ($app.MainWindowHandle -eq [IntPtr]::Zero) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'No application window for native DPI measurement.' }
+        Start-Sleep -Milliseconds 100
+        $app.Refresh()
+    }
+    $dpi = [DesktopNative]::GetDpiForWindow($app.MainWindowHandle)
+    if (!$dpi) { throw 'Native DPI measurement failed.' }
+    @{
+        dpi = $dpi
+        awareness = [DesktopNative]::GetAwarenessFromDpiAwarenessContext([DesktopNative]::GetWindowDpiAwarenessContext($app.MainWindowHandle))
+        workingSetBytes = $app.WorkingSet64
+        privateBytes = $app.PrivateMemorySize64
+        cpuSeconds = $app.TotalProcessorTime.TotalSeconds
+        handles = $app.HandleCount
+    } | ConvertTo-Json -Compress
+    exit 0
+}
 if ($Action -eq 'close') {
     if (!$app.CloseMainWindow()) { throw 'The application did not accept its normal window-close request.' }
     if (!$app.WaitForExit(15000)) { throw 'The application did not exit after its window-close request.' }
@@ -76,7 +106,7 @@ while ($dialog -eq [IntPtr]::Zero) {
 $savePath = $Action -eq 'save' -or ($Action -eq 'cancel' -and $Path)
 if ($Action -eq 'pick' -or $savePath) {
     if (![IO.Path]::IsPathRooted($Path)) { throw 'Picker input must be an absolute fixture path.' }
-    $fixtureRoot = [IO.Path]::GetDirectoryName([IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Executable))) + '\'
+    $fixtureRoot = $testRuntime
     if (![IO.Path]::GetFullPath($Path).StartsWith($fixtureRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Picker input must stay inside this test runtime.' }
     if ($Action -eq 'pick' -and !(Test-Path -LiteralPath $Path)) { throw 'Open picker input must exist.' }
     if ($savePath -and ((Test-Path -LiteralPath $Path) -or !(Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($Path)) -PathType Container))) {

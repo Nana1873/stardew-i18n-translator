@@ -48,3 +48,18 @@ catch {
 }
 if (!$rejected -or (Test-Path -LiteralPath $outside)) { throw 'Archive extraction did not enforce its destination boundary.' }
 Write-Output 'PASS archive rejects extraction outside runtime/app'
+
+# Multiple installation roots must not broaden native process ownership.
+foreach ($probe in @(
+    @{ executable = (Get-Process -Id $PID).Path; expected = 'supervisor-owned runtime' },
+    @{ executable = (Join-Path $resolved 'app/stardew-i18n-translator.exe'); expected = 'outside this test application' }
+)) {
+    $rejected = $false
+    try { & (Join-Path $PSScriptRoot 'native.ps1') -AppProcessId $PID -Executable $probe.executable -Action metrics | Out-Null }
+    catch {
+        if ($_.Exception.Message -notmatch $probe.expected) { throw }
+        $rejected = $true
+    }
+    if (!$rejected) { throw 'Native helper accepted an unrelated process.' }
+    Write-Output "PASS native rejects $($probe.expected)"
+}

@@ -172,6 +172,14 @@ Unsupported dialog layouts fail with diagnostics and need investigation.
 
 ## Acceptance limits and CI
 
+The opt-in [release acceptance profile](release-acceptance.md) adds real Local AI
+and Codex CLI calls, multi-mod/split output, bounded load and layout checks. It
+also records actual Windows DPI. A separate optional matrix command rejects
+incomplete native DPI evidence; that matrix is not a release requirement.
+The release profile also includes [portable installation and upgrade tests](installation-e2e.md),
+available separately through `test:desktop:install`.
+The ordinary command's coverage below remains unchanged.
+
 This suite can satisfy the functional acceptance slice listed above for its
 recorded executable. It is not a visual approval, an accessibility audit, a
 performance benchmark, or proof of every persistence/validation branch. Use a
