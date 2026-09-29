@@ -133,7 +133,10 @@ export function apiError(status, body, requestId) {
     typeof requestId === "string" && /^[a-zA-Z0-9_-]{1,120}$/.test(requestId)
       ? ` Request ID: ${requestId}.`
       : "";
-  return new Error(`${message} HTTP ${status}; ${code}.${id}`);
+  const error = new Error(`${message} HTTP ${status}; ${code}.${id}`);
+  error.failureCategory =
+    status >= 500 && status <= 599 ? "transient" : "message";
+  return error;
 }
 
 export async function requestJson(url, options = {}, fetcher = fetch) {
@@ -144,13 +147,28 @@ export async function requestJson(url, options = {}, fetcher = fetch) {
       signal: AbortSignal.timeout(30_000),
       ...options,
     });
-  } catch {
-    throw new Error("Could not reach OpenAI. Check the network and try again.");
+  } catch (cause) {
+    if (cause.name === "AbortError" || cause.name === "TimeoutError")
+      throw cause;
+    const error = new Error(
+      "Could not reach OpenAI. Check the network and try again.",
+    );
+    error.failureCategory = "transient";
+    throw error;
   }
   let data;
   try {
     data = JSON.parse(await readBounded(response, 2 * 1024 * 1024));
-  } catch {
+  } catch (cause) {
+    if (cause.name === "AbortError" || cause.name === "TimeoutError")
+      throw cause;
+    if (cause instanceof TypeError) {
+      const error = new Error(
+        "The OpenAI response was interrupted. Try again.",
+      );
+      error.failureCategory = "transient";
+      throw error;
+    }
     throw new Error(
       `OpenAI returned an unreadable or oversized response (HTTP ${response.status}).`,
     );

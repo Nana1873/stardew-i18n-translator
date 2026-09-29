@@ -59,7 +59,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - run: node --test scripts/chatgpt-login-prototype/core.test.mjs scripts/chatgpt-login-prototype/server.test.mjs
+      - run: node --test scripts/chatgpt-login-prototype/core.test.mjs scripts/chatgpt-login-prototype/server.test.mjs scripts/chatgpt-login-prototype/lifecycle.test.mjs
       - run: pnpm test:desktop:guards # Offline evidence validation; no desktop launch.
 
   rust:

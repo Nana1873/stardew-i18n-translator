@@ -48,6 +48,26 @@ let session = null,
   loginMessage = "",
   busy = false;
 let operation = null;
+let operationDone = Promise.resolve(),
+  finishOperation;
+let signingOut = false;
+function beginOperation() {
+  busy = true;
+  operation = new AbortController();
+  operationDone = new Promise((resolveDone) => {
+    finishOperation = resolveDone;
+  });
+  return operation.signal;
+}
+function endOperation() {
+  busy = false;
+  operation = null;
+  finishOperation?.();
+  finishOperation = null;
+}
+function requestSignal(signal) {
+  return AbortSignal.any([signal, AbortSignal.timeout(30_000)]);
+}
 let lastDiagnostic = null;
 let activity = "starting",
   activitySequence = 0;
@@ -103,7 +123,8 @@ async function bodyJson(req) {
   return JSON.parse(Buffer.concat(chunks).toString("utf8") || "{}");
 }
 
-async function readySession() {
+async function readySession(signal) {
+  signal.throwIfAborted();
   if (!session?.planEnabled)
     throw new Error(
       "Sign in and allow ChatGPT plan usage before making this request.",
@@ -115,6 +136,7 @@ async function readySession() {
       `${AUTH_ORIGIN}/api/accounts/oauth/token`,
       {
         method: "POST",
+        signal: requestSignal(signal),
         body: new URLSearchParams({
           grant_type: "refresh_token",
           client_id: session.clientId,
@@ -132,17 +154,20 @@ async function readySession() {
     if (!session.planEnabled)
       throw new Error("This session no longer permits ChatGPT plan usage.");
   }
+  signal.throwIfAborted();
   return session;
 }
 
-async function loadModels() {
-  const active = await readySession();
+async function loadModels(signal) {
+  const active = await readySession(signal);
   models = visibleModels(
     await requestJson(`${RESOURCE}/models`, {
       headers: { Authorization: `Bearer ${active.accessToken}` },
+      signal: requestSignal(signal),
     }),
     translatorMode,
   );
+  signal.throwIfAborted();
   if (!models.length)
     throw new Error(
       "The account returned no visible models. Inference access is not yet proven.",
@@ -160,19 +185,30 @@ const server = createServer(async (req, res) => {
       const attempt = pending;
       // A mismatching callback cannot consume the real user's pending attempt.
       const { code, clientId } = validateCallback(url.searchParams, attempt);
-      if (busy)
+      if (busy || signingOut)
         throw new Error(
           "Another request is in progress. Start sign-in again after it finishes.",
         );
       pending = null;
-      busy = true;
+      const signal = beginOperation();
       try {
-        const candidate = await exchangeCode(code, clientId, attempt);
+        const candidate = await exchangeCode(
+          code,
+          clientId,
+          attempt,
+          (url, options) =>
+            fetch(url, {
+              ...options,
+              signal: AbortSignal.any([signal, options.signal]),
+            }),
+        );
+        signal.throwIfAborted();
         const nextRegistration = { clientId, subject: candidate.subject };
         const oldRegistration = registration;
         registration = nextRegistration;
         try {
           await saveRegistration();
+          signal.throwIfAborted();
         } catch (error) {
           registration = oldRegistration;
           throw error;
@@ -186,7 +222,7 @@ const server = createServer(async (req, res) => {
       } catch (error) {
         lastError = safeError(error);
       } finally {
-        busy = false;
+        endOperation();
       }
       res.writeHead(303, {
         Location: "/",
@@ -248,11 +284,21 @@ const server = createServer(async (req, res) => {
         message: "Pending sign-in or translation cancelled.",
       });
     }
+    const cleanup =
+      url.pathname === "/api/logout" || url.pathname === "/api/stop";
+    if (signingOut)
+      return reply(res, 409, { error: "Sign-out is already in progress." });
+    if (cleanup) {
+      signingOut = true;
+      pending = null;
+      operation?.abort();
+      await operationDone;
+    }
     if (busy)
       return reply(res, 409, {
         error: "Please wait for the current request to finish.",
       });
-    busy = true;
+    const signal = beginOperation();
     lastError = "";
     try {
       if (url.pathname === "/api/login") {
@@ -265,13 +311,13 @@ const server = createServer(async (req, res) => {
         return reply(res, 200, { authorizationUrl: auth.url });
       }
       if (url.pathname === "/api/models")
-        return reply(res, 200, { models: await loadModels() });
+        return reply(res, 200, { models: await loadModels(signal) });
       if (url.pathname === "/api/inference" && translatorMode) {
         pending = null;
         lastDiagnostic = null;
         activity = "starting";
         activitySequence++;
-        const active = await readySession();
+        const active = await readySession(signal);
         if (!models.some((model) => model.id === data.model))
           throw new Error(
             "Load models and select one reported by this account.",
@@ -286,14 +332,10 @@ const server = createServer(async (req, res) => {
           data.schema.type !== "object"
         )
           throw new Error("Invalid bounded Translator inference request.");
-        operation = new AbortController();
         const response = await fetch(`${RESOURCE}/responses`, {
           method: "POST",
           redirect: "error",
-          signal: AbortSignal.any([
-            operation.signal,
-            AbortSignal.timeout(300_000),
-          ]),
+          signal: AbortSignal.any([signal, AbortSignal.timeout(300_000)]),
           headers: {
             Authorization: `Bearer ${active.accessToken}`,
             "Content-Type": "application/json",
@@ -372,15 +414,11 @@ const server = createServer(async (req, res) => {
           throw new Error(
             "Load models and select one reported by this account.",
           );
-        const active = await readySession();
-        operation = new AbortController();
+        const active = await readySession(signal);
         const response = await fetch(`${RESOURCE}/responses`, {
           method: "POST",
           redirect: "error",
-          signal: AbortSignal.any([
-            operation.signal,
-            AbortSignal.timeout(120_000),
-          ]),
+          signal: AbortSignal.any([signal, AbortSignal.timeout(120_000)]),
           headers: {
             Authorization: `Bearer ${active.accessToken}`,
             "Content-Type": "application/json",
@@ -461,13 +499,23 @@ const server = createServer(async (req, res) => {
       }
       return reply(res, 404, { error: "Not found." });
     } finally {
-      busy = false;
-      operation = null;
+      endOperation();
+      if (cleanup) signingOut = false;
     }
   } catch (error) {
     lastError = safeError(error);
     if (error.diagnostic) lastDiagnostic = error.diagnostic;
-    reply(res, 400, { error: lastError, diagnostic: lastDiagnostic });
+    reply(res, 400, {
+      error: lastError,
+      diagnostic: lastDiagnostic,
+      failureCategory:
+        error.name === "AbortError"
+          ? "cancelled"
+          : error.name === "TimeoutError" || error.message === "fetch failed"
+            ? "transient"
+            : (error.failureCategory ??
+              (error.diagnostic ? "invalid_response" : "message")),
+    });
   }
 });
 

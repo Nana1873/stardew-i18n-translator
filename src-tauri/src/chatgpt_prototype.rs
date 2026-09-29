@@ -62,7 +62,9 @@ impl Bridge {
                 "The ChatGPT connection is unavailable. Restart the app using its launcher."
                     .to_string()
             })?;
-        let bytes = read_bounded(response).await?;
+        let bytes = read_bounded(response)
+            .await
+            .map_err(provider_error_message)?;
         let page = String::from_utf8(bytes)
             .map_err(|_| "Invalid local ChatGPT helper page.".to_string())?;
         let marker = "name=\"prototype-csrf\" content=\"";
@@ -87,6 +89,12 @@ impl Bridge {
     }
 
     async fn call(&self, route: &str, body: Value) -> Result<Value, String> {
+        self.call_provider(route, body)
+            .await
+            .map_err(provider_error_message)
+    }
+
+    async fn call_provider(&self, route: &str, body: Value) -> Result<Value, ProviderFailure> {
         let response = self
             .client
             .post(format!("{}/api/{route}", self.origin))
@@ -95,30 +103,60 @@ impl Bridge {
             .json(&body)
             .send()
             .await
-            .map_err(|_| "The local ChatGPT request was interrupted or timed out.".to_string())?;
+            .map_err(|_| {
+                ProviderFailure::Transient(
+                    "The local ChatGPT request was interrupted or timed out.".into(),
+                )
+            })?;
         let success = response.status().is_success();
-        let body: Value = serde_json::from_slice(&read_bounded(response).await?)
-            .map_err(|_| "The local ChatGPT helper returned invalid data.".to_string())?;
+        let body: Value = serde_json::from_slice(&read_bounded(response).await?).map_err(|_| {
+            ProviderFailure::InvalidResponse(
+                "The local ChatGPT helper returned invalid data.".into(),
+            )
+        })?;
         if !success {
-            return Err(body
-                .get("error")
-                .and_then(Value::as_str)
-                .unwrap_or("ChatGPT could not complete the request.")
-                .chars()
-                .take(500)
-                .collect());
+            return Err(helper_failure(&body));
         }
         Ok(body)
     }
 }
 
-async fn read_bounded(response: reqwest::Response) -> Result<Vec<u8>, String> {
+fn helper_failure(body: &Value) -> ProviderFailure {
+    let message = body
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("ChatGPT could not complete the request.")
+        .chars()
+        .take(500)
+        .collect();
+    match body["failureCategory"].as_str() {
+        Some("transient") => ProviderFailure::Transient(message),
+        Some("invalid_response") => ProviderFailure::InvalidResponse(message),
+        Some("cancelled") => ProviderFailure::Cancelled,
+        _ => ProviderFailure::Message(message),
+    }
+}
+
+fn provider_error_message(failure: ProviderFailure) -> String {
+    match failure {
+        ProviderFailure::Cancelled => "The request was cancelled.".into(),
+        ProviderFailure::Transient(message)
+        | ProviderFailure::InvalidResponse(message)
+        | ProviderFailure::Message(message) => message,
+    }
+}
+
+async fn read_bounded(response: reqwest::Response) -> Result<Vec<u8>, ProviderFailure> {
     let mut stream = response.bytes_stream();
     let mut body = Vec::new();
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| "The local ChatGPT response was interrupted.".to_string())?;
+        let chunk = chunk.map_err(|_| {
+            ProviderFailure::Transient("The local ChatGPT response was interrupted.".into())
+        })?;
         if body.len().saturating_add(chunk.len()) > 2 * 1024 * 1024 {
-            return Err("The local ChatGPT response exceeded the output limit.".into());
+            return Err(ProviderFailure::InvalidResponse(
+                "The local ChatGPT response exceeded the output limit.".into(),
+            ));
         }
         body.extend_from_slice(&chunk);
     }
@@ -226,13 +264,13 @@ pub async fn run_prompt(
         ProviderFailure::Message("Select a ChatGPT model in Settings before translating.".into())
     })?;
     progress(ProviderProgressEvent::Activity(ProviderActivity::Starting));
-    let request = bridge.call("inference", json!({"model": model, "reasoning": reasoning, "instructions": prompt.instructions, "input": prompt.input, "schema": prompt.schema}));
+    let request = bridge.call_provider("inference", json!({"model": model, "reasoning": reasoning, "instructions": prompt.instructions, "input": prompt.input, "schema": prompt.schema}));
     tokio::pin!(request);
     let mut sequence = None;
     loop {
         tokio::select! {
             result = &mut request => {
-                let result = result.map_err(ProviderFailure::Message)?;
+                let result = result?;
                 if cancelled.load(Ordering::Acquire) {return Err(ProviderFailure::Cancelled);}
                 let usage = &result["usage"];
                 if usage.is_object() {progress(ProviderProgressEvent::Usage(ProviderTokenUsage {
@@ -332,3 +370,29 @@ mod merge_followup_tests;
 #[cfg(test)]
 #[path = "codex_cli/review_failure_tests.rs"]
 mod review_failure_tests;
+
+#[cfg(test)]
+mod transport_tests {
+    use super::*;
+    #[test]
+    fn helper_failure_preserves_recovery_categories_and_unknowns_fail_closed() {
+        for (category, expected) in [
+            ("transient", ProviderFailure::Transient("Safe error".into())),
+            (
+                "invalid_response",
+                ProviderFailure::InvalidResponse("Safe error".into()),
+            ),
+            ("cancelled", ProviderFailure::Cancelled),
+            ("message", ProviderFailure::Message("Safe error".into())),
+            ("future", ProviderFailure::Message("Safe error".into())),
+        ] {
+            assert_eq!(
+                helper_failure(&json!({"error":"Safe error", "failureCategory":category})),
+                expected
+            );
+        }
+        assert!(
+            matches!(helper_failure(&json!({"error":"x".repeat(1000)})), ProviderFailure::Message(message) if message.len() == 500)
+        );
+    }
+}

@@ -58,7 +58,7 @@ the app remain outside this prototype.
 Run the focused offline checks with:
 
 ```powershell
-node --test scripts/chatgpt-login-prototype/core.test.mjs scripts/chatgpt-login-prototype/server.test.mjs
+node --test scripts/chatgpt-login-prototype/core.test.mjs scripts/chatgpt-login-prototype/server.test.mjs scripts/chatgpt-login-prototype/lifecycle.test.mjs
 ```
 
 Sources: [registration and sign-in](https://developers.openai.com/siwc/token-sharing-open-source/sign-in),

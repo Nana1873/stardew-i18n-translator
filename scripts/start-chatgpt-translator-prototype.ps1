@@ -100,6 +100,7 @@ for ($attempt = 0; $attempt -lt 50; $attempt++) {
     Start-Sleep -Milliseconds 100
 }
 if (-not $runtime -or [int]$runtime.pid -ne $helperProcess.Id) { throw 'The ChatGPT helper did not become ready.' }
+$helperIdentity = Get-CimInstance Win32_Process -Filter "ProcessId = $($helperProcess.Id)"
 
 $oldBridge = $env:CHATGPT_TRANSLATOR_BRIDGE
 try {
@@ -111,11 +112,24 @@ try {
 finally {
     $env:CHATGPT_TRANSLATOR_BRIDGE = $oldBridge
     # Revoke and clear the helper's in-memory credentials on normal app exit.
-    try {
-        $page = Invoke-WebRequest -Uri $runtime.url -UseBasicParsing -TimeoutSec 5
-        $guard = [regex]::Match($page.Content, 'name="prototype-csrf" content="([^"]+)"').Groups[1].Value
-        $stopped = Invoke-RestMethod -Uri ($runtime.url + '/api/stop') -Method Post -Headers @{Origin=$runtime.url; 'X-Prototype-CSRF'=$guard} -ContentType 'application/json' -Body '{}' -TimeoutSec 20
-        if (-not $stopped.revoked) { Write-Warning 'Remote sign-out was not confirmed. Disconnect Stardew i18n Translator in ChatGPT settings.' }
+    $cleanupConfirmed = $false
+    for ($cleanupAttempt = 0; $cleanupAttempt -lt 2; $cleanupAttempt++) {
+        try {
+            $page = Invoke-WebRequest -Uri $runtime.url -UseBasicParsing -TimeoutSec 5
+            $guard = [regex]::Match($page.Content, 'name="prototype-csrf" content="([^"]+)"').Groups[1].Value
+            $stopped = Invoke-RestMethod -Uri ($runtime.url + '/api/stop') -Method Post -Headers @{Origin=$runtime.url; 'X-Prototype-CSRF'=$guard} -ContentType 'application/json' -Body '{}' -TimeoutSec 20
+            $cleanupConfirmed = $true
+            if (-not $stopped.revoked) { Write-Warning 'Remote sign-out was not confirmed. Disconnect Stardew i18n Translator in ChatGPT settings.' }
+            break
+        }
+        catch { if ($cleanupAttempt -eq 0) { Start-Sleep -Milliseconds 250 } }
     }
-    catch { Write-Warning 'ChatGPT helper cleanup was not confirmed. Disconnect Stardew i18n Translator in ChatGPT settings if needed.' }
+    if (-not $cleanupConfirmed) { Write-Warning 'Remote sign-out was not confirmed. Disconnect Stardew i18n Translator in ChatGPT settings.' }
+    if (-not $helperProcess.WaitForExit(3000)) {
+        $remainingHelper = Get-CimInstance Win32_Process -Filter "ProcessId = $($helperProcess.Id)" -ErrorAction SilentlyContinue
+        if ($remainingHelper -and $helperIdentity -and $remainingHelper.CreationDate -eq $helperIdentity.CreationDate -and $remainingHelper.ExecutablePath -eq $nodeExe -and $remainingHelper.CommandLine.Contains($serverScript) -and $remainingHelper.CommandLine.Contains('--translator')) {
+            Stop-Process -Id $helperProcess.Id -ErrorAction Stop
+            Write-Warning 'The local ChatGPT helper was stopped after cleanup. Disconnect the app in ChatGPT settings if remote sign-out was not confirmed.'
+        }
+    }
 }

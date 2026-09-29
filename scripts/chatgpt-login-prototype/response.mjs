@@ -193,7 +193,19 @@ export async function consumeResponseStream(response, options = {}) {
       if (event.type === "response.completed") finish(event.response);
     };
     while (true) {
-      const { value, done } = await reader.read();
+      let chunk;
+      try {
+        chunk = await reader.read();
+      } catch (cause) {
+        if (cause.name === "AbortError" || cause.name === "TimeoutError")
+          throw cause;
+        const error = new Error(
+          "The OpenAI response stream was interrupted. Try again.",
+        );
+        error.failureCategory = "transient";
+        throw error;
+      }
+      const { value, done } = chunk;
       if (done) break;
       bytes += value.length;
       if (bytes > 2 * 1024 * 1024)

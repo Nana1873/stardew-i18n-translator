@@ -321,6 +321,20 @@ test("output and service-body limits reject oversized content", async () => {
   );
   await assert.rejects(readBounded(new Response("x".repeat(101)), 100));
 });
+test("a disconnected response stream is transient without exposing transport details", async () => {
+  const response = new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(new TypeError("private transport detail"));
+      },
+    }),
+  );
+  await assert.rejects(consumeResponseStream(response), (error) => {
+    assert.equal(error.failureCategory, "transient");
+    assert.doesNotMatch(error.message, /private transport detail/);
+    return true;
+  });
+});
 test("completed JSON Responses replies are accepted without trusting arbitrary JSON text", async () => {
   const completed = {
     object: "response",
