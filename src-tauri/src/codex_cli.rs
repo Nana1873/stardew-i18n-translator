@@ -84,6 +84,11 @@ pub(crate) enum CodexProgressEvent {
     TransientRetry,
     StructureRetry,
     Split,
+    /// The quality review of `item_count` strings failed permanently after the
+    /// bounded retries; their structurally valid drafts are kept instead.
+    ReviewSkipped {
+        item_count: usize,
+    },
     Activity(CodexActivity),
     Usage(CodexTokenUsage),
 }
@@ -2315,6 +2320,9 @@ fn build_review_attempt_prompt(
     })
 }
 
+/// Apply review or repair follow-ups by identity. A follow-up replaces the
+/// previous draft only when it introduces no protected-token mismatch that the
+/// previous draft did not already have; otherwise the previous draft is kept.
 fn merge_followup(
     items: &[PreparedAiItem],
     previous: &[ProviderTranslation],
@@ -2322,11 +2330,28 @@ fn merge_followup(
 ) -> Vec<ProviderTranslation> {
     let mut merged = previous.to_vec();
     for candidate in candidates {
-        if let Some(index) = items.iter().position(|item| item.id == candidate.id) {
-            merged[index] = candidate;
+        let Some(index) = items.iter().position(|item| item.id == candidate.id) else {
+            continue;
+        };
+        if introduces_token_mismatch(&items[index].source, &merged[index].text, &candidate.text) {
+            log::warn!(
+                "A Codex follow-up introduced new token mismatches; the previous translation is retained."
+            );
+            continue;
         }
+        merged[index] = candidate;
     }
     merged
+}
+
+fn introduces_token_mismatch(source: &str, previous: &str, candidate: &str) -> bool {
+    let known = crate::tokens::token_differences(source, previous)
+        .into_iter()
+        .map(|difference| difference.token)
+        .collect::<HashSet<_>>();
+    crate::tokens::token_differences(source, candidate)
+        .iter()
+        .any(|difference| !known.contains(&difference.token))
 }
 
 async fn execute_review_plans<F, Fut>(
@@ -2351,13 +2376,26 @@ where
             item_count: plan.items.len(),
         });
         let report_recovery = Arc::clone(&progress);
-        let reviewed = translate_chunk_with_recovery_reporting(
+        let result = translate_chunk_with_recovery_reporting(
             Arc::clone(&cancelled),
             |structural_error| run(plan.items.clone(), plan.drafts.clone(), structural_error),
             move |event| report_recovery(event),
         )
-        .await?;
-        merged = merge_followup(items, &merged, reviewed);
+        .await;
+        match result {
+            Ok(reviewed) => merged = merge_followup(items, &merged, reviewed),
+            Err(ProviderFailure::Cancelled) => return Err(ProviderFailure::Cancelled),
+            Err(_) => {
+                // The drafts are already structurally valid. A permanently
+                // failed review keeps them and reports a non-fatal warning.
+                log::warn!(
+                    "One Codex full-review batch failed after bounded retries; its drafts are retained."
+                );
+                progress(CodexProgressEvent::ReviewSkipped {
+                    item_count: plan.items.len(),
+                });
+            }
+        }
     }
     Ok(merged)
 }
@@ -3069,6 +3107,10 @@ async fn run_translation_attempt(
     .await
 }
 
+/// Debug-only switch for manual testing: `1` makes every review attempt fail.
+#[cfg(debug_assertions)]
+const FORCE_REVIEW_FAILURE_ENV: &str = "SDV_I18N_FORCE_REVIEW_FAILURE";
+
 #[allow(clippy::too_many_arguments)]
 async fn run_review_attempt(
     model: Option<String>,
@@ -3080,6 +3122,12 @@ async fn run_review_attempt(
     cancelled: Arc<AtomicBool>,
     progress: CodexProgressCallback,
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
+    #[cfg(debug_assertions)]
+    if std::env::var(FORCE_REVIEW_FAILURE_ENV).is_ok_and(|value| value == "1") {
+        return Err(ProviderFailure::Transient(format!(
+            "Codex review failure forced by {FORCE_REVIEW_FAILURE_ENV}=1 (debug builds only)."
+        )));
+    }
     let prompt = build_review_attempt_prompt(
         &target_language,
         &items,
@@ -3372,6 +3420,9 @@ pub async fn repair_token_mismatches_once(
     )
     .await
 }
+
+#[cfg(test)]
+mod review_failure_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4000,7 +4051,7 @@ mod tests {
     }
 
     #[test]
-    fn persistent_review_failure_and_cancellation_propagate() {
+    fn persistent_review_failure_keeps_drafts_and_cancellation_propagates() {
         let items = vec![prepared_item("item-0000", "Hello")];
         let drafts = vec![provider_translation("item-0000", "Hallo")];
         let plans = build_review_plans("German", &items, &drafts).unwrap();
@@ -4019,7 +4070,7 @@ mod tests {
             },
         ));
 
-        assert!(matches!(failed, Err(ProviderFailure::InvalidResponse(_))));
+        assert_eq!(failed, Ok(drafts.clone()));
         assert_eq!(attempts, 2);
 
         let cancelled = Arc::new(AtomicBool::new(true));
@@ -4103,7 +4154,7 @@ mod tests {
     }
 
     #[test]
-    fn review_token_damage_is_retained_and_schedules_final_token_repair() {
+    fn review_token_damage_is_rejected_and_keeps_the_draft() {
         let items = vec![prepared_item("item-0000", "Hello, {{name}}.")];
         let drafts = vec![provider_translation("item-0000", "Hallo, {{name}}.")];
         let plans = build_review_plans("German", &items, &drafts).unwrap();
@@ -4123,13 +4174,10 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(reviewed[0].text, "Eine natürlichere Begrüßung.");
-        assert_eq!(
-            build_token_repair_plans("German", &items, &reviewed)
-                .unwrap()
-                .len(),
-            1
-        );
+        assert_eq!(reviewed, drafts);
+        assert!(build_token_repair_plans("German", &items, &reviewed)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -4371,11 +4419,13 @@ mod tests {
     }
 
     #[test]
-    fn terminology_token_damage_reaches_failed_final_repair_as_blocking_diff() {
+    fn existing_token_damage_reaches_failed_final_repair_as_blocking_diff() {
         let mut item = prepared_item("item-0000", "Parsnip for {{name}}");
         item.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
         let items = vec![item];
-        let reviewed = vec![provider_translation("item-0000", "Rübe für {{name}}")];
+        // The reviewed draft already lacks {{name}}, so the terminology fix adds
+        // no new mismatch and is accepted; the old damage still needs repair.
+        let reviewed = vec![provider_translation("item-0000", "Rübe für dich")];
         let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
         let mut calls = 0usize;
 

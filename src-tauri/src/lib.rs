@@ -1851,6 +1851,35 @@ fn stage_ai_suggestions(
     Ok(())
 }
 
+/// A permanently failed Codex quality review keeps the drafts; the run then
+/// completes with issues so the user checks those suggestions carefully.
+fn with_review_skipped_warning(error: Option<String>, review_skipped: usize) -> Option<String> {
+    if review_skipped == 0 {
+        return error;
+    }
+    let warning = format!(
+        "The Codex quality review failed for {review_skipped} string(s) after bounded retries; their unreviewed translation drafts were kept. Check them carefully in Review."
+    );
+    Some(match error {
+        Some(error) => format!("{error} {warning}"),
+        None => warning,
+    })
+}
+
+#[cfg(test)]
+mod review_warning_tests {
+    #[test]
+    fn skipped_review_adds_a_warning_and_keeps_existing_errors() {
+        assert_eq!(super::with_review_skipped_warning(None, 0), None);
+        let warning = super::with_review_skipped_warning(None, 3).unwrap();
+        assert!(warning.contains("failed for 3 string(s)"));
+        assert!(warning.contains("drafts were kept"));
+        let combined =
+            super::with_review_skipped_warning(Some("Earlier issue.".to_string()), 1).unwrap();
+        assert!(combined.starts_with("Earlier issue. The Codex quality review failed"));
+    }
+}
+
 fn ai_operation_outcome(result: &ai::AiRunResult) -> operation_history::OperationOutcome {
     match result.outcome {
         ai::AiRunOutcome::Complete if result.error.is_none() => {
@@ -2222,11 +2251,16 @@ async fn translate_with_codex_cli(
         usage: None,
     }));
     update_ai_progress(&app, &progress_state, |_| {});
+    let review_skipped = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let codex_progress: codex_cli::CodexProgressCallback = {
         let app = app.clone();
         let state = Arc::clone(&progress_state);
         let log_run_id = log_run_id.clone();
+        let review_skipped = Arc::clone(&review_skipped);
         Arc::new(move |event| {
+            if let codex_cli::CodexProgressEvent::ReviewSkipped { item_count } = event {
+                review_skipped.fetch_add(item_count, Ordering::AcqRel);
+            }
             let log_event = event;
             update_ai_progress(&app, &state, |progress| match event {
                 codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
@@ -2252,6 +2286,7 @@ async fn translate_with_codex_cli(
                     progress.splits = progress.splits.saturating_add(1);
                     progress.recovery = Some("split");
                 }
+                codex_cli::CodexProgressEvent::ReviewSkipped { .. } => {}
                 codex_cli::CodexProgressEvent::Activity(activity) => {
                     progress.codex_stage = Some(codex_activity_stage(activity));
                     progress.codex_activity_sequence =
@@ -2318,6 +2353,17 @@ async fn translate_with_codex_cli(
                             "event": "recovery",
                             "runId": log_run_id,
                             "kind": "split",
+                        })
+                    );
+                }
+                codex_cli::CodexProgressEvent::ReviewSkipped { item_count } => {
+                    log::warn!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "review_skipped",
+                            "runId": log_run_id,
+                            "itemCount": item_count,
                         })
                     );
                 }
@@ -2610,6 +2656,7 @@ async fn translate_with_codex_cli(
             "{isolated_failures} selected string(s) could not be translated after bounded response recovery. {cause}"
         ));
     }
+    error = with_review_skipped_warning(error, review_skipped.load(Ordering::Acquire));
     outcome = lease.finish(outcome)?;
     let progress_snapshot = progress_state.lock().ok().map(|progress| progress.clone());
     let result = ai_run_result(
