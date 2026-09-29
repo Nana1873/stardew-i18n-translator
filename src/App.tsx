@@ -771,6 +771,11 @@ export function App() {
     // The wizard may have built a glossary, or the target language changed —
     // reload the cache for the now-active language.
     refreshGlossary(merged.targetLang);
+    if (setupComplete(merged)) {
+      // Finishing setup defines the workspace, so scan it right away instead of
+      // leaving the user on an empty mod list until they press Scan.
+      await runScan(merged, false, () => true, { clearExisting: true });
+    }
   }
 
   async function handleSaveSettings(next: AppSettings) {
