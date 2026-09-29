@@ -1701,11 +1701,30 @@ function ShortcutsSettings({
                     setError(null);
                   }}
                   onKeyDown={(event) => {
-                    if (capturing === command.id) capture(command.id, event);
+                    if (capturing !== command.id) return;
+                    // Tab always keeps its focus role so capture can never trap
+                    // keyboard users; moving focus away ends capture on blur.
+                    if (event.key === "Tab") return;
+                    if (
+                      event.key === "Escape" &&
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.altKey
+                    ) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setCapturing(null);
+                      setError(null);
+                      return;
+                    }
+                    capture(command.id, event);
+                  }}
+                  onBlur={() => {
+                    if (capturing === command.id) setCapturing(null);
                   }}
                 >
                   {capturing === command.id
-                    ? "Press keys…"
+                    ? "Press keys… (Esc to cancel)"
                     : displayShortcut(shortcuts[command.id])}
                 </button>
                 <button
@@ -1723,7 +1742,8 @@ function ShortcutsSettings({
       </div>
       <p className="translator-kicker">
         Window and developer shortcuts such as Alt+F4 and Ctrl+Shift+I are
-        reserved. Plain letters require a modifier.
+        reserved. Plain letters require a modifier. Tab moves focus and Escape
+        cancels recording, so neither can be recorded as a new shortcut.
       </p>
     </section>
   );

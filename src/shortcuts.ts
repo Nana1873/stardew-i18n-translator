@@ -78,7 +78,12 @@ export const DEFAULT_SHORTCUTS = Object.fromEntries(
 export function resolveShortcuts(
   shortcuts?: ShortcutSettings | null,
 ): ResolvedShortcuts {
-  return { ...DEFAULT_SHORTCUTS, ...(shortcuts ?? {}) };
+  // Saved overrides that are no longer allowed (for example Tab from an older
+  // version) fall back to the default instead of trapping keyboard focus.
+  const valid = Object.entries(shortcuts ?? {}).filter(
+    ([, value]) => typeof value === "string" && shortcutProblem(value) === null,
+  );
+  return { ...DEFAULT_SHORTCUTS, ...Object.fromEntries(valid) };
 }
 
 function normalizedKey(key: string): string | null {
@@ -136,12 +141,12 @@ export function shortcutProblem(shortcut: string): string | null {
 
   const parts = shortcut.split("+");
   const key = parts.at(-1) ?? "";
+  if (key === "Tab") return "Tab is reserved for keyboard navigation.";
   const hasModifier = parts.length > 1;
   const isFunctionKey = /^F([1-9]|1[0-2])$/.test(key);
   const isNavigationKey = [
     "Enter",
     "Escape",
-    "Tab",
     "Space",
     "ArrowLeft",
     "ArrowRight",
