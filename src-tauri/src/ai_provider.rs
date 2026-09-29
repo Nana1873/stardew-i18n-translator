@@ -65,10 +65,8 @@ pub(crate) type ProviderProgressCallback = Arc<dyn Fn(ProviderProgressEvent) + S
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CloudAiStatus {
-    pub installed: bool,
     pub authenticated: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    pub sign_in_pending: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub authentication: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,23 +83,4 @@ pub struct CloudAiModel {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub default_reasoning_effort: Option<String>,
     pub supported_reasoning_efforts: Vec<String>,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CloudAiRateLimits {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub primary: Option<CloudAiRateLimitWindow>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub secondary: Option<CloudAiRateLimitWindow>,
-}
-
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct CloudAiRateLimitWindow {
-    pub used_percent: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_duration_mins: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub resets_at: Option<u64>,
 }

@@ -59,7 +59,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm test
-      - run: node --test scripts/chatgpt-login-prototype/core.test.mjs scripts/chatgpt-login-prototype/server.test.mjs scripts/chatgpt-login-prototype/lifecycle.test.mjs
       - run: pnpm test:desktop:guards # Offline evidence validation; no desktop launch.
 
   rust:
@@ -78,10 +77,6 @@ jobs:
       - run: cargo clippy --locked --all-targets --profile ci -- -D warnings
         working-directory: src-tauri
       - run: cargo test --locked --profile ci
-        working-directory: src-tauri
-      - run: cargo clippy --locked --all-targets --profile ci --features chatgpt-prototype -- -D warnings
-        working-directory: src-tauri
-      - run: cargo test --locked --profile ci --features chatgpt-prototype
         working-directory: src-tauri
 
   gate:

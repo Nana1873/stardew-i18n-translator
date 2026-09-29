@@ -274,7 +274,7 @@ fn language_style_rules(target_language: &str) -> &'static str {
 }
 
 /// Provider-independent translation instructions shared by the local client
-/// and Codex CLI adapter. Keeping the safety rules in one place
+/// and ChatGPT adapter. Keeping the safety rules in one place
 /// prevents one live engine from silently receiving weaker token guidance.
 pub(crate) fn translation_instructions(target_language: &str) -> String {
     let language_style = language_style_rules(target_language);

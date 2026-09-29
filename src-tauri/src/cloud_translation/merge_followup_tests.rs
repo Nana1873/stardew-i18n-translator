@@ -1,5 +1,5 @@
 //! Token-count rules for `merge_followup`. Self-contained so the tests can
-//! also be run against earlier versions of `codex_cli.rs`.
+//! also be run against earlier versions of `chatgpt.rs`.
 
 use std::path::PathBuf;
 

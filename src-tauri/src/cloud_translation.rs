@@ -1108,7 +1108,7 @@ where
     }
 }
 
-#[cfg(all(test, not(feature = "chatgpt-prototype")))]
+#[cfg(test)]
 async fn translate_chunk_with_recovery<F, Fut>(
     cancelled: Arc<AtomicBool>,
     attempt: F,

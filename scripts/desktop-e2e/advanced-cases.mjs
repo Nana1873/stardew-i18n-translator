@@ -275,8 +275,8 @@ export async function advancedCases(h) {
   }
   const engines =
     options.liveAi === "both"
-      ? ["local", "codex"]
-      : ["local", "codex"].filter((engine) => engine === options.liveAi);
+      ? ["local", "chatgpt"]
+      : ["local", "chatgpt"].filter((engine) => engine === options.liveAi);
   evidence.liveAi = [];
   for (const engine of engines) {
     await step(`live-${engine}-translate-review-export-restart`, async () => {
@@ -299,7 +299,7 @@ export async function advancedCases(h) {
           (
             await driver.findElements(
               By.xpath(
-                '//section[@aria-label="Codex CLI"]//button[normalize-space(.)="Check status"]',
+                '//section[@aria-label="ChatGPT"]//button[normalize-space(.)="Check status"]',
               ),
             )
           ).length === 1,
@@ -307,7 +307,7 @@ export async function advancedCases(h) {
       );
       await click(
         By.xpath(
-          `//button[.//strong[normalize-space(.)="${engine === "local" ? "Local AI" : "Codex CLI"}"]]`,
+          `//button[.//strong[normalize-space(.)="${engine === "local" ? "Local AI" : "ChatGPT"}"]]`,
         ),
       );
       if (engine === "local") {
@@ -339,23 +339,28 @@ export async function advancedCases(h) {
         );
         await select(css('[aria-label="AI model"]'), options.localModel);
       } else {
+        console.log(
+          "Complete browser sign-in for the isolated ChatGPT E2E profile.",
+        );
+        await click(button("Sign in with ChatGPT"));
         await waitFor(
-          "Codex is authenticated and model discovery completes",
+          "ChatGPT is authenticated and model discovery completes",
           async () => {
-            const section = await element(
-              css('section[aria-label="Codex CLI"]'),
-            );
+            const section = await element(css('section[aria-label="ChatGPT"]'));
             return (
               (await section.getText()).includes("Ready") &&
               (await (
-                await element(css('[aria-label="Codex model"]'))
+                await element(css('[aria-label="ChatGPT model"]'))
               ).isEnabled())
             );
           },
-          60000,
+          600000,
         );
-        if (options.codexModel)
-          await select(css('[aria-label="Codex model"]'), options.codexModel);
+        if (options.chatgptModel)
+          await select(
+            css('[aria-label="ChatGPT model"]'),
+            options.chatgptModel,
+          );
         // Keep quality review enabled: the normal draft + review path is covered.
         assert.equal(
           await (
@@ -369,7 +374,7 @@ export async function advancedCases(h) {
       const model = await (
         await element(
           css(
-            `[aria-label="${engine === "local" ? "AI model" : "Codex model"}"]`,
+            `[aria-label="${engine === "local" ? "AI model" : "ChatGPT model"}"]`,
           ),
         )
       ).getAttribute("value");
@@ -455,7 +460,7 @@ export async function advancedCases(h) {
         model,
         elapsedMs: performance.now() - started,
         items: 2,
-        qualityReview: engine === "codex",
+        qualityReview: engine === "chatgpt",
         passed: true,
       });
       await h.closeNormally();
@@ -477,6 +482,28 @@ export async function advancedCases(h) {
         translations.task,
       );
       await click(css('[aria-label="Close editor"]'));
+      if (engine === "chatgpt") {
+        await click(css('[aria-label="Settings"]'));
+        await click(css('[role="tab"][aria-controls="settings-panel-ai"]'));
+        await click(
+          By.xpath('//button[.//strong[normalize-space(.)="ChatGPT"]]'),
+        );
+        await waitFor(
+          "saved ChatGPT session restored after restart",
+          async () =>
+            (await element(css('section[aria-label="ChatGPT"]')))
+              .getText()
+              .then((text) => text.includes("Ready")),
+          60000,
+        );
+        await click(button("Sign out"));
+        await waitFor(
+          "isolated ChatGPT session removed",
+          async () => !(await exists(join(data, "chatgpt-session.bin"))),
+          60000,
+        );
+        await click(css('[aria-label="Close settings"]'));
+      }
       assert.deepEqual(await json(join(folder, "i18n/default.json")), source);
       await h.closeNormally();
     });

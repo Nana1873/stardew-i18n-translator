@@ -6,16 +6,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ShortcutSettings } from "../shortcuts";
 
-/** Explicit local prototype build; ordinary builds keep the CLI integration. */
-export const CHATGPT_PROTOTYPE = import.meta.env.VITE_CHATGPT_PROTOTYPE === "1";
-export const CLOUD_ENGINE_ID = CHATGPT_PROTOTYPE ? "chatgpt" : "codex";
-export const CLOUD_ENGINE_LABEL = CHATGPT_PROTOTYPE ? "ChatGPT" : "Codex CLI";
+export const CLOUD_ENGINE_ID = "chatgpt";
+export const CLOUD_ENGINE_LABEL = "ChatGPT";
 
-export function chatgptPrototypeSignIn(): Promise<void> {
+export function chatgptSignIn(): Promise<void> {
   return invoke<void>("chatgpt_sign_in");
 }
 
-export function chatgptPrototypeSignOut(): Promise<void> {
+export function chatgptSignOut(): Promise<void> {
   return invoke<void>("chatgpt_sign_out");
 }
 
@@ -36,15 +34,15 @@ export interface LlmSettings {
   temperature?: number | null;
 }
 
-export type AiEngine = "local" | "codex" | "chatgpt";
+export type AiEngine = "local" | "chatgpt";
 
 export interface AiSettings {
   defaultEngine: AiEngine;
   /** Exact model reported by the selected cloud provider; absent = provider default. */
-  codexModel?: string | null;
-  codexReasoning: "low" | "medium" | "high";
-  /** Run the full Codex language-quality review and focused repair stages. */
-  codexQualityReview: boolean;
+  cloudModel?: string | null;
+  cloudReasoning: "low" | "medium" | "high";
+  /** Run the full Cloud language-quality review and focused repair stages. */
+  cloudQualityReview: boolean;
 }
 
 export type WorkspaceSortColumn =
@@ -932,10 +930,9 @@ export function listenAiRunProgress(
 }
 
 export interface CloudAiStatus {
-  installed: boolean;
   authenticated: boolean;
-  version?: string;
-  /** Sanitized label only; the app never reads CLI auth files or tokens. */
+  signInPending?: boolean;
+  /** Account label only; credentials stay in the native backend. */
   authentication?: string;
   error?: string;
 }
@@ -947,18 +944,6 @@ export interface CloudAiModel {
   isDefault: boolean;
   defaultReasoningEffort?: "low" | "medium" | "high";
   supportedReasoningEfforts: ("low" | "medium" | "high")[];
-}
-
-export interface CloudAiRateLimitWindow {
-  usedPercent: number;
-  windowDurationMins?: number;
-  /** Unix timestamp in seconds, as reported by the provider. */
-  resetsAt?: number;
-}
-
-export interface CloudAiRateLimits {
-  primary?: CloudAiRateLimitWindow;
-  secondary?: CloudAiRateLimitWindow;
 }
 
 export function translateWithLocalAi(
@@ -973,10 +958,6 @@ export function cloudAiStatus(): Promise<CloudAiStatus> {
 
 export function cloudAiModels(): Promise<CloudAiModel[]> {
   return invoke<CloudAiModel[]>("cloud_ai_models");
-}
-
-export function cloudAiRateLimits(): Promise<CloudAiRateLimits | null> {
-  return invoke<CloudAiRateLimits | null>("cloud_ai_rate_limits");
 }
 
 export function translateWithCloudAi(

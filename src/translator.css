@@ -2985,24 +2985,24 @@
   display: block;
 }
 
-#stardew-i18n-translator .translator-codex-setup {
+#stardew-i18n-translator .translator-cloud-setup {
   display: grid;
   gap: 7px;
   margin-top: 8px;
 }
 
-#stardew-i18n-translator .translator-codex-quality-warning {
+#stardew-i18n-translator .translator-cloud-quality-warning {
   margin-top: 8px;
 }
 
-#stardew-i18n-translator .translator-codex-setup ol {
+#stardew-i18n-translator .translator-cloud-setup ol {
   display: grid;
   gap: 4px;
   margin: 0;
   padding-inline-start: 20px;
 }
 
-#stardew-i18n-translator .translator-codex-setup .translator-button {
+#stardew-i18n-translator .translator-cloud-setup .translator-button {
   justify-self: start;
 }
 

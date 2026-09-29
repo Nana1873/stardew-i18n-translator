@@ -16,11 +16,7 @@ import type {
   AiRunResult,
   ProviderActivityStage,
 } from "../tauri/commands";
-import {
-  listenAiRunProgress,
-  CLOUD_ENGINE_LABEL,
-  CHATGPT_PROTOTYPE,
-} from "../tauri/commands";
+import { listenAiRunProgress, CLOUD_ENGINE_LABEL } from "../tauri/commands";
 
 export interface LiveAiEngineOption {
   id: AiEngine;
@@ -75,7 +71,7 @@ const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   split: "Splitting affected batch",
 };
 
-const CODEX_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
+const CLOUD_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
   starting: "Starting process",
   working: "Working",
   reasoning: "Reasoning",
@@ -134,7 +130,7 @@ export function BatchTranslateDialog({
 }: BatchTranslateDialogProps) {
   const [done, setDone] = useState(0);
   const [liveProgress, setLiveProgress] = useState<AiRunProgress | null>(null);
-  const [lastCodexActivity, setLastCodexActivity] = useState<{
+  const [lastCloudActivity, setLastCloudActivity] = useState<{
     sequence: number;
     stage: ProviderActivityStage;
     receivedAt: number;
@@ -225,7 +221,7 @@ export function BatchTranslateDialog({
           const stage = event.providerStage;
           const sequence = event.providerActivitySequence;
           if (stage && sequence !== undefined) {
-            setLastCodexActivity((current) =>
+            setLastCloudActivity((current) =>
               current?.sequence === sequence
                 ? current
                 : {
@@ -351,10 +347,10 @@ export function BatchTranslateDialog({
           : []),
       ].join(" · ")
     : null;
-  const activityAge = lastCodexActivity
+  const activityAge = lastCloudActivity
     ? Math.max(
         0,
-        Math.floor((Date.now() - lastCodexActivity.receivedAt) / 1_000),
+        Math.floor((Date.now() - lastCloudActivity.receivedAt) / 1_000),
       )
     : null;
 
@@ -400,10 +396,10 @@ export function BatchTranslateDialog({
           </div>
           <div className="translator-ai-meta">
             <span>{metaParts.join(" · ")}</span>
-            {lastCodexActivity && activityAge !== null && (
+            {lastCloudActivity && activityAge !== null && (
               <span>
-                {CHATGPT_PROTOTYPE ? "ChatGPT" : "Codex"} activity ·{" "}
-                {CODEX_ACTIVITY_LABELS[lastCodexActivity.stage]} ·{" "}
+                {"ChatGPT"} activity ·{" "}
+                {CLOUD_ACTIVITY_LABELS[lastCloudActivity.stage]} ·{" "}
                 {formatActivityAge(activityAge)}
               </span>
             )}
@@ -415,8 +411,7 @@ export function BatchTranslateDialog({
             )}
             {usageText && (
               <span>
-                {CHATGPT_PROTOTYPE ? CLOUD_ENGINE_LABEL : "Codex"} reported ·{" "}
-                {usageText}
+                {CLOUD_ENGINE_LABEL} reported · {usageText}
               </span>
             )}
           </div>

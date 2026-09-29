@@ -10,11 +10,11 @@ it Done. Review status itself does not prevent export, as explained in the
 
 ## Choose a workflow
 
-| Workflow           | What you need                                         | Where translation runs                    |
-| ------------------ | ----------------------------------------------------- | ----------------------------------------- |
-| Local AI           | A local OpenAI-compatible service with a model loaded | Your configured loopback endpoint         |
-| Codex CLI          | An installed, authenticated Codex CLI                 | Through the CLI to its configured service |
-| External LLM batch | An LLM that accepts and returns files                 | Wherever you upload the exported batch    |
+| Workflow           | What you need                                         | Where translation runs                 |
+| ------------------ | ----------------------------------------------------- | -------------------------------------- |
+| Local AI           | A local OpenAI-compatible service with a model loaded | Your configured loopback endpoint      |
+| ChatGPT            | Browser sign-in with ChatGPT plan permission          | Directly to OpenAI                     |
+| External LLM batch | An LLM that accepts and returns files                 | Wherever you upload the exported batch |
 
 ## Set up Local AI
 
@@ -35,75 +35,33 @@ Hybrid Qwen3 models in LM Studio use non-thinking mode automatically. Qwen3
 Instruct uses ordinary response text already. Thinking-only variants are
 rejected with setup guidance; choose a compatible model if shown that message.
 
-## Set up Codex CLI
+## Sign in with ChatGPT
 
-1. Follow the [official Codex CLI installation instructions](https://learn.chatgpt.com/docs/codex/cli).
-2. Run `codex` in PowerShell and complete its login. **Sign in with ChatGPT** uses
-   subscription access where supported. API-key sign-in is separately billed.
-3. Open **Settings > Translation engines > Codex CLI** and use **Check status**.
-4. Choose a reported model, reasoning effort, and quality option, then save.
+1. Open **Settings > Translation engines > ChatGPT** and select **Sign in with ChatGPT**.
+2. Complete sign-in in your browser and allow this app to use your ChatGPT plan.
+3. Return to the app, choose an available model and Low/Medium/High reasoning, and save.
 
-The app uses the CLI's authentication without reading its credentials. Model
-choices come from the installed CLI. If discovery is unavailable, translation
-can still use the CLI's default model. An unavailable CLI may need an update or
-have a compatibility/timeout problem; follow its reported error rather than
-assuming that every failure requires signing in again.
+The app connects directly to OpenAI using its own browser-authorized session.
+No CLI installation or API key is required. The model catalog comes from your
+signed-in account; advertised reasoning capabilities limit the picker when provided.
+OpenAI checks availability and account/workspace permissions on each request.
+Manage your allowance through **Open ChatGPT settings**. Account eligibility
+and preview availability may vary; see the [official sign-in documentation](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
-For ChatGPT sign-in, Settings can display the remaining percentage and local
-reset time for each usage window reported by the CLI. **Check status** refreshes
-them. Missing usage data does not block an otherwise ready engine. Plan access
-and billing can change; consult the official
-[authentication](https://learn.chatgpt.com/docs/auth) and
-[pricing](https://learn.chatgpt.com/docs/pricing) pages.
-
-## Local ChatGPT prototype
-
-A development-only desktop prototype replaces the Codex CLI transport with
-direct ChatGPT plan usage. From a checkout with the development prerequisites
-and Node.js installed, run:
-
-```powershell
-powershell -File scripts/start-chatgpt-translator-prototype.ps1 -Build
-```
-
-After building once, double-click `scripts/start-chatgpt-translator-prototype.cmd`
-to reopen it. The launcher opens a separate app under ignored
-`target/chatgpt-translator-prototype/app/`, with its own portable data and a
-synthetic example mod. In **Settings > Translation engines > ChatGPT**, use
-**Sign in with ChatGPT**, grant plan usage in the browser, choose a model and
-Low/Medium/High reasoning, and save. Selected strings use the existing bounded
-draft, optional quality review/repair, validation, and Review workflow.
-
-This prototype still needs the local Node helper. Tokens remain in the helper's
-memory; restarting requires sign-in again. Sign out revokes the refresh token,
-and the launcher attempts the same cleanup when the app closes. Non-secret
-registration metadata persists under the prototype's `auth/` folder. Manage
-account allowance in ChatGPT settings; this route does not yet supply the CLI's
-remaining-usage display. Model choices come from the signed-in account. The
-reasoning picker uses advertised capabilities when present, with documented
-Low/Medium/High choices for the known models. Their availability is ultimately
-checked by OpenAI on each request.
-
-Ordinary builds keep the current CLI integration. The prototype launcher uses
-`VITE_CHATGPT_PROTOTYPE=1` and the Cargo feature `chatgpt-prototype`. Its native
-build excludes the CLI module: login, model loading, translation, review, and
-repair use the browser-authorized helper and direct Responses requests, with no
-CLI or API-key fallback. Shared translation validation and non-secret preference
-keys remain compatible with existing settings. AI logs identify the engine as
-`chatgpt`, the transport as `responses`, and activity as `provider_activity`.
-
-To prepare an update while the prototype is running, use the launcher with
-`-BuildOnly`. The next launch applies that build without interrupting the current
-session. This is not a release package or an implementation of persistent
-native authentication. See the [official sign-in documentation](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
-and [preview limits](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+The renewable session is encrypted with Windows DPAPI in
+`data/chatgpt-session.bin`, bound to your Windows user and this portable profile.
+Registration metadata in `data/chatgpt-registration.json` keeps the host identity
+stable. One running app owns a profile's ChatGPT session. Moving the app to another
+Windows account or computer requires signing in again. **Sign out** stops requests,
+attempts remote session revocation, and removes the locally saved tokens. If remote
+revocation cannot be confirmed, the app tells you to disconnect it in ChatGPT settings.
 
 ## Translate and review
 
 Select Open or Changed strings in Workspace and choose **Translate selected
 with AI**, or translate the current eligible string from its editor. The saved
 default engine is used. Settings keeps that choice while Local AI is configured
-or Codex is ready, otherwise it selects an available configured/ready engine.
+or ChatGPT is ready, otherwise it selects an available configured/ready engine.
 
 Done and Review strings are not sent for live translation. Empty source values,
 NUL-containing values, and sources larger than 64 KiB are excluded from the
@@ -120,13 +78,13 @@ Review. The same applies to a later error. Use **Open review queue** to inspect
 those results, then select the remaining Open or Changed strings for a later
 run. Unsaved drafts are not a resumable background job.
 
-## Codex quality option
+## ChatGPT quality option
 
-The quality option is on by default. Codex drafts the translation, reviews every
+The quality option is on by default. ChatGPT drafts the translation, reviews every
 draft for meaning, natural phrasing, grammar, terminology, and speaker voice,
 then attempts focused terminology or token repairs where needed.
 
-Turn the option off in **Settings > Translation engines > Codex CLI** for fewer
+Turn the option off in **Settings > Translation engines > ChatGPT** for fewer
 provider calls and lower time/token use. First drafts may need more correction.
 Validation still runs, and the result still enters Review. AI review is a useful
 editing pass, not proof of correctness or human acceptance.
@@ -156,16 +114,16 @@ glossary terms. They may include up to two preceding and two following English
 strings from the same component, i18n file, section, and related key group.
 These neighbors provide read-only context; only selected strings can be saved.
 
-Local AI requests go to the configured loopback service. Codex requests go
-through the installed CLI to its configured service. External batches leave
-your computer only when you upload them yourself. The app stores non-secret
-engine preferences but never reads, copies, or stores Codex authentication files
-or tokens. It has no telemetry or provider marketplace.
+Local AI requests go to the configured loopback service. ChatGPT requests go
+directly to OpenAI using your ChatGPT plan. External batches leave your computer
+only when you upload them yourself. Cloud credentials remain in the native backend
+and are encrypted on disk; they never enter browser storage or diagnostics.
+The app has no telemetry or provider marketplace.
 
 Optional AI diagnostics contain run/batch/phase timings, retries, cancellation,
 fixed outcome categories, and reported token totals. They exclude prompts,
 translations, glossary/context text, mod/string/file identities, target language,
-URLs, credentials, raw CLI output, and executable/temporary paths. General
+URLs, credentials, raw service output, and executable/temporary paths. General
 scanner and file-operation logs can contain paths; review them before sharing.
 Logging can be disabled in **Settings > About**.
 
@@ -173,7 +131,7 @@ Logging can be disabled in **Settings > About**.
 
 This section records the engine details used by contributors. User-facing
 workflow and privacy are described above; implementation lives in
-[ai.rs](../src-tauri/src/ai.rs), [codex_cli.rs](../src-tauri/src/codex_cli.rs),
+[ai.rs](../src-tauri/src/ai.rs), [chatgpt.rs](../src-tauri/src/chatgpt.rs),
 and [llm.rs](../src-tauri/src/llm.rs).
 
 - Live runs accept at most 4,096 strings and 8 MiB of selected source text, with
@@ -184,26 +142,27 @@ and [llm.rs](../src-tauri/src/llm.rs).
   HTTP-status, client-setup, cancellation, stale-state, and save failures stop
   remaining work. An error after a save is reported as completed with issues;
   before any save it is a failure. Token mismatch has one targeted retry.
-- Codex chunks contain at most 100 strings; each complete serialized prompt is
+- ChatGPT chunks contain at most 100 strings; each complete serialized prompt is
   bounded to 96 KiB. Repeated neighboring context is pooled without losing its
   order or boundaries. Oversized single-item prompts trim the farthest context
   first, never the selected source.
-- Each CLI attempt has a five-minute ceiling. A transient failure can be retried
+- Each ChatGPT attempt has a five-minute ceiling. A transient failure can be retried
   once; invalid structured output gets one corrected attempt. Persistent invalid
   output splits only the affected batch until the failing string is isolated.
 - With quality enabled, every draft receives full language review. Its response
   contains corrections only; omitted IDs retain their draft. Only then do
   conservatively detected terminology candidates receive one focused repair.
   Correct inflections and compounds may stay unchanged.
-- Failed or oversized full review leaves its chunk incomplete. Failed focused
+- A failed full review preserves structurally valid drafts after bounded recovery;
+  oversized review leaves its chunk incomplete. Failed focused
   terminology repair retains the fully reviewed text. Remaining protected-token
-  mismatches receive one targeted Codex repair when the prompt fits; oversized
+  mismatches receive one targeted ChatGPT repair when the prompt fits; oversized
   repair inputs skip the extra call. Unresolved mismatches remain visible in
-  Review with blocking validation. Disabling quality skips these extra Codex
+  Review with blocking validation. Disabling quality skips these extra ChatGPT
   review/repair calls, never validation or Review status.
 - Completed chunks persist as validation reaches them. Cancellation and later
   failure retain saved suggestions; unfinished Open/Changed work can be retried.
   There is no persistent AI job queue or separate checkpoint history.
-- Progress forwards safe CLI activity stages, not raw reasoning, commands,
+- Progress forwards safe provider activity stages, not raw reasoning, commands,
   identities, paths, or errors. The estimate uses saved-string checkpoints and
   changes when more results are persisted; no token-by-token heartbeat is assumed.

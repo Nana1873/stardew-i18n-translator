@@ -51,7 +51,7 @@ export function checkMatrix(reports, zipHash) {
         result.steps?.includes(`layout-render-scale-${scale}`),
         `Rendering scale ${scale} is untested.`,
       );
-    for (const engine of ["local", "codex"]) {
+    for (const engine of ["local", "chatgpt"]) {
       assert.ok(
         result.steps?.includes(
           `live-${engine}-translate-review-export-restart`,

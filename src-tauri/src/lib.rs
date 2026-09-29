@@ -6,14 +6,9 @@
 mod ai;
 mod ai_provider;
 mod batch;
-#[cfg(feature = "chatgpt-prototype")]
-mod chatgpt_prototype;
-#[cfg(not(feature = "chatgpt-prototype"))]
-mod codex_cli;
-#[cfg(feature = "chatgpt-prototype")]
-use chatgpt_prototype as cloud_provider;
-#[cfg(not(feature = "chatgpt-prototype"))]
-use codex_cli as cloud_provider;
+mod chatgpt;
+mod chatgpt_auth;
+mod chatgpt_response;
 mod detection;
 mod export;
 mod glossary;
@@ -41,7 +36,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::{fs::OpenOptions, io::Write};
 
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
@@ -1859,7 +1854,7 @@ fn stage_ai_suggestions(
     Ok(())
 }
 
-/// Codex review batches that could not complete and whose drafts were kept.
+/// ChatGPT review batches that could not complete and whose drafts were kept.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct ReviewSkips {
     items: usize,
@@ -1883,19 +1878,19 @@ impl ReviewSkips {
     }
 }
 
-/// A Codex review that could not complete keeps the drafts. Only a completed
+/// A ChatGPT review that could not complete keeps the drafts. Only a completed
 /// run gets the warning; cancelled and failed runs already report their cause.
 fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Option<String> {
     if outcome != ai::AiRunOutcome::Complete || skips.items == 0 {
         return None;
     }
     let cause = match (skips.transient, skips.invalid_response) {
-        (true, true) => "temporary Codex CLI failures and invalid review responses",
-        (true, false) => "a temporary Codex CLI failure",
+        (true, true) => "temporary ChatGPT failures and invalid review responses",
+        (true, false) => "a temporary ChatGPT failure",
         _ => "an invalid review response",
     };
     Some(format!(
-        "The Codex quality review could not complete for {} string(s) ({cause}); their unreviewed translation drafts were kept. Check them carefully in Review.",
+        "The ChatGPT quality review could not complete for {} string(s) ({cause}); their unreviewed translation drafts were kept. Check them carefully in Review.",
         skips.items
     ))
 }
@@ -1913,7 +1908,7 @@ mod review_warning_tests {
         skips.record(3, ReviewSkipReason::Transient);
         let warning = review_skipped_warning(AiRunOutcome::Complete, skips).unwrap();
         assert!(warning.contains("could not complete for 3 string(s)"));
-        assert!(warning.contains("temporary Codex CLI failure"));
+        assert!(warning.contains("temporary ChatGPT failure"));
         assert!(!warning.contains("retries"));
         assert_eq!(review_skipped_warning(AiRunOutcome::Cancelled, skips), None);
         assert_eq!(review_skipped_warning(AiRunOutcome::Error, skips), None);
@@ -1925,7 +1920,7 @@ mod review_warning_tests {
         saved.absorb(chunk);
         let warning = review_skipped_warning(AiRunOutcome::Complete, saved).unwrap();
         assert!(warning.contains("for 4 string(s)"));
-        assert!(warning.contains("temporary Codex CLI failures and invalid review responses"));
+        assert!(warning.contains("temporary ChatGPT failures and invalid review responses"));
     }
 }
 
@@ -2233,45 +2228,26 @@ async fn translate_with_local_ai(
 
 #[tauri::command]
 async fn cloud_ai_status() -> ai_provider::CloudAiStatus {
-    cloud_provider::status().await
+    chatgpt::status().await
 }
 
 #[tauri::command]
 async fn cloud_ai_models() -> Result<Vec<ai_provider::CloudAiModel>, String> {
-    cloud_provider::models().await
-}
-
-#[tauri::command]
-async fn cloud_ai_rate_limits() -> Result<Option<ai_provider::CloudAiRateLimits>, String> {
-    cloud_provider::rate_limits().await
+    chatgpt::models().await
 }
 
 #[tauri::command]
 async fn chatgpt_sign_in(app: AppHandle) -> Result<(), String> {
-    #[cfg(not(feature = "chatgpt-prototype"))]
-    {
-        let _ = app;
-        Err("ChatGPT sign-in is available only in the prototype build.".into())
+    let url = chatgpt_auth::login_url().await?;
+    if app.opener().open_url(&url, None::<String>).is_err() {
+        chatgpt_auth::abort_login().await;
+        return Err("Could not open ChatGPT sign-in in your browser.".into());
     }
-    #[cfg(feature = "chatgpt-prototype")]
-    {
-        let url = chatgpt_prototype::login_url().await?;
-        app.opener()
-            .open_url(&url, None::<String>)
-            .map_err(|_| "Could not open ChatGPT sign-in in your browser.".to_string())
-    }
+    Ok(())
 }
-
 #[tauri::command]
 async fn chatgpt_sign_out() -> Result<(), String> {
-    #[cfg(feature = "chatgpt-prototype")]
-    {
-        chatgpt_prototype::logout().await
-    }
-    #[cfg(not(feature = "chatgpt-prototype"))]
-    {
-        Err("ChatGPT sign-out is available only in the prototype build.".into())
-    }
+    chatgpt_auth::logout().await
 }
 
 #[tauri::command]
@@ -2285,9 +2261,9 @@ async fn translate_with_cloud_ai(
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
         prepare_ai_request(&app, &request)?;
-    let codex_model = settings.ai.codex_model.clone();
-    let reasoning = ai::normalize_reasoning(&settings.ai.codex_reasoning)?;
-    let codex_quality_review = settings.ai.codex_quality_review;
+    let cloud_model = settings.ai.cloud_model.clone();
+    let reasoning = ai::normalize_reasoning(&settings.ai.cloud_reasoning)?;
+    let cloud_quality_review = settings.ai.cloud_quality_review;
     let mut suggestions = Vec::with_capacity(prepared.len());
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
@@ -2300,16 +2276,8 @@ async fn translate_with_cloud_ai(
     let mut last_isolated_failure = None;
     let run_started_at = Instant::now();
     let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
-    let log_engine = if cfg!(feature = "chatgpt-prototype") {
-        "chatgpt"
-    } else {
-        "codex"
-    };
-    let log_transport = if cfg!(feature = "chatgpt-prototype") {
-        "responses"
-    } else {
-        "codex-cli"
-    };
+    let log_engine = "chatgpt";
+    let log_transport = "responses";
     log::info!(
         target: "ai_run",
         "{}",
@@ -2318,7 +2286,7 @@ async fn translate_with_cloud_ai(
             "runId": log_run_id,
             "engine": log_engine,
             "transport": log_transport,
-            "model": if codex_model.is_some() { "configured" } else { "default" },
+            "model": if cloud_model.is_some() { "configured" } else { "default" },
             "reasoning": reasoning,
             "total": prepared.len(),
             "batches": batch_total,
@@ -2343,7 +2311,7 @@ async fn translate_with_cloud_ai(
     // Review skips of the chunk in flight; they count only once it is saved.
     let chunk_review_skips = Arc::new(Mutex::new(ReviewSkips::default()));
     let mut saved_review_skips = ReviewSkips::default();
-    let codex_progress: ai_provider::ProviderProgressCallback = {
+    let cloud_progress: ai_provider::ProviderProgressCallback = {
         let app = app.clone();
         let state = Arc::clone(&progress_state);
         let log_run_id = log_run_id.clone();
@@ -2477,7 +2445,7 @@ async fn translate_with_cloud_ai(
                         target: "ai_run",
                         "{}",
                         serde_json::json!({
-                            "event": if cfg!(feature = "chatgpt-prototype") { "provider_activity" } else { "cli_activity" },
+                            "event": "provider_activity",
                             "runId": log_run_id,
                             "engine": log_engine,
                             "transport": log_transport,
@@ -2533,28 +2501,28 @@ async fn translate_with_cloud_ai(
         if let Ok(mut skips) = chunk_review_skips.lock() {
             *skips = ReviewSkips::default();
         }
-        match cloud_provider::translate_chunk(
-            codex_model.as_deref(),
+        match chatgpt::translate_chunk(
+            cloud_model.as_deref(),
             &reasoning,
             &target_language,
-            codex_quality_review,
+            cloud_quality_review,
             chunk,
             lease.cancelled.clone(),
-            Arc::clone(&codex_progress),
+            Arc::clone(&cloud_progress),
         )
         .await
         {
             Ok(translations) => {
                 let mut cancel_after_staging = false;
-                let translations = match cloud_provider::repair_token_mismatches_once(
-                    codex_model.as_deref(),
+                let translations = match chatgpt::repair_token_mismatches_once(
+                    cloud_model.as_deref(),
                     &reasoning,
                     &target_language,
-                    codex_quality_review,
+                    cloud_quality_review,
                     chunk,
                     &translations,
                     lease.cancelled.clone(),
-                    Arc::clone(&codex_progress),
+                    Arc::clone(&cloud_progress),
                 )
                 .await
                 {
@@ -2774,18 +2742,8 @@ async fn translate_with_cloud_ai(
         &request,
         prepared.len(),
         (
-            if cfg!(feature = "chatgpt-prototype") {
-                "chatgpt"
-            } else {
-                "codex"
-            },
-            codex_model.unwrap_or_else(|| {
-                if cfg!(feature = "chatgpt-prototype") {
-                    "ChatGPT default".to_string()
-                } else {
-                    "Codex default".to_string()
-                }
-            }),
+            "chatgpt",
+            cloud_model.unwrap_or_else(|| "ChatGPT default".to_string()),
             reasoning,
         ),
         suggestions,
@@ -3020,16 +2978,14 @@ pub fn run() {
         .manage(operation_history::OperationHistoryState::default())
         .plugin(log_plugin())
         .setup(|app| {
-            if cfg!(feature = "chatgpt-prototype") {
-                if let Some(window) = app.get_webview_window("main") {
-                    window.set_title("Stardew i18n Translator")?;
-                }
-            }
             let data_dir = ensure_portable_data_dir().map_err(|error| {
                 log::error!(target: "app", "Portable data folder unusable: {error}");
                 std::io::Error::other(error)
             })?;
             apply_diagnostic_logging(settings::load(&data_dir).diagnostic_logging);
+            if let Err(error) = chatgpt_auth::initialize(data_dir) {
+                chatgpt_auth::record_initialization_error(error);
+            }
             log::info!(
                 target: "app",
                 "Stardew i18n Translator {} started",
@@ -3074,7 +3030,6 @@ pub fn run() {
             translate_with_local_ai,
             cloud_ai_status,
             cloud_ai_models,
-            cloud_ai_rate_limits,
             chatgpt_sign_in,
             chatgpt_sign_out,
             translate_with_cloud_ai,
@@ -3661,7 +3616,11 @@ mod ai_run_contract_tests {
         let result = ai_run_result(
             &request,
             3,
-            ("codex", "Codex default".to_string(), "medium".to_string()),
+            (
+                "chatgpt",
+                "ChatGPT default".to_string(),
+                "medium".to_string(),
+            ),
             vec![suggestion],
             ai::AiRunOutcome::Error,
             Some("provider stopped after one chunk".to_string()),
@@ -3681,7 +3640,11 @@ mod ai_run_contract_tests {
         let failed = ai_run_result(
             &request,
             3,
-            ("codex", "Codex default".to_string(), "medium".to_string()),
+            (
+                "chatgpt",
+                "ChatGPT default".to_string(),
+                "medium".to_string(),
+            ),
             Vec::new(),
             ai::AiRunOutcome::Error,
             Some("provider stopped before saving".to_string()),

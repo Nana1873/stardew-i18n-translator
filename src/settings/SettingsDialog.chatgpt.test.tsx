@@ -1,13 +1,11 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { beforeEach, afterAll, expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import type { AppSettings } from "../tauri/commands";
 
 const invokeMock = vi.hoisted(() => vi.fn());
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
-vi.stubEnv("VITE_CHATGPT_PROTOTYPE", "1");
 const { SettingsDialog } = await import("./SettingsDialog");
 const commands = await import("../tauri/commands");
-afterAll(() => vi.unstubAllEnvs());
 
 const settings: AppSettings = {
   stardewPath: null,
@@ -17,9 +15,9 @@ const settings: AppSettings = {
   llm: null,
   ai: {
     defaultEngine: "chatgpt",
-    codexModel: "account-model",
-    codexReasoning: "medium",
-    codexQualityReview: true,
+    cloudModel: "account-model",
+    cloudReasoning: "medium",
+    cloudQualityReview: true,
   },
 };
 beforeEach(() => {
@@ -59,8 +57,8 @@ it("uses website commands, ChatGPT preferences and reasoning without CLI setup o
   expect(
     screen.getByText("Authenticated by ChatGPT browser sign-in"),
   ).toBeVisible();
-  expect(screen.queryByLabelText("Codex CLI setup guide")).toBeNull();
-  expect(screen.queryByText(/Codex CLI/)).toBeNull();
+  expect(screen.queryByLabelText("ChatGPT setup guide")).toBeNull();
+  expect(screen.queryByText(/Codex|CLI/)).toBeNull();
   expect(
     screen.queryByText(/local prototype|credentials stay in memory/i),
   ).toBeNull();
@@ -73,8 +71,8 @@ it("uses website commands, ChatGPT preferences and reasoning without CLI setup o
       expect.objectContaining({
         ai: expect.objectContaining({
           defaultEngine: "chatgpt",
-          codexModel: "account-model",
-          codexReasoning: "high",
+          cloudModel: "account-model",
+          cloudReasoning: "high",
         }),
       }),
     ),
@@ -84,8 +82,8 @@ it("uses website commands, ChatGPT preferences and reasoning without CLI setup o
       /codex|cli|rate_limits/.test(command),
     ),
   ).toBe(false);
-  await commands.chatgptPrototypeSignIn();
-  await commands.chatgptPrototypeSignOut();
+  await commands.chatgptSignIn();
+  await commands.chatgptSignOut();
   expect(invokeMock).toHaveBeenCalledWith("chatgpt_sign_in");
   expect(invokeMock).toHaveBeenCalledWith("chatgpt_sign_out");
 });
@@ -108,6 +106,6 @@ it("asks for browser sign-in when no session exists", async () => {
   );
   fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
   await screen.findByRole("button", { name: "Sign in with ChatGPT" });
-  expect(screen.queryByText(/Codex CLI/)).toBeNull();
+  expect(screen.queryByText(/Codex|CLI/)).toBeNull();
   expect(invokeMock).not.toHaveBeenCalledWith("cloud_ai_models");
 });

@@ -4,7 +4,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelAiRun,
   cloudAiModels,
-  cloudAiRateLimits,
   cloudAiStatus,
   exportAllMods,
   exportLlmBatchToPath,
@@ -233,7 +232,7 @@ describe("backend command bridges", () => {
     });
   });
 
-  it("keeps Codex status separate from a bounded translation request", async () => {
+  it("keeps Cloud status separate from a bounded translation request", async () => {
     const request: AiTranslationRequest = {
       runId: "run-1",
       scope: "selected",
@@ -262,16 +261,6 @@ describe("backend command bridges", () => {
     ]);
     await cloudAiModels();
     expect(invokeMock).toHaveBeenLastCalledWith("cloud_ai_models");
-
-    invokeMock.mockResolvedValueOnce({
-      primary: {
-        usedPercent: 25,
-        windowDurationMins: 300,
-        resetsAt: 1_730_947_200,
-      },
-    });
-    await cloudAiRateLimits();
-    expect(invokeMock).toHaveBeenLastCalledWith("cloud_ai_rate_limits");
 
     invokeMock.mockResolvedValueOnce({ outcome: "complete", suggestions: [] });
     await translateWithCloudAi(request);

@@ -42,7 +42,6 @@ import {
   previewStardewTranslatorOutput,
   cancelAiRun,
   cloudAiStatus,
-  CHATGPT_PROTOTYPE,
   CLOUD_ENGINE_LABEL,
   CLOUD_ENGINE_ID,
   exportAllMods,
@@ -158,9 +157,9 @@ const LEGACY_LAST_OPENED_KEY = "sit:lastOpened";
 
 const DEFAULT_AI_SETTINGS: AiSettings = {
   defaultEngine: "local",
-  codexModel: null,
-  codexReasoning: "medium",
-  codexQualityReview: true,
+  cloudModel: null,
+  cloudReasoning: "medium",
+  cloudQualityReview: true,
 };
 
 function fileNameOf(path: string): string {
@@ -377,7 +376,7 @@ export function App() {
     generation: number;
     language: string | null;
   }>({ generation: 0, language: null });
-  const [codexStatus, setCodexStatus] = useState<CloudAiStatus | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<CloudAiStatus | null>(null);
 
   // External LLM batch import: persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
@@ -496,10 +495,9 @@ export function App() {
 
   async function refreshAiAvailability() {
     try {
-      setCodexStatus(await cloudAiStatus());
+      setCloudStatus(await cloudAiStatus());
     } catch (cause) {
-      setCodexStatus({
-        installed: false,
+      setCloudStatus({
         authenticated: false,
         error: String(cause),
       });
@@ -1078,9 +1076,7 @@ export function App() {
   const llm = settings?.llm;
   const aiSettings = settings?.ai ?? DEFAULT_AI_SETTINGS;
   const localAiReady = Boolean(llm?.baseUrl.trim() && llm.model.trim());
-  const codexAiReady = Boolean(
-    codexStatus?.installed && codexStatus.authenticated,
-  );
+  const cloudAiReady = Boolean(cloudStatus?.authenticated);
   const liveAiEngines: LiveAiEngineOption[] = [
     {
       id: "local",
@@ -1098,24 +1094,13 @@ export function App() {
     {
       id: CLOUD_ENGINE_ID,
       label: CLOUD_ENGINE_LABEL,
-      ready: codexAiReady,
-      model:
-        aiSettings.codexModel ||
-        (CHATGPT_PROTOTYPE ? "Choose a ChatGPT model" : "Codex default"),
-      reasoning: aiSettings.codexReasoning,
-      unavailableReason: codexAiReady
+      ready: cloudAiReady,
+      model: aiSettings.cloudModel || "Choose a ChatGPT model",
+      reasoning: aiSettings.cloudReasoning,
+      unavailableReason: cloudAiReady
         ? undefined
-        : CHATGPT_PROTOTYPE
-          ? codexStatus?.error || "Sign in with ChatGPT in Settings."
-          : codexStatus?.installed
-            ? "Codex CLI is installed, but it is not signed in."
-            : codexStatus?.error ||
-              "Codex CLI is not installed or discoverable.",
-      note: CHATGPT_PROTOTYPE
-        ? "Uses your ChatGPT plan"
-        : codexStatus?.version
-          ? `Codex CLI ${codexStatus.version}`
-          : "Uses the Codex CLI account on this computer",
+        : cloudStatus?.error || "Sign in with ChatGPT in Settings.",
+      note: "Uses your ChatGPT plan",
     },
   ];
 

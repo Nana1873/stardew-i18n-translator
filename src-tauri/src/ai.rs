@@ -1,7 +1,7 @@
 //! Shared, provider-neutral data contract for live AI translation.
 //!
 //! This is intentionally a small validation/prompt module, not a provider
-//! registry. `codex_cli.rs` and the existing local `llm.rs` remain direct
+//! registry. `chatgpt.rs` and the existing local `llm.rs` remain direct
 //! adapters with their own availability and authentication rules.
 
 use std::collections::{HashMap, HashSet};
@@ -225,6 +225,12 @@ pub(crate) enum ProviderFailure {
 impl From<String> for ProviderFailure {
     fn from(message: String) -> Self {
         Self::Message(message)
+    }
+}
+
+impl From<&str> for ProviderFailure {
+    fn from(message: &str) -> Self {
+        Self::Message(message.to_string())
     }
 }
 

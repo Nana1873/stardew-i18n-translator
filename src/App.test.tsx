@@ -34,7 +34,7 @@ vi.mock("@tauri-apps/api/core", () => ({
           value ?? {
             installed: false,
             authenticated: false,
-            error: "Codex CLI is unavailable in this test.",
+            error: "ChatGPT is unavailable in this test.",
           },
       );
     }
@@ -1947,7 +1947,7 @@ describe("App shell", () => {
 
   it.each([
     undefined,
-    "Codex CLI quality review could not complete for 1 string(s); unreviewed drafts were kept.",
+    "ChatGPT quality review could not complete for 1 string(s); unreviewed drafts were kept.",
   ])(
     "keeps quick-editor suggestions and displays their warning: %s",
     async (warning) => {
@@ -2147,9 +2147,9 @@ describe("App shell", () => {
         return Promise.resolve({
           ...CONFIGURED,
           ai: {
-            defaultEngine: "codex",
-            codexReasoning: "high",
-            codexQualityReview: true,
+            defaultEngine: "chatgpt",
+            cloudReasoning: "high",
+            cloudQualityReview: true,
           },
         });
       if (cmd === "cloud_ai_status")
@@ -3858,9 +3858,9 @@ describe("App shell", () => {
       temperature: 0.15,
     };
     const ai = {
-      defaultEngine: "codex" as const,
-      codexReasoning: "high" as const,
-      codexQualityReview: true,
+      defaultEngine: "chatgpt" as const,
+      cloudReasoning: "high" as const,
+      cloudQualityReview: true,
     };
     const shortcuts = { "editor.save": "Ctrl+S" };
     const lastOpened = { "a.b": 1_234 };

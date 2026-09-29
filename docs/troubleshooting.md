@@ -85,9 +85,9 @@ the source explanation in **Settings > Glossary**. Custom languages need a
 compatible installed pack with local Strings sources for glossary generation.
 
 For Local AI, start the service, load a supported model, check the loopback URL,
-and test again. For Codex CLI, follow the error shown by **Check status**; lack
-of usage-limit data alone does not make the engine unusable. See the
-[AI guide](ai.md) for setup, quality options, and interrupted runs.
+and test again. For ChatGPT, follow the error shown by **Check status**. Sign in through your
+browser and grant plan usage if requested. Account/workspace eligibility and
+usage limits can prevent requests even after a successful sign-in.
 
 ## Report a problem
 
@@ -104,5 +104,5 @@ dictionaries. Preparation failures are recorded too. When reporting a problem,
 include the entries for the affected operation ID.
 
 General diagnostic entries can contain local paths, so remove private information before attaching them.
-Never include credentials, Codex authentication files, or a full copy of your
+Never include credentials, ChatGPT session files, or a full copy of your
 game or Mods folder.

@@ -1,4 +1,4 @@
-//! Review loop behavior when a Codex review batch cannot complete.
+//! Review loop behavior when a ChatGPT review batch cannot complete.
 
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -164,7 +164,7 @@ fn message_error_mid_review_aborts_without_retry_or_warning() {
                 Ok(vec![translation("item-0000", "Erster, geprüft")])
             } else {
                 Err(ProviderFailure::Message(
-                    "Codex CLI is not signed in. Check its status in Settings.".to_string(),
+                    "ChatGPT is not signed in. Check its status in Settings.".to_string(),
                 ))
             })
         },
@@ -173,7 +173,7 @@ fn message_error_mid_review_aborts_without_retry_or_warning() {
     assert_eq!(
         reviewed,
         Err(ProviderFailure::Message(
-            "Codex CLI is not signed in. Check its status in Settings.".to_string()
+            "ChatGPT is not signed in. Check its status in Settings.".to_string()
         ))
     );
     assert_eq!(calls, vec!["item-0000", "item-0001"]);

@@ -48,19 +48,19 @@ const ITEMS: BatchItem[] = [
   },
 ];
 
-const CODEX_ENGINE: LiveAiEngineOption = {
-  id: "codex",
-  label: "Codex CLI",
+const CLOUD_ENGINE: LiveAiEngineOption = {
+  id: "chatgpt",
+  label: "ChatGPT",
   ready: true,
   model: "gpt-5.6",
   reasoning: "high",
-  note: "Uses the signed-in Codex CLI.",
+  note: "Uses the signed-in ChatGPT.",
 };
 
 function liveResult(overrides: Partial<AiRunResult> = {}): AiRunResult {
   return {
     runId: "run-1",
-    engine: "codex",
+    engine: "chatgpt",
     model: "gpt-5.6",
     reasoning: "high",
     scope: "selected",
@@ -114,7 +114,7 @@ describe("BatchTranslateDialog", () => {
         }),
     );
     const { onFinished, onClose } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
     });
 
@@ -125,13 +125,13 @@ describe("BatchTranslateDialog", () => {
       screen.getByRole("dialog", { name: "AI translation progress" }),
     ).toBeVisible();
     expect(
-      screen.getByText(/Codex CLI .* completed suggestions enter Review/),
+      screen.getByText(/ChatGPT .* completed suggestions enter Review/),
     ).toBeVisible();
     expect(screen.getByText("Saved to Review")).toBeVisible();
     expect(screen.getByRole("status")).toHaveTextContent(
       "Preparing selected strings",
     );
-    expect(screen.getByText(/Codex CLI active · 00:00/)).toBeVisible();
+    expect(screen.getByText(/ChatGPT active · 00:00/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -152,7 +152,7 @@ describe("BatchTranslateDialog", () => {
       done: 2,
       total: 2,
       outcome: "complete",
-      engine: "Codex CLI",
+      engine: "ChatGPT",
       model: "gpt-5.6",
       reasoning: "high",
     });
@@ -169,7 +169,7 @@ describe("BatchTranslateDialog", () => {
     );
     const { onFinished } = renderDialog({
       items: [ITEMS[0]],
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
     });
 
@@ -200,7 +200,7 @@ describe("BatchTranslateDialog", () => {
         }),
     );
     const { onFinished, onClose } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
       strict: true,
     });
@@ -215,7 +215,7 @@ describe("BatchTranslateDialog", () => {
       done: 2,
       total: 2,
       outcome: "complete",
-      engine: "Codex CLI",
+      engine: "ChatGPT",
       model: "gpt-5.6",
       reasoning: "high",
     });
@@ -232,7 +232,7 @@ describe("BatchTranslateDialog", () => {
     const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
     const onCancelLiveRun = vi.fn(async () => false);
     const { onFinished, onClose } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
       onCancelLiveRun,
     });
@@ -256,7 +256,7 @@ describe("BatchTranslateDialog", () => {
       done: 0,
       total: 2,
       outcome: "cancelled",
-      engine: "Codex CLI",
+      engine: "ChatGPT",
       model: "gpt-5.6",
       reasoning: "high",
     });
@@ -272,7 +272,7 @@ describe("BatchTranslateDialog", () => {
         }),
     );
     const { onFinished } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
     });
 
@@ -332,15 +332,15 @@ describe("BatchTranslateDialog", () => {
     );
     expect(
       screen.getByText(
-        /Codex CLI active · \d\d:\d\d · Retrying response structure · 1 retry · 2 splits/,
+        /ChatGPT active · \d\d:\d\d · Retrying response structure · 1 retry · 2 splits/,
       ),
     ).toBeVisible();
     expect(
-      screen.getByText("Codex activity · Reasoning · just now"),
+      screen.getByText("ChatGPT activity · Reasoning · just now"),
     ).toBeVisible();
     expect(
       screen.getByText(
-        "Codex reported · 45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
+        "ChatGPT reported · 45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
       ),
     ).toBeVisible();
     expect(progress).not.toHaveAttribute("data-indeterminate");
@@ -368,7 +368,7 @@ describe("BatchTranslateDialog", () => {
     const onCancelLiveRun = vi.fn(async () => true);
     try {
       const { onFinished } = renderDialog({
-        engine: CODEX_ENGINE,
+        engine: CLOUD_ENGINE,
         onLiveRun,
         onCancelLiveRun,
       });
@@ -462,7 +462,7 @@ describe("BatchTranslateDialog", () => {
   it("removes the live progress listener when the dialog unmounts", async () => {
     const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
     const { unmount } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
     });
 
@@ -502,7 +502,7 @@ describe("BatchTranslateDialog", () => {
     );
     const onCancelLiveRun = vi.fn(async () => true);
     const { onFinished, onClose } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
       onCancelLiveRun,
     });
@@ -563,7 +563,7 @@ describe("BatchTranslateDialog", () => {
       done: 1,
       total: 2,
       outcome: "cancelled",
-      engine: "Codex CLI",
+      engine: "ChatGPT",
       model: "gpt-5.6",
       reasoning: "high",
     });
@@ -573,7 +573,7 @@ describe("BatchTranslateDialog", () => {
   it("reports a live backend error and closes", async () => {
     const onLiveRun = vi.fn().mockRejectedValue(new Error("Local AI offline"));
     const { onFinished, onClose } = renderDialog({
-      engine: CODEX_ENGINE,
+      engine: CLOUD_ENGINE,
       onLiveRun,
     });
 
@@ -584,7 +584,7 @@ describe("BatchTranslateDialog", () => {
       total: 2,
       outcome: "error",
       error: "Error: Local AI offline",
-      engine: "Codex CLI",
+      engine: "ChatGPT",
       model: "gpt-5.6",
       reasoning: "high",
     });
