@@ -2003,7 +2003,9 @@ export function App() {
     if (resultTray?.kind !== "export") return;
     const retry = resultTray.retry;
     if (retry.kind === "all") {
-      void handleExportAll();
+      // Retrying writes every mod again, so it goes through the same preflight
+      // and confirmation as the toolbar action instead of exporting directly.
+      void requestExportAll();
       return;
     }
     const mod = scan?.mods.find(

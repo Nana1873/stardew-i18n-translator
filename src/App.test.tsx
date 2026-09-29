@@ -1715,6 +1715,80 @@ describe("App shell", () => {
     ).toHaveLength(0);
   });
 
+  it("retries a failed all-mod export through the preflight confirmation", async () => {
+    let exportAttempts = 0;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(true));
+      if (cmd === "export_all_mods") {
+        exportAttempts += 1;
+        return Promise.reject(new Error("Target file is locked"));
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Export actions" }),
+      ).toBeEnabled(),
+    );
+    chooseToolbarAction("Export actions", "Export all mods …");
+    const firstPreflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    fireEvent.click(
+      within(firstPreflight).getByRole("button", { name: "Export all mods" }),
+    );
+
+    const tray = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    await waitFor(() =>
+      expect(tray).toHaveTextContent("Target file is locked"),
+    );
+    expect(exportAttempts).toBe(1);
+    const previewCallsBeforeRetry = invokeMock.mock.calls.filter(
+      ([cmd]) => cmd === "preview_export",
+    ).length;
+
+    fireEvent.click(within(tray).getByRole("button", { name: "Export again" }));
+
+    const retryPreflight = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    expect(retryPreflight).toHaveTextContent("Export all mods?");
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
+    ).toHaveLength(previewCallsBeforeRetry + 1);
+    expect(exportAttempts).toBe(1);
+
+    // Cancelling the retry confirmation writes nothing.
+    fireEvent.click(
+      within(retryPreflight).getByRole("button", { name: "Cancel export" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+      ).toBeNull(),
+    );
+    expect(exportAttempts).toBe(1);
+
+    // Opening the confirmation collapses the tray; expand it to retry again.
+    fireEvent.click(screen.getByRole("button", { name: "Expand result" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Export again" }),
+    );
+    const confirmedRetry = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    fireEvent.click(
+      within(confirmedRetry).getByRole("button", { name: "Export all mods" }),
+    );
+    await waitFor(() => expect(exportAttempts).toBe(2));
+  });
+
   it("offers one-session undo for a real bulk edit", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
