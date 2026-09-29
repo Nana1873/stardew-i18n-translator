@@ -106,27 +106,18 @@ falls back to GitHub-generated notes. It never combines both.
    corepack pnpm test:desktop -ReleaseZip src-tauri/target/release/portable/Stardew-i18n-Translator_<version>_windows-x64-portable.zip
    ```
 
-   A passing run supplies functional evidence only for the guide's listed
-   workflows. Review changed UI visually and exercise changed capabilities
-   outside that coverage, using synthetic fixtures or temporary copies for
-   writes. Computer Use is one option for those checks, not a mandatory tool.
-   Screenshots alone are not visual approval, and any explicitly requested
-   user-test step remains required. Publish the same ZIP whose hash was tested;
-   a pass for a different executable or archive cannot approve this artifact.
+   A passing run covers only the guide's listed workflows. Check changed UI and
+   uncovered capabilities separately, using synthetic fixtures or temporary
+   copies for writes. Any explicitly requested user-test step remains required.
+   Publish the same ZIP whose hash was tested; a pass for a different executable
+   or archive cannot approve this artifact.
 
-   For live-engine, split/multi-mod output, load and scaling coverage, use the
-   [extended acceptance profile](../testing/release-acceptance.md). It requires
-   real Local AI and Codex CLI, and distinguishes WebView rendering checks from
-   measured native Windows DPI configurations. The native DPI matrix is optional,
-   not a release requirement. Missing explicitly requested capabilities remain
-   incomplete acceptance; a green subset does not replace them.
-
-   The extended profile includes the [portable installation/upgrade test](../testing/installation-e2e.md).
-   It can replace the corresponding manual check when that is the maintainer's
-   chosen acceptance scope. Clean-Windows, download/security-prompt and WebView2
-   installation checks are optional environment checks, not additional mandatory
-   release gates. If requested or relevant to a change, they require separate
-   evidence; none is implied by this host-based test.
+   For live-engine, split/multi-mod output, load, layout and portable
+   installation/upgrade coverage, use the
+   [extended acceptance profile](../testing/release-acceptance.md). What it
+   proves, what stays optional (native DPI matrix, clean-Windows and WebView2
+   installation checks) and what still needs judgment is documented there and in
+   the [installation test guide](../testing/installation-e2e.md).
 
 6. Run the release preflight from the same clean, current `main` checkout:
 

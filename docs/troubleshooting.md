@@ -54,7 +54,8 @@ backup exists, report the error before deleting `data/` or starting over.
 ## A mod is missing or skipped
 
 Check that you selected the correct Mods folder and that the mod uses
-`i18n/default.json`. Content Patcher's `content.json`, arbitrary game data, and
+standard SMAPI i18n files (`i18n/default.json` or an `i18n/default/` folder).
+Content Patcher's `content.json`, arbitrary game data, and
 XNB assets are not translation inputs. Community language packs can provide
 glossary sources without appearing as translation targets.
 
@@ -64,14 +65,14 @@ they are unavailable after an incomplete scan rather than being guessed.
 
 ## Translation progress or export looks unexpected
 
-Check the selected language, search scope, and filters first. **Has text** totals
-can include Review entries; they do not mean every translation is accepted.
-Existing target files load as Done, while external LLM imports enter Review.
+Check the selected language, search scope, and filters first. Overview text
+totals such as **Has <target language> text** (for example **Has French text**)
+can include Review entries; they do not mean every translation is accepted. Existing target files load as Done, while
+external LLM imports enter Review.
 
-Saving an edit updates `data/`; **Export…** writes it into the mod. Review and
-Changed text can be exported after a warning. Empty translations are omitted so
-the game can fall back to English. Target-only keys absent from English sources
-are also omitted. See [export behavior](user-guide.md#export-translation-files).
+Saving an edit updates `data/`; **Export…** writes it into the mod. See
+[export behavior](user-guide.md#export-translation-files) for what is included,
+omitted, or backed up.
 
 For a blocked export, use **Open issue** in the confirmation to inspect an
 affected string. Correct protected tokens or invalid text. Use **Save anyway**
@@ -102,7 +103,6 @@ work involved; the operation summaries do not include translation text or full
 dictionaries. Preparation failures are recorded too. When reporting a problem,
 include the entries for the affected operation ID.
 
-General diagnostic entries can
-contain local paths, so remove private information before attaching them.
+General diagnostic entries can contain local paths, so remove private information before attaching them.
 Never include credentials, Codex authentication files, or a full copy of your
 game or Mods folder.

@@ -1,8 +1,7 @@
 # UI Design Reference
 
 This folder contains earlier Claude Design reference files retained for design
-history. They are not the current visual acceptance reference for the desktop
-UI redesign.
+history.
 
 - [full-design.dc.html](full-design.dc.html): Full visual reference for the dashboard, work view,
   editor, settings, dialogs, and component states.

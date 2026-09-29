@@ -47,15 +47,15 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
-- Malformed `#$b$...` dialogue sequences no longer turn following prose into
-  protected tokens, and a valid target-language-only gender-switch shape no
-  longer triggers an added-token error by itself.
+- Malformed `#$b$...` and `#$b*` dialogue sequences no longer turn following
+  prose into protected tokens.
+- A valid target-language-only gender-switch shape no longer triggers an
+  added-token error by itself, and harmless extra spaces in `$r` response
+  commands are normalized.
 - Removed the noisy quote-delimiter count warning; localized quote punctuation
   is now ignored.
 - Source-identical translations no longer produce a validation warning, matching
   the intentional **Keep original** workflow.
-- Malformed `#$b*` dialogue breaks no longer absorb following translatable
-  prose, and harmless extra spaces in `$r` response commands are normalized.
 - Removed the noisy physical line-break count warning; translated text can
   rewrap without appearing under **Validation issues**.
 

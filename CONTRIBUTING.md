@@ -116,16 +116,12 @@ same `-ReleaseZip`. It needs the pinned previous ZIP (downloaded automatically,
 or supplied with `-UpgradeFromZip`), but no AI service. See the
 [installation test guide](docs/testing/installation-e2e.md) for coverage and limits.
 Live Codex calls consume the CLI account's quota; only synthetic text is sent.
-The native Windows DPI matrix is optional and is not a release requirement;
-untested configurations are not counted as passed. The
-[release acceptance guide](docs/testing/release-acceptance.md)
-explains prerequisites, exact coverage, optional DPI diagnostics and remaining
-visual review. Screenshot review can be done without Computer Use; changed visual
-properties and explicitly requested installation tests still need their own proof.
-See the focused
-[desktop test guide](docs/testing/desktop-e2e.md) for exact coverage, diagnostics,
-failure probes and limitations. The suite is local-only until its interactive
-Windows requirements are verified on a CI runner.
+The [release acceptance guide](docs/testing/release-acceptance.md) explains
+prerequisites, exact coverage, the optional DPI matrix
+(`corepack pnpm test:desktop:matrix`) and what still needs visual review. The
+[desktop test guide](docs/testing/desktop-e2e.md) covers the ordinary suite's
+coverage, diagnostics, failure probes and limitations. The suite is local-only;
+CI does not run it.
 
 ## Safe Test Data
 

@@ -188,17 +188,19 @@ focus presentation, native dialog appearance, or changed interactions outside
 this slice. Review screenshots when appearance changes; their existence alone
 does not establish visual correctness.
 
-Additional capability checks remain necessary for live AI providers/authentication,
-combined output packages, multiple mods/languages, split locales,
-accepted token-mismatch overrides, replacing an
-existing ZIP, corruption recovery, or other changed behavior. The synthetic
+Outside this ordinary suite, additional capability checks remain necessary for
+live AI providers/authentication, combined output packages, multiple
+mods/languages, split locales, accepted token-mismatch overrides, replacing an
+existing ZIP, corruption recovery, or other changed behavior. The
+[release acceptance profile](release-acceptance.md#additional-functional-evidence)
+covers part of this list; see there for exactly which items. The synthetic
 uncompressed XNB test does not establish compatibility with every real or
 compressed game/community-pack asset. The offline batch return does not prove
 provider availability or translation quality. These uncovered properties are
 not claimed as tested. Plain locale-JSON or downloaded archive imports and
 Nexus/Vortex integration are not supported workflows on the current main branch;
-this suite does not add or claim them. Exact release-ZIP and explicit user-test gates follow the
-[release process](../release/release-process.md).
+this suite does not add or claim them. Exact release-ZIP and explicit user-test
+gates follow the [release process](../release/release-process.md).
 
 The suite is local-only. Tauri documents Windows WebDriver CI, but this complete
 suite also requires native common dialogs on an interactive desktop. The

@@ -21,6 +21,9 @@ it Done. Review status itself does not prevent export, as explained in the
 1. Start LM Studio or Ollama and load a model in its local service.
 2. Open **Settings > Translation engines** and select the matching Local AI
    provider. Use the default Base URL, or reset it to that provider's default.
+   The app talks to both through their OpenAI-compatible API (`/models` and
+   `/chat/completions`); for Ollama that is the `/v1` endpoint, not its native
+   API. A custom Ollama URL must therefore end in `/v1`.
 3. Select a model reported by the service and test the connection.
 4. Save settings and select the default translation engine.
 
@@ -100,8 +103,8 @@ editing pass, not proof of correctness or human acceptance.
 
 Preflight checks the mod, language, source snapshot, file/key identities,
 protected tokens, empty results, and existing translations. Nonempty local
-translations, including Changed rows, are preserved. A stale batch must be regenerated against the
-current sources; changing its metadata manually will not make outdated
+translations, including Changed rows, are preserved. A stale batch must be
+regenerated against the current sources; changing its metadata manually will not make outdated
 translations trustworthy.
 
 ## Data and privacy
