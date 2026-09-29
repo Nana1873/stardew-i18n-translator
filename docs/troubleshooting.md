@@ -66,8 +66,8 @@ they are unavailable after an incomplete scan rather than being guessed.
 ## Translation progress or export looks unexpected
 
 Check the selected language, search scope, and filters first. Overview text
-totals such as **Has German text** can include Review entries; they do not mean
-every translation is accepted. Existing target files load as Done, while
+totals such as **Has <target language> text** (for example **Has French text**)
+can include Review entries; they do not mean every translation is accepted. Existing target files load as Done, while
 external LLM imports enter Review.
 
 Saving an edit updates `data/`; **Export…** writes it into the mod. See
