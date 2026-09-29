@@ -11,8 +11,11 @@ each language. Custom-language targets also need a matching language mod for
 in-game use; selecting a language here does not install one.
 
 The scan reads standard `i18n/default.json` sources and existing target-language
-files. Multi-part packages are grouped in the mod list. Mods that do not use
-standard SMAPI i18n files cannot be translated here.
+files. Split locale folders such as `i18n/default/Dialogue.json` and
+`i18n/de/Dialogue.json` are also supported: source keys identify the matching
+target segment, even when filenames differ. Ambiguous or mixed layouts are
+reported rather than guessed. Multi-part packages are grouped in the mod list.
+Mods that do not use standard SMAPI i18n files cannot be translated here.
 
 **Overview** shows scan totals and recently opened mods. Open **Workspace** and
 select a mod or component to work on its strings. Use **Scan** after installing
@@ -129,9 +132,15 @@ For flat locale files, Portuguese export uses `i18n/pt.json`; an existing
 `i18n/pt-BR.json` is accepted on import and backed up when normalized during
 export. Split document names such as `i18n/de/pt.json` are kept literally.
 
-For a combined locale-only archive, choose **Export… > Build Stardew Translator Output**. Its preview includes all scanned components with effective target-language values in the configured Mods folder. Each included locale combines the existing target values for current source keys with saved overrides, using the same validation rules. Changed and Review values are included with warnings and retain their status. Choose a ZIP destination and confirm replacement if that file exists. The output preserves mod-relative folders; it contains no mod assets or manifests and does not install anything. Existing per-mod JSON export and package ZIP actions remain available.
-
-Split locale folders such as `i18n/default/Dialogue.json` and `i18n/de/Dialogue.json` are also supported. Source keys identify the matching target segment, even when filenames differ. Ambiguous or mixed layouts are reported rather than guessed.
+For a combined locale-only archive, choose **Export… > Build Stardew Translator
+Output**. Its preview includes all scanned components with effective
+target-language values in the configured Mods folder. Each included locale
+combines the existing target values for current source keys with saved
+overrides, using the same validation rules. Changed and Review values are
+included with warnings and retain their status. Choose a ZIP destination and
+confirm replacement if that file exists. The output preserves mod-relative
+folders; it contains no mod assets or manifests and does not install anything.
+Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 

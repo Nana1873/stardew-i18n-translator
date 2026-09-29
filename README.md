@@ -19,10 +19,12 @@ without an AI service._
 - Search across mods, filter unfinished work, and spot changed English strings.
 - Translate manually or use optional Local AI, Codex CLI, or external LLM batches.
 - Review suggestions with protected-token checks and optional glossary hints.
-- Export translation files or a translation ZIP to share with other players.
+- Export translation files, a translation ZIP to share with other players, or
+  one combined locale-only ZIP for all scanned mods.
 
-The app works with standard `i18n/default.json` and `i18n/<language>.json`
-files. It does not translate arbitrary `content.json` or XNB assets, manage
+The app works with standard SMAPI i18n files: flat `i18n/default.json` and
+`i18n/<language>.json` files, or split `i18n/default/*.json` and
+`i18n/<language>/*.json` folders. It does not translate arbitrary `content.json` or XNB assets, manage
 mods, or download updates. Custom-language targets need a matching language mod
 installed before the game can use them.
 

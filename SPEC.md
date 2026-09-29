@@ -15,9 +15,11 @@ Manual translation, validation, and export work offline without a glossary or
 AI backend.
 
 Translation targets are standard `<mod>/i18n/default.json` source files and
-`<mod>/i18n/<lang>.json` target files, plus split `i18n/default/*.json` and `i18n/<lang>/*.json` locale folders with unambiguous source-key membership. The source is normally English. The app
-supports built-in and curated custom-language targets; custom targets require
-a matching language mod for use in-game.
+`<mod>/i18n/<lang>.json` target files, plus split `i18n/default/*.json` and
+`i18n/<lang>/*.json` locale folders with unambiguous source-key membership. The
+source is normally English. The app supports built-in and curated
+custom-language targets; custom targets require a matching language mod for use
+in-game.
 
 The app does not install, activate, update, or download mods; manage profiles
 or Git repositories; use the Nexus API; or publish translations automatically.
@@ -25,7 +27,10 @@ It may open a browser link from a positive `Nexus:<id>` update key. It is not
 a general editor for Content Patcher, `Data/*.json`, or XNB files. The narrowly
 scoped glossary reads below are the only additional content sources.
 
-Blank source/target pairs need no text and are derived as Done without persisting an approval. Newly populated sources reopen them. Working coverage counts these pairs separately from nonempty translated values and reserves 100% for exact completion.
+Blank source/target pairs need no text and are derived as Done without
+persisting an approval. Newly populated sources reopen them. Working coverage
+counts these pairs separately from nonempty translated values and reserves 100%
+for exact completion.
 
 ## Scanning and Source Changes
 
@@ -51,12 +56,12 @@ and leave the last complete baseline intact. Intentional exclusions do not.
 
 ## Editing and Status
 
-| Display | Internal status | Meaning                                                                       |
-| ------- | --------------- | ----------------------------------------------------------------------------- |
-| Open    | `untranslated`  | No target translation is available.                                           |
-| Done    | `translated`    | Manually saved or accepted text, or an existing target imported from the mod. |
-| Changed | `outdated`      | The source changed after the stored translation baseline.                     |
-| Review  | `review-needed` | An AI suggestion or external LLM batch import awaiting human review.          |
+| Display | Internal status | Meaning                                                               |
+| ------- | --------------- | --------------------------------------------------------------------- |
+| Open    | `untranslated`  | The source needs text, but no target translation is available.        |
+| Done    | `translated`    | Saved or accepted text, an imported existing target, or a blank pair. |
+| Changed | `outdated`      | The source changed after the stored translation baseline.             |
+| Review  | `review-needed` | An AI suggestion or external LLM batch import awaiting human review.  |
 
 Existing translations gain a source baseline when first opened, so later source
 changes can mark them Changed. AI suggestions also become Changed when their
@@ -93,7 +98,8 @@ exercise the same extraction rules in TypeScript and Rust.
 Export is explicit and applies to the current mod or all scanned mods:
 
 - Omit empty targets so SMAPI falls back to `default.json`. Non-empty Done,
-  Review, and Changed values are included when validation permits them.
+  Review, and Changed values are included when validation permits them. A
+  target file left with no non-empty values is backed up and removed.
 - Before direct-export confirmation, run a read-only preflight across the
   complete selected scope. Report blocking keys and accepted mismatches without
   creating files, backups, or operation-history entries.
@@ -112,7 +118,13 @@ omitted orphan keys, remain recoverable from their export backup.
 Translation ZIPs contain only generated target-language i18n files and preserve
 the package's component folders. Publication notes use the same package data.
 Results retain the actual destination and filename for **Show in folder**.
-**Build Stardew Translator Output** previews and writes one locale-only ZIP for all scanned components with effective target-language values in the configured Mods folder. Each included locale combines existing target values for current source keys with saved overrides. Like package ZIPs, it includes token-valid Changed and Review values with warnings without approving them. It reuses export validation, existing destination/overwrite behavior and the result tray. No Nexus, community-library, mod-manager or deployment state is required.
+**Build Stardew Translator Output** previews and writes one locale-only ZIP for
+all scanned components with effective target-language values in the configured
+Mods folder. Each included locale combines existing target values for current
+source keys with saved overrides. Like package ZIPs, it includes token-valid
+Changed and Review values with warnings without approving them. It reuses export
+validation, existing destination/overwrite behavior and the result tray. No
+Nexus, community-library, mod-manager or deployment state is required.
 
 ## External LLM Batches
 
