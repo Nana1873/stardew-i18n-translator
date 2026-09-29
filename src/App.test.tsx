@@ -3918,6 +3918,100 @@ describe("App shell", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("scans right after the first-launch setup wizard finishes", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings")
+        return Promise.resolve({
+          stardewPath: null,
+          modsPath: null,
+          sourceLang: "default",
+          targetLang: null,
+        });
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "detect_stardew")
+        return Promise.resolve({
+          stardewPath: "E:/SDV",
+          modsPath: "E:/SDV/Mods",
+        });
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "glossary_status")
+        return Promise.resolve({
+          gameXnbPresent: false,
+          unpackedPresent: false,
+          sourceAvailable: false,
+          cached: null,
+          outdatedCache: false,
+          packAvailable: false,
+          packXnbAvailable: false,
+        });
+      return Promise.resolve(null);
+    });
+    render(<App />);
+
+    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", expect.anything());
+    fireEvent.click(within(setup).getByRole("button", { name: "Auto-detect" }));
+    await waitFor(() =>
+      expect(within(setup).getByRole("button", { name: "Next" })).toBeEnabled(),
+    );
+    fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
+    await within(setup).findByRole("region", { name: "Mods folder" });
+    fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
+    const targetLanguage =
+      await within(setup).findByLabelText("Target language");
+    fireEvent.change(targetLanguage, { target: { value: "de" } });
+    fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
+    fireEvent.click(
+      await within(setup).findByRole("button", { name: "Finish" }),
+    );
+
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
+        modsPath: "E:/SDV/Mods",
+        targetLang: "de",
+      }),
+    );
+    openWorkspace();
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+  });
+
+  it("does not scan when a re-run of the setup wizard is cancelled", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled(),
+    );
+    const scanCalls = () =>
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods").length;
+    await waitFor(() => expect(scanCalls()).toBe(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const settingsDialog = await screen.findByRole("dialog", {
+      name: "Settings",
+    });
+    fireEvent.click(
+      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+    );
+    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    fireEvent.click(within(setup).getByRole("button", { name: "Cancel" }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull(),
+    );
+    expect(scanCalls()).toBe(1);
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "save_settings",
+      expect.anything(),
+    );
+  });
+
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings")
