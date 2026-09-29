@@ -84,13 +84,24 @@ pub(crate) enum CodexProgressEvent {
     TransientRetry,
     StructureRetry,
     Split,
-    /// The quality review of `item_count` strings failed permanently after the
-    /// bounded retries; their structurally valid drafts are kept instead.
+    /// The quality review of `item_count` strings could not complete; their
+    /// structurally valid drafts are kept instead.
     ReviewSkipped {
         item_count: usize,
+        reason: ReviewSkipReason,
     },
     Activity(CodexActivity),
     Usage(CodexTokenUsage),
+}
+
+/// Why a review batch was skipped. Only failures that already went through the
+/// bounded recovery keep drafts; configuration errors abort the run instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReviewSkipReason {
+    /// A transient Codex CLI failure persisted after its one retry.
+    Transient,
+    /// A single-item review response stayed invalid after its structure retry.
+    InvalidResponse,
 }
 
 pub(crate) type CodexProgressCallback = Arc<dyn Fn(CodexProgressEvent) + Send + Sync>;
@@ -2121,6 +2132,20 @@ struct ReviewPlan {
     drafts: Vec<ProviderTranslation>,
 }
 
+impl ReviewPlan {
+    fn split_at(mut self, index: usize) -> (Self, Self) {
+        let right_items = self.items.split_off(index);
+        let right_drafts = self.drafts.split_off(index);
+        (
+            self,
+            Self {
+                items: right_items,
+                drafts: right_drafts,
+            },
+        )
+    }
+}
+
 fn review_prompt_item(
     item: &PreparedAiItem,
     draft: &ProviderTranslation,
@@ -2321,8 +2346,8 @@ fn build_review_attempt_prompt(
 }
 
 /// Apply review or repair follow-ups by identity. A follow-up replaces the
-/// previous draft only when it introduces no protected-token mismatch that the
-/// previous draft did not already have; otherwise the previous draft is kept.
+/// previous draft only when no protected token moves further away from its
+/// source count than in the previous draft; otherwise the previous draft is kept.
 fn merge_followup(
     items: &[PreparedAiItem],
     previous: &[ProviderTranslation],
@@ -2335,7 +2360,13 @@ fn merge_followup(
         };
         if introduces_token_mismatch(&items[index].source, &merged[index].text, &candidate.text) {
             log::warn!(
-                "A Codex follow-up introduced new token mismatches; the previous translation is retained."
+                target: "codex_cli",
+                "{}",
+                serde_json::json!({
+                    "event": "followup_rejected",
+                    "itemId": candidate.id,
+                    "reason": "tokenMismatch",
+                })
             );
             continue;
         }
@@ -2344,14 +2375,26 @@ fn merge_followup(
     merged
 }
 
+/// True when any protected token in `candidate` is further from its source count
+/// than in `previous`. A token missing from the source counts as zero there, so
+/// a new foreign token is rejected unless `previous` had at least as many.
 fn introduces_token_mismatch(source: &str, previous: &str, candidate: &str) -> bool {
-    let known = crate::tokens::token_differences(source, previous)
-        .into_iter()
-        .map(|difference| difference.token)
-        .collect::<HashSet<_>>();
+    let distance = |difference: &crate::tokens::TokenDifference| {
+        difference.source_count.abs_diff(difference.target_count)
+    };
+    let previous_distances = crate::tokens::token_differences(source, previous)
+        .iter()
+        .map(|difference| (difference.token.clone(), distance(difference)))
+        .collect::<HashMap<_, _>>();
     crate::tokens::token_differences(source, candidate)
         .iter()
-        .any(|difference| !known.contains(&difference.token))
+        .any(|difference| {
+            distance(difference)
+                > previous_distances
+                    .get(&difference.token)
+                    .copied()
+                    .unwrap_or(0)
+        })
 }
 
 async fn execute_review_plans<F, Fut>(
@@ -2367,7 +2410,8 @@ where
     Fut: Future<Output = Result<Vec<ProviderTranslation>, ProviderFailure>>,
 {
     let mut merged = drafts.to_vec();
-    for plan in plans {
+    let mut pending = VecDeque::from(plans);
+    while let Some(plan) = pending.pop_front() {
         if cancelled.load(Ordering::Acquire) {
             return Err(ProviderFailure::Cancelled);
         }
@@ -2382,20 +2426,56 @@ where
             move |event| report_recovery(event),
         )
         .await;
-        match result {
-            Ok(reviewed) => merged = merge_followup(items, &merged, reviewed),
-            Err(ProviderFailure::Cancelled) => return Err(ProviderFailure::Cancelled),
-            Err(_) => {
-                // The drafts are already structurally valid. A permanently
-                // failed review keeps them and reports a non-fatal warning.
-                log::warn!(
-                    "One Codex full-review batch failed after bounded retries; its drafts are retained."
-                );
-                progress(CodexProgressEvent::ReviewSkipped {
-                    item_count: plan.items.len(),
-                });
+        let reason = match result {
+            Ok(reviewed) => {
+                merged = merge_followup(items, &merged, reviewed);
+                continue;
             }
-        }
+            Err(ProviderFailure::Cancelled) => return Err(ProviderFailure::Cancelled),
+            Err(ProviderFailure::InvalidResponse(_)) if plan.items.len() > 1 => {
+                let middle = ai::recovery_split_index(&plan.items)
+                    .expect("a multi-item review plan always has a split point");
+                let (left, right) = plan.split_at(middle);
+                pending.push_front(right);
+                pending.push_front(left);
+                progress(CodexProgressEvent::Split);
+                continue;
+            }
+            Err(failure) => {
+                let error_text = match &failure {
+                    ProviderFailure::Transient(message)
+                    | ProviderFailure::InvalidResponse(message)
+                    | ProviderFailure::Message(message) => message.as_str(),
+                    ProviderFailure::Cancelled => "cancelled",
+                };
+                log::warn!(
+                    target: "codex_cli",
+                    "{}",
+                    serde_json::json!({
+                        "event": "review_failed",
+                        "itemCount": plan.items.len(),
+                        "errorCategory": crate::provider_failure_category(&failure),
+                        "error": error_text,
+                    })
+                );
+                match failure {
+                    ProviderFailure::Transient(_) => ReviewSkipReason::Transient,
+                    ProviderFailure::InvalidResponse(_) => ReviewSkipReason::InvalidResponse,
+                    // Messages are configuration or environment errors such as
+                    // a signed-out or missing Codex CLI. They get no retry and
+                    // would fail every later chunk too, so they abort the run.
+                    ProviderFailure::Message(_) | ProviderFailure::Cancelled => {
+                        return Err(failure)
+                    }
+                }
+            }
+        };
+        // The drafts are already structurally valid. A review that could not
+        // complete keeps them and reports a non-fatal warning.
+        progress(CodexProgressEvent::ReviewSkipped {
+            item_count: plan.items.len(),
+            reason,
+        });
     }
     Ok(merged)
 }
@@ -3423,6 +3503,9 @@ pub async fn repair_token_mismatches_once(
 
 #[cfg(test)]
 mod review_failure_tests;
+
+#[cfg(test)]
+mod merge_followup_tests;
 
 #[cfg(test)]
 mod tests {

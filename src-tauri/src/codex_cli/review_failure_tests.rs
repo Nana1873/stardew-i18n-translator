@@ -1,16 +1,16 @@
-//! Kept in a separate file so the tests can also be run against `main`'s
-//! `codex_cli.rs` (with only this module declaration added).
+//! Review loop behavior when a Codex review batch cannot complete.
 
 use std::path::PathBuf;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::{
-    build_review_plans, execute_review_plans, merge_followup, CodexProgressCallback,
-    PreparedAiItem, ProviderFailure, ProviderTranslation,
+    build_terminology_repair_plans, execute_review_plans, execute_terminology_repair_plans,
+    CodexProgressCallback, CodexProgressEvent, PreparedAiItem, ProviderFailure,
+    ProviderTranslation, ReviewPlan, ReviewSkipReason,
 };
 
-fn item(id: &str, source: &str) -> PreparedAiItem {
+fn item(id: &str, source: &str, group: usize) -> PreparedAiItem {
     PreparedAiItem {
         id: id.to_string(),
         identity: crate::ai::AiStringIdentity {
@@ -21,7 +21,7 @@ fn item(id: &str, source: &str) -> PreparedAiItem {
         source: source.to_string(),
         section: None,
         glossary_pairs: Vec::new(),
-        context: crate::ai::AiPromptContext::isolated(0),
+        context: crate::ai::AiPromptContext::isolated(group),
         default_path: PathBuf::from(r"C:\synthetic\default.json"),
         target_path: PathBuf::from(r"C:\synthetic\de.json"),
         expected_stored: None,
@@ -36,17 +36,60 @@ fn translation(id: &str, text: &str) -> ProviderTranslation {
     }
 }
 
-#[test]
-fn permanent_review_failure_keeps_drafts_and_reports_a_warning() {
-    let items = vec![item("item-0000", "Hello, {{name}}.")];
-    let drafts = vec![translation("item-0000", "Hallo, {{name}}.")];
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+fn recorder() -> (CodexProgressCallback, Arc<Mutex<Vec<CodexProgressEvent>>>) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&events);
-    // Events are compared by their Debug form so this file also compiles
-    // against a codex_cli.rs without the warning event.
-    let progress: CodexProgressCallback =
-        Arc::new(move |event| recorded.lock().unwrap().push(format!("{event:?}")));
+    (
+        Arc::new(move |event| recorded.lock().unwrap().push(event)),
+        events,
+    )
+}
+
+fn skipped(events: &[CodexProgressEvent]) -> Vec<(usize, ReviewSkipReason)> {
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            CodexProgressEvent::ReviewSkipped { item_count, reason } => Some((item_count, reason)),
+            _ => None,
+        })
+        .collect()
+}
+
+/// Two items in separate review plans (one plan per item).
+fn two_plans() -> (
+    Vec<PreparedAiItem>,
+    Vec<ProviderTranslation>,
+    Vec<ReviewPlan>,
+) {
+    let items = vec![
+        item("item-0000", "First", 0),
+        item("item-0001", "Second", 1),
+    ];
+    let drafts = vec![
+        translation("item-0000", "Erster Entwurf"),
+        translation("item-0001", "Zweiter Entwurf"),
+    ];
+    let plans = items
+        .iter()
+        .zip(&drafts)
+        .map(|(item, draft)| ReviewPlan {
+            items: vec![item.clone()],
+            drafts: vec![draft.clone()],
+        })
+        .collect();
+    (items, drafts, plans)
+}
+
+#[test]
+fn persistent_transient_review_failure_keeps_drafts_and_reports_a_warning() {
+    let items = vec![item("item-0000", "Hello, {{name}}.", 0)];
+    let drafts = vec![translation("item-0000", "Hallo, {{name}}.")];
+    let plans = vec![ReviewPlan {
+        items: items.clone(),
+        drafts: drafts.clone(),
+    }];
+    let (progress, events) = recorder();
+    let mut attempts = 0usize;
 
     let reviewed = tauri::async_runtime::block_on(execute_review_plans(
         &items,
@@ -55,6 +98,7 @@ fn permanent_review_failure_keeps_drafts_and_reports_a_warning() {
         Arc::new(AtomicBool::new(false)),
         progress,
         |_, _, _| {
+            attempts += 1;
             std::future::ready(Err::<Vec<ProviderTranslation>, _>(
                 ProviderFailure::Transient("provider unavailable".to_string()),
             ))
@@ -62,49 +106,179 @@ fn permanent_review_failure_keeps_drafts_and_reports_a_warning() {
     ));
 
     assert_eq!(reviewed, Ok(drafts));
+    assert_eq!(attempts, 2);
     let events = events.lock().unwrap();
-    assert!(events.iter().any(|event| event == "TransientRetry"));
-    assert!(events
-        .iter()
-        .any(|event| event == "ReviewSkipped { item_count: 1 }"));
+    assert!(events.contains(&CodexProgressEvent::TransientRetry));
+    assert_eq!(skipped(&events), vec![(1, ReviewSkipReason::Transient)]);
 }
 
 #[test]
-fn merge_followup_rejects_new_token_mismatches_and_accepts_clean_followups() {
+fn one_failing_plan_keeps_its_draft_while_other_plans_are_reviewed() {
+    let (items, drafts, plans) = two_plans();
+    let (progress, events) = recorder();
+
+    let reviewed = tauri::async_runtime::block_on(execute_review_plans(
+        &items,
+        &drafts,
+        plans,
+        Arc::new(AtomicBool::new(false)),
+        progress,
+        |review_items, _, _| {
+            std::future::ready(if review_items[0].id == "item-0000" {
+                Err(ProviderFailure::Transient("temporary".to_string()))
+            } else {
+                Ok(vec![translation("item-0001", "Zweiter, geprüft")])
+            })
+        },
+    ))
+    .unwrap();
+
+    assert_eq!(reviewed[0], drafts[0]);
+    assert_eq!(reviewed[1].text, "Zweiter, geprüft");
+    assert_eq!(
+        skipped(&events.lock().unwrap()),
+        vec![(1, ReviewSkipReason::Transient)]
+    );
+}
+
+#[test]
+fn message_error_mid_review_aborts_without_retry_or_warning() {
+    let (items, drafts, plans) = two_plans();
+    let (progress, events) = recorder();
+    let mut calls = Vec::new();
+
+    let reviewed = tauri::async_runtime::block_on(execute_review_plans(
+        &items,
+        &drafts,
+        plans,
+        Arc::new(AtomicBool::new(false)),
+        progress,
+        |review_items, _, _| {
+            calls.push(review_items[0].id.clone());
+            std::future::ready(if review_items[0].id == "item-0000" {
+                Ok(vec![translation("item-0000", "Erster, geprüft")])
+            } else {
+                Err(ProviderFailure::Message(
+                    "Codex CLI is not signed in. Check its status in Settings.".to_string(),
+                ))
+            })
+        },
+    ));
+
+    assert_eq!(
+        reviewed,
+        Err(ProviderFailure::Message(
+            "Codex CLI is not signed in. Check its status in Settings.".to_string()
+        ))
+    );
+    assert_eq!(calls, vec!["item-0000", "item-0001"]);
+    let events = events.lock().unwrap();
+    assert!(skipped(&events).is_empty());
+    assert!(!events.contains(&CodexProgressEvent::TransientRetry));
+}
+
+#[test]
+fn cancellation_during_a_running_review_stops_before_the_next_plan() {
+    let (items, drafts, plans) = two_plans();
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancel = Arc::clone(&cancelled);
+    let (progress, events) = recorder();
+    let mut calls = 0usize;
+
+    let reviewed = tauri::async_runtime::block_on(execute_review_plans(
+        &items,
+        &drafts,
+        plans,
+        Arc::clone(&cancelled),
+        progress,
+        |_, _, _| {
+            calls += 1;
+            // The user cancels while this review call is running.
+            cancel.store(true, Ordering::Release);
+            std::future::ready(Err::<Vec<ProviderTranslation>, _>(
+                ProviderFailure::Cancelled,
+            ))
+        },
+    ));
+
+    assert_eq!(reviewed, Err(ProviderFailure::Cancelled));
+    assert_eq!(calls, 1);
+    assert!(skipped(&events.lock().unwrap()).is_empty());
+}
+
+#[test]
+fn invalid_review_response_splits_the_plan_and_skips_only_the_bad_item() {
     let items = vec![
-        item("item-0000", "Hello, {{name}}."),
-        item("item-0001", "You have {0} coins."),
+        item("item-0000", "First", 0),
+        item("item-0001", "Second", 1),
     ];
-    let previous = vec![
-        translation("item-0000", "Hallo, {{name}}."),
-        translation("item-0001", "Du hast {0} Münzen."),
+    let drafts = vec![
+        translation("item-0000", "Erster Entwurf"),
+        translation("item-0001", "Zweiter Entwurf"),
     ];
+    let plans = vec![ReviewPlan {
+        items: items.clone(),
+        drafts: drafts.clone(),
+    }];
+    let (progress, events) = recorder();
+    let mut calls = Vec::new();
 
-    let merged = merge_followup(
+    let reviewed = tauri::async_runtime::block_on(execute_review_plans(
         &items,
-        &previous,
-        vec![
-            // Drops {{name}}: a new mismatch, so the previous draft stays.
-            translation("item-0000", "Hallo, Bauer."),
-            // Keeps {0}: clean, so it is accepted.
-            translation("item-0001", "Du besitzt {0} Münzen."),
-        ],
-    );
+        &drafts,
+        plans,
+        Arc::new(AtomicBool::new(false)),
+        progress,
+        |review_items, _, _| {
+            let ids = review_items
+                .iter()
+                .map(|item| item.id.clone())
+                .collect::<Vec<_>>();
+            calls.push(ids.clone());
+            std::future::ready(if ids == ["item-0001"] {
+                Ok(vec![translation("item-0001", "Zweiter, geprüft")])
+            } else {
+                Err(ProviderFailure::InvalidResponse("wrong ids".to_string()))
+            })
+        },
+    ))
+    .unwrap();
 
-    assert_eq!(merged[0], previous[0]);
-    assert_eq!(merged[1].text, "Du besitzt {0} Münzen.");
+    // Two attempts for the pair, two for item-0000 alone, one for item-0001.
+    assert_eq!(calls.len(), 5);
+    assert_eq!(reviewed[0], drafts[0]);
+    assert_eq!(reviewed[1].text, "Zweiter, geprüft");
+    let events = events.lock().unwrap();
+    assert!(events.contains(&CodexProgressEvent::Split));
+    assert_eq!(
+        skipped(&events),
+        vec![(1, ReviewSkipReason::InvalidResponse)]
+    );
 }
 
 #[test]
-fn merge_followup_accepts_a_followup_that_keeps_an_existing_mismatch() {
-    let items = vec![item("item-0000", "Hello, {{name}}.")];
-    let previous = vec![translation("item-0000", "Hallo.")];
+fn terminology_followup_that_newly_damages_a_token_is_rejected() {
+    let mut parsnip = item("item-0000", "Parsnip for {{name}}", 0);
+    parsnip.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
+    let items = vec![parsnip];
+    let reviewed = vec![translation("item-0000", "Rübe für {{name}}")];
+    let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
+    assert_eq!(plans.len(), 1);
+    let mut calls = 0usize;
 
-    let merged = merge_followup(
+    let terminology = tauri::async_runtime::block_on(execute_terminology_repair_plans(
         &items,
-        &previous,
-        vec![translation("item-0000", "Hallo zusammen.")],
-    );
+        &reviewed,
+        plans,
+        Arc::new(AtomicBool::new(false)),
+        super::no_progress_callback(),
+        |expected, _, _, _| {
+            calls += 1;
+            std::future::ready(Ok(vec![translation(&expected[0].id, "Pastinake für dich")]))
+        },
+    ))
+    .unwrap();
 
-    assert_eq!(merged[0].text, "Hallo zusammen.");
+    assert_eq!(calls, 1);
+    assert_eq!(terminology, reviewed);
 }
