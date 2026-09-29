@@ -44,9 +44,12 @@ export interface EditorTranslationResult extends TranslationResult {
   reasoning?: string;
   /** Live backend runs persist the suggestion to Review before returning. */
   persisted?: boolean;
+  /** Nonfatal run warning accompanying a saved suggestion. */
+  warning?: string | null;
 }
 
 export interface EditorSuggestionProvenance {
+  warning?: string | null;
   /** Stable mod/file/key identity this metadata describes. */
   identity: string;
   engine: string;
@@ -487,6 +490,7 @@ export function StringEditor({
               reasoning,
               persisted: Boolean(result.persisted),
               value: result.text,
+              warning: result.warning,
             }
           : null,
       );
@@ -1140,6 +1144,11 @@ export function StringEditor({
             )}
             {translateMsg && translateMsgKind === "note" && (
               <span className="editor__ai-msg">{translateMsg}</span>
+            )}
+            {reviewNeeded && aiProvenance?.warning && (
+              <span className="editor__ai-msg" role="status">
+                {aiProvenance.warning}
+              </span>
             )}
           </div>
 

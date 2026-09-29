@@ -1691,6 +1691,7 @@ export function StringTable({
           reasoning: reasoningLabel,
           persisted: true,
           value: suggestion.text,
+          warning: result.error,
         });
       }
     }
@@ -1802,6 +1803,7 @@ export function StringTable({
       model: result.model,
       reasoning: result.reasoning,
       persisted: true,
+      warning: result.error,
     };
   }
 

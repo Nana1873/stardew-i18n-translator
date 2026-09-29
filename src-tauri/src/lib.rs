@@ -1851,6 +1851,76 @@ fn stage_ai_suggestions(
     Ok(())
 }
 
+/// Codex review batches that could not complete and whose drafts were kept.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ReviewSkips {
+    items: usize,
+    transient: bool,
+    invalid_response: bool,
+}
+
+impl ReviewSkips {
+    fn record(&mut self, item_count: usize, reason: codex_cli::ReviewSkipReason) {
+        self.items = self.items.saturating_add(item_count);
+        match reason {
+            codex_cli::ReviewSkipReason::Transient => self.transient = true,
+            codex_cli::ReviewSkipReason::InvalidResponse => self.invalid_response = true,
+        }
+    }
+
+    fn absorb(&mut self, other: ReviewSkips) {
+        self.items = self.items.saturating_add(other.items);
+        self.transient |= other.transient;
+        self.invalid_response |= other.invalid_response;
+    }
+}
+
+/// A Codex review that could not complete keeps the drafts. Only a completed
+/// run gets the warning; cancelled and failed runs already report their cause.
+fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Option<String> {
+    if outcome != ai::AiRunOutcome::Complete || skips.items == 0 {
+        return None;
+    }
+    let cause = match (skips.transient, skips.invalid_response) {
+        (true, true) => "temporary Codex CLI failures and invalid review responses",
+        (true, false) => "a temporary Codex CLI failure",
+        _ => "an invalid review response",
+    };
+    Some(format!(
+        "The Codex quality review could not complete for {} string(s) ({cause}); their unreviewed translation drafts were kept. Check them carefully in Review.",
+        skips.items
+    ))
+}
+
+#[cfg(test)]
+mod review_warning_tests {
+    use super::{review_skipped_warning, ReviewSkips};
+    use crate::ai::AiRunOutcome;
+    use crate::codex_cli::ReviewSkipReason;
+
+    #[test]
+    fn review_warning_names_the_cause_and_only_attaches_to_completed_runs() {
+        let mut skips = ReviewSkips::default();
+        assert_eq!(review_skipped_warning(AiRunOutcome::Complete, skips), None);
+        skips.record(3, ReviewSkipReason::Transient);
+        let warning = review_skipped_warning(AiRunOutcome::Complete, skips).unwrap();
+        assert!(warning.contains("could not complete for 3 string(s)"));
+        assert!(warning.contains("temporary Codex CLI failure"));
+        assert!(!warning.contains("retries"));
+        assert_eq!(review_skipped_warning(AiRunOutcome::Cancelled, skips), None);
+        assert_eq!(review_skipped_warning(AiRunOutcome::Error, skips), None);
+
+        let mut saved = ReviewSkips::default();
+        let mut chunk = ReviewSkips::default();
+        chunk.record(1, ReviewSkipReason::InvalidResponse);
+        saved.absorb(skips);
+        saved.absorb(chunk);
+        let warning = review_skipped_warning(AiRunOutcome::Complete, saved).unwrap();
+        assert!(warning.contains("for 4 string(s)"));
+        assert!(warning.contains("temporary Codex CLI failures and invalid review responses"));
+    }
+}
+
 fn ai_operation_outcome(result: &ai::AiRunResult) -> operation_history::OperationOutcome {
     match result.outcome {
         ai::AiRunOutcome::Complete if result.error.is_none() => {
@@ -2222,11 +2292,20 @@ async fn translate_with_codex_cli(
         usage: None,
     }));
     update_ai_progress(&app, &progress_state, |_| {});
+    // Review skips of the chunk in flight; they count only once it is saved.
+    let chunk_review_skips = Arc::new(Mutex::new(ReviewSkips::default()));
+    let mut saved_review_skips = ReviewSkips::default();
     let codex_progress: codex_cli::CodexProgressCallback = {
         let app = app.clone();
         let state = Arc::clone(&progress_state);
         let log_run_id = log_run_id.clone();
+        let chunk_review_skips = Arc::clone(&chunk_review_skips);
         Arc::new(move |event| {
+            if let codex_cli::CodexProgressEvent::ReviewSkipped { item_count, reason } = event {
+                if let Ok(mut skips) = chunk_review_skips.lock() {
+                    skips.record(item_count, reason);
+                }
+            }
             let log_event = event;
             update_ai_progress(&app, &state, |progress| match event {
                 codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
@@ -2252,6 +2331,7 @@ async fn translate_with_codex_cli(
                     progress.splits = progress.splits.saturating_add(1);
                     progress.recovery = Some("split");
                 }
+                codex_cli::CodexProgressEvent::ReviewSkipped { .. } => {}
                 codex_cli::CodexProgressEvent::Activity(activity) => {
                     progress.codex_stage = Some(codex_activity_stage(activity));
                     progress.codex_activity_sequence =
@@ -2321,6 +2401,21 @@ async fn translate_with_codex_cli(
                         })
                     );
                 }
+                codex_cli::CodexProgressEvent::ReviewSkipped { item_count, reason } => {
+                    log::warn!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "review_skipped",
+                            "runId": log_run_id,
+                            "itemCount": item_count,
+                            "reason": match reason {
+                                codex_cli::ReviewSkipReason::Transient => "transient",
+                                codex_cli::ReviewSkipReason::InvalidResponse => "invalidResponse",
+                            },
+                        })
+                    );
+                }
                 codex_cli::CodexProgressEvent::Activity(activity)
                     if matches!(
                         activity,
@@ -2384,6 +2479,9 @@ async fn translate_with_codex_cli(
             progress.recovery = None;
             progress.codex_stage = None;
         });
+        if let Ok(mut skips) = chunk_review_skips.lock() {
+            *skips = ReviewSkips::default();
+        }
         match codex_cli::translate_chunk(
             codex_model.as_deref(),
             &reasoning,
@@ -2469,6 +2567,9 @@ async fn translate_with_codex_cli(
                             outcome = ai::AiRunOutcome::Error;
                             error = Some(cause);
                             break;
+                        }
+                        if let Ok(skips) = chunk_review_skips.lock() {
+                            saved_review_skips.absorb(*skips);
                         }
                         if cancel_after_staging {
                             log::info!(
@@ -2611,6 +2712,12 @@ async fn translate_with_codex_cli(
         ));
     }
     outcome = lease.finish(outcome)?;
+    if let Some(warning) = review_skipped_warning(outcome, saved_review_skips) {
+        error = Some(match error {
+            Some(error) => format!("{error} {warning}"),
+            None => warning,
+        });
+    }
     let progress_snapshot = progress_state.lock().ok().map(|progress| progress.clone());
     let result = ai_run_result(
         &request,

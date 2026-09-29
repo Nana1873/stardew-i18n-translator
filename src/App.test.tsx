@@ -1945,101 +1945,111 @@ describe("App shell", () => {
     );
   });
 
-  it("keeps the first quick-editor AI result hidden and reopenable", async () => {
-    const completed = aiHistory({
-      id: "ai-quick-success",
-      outcome: "success",
-      title: "Local AI quick translation",
-      summary: "1 suggestion staged for review",
-      itemCount: 1,
-    });
-    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
-      if (cmd === "load_settings")
-        return Promise.resolve({
-          ...CONFIGURED,
-          llm: {
-            provider: "custom",
-            baseUrl: "http://127.0.0.1:1234/v1",
-            model: "local-test",
-            temperature: 0.2,
-          },
-        });
-      if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
-      if (cmd === "load_strings")
-        return Promise.resolve([
-          {
-            key: "greeting",
-            source: "Hello",
-            target: "",
-            targetPresent: false,
-            status: "untranslated",
-          },
-        ]);
-      if (cmd === "translate_with_local_ai") {
-        const runId = (args as { request: { runId: string } }).request.runId;
-        backendHistory = [completed];
-        return Promise.resolve({
-          runId,
-          engine: "local",
-          model: "local-test",
-          reasoning: "default",
-          scope: "string",
-          requested: 1,
-          completed: 1,
-          outcome: "complete",
-          suggestions: [
-            {
-              identity: {
-                modUniqueId: "a.b",
-                relativeDir: "i18n",
-                key: "greeting",
-              },
-              text: "Hallo",
-              status: "review-needed",
-              tokenDifferences: [],
-              glossaryMisses: [],
+  it.each([
+    undefined,
+    "Codex CLI quality review could not complete for 1 string(s); unreviewed drafts were kept.",
+  ])(
+    "keeps quick-editor suggestions and displays their warning: %s",
+    async (warning) => {
+      const completed = aiHistory({
+        id: "ai-quick-success",
+        outcome: "success",
+        title: "Local AI quick translation",
+        summary: "1 suggestion staged for review",
+        itemCount: 1,
+      });
+      invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+        if (cmd === "load_settings")
+          return Promise.resolve({
+            ...CONFIGURED,
+            llm: {
+              provider: "custom",
+              baseUrl: "http://127.0.0.1:1234/v1",
+              model: "local-test",
+              temperature: 0.2,
             },
-          ],
-        } satisfies AiRunResult);
-      }
-      return Promise.resolve(null);
-    });
-    render(<App />);
-    openWorkspace();
+          });
+        if (cmd === "load_glossary") return Promise.resolve(null);
+        if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+        if (cmd === "load_strings")
+          return Promise.resolve([
+            {
+              key: "greeting",
+              source: "Hello",
+              target: "",
+              targetPresent: false,
+              status: "untranslated",
+            },
+          ]);
+        if (cmd === "translate_with_local_ai") {
+          const runId = (args as { request: { runId: string } }).request.runId;
+          backendHistory = [completed];
+          return Promise.resolve({
+            runId,
+            engine: "local",
+            model: "local-test",
+            reasoning: "default",
+            scope: "string",
+            requested: 1,
+            completed: 1,
+            outcome: "complete",
+            error: warning,
+            suggestions: [
+              {
+                identity: {
+                  modUniqueId: "a.b",
+                  relativeDir: "i18n",
+                  key: "greeting",
+                },
+                text: "Hallo",
+                status: "review-needed",
+                tokenDifferences: [],
+                glossaryMisses: [],
+              },
+            ],
+          } satisfies AiRunResult);
+        }
+        return Promise.resolve(null);
+      });
+      render(<App />);
+      openWorkspace();
 
-    const key = await screen.findByRole("button", { name: "greeting" });
-    const row = key.closest<HTMLElement>("[data-string-row]");
-    if (!row) throw new Error("String row was not rendered");
-    fireEvent.doubleClick(row);
-    const editor = await screen.findByRole("dialog", { name: "greeting" });
-    fireEvent.click(
-      within(editor).getByRole("button", { name: /Translate with AI/ }),
-    );
+      const key = await screen.findByRole("button", { name: "greeting" });
+      const row = key.closest<HTMLElement>("[data-string-row]");
+      if (!row) throw new Error("String row was not rendered");
+      fireEvent.doubleClick(row);
+      const editor = await screen.findByRole("dialog", { name: "greeting" });
+      fireEvent.click(
+        within(editor).getByRole("button", { name: /Translate with AI/ }),
+      );
 
-    await waitFor(() =>
+      await waitFor(() =>
+        expect(
+          within(editor).getByRole("textbox", { name: "German translation" }),
+        ).toHaveValue("Hallo"),
+      );
       expect(
-        within(editor).getByRole("textbox", { name: "German translation" }),
-      ).toHaveValue("Hallo"),
-    );
-    expect(
-      screen.queryByRole("complementary", { name: "Operation result" }),
-    ).toBeNull();
-    fireEvent.click(
-      within(editor).getByRole("button", { name: "Close editor" }),
-    );
+        screen.queryByRole("complementary", { name: "Operation result" }),
+      ).toBeNull();
+      if (warning) expect(within(editor).getByText(warning)).toBeVisible();
+      fireEvent.click(
+        within(editor).getByRole("button", { name: "Close editor" }),
+      );
 
-    const latest = await screen.findByRole("button", { name: "Latest result" });
-    expect(latest).toBeVisible();
-    fireEvent.click(latest);
-    const result = await screen.findByRole("complementary", {
-      name: "Operation result",
-    });
-    expect(result).toHaveTextContent("Local AI quick translation");
-    expect(screen.getByLabelText("Recent operation results")).toHaveValue(
-      completed.id,
-    );
-  });
+      const latest = await screen.findByRole("button", {
+        name: "Latest result",
+      });
+      expect(latest).toBeVisible();
+      fireEvent.click(latest);
+      const result = await screen.findByRole("complementary", {
+        name: "Operation result",
+      });
+      expect(result).toHaveTextContent("Local AI quick translation");
+      expect(screen.getByLabelText("Recent operation results")).toHaveValue(
+        completed.id,
+      );
+    },
+  );
 
   it("replaces an older latest result after a failed quick-editor AI run", async () => {
     const older = exportHistory({

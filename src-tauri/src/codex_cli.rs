@@ -84,8 +84,24 @@ pub(crate) enum CodexProgressEvent {
     TransientRetry,
     StructureRetry,
     Split,
+    /// The quality review of `item_count` strings could not complete; their
+    /// structurally valid drafts are kept instead.
+    ReviewSkipped {
+        item_count: usize,
+        reason: ReviewSkipReason,
+    },
     Activity(CodexActivity),
     Usage(CodexTokenUsage),
+}
+
+/// Why a review batch was skipped. Only failures that already went through the
+/// bounded recovery keep drafts; configuration errors abort the run instead.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReviewSkipReason {
+    /// A transient Codex CLI failure persisted after its one retry.
+    Transient,
+    /// A single-item review response stayed invalid after its structure retry.
+    InvalidResponse,
 }
 
 pub(crate) type CodexProgressCallback = Arc<dyn Fn(CodexProgressEvent) + Send + Sync>;
@@ -2116,6 +2132,20 @@ struct ReviewPlan {
     drafts: Vec<ProviderTranslation>,
 }
 
+impl ReviewPlan {
+    fn split_at(mut self, index: usize) -> (Self, Self) {
+        let right_items = self.items.split_off(index);
+        let right_drafts = self.drafts.split_off(index);
+        (
+            self,
+            Self {
+                items: right_items,
+                drafts: right_drafts,
+            },
+        )
+    }
+}
+
 fn review_prompt_item(
     item: &PreparedAiItem,
     draft: &ProviderTranslation,
@@ -2315,6 +2345,9 @@ fn build_review_attempt_prompt(
     })
 }
 
+/// Apply review or repair follow-ups by identity. A follow-up replaces the
+/// previous draft only when no protected token moves further away from its
+/// source count than in the previous draft; otherwise the previous draft is kept.
 fn merge_followup(
     items: &[PreparedAiItem],
     previous: &[ProviderTranslation],
@@ -2322,11 +2355,46 @@ fn merge_followup(
 ) -> Vec<ProviderTranslation> {
     let mut merged = previous.to_vec();
     for candidate in candidates {
-        if let Some(index) = items.iter().position(|item| item.id == candidate.id) {
-            merged[index] = candidate;
+        let Some(index) = items.iter().position(|item| item.id == candidate.id) else {
+            continue;
+        };
+        if introduces_token_mismatch(&items[index].source, &merged[index].text, &candidate.text) {
+            log::warn!(
+                target: "codex_cli",
+                "{}",
+                serde_json::json!({
+                    "event": "followup_rejected",
+                    "itemId": candidate.id,
+                    "reason": "tokenMismatch",
+                })
+            );
+            continue;
         }
+        merged[index] = candidate;
     }
     merged
+}
+
+/// True when any protected token in `candidate` is further from its source count
+/// than in `previous`. A token missing from the source counts as zero there, so
+/// a new foreign token is rejected unless `previous` had at least as many.
+fn introduces_token_mismatch(source: &str, previous: &str, candidate: &str) -> bool {
+    let distance = |difference: &crate::tokens::TokenDifference| {
+        difference.source_count.abs_diff(difference.target_count)
+    };
+    let previous_distances = crate::tokens::token_differences(source, previous)
+        .iter()
+        .map(|difference| (difference.token.clone(), distance(difference)))
+        .collect::<HashMap<_, _>>();
+    crate::tokens::token_differences(source, candidate)
+        .iter()
+        .any(|difference| {
+            distance(difference)
+                > previous_distances
+                    .get(&difference.token)
+                    .copied()
+                    .unwrap_or(0)
+        })
 }
 
 async fn execute_review_plans<F, Fut>(
@@ -2342,7 +2410,8 @@ where
     Fut: Future<Output = Result<Vec<ProviderTranslation>, ProviderFailure>>,
 {
     let mut merged = drafts.to_vec();
-    for plan in plans {
+    let mut pending = VecDeque::from(plans);
+    while let Some(plan) = pending.pop_front() {
         if cancelled.load(Ordering::Acquire) {
             return Err(ProviderFailure::Cancelled);
         }
@@ -2351,13 +2420,62 @@ where
             item_count: plan.items.len(),
         });
         let report_recovery = Arc::clone(&progress);
-        let reviewed = translate_chunk_with_recovery_reporting(
+        let result = translate_chunk_with_recovery_reporting(
             Arc::clone(&cancelled),
             |structural_error| run(plan.items.clone(), plan.drafts.clone(), structural_error),
             move |event| report_recovery(event),
         )
-        .await?;
-        merged = merge_followup(items, &merged, reviewed);
+        .await;
+        let reason = match result {
+            Ok(reviewed) => {
+                merged = merge_followup(items, &merged, reviewed);
+                continue;
+            }
+            Err(ProviderFailure::Cancelled) => return Err(ProviderFailure::Cancelled),
+            Err(ProviderFailure::InvalidResponse(_)) if plan.items.len() > 1 => {
+                let middle = ai::recovery_split_index(&plan.items)
+                    .expect("a multi-item review plan always has a split point");
+                let (left, right) = plan.split_at(middle);
+                pending.push_front(right);
+                pending.push_front(left);
+                progress(CodexProgressEvent::Split);
+                continue;
+            }
+            Err(failure) => {
+                let error_text = match &failure {
+                    ProviderFailure::Transient(message)
+                    | ProviderFailure::InvalidResponse(message)
+                    | ProviderFailure::Message(message) => message.as_str(),
+                    ProviderFailure::Cancelled => "cancelled",
+                };
+                log::warn!(
+                    target: "codex_cli",
+                    "{}",
+                    serde_json::json!({
+                        "event": "review_failed",
+                        "itemCount": plan.items.len(),
+                        "errorCategory": crate::provider_failure_category(&failure),
+                        "error": error_text,
+                    })
+                );
+                match failure {
+                    ProviderFailure::Transient(_) => ReviewSkipReason::Transient,
+                    ProviderFailure::InvalidResponse(_) => ReviewSkipReason::InvalidResponse,
+                    // Messages are configuration or environment errors such as
+                    // a signed-out or missing Codex CLI. They get no retry and
+                    // would fail every later chunk too, so they abort the run.
+                    ProviderFailure::Message(_) | ProviderFailure::Cancelled => {
+                        return Err(failure)
+                    }
+                }
+            }
+        };
+        // The drafts are already structurally valid. A review that could not
+        // complete keeps them and reports a non-fatal warning.
+        progress(CodexProgressEvent::ReviewSkipped {
+            item_count: plan.items.len(),
+            reason,
+        });
     }
     Ok(merged)
 }
@@ -3069,6 +3187,10 @@ async fn run_translation_attempt(
     .await
 }
 
+/// Debug-only switch for manual testing: `1` makes every review attempt fail.
+#[cfg(debug_assertions)]
+const FORCE_REVIEW_FAILURE_ENV: &str = "SDV_I18N_FORCE_REVIEW_FAILURE";
+
 #[allow(clippy::too_many_arguments)]
 async fn run_review_attempt(
     model: Option<String>,
@@ -3080,6 +3202,12 @@ async fn run_review_attempt(
     cancelled: Arc<AtomicBool>,
     progress: CodexProgressCallback,
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
+    #[cfg(debug_assertions)]
+    if std::env::var(FORCE_REVIEW_FAILURE_ENV).is_ok_and(|value| value == "1") {
+        return Err(ProviderFailure::Transient(format!(
+            "Codex review failure forced by {FORCE_REVIEW_FAILURE_ENV}=1 (debug builds only)."
+        )));
+    }
     let prompt = build_review_attempt_prompt(
         &target_language,
         &items,
@@ -3372,6 +3500,12 @@ pub async fn repair_token_mismatches_once(
     )
     .await
 }
+
+#[cfg(test)]
+mod review_failure_tests;
+
+#[cfg(test)]
+mod merge_followup_tests;
 
 #[cfg(test)]
 mod tests {
@@ -4000,7 +4134,7 @@ mod tests {
     }
 
     #[test]
-    fn persistent_review_failure_and_cancellation_propagate() {
+    fn persistent_review_failure_keeps_drafts_and_cancellation_propagates() {
         let items = vec![prepared_item("item-0000", "Hello")];
         let drafts = vec![provider_translation("item-0000", "Hallo")];
         let plans = build_review_plans("German", &items, &drafts).unwrap();
@@ -4019,7 +4153,7 @@ mod tests {
             },
         ));
 
-        assert!(matches!(failed, Err(ProviderFailure::InvalidResponse(_))));
+        assert_eq!(failed, Ok(drafts.clone()));
         assert_eq!(attempts, 2);
 
         let cancelled = Arc::new(AtomicBool::new(true));
@@ -4103,7 +4237,7 @@ mod tests {
     }
 
     #[test]
-    fn review_token_damage_is_retained_and_schedules_final_token_repair() {
+    fn review_token_damage_is_rejected_and_keeps_the_draft() {
         let items = vec![prepared_item("item-0000", "Hello, {{name}}.")];
         let drafts = vec![provider_translation("item-0000", "Hallo, {{name}}.")];
         let plans = build_review_plans("German", &items, &drafts).unwrap();
@@ -4123,13 +4257,10 @@ mod tests {
         ))
         .unwrap();
 
-        assert_eq!(reviewed[0].text, "Eine natürlichere Begrüßung.");
-        assert_eq!(
-            build_token_repair_plans("German", &items, &reviewed)
-                .unwrap()
-                .len(),
-            1
-        );
+        assert_eq!(reviewed, drafts);
+        assert!(build_token_repair_plans("German", &items, &reviewed)
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -4371,11 +4502,13 @@ mod tests {
     }
 
     #[test]
-    fn terminology_token_damage_reaches_failed_final_repair_as_blocking_diff() {
+    fn existing_token_damage_reaches_failed_final_repair_as_blocking_diff() {
         let mut item = prepared_item("item-0000", "Parsnip for {{name}}");
         item.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
         let items = vec![item];
-        let reviewed = vec![provider_translation("item-0000", "Rübe für {{name}}")];
+        // The reviewed draft already lacks {{name}}, so the terminology fix adds
+        // no new mismatch and is accepted; the old damage still needs repair.
+        let reviewed = vec![provider_translation("item-0000", "Rübe für dich")];
         let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
         let mut calls = 0usize;
 
