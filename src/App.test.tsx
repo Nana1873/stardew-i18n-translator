@@ -28,7 +28,7 @@ vi.mock("@tauri-apps/api/core", () => ({
         Array.isArray(value) ? value : backendHistory,
       );
     }
-    if (cmd === "codex_cli_status") {
+    if (cmd === "cloud_ai_status") {
       return Promise.resolve(mocked).then(
         (value) =>
           value ?? {
@@ -2152,14 +2152,14 @@ describe("App shell", () => {
             codexQualityReview: true,
           },
         });
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: true,
           version: "0.57.0",
           authentication: "ChatGPT account",
         });
-      if (cmd === "translate_with_codex_cli")
+      if (cmd === "translate_with_cloud_ai")
         return new Promise<never>(() => undefined);
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
@@ -2181,7 +2181,7 @@ describe("App shell", () => {
 
     await waitFor(() => {
       expect(
-        invokeMock.mock.calls.some(([cmd]) => cmd === "codex_cli_status"),
+        invokeMock.mock.calls.some(([cmd]) => cmd === "cloud_ai_status"),
       ).toBe(true);
     });
     fireEvent.click(
@@ -2200,7 +2200,7 @@ describe("App shell", () => {
     expect(within(dialog).queryByLabelText("Engine")).toBeNull();
     expect(within(dialog).queryByLabelText("Scope")).toBeNull();
     await waitFor(() =>
-      expect(invokeMock).toHaveBeenCalledWith("translate_with_codex_cli", {
+      expect(invokeMock).toHaveBeenCalledWith("translate_with_cloud_ai", {
         request: {
           runId: expect.any(String),
           scope: "selected",

@@ -56,6 +56,48 @@ and billing can change; consult the official
 [authentication](https://learn.chatgpt.com/docs/auth) and
 [pricing](https://learn.chatgpt.com/docs/pricing) pages.
 
+## Local ChatGPT prototype
+
+A development-only desktop prototype replaces the Codex CLI transport with
+direct ChatGPT plan usage. From a checkout with the development prerequisites
+and Node.js installed, run:
+
+```powershell
+powershell -File scripts/start-chatgpt-translator-prototype.ps1 -Build
+```
+
+After building once, double-click `scripts/start-chatgpt-translator-prototype.cmd`
+to reopen it. The launcher opens a separate app under ignored
+`target/chatgpt-translator-prototype/app/`, with its own portable data and a
+synthetic example mod. In **Settings > Translation engines > ChatGPT**, use
+**Sign in with ChatGPT**, grant plan usage in the browser, choose a model and
+Low/Medium/High reasoning, and save. Selected strings use the existing bounded
+draft, optional quality review/repair, validation, and Review workflow.
+
+This prototype still needs the local Node helper. Tokens remain in the helper's
+memory; restarting requires sign-in again. Sign out revokes the refresh token,
+and the launcher attempts the same cleanup when the app closes. Non-secret
+registration metadata persists under the prototype's `auth/` folder. Manage
+account allowance in ChatGPT settings; this route does not yet supply the CLI's
+remaining-usage display. Model choices come from the signed-in account. The
+reasoning picker uses advertised capabilities when present, with documented
+Low/Medium/High choices for the known models. Their availability is ultimately
+checked by OpenAI on each request.
+
+Ordinary builds keep the current CLI integration. The prototype launcher uses
+`VITE_CHATGPT_PROTOTYPE=1` and the Cargo feature `chatgpt-prototype`. Its native
+build excludes the CLI module: login, model loading, translation, review, and
+repair use the browser-authorized helper and direct Responses requests, with no
+CLI or API-key fallback. Shared translation validation and non-secret preference
+keys remain compatible with existing settings. AI logs identify the engine as
+`chatgpt`, the transport as `responses`, and activity as `provider_activity`.
+
+To prepare an update while the prototype is running, use the launcher with
+`-BuildOnly`. The next launch applies that build without interrupting the current
+session. This is not a release package or an implementation of persistent
+native authentication. See the [official sign-in documentation](https://developers.openai.com/siwc/token-sharing-open-source/sign-in)
+and [preview limits](https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations).
+
 ## Translate and review
 
 Select Open or Changed strings in Workspace and choose **Translate selected

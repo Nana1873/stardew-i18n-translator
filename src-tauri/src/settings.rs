@@ -366,7 +366,15 @@ fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSetting
 
 fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
     settings.default_engine = settings.default_engine.trim().to_ascii_lowercase();
-    if !matches!(settings.default_engine.as_str(), "local" | "codex") {
+    if cfg!(feature = "chatgpt-prototype") && settings.default_engine == "codex" {
+        settings.default_engine = "chatgpt".to_string();
+    }
+    let cloud_engine = if cfg!(feature = "chatgpt-prototype") {
+        "chatgpt"
+    } else {
+        "codex"
+    };
+    if settings.default_engine != "local" && settings.default_engine != cloud_engine {
         if strict {
             return Err("The default AI engine is invalid.".to_string());
         }
@@ -478,7 +486,12 @@ mod tests {
             target_lang: Some("de".to_string()),
             llm: None,
             ai: AiSettings {
-                default_engine: "codex".to_string(),
+                default_engine: if cfg!(feature = "chatgpt-prototype") {
+                    "chatgpt"
+                } else {
+                    "codex"
+                }
+                .to_string(),
                 codex_model: Some("gpt-5.6-sol".to_string()),
                 codex_reasoning: "high".to_string(),
                 codex_quality_review: false,
@@ -517,7 +530,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap()).unwrap();
         assert_eq!(json["workspace"]["columnWidths"]["mod"], 140);
         assert!(json["workspace"]["columnWidths"].get("modColumn").is_none());
-        assert_eq!(json["ai"]["defaultEngine"], "codex");
+        assert_eq!(json["ai"]["defaultEngine"], settings.ai.default_engine);
         assert_eq!(json["ai"]["codexModel"], "gpt-5.6-sol");
         assert_eq!(json["ai"]["codexQualityReview"], false);
         assert!(json["ai"].get("apiKey").is_none());

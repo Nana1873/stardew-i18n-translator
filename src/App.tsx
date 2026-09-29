@@ -20,7 +20,7 @@ import {
   type AiSettings,
   type AiTranslationRequest,
   type AppSettings,
-  type CodexCliStatus,
+  type CloudAiStatus,
   type ExportAllResult,
   type ExportPreflightProblem,
   type GlossaryEntry,
@@ -41,7 +41,10 @@ import {
   buildStardewTranslatorOutput,
   previewStardewTranslatorOutput,
   cancelAiRun,
-  codexCliStatus,
+  cloudAiStatus,
+  CHATGPT_PROTOTYPE,
+  CLOUD_ENGINE_LABEL,
+  CLOUD_ENGINE_ID,
   exportAllMods,
   exportLlmBatch,
   exportLlmBatchToPath,
@@ -60,7 +63,7 @@ import {
   previewTranslationZip,
   saveSettings,
   scanMods,
-  translateWithCodexCli,
+  translateWithCloudAi,
   translateWithLocalAi,
   undoBatchEdit,
 } from "./tauri/commands";
@@ -374,7 +377,7 @@ export function App() {
     generation: number;
     language: string | null;
   }>({ generation: 0, language: null });
-  const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
+  const [codexStatus, setCodexStatus] = useState<CloudAiStatus | null>(null);
 
   // External LLM batch import: persistent result tray + reload trigger.
   const [reloadToken, setReloadToken] = useState(0);
@@ -493,7 +496,7 @@ export function App() {
 
   async function refreshAiAvailability() {
     try {
-      setCodexStatus(await codexCliStatus());
+      setCodexStatus(await cloudAiStatus());
     } catch (cause) {
       setCodexStatus({
         installed: false,
@@ -1093,19 +1096,26 @@ export function App() {
         : "Local endpoint unavailable",
     },
     {
-      id: "codex",
-      label: "Codex CLI",
+      id: CLOUD_ENGINE_ID,
+      label: CLOUD_ENGINE_LABEL,
       ready: codexAiReady,
-      model: aiSettings.codexModel || "Codex default",
+      model:
+        aiSettings.codexModel ||
+        (CHATGPT_PROTOTYPE ? "Choose a ChatGPT model" : "Codex default"),
       reasoning: aiSettings.codexReasoning,
       unavailableReason: codexAiReady
         ? undefined
-        : codexStatus?.installed
-          ? "Codex CLI is installed, but it is not signed in."
-          : codexStatus?.error || "Codex CLI is not installed or discoverable.",
-      note: codexStatus?.version
-        ? `Codex CLI ${codexStatus.version}`
-        : "Uses the Codex CLI account on this computer",
+        : CHATGPT_PROTOTYPE
+          ? codexStatus?.error || "Sign in with ChatGPT in Settings."
+          : codexStatus?.installed
+            ? "Codex CLI is installed, but it is not signed in."
+            : codexStatus?.error ||
+              "Codex CLI is not installed or discoverable.",
+      note: CHATGPT_PROTOTYPE
+        ? "Uses your ChatGPT plan"
+        : codexStatus?.version
+          ? `Codex CLI ${codexStatus.version}`
+          : "Uses the Codex CLI account on this computer",
     },
   ];
 
@@ -1124,7 +1134,7 @@ export function App() {
       result =
         engine === "local"
           ? await translateWithLocalAi(request)
-          : await translateWithCodexCli(request);
+          : await translateWithCloudAi(request);
       return result;
     } finally {
       const entries = await refreshOperationHistory();

@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="prototype-csrf" content="__CSRF__" />
+    <title>ChatGPT login · Stardew Translator prototype</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <span class="eyebrow">STARDEW I18N TRANSLATOR · LOCAL PROTOTYPE</span>
+        <h1>One login. A small translation.</h1>
+        <p>
+          Try your ChatGPT plan directly, from sign-in to a completed
+          translation.
+        </p>
+      </header>
+      <section aria-labelledby="account-heading">
+        <div class="section-heading">
+          <span class="step">1</span>
+          <h2 id="account-heading">Connect ChatGPT</h2>
+          <span id="login-badge" class="badge">Not signed in</span>
+        </div>
+        <p id="account">
+          Your browser handles sign-in and permission to use your ChatGPT plan.
+        </p>
+        <div class="actions">
+          <button id="login" class="primary">Continue with ChatGPT</button
+          ><button id="new-account">Use another account</button
+          ><button id="logout" disabled>Sign out</button>
+        </div>
+        <p class="small">
+          Session credentials stay in this local process's memory. Restarting
+          requires sign-in.
+          <a
+            href="https://chatgpt.com/settings/usage"
+            target="_blank"
+            rel="noreferrer"
+            >Manage ChatGPT usage ↗</a
+          >
+        </p>
+        <p id="welcome" hidden></p>
+      </section>
+      <section aria-labelledby="translate-heading">
+        <div class="section-heading">
+          <span class="step">2</span>
+          <h2 id="translate-heading">Try a sample</h2>
+          <span id="model-badge" class="badge">Models not loaded</span>
+        </div>
+        <div class="model-row">
+          <label
+            >Model<select id="model" disabled>
+              <option>Sign in to load models</option>
+            </select></label
+          ><button id="models" disabled>Load models</button
+          ><label
+            >Translate into<select id="language">
+              <option>German</option>
+              <option>French</option>
+              <option>Spanish</option>
+              <option>Portuguese</option>
+              <option>Vietnamese</option>
+              <option>Japanese</option>
+            </select></label
+          >
+        </div>
+        <label
+          >English sample<textarea id="source" maxlength="2000" rows="4">
+Hello, {{player}}! The harvest festival starts tomorrow. Bring your best pumpkin!</textarea>
+        </label>
+        <p class="small">
+          Only this text and the selected target language are sent to OpenAI.
+          Requests use your ChatGPT plan or credits.
+        </p>
+        <div class="actions">
+          <button id="translate" class="primary" disabled>
+            Translate sample</button
+          ><button id="cancel">Cancel pending request</button>
+        </div>
+      </section>
+      <section aria-labelledby="result-heading">
+        <div class="section-heading">
+          <span class="step">3</span>
+          <h2 id="result-heading">Review the result</h2>
+          <span id="result-badge" class="badge">No request yet</span>
+        </div>
+        <p id="empty">
+          A completed translation proves that this account can use the selected
+          model through the new route.
+        </p>
+        <pre id="result" hidden></pre>
+        <p id="usage" class="small"></p>
+      </section>
+      <p id="status" role="status" aria-live="polite">Ready to sign in.</p>
+      <details id="diagnostics" hidden>
+        <summary>Connection details</summary>
+        <pre id="diagnostic-output"></pre>
+      </details>
+      <footer>
+        <span>Preview · Short samples · No game-folder access</span
+        ><button id="stop">Close local prototype</button>
+      </footer>
+    </main>
+  </body>
+</html>

@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use super::{
     build_terminology_repair_plans, execute_review_plans, execute_terminology_repair_plans,
-    CodexProgressCallback, CodexProgressEvent, PreparedAiItem, ProviderFailure,
+    PreparedAiItem, ProviderFailure, ProviderProgressCallback, ProviderProgressEvent,
     ProviderTranslation, ReviewPlan, ReviewSkipReason,
 };
 
@@ -36,7 +36,10 @@ fn translation(id: &str, text: &str) -> ProviderTranslation {
     }
 }
 
-fn recorder() -> (CodexProgressCallback, Arc<Mutex<Vec<CodexProgressEvent>>>) {
+fn recorder() -> (
+    ProviderProgressCallback,
+    Arc<Mutex<Vec<ProviderProgressEvent>>>,
+) {
     let events = Arc::new(Mutex::new(Vec::new()));
     let recorded = Arc::clone(&events);
     (
@@ -45,11 +48,13 @@ fn recorder() -> (CodexProgressCallback, Arc<Mutex<Vec<CodexProgressEvent>>>) {
     )
 }
 
-fn skipped(events: &[CodexProgressEvent]) -> Vec<(usize, ReviewSkipReason)> {
+fn skipped(events: &[ProviderProgressEvent]) -> Vec<(usize, ReviewSkipReason)> {
     events
         .iter()
         .filter_map(|event| match *event {
-            CodexProgressEvent::ReviewSkipped { item_count, reason } => Some((item_count, reason)),
+            ProviderProgressEvent::ReviewSkipped { item_count, reason } => {
+                Some((item_count, reason))
+            }
             _ => None,
         })
         .collect()
@@ -108,7 +113,7 @@ fn persistent_transient_review_failure_keeps_drafts_and_reports_a_warning() {
     assert_eq!(reviewed, Ok(drafts));
     assert_eq!(attempts, 2);
     let events = events.lock().unwrap();
-    assert!(events.contains(&CodexProgressEvent::TransientRetry));
+    assert!(events.contains(&ProviderProgressEvent::TransientRetry));
     assert_eq!(skipped(&events), vec![(1, ReviewSkipReason::Transient)]);
 }
 
@@ -174,7 +179,7 @@ fn message_error_mid_review_aborts_without_retry_or_warning() {
     assert_eq!(calls, vec!["item-0000", "item-0001"]);
     let events = events.lock().unwrap();
     assert!(skipped(&events).is_empty());
-    assert!(!events.contains(&CodexProgressEvent::TransientRetry));
+    assert!(!events.contains(&ProviderProgressEvent::TransientRetry));
 }
 
 #[test]
@@ -249,7 +254,7 @@ fn invalid_review_response_splits_the_plan_and_skips_only_the_bad_item() {
     assert_eq!(reviewed[0], drafts[0]);
     assert_eq!(reviewed[1].text, "Zweiter, geprüft");
     let events = events.lock().unwrap();
-    assert!(events.contains(&CodexProgressEvent::Split));
+    assert!(events.contains(&ProviderProgressEvent::Split));
     assert_eq!(
         skipped(&events),
         vec![(1, ReviewSkipReason::InvalidResponse)]

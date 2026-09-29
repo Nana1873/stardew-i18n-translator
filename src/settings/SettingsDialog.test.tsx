@@ -43,7 +43,7 @@ beforeEach(() => {
         });
       case "llm_models":
         return Promise.resolve(["llama3.1:8b", "qwen2.5"]);
-      case "codex_cli_status":
+      case "cloud_ai_status":
         return Promise.resolve({ installed: false, authenticated: false });
       default:
         return Promise.resolve(null);
@@ -1078,14 +1078,14 @@ describe("SettingsDialog", () => {
   it("keeps an available saved Codex model and exposes the CLI catalog", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: true,
           version: "1.2.3",
           authentication: "ChatGPT account",
         });
-      if (cmd === "codex_cli_models")
+      if (cmd === "cloud_ai_models")
         return Promise.resolve([
           {
             model: "gpt-5.6-sol",
@@ -1102,7 +1102,7 @@ describe("SettingsDialog", () => {
             supportedReasoningEfforts: ["low", "medium", "high"],
           },
         ]);
-      if (cmd === "codex_cli_rate_limits")
+      if (cmd === "cloud_ai_rate_limits")
         return Promise.resolve({
           primary: {
             usedPercent: 25,
@@ -1166,19 +1166,17 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check status" }));
     await waitFor(() =>
       expect(
-        invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_status"),
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_status"),
       ).toHaveLength(2),
     );
     await waitFor(() =>
       expect(
-        invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_models"),
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_models"),
       ).toHaveLength(2),
     );
     await waitFor(() =>
       expect(
-        invokeMock.mock.calls.filter(
-          ([cmd]) => cmd === "codex_cli_rate_limits",
-        ),
+        invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_rate_limits"),
       ).toHaveLength(2),
     );
 
@@ -1203,10 +1201,10 @@ describe("SettingsDialog", () => {
   it("defaults Codex quality review on and warns before saving first-draft mode", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({ installed: true, authenticated: true });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      if (cmd === "codex_cli_rate_limits") return Promise.resolve(null);
+      if (cmd === "cloud_ai_models") return Promise.resolve([]);
+      if (cmd === "cloud_ai_rate_limits") return Promise.resolve(null);
       return Promise.resolve(null);
     });
     const onSave = vi.fn();
@@ -1279,7 +1277,7 @@ describe("SettingsDialog", () => {
     }>();
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status") return pendingStatus.promise;
+      if (cmd === "cloud_ai_status") return pendingStatus.promise;
       return Promise.resolve(null);
     });
 
@@ -1322,14 +1320,14 @@ describe("SettingsDialog", () => {
 
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: true,
           authentication: "ChatGPT account",
         });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      if (cmd === "codex_cli_rate_limits") return pendingLimits.promise;
+      if (cmd === "cloud_ai_models") return Promise.resolve([]);
+      if (cmd === "cloud_ai_rate_limits") return pendingLimits.promise;
       return Promise.resolve(null);
     });
 
@@ -1372,14 +1370,14 @@ describe("SettingsDialog", () => {
   it("shows only the rate-limit details reported by Codex CLI", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: true,
           authentication: "ChatGPT",
         });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      if (cmd === "codex_cli_rate_limits")
+      if (cmd === "cloud_ai_models") return Promise.resolve([]);
+      if (cmd === "cloud_ai_rate_limits")
         return Promise.resolve({ primary: { usedPercent: 12.4 } });
       return Promise.resolve(null);
     });
@@ -1407,13 +1405,13 @@ describe("SettingsDialog", () => {
   it("does not request ChatGPT limits for API-key billing", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: true,
           authentication: "API key",
         });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
+      if (cmd === "cloud_ai_models") return Promise.resolve([]);
       return Promise.resolve(null);
     });
 
@@ -1432,16 +1430,16 @@ describe("SettingsDialog", () => {
     expect(await screen.findByText("Usage remaining")).toBeVisible();
     expect(screen.getByText("Not reported for API-key billing")).toBeVisible();
     expect(
-      invokeMock.mock.calls.some(([cmd]) => cmd === "codex_cli_rate_limits"),
+      invokeMock.mock.calls.some(([cmd]) => cmd === "cloud_ai_rate_limits"),
     ).toBe(false);
   });
 
   it("keeps Codex ready with the CLI default when its model list is unavailable", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({ installed: true, authenticated: true });
-      if (cmd === "codex_cli_models")
+      if (cmd === "cloud_ai_models")
         return Promise.reject(new Error("model list unavailable"));
       return Promise.resolve(null);
     });
@@ -1490,9 +1488,9 @@ describe("SettingsDialog", () => {
   it("automatically selects Codex when Local AI is not configured", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({ installed: true, authenticated: true });
-      if (cmd === "codex_cli_models")
+      if (cmd === "cloud_ai_models")
         return Promise.resolve([
           {
             model: "gpt-5.6-terra",
@@ -1631,7 +1629,7 @@ describe("SettingsDialog", () => {
   it("shows only the sign-in steps when Codex CLI is installed", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: false,
@@ -1666,7 +1664,7 @@ describe("SettingsDialog", () => {
     async (error) => {
       invokeMock.mockImplementation((cmd: string) => {
         if (cmd === "glossary_status") return Promise.resolve(null);
-        if (cmd === "codex_cli_status")
+        if (cmd === "cloud_ai_status")
           return Promise.resolve({
             installed: true,
             authenticated: false,

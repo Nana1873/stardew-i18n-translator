@@ -4,8 +4,16 @@
 //! i18n import/export, glossary extraction, and direct AI integrations.
 
 mod ai;
+mod ai_provider;
 mod batch;
+#[cfg(feature = "chatgpt-prototype")]
+mod chatgpt_prototype;
+#[cfg(not(feature = "chatgpt-prototype"))]
 mod codex_cli;
+#[cfg(feature = "chatgpt-prototype")]
+use chatgpt_prototype as cloud_provider;
+#[cfg(not(feature = "chatgpt-prototype"))]
+use codex_cli as cloud_provider;
 mod detection;
 mod export;
 mod glossary;
@@ -33,7 +41,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::{fs::OpenOptions, io::Write};
 
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_log::{RotationStrategy, Target, TargetKind};
 use tauri_plugin_opener::OpenerExt;
@@ -1559,8 +1567,8 @@ struct AiRunProgress {
     #[serde(skip_serializing_if = "Option::is_none")]
     recovery: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    codex_stage: Option<&'static str>,
-    codex_activity_sequence: usize,
+    provider_stage: Option<&'static str>,
+    provider_activity_sequence: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     usage: Option<AiRunTokenUsage>,
 }
@@ -1578,14 +1586,14 @@ fn safe_ai_run_id_for_log(run_id: &str) -> &str {
     }
 }
 
-fn codex_activity_stage(activity: codex_cli::CodexActivity) -> &'static str {
+fn provider_activity_stage(activity: ai_provider::ProviderActivity) -> &'static str {
     match activity {
-        codex_cli::CodexActivity::Starting => "starting",
-        codex_cli::CodexActivity::Working => "working",
-        codex_cli::CodexActivity::Reasoning => "reasoning",
-        codex_cli::CodexActivity::WritingResponse => "writingResponse",
-        codex_cli::CodexActivity::Completed => "completed",
-        codex_cli::CodexActivity::Failed => "failed",
+        ai_provider::ProviderActivity::Starting => "starting",
+        ai_provider::ProviderActivity::Working => "working",
+        ai_provider::ProviderActivity::Reasoning => "reasoning",
+        ai_provider::ProviderActivity::WritingResponse => "writingResponse",
+        ai_provider::ProviderActivity::Completed => "completed",
+        ai_provider::ProviderActivity::Failed => "failed",
     }
 }
 
@@ -1860,11 +1868,11 @@ struct ReviewSkips {
 }
 
 impl ReviewSkips {
-    fn record(&mut self, item_count: usize, reason: codex_cli::ReviewSkipReason) {
+    fn record(&mut self, item_count: usize, reason: ai_provider::ReviewSkipReason) {
         self.items = self.items.saturating_add(item_count);
         match reason {
-            codex_cli::ReviewSkipReason::Transient => self.transient = true,
-            codex_cli::ReviewSkipReason::InvalidResponse => self.invalid_response = true,
+            ai_provider::ReviewSkipReason::Transient => self.transient = true,
+            ai_provider::ReviewSkipReason::InvalidResponse => self.invalid_response = true,
         }
     }
 
@@ -1896,7 +1904,7 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
 mod review_warning_tests {
     use super::{review_skipped_warning, ReviewSkips};
     use crate::ai::AiRunOutcome;
-    use crate::codex_cli::ReviewSkipReason;
+    use crate::ai_provider::ReviewSkipReason;
 
     #[test]
     fn review_warning_names_the_cause_and_only_attaches_to_completed_runs() {
@@ -1938,6 +1946,7 @@ fn remember_ai_run(
 ) {
     let engine_label = match result.engine.as_str() {
         "local" => "Local AI",
+        "chatgpt" => "ChatGPT",
         "codex" => "Codex CLI",
         _ => "AI",
     };
@@ -2033,8 +2042,8 @@ async fn translate_with_local_ai(
         retries: 0,
         splits: 0,
         recovery: None,
-        codex_stage: None,
-        codex_activity_sequence: 0,
+        provider_stage: None,
+        provider_activity_sequence: 0,
         usage: None,
     };
     emit_ai_progress(&app, &progress);
@@ -2223,22 +2232,50 @@ async fn translate_with_local_ai(
 }
 
 #[tauri::command]
-async fn codex_cli_status() -> codex_cli::CodexCliStatus {
-    codex_cli::status().await
+async fn cloud_ai_status() -> ai_provider::CloudAiStatus {
+    cloud_provider::status().await
 }
 
 #[tauri::command]
-async fn codex_cli_models() -> Result<Vec<codex_cli::CodexCliModel>, String> {
-    codex_cli::models().await
+async fn cloud_ai_models() -> Result<Vec<ai_provider::CloudAiModel>, String> {
+    cloud_provider::models().await
 }
 
 #[tauri::command]
-async fn codex_cli_rate_limits() -> Result<Option<codex_cli::CodexCliRateLimits>, String> {
-    codex_cli::rate_limits().await
+async fn cloud_ai_rate_limits() -> Result<Option<ai_provider::CloudAiRateLimits>, String> {
+    cloud_provider::rate_limits().await
 }
 
 #[tauri::command]
-async fn translate_with_codex_cli(
+async fn chatgpt_sign_in(app: AppHandle) -> Result<(), String> {
+    #[cfg(not(feature = "chatgpt-prototype"))]
+    {
+        let _ = app;
+        Err("ChatGPT sign-in is available only in the prototype build.".into())
+    }
+    #[cfg(feature = "chatgpt-prototype")]
+    {
+        let url = chatgpt_prototype::login_url().await?;
+        app.opener()
+            .open_url(&url, None::<String>)
+            .map_err(|_| "Could not open ChatGPT sign-in in your browser.".to_string())
+    }
+}
+
+#[tauri::command]
+async fn chatgpt_sign_out() -> Result<(), String> {
+    #[cfg(feature = "chatgpt-prototype")]
+    {
+        chatgpt_prototype::logout().await
+    }
+    #[cfg(not(feature = "chatgpt-prototype"))]
+    {
+        Err("ChatGPT sign-out is available only in the prototype build.".into())
+    }
+}
+
+#[tauri::command]
+async fn translate_with_cloud_ai(
     app: AppHandle,
     state: State<'_, ai::AiRuntimeState>,
     history: State<'_, operation_history::OperationHistoryState>,
@@ -2263,13 +2300,24 @@ async fn translate_with_codex_cli(
     let mut last_isolated_failure = None;
     let run_started_at = Instant::now();
     let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
+    let log_engine = if cfg!(feature = "chatgpt-prototype") {
+        "chatgpt"
+    } else {
+        "codex"
+    };
+    let log_transport = if cfg!(feature = "chatgpt-prototype") {
+        "responses"
+    } else {
+        "codex-cli"
+    };
     log::info!(
         target: "ai_run",
         "{}",
         serde_json::json!({
             "event": "run_started",
             "runId": log_run_id,
-            "engine": "codex",
+            "engine": log_engine,
+            "transport": log_transport,
             "model": if codex_model.is_some() { "configured" } else { "default" },
             "reasoning": reasoning,
             "total": prepared.len(),
@@ -2287,57 +2335,58 @@ async fn translate_with_codex_cli(
         retries: 0,
         splits: 0,
         recovery: None,
-        codex_stage: None,
-        codex_activity_sequence: 0,
+        provider_stage: None,
+        provider_activity_sequence: 0,
         usage: None,
     }));
     update_ai_progress(&app, &progress_state, |_| {});
     // Review skips of the chunk in flight; they count only once it is saved.
     let chunk_review_skips = Arc::new(Mutex::new(ReviewSkips::default()));
     let mut saved_review_skips = ReviewSkips::default();
-    let codex_progress: codex_cli::CodexProgressCallback = {
+    let codex_progress: ai_provider::ProviderProgressCallback = {
         let app = app.clone();
         let state = Arc::clone(&progress_state);
         let log_run_id = log_run_id.clone();
         let chunk_review_skips = Arc::clone(&chunk_review_skips);
         Arc::new(move |event| {
-            if let codex_cli::CodexProgressEvent::ReviewSkipped { item_count, reason } = event {
+            if let ai_provider::ProviderProgressEvent::ReviewSkipped { item_count, reason } = event
+            {
                 if let Ok(mut skips) = chunk_review_skips.lock() {
                     skips.record(item_count, reason);
                 }
             }
             let log_event = event;
             update_ai_progress(&app, &state, |progress| match event {
-                codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
+                ai_provider::ProviderProgressEvent::Phase { phase, item_count } => {
                     progress.phase = match phase {
-                        codex_cli::CodexProgressPhase::Translating => "translating",
-                        codex_cli::CodexProgressPhase::Reviewing => "reviewing",
-                        codex_cli::CodexProgressPhase::TerminologyRepair => "terminologyRepair",
-                        codex_cli::CodexProgressPhase::TokenRepair => "tokenRepair",
+                        ai_provider::ProviderPhase::Translating => "translating",
+                        ai_provider::ProviderPhase::Reviewing => "reviewing",
+                        ai_provider::ProviderPhase::TerminologyRepair => "terminologyRepair",
+                        ai_provider::ProviderPhase::TokenRepair => "tokenRepair",
                     };
                     progress.batch_size = Some(item_count);
                     progress.recovery = None;
-                    progress.codex_stage = None;
+                    progress.provider_stage = None;
                 }
-                codex_cli::CodexProgressEvent::TransientRetry => {
+                ai_provider::ProviderProgressEvent::TransientRetry => {
                     progress.retries = progress.retries.saturating_add(1);
                     progress.recovery = Some("transientRetry");
                 }
-                codex_cli::CodexProgressEvent::StructureRetry => {
+                ai_provider::ProviderProgressEvent::StructureRetry => {
                     progress.retries = progress.retries.saturating_add(1);
                     progress.recovery = Some("structureRetry");
                 }
-                codex_cli::CodexProgressEvent::Split => {
+                ai_provider::ProviderProgressEvent::Split => {
                     progress.splits = progress.splits.saturating_add(1);
                     progress.recovery = Some("split");
                 }
-                codex_cli::CodexProgressEvent::ReviewSkipped { .. } => {}
-                codex_cli::CodexProgressEvent::Activity(activity) => {
-                    progress.codex_stage = Some(codex_activity_stage(activity));
-                    progress.codex_activity_sequence =
-                        progress.codex_activity_sequence.saturating_add(1);
+                ai_provider::ProviderProgressEvent::ReviewSkipped { .. } => {}
+                ai_provider::ProviderProgressEvent::Activity(activity) => {
+                    progress.provider_stage = Some(provider_activity_stage(activity));
+                    progress.provider_activity_sequence =
+                        progress.provider_activity_sequence.saturating_add(1);
                 }
-                codex_cli::CodexProgressEvent::Usage(usage) => {
+                ai_provider::ProviderProgressEvent::Usage(usage) => {
                     let total = progress.usage.get_or_insert_with(AiRunTokenUsage::default);
                     total.input_tokens = total.input_tokens.saturating_add(usage.input_tokens);
                     total.cached_input_tokens = total
@@ -2350,12 +2399,12 @@ async fn translate_with_codex_cli(
                 }
             });
             match log_event {
-                codex_cli::CodexProgressEvent::Phase { phase, item_count } => {
+                ai_provider::ProviderProgressEvent::Phase { phase, item_count } => {
                     let phase = match phase {
-                        codex_cli::CodexProgressPhase::Translating => "translating",
-                        codex_cli::CodexProgressPhase::Reviewing => "reviewing",
-                        codex_cli::CodexProgressPhase::TerminologyRepair => "terminologyRepair",
-                        codex_cli::CodexProgressPhase::TokenRepair => "tokenRepair",
+                        ai_provider::ProviderPhase::Translating => "translating",
+                        ai_provider::ProviderPhase::Reviewing => "reviewing",
+                        ai_provider::ProviderPhase::TerminologyRepair => "terminologyRepair",
+                        ai_provider::ProviderPhase::TokenRepair => "tokenRepair",
                     };
                     log::info!(
                         target: "ai_run",
@@ -2368,7 +2417,7 @@ async fn translate_with_codex_cli(
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::TransientRetry => {
+                ai_provider::ProviderProgressEvent::TransientRetry => {
                     log::info!(
                         target: "ai_run",
                         "{}",
@@ -2379,7 +2428,7 @@ async fn translate_with_codex_cli(
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::StructureRetry => {
+                ai_provider::ProviderProgressEvent::StructureRetry => {
                     log::info!(
                         target: "ai_run",
                         "{}",
@@ -2390,7 +2439,7 @@ async fn translate_with_codex_cli(
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::Split => {
+                ai_provider::ProviderProgressEvent::Split => {
                     log::info!(
                         target: "ai_run",
                         "{}",
@@ -2401,7 +2450,7 @@ async fn translate_with_codex_cli(
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::ReviewSkipped { item_count, reason } => {
+                ai_provider::ProviderProgressEvent::ReviewSkipped { item_count, reason } => {
                     log::warn!(
                         target: "ai_run",
                         "{}",
@@ -2410,31 +2459,33 @@ async fn translate_with_codex_cli(
                             "runId": log_run_id,
                             "itemCount": item_count,
                             "reason": match reason {
-                                codex_cli::ReviewSkipReason::Transient => "transient",
-                                codex_cli::ReviewSkipReason::InvalidResponse => "invalidResponse",
+                                ai_provider::ReviewSkipReason::Transient => "transient",
+                                ai_provider::ReviewSkipReason::InvalidResponse => "invalidResponse",
                             },
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::Activity(activity)
+                ai_provider::ProviderProgressEvent::Activity(activity)
                     if matches!(
                         activity,
-                        codex_cli::CodexActivity::Starting
-                            | codex_cli::CodexActivity::Completed
-                            | codex_cli::CodexActivity::Failed
+                        ai_provider::ProviderActivity::Starting
+                            | ai_provider::ProviderActivity::Completed
+                            | ai_provider::ProviderActivity::Failed
                     ) =>
                 {
                     log::info!(
                         target: "ai_run",
                         "{}",
                         serde_json::json!({
-                            "event": "cli_activity",
+                            "event": if cfg!(feature = "chatgpt-prototype") { "provider_activity" } else { "cli_activity" },
                             "runId": log_run_id,
-                            "stage": codex_activity_stage(activity),
+                            "engine": log_engine,
+                            "transport": log_transport,
+                            "stage": provider_activity_stage(activity),
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::Usage(usage) => {
+                ai_provider::ProviderProgressEvent::Usage(usage) => {
                     log::info!(
                         target: "ai_run",
                         "{}",
@@ -2448,7 +2499,7 @@ async fn translate_with_codex_cli(
                         })
                     );
                 }
-                codex_cli::CodexProgressEvent::Activity(_) => {}
+                ai_provider::ProviderProgressEvent::Activity(_) => {}
             }
         })
     };
@@ -2477,12 +2528,12 @@ async fn translate_with_codex_cli(
             progress.batch_total = Some(batch_total);
             progress.batch_size = Some(chunk.len());
             progress.recovery = None;
-            progress.codex_stage = None;
+            progress.provider_stage = None;
         });
         if let Ok(mut skips) = chunk_review_skips.lock() {
             *skips = ReviewSkips::default();
         }
-        match codex_cli::translate_chunk(
+        match cloud_provider::translate_chunk(
             codex_model.as_deref(),
             &reasoning,
             &target_language,
@@ -2495,7 +2546,7 @@ async fn translate_with_codex_cli(
         {
             Ok(translations) => {
                 let mut cancel_after_staging = false;
-                let translations = match codex_cli::repair_token_mismatches_once(
+                let translations = match cloud_provider::repair_token_mismatches_once(
                     codex_model.as_deref(),
                     &reasoning,
                     &target_language,
@@ -2540,7 +2591,7 @@ async fn translate_with_codex_cli(
                             progress.phase = "saving";
                             progress.batch_size = Some(chunk.len());
                             progress.recovery = None;
-                            progress.codex_stage = None;
+                            progress.provider_stage = None;
                         });
                         let staged_result = stage_ai_suggestions(
                             &translation_root,
@@ -2723,8 +2774,18 @@ async fn translate_with_codex_cli(
         &request,
         prepared.len(),
         (
-            "codex",
-            codex_model.unwrap_or_else(|| "Codex default".to_string()),
+            if cfg!(feature = "chatgpt-prototype") {
+                "chatgpt"
+            } else {
+                "codex"
+            },
+            codex_model.unwrap_or_else(|| {
+                if cfg!(feature = "chatgpt-prototype") {
+                    "ChatGPT default".to_string()
+                } else {
+                    "Codex default".to_string()
+                }
+            }),
             reasoning,
         ),
         suggestions,
@@ -2737,7 +2798,8 @@ async fn translate_with_codex_cli(
         serde_json::json!({
             "event": "run_finished",
             "runId": log_run_id,
-            "engine": "codex",
+            "engine": log_engine,
+            "transport": log_transport,
             "completed": result.completed,
             "total": result.requested,
             "outcome": result.outcome,
@@ -2958,6 +3020,11 @@ pub fn run() {
         .manage(operation_history::OperationHistoryState::default())
         .plugin(log_plugin())
         .setup(|app| {
+            if cfg!(feature = "chatgpt-prototype") {
+                if let Some(window) = app.get_webview_window("main") {
+                    window.set_title("Stardew i18n Translator")?;
+                }
+            }
             let data_dir = ensure_portable_data_dir().map_err(|error| {
                 log::error!(target: "app", "Portable data folder unusable: {error}");
                 std::io::Error::other(error)
@@ -3005,10 +3072,12 @@ pub fn run() {
             llm_models,
             translate_string,
             translate_with_local_ai,
-            codex_cli_status,
-            codex_cli_models,
-            codex_cli_rate_limits,
-            translate_with_codex_cli,
+            cloud_ai_status,
+            cloud_ai_models,
+            cloud_ai_rate_limits,
+            chatgpt_sign_in,
+            chatgpt_sign_out,
+            translate_with_cloud_ai,
             cancel_ai_run,
             open_url,
             log_frontend_error,
@@ -3541,8 +3610,8 @@ mod ai_run_contract_tests {
             retries: 1,
             splits: 2,
             recovery: Some("structureRetry"),
-            codex_stage: Some("reasoning"),
-            codex_activity_sequence: 7,
+            provider_stage: Some("reasoning"),
+            provider_activity_sequence: 7,
             usage: Some(AiRunTokenUsage {
                 input_tokens: 45_200,
                 cached_input_tokens: 32_900,
@@ -3556,8 +3625,10 @@ mod ai_run_contract_tests {
         assert_eq!(value["phase"], "reviewing");
         assert_eq!(value["batchIndex"], 4);
         assert_eq!(value["recovery"], "structureRetry");
-        assert_eq!(value["codexStage"], "reasoning");
-        assert_eq!(value["codexActivitySequence"], 7);
+        assert_eq!(value["providerStage"], "reasoning");
+        assert_eq!(value["providerActivitySequence"], 7);
+        assert!(value.get("codexStage").is_none());
+        assert!(value.get("codexActivitySequence").is_none());
         assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
     }
 

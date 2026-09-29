@@ -14,9 +14,13 @@ import type {
   AiRunProgress,
   AiRunRecovery,
   AiRunResult,
-  CodexActivityStage,
+  ProviderActivityStage,
 } from "../tauri/commands";
-import { listenAiRunProgress } from "../tauri/commands";
+import {
+  listenAiRunProgress,
+  CLOUD_ENGINE_LABEL,
+  CHATGPT_PROTOTYPE,
+} from "../tauri/commands";
 
 export interface LiveAiEngineOption {
   id: AiEngine;
@@ -71,7 +75,7 @@ const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   split: "Splitting affected batch",
 };
 
-const CODEX_ACTIVITY_LABELS: Record<CodexActivityStage, string> = {
+const CODEX_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
   starting: "Starting process",
   working: "Working",
   reasoning: "Reasoning",
@@ -132,7 +136,7 @@ export function BatchTranslateDialog({
   const [liveProgress, setLiveProgress] = useState<AiRunProgress | null>(null);
   const [lastCodexActivity, setLastCodexActivity] = useState<{
     sequence: number;
-    stage: CodexActivityStage;
+    stage: ProviderActivityStage;
     receivedAt: number;
   } | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -218,8 +222,8 @@ export function BatchTranslateDialog({
           recordCompletionCheckpoint(event.completed, event.total);
           setDone(event.completed);
           setLiveProgress(event);
-          const stage = event.codexStage;
-          const sequence = event.codexActivitySequence;
+          const stage = event.providerStage;
+          const sequence = event.providerActivitySequence;
           if (stage && sequence !== undefined) {
             setLastCodexActivity((current) =>
               current?.sequence === sequence
@@ -398,7 +402,7 @@ export function BatchTranslateDialog({
             <span>{metaParts.join(" · ")}</span>
             {lastCodexActivity && activityAge !== null && (
               <span>
-                Codex activity ·{" "}
+                {CHATGPT_PROTOTYPE ? "ChatGPT" : "Codex"} activity ·{" "}
                 {CODEX_ACTIVITY_LABELS[lastCodexActivity.stage]} ·{" "}
                 {formatActivityAge(activityAge)}
               </span>
@@ -409,7 +413,12 @@ export function BatchTranslateDialog({
                 {formatEstimatedRemaining(estimatedRemainingSeconds)}
               </span>
             )}
-            {usageText && <span>Codex reported · {usageText}</span>}
+            {usageText && (
+              <span>
+                {CHATGPT_PROTOTYPE ? CLOUD_ENGINE_LABEL : "Codex"} reported ·{" "}
+                {usageText}
+              </span>
+            )}
           </div>
           <div className="translator-progress-row">
             <span

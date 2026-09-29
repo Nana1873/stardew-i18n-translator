@@ -6,6 +6,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ShortcutSettings } from "../shortcuts";
 
+/** Explicit local prototype build; ordinary builds keep the CLI integration. */
+export const CHATGPT_PROTOTYPE = import.meta.env.VITE_CHATGPT_PROTOTYPE === "1";
+export const CLOUD_ENGINE_ID = CHATGPT_PROTOTYPE ? "chatgpt" : "codex";
+export const CLOUD_ENGINE_LABEL = CHATGPT_PROTOTYPE ? "ChatGPT" : "Codex CLI";
+
+export function chatgptPrototypeSignIn(): Promise<void> {
+  return invoke<void>("chatgpt_sign_in");
+}
+
+export function chatgptPrototypeSignOut(): Promise<void> {
+  return invoke<void>("chatgpt_sign_out");
+}
+
 export interface DetectedInstall {
   stardewPath: string;
   modsPath: string;
@@ -23,11 +36,11 @@ export interface LlmSettings {
   temperature?: number | null;
 }
 
-export type AiEngine = "local" | "codex";
+export type AiEngine = "local" | "codex" | "chatgpt";
 
 export interface AiSettings {
   defaultEngine: AiEngine;
-  /** Exact model reported by the installed Codex CLI; absent = CLI default. */
+  /** Exact model reported by the selected cloud provider; absent = provider default. */
   codexModel?: string | null;
   codexReasoning: "low" | "medium" | "high";
   /** Run the full Codex language-quality review and focused repair stages. */
@@ -878,7 +891,7 @@ export type AiRunPhase =
 
 export type AiRunRecovery = "transientRetry" | "structureRetry" | "split";
 
-export type CodexActivityStage =
+export type ProviderActivityStage =
   | "starting"
   | "working"
   | "reasoning"
@@ -904,8 +917,8 @@ export interface AiRunProgress {
   retries: number;
   splits: number;
   recovery?: AiRunRecovery;
-  codexStage?: CodexActivityStage;
-  codexActivitySequence?: number;
+  providerStage?: ProviderActivityStage;
+  providerActivitySequence?: number;
   usage?: AiRunTokenUsage;
 }
 
@@ -918,7 +931,7 @@ export function listenAiRunProgress(
   });
 }
 
-export interface CodexCliStatus {
+export interface CloudAiStatus {
   installed: boolean;
   authenticated: boolean;
   version?: string;
@@ -927,8 +940,8 @@ export interface CodexCliStatus {
   error?: string;
 }
 
-export interface CodexCliModel {
-  /** Exact value passed to `codex exec --model`. */
+export interface CloudAiModel {
+  /** Exact model identifier reported by the cloud provider. */
   model: string;
   displayName: string;
   isDefault: boolean;
@@ -936,16 +949,16 @@ export interface CodexCliModel {
   supportedReasoningEfforts: ("low" | "medium" | "high")[];
 }
 
-export interface CodexCliRateLimitWindow {
+export interface CloudAiRateLimitWindow {
   usedPercent: number;
   windowDurationMins?: number;
-  /** Unix timestamp in seconds, as reported by Codex CLI. */
+  /** Unix timestamp in seconds, as reported by the provider. */
   resetsAt?: number;
 }
 
-export interface CodexCliRateLimits {
-  primary?: CodexCliRateLimitWindow;
-  secondary?: CodexCliRateLimitWindow;
+export interface CloudAiRateLimits {
+  primary?: CloudAiRateLimitWindow;
+  secondary?: CloudAiRateLimitWindow;
 }
 
 export function translateWithLocalAi(
@@ -954,22 +967,22 @@ export function translateWithLocalAi(
   return invoke<AiRunResult>("translate_with_local_ai", { request });
 }
 
-export function codexCliStatus(): Promise<CodexCliStatus> {
-  return invoke<CodexCliStatus>("codex_cli_status");
+export function cloudAiStatus(): Promise<CloudAiStatus> {
+  return invoke<CloudAiStatus>("cloud_ai_status");
 }
 
-export function codexCliModels(): Promise<CodexCliModel[]> {
-  return invoke<CodexCliModel[]>("codex_cli_models");
+export function cloudAiModels(): Promise<CloudAiModel[]> {
+  return invoke<CloudAiModel[]>("cloud_ai_models");
 }
 
-export function codexCliRateLimits(): Promise<CodexCliRateLimits | null> {
-  return invoke<CodexCliRateLimits | null>("codex_cli_rate_limits");
+export function cloudAiRateLimits(): Promise<CloudAiRateLimits | null> {
+  return invoke<CloudAiRateLimits | null>("cloud_ai_rate_limits");
 }
 
-export function translateWithCodexCli(
+export function translateWithCloudAi(
   request: AiTranslationRequest,
 ): Promise<AiRunResult> {
-  return invoke<AiRunResult>("translate_with_codex_cli", { request });
+  return invoke<AiRunResult>("translate_with_cloud_ai", { request });
 }
 
 export function cancelAiRun(runId: string): Promise<boolean> {

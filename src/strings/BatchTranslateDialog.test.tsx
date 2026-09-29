@@ -315,8 +315,8 @@ describe("BatchTranslateDialog", () => {
           retries: 1,
           splits: 2,
           recovery: "structureRetry",
-          codexStage: "reasoning",
-          codexActivitySequence: 7,
+          providerStage: "reasoning",
+          providerActivitySequence: 7,
           usage: {
             inputTokens: 45_200,
             cachedInputTokens: 32_900,
