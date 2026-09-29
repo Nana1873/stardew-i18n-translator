@@ -1764,8 +1764,27 @@ describe("App shell", () => {
     ).toHaveLength(previewCallsBeforeRetry + 1);
     expect(exportAttempts).toBe(1);
 
+    // Cancelling the retry confirmation writes nothing.
     fireEvent.click(
-      within(retryPreflight).getByRole("button", { name: "Export all mods" }),
+      within(retryPreflight).getByRole("button", { name: "Cancel export" }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+      ).toBeNull(),
+    );
+    expect(exportAttempts).toBe(1);
+
+    // Opening the confirmation collapses the tray; expand it to retry again.
+    fireEvent.click(screen.getByRole("button", { name: "Expand result" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Export again" }),
+    );
+    const confirmedRetry = await screen.findByRole("dialog", {
+      name: "Confirm export overwrite",
+    });
+    fireEvent.click(
+      within(confirmedRetry).getByRole("button", { name: "Export all mods" }),
     );
     await waitFor(() => expect(exportAttempts).toBe(2));
   });
