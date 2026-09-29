@@ -34,6 +34,23 @@ describe("shortcuts", () => {
     expect(shortcutProblem("F6")).toBeNull();
   });
 
+  it("drops saved overrides that are no longer allowed", () => {
+    const resolved = resolveShortcuts({
+      "editor.save": "Tab",
+      "editor.close": "Ctrl+Tab",
+      "editor.reset": "F8",
+    });
+    expect(resolved["editor.save"]).toBe(DEFAULT_SHORTCUTS["editor.save"]);
+    expect(resolved["editor.close"]).toBe(DEFAULT_SHORTCUTS["editor.close"]);
+    expect(resolved["editor.reset"]).toBe("F8");
+  });
+
+  it("never accepts Tab so keyboard navigation keeps working", () => {
+    expect(shortcutProblem("Tab")).toMatch(/keyboard navigation/);
+    expect(shortcutProblem("Shift+Tab")).toMatch(/keyboard navigation/);
+    expect(shortcutProblem("Ctrl+Tab")).toMatch(/keyboard navigation/);
+  });
+
   it("uses compact arrow glyphs for display", () => {
     expect(displayShortcut("Alt+ArrowLeft")).toBe("Alt+←");
   });

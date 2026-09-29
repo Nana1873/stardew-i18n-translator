@@ -771,6 +771,11 @@ export function App() {
     // The wizard may have built a glossary, or the target language changed —
     // reload the cache for the now-active language.
     refreshGlossary(merged.targetLang);
+    if (setupComplete(merged)) {
+      // Finishing setup defines the workspace, so scan it right away instead of
+      // leaving the user on an empty mod list until they press Scan.
+      await runScan(merged, false, () => true, { clearExisting: true });
+    }
   }
 
   async function handleSaveSettings(next: AppSettings) {
@@ -1998,7 +2003,9 @@ export function App() {
     if (resultTray?.kind !== "export") return;
     const retry = resultTray.retry;
     if (retry.kind === "all") {
-      void handleExportAll();
+      // Retrying writes every mod again, so it goes through the same preflight
+      // and confirmation as the toolbar action instead of exporting directly.
+      void requestExportAll();
       return;
     }
     const mod = scan?.mods.find(
