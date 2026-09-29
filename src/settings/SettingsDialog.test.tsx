@@ -703,10 +703,16 @@ describe("SettingsDialog", () => {
 
     // Escape cancels capture, keeps the old shortcut, and leaves the dialog open.
     fireEvent.click(saveShortcut);
-    expect(saveShortcut).toHaveTextContent("Press keys…");
+    expect(saveShortcut).toHaveTextContent("Press keys… (Esc to cancel)");
     fireEvent.keyDown(saveShortcut, { key: "Escape" });
     expect(saveShortcut).toHaveTextContent("Ctrl+Enter");
     expect(saveShortcut).toHaveAttribute("aria-pressed", "false");
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Shift+Escape cancels the same way.
+    fireEvent.click(saveShortcut);
+    fireEvent.keyDown(saveShortcut, { key: "Escape", shiftKey: true });
+    expect(saveShortcut).toHaveTextContent("Ctrl+Enter");
     expect(onClose).not.toHaveBeenCalled();
 
     // Tab and Shift+Tab are never recorded and keep their default focus move.

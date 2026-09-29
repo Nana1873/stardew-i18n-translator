@@ -78,7 +78,12 @@ export const DEFAULT_SHORTCUTS = Object.fromEntries(
 export function resolveShortcuts(
   shortcuts?: ShortcutSettings | null,
 ): ResolvedShortcuts {
-  return { ...DEFAULT_SHORTCUTS, ...(shortcuts ?? {}) };
+  // Saved overrides that are no longer allowed (for example Tab from an older
+  // version) fall back to the default instead of trapping keyboard focus.
+  const valid = Object.entries(shortcuts ?? {}).filter(
+    ([, value]) => typeof value === "string" && shortcutProblem(value) === null,
+  );
+  return { ...DEFAULT_SHORTCUTS, ...Object.fromEntries(valid) };
 }
 
 function normalizedKey(key: string): string | null {

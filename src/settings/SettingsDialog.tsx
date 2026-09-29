@@ -1709,7 +1709,6 @@ function ShortcutsSettings({
                       event.key === "Escape" &&
                       !event.ctrlKey &&
                       !event.metaKey &&
-                      !event.shiftKey &&
                       !event.altKey
                     ) {
                       event.preventDefault();
@@ -1725,7 +1724,7 @@ function ShortcutsSettings({
                   }}
                 >
                   {capturing === command.id
-                    ? "Press keys…"
+                    ? "Press keys… (Esc to cancel)"
                     : displayShortcut(shortcuts[command.id])}
                 </button>
                 <button
@@ -1743,7 +1742,8 @@ function ShortcutsSettings({
       </div>
       <p className="translator-kicker">
         Window and developer shortcuts such as Alt+F4 and Ctrl+Shift+I are
-        reserved. Plain letters require a modifier.
+        reserved. Plain letters require a modifier. Tab moves focus and Escape
+        cancels recording, so neither can be recorded as a new shortcut.
       </p>
     </section>
   );
