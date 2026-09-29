@@ -1701,7 +1701,27 @@ function ShortcutsSettings({
                     setError(null);
                   }}
                   onKeyDown={(event) => {
-                    if (capturing === command.id) capture(command.id, event);
+                    if (capturing !== command.id) return;
+                    // Tab always keeps its focus role so capture can never trap
+                    // keyboard users; moving focus away ends capture on blur.
+                    if (event.key === "Tab") return;
+                    if (
+                      event.key === "Escape" &&
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.shiftKey &&
+                      !event.altKey
+                    ) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setCapturing(null);
+                      setError(null);
+                      return;
+                    }
+                    capture(command.id, event);
+                  }}
+                  onBlur={() => {
+                    if (capturing === command.id) setCapturing(null);
                   }}
                 >
                   {capturing === command.id

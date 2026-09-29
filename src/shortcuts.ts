@@ -136,12 +136,12 @@ export function shortcutProblem(shortcut: string): string | null {
 
   const parts = shortcut.split("+");
   const key = parts.at(-1) ?? "";
+  if (key === "Tab") return "Tab is reserved for keyboard navigation.";
   const hasModifier = parts.length > 1;
   const isFunctionKey = /^F([1-9]|1[0-2])$/.test(key);
   const isNavigationKey = [
     "Enter",
     "Escape",
-    "Tab",
     "Space",
     "ArrowLeft",
     "ArrowRight",

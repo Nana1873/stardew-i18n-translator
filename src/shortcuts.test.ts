@@ -34,6 +34,12 @@ describe("shortcuts", () => {
     expect(shortcutProblem("F6")).toBeNull();
   });
 
+  it("never accepts Tab so keyboard navigation keeps working", () => {
+    expect(shortcutProblem("Tab")).toMatch(/keyboard navigation/);
+    expect(shortcutProblem("Shift+Tab")).toMatch(/keyboard navigation/);
+    expect(shortcutProblem("Ctrl+Tab")).toMatch(/keyboard navigation/);
+  });
+
   it("uses compact arrow glyphs for display", () => {
     expect(displayShortcut("Alt+ArrowLeft")).toBe("Alt+←");
   });

@@ -684,6 +684,52 @@ describe("SettingsDialog", () => {
     );
   });
 
+  it("never traps the keyboard while capturing a shortcut", () => {
+    const onSave = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <SettingsDialog
+        settings={baseSettings}
+        onSave={onSave}
+        onClose={onClose}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Shortcuts" }));
+    const saveShortcut = screen.getByRole("button", {
+      name: "Change Save and close",
+    });
+
+    // Escape cancels capture, keeps the old shortcut, and leaves the dialog open.
+    fireEvent.click(saveShortcut);
+    expect(saveShortcut).toHaveTextContent("Press keys…");
+    fireEvent.keyDown(saveShortcut, { key: "Escape" });
+    expect(saveShortcut).toHaveTextContent("Ctrl+Enter");
+    expect(saveShortcut).toHaveAttribute("aria-pressed", "false");
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Tab and Shift+Tab are never recorded and keep their default focus move.
+    saveShortcut.focus();
+    fireEvent.click(saveShortcut);
+    expect(fireEvent.keyDown(saveShortcut, { key: "Tab" })).toBe(true);
+    expect(
+      fireEvent.keyDown(saveShortcut, { key: "Tab", shiftKey: true }),
+    ).toBe(true);
+    expect(saveShortcut).toHaveTextContent("Press keys…");
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    // Leaving the button ends capture without changing the shortcut.
+    fireEvent.blur(saveShortcut);
+    expect(saveShortcut).toHaveTextContent("Ctrl+Enter");
+    expect(saveShortcut).toHaveAttribute("aria-pressed", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ shortcuts: {} }),
+    );
+  });
+
   it("resets every shortcut to its default", () => {
     const onSave = vi.fn();
     render(
