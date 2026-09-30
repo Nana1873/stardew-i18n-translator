@@ -356,10 +356,25 @@ export async function advancedCases(h) {
           },
           600000,
         );
-        await select(
-          css('[aria-label="ChatGPT model"]'),
-          options.chatgptModel || "gpt-6-sol",
+        const requestedModel = options.chatgptModel || "gpt-5.6-sol";
+        const availableModels = await driver.findElements(
+          css('[aria-label="ChatGPT model"] option'),
         );
+        const modelIds = await Promise.all(
+          availableModels.map((option) => option.getAttribute("value")),
+        );
+        if (!modelIds.includes(requestedModel)) {
+          await click(button("Sign out"));
+          await waitFor(
+            "unavailable-model session removed",
+            async () => !(await exists(join(data, "chatgpt-session.bin"))),
+            60000,
+          );
+          assert.fail(
+            `Requested ChatGPT test model is unavailable: ${requestedModel}`,
+          );
+        }
+        await select(css('[aria-label="ChatGPT model"]'), requestedModel);
         // Keep quality review enabled: the normal draft + review path is covered.
         assert.equal(
           await (

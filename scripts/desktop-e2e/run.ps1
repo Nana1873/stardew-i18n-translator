@@ -9,7 +9,7 @@ param(
     [ValidateSet('none', 'local', "chatgpt", 'both')][string]$LiveAi = 'none',
     [string]$LocalUrl = 'http://127.0.0.1:1234/v1',
     [string]$LocalModel,
-    [string]$ChatGptModel = 'gpt-6-sol',
+    [string]$ChatGptModel = 'gpt-5.6-sol',
     [ValidateSet(0, 96, 120, 144, 192)][int]$ExpectedDpi = 0
 )
 $ErrorActionPreference = 'Stop'
