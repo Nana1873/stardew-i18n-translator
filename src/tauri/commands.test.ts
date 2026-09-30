@@ -3,9 +3,8 @@ import { listen } from "@tauri-apps/api/event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   cancelAiRun,
-  codexCliModels,
-  codexCliRateLimits,
-  codexCliStatus,
+  cloudAiModels,
+  cloudAiStatus,
   exportAllMods,
   exportLlmBatchToPath,
   listenAiRunProgress,
@@ -16,7 +15,7 @@ import {
   preflightLlmBatchPath,
   saveString,
   saveStringGroupsWithUndo,
-  translateWithCodexCli,
+  translateWithCloudAi,
   translateWithLocalAi,
   undoBatchEdit,
   type AiTranslationRequest,
@@ -233,7 +232,7 @@ describe("backend command bridges", () => {
     });
   });
 
-  it("keeps Codex status separate from a bounded translation request", async () => {
+  it("keeps Cloud status separate from a bounded translation request", async () => {
     const request: AiTranslationRequest = {
       runId: "run-1",
       scope: "selected",
@@ -248,8 +247,8 @@ describe("backend command bridges", () => {
       includeChanged: false,
     };
     invokeMock.mockResolvedValueOnce({ installed: true, authenticated: true });
-    await codexCliStatus();
-    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_status");
+    await cloudAiStatus();
+    expect(invokeMock).toHaveBeenLastCalledWith("cloud_ai_status");
 
     invokeMock.mockResolvedValueOnce([
       {
@@ -260,22 +259,12 @@ describe("backend command bridges", () => {
         supportedReasoningEfforts: ["low", "medium", "high"],
       },
     ]);
-    await codexCliModels();
-    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_models");
-
-    invokeMock.mockResolvedValueOnce({
-      primary: {
-        usedPercent: 25,
-        windowDurationMins: 300,
-        resetsAt: 1_730_947_200,
-      },
-    });
-    await codexCliRateLimits();
-    expect(invokeMock).toHaveBeenLastCalledWith("codex_cli_rate_limits");
+    await cloudAiModels();
+    expect(invokeMock).toHaveBeenLastCalledWith("cloud_ai_models");
 
     invokeMock.mockResolvedValueOnce({ outcome: "complete", suggestions: [] });
-    await translateWithCodexCli(request);
-    expect(invokeMock).toHaveBeenLastCalledWith("translate_with_codex_cli", {
+    await translateWithCloudAi(request);
+    expect(invokeMock).toHaveBeenLastCalledWith("translate_with_cloud_ai", {
       request,
     });
 

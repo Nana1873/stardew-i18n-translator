@@ -48,7 +48,7 @@ $start.CreateNoWindow = $true
 foreach ($key in @($start.EnvironmentVariables.Keys)) {
     if ($key -match '^(WEBVIEW2_|TAURI_|NODE_|NEXUS_API_KEY$)') { $start.EnvironmentVariables.Remove($key) }
 }
-# The application must start without Rust/Node/Codex/build-tool search paths or
+# The application must start without Rust/Node/build-tool search paths or
 # a WebDriver/debug-port launch. This is a host test, not a clean Windows claim.
 $start.EnvironmentVariables['PATH'] = "$env:WINDIR\System32;$env:WINDIR"
 foreach ($pair in @{

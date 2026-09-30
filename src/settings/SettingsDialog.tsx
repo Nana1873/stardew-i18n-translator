@@ -13,22 +13,23 @@ import {
   RefreshCw,
   RotateCcw,
   Sparkles,
-  SquareTerminal,
+  Cloud,
   X,
   type LucideIcon,
 } from "lucide-react";
 import {
   type AiEngine,
   type AppSettings,
-  type CodexCliModel,
-  type CodexCliRateLimitWindow,
-  type CodexCliRateLimits,
-  type CodexCliStatus,
+  type CloudAiModel,
+  type CloudAiStatus,
   type GlossaryStatus,
   buildGlossary,
-  codexCliModels,
-  codexCliRateLimits,
-  codexCliStatus,
+  cloudAiModels,
+  cloudAiStatus,
+  CLOUD_ENGINE_LABEL,
+  CLOUD_ENGINE_ID,
+  chatgptSignIn,
+  chatgptSignOut,
   glossaryStatus,
   llmModels,
   openLogsDir,
@@ -90,54 +91,17 @@ interface LlmConnectionResult {
   error?: string;
 }
 
-type EnginePanel = "local" | "codex";
+type EnginePanel = AiEngine;
 
 const DEFAULT_AI_SETTINGS = {
   defaultEngine: "local" as AiEngine,
-  codexModel: null,
-  codexReasoning: "medium" as const,
-  codexQualityReview: true,
+  cloudModel: null,
+  cloudReasoning: "medium" as const,
+  cloudQualityReview: true,
 };
 
-const CODEX_REASONING_OPTIONS = ["low", "medium", "high"] as const;
-const CODEX_SETUP_GUIDE_URL = "https://learn.chatgpt.com/docs/codex/cli";
+const CLOUD_REASONING_OPTIONS = ["low", "medium", "high"] as const;
 const englishNumberFormat = new Intl.NumberFormat("en-US");
-
-function formatCodexWindowDuration(minutes?: number): string | null {
-  if (!Number.isSafeInteger(minutes) || !minutes || minutes < 1) return null;
-  if (minutes % 1440 === 0) return `${minutes / 1440} d`;
-  if (minutes % 60 === 0) return `${minutes / 60} h`;
-  return `${minutes} min`;
-}
-
-function formatCodexReset(resetsAt?: number): string | null {
-  if (!Number.isSafeInteger(resetsAt) || resetsAt == null || resetsAt < 0)
-    return null;
-  const reset = new Date(resetsAt * 1000);
-  if (Number.isNaN(reset.getTime())) return null;
-  return new Intl.DateTimeFormat("en-GB", {
-    day: "numeric",
-    month: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(reset);
-}
-
-function formatCodexRateLimitWindow(window: CodexCliRateLimitWindow): string {
-  const usedPercent = Math.min(100, Math.max(0, window.usedPercent));
-  const remainingPercent = Math.round(100 - usedPercent);
-  const duration = formatCodexWindowDuration(window.windowDurationMins);
-  const reset = formatCodexReset(window.resetsAt);
-  return `${duration ? `${duration}: ` : ""}${remainingPercent}% remaining${reset ? ` · resets ${reset}` : ""}`;
-}
-
-function formatCodexRateLimits(limits: CodexCliRateLimits): string {
-  return [limits.primary, limits.secondary]
-    .filter((window): window is CodexCliRateLimitWindow => Boolean(window))
-    .map(formatCodexRateLimitWindow)
-    .join(" · ");
-}
 
 export function SettingsDialog({
   settings,
@@ -148,7 +112,8 @@ export function SettingsDialog({
 }: SettingsDialogProps) {
   const savedAi = settings.ai ?? DEFAULT_AI_SETTINGS;
   const savedDefaultEngine =
-    savedAi.defaultEngine === "local" || savedAi.defaultEngine === "codex"
+    savedAi.defaultEngine === "local" ||
+    savedAi.defaultEngine === CLOUD_ENGINE_ID
       ? savedAi.defaultEngine
       : null;
   const [page, setPage] = useState<SettingsPage>(initialPage);
@@ -187,21 +152,20 @@ export function SettingsDialog({
   const [llmTemperature, setLlmTemperature] = useState(
     settings.llm?.temperature != null ? String(settings.llm.temperature) : "",
   );
-  const [codexReasoning, setCodexReasoning] = useState<
+  const [cloudReasoning, setCloudReasoning] = useState<
     "low" | "medium" | "high"
-  >(savedAi.codexReasoning);
-  const [codexQualityReview, setCodexQualityReview] = useState(
-    savedAi.codexQualityReview ?? true,
+  >(savedAi.cloudReasoning);
+  const [cloudQualityReview, setCloudQualityReview] = useState(
+    savedAi.cloudQualityReview ?? true,
   );
-  const [codexModel, setCodexModel] = useState(savedAi.codexModel ?? "");
-  const [codexModels, setCodexModels] = useState<CodexCliModel[] | null>(null);
-  const [codexModelsLoading, setCodexModelsLoading] = useState(false);
-  const [codexModelsError, setCodexModelsError] = useState<string | null>(null);
-  const [codexRateLimits, setCodexRateLimits] =
-    useState<CodexCliRateLimits | null>(null);
-  const [codexRateLimitsLoading, setCodexRateLimitsLoading] = useState(false);
-  const [codexStatus, setCodexStatus] = useState<CodexCliStatus | null>(null);
-  const [codexChecking, setCodexChecking] = useState(false);
+  const [cloudModel, setCloudModel] = useState(savedAi.cloudModel ?? "");
+  const [cloudModels, setCloudModels] = useState<CloudAiModel[] | null>(null);
+  const [cloudModelsLoading, setCloudModelsLoading] = useState(false);
+  const [cloudModelsError, setCloudModelsError] = useState<string | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<CloudAiStatus | null>(null);
+  const [cloudChecking, setCloudChecking] = useState(false);
+  const [chatgptSigningIn, setChatgptSigningIn] = useState(false);
+  const [chatgptAuthError, setChatgptAuthError] = useState<string | null>(null);
   const llmDefaultBaseUrl =
     llmProvider === "custom" ? null : (LLM_PRESETS[llmProvider] ?? null);
   const [saving, setSaving] = useState(false);
@@ -209,35 +173,29 @@ export function SettingsDialog({
   const llmRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
-  const codexAvailable = Boolean(
-    codexStatus?.installed && codexStatus.authenticated,
-  );
-  const codexNeedsSignIn = Boolean(
-    codexStatus?.installed &&
-    !codexStatus.authenticated &&
-    codexStatus.error?.toLowerCase().includes("not signed in"),
-  );
+  const cloudAvailable = Boolean(cloudStatus?.authenticated);
+  const cloudAccountError = chatgptAuthError || cloudStatus?.error;
   const defaultEngine: AiEngine | null =
-    preferredEngine === "codex" && codexStatus === null
+    preferredEngine === CLOUD_ENGINE_ID && cloudStatus === null
       ? null
       : preferredEngine === "local" && localAvailable
         ? "local"
-        : preferredEngine === "codex" && codexAvailable
-          ? "codex"
+        : preferredEngine === CLOUD_ENGINE_ID && cloudAvailable
+          ? CLOUD_ENGINE_ID
           : localAvailable
             ? "local"
-            : codexAvailable
-              ? "codex"
+            : cloudAvailable
+              ? CLOUD_ENGINE_ID
               : null;
-  const selectedCodexModel = codexModels?.find(
-    (candidate) => candidate.model === codexModel,
+  const selectedCloudModel = cloudModels?.find(
+    (candidate) => candidate.model === cloudModel,
   );
-  const codexReasoningOptions = selectedCodexModel?.supportedReasoningEfforts
+  const cloudReasoningOptions = selectedCloudModel?.supportedReasoningEfforts
     .length
-    ? CODEX_REASONING_OPTIONS.filter((reasoning) =>
-        selectedCodexModel.supportedReasoningEfforts.includes(reasoning),
+    ? CLOUD_REASONING_OPTIONS.filter((reasoning) =>
+        selectedCloudModel.supportedReasoningEfforts.includes(reasoning),
       )
-    : CODEX_REASONING_OPTIONS;
+    : CLOUD_REASONING_OPTIONS;
 
   useEffect(() => {
     if (defaultEngine) setEnginePanel(defaultEngine);
@@ -245,21 +203,21 @@ export function SettingsDialog({
 
   useEffect(() => {
     if (
-      !selectedCodexModel ||
-      selectedCodexModel.supportedReasoningEfforts.length === 0 ||
-      selectedCodexModel.supportedReasoningEfforts.includes(codexReasoning)
+      !selectedCloudModel ||
+      selectedCloudModel.supportedReasoningEfforts.length === 0 ||
+      selectedCloudModel.supportedReasoningEfforts.includes(cloudReasoning)
     ) {
       return;
     }
-    setCodexReasoning(
-      selectedCodexModel.defaultReasoningEffort &&
-        selectedCodexModel.supportedReasoningEfforts.includes(
-          selectedCodexModel.defaultReasoningEffort,
+    setCloudReasoning(
+      selectedCloudModel.defaultReasoningEffort &&
+        selectedCloudModel.supportedReasoningEfforts.includes(
+          selectedCloudModel.defaultReasoningEffort,
         )
-        ? selectedCodexModel.defaultReasoningEffort
-        : selectedCodexModel.supportedReasoningEfforts[0],
+        ? selectedCloudModel.defaultReasoningEffort
+        : selectedCloudModel.supportedReasoningEfforts[0],
     );
-  }, [codexReasoning, selectedCodexModel]);
+  }, [cloudReasoning, selectedCloudModel]);
 
   useEffect(
     () => () => {
@@ -270,23 +228,22 @@ export function SettingsDialog({
 
   useEffect(() => {
     let active = true;
-    setCodexChecking(true);
-    codexCliStatus()
+    setCloudChecking(true);
+    cloudAiStatus()
       .then(async (status) => {
         if (!active) return;
-        setCodexStatus(status);
-        await loadCodexDetails(status, () => active);
+        setCloudStatus(status);
+        await loadCloudDetails(status, () => active);
       })
       .catch((cause) => {
         if (!active) return;
-        setCodexStatus({
-          installed: false,
+        setCloudStatus({
           authenticated: false,
           error: String(cause),
         });
       })
       .finally(() => {
-        if (active) setCodexChecking(false);
+        if (active) setCloudChecking(false);
       });
     return () => {
       active = false;
@@ -299,6 +256,41 @@ export function SettingsDialog({
     escapeDisabled: saving || folderPicking !== null,
     initialFocusSelector: '[role="tab"][aria-selected="true"]',
   });
+
+  useEffect(() => {
+    if (!chatgptSigningIn) return;
+    let active = true;
+    let checking = false;
+    const deadline = Date.now() + 10 * 60_000;
+    const timer = window.setInterval(() => {
+      if (Date.now() > deadline) {
+        setChatgptSigningIn(false);
+        setChatgptAuthError("Sign-in expired. Try again.");
+        return;
+      }
+      if (checking) return;
+      checking = true;
+      void cloudAiStatus()
+        .then(async (status) => {
+          if (!active) return;
+          setCloudStatus(status);
+          if (!status.signInPending) {
+            if (status.error) setChatgptAuthError(status.error);
+            if (status.authenticated)
+              await loadCloudDetails(status, () => active);
+            if (active) setChatgptSigningIn(false);
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          checking = false;
+        });
+    }, 2000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, [chatgptSigningIn]);
 
   useEffect(() => {
     if (!stardewPath) {
@@ -442,25 +434,21 @@ export function SettingsDialog({
     setPreferredEngine(panel);
   }
 
-  async function loadCodexDetails(
-    status: CodexCliStatus,
+  async function loadCloudDetails(
+    status: CloudAiStatus,
     isActive: () => boolean = () => true,
   ) {
-    if (!status.installed || !status.authenticated) {
-      if (isActive()) {
-        setCodexRateLimits(null);
-        setCodexRateLimitsLoading(false);
-      }
+    if (!status.authenticated) {
       return;
     }
 
-    setCodexModelsLoading(true);
-    setCodexModelsError(null);
-    const modelsRequest = codexCliModels()
+    setCloudModelsLoading(true);
+    setCloudModelsError(null);
+    const modelsRequest = cloudAiModels()
       .then((models) => {
         if (!isActive()) return;
-        setCodexModels(models);
-        setCodexModel((current) =>
+        setCloudModels(models);
+        setCloudModel((current) =>
           models.some((model) => model.model === current)
             ? current
             : (models.find((model) => model.isDefault)?.model ??
@@ -469,50 +457,59 @@ export function SettingsDialog({
         );
       })
       .catch((cause) => {
-        if (isActive()) setCodexModelsError(String(cause));
+        if (isActive()) setCloudModelsError(String(cause));
       })
       .finally(() => {
-        if (isActive()) setCodexModelsLoading(false);
+        if (isActive()) setCloudModelsLoading(false);
       });
 
-    const canReadRateLimits = status.authentication !== "API key";
-    setCodexRateLimits(null);
-    setCodexRateLimitsLoading(canReadRateLimits);
-    const rateLimitsRequest = canReadRateLimits
-      ? codexCliRateLimits()
-          .then((limits) => {
-            if (isActive()) setCodexRateLimits(limits);
-          })
-          .catch(() => {
-            if (isActive()) setCodexRateLimits(null);
-          })
-          .finally(() => {
-            if (isActive()) setCodexRateLimitsLoading(false);
-          })
-      : Promise.resolve();
-
-    await Promise.all([modelsRequest, rateLimitsRequest]);
+    await modelsRequest;
   }
 
-  async function checkCodexStatus() {
-    setCodexChecking(true);
+  async function checkCloudStatus() {
+    setChatgptAuthError(null);
+    setCloudChecking(true);
     try {
-      const status = await codexCliStatus();
-      setCodexStatus(status);
-      await loadCodexDetails(status);
+      const status = await cloudAiStatus();
+      setCloudStatus(status);
+      await loadCloudDetails(status);
     } catch (cause) {
-      setCodexStatus({
-        installed: false,
+      setCloudStatus({
         authenticated: false,
         error: String(cause),
       });
     } finally {
-      setCodexChecking(false);
+      setCloudChecking(false);
     }
   }
 
-  function chooseCodexModel(model: string) {
-    setCodexModel(model);
+  async function signInWithChatgpt() {
+    setChatgptAuthError(null);
+    try {
+      await chatgptSignIn();
+      setChatgptSigningIn(true);
+    } catch (cause) {
+      setChatgptAuthError(String(cause));
+    }
+  }
+
+  async function signOutFromChatgpt() {
+    setChatgptAuthError(null);
+    setCloudChecking(true);
+    setChatgptSigningIn(false);
+    try {
+      await chatgptSignOut();
+    } catch (cause) {
+      setChatgptAuthError(String(cause));
+    } finally {
+      setCloudModels(null);
+      setCloudModel("");
+      await checkCloudStatus();
+    }
+  }
+
+  function chooseCloudModel(model: string) {
+    setCloudModel(model);
   }
 
   async function save() {
@@ -538,9 +535,9 @@ export function SettingsDialog({
         diagnosticLogging,
         ai: {
           defaultEngine: defaultEngine ?? "local",
-          codexModel: codexModel || null,
-          codexReasoning,
-          codexQualityReview,
+          cloudModel: cloudModel || null,
+          cloudReasoning,
+          cloudQualityReview,
         },
         llm:
           url && llmModel
@@ -789,20 +786,18 @@ export function SettingsDialog({
                 <button
                   className="translator-engine-card"
                   type="button"
-                  aria-pressed={enginePanel === "codex"}
-                  onClick={() => chooseEngine("codex")}
+                  aria-pressed={enginePanel === CLOUD_ENGINE_ID}
+                  onClick={() => chooseEngine(CLOUD_ENGINE_ID)}
                 >
-                  <SquareTerminal aria-hidden="true" />
+                  <Cloud aria-hidden="true" />
                   <span>
-                    <strong>Codex CLI</strong>
+                    <strong>{CLOUD_ENGINE_LABEL}</strong>
                     <span>
-                      {codexStatus
-                        ? codexStatus.installed && codexStatus.authenticated
-                          ? `Ready${codexStatus.version ? ` · ${codexStatus.version}` : ""}`
-                          : codexStatus.installed
-                            ? "Installed · sign-in required"
-                            : "Not installed"
-                        : "Check status"}
+                      {cloudStatus
+                        ? cloudStatus.authenticated
+                          ? "Ready"
+                          : "Sign in with ChatGPT"
+                        : "Checking…"}
                     </span>
                   </span>
                 </button>
@@ -964,96 +959,139 @@ export function SettingsDialog({
               <section
                 className={
                   "translator-engine-panel" +
-                  (enginePanel === "codex" ? " is-active" : "")
+                  (enginePanel === CLOUD_ENGINE_ID ? " is-active" : "")
                 }
-                aria-label="Codex CLI"
-                hidden={enginePanel !== "codex"}
+                aria-label={CLOUD_ENGINE_LABEL}
+                hidden={enginePanel !== CLOUD_ENGINE_ID}
               >
                 <div className="translator-settings-group">
                   <div className="translator-setting-line">
                     <span className="translator-setting-copy">
-                      <strong>Codex CLI status</strong>
+                      <strong>ChatGPT account</strong>
                       <span
-                        role={codexStatus?.error ? "alert" : "status"}
-                        aria-live={codexStatus?.error ? "assertive" : "polite"}
+                        role={cloudAccountError ? "alert" : "status"}
+                        aria-live={cloudAccountError ? "assertive" : "polite"}
                         aria-atomic="true"
                       >
-                        {codexChecking
-                          ? "Checking the installed Codex CLI…"
-                          : codexStatus
-                            ? codexStatus.error
-                              ? codexStatus.error
-                              : codexStatus.installed
-                                ? codexStatus.authenticated
-                                  ? `Ready${codexStatus.version ? ` · ${codexStatus.version}` : ""}`
-                                  : "Installed · sign in with Codex CLI first"
-                                : "Codex CLI is not installed or not discoverable"
-                            : "Not checked in this session"}
+                        {cloudAccountError ||
+                          (chatgptSigningIn
+                            ? "Complete sign-in in your browser. This screen updates automatically."
+                            : cloudChecking
+                              ? "Checking ChatGPT sign-in…"
+                              : cloudAvailable
+                                ? cloudStatus?.authentication ||
+                                  "Signed in with ChatGPT"
+                                : "Sign in to use your ChatGPT plan.")}
                       </span>
                     </span>
-                    <button
-                      className="translator-button translator-button-quiet"
-                      type="button"
-                      onClick={() => void checkCodexStatus()}
-                      disabled={codexChecking}
-                    >
-                      {codexChecking ? "Checking…" : "Check status"}
-                    </button>
+                    <div className="translator-setting-actions">
+                      {cloudStatus?.error && (
+                        <button
+                          className="translator-button translator-button-quiet"
+                          type="button"
+                          onClick={() => void checkCloudStatus()}
+                          disabled={cloudChecking || chatgptSigningIn}
+                        >
+                          Retry connection
+                        </button>
+                      )}
+                      {cloudAvailable && (
+                        <button
+                          type="button"
+                          className="translator-button translator-button-quiet"
+                          onClick={() =>
+                            void openUrl("https://chatgpt.com/settings/usage")
+                          }
+                        >
+                          Manage usage
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="translator-button translator-button-quiet"
+                        disabled={cloudChecking || chatgptSigningIn}
+                        onClick={() =>
+                          void (cloudAvailable
+                            ? signOutFromChatgpt()
+                            : signInWithChatgpt())
+                        }
+                      >
+                        {cloudAvailable
+                          ? "Sign out"
+                          : chatgptSigningIn
+                            ? "Waiting for browser…"
+                            : "Sign in with ChatGPT"}
+                      </button>
+                    </div>
                   </div>
-                  <label className="translator-setting-line">
+                  <div className="translator-setting-line">
                     <span className="translator-setting-copy">
                       <strong>Model</strong>
                       <span>
-                        {codexModelsLoading
-                          ? "Loading models from Codex CLI…"
-                          : codexModels?.length
-                            ? "Reported by the installed Codex CLI"
-                            : codexModelsError
-                              ? codexModel
-                                ? "Model list unavailable · keeping the saved selection"
-                                : "Model list unavailable · using the CLI default"
-                              : "Uses the CLI default when no model is selected"}
+                        {cloudModelsLoading
+                          ? "Loading models…"
+                          : cloudModelsError
+                            ? cloudModel
+                              ? "Model list unavailable · keeping the saved selection"
+                              : "Model list unavailable · retry loading"
+                            : cloudAvailable && cloudModels?.length === 0
+                              ? "No models available"
+                              : !cloudAvailable
+                                ? "Sign in to load your models"
+                                : null}
                       </span>
                     </span>
-                    <select
-                      className="translator-select"
-                      value={codexModel}
-                      onChange={(event) => chooseCodexModel(event.target.value)}
-                      aria-label="Codex model"
-                      disabled={codexModelsLoading || !codexModels?.length}
-                    >
-                      {!codexModels?.length && (
-                        <option value={codexModel}>
-                          {codexModel
-                            ? `${codexModel} · saved`
-                            : "Codex CLI default"}
-                        </option>
-                      )}
-                      {codexModels?.map((model) => (
-                        <option key={model.model} value={model.model}>
-                          {model.displayName === model.model
-                            ? model.displayName
-                            : `${model.displayName} · ${model.model}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    <div className="translator-setting-actions">
+                      {cloudAvailable &&
+                        (cloudModelsError || cloudModels?.length === 0) && (
+                          <button
+                            type="button"
+                            className="translator-button translator-button-quiet"
+                            disabled={cloudChecking || cloudModelsLoading}
+                            onClick={() => void checkCloudStatus()}
+                          >
+                            Retry models
+                          </button>
+                        )}
+                      <select
+                        className="translator-select"
+                        value={cloudModel}
+                        onChange={(event) =>
+                          chooseCloudModel(event.target.value)
+                        }
+                        aria-label={"ChatGPT model"}
+                        disabled={cloudModelsLoading || !cloudModels?.length}
+                      >
+                        {!cloudModels?.length && (
+                          <option value={cloudModel}>
+                            {cloudModel
+                              ? `${cloudModel} · saved`
+                              : "Choose a ChatGPT model"}
+                          </option>
+                        )}
+                        {cloudModels?.map((model) => (
+                          <option key={model.model} value={model.model}>
+                            {model.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   <label className="translator-setting-line">
                     <span className="translator-setting-copy">
                       <strong>Reasoning</strong>
-                      <span>Applied to translation runs</span>
                     </span>
                     <select
                       className="translator-select"
-                      value={codexReasoning}
+                      value={cloudReasoning}
                       onChange={(event) =>
-                        setCodexReasoning(
+                        setCloudReasoning(
                           event.target.value as "low" | "medium" | "high",
                         )
                       }
-                      aria-label="Codex reasoning"
+                      aria-label={"ChatGPT reasoning"}
                     >
-                      {codexReasoningOptions.map((reasoning) => (
+                      {cloudReasoningOptions.map((reasoning) => (
                         <option key={reasoning} value={reasoning}>
                           {reasoning[0].toUpperCase() + reasoning.slice(1)}
                         </option>
@@ -1064,68 +1102,26 @@ export function SettingsDialog({
                     <span className="translator-setting-copy">
                       <strong>AI quality review &amp; repairs</strong>
                       <span>
-                        Reviews meaning, natural language, terminology, grammar,
-                        register, speaker voice, and dialogue continuity, then
-                        applies focused terminology and protected-token repairs
-                        when needed.
+                        Checks wording, terminology and protected tokens. Uses
+                        additional ChatGPT requests.
                       </span>
                     </span>
                     <label className="translator-switch">
                       <input
                         type="checkbox"
                         aria-label="AI quality review and repairs"
-                        checked={codexQualityReview}
+                        checked={cloudQualityReview}
                         onChange={(event) =>
-                          setCodexQualityReview(event.target.checked)
+                          setCloudQualityReview(event.target.checked)
                         }
                       />
                       <span aria-hidden="true" />
                     </label>
                   </div>
-                  <div className="translator-setting-line">
-                    <span className="translator-setting-copy">
-                      <strong>Authentication</strong>
-                      <span>
-                        {codexStatus?.authenticated
-                          ? codexStatus.authentication ||
-                            "Authenticated by Codex CLI"
-                          : "Uses the CLI's own sign-in; this app never reads authentication files"}
-                      </span>
-                    </span>
-                    <span
-                      className={
-                        "translator-state " +
-                        (codexStatus?.installed && codexStatus.authenticated
-                          ? "is-ready"
-                          : "is-change")
-                      }
-                    >
-                      {codexStatus?.installed && codexStatus.authenticated
-                        ? "Ready"
-                        : "Unavailable"}
-                    </span>
-                  </div>
-                  {codexAvailable && (
-                    <div className="translator-setting-line">
-                      <span className="translator-setting-copy">
-                        <strong>Usage remaining</strong>
-                        <span aria-live="polite">
-                          {codexRateLimitsLoading
-                            ? "Reading ChatGPT limits from Codex CLI…"
-                            : codexRateLimits
-                              ? formatCodexRateLimits(codexRateLimits) ||
-                                "Not reported by this Codex CLI"
-                              : codexStatus?.authentication === "API key"
-                                ? "Not reported for API-key billing"
-                                : "Not reported by this Codex CLI"}
-                        </span>
-                      </span>
-                    </div>
-                  )}
                 </div>
-                {!codexQualityReview && (
+                {!cloudQualityReview && (
                   <div
-                    className="translator-flow-callout translator-codex-quality-warning is-warning"
+                    className="translator-flow-callout translator-cloud-quality-warning is-warning"
                     role="note"
                     aria-label="First draft quality warning"
                   >
@@ -1139,77 +1135,7 @@ export function SettingsDialog({
                     </p>
                   </div>
                 )}
-                {!codexChecking && codexStatus && !codexAvailable && (
-                  <div
-                    className="translator-flow-callout translator-codex-setup"
-                    role="note"
-                    aria-label="Codex CLI setup guide"
-                  >
-                    <p>
-                      <strong>
-                        {codexNeedsSignIn
-                          ? "Finish Codex CLI setup"
-                          : codexStatus.installed
-                            ? "Check Codex CLI setup"
-                            : "Set up Codex CLI"}
-                      </strong>
-                    </p>
-                    <ol>
-                      {!codexNeedsSignIn && (
-                        <li>
-                          {codexStatus.installed ? (
-                            <>
-                              Run <code>codex</code> in PowerShell and confirm
-                              it responds. Update Codex CLI using the official
-                              setup guide if the installed version is
-                              incompatible.
-                            </>
-                          ) : (
-                            <>
-                              Install or update Codex CLI for Windows using the
-                              official setup guide, then make sure{" "}
-                              <code>codex</code> runs in PowerShell.
-                            </>
-                          )}
-                        </li>
-                      )}
-                      <li>
-                        {codexNeedsSignIn ? "Run" : "If prompted, run"}{" "}
-                        <code>codex</code> and choose
-                        <strong> Sign in with ChatGPT</strong> for subscription
-                        access, or use another sign-in method supported by Codex
-                        CLI.
-                      </li>
-                      <li>
-                        {codexStatus.installed
-                          ? "Return here and select Check status."
-                          : "Restart this app if it was open during installation, then return here and select Check status."}
-                      </li>
-                    </ol>
-                    <p>
-                      ChatGPT sign-in uses the account&apos;s current plan and
-                      its limits. API-key sign-in uses separate usage-based
-                      billing.
-                    </p>
-                    <button
-                      className="translator-button translator-button-quiet"
-                      type="button"
-                      onClick={() => void openUrl(CODEX_SETUP_GUIDE_URL)}
-                    >
-                      Open Codex setup guide
-                    </button>
-                  </div>
-                )}
-                <p className="translator-kicker">
-                  Codex CLI uses its existing CLI sign-in, account limits, and
-                  the selected model. Runs are ephemeral and read-only. The app
-                  does not inspect or persist CLI authentication data.
-                </p>
               </section>
-              <p className="translator-kicker">
-                External LLM batch stays separate because it is a manual file
-                export/import workflow.
-              </p>
             </section>
 
             <GlossarySettings

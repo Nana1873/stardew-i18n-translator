@@ -14,9 +14,9 @@ import type {
   AiRunProgress,
   AiRunRecovery,
   AiRunResult,
-  CodexActivityStage,
+  ProviderActivityStage,
 } from "../tauri/commands";
-import { listenAiRunProgress } from "../tauri/commands";
+import { listenAiRunProgress, CLOUD_ENGINE_LABEL } from "../tauri/commands";
 
 export interface LiveAiEngineOption {
   id: AiEngine;
@@ -71,8 +71,8 @@ const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   split: "Splitting affected batch",
 };
 
-const CODEX_ACTIVITY_LABELS: Record<CodexActivityStage, string> = {
-  starting: "Starting process",
+const CLOUD_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
+  starting: "Starting request",
   working: "Working",
   reasoning: "Reasoning",
   writingResponse: "Writing response",
@@ -130,9 +130,9 @@ export function BatchTranslateDialog({
 }: BatchTranslateDialogProps) {
   const [done, setDone] = useState(0);
   const [liveProgress, setLiveProgress] = useState<AiRunProgress | null>(null);
-  const [lastCodexActivity, setLastCodexActivity] = useState<{
+  const [lastCloudActivity, setLastCloudActivity] = useState<{
     sequence: number;
-    stage: CodexActivityStage;
+    stage: ProviderActivityStage;
     receivedAt: number;
   } | null>(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
@@ -218,10 +218,10 @@ export function BatchTranslateDialog({
           recordCompletionCheckpoint(event.completed, event.total);
           setDone(event.completed);
           setLiveProgress(event);
-          const stage = event.codexStage;
-          const sequence = event.codexActivitySequence;
+          const stage = event.providerStage;
+          const sequence = event.providerActivitySequence;
           if (stage && sequence !== undefined) {
-            setLastCodexActivity((current) =>
+            setLastCloudActivity((current) =>
               current?.sequence === sequence
                 ? current
                 : {
@@ -293,6 +293,10 @@ export function BatchTranslateDialog({
   }, []);
 
   const total = liveProgress?.total ?? items.length;
+  const translated = Math.min(
+    total,
+    Math.max(done, liveProgress?.translated ?? done),
+  );
   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
   const indeterminate = !liveProgress;
   const phaseLabel = cancelRequested
@@ -347,10 +351,10 @@ export function BatchTranslateDialog({
           : []),
       ].join(" · ")
     : null;
-  const activityAge = lastCodexActivity
+  const activityAge = lastCloudActivity
     ? Math.max(
         0,
-        Math.floor((Date.now() - lastCodexActivity.receivedAt) / 1_000),
+        Math.floor((Date.now() - lastCloudActivity.receivedAt) / 1_000),
       )
     : null;
 
@@ -380,12 +384,23 @@ export function BatchTranslateDialog({
         </div>
 
         <div className="translator-flow-body">
+          <div className="translator-ai-drafts">
+            <span>Translated</span>
+            <output aria-label="Translated strings">
+              {translated} / {total}
+            </output>
+          </div>
           <div className="translator-ai-count">
             <span>Saved to Review</span>
             <strong>
               {done} / {total}
             </strong>
           </div>
+          {translated > done && (
+            <p className="translator-kicker">
+              Quality checks run before drafts are saved to Review.
+            </p>
+          )}
           <div
             className="translator-ai-activity"
             role="status"
@@ -396,10 +411,10 @@ export function BatchTranslateDialog({
           </div>
           <div className="translator-ai-meta">
             <span>{metaParts.join(" · ")}</span>
-            {lastCodexActivity && activityAge !== null && (
+            {lastCloudActivity && activityAge !== null && (
               <span>
-                Codex activity ·{" "}
-                {CODEX_ACTIVITY_LABELS[lastCodexActivity.stage]} ·{" "}
+                {"ChatGPT"} activity ·{" "}
+                {CLOUD_ACTIVITY_LABELS[lastCloudActivity.stage]} ·{" "}
                 {formatActivityAge(activityAge)}
               </span>
             )}
@@ -409,7 +424,11 @@ export function BatchTranslateDialog({
                 {formatEstimatedRemaining(estimatedRemainingSeconds)}
               </span>
             )}
-            {usageText && <span>Codex reported · {usageText}</span>}
+            {usageText && (
+              <span>
+                {CLOUD_ENGINE_LABEL} reported · {usageText}
+              </span>
+            )}
           </div>
           <div className="translator-progress-row">
             <span
@@ -423,7 +442,7 @@ export function BatchTranslateDialog({
                   ? `Cancelling the active AI batch; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
                   : indeterminate
                     ? `${total} selected ${total === 1 ? "string is" : "strings are"} being prepared`
-                    : `${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
+                    : `${translated} of ${total} strings translated; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
               }
               data-indeterminate={indeterminate ? "true" : undefined}
               style={

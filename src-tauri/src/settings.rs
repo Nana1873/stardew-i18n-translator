@@ -38,7 +38,7 @@ pub struct AppSettings {
     #[serde(default)]
     pub llm: Option<LlmSettings>,
     /// Live-engine preferences. Credentials and readiness are deliberately not
-    /// represented here: Codex owns its own login.
+    /// represented here; the app stores its OAuth session separately.
     #[serde(default, skip_serializing_if = "AiSettings::is_default")]
     pub ai: AiSettings,
     /// User overrides for the frontend shortcut catalog.
@@ -84,15 +84,15 @@ pub struct LlmSettings {
 pub struct AiSettings {
     #[serde(default = "default_ai_engine")]
     pub default_engine: String,
-    /// Optional Codex CLI model id. `None` keeps the CLI's own default.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub codex_model: Option<String>,
-    #[serde(default = "default_ai_reasoning")]
-    pub codex_reasoning: String,
-    /// Run the additional Codex language review, terminology repair, and
+    /// Exact model from the signed-in ChatGPT account.
+    #[serde(default, alias = "codexModel", skip_serializing_if = "Option::is_none")]
+    pub cloud_model: Option<String>,
+    #[serde(default = "default_ai_reasoning", alias = "codexReasoning")]
+    pub cloud_reasoning: String,
+    /// Run the additional ChatGPT language review, terminology repair, and
     /// protected-token repair passes after the initial translation draft.
-    #[serde(default = "default_codex_quality_review")]
-    pub codex_quality_review: bool,
+    #[serde(default = "default_cloud_quality_review", alias = "codexQualityReview")]
+    pub cloud_quality_review: bool,
 }
 
 impl AiSettings {
@@ -105,9 +105,9 @@ impl Default for AiSettings {
     fn default() -> Self {
         Self {
             default_engine: default_ai_engine(),
-            codex_model: None,
-            codex_reasoning: default_ai_reasoning(),
-            codex_quality_review: default_codex_quality_review(),
+            cloud_model: None,
+            cloud_reasoning: default_ai_reasoning(),
+            cloud_quality_review: default_cloud_quality_review(),
         }
     }
 }
@@ -199,7 +199,7 @@ fn default_ai_reasoning() -> String {
     "medium".to_string()
 }
 
-fn default_codex_quality_review() -> bool {
+fn default_cloud_quality_review() -> bool {
     true
 }
 
@@ -366,14 +366,18 @@ fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSetting
 
 fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
     settings.default_engine = settings.default_engine.trim().to_ascii_lowercase();
-    if !matches!(settings.default_engine.as_str(), "local" | "codex") {
+    if settings.default_engine == "codex" {
+        settings.default_engine = "chatgpt".to_string();
+    }
+    let cloud_engine = "chatgpt";
+    if settings.default_engine != "local" && settings.default_engine != cloud_engine {
         if strict {
             return Err("The default AI engine is invalid.".to_string());
         }
         settings.default_engine = default_ai_engine();
     }
 
-    settings.codex_model = match settings.codex_model.take() {
+    settings.cloud_model = match settings.cloud_model.take() {
         Some(model) => {
             let model = model.trim();
             let invalid = model.starts_with('-')
@@ -381,7 +385,7 @@ fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
                 || model.chars().any(char::is_control);
             if invalid {
                 if strict {
-                    return Err("The Codex CLI model is invalid.".to_string());
+                    return Err("The ChatGPT model is invalid.".to_string());
                 }
                 None
             } else if model.is_empty() {
@@ -393,10 +397,10 @@ fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
         None => None,
     };
 
-    match crate::ai::normalize_reasoning(&settings.codex_reasoning) {
-        Ok(normalized) => settings.codex_reasoning = normalized,
+    match crate::ai::normalize_reasoning(&settings.cloud_reasoning) {
+        Ok(normalized) => settings.cloud_reasoning = normalized,
         Err(error) if strict => return Err(error),
-        Err(_) => settings.codex_reasoning = default_ai_reasoning(),
+        Err(_) => settings.cloud_reasoning = default_ai_reasoning(),
     }
     Ok(())
 }
@@ -478,10 +482,10 @@ mod tests {
             target_lang: Some("de".to_string()),
             llm: None,
             ai: AiSettings {
-                default_engine: "codex".to_string(),
-                codex_model: Some("gpt-5.6-sol".to_string()),
-                codex_reasoning: "high".to_string(),
-                codex_quality_review: false,
+                default_engine: "chatgpt".to_string(),
+                cloud_model: Some("gpt-5.6-sol".to_string()),
+                cloud_reasoning: "high".to_string(),
+                cloud_quality_review: false,
             },
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
             last_opened: BTreeMap::from([(
@@ -517,9 +521,9 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap()).unwrap();
         assert_eq!(json["workspace"]["columnWidths"]["mod"], 140);
         assert!(json["workspace"]["columnWidths"].get("modColumn").is_none());
-        assert_eq!(json["ai"]["defaultEngine"], "codex");
-        assert_eq!(json["ai"]["codexModel"], "gpt-5.6-sol");
-        assert_eq!(json["ai"]["codexQualityReview"], false);
+        assert_eq!(json["ai"]["defaultEngine"], settings.ai.default_engine);
+        assert_eq!(json["ai"]["cloudModel"], "gpt-5.6-sol");
+        assert_eq!(json["ai"]["cloudQualityReview"], false);
         assert!(json["ai"].get("apiKey").is_none());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -534,32 +538,32 @@ mod tests {
 
         assert_eq!(loaded.ai, AiSettings::default());
         assert_eq!(loaded.ai.default_engine, "local");
-        assert_eq!(loaded.ai.codex_model, None);
-        assert_eq!(loaded.ai.codex_reasoning, "medium");
-        assert!(loaded.ai.codex_quality_review);
+        assert_eq!(loaded.ai.cloud_model, None);
+        assert_eq!(loaded.ai.cloud_reasoning, "medium");
+        assert!(loaded.ai.cloud_quality_review);
         std::fs::remove_dir_all(dir).ok();
     }
 
     #[test]
-    fn codex_model_is_retained_while_removed_openai_preferences_are_ignored() {
+    fn cloud_model_is_retained_while_removed_openai_preferences_are_ignored() {
         let dir = crate::test_support::temp_dir("settings-removed-ai-fields");
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             settings_path(&dir),
-            r#"{"sourceLang":"default","ai":{"defaultEngine":"openai","codexModel":"legacy-codex-model","codexReasoning":"low","openaiModel":"legacy-openai-model","openaiReasoning":"high","apiKey":"legacy-test-value"}}"#,
+            r#"{"sourceLang":"default","ai":{"defaultEngine":"openai","cloudModel":"legacy-codex-model","cloudReasoning":"low","openaiModel":"legacy-openai-model","openaiReasoning":"high","apiKey":"legacy-test-value"}}"#,
         )
         .unwrap();
 
         let loaded = load_checked(&dir).unwrap();
         assert_eq!(loaded.ai.default_engine, "local");
-        assert_eq!(loaded.ai.codex_model.as_deref(), Some("legacy-codex-model"));
-        assert_eq!(loaded.ai.codex_reasoning, "low");
-        assert!(loaded.ai.codex_quality_review);
+        assert_eq!(loaded.ai.cloud_model.as_deref(), Some("legacy-codex-model"));
+        assert_eq!(loaded.ai.cloud_reasoning, "low");
+        assert!(loaded.ai.cloud_quality_review);
 
         let serialized = serde_json::to_value(loaded).unwrap();
         let ai = serialized.get("ai").and_then(serde_json::Value::as_object);
         assert!(ai.is_none_or(|ai| {
-            ai.get("codexModel") == Some(&serde_json::json!("legacy-codex-model"))
+            ai.get("cloudModel") == Some(&serde_json::json!("legacy-codex-model"))
                 && !ai.contains_key("openaiModel")
                 && !ai.contains_key("openaiReasoning")
                 && !ai.contains_key("apiKey")
@@ -587,7 +591,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(
             settings_path(&dir),
-            r#"{"sourceLang":"default","ai":{"defaultEngine":"future","codexReasoning":"max"}}"#,
+            r#"{"sourceLang":"default","ai":{"defaultEngine":"future","cloudReasoning":"max"}}"#,
         )
         .unwrap();
         assert_eq!(load_checked(&dir).unwrap().ai, AiSettings::default());
@@ -601,6 +605,18 @@ mod tests {
         };
         assert!(save(&dir, &invalid).is_err());
         std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn legacy_cli_preferences_migrate_without_credentials_or_a_cli_engine() {
+        let saved = parse_and_normalize(r#"{"ai":{"defaultEngine":"codex","codexModel":"synthetic-model","codexReasoning":"high","codexQualityReview":false}}"#, false).unwrap();
+        assert_eq!(saved.ai.default_engine, "chatgpt");
+        assert_eq!(saved.ai.cloud_model.as_deref(), Some("synthetic-model"));
+        assert_eq!(saved.ai.cloud_reasoning, "high");
+        assert!(!saved.ai.cloud_quality_review);
+        let json = serde_json::to_value(&saved).unwrap();
+        assert_eq!(json["ai"]["cloudModel"], "synthetic-model");
+        assert!(json["ai"].get("codexModel").is_none());
     }
 
     #[test]

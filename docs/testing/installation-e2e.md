@@ -9,7 +9,7 @@ corepack pnpm test:desktop:install -ReleaseZip "path/to/Stardew-i18n-Translator_
 Without `-ReleaseZip`, the suite builds and packages the current checkout first.
 The command runs the ordinary desktop suite and the installation cases below;
 it needs no AI service or login. `test:desktop:release` includes these cases too,
-alongside its real Local AI/Codex CLI, load and layout checks.
+alongside its real Local AI/ChatGPT, load and layout checks.
 
 The previous release is downloaded from the exact URL and checked against the
 SHA-256 in [upgrade-baseline.json](../../scripts/desktop-e2e/upgrade-baseline.json).
@@ -23,7 +23,7 @@ historical version or downgrade.
 1. Extract and version/hash-check the actual release ZIP. Launch its EXE directly,
    with only Windows directories in `PATH`, no WebDriver/debug arguments, empty
    portable data and an isolated WebView profile. Wait for accessible first-time
-   setup and close normally. Rust, Node and Codex are not on the app's search path.
+   setup and close normally. Rust and Node are not on the app's search path.
 2. Exercise the real native missing-WebView2 message and its **No** button. Verify
    the guidance includes the official download URL, creates no portable state,
    and exits normally. This uses Microsoft's

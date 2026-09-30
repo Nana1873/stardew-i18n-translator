@@ -43,7 +43,7 @@ beforeEach(() => {
         });
       case "llm_models":
         return Promise.resolve(["llama3.1:8b", "qwen2.5"]);
-      case "codex_cli_status":
+      case "cloud_ai_status":
         return Promise.resolve({ installed: false, authenticated: false });
       default:
         return Promise.resolve(null);
@@ -1075,17 +1075,17 @@ describe("SettingsDialog", () => {
     ).not.toBeNull();
   });
 
-  it("keeps an available saved Codex model and exposes the CLI catalog", async () => {
+  it("keeps an available saved ChatGPT model and exposes the account catalog", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({
           installed: true,
           authenticated: true,
           version: "1.2.3",
-          authentication: "ChatGPT account",
+          authentication: "Connected test account",
         });
-      if (cmd === "codex_cli_models")
+      if (cmd === "cloud_ai_models")
         return Promise.resolve([
           {
             model: "gpt-5.6-sol",
@@ -1102,7 +1102,7 @@ describe("SettingsDialog", () => {
             supportedReasoningEfforts: ["low", "medium", "high"],
           },
         ]);
-      if (cmd === "codex_cli_rate_limits")
+      if (cmd === "cloud_ai_rate_limits")
         return Promise.resolve({
           primary: {
             usedPercent: 25,
@@ -1128,10 +1128,10 @@ describe("SettingsDialog", () => {
             model: "qwen2.5",
           },
           ai: {
-            defaultEngine: "codex",
-            codexModel: "gpt-5.5",
-            codexReasoning: "high",
-            codexQualityReview: true,
+            defaultEngine: "chatgpt",
+            cloudModel: "gpt-5.5",
+            cloudReasoning: "high",
+            cloudQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1141,72 +1141,57 @@ describe("SettingsDialog", () => {
       />,
     );
 
-    const codex = screen.getByText("Codex CLI").closest("button")!;
-    expect(codex).not.toHaveAttribute("aria-disabled");
+    const cloud = screen.getByText("ChatGPT").closest("button")!;
+    expect(cloud).not.toHaveAttribute("aria-disabled");
     await waitFor(() => {
-      expect(codex).toHaveTextContent("Ready · 1.2.3");
-      expect(codex).toHaveAttribute("aria-pressed", "true");
+      expect(cloud).toHaveTextContent("Ready");
+      expect(cloud).toHaveAttribute("aria-pressed", "true");
     });
     expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
       "aria-pressed",
       "false",
     );
-    expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
-    expect(screen.getByLabelText("Codex model")).toHaveValue("gpt-5.5");
-    expect(screen.getByLabelText("Codex model")).toHaveTextContent(
+    expect(screen.getByRole("region", { name: "ChatGPT" })).toBeVisible();
+    expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.5");
+    expect(screen.getByLabelText("ChatGPT model")).toHaveTextContent(
       "GPT-5.6-Sol",
     );
-    expect(screen.getByLabelText("Codex reasoning")).toHaveValue("high");
-    expect(screen.getByText("ChatGPT account")).toBeVisible();
-    expect(screen.getByText("Usage remaining")).toBeVisible();
-    expect(screen.getByText(/5 h: 75% remaining/)).toBeVisible();
-    expect(screen.getByText(/7 d: 57% remaining/)).toBeVisible();
-    expect(screen.getByText(/resets \d{1,2} Nov, \d{2}:\d{2}/)).toBeVisible();
+    expect(screen.getByLabelText("ChatGPT reasoning")).toHaveValue("high");
+    expect(screen.getByText("Connected test account")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Check status" }));
-    await waitFor(() =>
-      expect(
-        invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_status"),
-      ).toHaveLength(2),
-    );
-    await waitFor(() =>
-      expect(
-        invokeMock.mock.calls.filter(([cmd]) => cmd === "codex_cli_models"),
-      ).toHaveLength(2),
-    );
-    await waitFor(() =>
-      expect(
-        invokeMock.mock.calls.filter(
-          ([cmd]) => cmd === "codex_cli_rate_limits",
-        ),
-      ).toHaveLength(2),
-    );
+    expect(screen.queryByRole("button", { name: "Check status" })).toBeNull();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_status"),
+    ).toHaveLength(1);
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_models"),
+    ).toHaveLength(1);
 
-    fireEvent.change(screen.getByLabelText("Codex model"), {
+    fireEvent.change(screen.getByLabelText("ChatGPT model"), {
       target: { value: "gpt-5.6-sol" },
     });
-    expect(screen.getByLabelText("Codex model")).toHaveValue("gpt-5.6-sol");
+    expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: {
-          defaultEngine: "codex",
-          codexModel: "gpt-5.6-sol",
-          codexReasoning: "high",
-          codexQualityReview: true,
+          defaultEngine: "chatgpt",
+          cloudModel: "gpt-5.6-sol",
+          cloudReasoning: "high",
+          cloudQualityReview: true,
         },
       }),
     );
   });
 
-  it("defaults Codex quality review on and warns before saving first-draft mode", async () => {
+  it("defaults Cloud quality review on and warns before saving first-draft mode", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({ installed: true, authenticated: true });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      if (cmd === "codex_cli_rate_limits") return Promise.resolve(null);
+      if (cmd === "cloud_ai_models") return Promise.resolve([]);
+      if (cmd === "cloud_ai_rate_limits") return Promise.resolve(null);
       return Promise.resolve(null);
     });
     const onSave = vi.fn();
@@ -1215,8 +1200,8 @@ describe("SettingsDialog", () => {
         settings={{
           ...baseSettings,
           ai: {
-            defaultEngine: "codex",
-            codexReasoning: "medium",
+            defaultEngine: "chatgpt",
+            cloudReasoning: "medium",
           } as unknown as NonNullable<AppSettings["ai"]>,
         }}
         initialPage="ai"
@@ -1227,9 +1212,7 @@ describe("SettingsDialog", () => {
     );
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Check status" }),
-      ).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled(),
     );
 
     const qualityReview = screen.getByRole("checkbox", {
@@ -1237,9 +1220,9 @@ describe("SettingsDialog", () => {
     });
     expect(qualityReview).toBeChecked();
     expect(
-      screen.getByText(/Reviews meaning, natural language, terminology/),
+      screen.getByText(/Checks wording, terminology and protected tokens/),
     ).toHaveTextContent(
-      "Reviews meaning, natural language, terminology, grammar, register, speaker voice, and dialogue continuity, then applies focused terminology and protected-token repairs when needed.",
+      "Checks wording, terminology and protected tokens. Uses additional ChatGPT requests.",
     );
     expect(
       screen.queryByRole("note", { name: "First draft quality warning" }),
@@ -1262,16 +1245,16 @@ describe("SettingsDialog", () => {
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: {
-          defaultEngine: "codex",
-          codexModel: null,
-          codexReasoning: "medium",
-          codexQualityReview: false,
+          defaultEngine: "chatgpt",
+          cloudModel: null,
+          cloudReasoning: "medium",
+          cloudQualityReview: false,
         },
       }),
     );
   });
 
-  it("announces asynchronous Codex status updates and errors", async () => {
+  it("announces asynchronous Cloud status updates and errors", async () => {
     const pendingStatus = deferred<{
       installed: boolean;
       authenticated: boolean;
@@ -1279,7 +1262,7 @@ describe("SettingsDialog", () => {
     }>();
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status") return pendingStatus.promise;
+      if (cmd === "cloud_ai_status") return pendingStatus.promise;
       return Promise.resolve(null);
     });
 
@@ -1292,156 +1275,42 @@ describe("SettingsDialog", () => {
         onReRunSetup={() => {}}
       />,
     );
-    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
+    fireEvent.click(screen.getByText("ChatGPT").closest("button")!);
 
     const checking = screen.getByRole("status");
-    expect(checking).toHaveTextContent("Checking the installed Codex CLI…");
+    expect(checking).toHaveTextContent(/Checking ChatGPT sign-in/);
     expect(checking).toHaveAttribute("aria-live", "polite");
     expect(checking).toHaveAttribute("aria-atomic", "true");
 
     pendingStatus.resolve({
       installed: false,
       authenticated: false,
-      error: "Codex CLI status failed.",
+      error: "ChatGPT status failed.",
     });
 
     const error = await screen.findByRole("alert");
-    expect(error).toHaveTextContent("Codex CLI status failed.");
+    expect(error).toHaveTextContent("ChatGPT status failed.");
     expect(error).toHaveAttribute("aria-live", "assertive");
     expect(error).toHaveAttribute("aria-atomic", "true");
-  });
-
-  it("shows rate-limit loading until Codex CLI reports usage", async () => {
-    const pendingLimits = deferred<{
-      primary: {
-        usedPercent: number;
-        windowDurationMins: number;
-        resetsAt: number;
-      };
-    } | null>();
-
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
-        return Promise.resolve({
-          installed: true,
-          authenticated: true,
-          authentication: "ChatGPT account",
-        });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      if (cmd === "codex_cli_rate_limits") return pendingLimits.promise;
-      return Promise.resolve(null);
-    });
-
-    render(
-      <SettingsDialog
-        settings={{
-          ...baseSettings,
-          ai: {
-            defaultEngine: "codex",
-            codexReasoning: "medium",
-            codexQualityReview: true,
-          },
-        }}
-        initialPage="ai"
-        onSave={() => {}}
-        onClose={() => {}}
-        onReRunSetup={() => {}}
-      />,
+    invokeMock.mockImplementation(() =>
+      Promise.resolve({ authenticated: false }),
     );
-
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
     expect(
-      await screen.findByText("Reading ChatGPT limits from Codex CLI…"),
-    ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Checking…" })).toBeDisabled();
-
-    pendingLimits.resolve({
-      primary: {
-        usedPercent: 20,
-        windowDurationMins: 300,
-        resetsAt: 1_730_947_200,
-      },
-    });
-
-    expect(await screen.findByText(/5 h: 80% remaining/)).toBeVisible();
+      screen.getByRole("button", { name: "Sign in with ChatGPT" }),
+    ).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: "Check status" }),
-    ).not.toBeDisabled();
+      screen.queryByRole("button", { name: "Retry connection" }),
+    ).toBeNull();
   });
 
-  it("shows only the rate-limit details reported by Codex CLI", async () => {
+  it("keeps the account signed in and asks for model discovery to be retried", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
-        return Promise.resolve({
-          installed: true,
-          authenticated: true,
-          authentication: "ChatGPT",
-        });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      if (cmd === "codex_cli_rate_limits")
-        return Promise.resolve({ primary: { usedPercent: 12.4 } });
-      return Promise.resolve(null);
-    });
-
-    render(
-      <SettingsDialog
-        settings={baseSettings}
-        initialPage="ai"
-        onSave={() => {}}
-        onClose={() => {}}
-        onReRunSetup={() => {}}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
-
-    const usage = (await screen.findByText("Usage remaining")).closest(
-      ".translator-setting-line",
-    )!;
-    await waitFor(() => expect(usage).toHaveTextContent("88% remaining"));
-    expect(usage).not.toHaveTextContent("resets");
-    expect(usage).not.toHaveTextContent("7 d");
-  });
-
-  it("does not request ChatGPT limits for API-key billing", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
-        return Promise.resolve({
-          installed: true,
-          authenticated: true,
-          authentication: "API key",
-        });
-      if (cmd === "codex_cli_models") return Promise.resolve([]);
-      return Promise.resolve(null);
-    });
-
-    render(
-      <SettingsDialog
-        settings={baseSettings}
-        initialPage="ai"
-        onSave={() => {}}
-        onClose={() => {}}
-        onReRunSetup={() => {}}
-      />,
-    );
-
-    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
-
-    expect(await screen.findByText("Usage remaining")).toBeVisible();
-    expect(screen.getByText("Not reported for API-key billing")).toBeVisible();
-    expect(
-      invokeMock.mock.calls.some(([cmd]) => cmd === "codex_cli_rate_limits"),
-    ).toBe(false);
-  });
-
-  it("keeps Codex ready with the CLI default when its model list is unavailable", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({ installed: true, authenticated: true });
-      if (cmd === "codex_cli_models")
+      if (cmd === "cloud_ai_models")
         return Promise.reject(new Error("model list unavailable"));
       return Promise.resolve(null);
     });
@@ -1451,9 +1320,9 @@ describe("SettingsDialog", () => {
         settings={{
           ...baseSettings,
           ai: {
-            defaultEngine: "codex",
-            codexReasoning: "medium",
-            codexQualityReview: true,
+            defaultEngine: "chatgpt",
+            cloudReasoning: "medium",
+            cloudQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1464,35 +1333,52 @@ describe("SettingsDialog", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText("Codex model")).toBeDisabled(),
+      expect(screen.getByLabelText("ChatGPT model")).toBeDisabled(),
     );
-    expect(screen.getByLabelText("Codex model")).toHaveValue("");
-    expect(screen.getByText(/using the CLI default/i)).toBeVisible();
-    expect(screen.getByText("Codex CLI").closest("button")).toHaveTextContent(
+    expect(screen.getByLabelText("ChatGPT model")).toHaveValue("");
+    expect(screen.getByText(/retry loading/i)).toBeVisible();
+    expect(screen.getByText("ChatGPT").closest("button")).toHaveTextContent(
       "Ready",
     );
-    expect(screen.getByText("Usage remaining")).toBeVisible();
-    expect(screen.getByText("Not reported by this Codex CLI")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "cloud_ai_status")
+        return Promise.resolve({ authenticated: true });
+      if (cmd === "cloud_ai_models")
+        return Promise.resolve([
+          {
+            model: "recovered-model",
+            displayName: "Recovered model",
+            isDefault: true,
+            supportedReasoningEfforts: ["low", "medium", "high"],
+            defaultReasoningEffort: "medium",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry models" }));
+    await screen.findByRole("option", { name: "Recovered model" });
+    expect(screen.queryByRole("button", { name: "Retry models" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: {
-          defaultEngine: "codex",
-          codexModel: null,
-          codexReasoning: "medium",
-          codexQualityReview: true,
+          defaultEngine: "chatgpt",
+          cloudModel: "recovered-model",
+          cloudReasoning: "medium",
+          cloudQualityReview: true,
         },
       }),
     );
   });
 
-  it("automatically selects Codex when Local AI is not configured", async () => {
+  it("automatically selects Cloud when Local AI is not configured", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
+      if (cmd === "cloud_ai_status")
         return Promise.resolve({ installed: true, authenticated: true });
-      if (cmd === "codex_cli_models")
+      if (cmd === "cloud_ai_models")
         return Promise.resolve([
           {
             model: "gpt-5.6-terra",
@@ -1517,9 +1403,9 @@ describe("SettingsDialog", () => {
           ...baseSettings,
           ai: {
             defaultEngine: "local",
-            codexModel: "retired-model",
-            codexReasoning: "medium",
-            codexQualityReview: true,
+            cloudModel: "retired-model",
+            cloudReasoning: "medium",
+            cloudQualityReview: true,
           },
         }}
         initialPage="ai"
@@ -1530,12 +1416,12 @@ describe("SettingsDialog", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Codex CLI").closest("button")).toHaveAttribute(
+      expect(screen.getByText("ChatGPT").closest("button")).toHaveAttribute(
         "aria-pressed",
         "true",
       );
-      expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
-      expect(screen.getByLabelText("Codex model")).toHaveValue("gpt-5.6-sol");
+      expect(screen.getByRole("region", { name: "ChatGPT" })).toBeVisible();
+      expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
     });
     expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
       "aria-pressed",
@@ -1546,7 +1432,7 @@ describe("SettingsDialog", () => {
       "aria-pressed",
       "true",
     );
-    expect(screen.getByText("Codex CLI").closest("button")).toHaveAttribute(
+    expect(screen.getByText("ChatGPT").closest("button")).toHaveAttribute(
       "aria-pressed",
       "false",
     );
@@ -1570,14 +1456,16 @@ describe("SettingsDialog", () => {
     );
 
     const local = screen.getByText("Local AI").closest("button")!;
-    const codex = screen.getByText("Codex CLI").closest("button")!;
-    await waitFor(() => expect(codex).toHaveTextContent("Not installed"));
+    const cloud = screen.getByText("ChatGPT").closest("button")!;
+    await waitFor(() =>
+      expect(cloud).toHaveTextContent("Sign in with ChatGPT"),
+    );
     expect(local).toHaveAttribute("aria-pressed", "true");
-    expect(codex).toHaveAttribute("aria-pressed", "false");
+    expect(cloud).toHaveAttribute("aria-pressed", "false");
 
-    fireEvent.click(codex);
-    expect(screen.getByRole("region", { name: "Codex CLI" })).toBeVisible();
-    expect(codex).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(cloud);
+    expect(screen.getByRole("region", { name: "ChatGPT" })).toBeVisible();
+    expect(cloud).toHaveAttribute("aria-pressed", "true");
     expect(local).toHaveAttribute("aria-pressed", "false");
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -1585,116 +1473,13 @@ describe("SettingsDialog", () => {
       expect.objectContaining({
         ai: {
           defaultEngine: "local",
-          codexModel: null,
-          codexReasoning: "medium",
-          codexQualityReview: true,
+          cloudModel: null,
+          cloudReasoning: "medium",
+          cloudQualityReview: true,
         },
       }),
     );
   });
-
-  it("shows the official setup guide when Codex CLI is unavailable", async () => {
-    render(
-      <SettingsDialog
-        settings={baseSettings}
-        initialPage="ai"
-        onSave={() => {}}
-        onClose={() => {}}
-        onReRunSetup={() => {}}
-      />,
-    );
-    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
-
-    const guide = await screen.findByRole("note", {
-      name: "Codex CLI setup guide",
-    });
-    expect(guide).toHaveTextContent("Set up Codex CLI");
-    expect(guide).toHaveTextContent("Install or update Codex CLI for Windows");
-    expect(guide).toHaveTextContent("Sign in with ChatGPT");
-    expect(guide).toHaveTextContent(
-      "ChatGPT sign-in uses the account's current plan and its limits",
-    );
-    expect(guide).toHaveTextContent(
-      "API-key sign-in uses separate usage-based billing",
-    );
-    expect(guide).not.toHaveTextContent("A ChatGPT account is required");
-    expect(screen.queryByText("Usage remaining")).toBeNull();
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Open Codex setup guide" }),
-    );
-    expect(invokeMock).toHaveBeenCalledWith("open_url", {
-      url: "https://learn.chatgpt.com/docs/codex/cli",
-    });
-  });
-
-  it("shows only the sign-in steps when Codex CLI is installed", async () => {
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "glossary_status") return Promise.resolve(null);
-      if (cmd === "codex_cli_status")
-        return Promise.resolve({
-          installed: true,
-          authenticated: false,
-          error: "Codex CLI is not signed in. Run `codex login` first.",
-        });
-      return Promise.resolve(null);
-    });
-    render(
-      <SettingsDialog
-        settings={baseSettings}
-        initialPage="ai"
-        onSave={() => {}}
-        onClose={() => {}}
-        onReRunSetup={() => {}}
-      />,
-    );
-    fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
-
-    const guide = await screen.findByRole("note", {
-      name: "Codex CLI setup guide",
-    });
-    expect(guide).toHaveTextContent("Finish Codex CLI setup");
-    expect(guide).toHaveTextContent("Sign in with ChatGPT");
-    expect(guide).not.toHaveTextContent("Install or update Codex CLI");
-  });
-
-  it.each([
-    "This Codex CLI version does not support the isolated translation mode required by the app. Update Codex CLI.",
-    "Codex CLI did not answer the login-status check in time.",
-  ])(
-    "shows recovery guidance for an installed unavailable CLI: %s",
-    async (error) => {
-      invokeMock.mockImplementation((cmd: string) => {
-        if (cmd === "glossary_status") return Promise.resolve(null);
-        if (cmd === "codex_cli_status")
-          return Promise.resolve({
-            installed: true,
-            authenticated: false,
-            error,
-          });
-        return Promise.resolve(null);
-      });
-      render(
-        <SettingsDialog
-          settings={baseSettings}
-          initialPage="ai"
-          onSave={() => {}}
-          onClose={() => {}}
-          onReRunSetup={() => {}}
-        />,
-      );
-      fireEvent.click(screen.getByText("Codex CLI").closest("button")!);
-
-      const guide = await screen.findByRole("note", {
-        name: "Codex CLI setup guide",
-      });
-      expect(guide).toHaveTextContent("Check Codex CLI setup");
-      expect(guide).toHaveTextContent(
-        "Run codex in PowerShell and confirm it responds",
-      );
-      expect(guide).not.toHaveTextContent("Finish Codex CLI setup");
-    },
-  );
 
   it("includes the Ctrl+F string-search shortcut", () => {
     render(

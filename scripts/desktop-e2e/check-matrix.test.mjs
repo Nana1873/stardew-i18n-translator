@@ -17,11 +17,11 @@ function reports() {
         "install-native-startup-and-runtime-guidance",
         "install-updated-edit-export-and-restart",
         ...[1, 1.25, 1.5, 2].map((scale) => `layout-render-scale-${scale}`),
-        ...["local", "codex"].map(
+        ...["local", "chatgpt"].map(
           (engine) => `live-${engine}-translate-review-export-restart`,
         ),
       ],
-      liveAi: ["local", "codex"].map((engine) => ({
+      liveAi: ["local", "chatgpt"].map((engine) => ({
         engine,
         passed: true,
         items: 2,
@@ -79,7 +79,7 @@ test("rejects another artifact and mixed executables", () => {
 test("rejects skipped engine or stress stage", () => {
   const input = reports();
   input[0].result.liveAi.pop();
-  assert.throws(() => checkMatrix(input, hash), /Live codex results/);
+  assert.throws(() => checkMatrix(input, hash), /Live chatgpt results/);
   const other = reports();
   other[0].result.steps = [];
   assert.throws(() => checkMatrix(other, hash), /cases are missing/);

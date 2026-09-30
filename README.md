@@ -17,7 +17,7 @@ without an AI service._
 
 - Scan your Mods folder, group multi-part mods, and use existing translations.
 - Search across mods, filter unfinished work, and spot changed English strings.
-- Translate manually or use optional Local AI, Codex CLI, or external LLM batches.
+- Translate manually or use optional Local AI, ChatGPT, or external LLM batches.
 - Review suggestions with protected-token checks and optional glossary hints.
 - Export translation files, a translation ZIP to share with other players, or
   one combined locale-only ZIP for all scanned mods.
@@ -60,8 +60,8 @@ Scanning, manual editing, glossary generation, validation, and export happen
 locally. The app has no accounts, analytics, or telemetry.
 
 Local AI sends translation text and context to your configured loopback service.
-Codex CLI sends them through its configured service using the CLI's own login;
-the app never reads or copies its authentication files. External batches leave
+ChatGPT sends them directly to OpenAI using browser sign-in and your ChatGPT plan.
+The native app encrypts its renewable session with Windows DPAPI. External batches leave
 your computer only when you upload them yourself. AI results enter **Review**
 and are never automatically marked Done.
 

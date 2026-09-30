@@ -26,7 +26,7 @@ corepack pnpm dev
 
 `corepack pnpm dev:web` starts the Vite frontend for browser work, but native
 dialogs, scanning, and file operations require the Tauri desktop app. No real
-game installation, AI service, or Codex login is needed for the default automated
+game installation, AI service, or ChatGPT login is needed for the default automated
 tests. The explicit live-engine release profile requires both real engines.
 
 ## Source Map
@@ -102,8 +102,7 @@ profile, and synthetic inputs; its runtime and processes are cleaned up even on
 failure. Logs, screenshots, output, ZIP/EXE hashes, and cleanup evidence remain
 under ignored `target/desktop-e2e/runs/`.
 
-For broader release acceptance, prepare a loaded local model and an authenticated
-Codex CLI, then run:
+For broader release acceptance, prepare a loaded local model and access to ChatGPT browser sign-in, then run:
 
 ```powershell
 corepack pnpm test:desktop:release -ReleaseZip "path/to/Stardew-i18n-Translator_<version>_windows-x64-portable.zip" -LocalModel "loaded-model-id"
@@ -115,7 +114,8 @@ For installation/upgrade alone, use `corepack pnpm test:desktop:install` with th
 same `-ReleaseZip`. It needs the pinned previous ZIP (downloaded automatically,
 or supplied with `-UpgradeFromZip`), but no AI service. See the
 [installation test guide](docs/testing/installation-e2e.md) for coverage and limits.
-Live Codex calls consume the CLI account's quota; only synthetic text is sent.
+Live ChatGPT calls consume your plan allowance; only synthetic text is sent.
+The isolated E2E profile requests its own browser sign-in and signs out afterward.
 The [release acceptance guide](docs/testing/release-acceptance.md) explains
 prerequisites, exact coverage, the optional DPI matrix
 (`corepack pnpm test:desktop:matrix`) and what still needs visual review. The

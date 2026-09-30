@@ -15,10 +15,12 @@ Also prepare both supported live engines:
   `-LocalModel`; `-LocalUrl` defaults to `http://127.0.0.1:1234/v1`. The suite
   configures and tests the connection through Settings. It does not download
   models or start/stop a shared model server.
-- Codex CLI: installed, discoverable, authenticated, and able to report a usable
-  model. The suite uses the reported selection, or `-CodexModel` when specified.
-  Quality review stays enabled. It uses the CLI's own sign-in without reading or
-  copying authentication files. Calls consume that account's quota or API billing.
+- ChatGPT: access to browser sign-in with ChatGPT plan permission. The suite
+  opens sign-in for its isolated portable profile; complete it in your browser.
+  It selects `gpt-5.6-sol` by default, or `-ChatGptModel` when specified. The requested
+  model must be available; there is no automatic fallback to another model. Quality review
+  stays enabled. Credentials remain in the native app and are encrypted by Windows.
+  Normal completion verifies session restoration after restart, then signs out.
 
 For example, an already installed LM Studio model can be prepared with its
 [documented CLI](https://lmstudio.ai/docs/cli/local-models/load):
@@ -37,7 +39,7 @@ not skips or successful acceptance. Never use a fake response server as evidence
 for the live-engine profile. The default `test:desktop` still needs neither engine.
 
 To isolate a failing capability, use `test:desktop` with `-ReleaseCases`,
-`-Layout`, `-Stress`, `-Install`, or `-LiveAi local|codex|both` plus the relevant parameters.
+`-Layout`, `-Stress`, `-Install`, or `-LiveAi local|chatgpt|both` plus the relevant parameters.
 A diagnostic subset does not approve the full release profile.
 
 The release profile also includes the [portable installation and upgrade tests](installation-e2e.md).
@@ -55,7 +57,7 @@ with `-UpgradeFromZip`, and run both real executables against generated work.
   synthetic English-to-German requests, nonempty changed output with exactly the
   expected placeholders, persisted Review before export, explicit approval of
   one suggestion, exact exported text and normal restart. The other suggestion
-  remains Review. Model names and timing are recorded. Codex uses its normal
+  remains Review. Model names and timing are recorded. ChatGPT uses its normal
   quality review path; conditional repair branches are not guaranteed to occur.
 - **Bounded load:** 20 generated mods with 1,000 strings each; scan plus 20
   search/edit/save cycles, repeated rescans, exact export and restart persistence.
@@ -72,9 +74,8 @@ with `-UpgradeFromZip`, and run both real executables against generated work.
   review of typography, focus, wrapping and other appearance properties.
 
 All writes use generated fixtures. The model sees only synthetic text, including
-synthetic neighboring context and glossary terms. Local-server state and the
-CLI's authentication/cache remain external prerequisites, not copied portable
-settings. App/driver/helper descendants are owned by the supervisor; pre-existing
+synthetic neighboring context and glossary terms. Local-server state remains external. ChatGPT sign-in and its encrypted session
+belong only to the isolated portable test profile. App/driver/helper descendants are owned by the supervisor; pre-existing
 model services are not killed. Normal logs, screenshots, exports, model provenance,
 timing, `layout.json`, `stress.json`, `result.json` and `cleanup.json` stay in the
 printed ignored `target/desktop-e2e/runs/` directory after runtime cleanup.

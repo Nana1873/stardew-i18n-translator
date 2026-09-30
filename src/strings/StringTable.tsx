@@ -54,6 +54,8 @@ import {
   type StringRow,
   type StringStatus,
   loadStrings,
+  CLOUD_ENGINE_LABEL,
+  CLOUD_ENGINE_ID,
   saveString,
   saveStringGroupsWithUndo,
 } from "../tauri/commands";
@@ -1671,8 +1673,8 @@ export function StringTable({
     const engineLabel =
       activeLiveEngine?.id === result.engine
         ? activeLiveEngine.label
-        : result.engine === "codex"
-          ? "Codex CLI"
+        : result.engine === CLOUD_ENGINE_ID
+          ? CLOUD_ENGINE_LABEL
           : "Local AI";
     const reasoningLabel = result.reasoning
       ? result.reasoning.charAt(0).toUpperCase() + result.reasoning.slice(1)

@@ -154,11 +154,12 @@ Pack inspection is read-only and limited to language registration and string
 assets. Missing glossary data never blocks the core workflow; glossaries are
 stored per language and never bundled with the app.
 
-AI integrations are direct: a localhost OpenAI-compatible endpoint or the
-installed Codex CLI. There is no provider registry, marketplace, custom cloud
-base URL, or persisted cloud credential. Codex authentication remains entirely
-owned by the CLI; the app never reads, copies, or stores its authentication
-files or tokens.
+AI integrations are direct: a localhost OpenAI-compatible endpoint or OpenAI's
+Responses API through browser Sign in with ChatGPT. The native app owns OAuth,
+model discovery, and requests; no CLI or external helper is required. There is
+no provider registry, marketplace, custom cloud base URL, or API-key fallback.
+Renewable cloud credentials stay in the native backend and are encrypted with
+Windows DPAPI in the portable data folder. They never enter the WebView or logs.
 
 Requests send selected source text, section context, and matching glossary
 terms to the selected backend for exactly one target language. Nearby source

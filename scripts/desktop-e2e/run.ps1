@@ -6,10 +6,10 @@ param(
     [switch]$Stress,
     [switch]$Install,
     [string]$UpgradeFromZip,
-    [ValidateSet('none', 'local', 'codex', 'both')][string]$LiveAi = 'none',
+    [ValidateSet('none', 'local', "chatgpt", 'both')][string]$LiveAi = 'none',
     [string]$LocalUrl = 'http://127.0.0.1:1234/v1',
     [string]$LocalModel,
-    [string]$CodexModel,
+    [string]$ChatGptModel = 'gpt-5.6-sol',
     [ValidateSet(0, 96, 120, 144, 192)][int]$ExpectedDpi = 0
 )
 $ErrorActionPreference = 'Stop'
@@ -43,7 +43,7 @@ try {
     $start.EnvironmentVariables['SIT_E2E_OPTIONS'] = (@{
         releaseCases = [bool]$ReleaseCases; layout = [bool]$Layout; stress = [bool]$Stress
         liveAi = $LiveAi; localUrl = $LocalUrl; localModel = $LocalModel
-        codexModel = $CodexModel; expectedDpi = $ExpectedDpi
+        chatgptModel = $ChatGptModel; expectedDpi = $ExpectedDpi
         install = [bool]$Install; upgradeFromZip = $UpgradeFromZip
     } | ConvertTo-Json -Compress)
     if ($ReleaseZip) {
