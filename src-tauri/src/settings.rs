@@ -37,6 +37,9 @@ pub struct AppSettings {
     /// Optional local-LLM connection. Absent when AI translation is not set up.
     #[serde(default)]
     pub llm: Option<LlmSettings>,
+    /// Optional ParaTranz project hint. The API token is session-only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub paratranz_project_id: Option<u64>,
     /// Live-engine preferences. Credentials and readiness are deliberately not
     /// represented here; the app stores its OAuth session separately.
     #[serde(default, skip_serializing_if = "AiSettings::is_default")]
@@ -219,6 +222,7 @@ impl Default for AppSettings {
             source_lang: default_source_lang(),
             target_lang: None,
             llm: None,
+            paratranz_project_id: None,
             ai: AiSettings::default(),
             shortcuts: BTreeMap::new(),
             last_opened: BTreeMap::new(),
@@ -348,6 +352,9 @@ fn parse_and_normalize(body: &str, validate_llm: bool) -> Result<AppSettings, St
 }
 
 fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSettings, String> {
+    if settings.paratranz_project_id == Some(0) {
+        settings.paratranz_project_id = None;
+    }
     if settings.source_lang != "default" {
         return Err("The source language must be default (English).".to_string());
     }
@@ -481,6 +488,7 @@ mod tests {
             source_lang: "default".to_string(),
             target_lang: Some("de".to_string()),
             llm: None,
+            paratranz_project_id: Some(123),
             ai: AiSettings {
                 default_engine: "chatgpt".to_string(),
                 cloud_model: Some("gpt-5.6-sol".to_string()),

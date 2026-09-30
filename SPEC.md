@@ -56,12 +56,12 @@ and leave the last complete baseline intact. Intentional exclusions do not.
 
 ## Editing and Status
 
-| Display | Internal status | Meaning                                                               |
-| ------- | --------------- | --------------------------------------------------------------------- |
-| Open    | `untranslated`  | The source needs text, but no target translation is available.        |
-| Done    | `translated`    | Saved or accepted text, an imported existing target, or a blank pair. |
-| Changed | `outdated`      | The source changed after the stored translation baseline.             |
-| Review  | `review-needed` | An AI suggestion or external LLM batch import awaiting human review.  |
+| Display | Internal status | Meaning                                                                      |
+| ------- | --------------- | ---------------------------------------------------------------------------- |
+| Open    | `untranslated`  | The source needs text, but no target translation is available.               |
+| Done    | `translated`    | Saved or accepted text, an imported existing target, or a blank pair.        |
+| Changed | `outdated`      | The source changed after the stored translation baseline.                    |
+| Review  | `review-needed` | An AI suggestion, external batch, or ParaTranz import awaiting human review. |
 
 Existing translations gain a source baseline when first opened, so later source
 changes can mark them Changed. AI suggestions also become Changed when their
@@ -174,6 +174,30 @@ saved as work progresses and survive cancellation or later provider failures.
 Retry uses the remaining Open/Changed rows, without a persistent AI job queue.
 The [AI guide](docs/ai.md) defines limits, context boundaries, quality stages,
 failure behavior, and diagnostic privacy in one place.
+
+## ParaTranz Collaboration
+
+ParaTranz is optional and does not affect offline setup or editing. Settings
+store only a project ID hint. Personal API tokens, connection readiness, and
+pull previews stay in memory and are discarded on restart or disconnect.
+Requests use the fixed HTTPS ParaTranz API origin without following redirects.
+
+The project must use English and the current target language. Each local i18n
+source group is explicitly mapped to a distinct remote file. Upload sends only
+English sources and context, never local translations. Existing files must have
+the same keys and originals; differing source inventories require a new file.
+Source uploads use incremental updates and do not delete remote entries or
+replace remote translations. A multi-file upload can partially succeed; failure
+reports this and asks the user to refresh before retrying.
+
+Pull checks exact key membership, originals, duplicate keys, and known review
+stages before constructing a native batch snapshot. Stages 1, 3, 5, and 9 may
+provide text; untranslated, questioned, and hidden entries are skipped. The
+preview shows importable text, preserved local values, and blocking problems.
+Import revalidates current local sources, target language, and protected tokens
+before one atomic state write. Existing local text stays intact and every new
+value enters Review, including remotely reviewed or locked text. Export into
+Mods remains explicit. There is no background or two-way translation sync.
 
 ## Portable Data
 

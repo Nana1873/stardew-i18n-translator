@@ -1064,7 +1064,8 @@ describe("SettingsDialog", () => {
         /two preceding and two following English strings as read-only context/i,
       ),
     ).toBeVisible();
-    expect(screen.getAllByRole("tab")).toHaveLength(5);
+    expect(screen.getAllByRole("tab")).toHaveLength(6);
+    expect(screen.getByRole("tab", { name: "ParaTranz" })).toBeVisible();
     expect(
       container.querySelector(".translator-settings-dialog"),
     ).not.toBeNull();

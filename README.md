@@ -18,6 +18,8 @@ without an AI service._
 - Scan your Mods folder, group multi-part mods, and use existing translations.
 - Search across mods, filter unfinished work, and spot changed English strings.
 - Translate manually or use optional Local AI, ChatGPT, or external LLM batches.
+- Collaborate through an optional ParaTranz project, with explicit source upload
+  and translation pull into local Review.
 - Review suggestions with protected-token checks and optional glossary hints.
 - Export translation files, a translation ZIP to share with other players, or
   one combined locale-only ZIP for all scanned mods.
@@ -64,6 +66,10 @@ ChatGPT sends them directly to OpenAI using browser sign-in and your ChatGPT pla
 The native app encrypts its renewable session with Windows DPAPI. External batches leave
 your computer only when you upload them yourself. AI results enter **Review**
 and are never automatically marked Done.
+
+Optional ParaTranz actions send English sources to your chosen project or pull
+its translations into Review. Its API token stays in memory for the app session.
+See [ParaTranz setup](docs/user-guide.md#paratranz-collaboration).
 
 See the [AI guide](docs/ai.md) for setup, quality options, and exactly what is sent.
 

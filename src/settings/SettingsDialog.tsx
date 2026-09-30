@@ -53,6 +53,7 @@ import {
 } from "../shortcuts";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import packageInfo from "../../package.json";
+import { ParaTranzSettings } from "../paratranz/ParaTranzSettings";
 
 const LLM_PRESETS: Record<string, string> = {
   lmstudio: "http://localhost:1234/v1",
@@ -61,7 +62,7 @@ const LLM_PRESETS: Record<string, string> = {
 };
 
 export type SettingsPage =
-  "folders" | "ai" | "glossary" | "shortcuts" | "about";
+  "folders" | "ai" | "paratranz" | "glossary" | "shortcuts" | "about";
 
 interface SettingsPageDefinition {
   id: SettingsPage;
@@ -72,6 +73,7 @@ interface SettingsPageDefinition {
 const SETTINGS_PAGES: readonly SettingsPageDefinition[] = [
   { id: "folders", label: "Folders & language", icon: Folder },
   { id: "ai", label: "Translation engines", icon: Sparkles },
+  { id: "paratranz", label: "ParaTranz", icon: Cloud },
   { id: "glossary", label: "Glossary", icon: BookOpen },
   { id: "shortcuts", label: "Shortcuts", icon: Keyboard },
   { id: "about", label: "About", icon: Info },
@@ -117,6 +119,9 @@ export function SettingsDialog({
       ? savedAi.defaultEngine
       : null;
   const [page, setPage] = useState<SettingsPage>(initialPage);
+  const [paratranzProjectId, setParatranzProjectId] = useState(
+    settings.paratranzProjectId ?? null,
+  );
   const [preferredEngine, setPreferredEngine] = useState<AiEngine | null>(
     savedDefaultEngine,
   );
@@ -533,6 +538,7 @@ export function SettingsDialog({
           ).map((command) => [command.id, shortcuts[command.id]]),
         ),
         diagnosticLogging,
+        paratranzProjectId,
         ai: {
           defaultEngine: defaultEngine ?? "local",
           cloudModel: cloudModel || null,
@@ -1137,6 +1143,12 @@ export function SettingsDialog({
                 )}
               </section>
             </section>
+
+            <ParaTranzSettings
+              active={page === "paratranz"}
+              projectId={paratranzProjectId}
+              onProjectId={setParatranzProjectId}
+            />
 
             <GlossarySettings
               active={page === "glossary"}

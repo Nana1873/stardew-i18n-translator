@@ -10,7 +10,9 @@ param(
     [string]$LocalUrl = 'http://127.0.0.1:1234/v1',
     [string]$LocalModel,
     [string]$ChatGptModel = 'gpt-5.6-sol',
-    [ValidateSet(0, 96, 120, 144, 192)][int]$ExpectedDpi = 0
+    [ValidateSet(0, 96, 120, 144, 192)][int]$ExpectedDpi = 0,
+    [long]$ParaTranzProjectId = 0,
+    [long]$ParaTranzFileId = 0
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
@@ -45,6 +47,7 @@ try {
         liveAi = $LiveAi; localUrl = $LocalUrl; localModel = $LocalModel
         chatgptModel = $ChatGptModel; expectedDpi = $ExpectedDpi
         install = [bool]$Install; upgradeFromZip = $UpgradeFromZip
+        paratranzProjectId = $ParaTranzProjectId; paratranzFileId = $ParaTranzFileId
     } | ConvertTo-Json -Compress)
     if ($ReleaseZip) {
         $start.EnvironmentVariables['SIT_E2E_RELEASE_ZIP'] = (Resolve-Path -LiteralPath $ReleaseZip -ErrorAction Stop).Path

@@ -114,6 +114,35 @@ translate game assets, replace your chosen language pack, or guarantee that an
 AI model will use the right wording. Matching terms also accompany AI requests;
 see [data sent to AI](ai.md#data-and-privacy).
 
+## ParaTranz collaboration
+
+ParaTranz is an optional online translation workspace. Manual editing continues
+to work without it.
+
+1. Create or join a ParaTranz project with **English** as its source and your
+   chosen target language. Set it to private if the texts should stay private.
+   ParaTranz manages membership, project visibility, and its own license terms.
+2. Open **Settings → ParaTranz**, enter the project ID and the API token from
+   your ParaTranz profile settings, and choose **Connect ParaTranz**. Save the
+   settings to remember the project ID. The token lasts only for this app
+   session; enter it again after restarting.
+3. Select a component in **Workspace** and choose **ParaTranz**. Map each local
+   i18n source group to an existing remote file, or choose to create a new file.
+4. **Upload English sources…** asks before sending the component's source text.
+   It preserves remote translations and does not upload your local translations.
+   Existing files must match the current English originals and keys. If the
+   sources differ, choose a new remote file for this initial integration.
+5. **Pull translations** shows a preview. **Import into Review** preserves
+   nonempty local translations and checks current sources and protected tokens
+   again before saving. Remote review or lock status does not mark local text
+   Done. Questioned, hidden, and untranslated entries are skipped.
+6. Review the imported text and explicitly export when ready. The pull does not
+   write a locale file into your Mods folder.
+
+File mappings are chosen when opening the collaboration dialog. There is no
+background sync. **Disconnect ParaTranz** forgets the current session token; it
+does not delete your remote project or local translation work.
+
 ## Export translation files
 
 Choose **Export…** for the current mod or all scanned mods. The confirmation
