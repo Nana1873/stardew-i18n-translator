@@ -17,7 +17,8 @@ Also prepare both supported live engines:
   models or start/stop a shared model server.
 - ChatGPT: access to browser sign-in with ChatGPT plan permission. The suite
   opens sign-in for its isolated portable profile; complete it in your browser.
-  It uses a reported model, or `-ChatGptModel` when specified. Quality review
+  It selects `gpt-6-sol` by default, or `-ChatGptModel` when specified. The requested
+  model must be available; there is no automatic fallback to another model. Quality review
   stays enabled. Credentials remain in the native app and are encrypted by Windows.
   Normal completion verifies session restoration after restart, then signs out.
 

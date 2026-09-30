@@ -356,11 +356,10 @@ export async function advancedCases(h) {
           },
           600000,
         );
-        if (options.chatgptModel)
-          await select(
-            css('[aria-label="ChatGPT model"]'),
-            options.chatgptModel,
-          );
+        await select(
+          css('[aria-label="ChatGPT model"]'),
+          options.chatgptModel || "gpt-6-sol",
+        );
         // Keep quality review enabled: the normal draft + review path is covered.
         assert.equal(
           await (
