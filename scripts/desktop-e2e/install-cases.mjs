@@ -354,6 +354,12 @@ export async function installCases(h) {
     await click(css('[aria-label="Close editor"]'));
     await click(button("All"));
     await fill(css('[aria-label="Search strings"]'), "");
+    // Workspace preferences are debounced and pause while exporting.
+    // Assert persistence before the later export/close/restart sequence.
+    await waitFor("upgraded cleared workspace preferences saved", async () => {
+      const workspace = (await json(join(newData, "settings.json"))).workspace;
+      return workspace.stringSearch === "" && workspace.statusFilter === "all";
+    });
     for (const [key, status] of [
       ["manual", "translated"],
       ["review", "review-needed"],
@@ -399,6 +405,17 @@ export async function installCases(h) {
     await closeNormally();
     await launch(newExe);
     await click(button("Workspace"));
+    await waitFor(
+      "upgraded cleared search restored",
+      async () =>
+        (await (
+          await element(css('[aria-label="Search strings"]'))
+        ).getAttribute("value")) === "",
+    );
+    assert.equal(
+      await (await element(button("All"))).getAttribute("aria-pressed"),
+      "true",
+    );
     await openEntry("manual");
     assert.equal(
       await (
