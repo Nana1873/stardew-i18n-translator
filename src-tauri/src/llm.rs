@@ -262,7 +262,7 @@ fn language_style_rules(target_language: &str) -> &'static str {
     if target_language.trim().eq_ignore_ascii_case("german")
         || target_language.trim().eq_ignore_ascii_case("deutsch")
     {
-        "\n- For German, match Stardew Valley's simple, warm, direct tone. Do not \
+        "\n- For German: Do not \
          introduce em dashes, en dashes, or spaced hyphens as sentence asides \
          (—, –, or ` - `) when the source does not use them. Rewrite with normal \
          German sentence structure, commas, or full stops instead. Preserve existing \
@@ -299,7 +299,11 @@ pub(crate) fn translation_instructions(target_language: &str) -> String {
            'test' must stay enclosed by ' characters, never become „test“, “test”, \
            or \"test\".\n\
          - Keep the same line breaks.\n\
-         - Translate naturally and concisely; keep game terminology consistent.\
+         - Preserve the source's tone, humor, emotional intent, and character voice. \
+           Use natural, concise language appropriate to Stardew Valley and the target language. \
+           Retain warmth and directness where present in the source; do not soften sarcasm, \
+           sadness, bluntness, or formal register. Do not invent speaker traits.\n\
+         - Keep game terminology consistent.\
          {language_style}"
     )
 }
@@ -864,7 +868,7 @@ mod tests {
         assert!(messages[0].content.contains("'test'"));
         assert!(messages[0].content.contains("„test“"));
         assert!(messages[0].content.contains("Do not introduce em dashes"));
-        assert!(messages[0].content.contains("simple, warm, direct tone"));
+        assert!(messages[0].content.contains("Preserve the source's tone"));
         assert_eq!(messages[1].role, "user");
         assert_eq!(messages[1].content, "Hello {{name}}");
     }
@@ -959,6 +963,30 @@ mod tests {
     fn non_german_prompt_omits_the_german_dash_style_rule() {
         let messages = build_messages("Hello", "French", None, &[], None);
         assert!(!messages[0].content.contains("Do not introduce em dashes"));
+    }
+
+    #[test]
+    fn every_language_preserves_source_tone_without_forcing_warmth() {
+        for language in [
+            "German",
+            "French",
+            "Japanese",
+            "Portuguese",
+            "Custom language",
+        ] {
+            let instructions = translation_instructions(language);
+            assert!(instructions.contains("tone, humor, emotional intent, and character voice"));
+            assert!(
+                instructions.contains("Retain warmth and directness where present in the source")
+            );
+            assert!(instructions.contains("do not soften sarcasm"));
+            assert!(instructions.contains("Do not invent speaker traits"));
+            assert!(!instructions.contains("simple, warm, direct tone"));
+            assert_eq!(
+                instructions.contains("Do not introduce em dashes"),
+                language == "German"
+            );
+        }
     }
 
     #[test]
