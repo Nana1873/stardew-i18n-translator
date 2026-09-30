@@ -908,6 +908,8 @@ export interface AiRunProgress {
   runId: string;
   phase: AiRunPhase;
   completed: number;
+  /** Valid drafts received before quality checks and saving. */
+  translated?: number;
   total: number;
   batchIndex?: number;
   batchTotal?: number;

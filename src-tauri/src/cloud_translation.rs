@@ -1248,6 +1248,9 @@ pub async fn translate_chunk(
         move |event| translation_progress(event),
     )
     .await?;
+    progress(ProviderProgressEvent::DraftsReady {
+        ids: drafts.iter().map(|draft| draft.id.clone()).collect(),
+    });
     apply_quality_review(
         quality_review,
         model,

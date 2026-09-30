@@ -70,7 +70,13 @@ NUL-containing values, and sources larger than 64 KiB are excluded from the
 AI-ready count. The [external file workflow](#external-llm-batches) can still
 export selected source values outside these live-engine limits.
 
-The progress dialog shows saved suggestions, elapsed time, the current phase,
+The progress dialog counts translated drafts separately from suggestions saved
+to Review. A batch's drafts can be translated while its quality checks are still
+running; they are not yet saved. The saved counter and progress bar count
+persisted suggestions only. Cancelling keeps suggestions already saved and can
+also save valid drafts when a token repair is interrupted.
+
+The dialog also shows elapsed time, the current phase,
 and available provider activity/token usage. An estimated remaining time appears
 after suggestions have been saved. A quiet interval can mean the engine is
 still processing; progress cannot describe every moment inside a provider call.

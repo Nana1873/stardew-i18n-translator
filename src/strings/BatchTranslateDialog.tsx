@@ -293,6 +293,10 @@ export function BatchTranslateDialog({
   }, []);
 
   const total = liveProgress?.total ?? items.length;
+  const translated = Math.min(
+    total,
+    Math.max(done, liveProgress?.translated ?? done),
+  );
   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
   const indeterminate = !liveProgress;
   const phaseLabel = cancelRequested
@@ -380,12 +384,23 @@ export function BatchTranslateDialog({
         </div>
 
         <div className="translator-flow-body">
+          <div className="translator-ai-drafts">
+            <span>Translated</span>
+            <output aria-label="Translated strings">
+              {translated} / {total}
+            </output>
+          </div>
           <div className="translator-ai-count">
             <span>Saved to Review</span>
             <strong>
               {done} / {total}
             </strong>
           </div>
+          {translated > done && (
+            <p className="translator-kicker">
+              Quality checks run before drafts are saved to Review.
+            </p>
+          )}
           <div
             className="translator-ai-activity"
             role="status"
@@ -427,7 +442,7 @@ export function BatchTranslateDialog({
                   ? `Cancelling the active AI batch; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
                   : indeterminate
                     ? `${total} selected ${total === 1 ? "string is" : "strings are"} being prepared`
-                    : `${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
+                    : `${translated} of ${total} strings translated; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
               }
               data-indeterminate={indeterminate ? "true" : undefined}
               style={

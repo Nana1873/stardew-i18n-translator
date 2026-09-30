@@ -1550,6 +1550,9 @@ struct AiRunProgress {
     run_id: String,
     phase: &'static str,
     completed: usize,
+    translated: usize,
+    #[serde(skip)]
+    translated_ids: HashSet<String>,
     total: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     batch_index: Option<usize>,
@@ -1566,6 +1569,15 @@ struct AiRunProgress {
     provider_activity_sequence: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     usage: Option<AiRunTokenUsage>,
+}
+
+impl AiRunProgress {
+    fn record_translated(&mut self, ids: impl IntoIterator<Item = String>) {
+        // Recovery can revisit drafts or skip items before saving. Count each
+        // generated item ID once, independently of the persisted count.
+        self.translated_ids.extend(ids);
+        self.translated = self.translated_ids.len().min(self.total);
+    }
 }
 
 fn safe_ai_run_id_for_log(run_id: &str) -> &str {
@@ -2030,6 +2042,8 @@ async fn translate_with_local_ai(
         run_id: request.run_id.clone(),
         phase: "preparing",
         completed: 0,
+        translated: 0,
+        translated_ids: HashSet::new(),
         total: prepared.len(),
         batch_index: None,
         batch_total: Some(prepared.len()),
@@ -2098,6 +2112,7 @@ async fn translate_with_local_ai(
                 }],
             ) {
                 Ok(completed) => {
+                    progress.record_translated([item.id.clone()]);
                     progress.phase = "saving";
                     emit_ai_progress(&app, &progress);
                     let staged_result = stage_ai_suggestions(
@@ -2296,6 +2311,8 @@ async fn translate_with_cloud_ai(
         run_id: request.run_id.clone(),
         phase: "preparing",
         completed: 0,
+        translated: 0,
+        translated_ids: HashSet::new(),
         total: prepared.len(),
         batch_index: None,
         batch_total: Some(batch_total),
@@ -2323,8 +2340,11 @@ async fn translate_with_cloud_ai(
                     skips.record(item_count, reason);
                 }
             }
-            let log_event = event;
+            let log_event = event.clone();
             update_ai_progress(&app, &state, |progress| match event {
+                ai_provider::ProviderProgressEvent::DraftsReady { ids } => {
+                    progress.record_translated(ids);
+                }
                 ai_provider::ProviderProgressEvent::Phase { phase, item_count } => {
                     progress.phase = match phase {
                         ai_provider::ProviderPhase::Translating => "translating",
@@ -2367,6 +2387,12 @@ async fn translate_with_cloud_ai(
                 }
             });
             match log_event {
+                ai_provider::ProviderProgressEvent::DraftsReady { ids } => {
+                    log::info!(target: "ai_run", "{}", serde_json::json!({
+                        "event": "drafts_ready", "runId": log_run_id,
+                        "itemCount": ids.len(),
+                    }));
+                }
                 ai_provider::ProviderProgressEvent::Phase { phase, item_count } => {
                     let phase = match phase {
                         ai_provider::ProviderPhase::Translating => "translating",
@@ -3554,10 +3580,12 @@ mod ai_run_contract_tests {
 
     #[test]
     fn progress_contract_exposes_saved_count_phase_batch_recovery_and_usage() {
-        let progress = AiRunProgress {
+        let mut progress = AiRunProgress {
             run_id: "run-progress".to_string(),
             phase: "reviewing",
             completed: 320,
+            translated: 407,
+            translated_ids: HashSet::new(),
             total: 1_000,
             batch_index: Some(4),
             batch_total: Some(11),
@@ -3575,8 +3603,9 @@ mod ai_run_contract_tests {
             }),
         };
 
-        let value = serde_json::to_value(progress).unwrap();
+        let value = serde_json::to_value(&progress).unwrap();
         assert_eq!(value["completed"], 320);
+        assert_eq!(value["translated"], 407);
         assert_eq!(value["phase"], "reviewing");
         assert_eq!(value["batchIndex"], 4);
         assert_eq!(value["recovery"], "structureRetry");
@@ -3585,6 +3614,25 @@ mod ai_run_contract_tests {
         assert!(value.get("codexStage").is_none());
         assert!(value.get("codexActivitySequence").is_none());
         assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
+        assert!(value.get("translatedIds").is_none());
+        progress.completed = 0;
+        progress.translated = 0;
+        progress.total = 282;
+        let ids = |start, end| (start..end).map(|index| format!("item-{index:04}"));
+        progress.record_translated(ids(0, 93));
+        assert_eq!(progress.translated, 93);
+        assert_eq!(progress.completed, 0);
+        // Split recovery redrafts the same IDs; one failed item is not saved.
+        progress.record_translated(ids(0, 46));
+        progress.completed = 45;
+        progress.record_translated(ids(46, 93));
+        assert_eq!(progress.translated, 93);
+        progress.completed = 92;
+        // A new batch still counts every new draft despite the earlier gap.
+        progress.record_translated(ids(93, 172));
+        assert_eq!(progress.translated, 172);
+        progress.record_translated(ids(0, 282));
+        assert_eq!(progress.translated, 282);
     }
 
     #[test]

@@ -31,8 +31,12 @@ pub(crate) struct ProviderTokenUsage {
     pub reasoning_output_tokens: u64,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum ProviderProgressEvent {
+    /// Structurally valid drafts, before review/repairs and persistence.
+    DraftsReady {
+        ids: Vec<String>,
+    },
     Phase {
         phase: ProviderPhase,
         item_count: usize,

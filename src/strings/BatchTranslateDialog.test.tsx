@@ -105,6 +105,54 @@ function renderDialog(
 }
 
 describe("BatchTranslateDialog", () => {
+  it("shows translated drafts before the first batch is saved to Review", async () => {
+    const onLiveRun = vi.fn(
+      (_runId: string) => new Promise<AiRunResult>(() => {}),
+    );
+    renderDialog({ engine: CLOUD_ENGINE, onLiveRun });
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const runId = onLiveRun.mock.calls[0][0];
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    const payload = {
+      runId,
+      phase: "reviewing",
+      completed: 0,
+      translated: 93,
+      total: 282,
+      batchIndex: 1,
+      batchTotal: 4,
+      batchSize: 93,
+      retries: 0,
+      splits: 0,
+    };
+    act(() => receiveProgress({ payload }));
+    expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
+      "93 / 282",
+    );
+    expect(screen.getByText("0 / 282")).toBeVisible();
+    expect(
+      screen.getByText(/Quality checks run before drafts are saved to Review/),
+    ).toBeVisible();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+    act(() =>
+      receiveProgress({
+        payload: { ...payload, phase: "saving", completed: 93 },
+      }),
+    );
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "93",
+    );
+    expect(
+      screen.queryByText(
+        /Quality checks run before drafts are saved to Review/,
+      ),
+    ).toBeNull();
+  });
+
   it("starts the configured live engine immediately with only compact progress and Cancel", async () => {
     let resolveRun: (result: AiRunResult) => void = () => {};
     const onLiveRun = vi.fn(
@@ -128,7 +176,7 @@ describe("BatchTranslateDialog", () => {
       screen.getByText(/ChatGPT .* completed suggestions enter Review/),
     ).toBeVisible();
     expect(screen.getByText("Saved to Review")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Preparing selected strings",
     );
     expect(screen.getByText(/ChatGPT active · 00:00/)).toBeVisible();
@@ -299,7 +347,9 @@ describe("BatchTranslateDialog", () => {
         },
       }),
     );
-    expect(screen.getByText("0 / 2")).toBeVisible();
+    expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
+      "0 / 2",
+    );
     expect(progress).toHaveAttribute("data-indeterminate", "true");
 
     act(() =>
@@ -308,6 +358,7 @@ describe("BatchTranslateDialog", () => {
           runId,
           phase: "reviewing",
           completed: 320,
+          translated: 407,
           total: 1_000,
           batchIndex: 4,
           batchTotal: 11,
@@ -327,7 +378,13 @@ describe("BatchTranslateDialog", () => {
       }),
     );
     expect(screen.getByText("320 / 1000")).toBeVisible();
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
+      "407 / 1000",
+    );
+    expect(
+      screen.getByText(/Quality checks run before drafts are saved to Review/),
+    ).toBeVisible();
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Reviewing quality · Batch 4 of 11 · 87 strings",
     );
     expect(
@@ -348,7 +405,7 @@ describe("BatchTranslateDialog", () => {
     expect(progress).toHaveAttribute("aria-valuenow", "320");
     expect(progress).toHaveAttribute(
       "aria-valuetext",
-      "320 of 1000 suggestions saved to Review; reviewing quality · batch 4 of 11 · 87 strings",
+      "407 of 1000 strings translated; 320 of 1000 suggestions saved to Review; reviewing quality · batch 4 of 11 · 87 strings",
     );
 
     act(() => resolveRun(liveResult({ runId })));
@@ -528,7 +585,7 @@ describe("BatchTranslateDialog", () => {
         },
       }),
     );
-    expect(screen.getByRole("status")).toHaveTextContent(
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Cancelling active batch",
     );
     expect(screen.queryByText(/Reviewing quality/)).not.toBeInTheDocument();
