@@ -710,6 +710,27 @@ pub async fn login_url() -> Result<String, String> {
     state.pending = Some(task.abort_handle());
     Ok(url.into())
 }
+fn callback_response() -> String {
+    let style = r#":root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; background: #101214; color: #f2f3f5; }
+main { width: 100%; max-width: 440px; padding: 32px; background: #1b1f24; border: 1px solid #414953; border-radius: 12px; }
+.brand { margin: 0 0 24px; color: #e3b85f; font-size: 13px; font-weight: 600; }
+h1 { margin: 0 0 12px; font-size: 24px; line-height: 1.3; }
+.hint { margin: 0; color: #b0b6be; font-size: 14px; line-height: 1.6; }"#;
+    let style_hash =
+        base64::engine::general_purpose::STANDARD.encode(Sha256::digest(style.as_bytes()));
+    let body = format!(
+        r#"<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stardew i18n Translator</title><style>{style}</style></head>
+<body><main aria-labelledby="callback-title"><p class="brand">Stardew i18n Translator</p>
+<h1 id="callback-title">You can close this tab.</h1>
+<p class="hint">Your sign-in status is shown in the app.</p></main></body></html>"#
+    );
+    format!("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'; style-src 'sha256-{style_hash}'; frame-ancestors 'none'\r\nContent-Length: {}\r\n\r\n{body}", body.len())
+}
+
 async fn accept_callback(listener: TcpListener, attempt: Attempt) -> Result<Session, String> {
     loop {
         let (mut stream, _) = listener
@@ -780,8 +801,7 @@ async fn accept_callback(listener: TcpListener, attempt: Attempt) -> Result<Sess
             Ok((code, id)) => exchange(&attempt, &code, &id).await,
             Err(e) => Err(e),
         };
-        let body = "<!doctype html><meta charset=utf-8><title>Stardew i18n Translator</title><p>Return to Stardew i18n Translator to check your sign-in.</p>";
-        let response = format!("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'; frame-ancestors 'none'\r\nContent-Length: {}\r\n\r\n{body}", body.len());
+        let response = callback_response();
         let _ = tokio::time::timeout(
             Duration::from_secs(2),
             stream.write_all(response.as_bytes()),
@@ -906,6 +926,29 @@ pub async fn logout() -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn callback_page_has_app_colors_and_only_allows_its_static_style() {
+        let response = callback_response();
+        let (headers, body) = response.split_once("\r\n\r\n").unwrap();
+        let style = body
+            .split_once("<style>")
+            .unwrap()
+            .1
+            .split_once("</style>")
+            .unwrap()
+            .0;
+        let hash =
+            base64::engine::general_purpose::STANDARD.encode(Sha256::digest(style.as_bytes()));
+        assert!(headers.contains(&format!("style-src 'sha256-{hash}'")));
+        assert!(headers.contains("default-src 'none'"));
+        assert!(headers.contains("Cache-Control: no-store"));
+        assert!(headers.contains(&format!("Content-Length: {}", body.len())));
+        assert!(body.contains("background: #101214"));
+        assert!(body.contains("You can close this tab."));
+        assert!(!body.contains("<script"));
+        assert!(!body.contains("https://"));
+    }
+
     #[test]
     fn callback_is_bound_to_state_and_registration() {
         let attempt = Attempt {
