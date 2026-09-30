@@ -9,7 +9,6 @@ static SESSION: OnceLock<u128> = OnceLock::new();
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Outcome {
     Success,
-    Cancelled,
     Blocked,
     Partial,
 }
@@ -82,7 +81,6 @@ fn record<T>(
             let summary = summarize(value);
             let outcome = match summary.outcome {
                 Outcome::Success => "success",
-                Outcome::Cancelled => "cancelled",
                 Outcome::Blocked => "blocked",
                 Outcome::Partial => "partial",
             };
@@ -162,12 +160,7 @@ mod tests {
     }
     #[test]
     fn lifecycle_pairs_ids_and_preserves_results_without_payloads() {
-        for outcome in [
-            Outcome::Success,
-            Outcome::Cancelled,
-            Outcome::Blocked,
-            Outcome::Partial,
-        ] {
+        for outcome in [Outcome::Success, Outcome::Blocked, Outcome::Partial] {
             let mut lines = Vec::new();
             let result = record(
                 true,

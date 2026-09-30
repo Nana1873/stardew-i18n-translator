@@ -286,6 +286,13 @@ pub fn resolve_scan_inputs(
     requests: &[ExportModInput],
 ) -> Result<Vec<ExportModInput>, String> {
     let scan = scanner::scan_mods(mods_root, target_lang, config_dir);
+    resolve_scanned_inputs(&scan, requests)
+}
+
+pub(crate) fn resolve_scanned_inputs(
+    scan: &scanner::ScanResult,
+    requests: &[ExportModInput],
+) -> Result<Vec<ExportModInput>, String> {
     let mut requested_ids = HashSet::with_capacity(requests.len());
     let mut resolved = Vec::with_capacity(requests.len());
 

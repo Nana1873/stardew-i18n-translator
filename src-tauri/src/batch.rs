@@ -268,10 +268,23 @@ fn analyze_batch(
         });
     }
 
+    let rows_by_key = batch
+        .files
+        .keys()
+        .filter_map(|directory| {
+            rows_by_dir.get(directory).map(|rows| {
+                let index = rows
+                    .iter()
+                    .map(|row| (row.key.as_str(), row))
+                    .collect::<HashMap<_, _>>();
+                (directory.as_str(), index)
+            })
+        })
+        .collect::<HashMap<_, _>>();
     let mut current_entries = Vec::with_capacity(batch.supplied_strings);
     let mut first_binding_error = None;
     for (relative_dir, group) in batch.files {
-        let Some(rows) = rows_by_dir.get(relative_dir) else {
+        let Some(rows) = rows_by_key.get(relative_dir.as_str()) else {
             first_binding_error.get_or_insert_with(|| {
                 format!("Batch contains unknown file \"{relative_dir}\". No changes were made.")
             });
@@ -282,7 +295,7 @@ fn analyze_batch(
             .expect("batch_envelope validated every file group")
             .keys()
         {
-            let Some(row) = rows.iter().find(|row| row.key == *key) else {
+            let Some(row) = rows.get(key.as_str()) else {
                 first_binding_error.get_or_insert_with(|| {
                     format!(
                         "Batch contains unknown key \"{relative_dir} · {key}\". No changes were made."
@@ -316,8 +329,8 @@ fn analyze_batch(
 
     let mut entries = Vec::new();
     for (relative_dir, group) in batch.files {
-        let rows = rows_by_dir
-            .get(relative_dir)
+        let rows = rows_by_key
+            .get(relative_dir.as_str())
             .expect("snapshot validation proved this file binding");
         for (key, value) in group
             .as_object()
@@ -331,8 +344,7 @@ fn analyze_batch(
                 continue;
             }
             let row = rows
-                .iter()
-                .find(|row| row.key == *key)
+                .get(key.as_str())
                 .expect("snapshot validation proved this key binding");
             if !row.target.trim().is_empty() {
                 preflight.preserved_local += 1;

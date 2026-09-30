@@ -246,6 +246,40 @@ beforeEach(() => {
   localStorage.clear();
 });
 
+it("shows unreadable settings without starting setup and retries after repair", async () => {
+  const error = "Settings file is corrupted and no usable backup exists.";
+  let repaired = false;
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "load_settings")
+      return repaired ? Promise.resolve(CONFIGURED) : Promise.reject(error);
+    if (command === "scan_mods") return Promise.resolve(EMPTY_SCAN);
+    return Promise.resolve(null);
+  });
+  render(<App />);
+  expect(await screen.findByText(error)).toBeVisible();
+  expect(screen.queryByText("Game folder")).toBeNull();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === "save_settings")).toBe(
+    false,
+  );
+
+  repaired = true;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry loading settings" }),
+  );
+  await waitFor(() =>
+    expect(invokeMock.mock.calls.some(([cmd]) => cmd === "scan_mods")).toBe(
+      true,
+    ),
+  );
+  expect(screen.queryByText(error)).toBeNull();
+  expect(screen.queryByText("Game folder")).toBeNull();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === "save_settings")).toBe(
+    false,
+  );
+});
+
 const EMPTY_SCAN = {
   mods: [],
   warnings: [],

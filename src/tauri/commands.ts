@@ -280,17 +280,6 @@ export interface SaveStringEntry {
   source: string;
 }
 
-/**
- * Save many strings of one mod in a single backend write. Bulk actions must
- * use this — N parallel saveString calls race the per-mod state file.
- */
-export function saveStrings(
-  modUniqueId: string,
-  entries: SaveStringEntry[],
-): Promise<void> {
-  return invoke<void>("save_strings", { modUniqueId, entries });
-}
-
 export type OperationKind =
   | "import"
   | "export"
@@ -654,20 +643,6 @@ export interface LlmImportPreflight {
   blockingReason: string | null;
 }
 
-/**
- * Import a translated LLM batch/result file for one mod. The
- * backend opens a file picker; resolves null on cancel.
- */
-export function importLlmBatch(
-  modUniqueId: string,
-  files: ExportFileInput[],
-): Promise<LlmImportSummary | null> {
-  return invoke<LlmImportSummary | null>("import_llm_batch", {
-    modUniqueId,
-    files,
-  });
-}
-
 /** Pick a JSON result without importing it yet. Resolves null on cancel. */
 export function pickLlmBatchFile(): Promise<string | null> {
   return invoke<string | null>("pick_llm_batch_file");
@@ -797,30 +772,6 @@ export interface TranslationResult {
   missingTokens: string[];
   /** Injected glossary terms the result appears not to use ("En -> Target"). Soft hint. */
   glossaryMisses: string[];
-}
-
-/**
- * Translate one source string via the configured local LLM. Injects
- * matching glossary terms and validates protected tokens with one retry.
- */
-export function translateString(
-  baseUrl: string,
-  model: string,
-  source: string,
-  targetLang: string,
-  targetLanguage: string,
-  section?: string | null,
-  temperature?: number | null,
-): Promise<TranslationResult> {
-  return invoke<TranslationResult>("translate_string", {
-    baseUrl,
-    model,
-    source,
-    targetLang,
-    targetLanguage,
-    section: section ?? null,
-    temperature: temperature ?? null,
-  });
 }
 
 export type AiScope = "string" | "selected";
