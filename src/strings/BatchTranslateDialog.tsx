@@ -59,7 +59,7 @@ function createRunId(): string {
 const PHASE_LABELS: Record<AiRunProgress["phase"], string> = {
   preparing: "Preparing batch",
   translating: "Translating draft",
-  reviewing: "Reviewing quality",
+  reviewing: "Checking translation quality",
   terminologyRepair: "Checking terminology",
   tokenRepair: "Repairing protected tokens",
   saving: "Validating & saving",
@@ -383,11 +383,6 @@ export function BatchTranslateDialog({
               {done} / {total}
             </strong>
           </div>
-          {translated > done && (
-            <p className="translator-kicker">
-              Quality checks run before drafts are saved to Review.
-            </p>
-          )}
           <div
             className="translator-ai-activity"
             role="status"
