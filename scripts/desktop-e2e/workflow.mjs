@@ -20,7 +20,6 @@ import { xnbDictionary } from "./fixtures.mjs";
 import { releaseCases } from "./release-cases.mjs";
 import { advancedCases } from "./advanced-cases.mjs";
 import { installCases } from "./install-cases.mjs";
-import { paraTranzCases } from "./paratranz-cases.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
 // releasing the handshake. Direct invocation must not start an unowned app.
@@ -67,8 +66,6 @@ const imported = {
 const expectedExport = { ...imported, greeting: edited };
 const events = createWriteStream(join(artifacts, "steps.log"));
 const options = JSON.parse(process.env.SIT_E2E_OPTIONS || "{}");
-let paraTranzToken = process.env.SIT_E2E_PARATRANZ_TOKEN;
-delete process.env.SIT_E2E_PARATRANZ_TOKEN;
 let driver;
 let driverProcess;
 let appPid;
@@ -1102,21 +1099,6 @@ try {
   )
     await advancedCases(helpers);
   if (options.install) await installCases(helpers);
-  if (options.paratranzProjectId) {
-    assert.ok(
-      paraTranzToken,
-      "Set SIT_E2E_PARATRANZ_TOKEN for opt-in live ParaTranz acceptance.",
-    );
-    try {
-      await paraTranzCases(helpers, {
-        projectId: options.paratranzProjectId,
-        fileId: options.paratranzFileId,
-        token: paraTranzToken,
-      });
-    } finally {
-      paraTranzToken = undefined;
-    }
-  }
   assert.deepEqual(await json(join(i18n, "default.json")), source);
   assert.equal(
     hash(await readFile(evidence.releaseZip.path)),

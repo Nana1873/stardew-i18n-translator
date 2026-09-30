@@ -87,8 +87,6 @@ export interface AppSettings {
   targetLang: string | null;
   /** Optional local-LLM connection; null until AI translation is set up. */
   llm?: LlmSettings | null;
-  /** Non-secret project hint; API tokens remain in native session memory. */
-  paratranzProjectId?: number | null;
   /** Live-engine preferences only. API keys/readiness are never persisted. */
   ai?: AiSettings;
   /** User overrides for the keyboard shortcut catalog. */

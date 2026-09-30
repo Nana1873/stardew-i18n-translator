@@ -88,7 +88,6 @@ import {
 import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
-import { ParaTranzDialog } from "./paratranz/ParaTranzDialog";
 import {
   Dashboard,
   type DashboardLastExport,
@@ -268,7 +267,7 @@ export function App() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsPage, setSettingsPage] = useState<
-    "folders" | "ai" | "paratranz" | "glossary" | "shortcuts" | "about"
+    "folders" | "ai" | "glossary" | "shortcuts" | "about"
   >("folders");
   const [loaded, setLoaded] = useState(false);
   const [now, setNow] = useState(() => Date.now());
@@ -287,7 +286,6 @@ export function App() {
   const scanDismissedRef = useRef(false);
   const scanGenerationRef = useRef(0);
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
-  const [paratranzOpen, setParatranzOpen] = useState(false);
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(340);
   const [modsCollapsed, setModsCollapsed] = useState(false);
@@ -1940,7 +1938,6 @@ export function App() {
     ? `${languageLabel} (${settings.targetLang})`
     : "No target language yet";
   const focusedDialogOpen = Boolean(
-    paratranzOpen ||
     wizardOpen ||
     settingsOpen ||
     scanDialogOpen ||
@@ -1994,7 +1991,6 @@ export function App() {
             !scanning
           }
           onImportBatch={() => void handleImportBatch()}
-          onParaTranz={() => setParatranzOpen(true)}
           importBatchEnabled={Boolean(selectedMod) && !exporting}
           onOpenSettings={() => {
             setSettingsPage("folders");
@@ -2255,20 +2251,6 @@ export function App() {
             initial={settings}
             onComplete={handleComplete}
             onCancel={configured ? () => setWizardOpen(false) : undefined}
-          />
-        )}
-        {paratranzOpen && selectedMod && (
-          <ParaTranzDialog
-            mod={selectedMod}
-            onClose={() => setParatranzOpen(false)}
-            onSettings={() => {
-              setParatranzOpen(false);
-              setSettingsPage("paratranz");
-              setSettingsOpen(true);
-            }}
-            onImported={async () => {
-              setReloadToken((value) => value + 1);
-            }}
           />
         )}
         {settingsOpen && settings && (
@@ -2598,7 +2580,6 @@ function AppToolbar({
   onBuildOutput,
   outputEnabled,
   onImportBatch,
-  onParaTranz,
   importBatchEnabled,
   onOpenSettings,
   settingsEnabled,
@@ -2623,7 +2604,6 @@ function AppToolbar({
   onBuildOutput: () => void;
   outputEnabled: boolean;
   onImportBatch: () => void;
-  onParaTranz: () => void;
   importBatchEnabled: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
@@ -2744,15 +2724,6 @@ function AppToolbar({
           <span className="translator-action-label-compact">
             Import LLM batch …
           </span>
-        </button>
-        <button
-          className="translator-button translator-button-quiet"
-          type="button"
-          aria-label="ParaTranz collaboration"
-          disabled={!importBatchEnabled}
-          onClick={onParaTranz}
-        >
-          ParaTranz
         </button>
         <div className="translator-menu" ref={menuRef}>
           <button

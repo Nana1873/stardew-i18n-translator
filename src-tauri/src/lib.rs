@@ -18,7 +18,6 @@ mod language;
 mod llm;
 mod operation_history;
 mod operation_log;
-mod paratranz;
 mod release_zip;
 mod scan_snapshot;
 mod scanner;
@@ -3002,7 +3001,6 @@ fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 pub fn run() {
     tauri::Builder::default()
         .manage(ai::AiRuntimeState::default())
-        .manage(paratranz::Runtime::default())
         .manage(operation_history::OperationHistoryState::default())
         .plugin(log_plugin())
         .setup(|app| {
@@ -3068,13 +3066,7 @@ pub fn run() {
             open_mod_folder,
             open_folder,
             load_settings,
-            save_settings,
-            paratranz::paratranz_connect,
-            paratranz::paratranz_disconnect,
-            paratranz::paratranz_connection,
-            paratranz::paratranz_preview,
-            paratranz::paratranz_import,
-            paratranz::paratranz_upload
+            save_settings
         ])
         .run(tauri::generate_context!())
         .expect("error while running Stardew i18n Translator");

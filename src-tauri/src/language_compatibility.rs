@@ -192,7 +192,6 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             target_lang: Some(language.code.to_string()),
             diagnostic_logging: true,
             llm: None,
-            paratranz_project_id: None,
             ai: crate::settings::AiSettings::default(),
             shortcuts: BTreeMap::new(),
             last_opened: BTreeMap::new(),
