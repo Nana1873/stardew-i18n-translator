@@ -62,8 +62,7 @@ For every target language, AI instructions preserve the original tone, humor,
 emotional intent, and character voice. Natural, concise Stardew-style wording
 should retain warmth where it exists in the source, without softening sarcastic,
 sad, blunt, or formal dialogue. The same source-based rule applies during AI
-quality review. Language-specific conventions, such as the German punctuation
-rule, remain separate. These instructions guide the model; review the result.
+quality review. These instructions guide the model; review the result.
 
 Select Open or Changed strings in Workspace and choose **Translate selected
 with AI**, or translate the current eligible string from its editor. The saved
