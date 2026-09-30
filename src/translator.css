@@ -666,13 +666,22 @@
 }
 
 #stardew-i18n-translator .translator-string-meta {
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 3px;
   color: var(--translator-muted);
   font-size: 0.84em;
 }
 
+#stardew-i18n-translator .translator-string-meta > span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 #stardew-i18n-translator .translator-progress-inline {
+  flex: none;
   width: 94px;
   height: 4px;
   overflow: hidden;
@@ -2347,6 +2356,10 @@
 }
 
 #stardew-i18n-translator .editor__valid-ok {
+  color: var(--translator-muted);
+}
+
+#stardew-i18n-translator .stringrow__tgt--empty {
   color: var(--translator-muted);
 }
 
