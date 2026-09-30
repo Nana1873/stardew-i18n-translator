@@ -375,10 +375,14 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
         assert!(messages[0]
             .content
             .contains("Preserve every non-translatable placeholder/runtime token"));
-        assert_eq!(
-            messages[0].content.contains("Do not introduce em dashes"),
-            language.code == "de",
-            "{} language-specific prompt rules",
+        assert!(
+            messages[0].content.contains("Preserve the source's tone"),
+            "{} shared prompt tone rule",
+            language.code
+        );
+        assert!(
+            !messages[0].content.contains("Do not introduce em dashes"),
+            "{} omits the removed German punctuation preference",
             language.code
         );
 

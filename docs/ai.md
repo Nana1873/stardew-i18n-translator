@@ -58,6 +58,12 @@ and billing can change; consult the official
 
 ## Translate and review
 
+For every target language, AI instructions preserve the original tone, humor,
+emotional intent, and character voice. Natural, concise Stardew-style wording
+should retain warmth where it exists in the source, without softening sarcastic,
+sad, blunt, or formal dialogue. The same source-based rule applies during AI
+quality review. These instructions guide the model; review the result.
+
 Select Open or Changed strings in Workspace and choose **Translate selected
 with AI**, or translate the current eligible string from its editor. The saved
 default engine is used. Settings keeps that choice while Local AI is configured
