@@ -72,7 +72,7 @@ const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
 };
 
 const CLOUD_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
-  starting: "Starting process",
+  starting: "Starting request",
   working: "Working",
   reasoning: "Reasoning",
   writingResponse: "Writing response",
