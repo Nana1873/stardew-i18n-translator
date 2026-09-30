@@ -2559,6 +2559,44 @@ describe("StringTable workbench", () => {
     }
   });
 
+  it("fixes the inherited target width when another Fit column is resized", async () => {
+    const changed = vi.fn();
+    const view = render(
+      <StringTable mod={MOD} onColumnWidthsChange={changed} />,
+    );
+    await screen.findByText("greeting");
+    const workbench = view.container.querySelector(
+      ".translator-string-workbench",
+    );
+    if (!workbench) throw new Error("Missing string workbench");
+    Object.defineProperty(workbench, "clientWidth", { value: 1_200 });
+    fireEvent(window, new Event("resize"));
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize key column" }),
+      {
+        key: "ArrowLeft",
+      },
+    );
+    const grid = "34px 80px 124px 444px 444px minmax(0, 1fr) 58px";
+    expect(
+      view.container.querySelector(".translator-string-table-head"),
+    ).toHaveStyle({
+      gridTemplateColumns: grid,
+    });
+    const persisted = JSON.parse(JSON.stringify(changed.mock.lastCall?.[0]));
+    expect(persisted.target).toBe(444);
+    view.unmount();
+    const restored = render(
+      <StringTable mod={MOD} initialColumnWidths={persisted} />,
+    );
+    await screen.findByText("greeting");
+    expect(
+      restored.container.querySelector(".translator-string-table-head"),
+    ).toHaveStyle({
+      gridTemplateColumns: grid,
+    });
+  });
+
   it("bounds every inherited Fit width before persisting a manual resize", async () => {
     const changed = vi.fn();
     const { container } = render(

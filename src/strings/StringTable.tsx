@@ -1915,6 +1915,7 @@ export function StringTable({
   function adjustColumn(column: ColumnName, value: number) {
     const limits = COLUMN_LIMITS[column];
     setFitColumns(false);
+    setTargetColumnSized(true);
     setColumnWidths((current) => {
       const next = {
         ...(fitColumns ? renderedColumnWidths : current),
