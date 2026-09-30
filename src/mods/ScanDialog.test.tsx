@@ -98,8 +98,8 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Sample/Broken/manifest.json")).toBeInTheDocument();
     expect(screen.getByText("Rest of package loaded")).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Review changed strings/ }),
-    ).toBeDisabled();
+      screen.queryByRole("button", { name: /Review changed strings/ }),
+    ).toBeNull();
   });
 
   it("uses singular count labels for a one-mod scan", () => {

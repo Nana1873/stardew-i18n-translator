@@ -440,19 +440,19 @@ fn normalize_workspace(mut workspace: WorkspaceSettings) -> WorkspaceSettings {
     workspace.column_widths.status = workspace
         .column_widths
         .status
-        .map(|value| value.clamp(80, 240));
+        .map(|value| value.clamp(76, 240));
     workspace.column_widths.key = workspace
         .column_widths
         .key
-        .map(|value| value.clamp(140, 480));
+        .map(|value| value.clamp(100, 480));
     workspace.column_widths.source = workspace
         .column_widths
         .source
-        .map(|value| value.clamp(220, 720));
+        .map(|value| value.clamp(160, 720));
     workspace.column_widths.target = workspace
         .column_widths
         .target
-        .map(|value| value.clamp(180, 1_600));
+        .map(|value| value.clamp(160, 1_600));
     workspace
 }
 
@@ -770,9 +770,47 @@ mod tests {
         assert_eq!(loaded.workspace.column_widths.mod_column, Some(100));
         assert_eq!(loaded.workspace.column_widths.file, Some(320));
         assert_eq!(loaded.workspace.column_widths.status, Some(240));
-        assert_eq!(loaded.workspace.column_widths.key, Some(140));
+        assert_eq!(loaded.workspace.column_widths.key, Some(100));
         assert_eq!(loaded.workspace.column_widths.source, Some(720));
-        assert_eq!(loaded.workspace.column_widths.target, Some(180));
+        assert_eq!(loaded.workspace.column_widths.target, Some(160));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn manual_column_width_limits_survive_save_and_reload() {
+        let dir = crate::test_support::temp_dir("settings-column-width-limits");
+        for widths in [
+            WorkspaceColumnWidths {
+                mod_column: Some(100),
+                file: Some(80),
+                status: Some(76),
+                key: Some(100),
+                source: Some(160),
+                target: Some(160),
+            },
+            WorkspaceColumnWidths {
+                mod_column: Some(420),
+                file: Some(320),
+                status: Some(240),
+                key: Some(480),
+                source: Some(720),
+                target: Some(1_600),
+            },
+        ] {
+            let settings = AppSettings {
+                workspace: WorkspaceSettings {
+                    column_widths: widths.clone(),
+                    ..WorkspaceSettings::default()
+                },
+                ..AppSettings::default()
+            };
+            save(&dir, &settings).unwrap();
+            let persisted: AppSettings =
+                serde_json::from_str(&std::fs::read_to_string(settings_path(&dir)).unwrap())
+                    .unwrap();
+            assert_eq!(persisted.workspace.column_widths, widths);
+            assert_eq!(load_checked(&dir).unwrap().workspace.column_widths, widths);
+        }
         std::fs::remove_dir_all(dir).ok();
     }
 

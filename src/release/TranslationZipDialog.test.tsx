@@ -41,7 +41,6 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={vi.fn()}
-        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -66,7 +65,6 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={vi.fn()}
-        onReleaseNotes={vi.fn()}
         onBuild={build}
         onClose={vi.fn()}
       />,
@@ -86,7 +84,6 @@ describe("TranslationZipDialog", () => {
       screen.getByRole("button", { name: "Choose save location …" }),
     );
     expect(build).toHaveBeenCalledWith(
-      "2.1/beta",
       "Sample Pack - 2.1_beta - German (de).zip",
     );
   });
@@ -107,7 +104,6 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={inspect}
-        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={vi.fn()}
       />,
@@ -128,7 +124,6 @@ describe("TranslationZipDialog", () => {
         error={null}
         building={false}
         onInspect={vi.fn()}
-        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={onClose}
       />,
@@ -139,7 +134,7 @@ describe("TranslationZipDialog", () => {
     fireEvent.mouseDown(container.firstElementChild!);
     expect(onClose).not.toHaveBeenCalled();
 
-    const last = screen.getByRole("button", { name: "Translation notes" });
+    const last = screen.getByRole("button", { name: "Cancel" });
     last.focus();
     fireEvent.keyDown(last, { key: "Tab" });
     expect(first).toHaveFocus();
@@ -156,7 +151,6 @@ describe("TranslationZipDialog", () => {
         error={null}
         building
         onInspect={vi.fn()}
-        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={onClose}
       />,
@@ -170,9 +164,6 @@ describe("TranslationZipDialog", () => {
       screen.getByRole("button", { name: "Close ZIP preview" }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Translation notes" }),
-    ).toBeDisabled();
     expect(screen.getByLabelText("Package version")).toBeDisabled();
     expect(
       screen.getByLabelText(/I verified the advertised package version/),
@@ -220,7 +211,6 @@ describe("ZipOverwriteDialog", () => {
         error={null}
         building={false}
         onInspect={vi.fn()}
-        onReleaseNotes={vi.fn()}
         onBuild={vi.fn()}
         onClose={vi.fn()}
       />

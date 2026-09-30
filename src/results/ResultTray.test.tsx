@@ -605,14 +605,11 @@ describe("ResultTray", () => {
         },
         problems: [],
       },
-      { onOpenFolder: vi.fn(), onReleaseNotes: vi.fn() },
+      { onOpenFolder: vi.fn() },
     );
     expect(screen.getByRole("button", { name: "Show in folder" })).toHaveClass(
       "translator-button",
       "translator-button-quiet",
     );
-    expect(
-      screen.getByRole("button", { name: "Translation notes" }),
-    ).toHaveClass("translator-button", "translator-button-quiet");
   });
 });

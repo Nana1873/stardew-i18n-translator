@@ -348,12 +348,12 @@ describe("StringTable workbench", () => {
       ".translator-string-table-head",
     );
     expect(header).toHaveStyle({
-      gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
+      gridTemplateColumns: "34px 80px 140px 260px minmax(260px, 1fr) 58px",
       columnGap: "0",
       padding: "0",
     });
     expect(dataRows()[0]).toHaveStyle({
-      gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
+      gridTemplateColumns: "34px 80px 140px 260px minmax(260px, 1fr) 58px",
     });
     expect(
       screen
@@ -437,7 +437,7 @@ describe("StringTable workbench", () => {
       screen.getByRole("heading", { name: /Test Package.*Test Mod/ }),
     ).toBeVisible();
     expect(screen.getByText("German (de)")).toBeVisible();
-    expect(screen.getByText("2 / 3 translated · 67%")).toBeVisible();
+    expect(screen.getByText("2 / 3 covered · 67%")).toBeVisible();
     expect(screen.getByText("scanned just now")).toBeVisible();
   });
 
@@ -456,9 +456,7 @@ describe("StringTable workbench", () => {
       ),
     );
     render(<StringTable mod={MOD} />);
-    expect(
-      await screen.findByText("199 / 200 translated · 99.5%"),
-    ).toBeVisible();
+    expect(await screen.findByText("199 / 200 covered · 99.5%")).toBeVisible();
   });
 
   it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
@@ -2518,6 +2516,117 @@ describe("StringTable workbench", () => {
     );
   });
 
+  it("retains the smallest manual widths when remounted from persisted settings", async () => {
+    const changed = vi.fn();
+    const view = render(
+      <StringTable
+        mod={MOD}
+        initialColumnWidths={{ status: 92, key: 116, source: 176, target: 176 }}
+        onColumnWidthsChange={changed}
+      />,
+    );
+    await screen.findByText("greeting");
+    const minimums = [
+      ["Resize status column", 76],
+      ["Resize key column", 100],
+      ["Resize English source column", 160],
+      ["Resize translation column", 160],
+    ] as const;
+    for (const [name, value] of minimums) {
+      fireEvent.keyDown(screen.getByRole("separator", { name }), {
+        key: "ArrowLeft",
+      });
+      expect(screen.getByRole("separator", { name })).toHaveAttribute(
+        "aria-valuenow",
+        String(value),
+      );
+    }
+    const persisted = JSON.parse(JSON.stringify(changed.mock.lastCall?.[0]));
+    expect(persisted).toMatchObject({
+      status: 76,
+      key: 100,
+      source: 160,
+      target: 160,
+    });
+    view.unmount();
+    render(<StringTable mod={MOD} initialColumnWidths={persisted} />);
+    await screen.findByText("greeting");
+    for (const [name, value] of minimums) {
+      expect(screen.getByRole("separator", { name })).toHaveAttribute(
+        "aria-valuenow",
+        String(value),
+      );
+    }
+  });
+
+  it("fixes the inherited target width when another Fit column is resized", async () => {
+    const changed = vi.fn();
+    const view = render(
+      <StringTable mod={MOD} onColumnWidthsChange={changed} />,
+    );
+    await screen.findByText("greeting");
+    const workbench = view.container.querySelector(
+      ".translator-string-workbench",
+    );
+    if (!workbench) throw new Error("Missing string workbench");
+    Object.defineProperty(workbench, "clientWidth", { value: 1_200 });
+    fireEvent(window, new Event("resize"));
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize key column" }),
+      {
+        key: "ArrowLeft",
+      },
+    );
+    const grid = "34px 80px 124px 444px 444px minmax(0, 1fr) 58px";
+    expect(
+      view.container.querySelector(".translator-string-table-head"),
+    ).toHaveStyle({
+      gridTemplateColumns: grid,
+    });
+    const persisted = JSON.parse(JSON.stringify(changed.mock.lastCall?.[0]));
+    expect(persisted.target).toBe(444);
+    view.unmount();
+    const restored = render(
+      <StringTable mod={MOD} initialColumnWidths={persisted} />,
+    );
+    await screen.findByText("greeting");
+    expect(
+      restored.container.querySelector(".translator-string-table-head"),
+    ).toHaveStyle({
+      gridTemplateColumns: grid,
+    });
+  });
+
+  it("bounds every inherited Fit width before persisting a manual resize", async () => {
+    const changed = vi.fn();
+    const { container } = render(
+      <StringTable mod={MOD} onColumnWidthsChange={changed} />,
+    );
+    await screen.findByText("greeting");
+    const workbench = container.querySelector(".translator-string-workbench");
+    if (!workbench) throw new Error("Missing string workbench");
+    Object.defineProperty(workbench, "clientWidth", { value: 4_000 });
+    fireEvent(window, new Event("resize"));
+    expect(
+      screen.getByRole("separator", { name: "Resize English source column" }),
+    ).toHaveAttribute("aria-valuenow", "1844");
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize key column" }),
+      { key: "ArrowRight" },
+    );
+    expect(changed).toHaveBeenLastCalledWith({
+      mod: 100,
+      file: 80,
+      status: 80,
+      key: 156,
+      source: 720,
+      target: 1600,
+    });
+    expect(
+      screen.getByRole("separator", { name: "Resize English source column" }),
+    ).toHaveAttribute("aria-valuenow", "720");
+  });
+
   it("resizes status and content columns while action and issue controls stay fixed", async () => {
     const secondFile = {
       ...MOD.i18nFiles[0],
@@ -2540,12 +2649,12 @@ describe("StringTable workbench", () => {
     await screen.findAllByText("greeting");
 
     const resizers = [
-      ["Resize mod column", "146"],
-      ["Resize file column", "121"],
-      ["Resize status column", "118"],
-      ["Resize key column", "266"],
-      ["Resize English source column", "376"],
-      ["Resize German translation column", "196"],
+      ["Resize mod column", "116"],
+      ["Resize file column", "96"],
+      ["Resize status column", "96"],
+      ["Resize key column", "156"],
+      ["Resize English source column", "276"],
+      ["Resize German translation column", "276"],
     ] as const;
     for (const [name, expectedWidth] of resizers) {
       const resizer = screen.getByRole("separator", { name });
@@ -2561,7 +2670,7 @@ describe("StringTable workbench", () => {
     });
     expect(header).toHaveStyle({
       gridTemplateColumns:
-        "34px 146px 121px 118px 266px 376px 196px minmax(0, 1fr) 58px",
+        "34px 116px 96px 96px 156px 276px 276px minmax(0, 1fr) 58px",
     });
     expect(header?.lastElementChild).toBe(actionHeader);
     expect(actionHeader).toHaveClass("translator-row-actions-col");
@@ -2597,7 +2706,7 @@ describe("StringTable workbench", () => {
         name: /Resize (?:action|issue)s? column/i,
       }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("table")).toHaveStyle({ minWidth: "1315px" });
+    expect(screen.getByRole("table")).toHaveStyle({ minWidth: "1108px" });
   });
 
   it("drags a column boundary and removes the temporary window listeners", async () => {
@@ -2627,7 +2736,7 @@ describe("StringTable workbench", () => {
     });
     fireEvent.pointerMove(window, { clientX: 148, pointerId: 6 });
     expect(targetResizer).not.toHaveClass("is-dragging");
-    expect(targetResizer).toHaveAttribute("aria-valuenow", "180");
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "260");
 
     fireEvent.pointerDown(targetResizer, { clientX: 100, pointerId: 7 });
     expect(targetResizer).toHaveClass("is-dragging");
@@ -2714,7 +2823,7 @@ it("derives blank source status and reopens it after a source update, retaining 
   expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
   expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
     "data-complete",
-    "true",
+    "false",
   );
   expect(screen.getByText("1 need no translation text")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(

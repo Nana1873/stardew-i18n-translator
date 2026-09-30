@@ -130,9 +130,9 @@ describe("BatchTranslateDialog", () => {
       "93 / 282",
     );
     expect(screen.getByText("0 / 282")).toBeVisible();
-    expect(
-      screen.getByText(/Quality checks run before drafts are saved to Review/),
-    ).toBeVisible();
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "Checking translation quality · Batch 1 of 4 · 93 strings",
+    );
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuenow",
       "0",
@@ -146,11 +146,9 @@ describe("BatchTranslateDialog", () => {
       "aria-valuenow",
       "93",
     );
-    expect(
-      screen.queryByText(
-        /Quality checks run before drafts are saved to Review/,
-      ),
-    ).toBeNull();
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "Validating & saving",
+    );
   });
 
   it("starts the configured live engine immediately with only compact progress and Cancel", async () => {
@@ -179,7 +177,7 @@ describe("BatchTranslateDialog", () => {
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Preparing selected strings",
     );
-    expect(screen.getByText(/ChatGPT active · 00:00/)).toBeVisible();
+    expect(screen.getByText(/Elapsed · 00:00/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -381,17 +379,13 @@ describe("BatchTranslateDialog", () => {
     expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
       "407 / 1000",
     );
-    expect(
-      screen.getByText(/Quality checks run before drafts are saved to Review/),
-    ).toBeVisible();
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
-      "Reviewing quality · Batch 4 of 11 · 87 strings",
+      "Checking translation quality · Batch 4 of 11 · 87 strings",
     );
     expect(
-      screen.getByText(
-        /ChatGPT active · \d\d:\d\d · Retrying response structure · 1 retry · 2 splits/,
-      ),
+      screen.getByText(/Elapsed · \d\d:\d\d · Retrying response structure/),
     ).toBeVisible();
+    fireEvent.click(screen.getByText("Details"));
     expect(
       screen.getByText("ChatGPT activity · Reasoning · just now"),
     ).toBeVisible();
@@ -405,7 +399,7 @@ describe("BatchTranslateDialog", () => {
     expect(progress).toHaveAttribute("aria-valuenow", "320");
     expect(progress).toHaveAttribute(
       "aria-valuetext",
-      "407 of 1000 strings translated; 320 of 1000 suggestions saved to Review; reviewing quality · batch 4 of 11 · 87 strings",
+      "407 of 1000 strings translated; 320 of 1000 suggestions saved to Review; checking translation quality · batch 4 of 11 · 87 strings",
     );
 
     act(() => resolveRun(liveResult({ runId })));
@@ -538,11 +532,11 @@ describe("BatchTranslateDialog", () => {
         onLiveRun,
       });
 
-      expect(screen.getByText(/AI active · 00:00/)).toBeVisible();
+      expect(screen.getByText(/Elapsed · 00:00/)).toBeVisible();
       act(() => {
         vi.advanceTimersByTime(34_000);
       });
-      expect(screen.getByText(/AI active · 00:34/)).toBeVisible();
+      expect(screen.getByText(/Elapsed · 00:34/)).toBeVisible();
       unmount();
     } finally {
       vi.useRealTimers();
@@ -588,7 +582,9 @@ describe("BatchTranslateDialog", () => {
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Cancelling active batch",
     );
-    expect(screen.queryByText(/Reviewing quality/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/Checking translation quality/),
+    ).not.toBeInTheDocument();
 
     act(() =>
       resolveRun(

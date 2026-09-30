@@ -916,9 +916,7 @@ describe("SettingsDialog", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
       expect(await screen.findByText("1,185")).toBeInTheDocument();
       expect(
-        screen.getByText(
-          /1,185 terms · optional and not included in a release/,
-        ),
+        screen.getByText(/Stored locally · not included in a release/),
       ).toBeInTheDocument();
       expect(screen.queryByText("1.185")).toBeNull();
     } finally {
@@ -1216,7 +1214,7 @@ describe("SettingsDialog", () => {
     );
 
     const qualityReview = screen.getByRole("checkbox", {
-      name: "AI quality review and repairs",
+      name: "AI quality checks",
     });
     expect(qualityReview).toBeChecked();
     expect(

@@ -69,6 +69,7 @@ body {
   flex: 1 1 auto;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 /* Keep the trailing translation handle fully inside the scrollable table. */

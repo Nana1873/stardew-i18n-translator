@@ -1250,7 +1250,7 @@ export function StringEditor({
           className="editor__footer translator-editor-actions"
           {...nestedContentIsolation}
         >
-          <div className="translator-command-actions">
+          <div className="translator-command-actions translator-editor-tools">
             <button
               type="button"
               className="editor__iconbtn translator-icon-button"
@@ -1314,7 +1314,7 @@ export function StringEditor({
               </span>
             </button>
           </div>
-          <div className="translator-command-actions">
+          <div className="translator-command-actions translator-editor-save-actions">
             <button
               type="button"
               className="translator-button translator-button-quiet"

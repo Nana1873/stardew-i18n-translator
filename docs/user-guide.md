@@ -60,8 +60,8 @@ and dialogue commands when translating the surrounding words.
 
 A blank English source with a blank target needs no translation text and counts
 as Done. This is not a saved approval: if a mod update adds source text, the entry
-becomes Open again. Coverage reaches 100% and turns green only when every required
-string is covered.
+becomes Open again. Coverage counts text already present, including Review and
+Changed entries. Progress turns green only when every string is Done.
 
 Existing `<language>.json` files are taken as translated when scanned; this is
 different from importing an external LLM batch, which creates Review entries.
@@ -79,6 +79,10 @@ Use **This mod** or **All mods** to set your search scope. Search matches keys,
 English source text, and translations. Combine it with status and validation
 filters to find the work you need. Sorting, filters, pane width, and resizable
 column widths are remembered across sessions.
+
+Columns fit the available space by default. In narrow panes, mod and file
+details appear below the key so source and translation remain side by side.
+After resizing columns manually, use **Fit columns** to restore automatic sizing.
 
 Select rows with checkboxes, Ctrl+click, Shift+click, or Ctrl+A in the string
 table. The batch toolbar and right-click menu offer copy, mark Done, keep
@@ -144,14 +148,13 @@ Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 
-Select a mod package and use **Export… > Build translation ZIP**. Check its
+Select a mod package and use **Export… > Translation ZIP · current mod**. Check its
 preview and choose a destination. The ZIP preserves component folder paths and
 contains only generated target-language i18n files. Recipients still need the
 original mod; the ZIP does not include its assets, DLLs, or manifest.
 
-Use **Translation notes** for copy-ready package, language, coverage, review,
-and installation information. Check that text before publishing it alongside
-the ZIP. Uploading and publication happen outside the desktop app.
+Check coverage, Review, and Changed in the app and the ZIP preview before
+sharing the archive. Uploading and publication happen outside the desktop app.
 
 ## Find operation results
 

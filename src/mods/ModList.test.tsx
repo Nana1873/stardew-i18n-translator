@@ -28,6 +28,20 @@ function mod(partial: Partial<ScannedMod> & { uniqueId: string }): ScannedMod {
     totalKeys: 10,
     translatedKeys: 0,
     reviewNeeded: 0,
+    statusCounts: {
+      untranslated: Math.max(
+        0,
+        (partial.totalKeys ?? 10) -
+          (partial.translatedKeys ?? 0) -
+          (partial.noTranslationNeededKeys ?? 0),
+      ),
+      translated:
+        (partial.translatedKeys ?? 0) +
+        (partial.noTranslationNeededKeys ?? 0) -
+        (partial.reviewNeeded ?? 0),
+      "review-needed": partial.reviewNeeded ?? 0,
+      outdated: 0,
+    },
     progress: 0,
     status: "untranslated",
     ...partial,
@@ -58,7 +72,7 @@ describe("ModList", () => {
     expect(screen.getByText("Solo Mod")).toBeInTheDocument();
     expect(
       screen.getByRole("treeitem", { name: /Solo Mod/ }).getAttribute("title"),
-    ).toContain("0 of 10 strings translated");
+    ).toContain("0 of 10 strings covered");
     // No expand control for a single-component package.
     expect(screen.queryByRole("button", { name: "Collapse" })).toBeNull();
   });
@@ -85,7 +99,7 @@ describe("ModList", () => {
       screen
         .getByRole("treeitem", { name: /One String Mod/ })
         .getAttribute("title"),
-    ).toContain("1 of 1 string translated");
+    ).toContain("1 of 1 string covered");
   });
 
   it("groups a multi-component package under an expandable parent", () => {

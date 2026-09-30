@@ -59,7 +59,7 @@ function createRunId(): string {
 const PHASE_LABELS: Record<AiRunProgress["phase"], string> = {
   preparing: "Preparing batch",
   translating: "Translating draft",
-  reviewing: "Reviewing quality",
+  reviewing: "Checking translation quality",
   terminologyRepair: "Checking terminology",
   tokenRepair: "Repairing protected tokens",
   saving: "Validating & saving",
@@ -320,22 +320,9 @@ export function BatchTranslateDialog({
     );
   }
   const activityText = activityParts.join(" · ");
-  const metaParts = [
-    `${engine?.label ?? "AI"} active`,
-    formatElapsed(elapsedSeconds),
-  ];
+  const metaParts = [`Elapsed · ${formatElapsed(elapsedSeconds)}`];
   if (!cancelRequested && liveProgress?.recovery) {
     metaParts.push(RECOVERY_LABELS[liveProgress.recovery]);
-  }
-  if (liveProgress?.retries) {
-    metaParts.push(
-      `${liveProgress.retries} ${liveProgress.retries === 1 ? "retry" : "retries"}`,
-    );
-  }
-  if (liveProgress?.splits) {
-    metaParts.push(
-      `${liveProgress.splits} ${liveProgress.splits === 1 ? "split" : "splits"}`,
-    );
   }
   const usage = liveProgress?.usage;
   const usageText = usage
@@ -396,11 +383,6 @@ export function BatchTranslateDialog({
               {done} / {total}
             </strong>
           </div>
-          {translated > done && (
-            <p className="translator-kicker">
-              Quality checks run before drafts are saved to Review.
-            </p>
-          )}
           <div
             className="translator-ai-activity"
             role="status"
@@ -411,25 +393,47 @@ export function BatchTranslateDialog({
           </div>
           <div className="translator-ai-meta">
             <span>{metaParts.join(" · ")}</span>
-            {lastCloudActivity && activityAge !== null && (
-              <span>
-                {"ChatGPT"} activity ·{" "}
-                {CLOUD_ACTIVITY_LABELS[lastCloudActivity.stage]} ·{" "}
-                {formatActivityAge(activityAge)}
-              </span>
-            )}
             {!cancelRequested && estimatedRemainingSeconds !== null && (
               <span>
                 Estimated remaining ·{" "}
                 {formatEstimatedRemaining(estimatedRemainingSeconds)}
               </span>
             )}
-            {usageText && (
-              <span>
-                {CLOUD_ENGINE_LABEL} reported · {usageText}
-              </span>
-            )}
           </div>
+          <details className="translator-ai-details">
+            <summary>Details</summary>
+            <div className="translator-ai-meta">
+              {engine && (
+                <span>
+                  {engine.model} · {engine.reasoning} reasoning
+                </span>
+              )}
+              {lastCloudActivity && activityAge !== null && (
+                <span>
+                  {CLOUD_ENGINE_LABEL} activity ·{" "}
+                  {CLOUD_ACTIVITY_LABELS[lastCloudActivity.stage]} ·{" "}
+                  {formatActivityAge(activityAge)}
+                </span>
+              )}
+              {usageText && (
+                <span>
+                  {CLOUD_ENGINE_LABEL} reported · {usageText}
+                </span>
+              )}
+              {Boolean(liveProgress?.retries) && (
+                <span>
+                  {liveProgress?.retries}{" "}
+                  {liveProgress?.retries === 1 ? "retry" : "retries"}
+                </span>
+              )}
+              {Boolean(liveProgress?.splits) && (
+                <span>
+                  {liveProgress?.splits}{" "}
+                  {liveProgress?.splits === 1 ? "split" : "splits"}
+                </span>
+              )}
+            </div>
+          </details>
           <div className="translator-progress-row">
             <span
               role="progressbar"

@@ -101,16 +101,10 @@ describe("ExportConfirmDialog", () => {
     );
 
     expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "8currently eligible",
+      "8texts with a value",
     );
     expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "2currently open",
-    );
-    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "1currently changed",
-    );
-    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "2currently in review",
+      "2open strings omitted",
     );
     expect(
       screen.getByText("E:/Fixtures/Mods/Test/i18n/de.json"),
@@ -121,10 +115,10 @@ describe("ExportConfirmDialog", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/blocker preflight is unavailable/),
+      screen.getByText(/Check these strings before sharing/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/Counts above describe the current scan/),
+      screen.getByText(/Counts reflect the current scan/),
     ).toBeInTheDocument();
     expect(screen.queryByText("Unavailable before export")).toBeNull();
   });
@@ -145,8 +139,7 @@ describe("ExportConfirmDialog", () => {
 
     expect(
       screen.getByText(/3 included strings are not Done/),
-    ).toHaveTextContent("No blocking protected-token issue was found.");
-    expect(screen.queryByText(/blocker preflight is unavailable/)).toBeNull();
+    ).toHaveTextContent("Check these strings before sharing the translation.");
   });
 
   it("keeps unavailable current-scan aggregates explicit", () => {
@@ -159,9 +152,11 @@ describe("ExportConfirmDialog", () => {
       />,
     );
 
-    expect(screen.getAllByText("Unavailable")).toHaveLength(5);
+    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
     expect(screen.getByText("Unavailable before export")).toBeInTheDocument();
-    expect(screen.getByText(/aggregates are unavailable/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Review and Changed counts are unavailable/),
+    ).toBeInTheDocument();
   });
 
   it("does not claim Ready while protected-token preflight is unavailable", () => {
@@ -181,7 +176,7 @@ describe("ExportConfirmDialog", () => {
 
     expect(screen.queryByText(/Ready to export/)).toBeNull();
     expect(
-      screen.getByText(/Export readiness · Unavailable/),
+      screen.getByText(/Protected tokens will be checked before writing/),
     ).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });

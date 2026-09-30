@@ -287,7 +287,7 @@ export function ModList({
         <span>Mod</span>
         <span>Ver.</span>
         <span>Nexus</span>
-        <span>Progress</span>
+        <span>Coverage</span>
       </div>
       <div
         className="translator-mod-list"
@@ -490,7 +490,7 @@ function PackageNode({
         tabIndex={tabStop ? 0 : -1}
         data-tree-id={`package:${group.packageId}`}
         aria-expanded={expanded}
-        title={`${workingCoveredKeys(group).toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} ${group.noTranslationNeededKeys ? "covered" : "translated"}${group.noTranslationNeededKeys ? ` (${group.noTranslationNeededKeys} need no translation text)` : ""}, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
+        title={`${workingCoveredKeys(group).toLocaleString()} of ${group.totalKeys.toLocaleString()} ${group.totalKeys === 1 ? "string" : "strings"} covered${group.noTranslationNeededKeys ? ` (${group.noTranslationNeededKeys} need no translation text)` : ""}, ${group.reviewNeeded.toLocaleString()} awaiting review, ${group.fileCount.toLocaleString()} i18n ${group.fileCount === 1 ? "file" : "files"}, ${percent} percent.`}
         onClick={onToggle}
       >
         <strong>
@@ -509,7 +509,10 @@ function PackageNode({
         <span
           className="translator-mod-progress"
           data-complete={
-            group.totalKeys > 0 && workingCoveredKeys(group) >= group.totalKeys
+            group.totalKeys > 0 &&
+            group.mods.every(
+              (mod) => (mod.statusCounts?.translated ?? 0) >= mod.totalKeys,
+            )
           }
           aria-hidden="true"
         >
@@ -572,7 +575,7 @@ function ModRow({
       data-tree-id={treeId}
       data-mod-id={mod.uniqueId}
       data-mod-progress={`${workingCoveredKeys(mod)} / ${mod.totalKeys} · ${percent}%`}
-      title={`${mod.name} · ${workingCoveredKeys(mod).toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} ${mod.noTranslationNeededKeys ? "covered" : "translated"}${mod.noTranslationNeededKeys ? ` (${mod.noTranslationNeededKeys} need no translation text)` : ""} · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
+      title={`${mod.name} · ${workingCoveredKeys(mod).toLocaleString()} of ${mod.totalKeys.toLocaleString()} ${mod.totalKeys === 1 ? "string" : "strings"} covered${mod.noTranslationNeededKeys ? ` (${mod.noTranslationNeededKeys} need no translation text)` : ""} · ${mod.reviewNeeded} awaiting review · ${mod.i18nFiles.length} i18n ${mod.i18nFiles.length === 1 ? "source" : "sources"}`}
       onClick={() => onSelect(mod.uniqueId)}
       onContextMenu={(event) => onContextMenu(mod, event, event.currentTarget)}
     >
@@ -614,7 +617,8 @@ function ModRow({
       <span
         className="translator-mod-progress"
         data-complete={
-          mod.totalKeys > 0 && workingCoveredKeys(mod) >= mod.totalKeys
+          mod.totalKeys > 0 &&
+          (mod.statusCounts?.translated ?? 0) >= mod.totalKeys
         }
         aria-hidden="true"
       >

@@ -208,31 +208,6 @@ export function ImportBatchDialog({
               </div>
               <dl className="translator-import-preflight-grid">
                 <div>
-                  <dt>Mod / component</dt>
-                  <dd>
-                    {preflight.modMatches
-                      ? preflight.selectedModUniqueId
-                      : `${preflight.batchModUniqueId} does not match ${preflight.selectedModUniqueId}`}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Target language</dt>
-                  <dd>
-                    {preflight.batchTargetLang} ·{" "}
-                    {preflight.languageMatches ? "matched" : "mismatch"}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Source snapshot</dt>
-                  <dd>{preflight.snapshotResult}</dd>
-                </div>
-                <div>
-                  <dt>Strings supplied / matched</dt>
-                  <dd>
-                    {preflight.suppliedStrings} / {preflight.matchedStrings}
-                  </dd>
-                </div>
-                <div>
                   <dt>Ready for Review</dt>
                   <dd>{preflight.importable}</dd>
                 </div>
@@ -240,15 +215,49 @@ export function ImportBatchDialog({
                   <dt>Local translations preserved</dt>
                   <dd>{preflight.preservedLocal}</dd>
                 </div>
-                <div>
-                  <dt>Empty values skipped</dt>
-                  <dd>{preflight.skippedEmpty}</dd>
-                </div>
-                <div>
-                  <dt>Identical to source</dt>
-                  <dd>{preflight.identicalToSource}</dd>
-                </div>
+                {preflight.skippedEmpty > 0 && (
+                  <div>
+                    <dt>Empty values skipped</dt>
+                    <dd>{preflight.skippedEmpty}</dd>
+                  </div>
+                )}
+                {preflight.identicalToSource > 0 && (
+                  <div>
+                    <dt>Identical to source</dt>
+                    <dd>{preflight.identicalToSource}</dd>
+                  </div>
+                )}
               </dl>
+              <details className="translator-result-help">
+                <summary>Details</summary>
+                <dl className="translator-import-preflight-grid">
+                  <div>
+                    <dt>Mod / component</dt>
+                    <dd>
+                      {preflight.modMatches
+                        ? preflight.selectedModUniqueId
+                        : `${preflight.batchModUniqueId} does not match ${preflight.selectedModUniqueId}`}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Target language</dt>
+                    <dd>
+                      {preflight.batchTargetLang} ·{" "}
+                      {preflight.languageMatches ? "matched" : "mismatch"}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Source snapshot</dt>
+                    <dd>{preflight.snapshotResult}</dd>
+                  </div>
+                  <div>
+                    <dt>Strings supplied / matched</dt>
+                    <dd>
+                      {preflight.suppliedStrings} / {preflight.matchedStrings}
+                    </dd>
+                  </div>
+                </dl>
+              </details>
               {preflight.protectedTokenIssues.length > 0 && (
                 <details className="translator-result-help">
                   <summary>

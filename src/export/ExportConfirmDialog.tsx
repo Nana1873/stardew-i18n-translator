@@ -9,6 +9,8 @@ export interface ExportBlockingProblem {
 
 interface ExportConfirmDialogProps {
   modName: string;
+  modsRoot?: string;
+  targetLanguage?: string;
   /** Number of existing target files which will receive visible backups. */
   existingFiles: number;
   /** Number of target files which do not exist yet and will be created. */
@@ -36,6 +38,8 @@ interface ExportConfirmDialogProps {
 
 export function ExportConfirmDialog({
   modName,
+  modsRoot,
+  targetLanguage,
   existingFiles,
   newFiles = 0,
   mods = null,
@@ -63,6 +67,13 @@ export function ExportConfirmDialog({
   const replacing = existingFiles > 0;
   const creating = newFiles > 0;
   const allMods = mods != null;
+  const root = modsRoot?.replace(/\\/g, "/").replace(/\/+$/, "");
+  const displayPath = (path: string) => {
+    const normalized = path.replace(/\\/g, "/");
+    return root && normalized.toLowerCase().startsWith(root.toLowerCase() + "/")
+      ? normalized.slice(root.length + 1)
+      : path;
+  };
 
   return (
     <div className="translator-flow-overlay">
@@ -84,7 +95,10 @@ export function ExportConfirmDialog({
             <h2 className="translator-heading">
               {allMods ? "Export all mods?" : "Export current mod?"}
             </h2>
-            <div className="translator-kicker">{modName}</div>
+            <div className="translator-kicker">
+              {modName}
+              {targetLanguage ? ` · ${targetLanguage}` : ""}
+            </div>
           </div>
           <button
             className="translator-icon-button"
@@ -133,15 +147,18 @@ export function ExportConfirmDialog({
                 className="translator-preflight-metrics"
                 aria-label="Export readiness"
               >
-                <Metric value={willWrite} label="currently eligible" />
-                <Metric value={openOmitted} label="currently open" />
-                <Metric value={changedIncluded} label="currently changed" />
-                <Metric value={reviewIncluded} label="currently in review" />
-                <Metric
-                  value={acceptedMismatches}
-                  label="accepted mismatches"
-                />
+                <Metric value={willWrite} label="texts with a value" />
+                {(openOmitted == null || openOmitted > 0) && (
+                  <Metric value={openOmitted} label="open strings omitted" />
+                )}
               </div>
+
+              {modsRoot && (
+                <div className="translator-result-path">
+                  <span>Mods folder</span>
+                  <code>{modsRoot}</code>
+                </div>
+              )}
 
               {existingTargetPaths.length > 0 && (
                 <div className="translator-result-path">
@@ -152,7 +169,9 @@ export function ExportConfirmDialog({
                     · backed up as .json.bak
                   </span>
                   {existingTargetPaths.map((path) => (
-                    <code key={path}>{path}</code>
+                    <code key={path} title={path}>
+                      {displayPath(path)}
+                    </code>
                   ))}
                 </div>
               )}
@@ -163,7 +182,9 @@ export function ExportConfirmDialog({
                     · created by this export
                   </span>
                   {newTargetPaths.map((path) => (
-                    <code key={path}>{path}</code>
+                    <code key={path} title={path}>
+                      {displayPath(path)}
+                    </code>
                   ))}
                 </div>
               )}
@@ -177,65 +198,50 @@ export function ExportConfirmDialog({
 
               {attention == null ? (
                 <div className="translator-flow-callout">
-                  Changed and review aggregates are unavailable before this
-                  export.{" "}
+                  Review and Changed counts are unavailable.{" "}
                   {blockingValidationAvailable
-                    ? "No blocking protected-token issue was found in the complete selected scope."
-                    : "Protected-token blocker preflight is also unavailable; the backend validates the complete selected scope before any file is written."}
+                    ? "Protected-token checks passed."
+                    : "All selected files will be checked before writing."}
                 </div>
               ) : attention > 0 ? (
                 <div className="translator-flow-callout is-warning">
                   <AlertTriangle aria-hidden="true" /> {attention} included{" "}
                   {attention === 1 ? "string is" : "strings are"} not Done:{" "}
                   {changedIncluded} Changed and {reviewIncluded} in Review.{" "}
-                  {blockingValidationAvailable
-                    ? "No blocking protected-token issue was found."
-                    : "Protected-token blocker preflight is unavailable; the backend remains the final write guard."}
+                  Check these strings before sharing the translation.
                 </div>
               ) : blockingValidationAvailable ? (
-                <div className="translator-flow-callout">
+                <div className="translator-flow-callout is-success">
                   Ready to export. No included strings are Changed or in Review.
                 </div>
               ) : (
                 <div className="translator-flow-callout">
-                  Export readiness · Unavailable before export. Known changed
-                  and review counts are clear, but protected-token blockers are
-                  validated by the backend when export starts.
+                  No included strings are Changed or in Review. Protected tokens
+                  will be checked before writing.
                 </div>
               )}
-
-              <div className="translator-kicker">
-                Counts above describe the current scan. The backend revalidates
-                the complete scope atomically when export starts; no file is
-                changed if a blocking issue is found.
-              </div>
 
               {acceptedMismatches != null && acceptedMismatches > 0 && (
                 <div className="translator-flow-callout">
                   <strong>Accepted mismatch:</strong> {acceptedMismatches}{" "}
-                  {acceptedMismatches === 1
-                    ? "exact source revision may"
-                    : "exact source revisions may"}{" "}
-                  be exported because the translator explicitly confirmed it.
+                  {acceptedMismatches === 1 ? "string has" : "strings have"} an
+                  explicitly accepted protected-token difference.
                 </div>
               )}
 
               <details className="translator-export-details">
-                <summary>Safety and previous export</summary>
+                <summary>Details</summary>
                 <div className="translator-export-details-body">
                   <span>
-                    The complete scope is validated before writing. Existing
-                    files receive visible <code>.json.bak</code> backups and a
-                    failed package write is rolled back.
+                    Counts reflect the current scan. All selected files are
+                    checked again before writing. Existing files receive visible{" "}
+                    <code>.json.bak</code> backups and a failed package write is
+                    rolled back.
                   </span>
                   <span>
-                    Disk-change comparison: unavailable before export; backend
-                    path authorization and validation remain active.
+                    No files are changed if a blocking issue is found.
                   </span>
-                  <span>
-                    {lastExportLabel ??
-                      "Previous export · Unavailable in this session"}
-                  </span>
+                  {lastExportLabel && <span>{lastExportLabel}</span>}
                 </div>
               </details>
             </>

@@ -612,7 +612,6 @@ export function ResultTray({
   onRetry,
   onOpenFolder,
   onOpenReview,
-  onReleaseNotes,
   onUndoBulk,
   onNotify,
   toggleButtonRef,
@@ -627,7 +626,6 @@ export function ResultTray({
   onRetry?: () => void;
   onOpenFolder?: (path: string) => void;
   onOpenReview?: () => void;
-  onReleaseNotes?: () => void;
   onUndoBulk?: () => Promise<void> | void;
   onNotify?: (message: string) => void;
   /** Lets the shell restore focus after Latest result is reopened. */
@@ -948,21 +946,6 @@ export function ResultTray({
               >
                 {unresolved.length === 1 ? "Open issue" : "Open issues"}
               </button>
-            )}
-            {data.kind === "zip" && data.outcome && onReleaseNotes && (
-              <>
-                <span
-                  className="translator-result-action-break"
-                  aria-hidden="true"
-                />
-                <button
-                  className="translator-button translator-button-quiet"
-                  type="button"
-                  onClick={onReleaseNotes}
-                >
-                  Translation notes
-                </button>
-              </>
             )}
             {showRetry && (
               <button

@@ -601,7 +601,7 @@ export function SettingsDialog({
               className="translator-kicker"
               id="translator-settings-description"
             >
-              Stored locally beside the application
+              Translation and application preferences
             </div>
           </div>
           <button
@@ -654,8 +654,8 @@ export function SettingsDialog({
             >
               <h3>Folders & language</h3>
               <p className="translator-settings-intro">
-                The app only reads mods and game content from the selected
-                folders.
+                Scanning reads these folders. Export writes translation files to
+                your Mods folder; game files stay read-only.
               </p>
               <div className="translator-settings-group">
                 <div className="translator-setting-line">
@@ -1100,7 +1100,7 @@ export function SettingsDialog({
                   </label>
                   <div className="translator-setting-line">
                     <span className="translator-setting-copy">
-                      <strong>AI quality review &amp; repairs</strong>
+                      <strong>AI quality checks</strong>
                       <span>
                         Checks wording, terminology and protected tokens. Uses
                         additional ChatGPT requests.
@@ -1109,7 +1109,7 @@ export function SettingsDialog({
                     <label className="translator-switch">
                       <input
                         type="checkbox"
-                        aria-label="AI quality review and repairs"
+                        aria-label="AI quality checks"
                         checked={cloudQualityReview}
                         onChange={(event) =>
                           setCloudQualityReview(event.target.checked)
@@ -1165,7 +1165,7 @@ export function SettingsDialog({
             >
               <h3>About</h3>
               <p className="translator-settings-intro">
-                Stardew i18n Translator · version {packageInfo.version}.
+                Stardew i18n Translator
               </p>
               <div className="translator-settings-group">
                 <div className="translator-setting-line">
@@ -1180,34 +1180,36 @@ export function SettingsDialog({
                     <strong>Author & license</strong>
                     <span>Nana · GPL-3.0-or-later</span>
                   </span>
-                  <button
-                    className="translator-button translator-button-quiet"
-                    type="button"
-                    onClick={() =>
-                      void openUrl(
-                        "https://github.com/Nana1873/stardew-i18n-translator",
-                      )
-                    }
-                  >
-                    GitHub
-                  </button>
+                  <div className="translator-settings-actions">
+                    <button
+                      className="translator-button translator-button-quiet"
+                      type="button"
+                      onClick={() =>
+                        void openUrl(
+                          "https://github.com/Nana1873/stardew-i18n-translator",
+                        )
+                      }
+                    >
+                      GitHub
+                    </button>
+                    <button
+                      className="translator-button translator-button-quiet"
+                      type="button"
+                      onClick={() =>
+                        void openUrl(
+                          "https://github.com/Nana1873/stardew-i18n-translator/blob/main/LICENSE",
+                        )
+                      }
+                    >
+                      License
+                    </button>
+                  </div>
                 </div>
                 <div className="translator-setting-line">
                   <span className="translator-setting-copy">
                     <strong>Technology</strong>
                     <span>Tauri 2 · Rust · React · TypeScript</span>
                   </span>
-                  <button
-                    className="translator-button translator-button-quiet"
-                    type="button"
-                    onClick={() =>
-                      void openUrl(
-                        "https://github.com/Nana1873/stardew-i18n-translator/blob/main/LICENSE",
-                      )
-                    }
-                  >
-                    License
-                  </button>
                 </div>
                 <div className="translator-setting-line">
                   <span className="translator-setting-copy">
@@ -1262,16 +1264,13 @@ export function SettingsDialog({
         </fieldset>
 
         <div className="translator-settings-head">
-          <span className="translator-kicker">
-            {saveError
-              ? "Settings could not be saved"
-              : "Settings are stored in the portable Data folder"}
+          <span>
+            {saveError && (
+              <span className="translator-shortcut-error" role="alert">
+                {saveError}
+              </span>
+            )}
           </span>
-          {saveError && (
-            <span className="translator-shortcut-error" role="alert">
-              {saveError}
-            </span>
-          )}
           <div className="translator-settings-actions">
             <button
               className="translator-button translator-button-quiet"
@@ -1359,15 +1358,13 @@ function GlossarySettings({
     >
       <h3>Glossary</h3>
       <p className="translator-settings-intro">
-        Optional official term hints from local Stardew strings. The glossary
-        does not translate ordinary prose.
+        Optional term hints from local Stardew strings. The glossary does not
+        translate ordinary prose.
       </p>
       <div className={"translator-glossary-summary" + summaryTone}>
         <div className="translator-glossary-main">
           <strong>{state}</strong>
-          <span>
-            {language} · source: {source}
-          </span>
+          <span>{language}</span>
         </div>
         <div className="translator-glossary-number">
           <strong>
@@ -1468,8 +1465,7 @@ function GlossarySettings({
               <strong>{language} cache</strong>
               <span>
                 {cached
-                  ? englishNumberFormat.format(cached.termCount) +
-                    " terms · optional and not included in a release"
+                  ? "Stored locally · not included in a release"
                   : "Not built yet · optional and stored locally"}
               </span>
             </span>
@@ -1511,10 +1507,12 @@ function GlossarySettings({
           {error}
         </p>
       )}
-      <p className="translator-kicker">
-        If the glossary is unavailable, scanning, translation, review, and
-        export still work normally.
-      </p>
+      {!available && (
+        <p className="translator-kicker">
+          If the glossary is unavailable, scanning, translation, review, and
+          export still work normally.
+        </p>
+      )}
     </section>
   );
 }

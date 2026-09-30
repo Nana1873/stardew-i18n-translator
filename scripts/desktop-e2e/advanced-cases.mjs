@@ -87,32 +87,48 @@ export async function advancedCases(h) {
         await selectMod("E2E.DesktopSmoke");
         const measure = async (name, selectors) => {
           const result = await driver.executeScript((selectors) => {
-            const controls = selectors.map((selector) => {
-              const node = document.querySelector(selector);
-              if (!node) return { selector, missing: true };
-              const rect = node.getBoundingClientRect();
-              const hit = document.elementFromPoint(
-                rect.x + rect.width / 2,
-                rect.y + rect.height / 2,
-              );
-              return {
-                selector,
-                width: rect.width,
-                height: rect.height,
-                inside:
-                  rect.x >= -1 &&
-                  rect.y >= -1 &&
-                  rect.right <= innerWidth + 1 &&
-                  rect.bottom <= innerHeight + 1,
-                unobstructed: hit === node || node.contains(hit),
-              };
+            const controls = selectors.flatMap((selector) => {
+              const nodes = [...document.querySelectorAll(selector)];
+              if (!nodes.length) return [{ selector, missing: true }];
+              return nodes.map((node) => {
+                const rect = node.getBoundingClientRect();
+                const hit = document.elementFromPoint(
+                  rect.x + rect.width / 2,
+                  rect.y + rect.height / 2,
+                );
+                return {
+                  selector,
+                  width: rect.width,
+                  height: rect.height,
+                  inside:
+                    rect.x >= -1 &&
+                    rect.y >= -1 &&
+                    rect.right <= innerWidth + 1 &&
+                    rect.bottom <= innerHeight + 1,
+                  unobstructed: hit === node || node.contains(hit),
+                };
+              });
             });
+            const footer = document.querySelector(".translator-editor-actions");
+            const footerStyle = footer && getComputedStyle(footer);
+            const buttonRects = (selector) =>
+              [...document.querySelectorAll(selector)].map((node) =>
+                node.getBoundingClientRect().toJSON(),
+              );
             return {
               width: innerWidth,
               height: innerHeight,
               ratio: devicePixelRatio,
               overflow: document.documentElement.scrollWidth > innerWidth + 1,
               controls,
+              editorFooter: footer && {
+                contentLeft:
+                  footer.getBoundingClientRect().left +
+                  parseFloat(footerStyle.paddingLeft) +
+                  parseFloat(footerStyle.borderLeftWidth),
+                tools: buttonRects(".translator-editor-tools button"),
+                saves: buttonRects(".translator-editor-save-actions button"),
+              },
             };
           }, selectors);
           evidence.layout.push({ scale, screen: name, ...result });
@@ -140,6 +156,27 @@ export async function advancedCases(h) {
                 control.unobstructed,
               `${name}: inaccessible/clipped ${control.selector}`,
             );
+          if (result.editorFooter) {
+            const { contentLeft, tools, saves } = result.editorFooter;
+            assert.equal(tools.length, 5);
+            assert.equal(saves.length, 2);
+            assert.ok(
+              Math.abs(tools[0].left - contentLeft) < 1,
+              `${name}: navigation must start at the footer's left padding`,
+            );
+            for (const tool of tools) {
+              assert.ok(
+                Math.abs(
+                  tool.y + tool.height / 2 - tools[0].y - tools[0].height / 2,
+                ) < 1,
+                `${name}: editor tools must stay on one aligned row`,
+              );
+              assert.ok(tool.right + 6 <= saves[0].left);
+            }
+            assert.ok(Math.abs(saves[0].left - saves[1].left) < 1);
+            assert.ok(Math.abs(saves[0].width - saves[1].width) < 1);
+            assert.ok(saves[0].bottom + 5 <= saves[1].top);
+          }
           await screenshot(`layout-${scale}-${name}`);
         };
         await measure("workspace", [
@@ -154,6 +191,22 @@ export async function advancedCases(h) {
           ".translator-editor-actions button",
         ]);
         await click(css('[aria-label="Close editor"]'));
+        if (options.releaseCases) {
+          await selectMod("E2E.ReleaseSplit");
+          await openEntry("split.review");
+          await measure("editor-review", [".translator-editor-actions button"]);
+          const translation = css("#translator-editor-translation");
+          const original = await (
+            await element(translation)
+          ).getAttribute("value");
+          await fill(translation, `${original} Edited.`);
+          await element(button("Save edited suggestion"));
+          await measure("editor-review-edited", [
+            ".translator-editor-actions button",
+          ]);
+          await fill(translation, original);
+          await click(css('[aria-label="Close editor"]'));
+        }
         await click(css('[aria-label="Settings"]'));
         await measure("settings", [
           '[aria-label="Close settings"]',
@@ -190,15 +243,13 @@ export async function advancedCases(h) {
           'section[aria-label="ChatGPT"] .translator-setting-actions button',
           '[aria-label="ChatGPT model"]',
           '[aria-label="ChatGPT reasoning"]',
-          '.translator-switch:has([aria-label="AI quality review and repairs"])',
+          '.translator-switch:has([aria-label="AI quality checks"])',
           '[aria-label="Close settings"]',
         ]);
         const qualitySwitch = css(
-          '.translator-switch:has([aria-label="AI quality review and repairs"])',
+          '.translator-switch:has([aria-label="AI quality checks"])',
         );
-        const qualityInput = css(
-          '[aria-label="AI quality review and repairs"]',
-        );
+        const qualityInput = css('[aria-label="AI quality checks"]');
         const qualityEnabled = await (
           await driver.findElement(qualityInput)
         ).isSelected();
@@ -432,9 +483,7 @@ export async function advancedCases(h) {
         // Keep quality review enabled: the normal draft + review path is covered.
         assert.equal(
           await (
-            await driver.findElement(
-              css('[aria-label="AI quality review and repairs"]'),
-            )
+            await driver.findElement(css('[aria-label="AI quality checks"]'))
           ).isSelected(),
           true,
         );
