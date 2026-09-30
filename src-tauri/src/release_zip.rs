@@ -88,6 +88,104 @@ pub struct ZipBuildRequest {
     pub overwrite: bool,
 }
 
+/// Bind a package preview or build to the configured workspace and a fresh
+/// scan. A changed inventory requires a new displayed scan and preview.
+pub(crate) fn resolve_components(
+    config: &Path,
+    mods_path: &Path,
+    package_name: &str,
+    target_lang: &str,
+    requests: &[ZipComponentInput],
+) -> Result<Vec<ZipComponentInput>, String> {
+    validate_segment(package_name, "package folder")?;
+    let (mods, language) = output_context(&crate::settings::load_checked(config)?)?;
+    if language != target_lang
+        || std::fs::canonicalize(&mods)
+            .ok()
+            .filter(|path| {
+                std::fs::canonicalize(mods_path).is_ok_and(|requested| *path == requested)
+            })
+            .is_none()
+    {
+        return Err("Translation settings changed. Open the ZIP preview again.".into());
+    }
+    let scan = scanner::scan_mods(&mods, &language, config);
+    if !scan.traversal_complete
+        || scan.skipped_components.iter().any(|component| {
+            component.requires_attention && component.package_id.as_deref() == Some(package_name)
+        })
+    {
+        return Err(
+            "Resolve this package's scan errors before creating its translation ZIP.".into(),
+        );
+    }
+    let current = scan
+        .mods
+        .iter()
+        .filter(|component| component.package_id == package_name)
+        .collect::<Vec<_>>();
+    let requested_ids = requests
+        .iter()
+        .map(|component| component.unique_id.to_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let current_ids = current
+        .iter()
+        .map(|component| component.unique_id.to_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let stale = "The selected package changed. Run Scan and open the ZIP preview again.";
+    if requests.is_empty() || current_ids != requested_ids || requests.len() != current.len() {
+        return Err(stale.into());
+    }
+    for request in requests {
+        let component = current
+            .iter()
+            .find(|component| component.unique_id.eq_ignore_ascii_case(&request.unique_id))
+            .ok_or(stale)?;
+        if component.version != request.version
+            || std::fs::canonicalize(&component.folder_path)
+                .ok()
+                .filter(|path| {
+                    std::fs::canonicalize(&request.folder_path)
+                        .is_ok_and(|requested| *path == requested)
+                })
+                .is_none()
+        {
+            return Err(stale.into());
+        }
+    }
+    let inputs = requests
+        .iter()
+        .map(|component| crate::export::ExportModInput {
+            mod_unique_id: component.unique_id.clone(),
+            mod_name: component.name.clone(),
+            files: component.files.clone(),
+        })
+        .collect::<Vec<_>>();
+    let resolved = crate::export::resolve_scanned_inputs(&scan, &inputs)
+        .map_err(|error| format!("{error} Run Scan and open the ZIP preview again."))?;
+    let files = resolved
+        .iter()
+        .flat_map(|component| component.files.iter().cloned())
+        .collect::<Vec<_>>();
+    crate::export::validate_paths(&mods, &language, &files)?;
+    Ok(resolved
+        .into_iter()
+        .map(|input| {
+            let component = current
+                .iter()
+                .find(|component| component.unique_id == input.mod_unique_id)
+                .expect("resolved component came from this package's current scan");
+            ZipComponentInput {
+                unique_id: input.mod_unique_id,
+                name: component.name.clone(),
+                version: component.version.clone(),
+                folder_path: component.folder_path.clone(),
+                files: input.files,
+            }
+        })
+        .collect())
+}
+
 struct PreparedEntry {
     preview: ZipEntryPreview,
     body: Vec<u8>,
@@ -875,6 +973,92 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    fn scanned_package(config: &Path, mods: &Path, package: &str) -> Vec<ZipComponentInput> {
+        scanner::scan_mods(mods, "de", config)
+            .mods
+            .into_iter()
+            .filter(|component| component.package_id == package)
+            .map(|component| ZipComponentInput {
+                unique_id: component.unique_id,
+                name: component.name,
+                version: component.version,
+                folder_path: component.folder_path,
+                files: component
+                    .i18n_files
+                    .into_iter()
+                    .map(|file| ExportFileInput {
+                        relative_dir: file.relative_dir,
+                        default_path: file.default_path,
+                        target_path: file.target_path,
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn package_zip_requires_a_new_scan_for_added_files_and_includes_them_after_rescan() {
+        let (root, config, mods) = output_fixture("package-fresh-files");
+        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        write(&component.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        let displayed = scanned_package(&config, &mods, "Pack");
+        assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_ok());
+        write(
+            &component.join("extra/i18n/default.json"),
+            r#"{"bye":"Goodbye"}"#,
+        );
+        write(
+            &component.join("extra/i18n/de.json"),
+            r#"{"bye":"Tschüss"}"#,
+        );
+        assert!(resolve_components(&config, &mods, "Pack", "de", &displayed)
+            .unwrap_err()
+            .contains("Run Scan"));
+        let current = scanned_package(&config, &mods, "Pack");
+        let resolved = resolve_components(&config, &mods, "Pack", "de", &current).unwrap();
+        assert_eq!(resolved[0].files.len(), 2);
+        let destination = root.join("package.zip");
+        build(
+            &translations::language_root(&config, "de").unwrap(),
+            &request(&mods, "Pack", resolved, &destination, false),
+        )
+        .unwrap();
+        assert_eq!(zip_documents(&destination).len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_zip_rejects_changed_versions_components_and_workspace() {
+        let (root, config, mods) = output_fixture("package-fresh-binding");
+        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        let displayed = scanned_package(&config, &mods, "Pack");
+        write(
+            &component.join("manifest.json"),
+            r#"{"Name":"Pack","UniqueID":"Fixture.Package","Version":"2.0.0"}"#,
+        );
+        assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_err());
+        let current = scanned_package(&config, &mods, "Pack");
+        assert_eq!(
+            resolve_components(&config, &mods, "Pack", "de", &current).unwrap()[0].version,
+            "2.0.0"
+        );
+        output_component(&mods, "Pack/Child", "Fixture.Child", r#"{"child":"Child"}"#);
+        assert!(resolve_components(&config, &mods, "Pack", "de", &current).is_err());
+        let current = scanned_package(&config, &mods, "Pack");
+        assert_eq!(
+            resolve_components(&config, &mods, "Pack", "de", &current)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(resolve_components(&config, &mods, "Pack", "fr", &current).is_err());
+        assert!(resolve_components(&config, &root, "Pack", "de", &current).is_err());
+        let mut substituted = current.clone();
+        substituted[0].files[0].default_path = root.join("outside.json").display().to_string();
+        assert!(resolve_components(&config, &mods, "Pack", "de", &substituted).is_err());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     fn zip_documents(path: &Path) -> std::collections::BTreeMap<String, Value> {

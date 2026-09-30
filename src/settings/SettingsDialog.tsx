@@ -466,8 +466,8 @@ export function SettingsDialog({
     await modelsRequest;
   }
 
-  async function checkCloudStatus() {
-    setChatgptAuthError(null);
+  async function checkCloudStatus(clearAuthError = true) {
+    if (clearAuthError) setChatgptAuthError(null);
     setCloudChecking(true);
     try {
       const status = await cloudAiStatus();
@@ -504,7 +504,7 @@ export function SettingsDialog({
     } finally {
       setCloudModels(null);
       setCloudModel("");
-      await checkCloudStatus();
+      await checkCloudStatus(false);
     }
   }
 

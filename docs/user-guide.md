@@ -153,6 +153,10 @@ preview and choose a destination. The ZIP preserves component folder paths and
 contains only generated target-language i18n files. Recipients still need the
 original mod; the ZIP does not include its assets, DLLs, or manifest.
 
+The preview and build check the package against the current Mods folder. If its
+components, version, or i18n file list changed, run **Scan** and open the preview
+again. A stale package selection is rejected before writing a ZIP.
+
 Check coverage, Review, and Changed in the app and the ZIP preview before
 sharing the archive. Uploading and publication happen outside the desktop app.
 

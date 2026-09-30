@@ -118,6 +118,9 @@ omitted orphan keys, remain recoverable from their export backup.
 Translation ZIPs contain only generated target-language i18n files and preserve
 the package's component folders. Coverage and open reviews remain visible in the
 workspace and export preview.
+Package preview and build resolve current component/file bindings again. A
+changed component inventory, version, or file list requires a new displayed
+scan and preview before writing.
 Results retain the actual destination and filename for **Show in folder**.
 **Translation ZIP · all mods** previews and writes one locale-only ZIP for
 all scanned components with effective target-language values in the configured
@@ -185,6 +188,14 @@ All persistent application state lives in `data/` beside the executable:
 - `glossary/glossary-<lang>.json`: optional glossary cache;
 - `language-state/<lang>/`: translation progress;
 - `logs/`: optional rotating local logs.
+
+One running process owns a portable data folder. A second instance using that
+folder stops before loading or changing profile state. Ownership is released
+when the process exits, including crashes. Independent portable folders may
+run together.
+
+If settings and their backup cannot be read, show the error with a retry action;
+do not treat that failure as first-run setup or reset the profile.
 
 Workspace scope, selected mod, search, filters, sort order, pane width, and
 column widths persist in settings, not browser-local storage. Selection, open

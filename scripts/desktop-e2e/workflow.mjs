@@ -20,6 +20,7 @@ import { xnbDictionary } from "./fixtures.mjs";
 import { releaseCases } from "./release-cases.mjs";
 import { advancedCases } from "./advanced-cases.mjs";
 import { installCases } from "./install-cases.mjs";
+import { profileCases } from "./profile-cases.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
 // releasing the handshake. Direct invocation must not start an unowned app.
@@ -1091,6 +1092,7 @@ try {
     browseFolder,
     exe,
   };
+  await profileCases(helpers);
   if (options.releaseCases) await releaseCases(helpers);
   if (
     options.layout ||

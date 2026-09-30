@@ -1,4 +1,6 @@
+use super::super::visible_models;
 use super::*;
+use serde_json::json;
 use std::path::PathBuf;
 fn prepared_item(id: &str, source: &str) -> PreparedAiItem {
     PreparedAiItem {

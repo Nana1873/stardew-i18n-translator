@@ -3057,25 +3057,13 @@
   display: block;
 }
 
-#stardew-i18n-translator .translator-cloud-setup {
-  display: grid;
-  gap: 7px;
-  margin-top: 8px;
-}
-
 #stardew-i18n-translator .translator-cloud-quality-warning {
   margin-top: 8px;
 }
 
-#stardew-i18n-translator .translator-cloud-setup ol {
-  display: grid;
-  gap: 4px;
-  margin: 0;
-  padding-inline-start: 20px;
-}
-
-#stardew-i18n-translator .translator-cloud-setup .translator-button {
-  justify-self: start;
+#stardew-i18n-translator .translator-startup-error {
+  padding: 24px;
+  overflow-wrap: anywhere;
 }
 
 #stardew-i18n-translator .translator-ai-count,

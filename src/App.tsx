@@ -270,6 +270,10 @@ export function App() {
     "folders" | "ai" | "glossary" | "shortcuts" | "about"
   >("folders");
   const [loaded, setLoaded] = useState(false);
+  const [settingsLoadError, setSettingsLoadError] = useState<string | null>(
+    null,
+  );
+  const [settingsLoadAttempt, setSettingsLoadAttempt] = useState(0);
   const [now, setNow] = useState(() => Date.now());
 
   const [scan, setScan] = useState<ScanResult | null>(null);
@@ -598,6 +602,8 @@ export function App() {
 
   useEffect(() => {
     let active = true;
+    setLoaded(false);
+    setSettingsLoadError(null);
     loadSettings()
       .then((loadedSettings) => {
         if (!active) return;
@@ -651,7 +657,7 @@ export function App() {
       })
       .catch((error) => {
         logFrontendError("loadSettings", String(error));
-        if (active) setWizardOpen(true);
+        if (active) setSettingsLoadError(String(error));
       })
       .finally(() => {
         if (active) setLoaded(true);
@@ -659,7 +665,7 @@ export function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [settingsLoadAttempt]);
 
   useEffect(() => {
     const current = settingsRef.current;
@@ -1997,12 +2003,31 @@ export function App() {
             if (settings) setSettingsOpen(true);
             else setWizardOpen(true);
           }}
-          settingsEnabled={loaded && !exporting}
+          settingsEnabled={loaded && !settingsLoadError && !exporting}
           latestResultAvailable={Boolean(resultTray && resultHidden)}
           latestResultButtonRef={latestResultButtonRef}
           onReopenResult={reopenLatestResult}
         />
-        {view === "home" ? (
+        {settingsLoadError ? (
+          <section
+            className="translator-view-panel is-active translator-startup-error"
+            role="alert"
+          >
+            <h2>Could not load settings</h2>
+            <p>{settingsLoadError}</p>
+            <p>
+              Restore or repair the settings file, then retry. Your translation
+              work has not been reset.
+            </p>
+            <button
+              type="button"
+              className="translator-button"
+              onClick={() => setSettingsLoadAttempt((attempt) => attempt + 1)}
+            >
+              Retry loading settings
+            </button>
+          </section>
+        ) : view === "home" ? (
           <section
             className="translator-view-panel is-active"
             aria-label="Translation overview"
