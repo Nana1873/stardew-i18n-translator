@@ -116,9 +116,10 @@ literal and do not trigger this language-filename migration. Existing targets, i
 omitted orphan keys, remain recoverable from their export backup.
 
 Translation ZIPs contain only generated target-language i18n files and preserve
-the package's component folders. Publication notes use the same package data.
+the package's component folders. Coverage and open reviews remain visible in the
+workspace and export preview.
 Results retain the actual destination and filename for **Show in folder**.
-**Build Stardew Translator Output** previews and writes one locale-only ZIP for
+**Translation ZIP · all mods** previews and writes one locale-only ZIP for
 all scanned components with effective target-language values in the configured
 Mods folder. Each included locale combines existing target values for current
 source keys with saved overrides. Like package ZIPs, it includes token-valid

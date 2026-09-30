@@ -179,7 +179,7 @@ describe("BatchTranslateDialog", () => {
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Preparing selected strings",
     );
-    expect(screen.getByText(/ChatGPT active · 00:00/)).toBeVisible();
+    expect(screen.getByText(/Elapsed · 00:00/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
@@ -388,10 +388,9 @@ describe("BatchTranslateDialog", () => {
       "Reviewing quality · Batch 4 of 11 · 87 strings",
     );
     expect(
-      screen.getByText(
-        /ChatGPT active · \d\d:\d\d · Retrying response structure · 1 retry · 2 splits/,
-      ),
+      screen.getByText(/Elapsed · \d\d:\d\d · Retrying response structure/),
     ).toBeVisible();
+    fireEvent.click(screen.getByText("Details"));
     expect(
       screen.getByText("ChatGPT activity · Reasoning · just now"),
     ).toBeVisible();
@@ -538,11 +537,11 @@ describe("BatchTranslateDialog", () => {
         onLiveRun,
       });
 
-      expect(screen.getByText(/AI active · 00:00/)).toBeVisible();
+      expect(screen.getByText(/Elapsed · 00:00/)).toBeVisible();
       act(() => {
         vi.advanceTimersByTime(34_000);
       });
-      expect(screen.getByText(/AI active · 00:34/)).toBeVisible();
+      expect(screen.getByText(/Elapsed · 00:34/)).toBeVisible();
       unmount();
     } finally {
       vi.useRealTimers();

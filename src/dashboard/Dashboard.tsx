@@ -291,7 +291,12 @@ export function Dashboard({
 
       {scan ? (
         <button
-          className="translator-scan-summary"
+          className={
+            "translator-scan-summary" +
+            (scan.warnings.length > 0 || (attentionSkippedCount ?? 0) > 0
+              ? " is-warning"
+              : "")
+          }
           type="button"
           onClick={onShowScanDetails}
           disabled={!onShowScanDetails}
@@ -337,26 +342,23 @@ export function Dashboard({
         </button>
       )}
 
-      <div className="translator-last-export">
-        <FileCheck2 aria-hidden="true" />
-        <span>
-          <strong>
-            {lastExport?.label ?? "Last export · Unavailable in this session"}
-          </strong>
-          <code>
-            {lastExport?.path ??
-              "No successful export path is available in this session."}
-          </code>
-        </span>
-        <button
-          className="translator-button translator-button-quiet"
-          type="button"
-          onClick={onShowLastExport}
-          disabled={!lastExport || !onShowLastExport}
-        >
-          Show in folder
-        </button>
-      </div>
+      {lastExport && (
+        <div className="translator-last-export">
+          <FileCheck2 aria-hidden="true" />
+          <span>
+            <strong>{lastExport.label}</strong>
+            <code>{lastExport.path}</code>
+          </span>
+          <button
+            className="translator-button translator-button-quiet"
+            type="button"
+            onClick={onShowLastExport}
+            disabled={!onShowLastExport}
+          >
+            Show in folder
+          </button>
+        </div>
+      )}
 
       <section className="translator-section">
         <div className="translator-section-head">
@@ -367,7 +369,7 @@ export function Dashboard({
           <thead>
             <tr>
               <th>Mod</th>
-              <th>Progress</th>
+              <th>Coverage</th>
               <th>Last opened</th>
               <th>Status</th>
             </tr>

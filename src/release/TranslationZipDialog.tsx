@@ -17,7 +17,6 @@ export function TranslationZipDialog({
   error,
   building,
   onInspect,
-  onReleaseNotes,
   onBuild,
   onClose,
 }: {
@@ -27,8 +26,7 @@ export function TranslationZipDialog({
   error: string | null;
   building: boolean;
   onInspect: (problem: ZipProblem) => void;
-  onReleaseNotes: (version: string, fileName: string) => void;
-  onBuild: (version: string, fileName: string) => void;
+  onBuild: (fileName: string) => void;
   onClose: () => void;
 }) {
   const [version, setVersion] = useState(preview?.selectedVersion ?? "");
@@ -49,7 +47,7 @@ export function TranslationZipDialog({
   const hasVersionConflicts =
     !combined && Boolean(preview?.versionConflicts.length);
   const title = combined
-    ? "Build Stardew Translator Output"
+    ? "Build translation ZIP · all mods"
     : "Build translation ZIP";
   const versionReady = !hasVersionConflicts || versionConfirmed;
   const dialogRef = useRef<HTMLElement>(null);
@@ -107,6 +105,35 @@ export function TranslationZipDialog({
           {!preview && !error && <p>Preparing current package data …</p>}
           {preview && (
             <>
+              <div
+                className="translator-preflight-metrics"
+                aria-label="ZIP coverage and review"
+              >
+                <div className="translator-preflight-metric">
+                  <strong>
+                    {preview.totalStrings} / {preview.totalSourceStrings}
+                  </strong>
+                  <span>source strings included</span>
+                </div>
+                <div className="translator-preflight-metric">
+                  <strong>
+                    {preview.entries.reduce(
+                      (sum, entry) => sum + entry.reviewNeeded,
+                      0,
+                    )}
+                  </strong>
+                  <span>in Review</span>
+                </div>
+                <div className="translator-preflight-metric">
+                  <strong>
+                    {preview.entries.reduce(
+                      (sum, entry) => sum + entry.outdated,
+                      0,
+                    )}
+                  </strong>
+                  <span>Changed</span>
+                </div>
+              </div>
               <div className="translator-flow-fields">
                 {!combined && (
                   <label className="translator-flow-field">
@@ -203,7 +230,8 @@ export function TranslationZipDialog({
                       <li key={entry.archivePath}>
                         <code>{entry.archivePath}</code>
                         <span>
-                          {entry.strings} strings
+                          {entry.strings}{" "}
+                          {entry.strings === 1 ? "string" : "strings"}
                           {entry.outdated > 0
                             ? ` · ${entry.outdated} changed`
                             : ""}
@@ -257,16 +285,6 @@ export function TranslationZipDialog({
           >
             Cancel
           </button>
-          {!combined && (
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              disabled={!preview || building || !version.trim()}
-              onClick={() => onReleaseNotes(version.trim(), fileName)}
-            >
-              Translation notes
-            </button>
-          )}
           <button
             className="translator-button translator-button-primary"
             type="button"
@@ -278,7 +296,7 @@ export function TranslationZipDialog({
               (!combined && !version.trim()) ||
               !versionReady
             }
-            onClick={() => onBuild(version.trim(), fileName)}
+            onClick={() => onBuild(fileName)}
           >
             {building ? "Building …" : "Choose save location …"}
           </button>

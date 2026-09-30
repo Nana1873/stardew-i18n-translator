@@ -827,7 +827,7 @@ try {
     const diskBefore = await readFile(exported);
     const backupBefore = await readFile(`${exported}.bak`);
     await click(button("Export …"));
-    await click(button("Build translation ZIP · current mod"));
+    await click(button("Translation ZIP · current mod"));
     await element(css('[aria-label="Build translation ZIP"]'));
     await click(button("Choose save location …"));
     await native("cancel", "Save translation ZIP", destination);

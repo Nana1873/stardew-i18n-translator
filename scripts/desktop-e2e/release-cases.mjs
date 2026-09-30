@@ -304,9 +304,9 @@ export async function releaseCases(h) {
       const before = await diskInventory();
       const stateBefore = await readFile(splitStatePath);
       await click(button("Export …"));
-      await click(button("Build Stardew Translator Output"));
+      await click(button("Translation ZIP · all mods"));
       const preview = css(
-        '[role="dialog"][aria-label="Build Stardew Translator Output"]',
+        '[role="dialog"][aria-label="Build translation ZIP · all mods"]',
       );
       await element(preview);
       await waitFor("combined preview includes pending work", async () => {

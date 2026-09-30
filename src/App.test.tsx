@@ -1243,11 +1243,13 @@ describe("App shell", () => {
     expect(preflight).toHaveTextContent("creates 1 new translation file");
     expect(
       within(preflight).getByLabelText("Export readiness"),
-    ).toHaveTextContent("1currently eligible");
-    expect(preflight).toHaveTextContent("0currently open");
-    expect(preflight).toHaveTextContent("2accepted mismatches");
+    ).toHaveTextContent("1texts with a value");
+    expect(preflight).not.toHaveTextContent("open strings omitted");
+    expect(preflight).toHaveTextContent("Accepted mismatch: 2");
     expect(preflight).toHaveTextContent("Ready to export");
-    expect(preflight).toHaveTextContent("2 exact source revisions may");
+    expect(preflight).toHaveTextContent(
+      "2 strings have an explicitly accepted protected-token difference",
+    );
     expect(preflight).toHaveTextContent("x/i18n/de.json");
     expect(invokeMock).not.toHaveBeenCalledWith(
       "export_mod",
@@ -1448,12 +1450,12 @@ describe("App shell", () => {
     render(<App />);
 
     let overview = await screen.findByRole("main", { name: "Overview" });
-    expect(overview).toHaveTextContent(
+    expect(overview).not.toHaveTextContent(
       "Last export · Unavailable in this session",
     );
     expect(
-      within(overview).getByRole("button", { name: "Show in folder" }),
-    ).toBeDisabled();
+      within(overview).queryByRole("button", { name: "Show in folder" }),
+    ).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
     chooseToolbarAction("Export actions", "Export current mod");
@@ -1678,7 +1680,7 @@ describe("App shell", () => {
       "Existing target · backed up as .json.bak",
     );
     expect(preflight).toHaveTextContent("New targets · created by this export");
-    expect(preflight).toHaveTextContent("3currently eligible");
+    expect(preflight).toHaveTextContent("3texts with a value");
     expect(invokeMock).toHaveBeenCalledWith("preview_export", {
       mods: scan.mods.map((mod) => ({
         modUniqueId: mod.uniqueId,
@@ -2750,8 +2752,8 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Overview" }));
     expect(
-      await screen.findByText("Last export · Unavailable in this session"),
-    ).toBeInTheDocument();
+      screen.queryByText("Last export · Unavailable in this session"),
+    ).toBeNull();
   });
 
   it("replaces invalid native-drop details inside the import dialog", async () => {
@@ -2842,10 +2844,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction(
-      "Export actions",
-      "Build translation ZIP · current mod",
-    );
+    chooseToolbarAction("Export actions", "Translation ZIP · current mod");
 
     await screen.findByText("Test Mod/i18n/de.json");
     expect(
@@ -2871,27 +2870,6 @@ describe("App shell", () => {
         }),
       }),
     );
-    fireEvent.click(
-      within(result).getByRole("button", { name: "Translation notes" }),
-    );
-    await screen.findByLabelText("Generated release notes");
-    expect(
-      screen.queryByRole("complementary", {
-        name: "Operation result",
-      }),
-    ).toBeNull();
-    expect(
-      (screen.getByLabelText("Generated release notes") as HTMLTextAreaElement)
-        .value,
-    ).toContain("Archiv: Test Mod.zip");
-    fireEvent.click(
-      screen.getByRole("button", { name: "Close translation notes" }),
-    );
-    expect(
-      await screen.findByRole("complementary", {
-        name: "Operation result",
-      }),
-    ).toBeInTheDocument();
   });
   it("builds the combined local output through preview, overwrite confirmation and the existing result tray", async () => {
     const preview = combinedOutputPreview();
@@ -2936,15 +2914,12 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findAllByText("Test Mod");
-    chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+    chooseToolbarAction("Export actions", "Translation ZIP · all mods");
     await screen.findByText("AI mod/i18n/de.json");
     const dialog = screen.getByRole("dialog", {
-      name: "Build Stardew Translator Output",
+      name: "Build translation ZIP · all mods",
     });
     expect(within(dialog).queryByLabelText("Package version")).toBeNull();
-    expect(
-      within(dialog).queryByRole("button", { name: "Translation notes" }),
-    ).toBeNull();
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Choose save location …" }),
     );
@@ -3010,7 +2985,7 @@ describe("App shell", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "Filter mods" }), {
       target: { value: "Test" },
     });
-    chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+    chooseToolbarAction("Export actions", "Translation ZIP · all mods");
     await screen.findByText("AI mod/i18n/de.json");
     fireEvent.click(
       screen.getByRole("button", { name: "Choose save location …" }),
@@ -3140,14 +3115,11 @@ describe("App shell", () => {
       render(<App />);
       openWorkspace();
       await screen.findAllByText("Test Mod");
-      chooseToolbarAction(
-        "Export actions",
-        "Build translation ZIP · current mod",
-      );
+      chooseToolbarAction("Export actions", "Translation ZIP · current mod");
       fireEvent.click(
         screen.getByRole("button", { name: "Close ZIP preview" }),
       );
-      chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+      chooseToolbarAction("Export actions", "Translation ZIP · all mods");
       await screen.findByText("AI mod/i18n/de.json");
       await act(async () => {
         if (outcome === "success") {
@@ -3167,7 +3139,7 @@ describe("App shell", () => {
         await pending.promise.catch(() => undefined);
       });
       const dialog = screen.getByRole("dialog", {
-        name: "Build Stardew Translator Output",
+        name: "Build translation ZIP · all mods",
       });
       expect(within(dialog).getByLabelText("Archive name")).toHaveValue(
         preview.defaultFileName,
@@ -3191,14 +3163,16 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findAllByText("Test Mod");
-    chooseToolbarAction("Export actions", "Build Stardew Translator Output");
+    chooseToolbarAction("Export actions", "Translation ZIP · all mods");
     fireEvent.click(screen.getByRole("button", { name: "Close ZIP preview" }));
     await act(async () => {
       pending.resolve({ packageName: "Late output" });
       await pending.promise;
     });
     expect(
-      screen.queryByRole("dialog", { name: "Build Stardew Translator Output" }),
+      screen.queryByRole("dialog", {
+        name: "Build translation ZIP · all mods",
+      }),
     ).toBeNull();
     expect(
       invokeMock.mock.calls.some(
@@ -3358,134 +3332,6 @@ describe("App shell", () => {
     });
   });
 
-  it("generates release notes independently for the selected package", async () => {
-    const preview = {
-      packageName: "Test Mod",
-      selectedVersion: "1.0",
-      versionSource: "Test Mod",
-      versionConflicts: [],
-      defaultFileName: "Test Mod - 1.0 - German (de).zip",
-      targetLang: "de",
-      targetLanguage: "German",
-      entries: [
-        {
-          modName: "Test Mod",
-          modVersion: "1.0",
-          archivePath: "Test Mod/i18n/de.json",
-          strings: 1,
-          totalSourceStrings: 1,
-          outdated: 0,
-          reviewNeeded: 0,
-        },
-      ],
-      omittedComponents: [],
-      warnings: [],
-      problems: [],
-      totalStrings: 1,
-      totalSourceStrings: 1,
-    };
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
-      if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
-      if (cmd === "load_strings") return Promise.resolve([]);
-      if (cmd === "preview_translation_zip") return Promise.resolve(preview);
-      return Promise.resolve(null);
-    });
-    render(<App />);
-    openWorkspace();
-    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("Export actions", "Translation notes");
-    await screen.findByLabelText("Generated release notes");
-    const dialog = screen.getByRole("dialog", {
-      name: "Translation notes",
-    });
-    expect(
-      within(dialog).getByLabelText("Generated release notes"),
-    ).toHaveAttribute("readonly");
-    expect(
-      (
-        within(dialog).getByLabelText(
-          "Generated release notes",
-        ) as HTMLTextAreaElement
-      ).value,
-    ).toContain("Deutsche Übersetzung für Test Mod 1.0");
-  });
-
-  it("reuses the edited ZIP version and archive name in release notes", async () => {
-    const preview = {
-      packageName: "Test Mod",
-      selectedVersion: "1.0",
-      versionSource: "Test Mod",
-      versionConflicts: [],
-      defaultFileName: "Test Mod - 1.0 - German (de).zip",
-      targetLang: "de",
-      targetLanguage: "German",
-      entries: [
-        {
-          modName: "Test Mod",
-          modVersion: "1.0",
-          archivePath: "Test Mod/i18n/de.json",
-          strings: 1,
-          totalSourceStrings: 1,
-          outdated: 0,
-          reviewNeeded: 0,
-        },
-      ],
-      omittedComponents: [],
-      warnings: [],
-      problems: [],
-      totalStrings: 1,
-      totalSourceStrings: 1,
-    };
-    invokeMock.mockImplementation((cmd: string) => {
-      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
-      if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
-      if (cmd === "load_strings") return Promise.resolve([]);
-      if (cmd === "preview_translation_zip") return Promise.resolve(preview);
-      return Promise.resolve(null);
-    });
-    render(<App />);
-    openWorkspace();
-    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction(
-      "Export actions",
-      "Build translation ZIP · current mod",
-    );
-    await screen.findByLabelText("Package version");
-    const zipDialog = screen.getByRole("dialog", {
-      name: "Build translation ZIP",
-    });
-    fireEvent.change(within(zipDialog).getByLabelText("Package version"), {
-      target: { value: "1.1/beta" },
-    });
-    fireEvent.click(
-      within(zipDialog).getByRole("button", { name: "Translation notes" }),
-    );
-    const releaseDialog = await screen.findByRole("dialog", {
-      name: "Translation notes",
-    });
-    const text = (
-      within(releaseDialog).getByLabelText(
-        "Generated release notes",
-      ) as HTMLTextAreaElement
-    ).value;
-    expect(text).toContain("Test Mod 1.1/beta");
-    expect(text).toContain("Test Mod - 1.1_beta - German (de).zip");
-    expect(
-      screen.queryByRole("dialog", { name: "Build translation ZIP" }),
-    ).toBeNull();
-    fireEvent.click(
-      within(releaseDialog).getByRole("button", {
-        name: "Close translation notes",
-      }),
-    );
-    expect(
-      screen.queryByRole("dialog", { name: "Build translation ZIP" }),
-    ).toBeNull();
-  });
-
   it("closes the ZIP preview when opening a blocking problem", async () => {
     const preview = {
       packageName: "Test Mod",
@@ -3522,10 +3368,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction(
-      "Export actions",
-      "Build translation ZIP · current mod",
-    );
+    chooseToolbarAction("Export actions", "Translation ZIP · current mod");
     const problems = await screen.findByRole("list", {
       name: "Blocking ZIP problems",
     });
@@ -3593,10 +3436,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction(
-      "Export actions",
-      "Build translation ZIP · current mod",
-    );
+    chooseToolbarAction("Export actions", "Translation ZIP · current mod");
     await screen.findByLabelText("Package version");
     const chooseLocation = await screen.findByRole("button", {
       name: "Choose save location …",
@@ -3664,11 +3504,11 @@ describe("App shell", () => {
     ).toBeEnabled();
     expect(
       screen.getByRole("menuitem", {
-        name: "Build translation ZIP · current mod",
+        name: "Translation ZIP · current mod",
       }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("menuitem", { name: "Translation notes" }),
+      screen.getByRole("menuitem", { name: "Translation ZIP · all mods" }),
     ).toBeEnabled();
     expect(screen.getByRole("menu", { name: "Export" })).toHaveTextContent(
       "JSON files",
@@ -3679,7 +3519,7 @@ describe("App shell", () => {
 
     fireEvent.keyDown(currentExport, { key: "End" });
     expect(
-      screen.getByRole("menuitem", { name: "Translation notes" }),
+      screen.getByRole("menuitem", { name: "Translation ZIP · all mods" }),
     ).toHaveFocus();
     const allExport = screen.getByRole("menuitem", {
       name: "Export all mods …",
@@ -5139,10 +4979,10 @@ it("keeps App work progress and export eligibility coherent after clearing a per
     name: "Confirm export overwrite",
   });
   const eligible =
-    within(confirmation).getByText("currently eligible").parentElement;
-  const open = within(confirmation).getByText("currently open").parentElement;
+    within(confirmation).getByText("texts with a value").parentElement;
+  const open = within(confirmation).queryByText("open strings omitted");
   expect(eligible).toHaveTextContent("0");
-  expect(open).toHaveTextContent("0");
+  expect(open).toBeNull();
   expect(
     invokeMock.mock.calls.filter(([cmd]) => cmd === "scan_mods"),
   ).toHaveLength(1);

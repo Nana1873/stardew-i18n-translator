@@ -916,9 +916,7 @@ describe("SettingsDialog", () => {
       fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
       expect(await screen.findByText("1,185")).toBeInTheDocument();
       expect(
-        screen.getByText(
-          /1,185 terms · optional and not included in a release/,
-        ),
+        screen.getByText(/Stored locally · not included in a release/),
       ).toBeInTheDocument();
       expect(screen.queryByText("1.185")).toBeNull();
     } finally {

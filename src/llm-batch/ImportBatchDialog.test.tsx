@@ -82,6 +82,7 @@ describe("ImportBatchDialog", () => {
     expect(screen.getByText(path)).toBeVisible();
     expect(await screen.findByText("Ready to import")).toBeVisible();
     expect(onPreflight).toHaveBeenCalledWith(path);
+    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
     expect(screen.getByText("2 / 2")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Import file" }));

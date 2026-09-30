@@ -228,8 +228,14 @@ export function SetupWizard({
       <div className="wizard wizard--setup">
         <header className="setup__hero">
           <div>
-            <span className="setup__eyebrow">First-time setup</span>
-            <h2>Welcome to Stardew i18n Translator</h2>
+            <span className="setup__eyebrow">
+              {onCancel ? "Workspace setup" : "First-time setup"}
+            </span>
+            <h2>
+              {onCancel
+                ? "Configure your workspace"
+                : "Welcome to Stardew i18n Translator"}
+            </h2>
             <p>Set up your translation workspace in four quick steps.</p>
           </div>
           <span className="setup__counter">

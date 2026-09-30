@@ -265,14 +265,12 @@ describe("Dashboard", () => {
     expect(rescan).toHaveBeenCalledOnce();
     expect(screen.queryByText("Needs attention")).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Last export · Unavailable in this session/),
-    ).toBeInTheDocument();
+      screen.queryByText(/Last export · Unavailable in this session/),
+    ).toBeNull();
     expect(
       screen.getByText(/skipped-component count unavailable/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Show in folder" }),
-    ).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Show in folder" })).toBeNull();
     expect(screen.getByText(/scan time unavailable/)).toBeInTheDocument();
     expect(
       screen.getByText("No recently opened mods yet."),

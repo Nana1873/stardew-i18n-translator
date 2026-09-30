@@ -31,6 +31,7 @@ import {
   Copy,
   CopyCheck,
   ChevronsUpDown,
+  Columns2,
   Eraser,
   Equal,
   FileJson,
@@ -192,7 +193,7 @@ export interface StringTableProps {
   initialSort?: StringTableSort | null;
   onSortChange?: (sort: StringTableSort | null) => void;
   initialColumnWidths?: Partial<StringTableColumnWidths>;
-  onColumnWidthsChange?: (widths: StringTableColumnWidths) => void;
+  onColumnWidthsChange?: (widths: Partial<StringTableColumnWidths>) => void;
   /** Real shell-provided heading text; defaults to the active ScannedMod. */
   headerTitle?: string;
   /** Real package/parent context shown before the heading. */
@@ -285,10 +286,10 @@ const COLUMN_LIMITS: Record<
 > = {
   mod: { min: 100, max: 420, initial: 130 },
   file: { min: 80, max: 320, initial: 105 },
-  status: { min: 80, max: 240, initial: 102 },
-  key: { min: 140, max: 480, initial: 250 },
-  source: { min: 220, max: 720, initial: 360 },
-  target: { min: 180, max: 1_600, initial: 180 },
+  status: { min: 76, max: 240, initial: 80 },
+  key: { min: 100, max: 480, initial: 140 },
+  source: { min: 160, max: 720, initial: 260 },
+  target: { min: 160, max: 1_600, initial: 260 },
 };
 
 /** Fixed trailing rail for validation and row-menu controls. It deliberately
@@ -639,6 +640,35 @@ export function StringTable({
   const [targetColumnSized, setTargetColumnSized] = useState(
     initialColumnWidths?.target != null,
   );
+  const [fitColumns, setFitColumns] = useState(
+    !Object.values(initialColumnWidths ?? {}).some((value) => value != null),
+  );
+  const [workbenchWidth, setWorkbenchWidth] = useState(0);
+  const workbenchRef = useRef<HTMLDivElement>(null);
+  const tableWrapRef = useRef<HTMLDivElement>(null);
+  const compactMetadata = workbenchWidth > 0 && workbenchWidth < 850;
+
+  useLayoutEffect(() => {
+    const node = workbenchRef.current;
+    if (!node) return;
+    const measure = () => {
+      const body = parentRef.current;
+      const scrollbar = body ? body.offsetWidth - body.clientWidth : 0;
+      setWorkbenchWidth(Math.floor(node.clientWidth - scrollbar));
+    };
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(node);
+    if (parentRef.current) observer?.observe(parentRef.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [rows === null, Boolean(error)]);
 
   const anchor = useRef<number | null>(null);
   const parentRef = useRef<HTMLDivElement>(null);
@@ -947,13 +977,14 @@ export function StringTable({
   const virtualizer = useVirtualizer({
     count: display.length,
     getScrollElement: () => parentRef.current,
-    estimateSize: (index) => (display[index]?.kind === "section" ? 26 : 38),
+    estimateSize: (index) =>
+      display[index]?.kind === "section" ? 26 : compactMetadata ? 48 : 38,
     overscan: 16,
   });
 
   useEffect(() => {
     virtualizer.measure();
-  }, [display, virtualizer]);
+  }, [display, compactMetadata, virtualizer]);
 
   const effectiveActiveIdentity = visible.some(
     (entry) => entry.identity === activeIdentity,
@@ -1883,9 +1914,10 @@ export function StringTable({
 
   function adjustColumn(column: ColumnName, value: number) {
     const limits = COLUMN_LIMITS[column];
+    setFitColumns(false);
     setColumnWidths((current) => {
       const next = {
-        ...current,
+        ...(fitColumns ? renderedColumnWidths : current),
         [column]: Math.min(limits.max, Math.max(limits.min, value)),
       };
       onColumnWidthsChange?.(next);
@@ -1906,9 +1938,9 @@ export function StringTable({
     const startX = event.clientX;
     const measuredWidth = handle.parentElement?.getBoundingClientRect().width;
     const startWidth =
-      column === "target" && measuredWidth && measuredWidth > 0
+      measuredWidth && measuredWidth > 0
         ? Math.round(measuredWidth)
-        : columnWidths[column];
+        : renderedColumnWidths[column];
     if (column === "target" && !targetColumnSized) {
       adjustColumn(column, startWidth);
       setTargetColumnSized(true);
@@ -1944,38 +1976,70 @@ export function StringTable({
     const measuredWidth =
       event.currentTarget.parentElement?.getBoundingClientRect().width;
     const startWidth =
-      column === "target" && measuredWidth && measuredWidth > 0
+      measuredWidth && measuredWidth > 0
         ? Math.round(measuredWidth)
-        : columnWidths[column];
+        : renderedColumnWidths[column];
     if (column === "target") setTargetColumnSized(true);
     adjustColumn(column, startWidth + (event.key === "ArrowRight" ? 16 : -16));
   }
 
-  const showModColumn = effectiveScope === "all";
-  const showFileColumn =
+  const hasModMetadata = effectiveScope === "all";
+  const hasFileMetadata =
     effectiveScope === "all"
       ? plan.some((candidate) => candidate.i18nFiles.length > 1)
       : (mod?.i18nFiles.length ?? 0) > 1;
+  const showModColumn = hasModMetadata && !compactMetadata;
+  const showFileColumn = hasFileMetadata && !compactMetadata;
+  const fittedMetadataWidth =
+    34 +
+    ROW_ACTIONS_WIDTH +
+    80 +
+    140 +
+    (showModColumn ? 100 : 0) +
+    (showFileColumn ? 80 : 0);
+  const textWidth =
+    workbenchWidth > 0
+      ? Math.max(160, Math.floor((workbenchWidth - fittedMetadataWidth) / 2))
+      : COLUMN_LIMITS.source.initial;
+  const renderedColumnWidths = fitColumns
+    ? {
+        mod: 100,
+        file: 80,
+        status: 80,
+        key: 140,
+        source: textWidth,
+        target: textWidth,
+      }
+    : columnWidths;
+  const {
+    mod: modWidth,
+    file: fileWidth,
+    status: statusWidth,
+    key: keyWidth,
+    source: sourceWidth,
+    target: targetWidth,
+  } = renderedColumnWidths;
+  const fixedTargetWidth = !fitColumns && targetColumnSized;
   const gridTemplateColumns = [
     "34px",
-    ...(showModColumn ? [String(columnWidths.mod) + "px"] : []),
-    ...(showFileColumn ? [String(columnWidths.file) + "px"] : []),
-    String(columnWidths.status) + "px",
-    String(columnWidths.key) + "px",
-    String(columnWidths.source) + "px",
-    ...(targetColumnSized
-      ? [String(columnWidths.target) + "px", "minmax(0, 1fr)"]
-      : ["minmax(" + String(columnWidths.target) + "px, 1fr)"]),
+    ...(showModColumn ? [String(modWidth) + "px"] : []),
+    ...(showFileColumn ? [String(fileWidth) + "px"] : []),
+    String(statusWidth) + "px",
+    String(keyWidth) + "px",
+    String(sourceWidth) + "px",
+    ...(fixedTargetWidth
+      ? [String(targetWidth) + "px", "minmax(0, 1fr)"]
+      : ["minmax(" + String(targetWidth) + "px, 1fr)"]),
     String(ROW_ACTIONS_WIDTH) + "px",
   ].join(" ");
   const tableMinWidth =
     34 +
-    (showModColumn ? columnWidths.mod : 0) +
-    (showFileColumn ? columnWidths.file : 0) +
-    columnWidths.status +
-    columnWidths.key +
-    columnWidths.source +
-    columnWidths.target +
+    (showModColumn ? modWidth : 0) +
+    (showFileColumn ? fileWidth : 0) +
+    statusWidth +
+    keyWidth +
+    sourceWidth +
+    targetWidth +
     ROW_ACTIONS_WIDTH;
   const effectiveHeaderTitle =
     headerTitle ??
@@ -2006,16 +2070,22 @@ export function StringTable({
       ? String(workingTranslated) +
         " / " +
         String(data.length) +
-        (noTextNeeded ? " covered · " : " translated · ") +
+        " covered · " +
         String(workingProgress) +
         "%"
       : "No translatable strings",
     ...(noTextNeeded ? [`${noTextNeeded} need no translation text`] : []),
+    ...[
+      statusCounts["review-needed"]
+        ? `${statusCounts["review-needed"]} Review`
+        : "",
+      statusCounts.outdated ? `${statusCounts.outdated} Changed` : "",
+    ].filter(Boolean),
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
   const gridStyle = {
-    "--translator-key-column": String(columnWidths.key) + "px",
-    "--translator-source-column": String(columnWidths.source) + "px",
+    "--translator-key-column": String(keyWidth) + "px",
+    "--translator-source-column": String(sourceWidth) + "px",
   } as CSSProperties;
   const translationColumnLabel = targetLanguageLabel
     ? targetLanguageLabel.split(" (")[0] + " translation"
@@ -2023,9 +2093,11 @@ export function StringTable({
   const resizerFor = (column: ColumnName, ariaLabel: string) => (
     <ColumnResizer
       column={column}
-      value={columnWidths[column]}
+      value={renderedColumnWidths[column]}
       ariaLabel={ariaLabel}
-      measureRenderedWidth={column === "target" && !targetColumnSized}
+      measureRenderedWidth={
+        fitColumns || (column === "target" && !targetColumnSized)
+      }
       onPointerDown={(event) => startColumnResize(column, event)}
       onKeyDown={(event) => onColumnResizeKeyDown(column, event)}
     />
@@ -2120,6 +2192,7 @@ export function StringTable({
 
   return (
     <div
+      ref={workbenchRef}
       className={
         "stringtable translator-string-workbench" +
         (showFileColumn ? " stringtable--multifile" : "") +
@@ -2147,7 +2220,7 @@ export function StringTable({
               <span
                 className="translator-progress-inline"
                 data-complete={
-                  data.length > 0 && workingTranslated >= data.length
+                  data.length > 0 && statusCounts.translated >= data.length
                 }
                 aria-hidden="true"
               >
@@ -2319,6 +2392,20 @@ export function StringTable({
         </div>
 
         <div className="translator-bulk-wrap">
+          <button
+            className="translator-icon-button"
+            type="button"
+            aria-label="Fit columns"
+            title="Fit columns to the available space"
+            onClick={() => {
+              setFitColumns(true);
+              setTargetColumnSized(false);
+              onColumnWidthsChange?.({});
+              if (tableWrapRef.current) tableWrapRef.current.scrollLeft = 0;
+            }}
+          >
+            <Columns2 aria-hidden="true" />
+          </button>
           {selection.size > 0 && (
             <span className="translator-selection-hint">
               Ctrl+click adds more
@@ -2427,7 +2514,7 @@ export function StringTable({
         </div>
       </div>
 
-      <div className="translator-table-wrap">
+      <div className="translator-table-wrap" ref={tableWrapRef}>
         <span className="translator-sr-only" id="translator-table-help">
           Use Up and Down Arrow to move between rows, Enter to edit, Space to
           select, and Shift plus F10 for row actions.
@@ -2585,6 +2672,18 @@ export function StringTable({
                       dataIndex={entry.index}
                       showMod={showModColumn}
                       showFile={showFileColumn}
+                      metadataContext={
+                        compactMetadata
+                          ? [
+                              hasModMetadata ? entry.row.modName : "",
+                              hasFileMetadata
+                                ? entry.row.file.replace("/@split/", "/")
+                                : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")
+                          : undefined
+                      }
                       searchNeedles={searchNeedles}
                       searchLocale={targetLanguageCode}
                       searchAllMetadata={effectiveScope === "all"}
@@ -3092,6 +3191,7 @@ interface RowViewProps {
   dataIndex: number;
   showMod: boolean;
   showFile: boolean;
+  metadataContext?: string;
   searchNeedles: string[];
   searchLocale?: string;
   searchAllMetadata: boolean;
@@ -3121,6 +3221,7 @@ function RowView({
   dataIndex,
   showMod,
   showFile,
+  metadataContext,
   searchNeedles,
   searchLocale,
   searchAllMetadata,
@@ -3324,6 +3425,11 @@ function RowView({
         >
           {row.key}
         </button>
+        {metadataContext && (
+          <span className="translator-row-metadata" title={metadataContext}>
+            {metadataContext}
+          </span>
+        )}
       </span>
       <span
         className={

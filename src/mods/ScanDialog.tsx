@@ -146,58 +146,64 @@ export function ScanDialog({
           >
             Close
           </button>
-          <button
-            className="translator-button translator-button-quiet"
-            type="button"
-            disabled={
-              scanning ||
-              !sourceDeltas ||
-              sourceDeltas.stringsAdded === 0 ||
-              !onOpenAddedStrings
-            }
-            title={
-              sourceDeltas
-                ? sourceDeltas.stringsAdded === 0
-                  ? "No new strings were found in this scan"
-                  : "Show exactly the strings added since the previous scan"
-                : "New-string deltas are unavailable in the current scan result"
-            }
-            onClick={onOpenAddedStrings}
-          >
-            Open new{" "}
-            {countLabel(
-              sourceDeltas?.stringsAdded ?? "Unavailable",
-              "string",
-              "strings",
-            )}{" "}
-            · {sourceDeltas?.stringsAdded ?? "Unavailable"}
-          </button>
-          <button
-            className="translator-button translator-button-primary"
-            type="button"
-            disabled={
-              scanning ||
-              !sourceDeltas ||
-              sourceDeltas.sourcesChanged === 0 ||
-              !onReviewChangedSources
-            }
-            title={
-              sourceDeltas
-                ? sourceDeltas.sourcesChanged === 0
-                  ? "No English strings changed in this scan"
-                  : "Show exactly the English strings changed since the previous scan"
-                : "Changed-string details are unavailable in the current scan result"
-            }
-            onClick={onReviewChangedSources}
-          >
-            Review changed{" "}
-            {countLabel(
-              sourceDeltas?.sourcesChanged ?? "Unavailable",
-              "string",
-              "strings",
-            )}{" "}
-            · {sourceDeltas?.sourcesChanged ?? "Unavailable"}
-          </button>
+          {!scanning &&
+            Boolean(sourceDeltas?.stringsAdded && onOpenAddedStrings) && (
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                disabled={
+                  scanning ||
+                  !sourceDeltas ||
+                  sourceDeltas.stringsAdded === 0 ||
+                  !onOpenAddedStrings
+                }
+                title={
+                  sourceDeltas
+                    ? sourceDeltas.stringsAdded === 0
+                      ? "No new strings were found in this scan"
+                      : "Show exactly the strings added since the previous scan"
+                    : "New-string deltas are unavailable in the current scan result"
+                }
+                onClick={onOpenAddedStrings}
+              >
+                Open new{" "}
+                {countLabel(
+                  sourceDeltas?.stringsAdded ?? "Unavailable",
+                  "string",
+                  "strings",
+                )}{" "}
+                · {sourceDeltas?.stringsAdded ?? "Unavailable"}
+              </button>
+            )}
+          {!scanning &&
+            Boolean(sourceDeltas?.sourcesChanged && onReviewChangedSources) && (
+              <button
+                className="translator-button translator-button-primary"
+                type="button"
+                disabled={
+                  scanning ||
+                  !sourceDeltas ||
+                  sourceDeltas.sourcesChanged === 0 ||
+                  !onReviewChangedSources
+                }
+                title={
+                  sourceDeltas
+                    ? sourceDeltas.sourcesChanged === 0
+                      ? "No English strings changed in this scan"
+                      : "Show exactly the English strings changed since the previous scan"
+                    : "Changed-string details are unavailable in the current scan result"
+                }
+                onClick={onReviewChangedSources}
+              >
+                Review changed{" "}
+                {countLabel(
+                  sourceDeltas?.sourcesChanged ?? "Unavailable",
+                  "string",
+                  "strings",
+                )}{" "}
+                · {sourceDeltas?.sourcesChanged ?? "Unavailable"}
+              </button>
+            )}
         </div>
 
         <span className="translator-sr-only" aria-live="polite">
@@ -294,7 +300,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
       </div>
 
       <div
-        className={`translator-flow-callout translator-scan-diagnostics${hasWarningDiagnostics ? " is-warning" : ""}`}
+        className={`translator-flow-callout translator-scan-diagnostics${hasWarningDiagnostics ? " is-warning" : hasInformation ? " is-neutral" : " is-success"}`}
         tabIndex={-1}
         data-scan-diagnostics
       >

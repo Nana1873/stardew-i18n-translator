@@ -348,12 +348,12 @@ describe("StringTable workbench", () => {
       ".translator-string-table-head",
     );
     expect(header).toHaveStyle({
-      gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
+      gridTemplateColumns: "34px 80px 140px 260px minmax(260px, 1fr) 58px",
       columnGap: "0",
       padding: "0",
     });
     expect(dataRows()[0]).toHaveStyle({
-      gridTemplateColumns: "34px 102px 250px 360px minmax(180px, 1fr) 58px",
+      gridTemplateColumns: "34px 80px 140px 260px minmax(260px, 1fr) 58px",
     });
     expect(
       screen
@@ -437,7 +437,7 @@ describe("StringTable workbench", () => {
       screen.getByRole("heading", { name: /Test Package.*Test Mod/ }),
     ).toBeVisible();
     expect(screen.getByText("German (de)")).toBeVisible();
-    expect(screen.getByText("2 / 3 translated · 67%")).toBeVisible();
+    expect(screen.getByText("2 / 3 covered · 67%")).toBeVisible();
     expect(screen.getByText("scanned just now")).toBeVisible();
   });
 
@@ -456,9 +456,7 @@ describe("StringTable workbench", () => {
       ),
     );
     render(<StringTable mod={MOD} />);
-    expect(
-      await screen.findByText("199 / 200 translated · 99.5%"),
-    ).toBeVisible();
+    expect(await screen.findByText("199 / 200 covered · 99.5%")).toBeVisible();
   });
 
   it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
@@ -2540,12 +2538,12 @@ describe("StringTable workbench", () => {
     await screen.findAllByText("greeting");
 
     const resizers = [
-      ["Resize mod column", "146"],
-      ["Resize file column", "121"],
-      ["Resize status column", "118"],
-      ["Resize key column", "266"],
-      ["Resize English source column", "376"],
-      ["Resize German translation column", "196"],
+      ["Resize mod column", "116"],
+      ["Resize file column", "96"],
+      ["Resize status column", "96"],
+      ["Resize key column", "156"],
+      ["Resize English source column", "276"],
+      ["Resize German translation column", "276"],
     ] as const;
     for (const [name, expectedWidth] of resizers) {
       const resizer = screen.getByRole("separator", { name });
@@ -2561,7 +2559,7 @@ describe("StringTable workbench", () => {
     });
     expect(header).toHaveStyle({
       gridTemplateColumns:
-        "34px 146px 121px 118px 266px 376px 196px minmax(0, 1fr) 58px",
+        "34px 116px 96px 96px 156px 276px 276px minmax(0, 1fr) 58px",
     });
     expect(header?.lastElementChild).toBe(actionHeader);
     expect(actionHeader).toHaveClass("translator-row-actions-col");
@@ -2597,7 +2595,7 @@ describe("StringTable workbench", () => {
         name: /Resize (?:action|issue)s? column/i,
       }),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("table")).toHaveStyle({ minWidth: "1315px" });
+    expect(screen.getByRole("table")).toHaveStyle({ minWidth: "1108px" });
   });
 
   it("drags a column boundary and removes the temporary window listeners", async () => {
@@ -2627,7 +2625,7 @@ describe("StringTable workbench", () => {
     });
     fireEvent.pointerMove(window, { clientX: 148, pointerId: 6 });
     expect(targetResizer).not.toHaveClass("is-dragging");
-    expect(targetResizer).toHaveAttribute("aria-valuenow", "180");
+    expect(targetResizer).toHaveAttribute("aria-valuenow", "260");
 
     fireEvent.pointerDown(targetResizer, { clientX: 100, pointerId: 7 });
     expect(targetResizer).toHaveClass("is-dragging");
@@ -2714,7 +2712,7 @@ it("derives blank source status and reopens it after a source update, retaining 
   expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
   expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
     "data-complete",
-    "true",
+    "false",
   );
   expect(screen.getByText("1 need no translation text")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(

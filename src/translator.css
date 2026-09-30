@@ -1,29 +1,30 @@
 #stardew-i18n-translator {
-  color-scheme: light dark;
-  --translator-canvas: light-dark(#f1ede4, #101214);
-  --translator-title: light-dark(#e7e0d3, #16191d);
-  --translator-sidebar: light-dark(#eae5db, #14171b);
-  --translator-surface: light-dark(#fffdf8, #1b1f24);
-  --translator-surface-raised: light-dark(#f8f4ec, #23282e);
-  --translator-surface-soft: light-dark(#ece7dc, #2d333a);
-  --translator-border: light-dark(#d2c9ba, #414953);
-  --translator-border-strong: light-dark(#b9ad9b, #697582);
-  --translator-text: light-dark(#28231c, #f2f3f5);
-  --translator-muted: light-dark(#71695e, #b0b6be);
-  --translator-faint: light-dark(#7f776c, #8d96a1);
-  --translator-brand: light-dark(#8e6419, #e3b85f);
-  --translator-brand-muted: light-dark(#765923, #c7ab73);
-  --translator-brand-soft: light-dark(#f3e4be, #332b1d);
-  --translator-green: light-dark(#24724c, #72c795);
-  --translator-green-soft: light-dark(#d9eee2, #1d3428);
-  --translator-orange: light-dark(#a44f1d, #e6a069);
-  --translator-orange-soft: light-dark(#f6dfd0, #3a2a20);
-  --translator-red: light-dark(#a13b3b, #e58a8f);
-  --translator-red-soft: light-dark(#f4dada, #392327);
-  --translator-purple: light-dark(#7153a0, #b7a0d9);
-  --translator-purple-soft: light-dark(#e8def2, #302a3c);
-  --translator-blue: light-dark(#2c668b, #7db4d4);
-  --translator-blue-soft: light-dark(#dceaf3, #20323e);
+  color-scheme: dark;
+  --text-dim: var(--translator-muted);
+  --translator-canvas: #101214;
+  --translator-title: #16191d;
+  --translator-sidebar: #14171b;
+  --translator-surface: #1b1f24;
+  --translator-surface-raised: #23282e;
+  --translator-surface-soft: #2d333a;
+  --translator-border: #414953;
+  --translator-border-strong: #697582;
+  --translator-text: #f2f3f5;
+  --translator-muted: #b0b6be;
+  --translator-faint: #8d96a1;
+  --translator-brand: #e3b85f;
+  --translator-brand-muted: #c7ab73;
+  --translator-brand-soft: #332b1d;
+  --translator-green: #72c795;
+  --translator-green-soft: #1d3428;
+  --translator-orange: #e6a069;
+  --translator-orange-soft: #3a2a20;
+  --translator-red: #e58a8f;
+  --translator-red-soft: #392327;
+  --translator-purple: #b7a0d9;
+  --translator-purple-soft: #302a3c;
+  --translator-blue: #7db4d4;
+  --translator-blue-soft: #20323e;
   width: 100%;
   color: var(--translator-text);
   background: transparent;
@@ -61,8 +62,7 @@
   background: var(--translator-canvas);
   border: 1px solid var(--translator-border-strong);
   border-radius: 12px;
-  box-shadow: 0 24px 64px
-    light-dark(rgba(76, 59, 32, 0.14), rgba(0, 0, 0, 0.28));
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
 }
 
 #stardew-i18n-translator .translator-commandbar,
@@ -128,8 +128,7 @@
   background: var(--translator-surface-raised);
   border: 1px solid var(--translator-border-strong);
   border-radius: 8px;
-  box-shadow: 0 16px 36px
-    light-dark(rgba(76, 59, 32, 0.18), rgba(0, 0, 0, 0.42));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.42);
 }
 
 #stardew-i18n-translator .translator-popover button {
@@ -193,7 +192,7 @@
   background: var(--translator-surface-raised);
   border: 1px solid var(--translator-border-strong);
   border-radius: 8px;
-  box-shadow: 0 16px 36px light-dark(rgba(76, 59, 32, 0.2), rgba(0, 0, 0, 0.48));
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.48);
 }
 
 #stardew-i18n-translator .translator-context-menu button {
@@ -201,7 +200,7 @@
   min-height: 29px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 12px;
   padding: 5px 12px;
   color: inherit;
@@ -227,6 +226,7 @@
 }
 
 #stardew-i18n-translator .translator-context-shortcut {
+  margin-left: auto;
   color: var(--translator-muted);
   font-size: 0.82em;
   white-space: nowrap;
@@ -274,7 +274,7 @@
 }
 
 #stardew-i18n-translator .translator-button-primary {
-  color: light-dark(#fffdf7, #20190e);
+  color: #20190e;
   background: var(--translator-brand);
   border-color: var(--translator-brand);
 }
@@ -1041,7 +1041,7 @@
   background: var(--translator-surface-raised);
   border: 1px solid var(--translator-border-strong);
   border-radius: 9px;
-  box-shadow: 0 16px 42px light-dark(rgba(76, 59, 32, 0.2), rgba(0, 0, 0, 0.46));
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.46);
 }
 
 #stardew-i18n-translator .translator-result-head {
@@ -1085,11 +1085,6 @@
   gap: 6px;
   padding-inline-end: 24px;
   flex-wrap: wrap;
-}
-
-#stardew-i18n-translator .translator-result-action-break {
-  height: 0;
-  flex: 0 0 100%;
 }
 
 #stardew-i18n-translator .translator-result-details {
@@ -1140,7 +1135,7 @@
   display: grid;
   place-items: center;
   padding: 18px;
-  background: light-dark(rgba(244, 238, 225, 0.64), rgba(11, 15, 13, 0.72));
+  background: rgba(11, 15, 13, 0.72);
   backdrop-filter: blur(3px);
 }
 
@@ -1152,7 +1147,7 @@
   background: var(--translator-surface-raised);
   border: 1px solid var(--translator-border-strong);
   border-radius: 10px;
-  box-shadow: 0 22px 58px light-dark(rgba(76, 59, 32, 0.2), rgba(0, 0, 0, 0.5));
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.5);
 }
 
 #stardew-i18n-translator .translator-scan-dialog,
@@ -1418,8 +1413,7 @@
   background: var(--translator-surface-raised);
   border: 1px solid var(--translator-border-strong);
   border-radius: 8px;
-  box-shadow: 0 14px 38px
-    light-dark(rgba(76, 59, 32, 0.16), rgba(0, 0, 0, 0.35));
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.35);
 }
 
 #stardew-i18n-translator .translator-toast i {
@@ -1433,7 +1427,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: light-dark(rgba(42, 34, 24, 0.34), rgba(0, 0, 0, 0.58));
+  background: rgba(0, 0, 0, 0.58);
   backdrop-filter: blur(2px);
 }
 
@@ -1446,8 +1440,7 @@
   background: var(--translator-surface);
   border: 1px solid var(--translator-border-strong);
   border-radius: 12px;
-  box-shadow: 0 26px 72px
-    light-dark(rgba(76, 59, 32, 0.22), rgba(0, 0, 0, 0.48));
+  box-shadow: 0 26px 72px rgba(0, 0, 0, 0.48);
 }
 
 #stardew-i18n-translator .translator-editor-head {
@@ -1680,18 +1673,18 @@
   display: grid;
   place-items: center;
   padding: 18px;
-  background: light-dark(rgba(40, 32, 22, 0.28), rgba(0, 0, 0, 0.54));
+  background: rgba(0, 0, 0, 0.54);
 }
 
 #stardew-i18n-translator .translator-settings-dialog {
   width: min(880px, 100%);
-  max-height: 720px;
+  height: min(660px, calc(100dvh - 36px));
+  max-height: calc(100dvh - 36px);
   overflow: hidden;
   background: var(--translator-surface);
   border: 1px solid var(--translator-border-strong);
   border-radius: 10px;
-  box-shadow: 0 24px 72px
-    light-dark(rgba(76, 59, 32, 0.24), rgba(0, 0, 0, 0.56));
+  box-shadow: 0 24px 72px rgba(0, 0, 0, 0.56);
 }
 
 #stardew-i18n-translator .translator-settings-head {
@@ -1735,6 +1728,7 @@
 
 #stardew-i18n-translator .translator-settings-content {
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 17px 18px;
 }
 
@@ -2322,10 +2316,52 @@
   padding: 9px 11px;
   color: var(--translator-text);
   text-align: left;
-  background: var(--translator-orange-soft);
-  border: 1px solid
-    color-mix(in srgb, var(--translator-orange) 38%, var(--translator-border));
+  background: var(--translator-surface-raised);
+  border: 1px solid var(--translator-border);
   border-radius: 7px;
+}
+
+#stardew-i18n-translator .translator-scan-summary.is-warning {
+  background: var(--translator-orange-soft);
+  border-color: color-mix(
+    in srgb,
+    var(--translator-orange) 38%,
+    var(--translator-border)
+  );
+}
+
+#stardew-i18n-translator .translator-flow-callout.is-success {
+  background: var(--translator-green-soft);
+  border-left-color: var(--translator-green);
+}
+
+#stardew-i18n-translator .translator-flow-callout.is-neutral {
+  background: var(--translator-surface-raised);
+  border-left-color: var(--translator-border-strong);
+}
+
+#stardew-i18n-translator .stringrow--head {
+  color: var(--translator-muted);
+  background: var(--translator-surface-raised);
+  font-size: 11px;
+}
+
+#stardew-i18n-translator .editor__valid-ok {
+  color: var(--translator-muted);
+}
+
+#stardew-i18n-translator .translator-row-metadata {
+  display: block;
+  overflow: hidden;
+  color: var(--translator-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#stardew-i18n-translator .translator-ai-details summary {
+  cursor: pointer;
+  color: var(--translator-muted);
 }
 
 #stardew-i18n-translator .translator-scan-summary span span {

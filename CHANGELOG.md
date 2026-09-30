@@ -8,11 +8,22 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Changed
+
+- Fit string columns to the available space, keep mod and file context under the
+  key in narrow windows, and provide a control to reset manual column widths.
+- Simplify settings, scan results, AI progress and export previews. Distinguish
+  translation coverage from completed reviews.
+
+### Removed
+
+- Translation Notes, including the menu, dialog and generated publication text.
+
 ## [2.1.0] - 2026-09-07
 
 ### Added
 
-- Build Stardew Translator Output combines existing local translations and saved
+- Translation ZIP · all mods combines existing local translations and saved
   edits from all scanned mods into one locale-only ZIP.
 - Scan, edit and export split locale folders such as `i18n/default/Dialogue.json`
   and `i18n/de/Dialogue.json`, including new language folders and obsolete keys.
@@ -248,15 +259,12 @@ See [docs/release/v1.4.0.md](docs/release/v1.4.0.md) for the full notes.
   outcomes without blocking the translation workspace.
 - Installable translation ZIP creation that preserves the selected mod
   package's folder structure.
-- Short localized **Translation Notes** generated from verified package,
-  language, coverage, and installation details.
 - Native startup guidance with the official Microsoft download link when the
   WebView2 Runtime is unavailable.
 
 ### Changed
 
-- Related export and import actions are grouped into compact toolbar menus,
-  while **Translation Notes** and **Settings** remain clearly separated.
+- Related export and import actions are grouped into compact toolbar menus.
 - External-LLM batch exports show the complete four-step handoff and an exact
   copyable prompt in the result tray.
 
