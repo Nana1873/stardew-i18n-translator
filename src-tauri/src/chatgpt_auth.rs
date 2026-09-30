@@ -870,7 +870,10 @@ pub async fn status() -> crate::ai_provider::CloudAiStatus {
     if let Ok(state) = state() {
         let state = state.lock().await;
         sign_in_pending = state.pending.is_some();
-        if let Some(latest) = &state.error {
+        if state.session.is_none() {
+            // A signed-out profile is normal, not a failed connection.
+            error = state.error.clone();
+        } else if let Some(latest) = &state.error {
             error = Some(latest.clone());
         }
         if authenticated {

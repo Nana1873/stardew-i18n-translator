@@ -159,6 +159,59 @@ export async function advancedCases(h) {
           '[aria-label="Close settings"]',
           '[role="tab"][aria-controls="settings-panel-glossary"]',
         ]);
+        await click(css('[role="tab"][aria-controls="settings-panel-ai"]'));
+        await click(
+          By.xpath('//button[.//strong[normalize-space(.)="ChatGPT"]]'),
+        );
+        const cloudPanel = css('section[aria-label="ChatGPT"]');
+        await waitFor("signed-out ChatGPT profile checked", async () =>
+          (await element(button("Sign in with ChatGPT"))).isEnabled(),
+        );
+        assert.equal(
+          await driver.executeScript(
+            () =>
+              document
+                .querySelector('section[aria-label="ChatGPT"]')
+                .querySelectorAll(".translator-setting-line").length,
+          ),
+          4,
+        );
+        assert.equal(
+          /Authentication|ChatGPT status|Check status|Plan usage/.test(
+            await (await element(cloudPanel)).getText(),
+          ),
+          false,
+        );
+        assert.equal(
+          (await driver.findElements(button("Retry connection"))).length,
+          0,
+        );
+        await measure("settings-chatgpt", [
+          'section[aria-label="ChatGPT"] .translator-setting-actions button',
+          '[aria-label="ChatGPT model"]',
+          '[aria-label="ChatGPT reasoning"]',
+          '.translator-switch:has([aria-label="AI quality review and repairs"])',
+          '[aria-label="Close settings"]',
+        ]);
+        const qualitySwitch = css(
+          '.translator-switch:has([aria-label="AI quality review and repairs"])',
+        );
+        const qualityInput = css(
+          '[aria-label="AI quality review and repairs"]',
+        );
+        const qualityEnabled = await (
+          await driver.findElement(qualityInput)
+        ).isSelected();
+        await click(qualitySwitch);
+        assert.equal(
+          await (await driver.findElement(qualityInput)).isSelected(),
+          !qualityEnabled,
+        );
+        await click(qualitySwitch);
+        assert.equal(
+          await (await driver.findElement(qualityInput)).isSelected(),
+          qualityEnabled,
+        );
         await click(css('[aria-label="Close settings"]'));
         await h.closeNormally();
       });
@@ -295,14 +348,14 @@ export async function advancedCases(h) {
       // Choose the test engine after that state transition has completed.
       await waitFor(
         "initial engine discovery completed",
-        async () =>
-          (
-            await driver.findElements(
-              By.xpath(
-                '//section[@aria-label="ChatGPT"]//button[normalize-space(.)="Check status"]',
-              ),
-            )
-          ).length === 1,
+        async () => {
+          const actions = await driver.findElements(
+            By.xpath(
+              '//section[@aria-label="ChatGPT"]//button[normalize-space(.)="Sign in with ChatGPT" or normalize-space(.)="Sign out"]',
+            ),
+          );
+          return actions.length === 1 && (await actions[0].isEnabled());
+        },
         60000,
       );
       await click(
@@ -346,9 +399,10 @@ export async function advancedCases(h) {
         await waitFor(
           "ChatGPT is authenticated and model discovery completes",
           async () => {
-            const section = await element(css('section[aria-label="ChatGPT"]'));
+            const actions = await driver.findElements(button("Sign out"));
             return (
-              (await section.getText()).includes("Ready") &&
+              actions.length === 1 &&
+              (await actions[0].isEnabled()) &&
               (await (
                 await element(css('[aria-label="ChatGPT model"]'))
               ).isEnabled())
@@ -504,10 +558,16 @@ export async function advancedCases(h) {
         );
         await waitFor(
           "saved ChatGPT session restored after restart",
-          async () =>
-            (await element(css('section[aria-label="ChatGPT"]')))
-              .getText()
-              .then((text) => text.includes("Ready")),
+          async () => {
+            const actions = await driver.findElements(button("Sign out"));
+            return (
+              actions.length === 1 &&
+              (await actions[0].isEnabled()) &&
+              (await (
+                await element(css('[aria-label="ChatGPT model"]'))
+              ).isEnabled())
+            );
+          },
           60000,
         );
         await click(button("Sign out"));

@@ -174,6 +174,7 @@ export function SettingsDialog({
   const dialogRef = useRef<HTMLElement>(null);
   const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
   const cloudAvailable = Boolean(cloudStatus?.authenticated);
+  const cloudAccountError = chatgptAuthError || cloudStatus?.error;
   const defaultEngine: AiEngine | null =
     preferredEngine === CLOUD_ENGINE_ID && cloudStatus === null
       ? null
@@ -438,8 +439,6 @@ export function SettingsDialog({
     isActive: () => boolean = () => true,
   ) {
     if (!status.authenticated) {
-      if (isActive()) {
-      }
       return;
     }
 
@@ -468,6 +467,7 @@ export function SettingsDialog({
   }
 
   async function checkCloudStatus() {
+    setChatgptAuthError(null);
     setCloudChecking(true);
     try {
       const status = await cloudAiStatus();
@@ -797,7 +797,7 @@ export function SettingsDialog({
                         ? cloudStatus.authenticated
                           ? "Ready"
                           : "Sign in with ChatGPT"
-                        : "Check status"}
+                        : "Checking…"}
                     </span>
                   </span>
                 </button>
@@ -967,42 +967,45 @@ export function SettingsDialog({
                 <div className="translator-settings-group">
                   <div className="translator-setting-line">
                     <span className="translator-setting-copy">
-                      <strong>{CLOUD_ENGINE_LABEL} status</strong>
+                      <strong>ChatGPT account</strong>
                       <span
-                        role={cloudStatus?.error ? "alert" : "status"}
-                        aria-live={cloudStatus?.error ? "assertive" : "polite"}
+                        role={cloudAccountError ? "alert" : "status"}
+                        aria-live={cloudAccountError ? "assertive" : "polite"}
                         aria-atomic="true"
                       >
-                        {cloudChecking
-                          ? "Checking ChatGPT sign-in…"
-                          : cloudStatus
-                            ? cloudStatus.error
-                              ? cloudStatus.error
-                              : cloudStatus.authenticated
-                                ? "Ready"
-                                : "Sign in with ChatGPT first"
-                            : "Not checked in this session"}
+                        {cloudAccountError ||
+                          (chatgptSigningIn
+                            ? "Complete sign-in in your browser. This screen updates automatically."
+                            : cloudChecking
+                              ? "Checking ChatGPT sign-in…"
+                              : cloudAvailable
+                                ? cloudStatus?.authentication ||
+                                  "Signed in with ChatGPT"
+                                : "Sign in to use your ChatGPT plan.")}
                       </span>
                     </span>
-                    <button
-                      className="translator-button translator-button-quiet"
-                      type="button"
-                      onClick={() => void checkCloudStatus()}
-                      disabled={cloudChecking}
-                    >
-                      {cloudChecking ? "Checking…" : "Check status"}
-                    </button>
-                  </div>
-                  {
-                    <div className="translator-setting-line">
-                      <span className="translator-setting-copy">
-                        <strong>ChatGPT account</strong>
-                        <span>
-                          {chatgptSigningIn
-                            ? "Complete sign-in in your browser. This screen updates automatically."
-                            : "Use your ChatGPT plan to translate and review strings."}
-                        </span>
-                      </span>
+                    <div className="translator-setting-actions">
+                      {cloudStatus?.error && (
+                        <button
+                          className="translator-button translator-button-quiet"
+                          type="button"
+                          onClick={() => void checkCloudStatus()}
+                          disabled={cloudChecking || chatgptSigningIn}
+                        >
+                          Retry connection
+                        </button>
+                      )}
+                      {cloudAvailable && (
+                        <button
+                          type="button"
+                          className="translator-button translator-button-quiet"
+                          onClick={() =>
+                            void openUrl("https://chatgpt.com/settings/usage")
+                          }
+                        >
+                          Manage usage
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="translator-button translator-button-quiet"
@@ -1020,50 +1023,63 @@ export function SettingsDialog({
                             : "Sign in with ChatGPT"}
                       </button>
                     </div>
-                  }
-                  {chatgptAuthError && <p role="alert">{chatgptAuthError}</p>}
-                  <label className="translator-setting-line">
+                  </div>
+                  <div className="translator-setting-line">
                     <span className="translator-setting-copy">
                       <strong>Model</strong>
                       <span>
                         {cloudModelsLoading
-                          ? "Loading your ChatGPT models…"
-                          : cloudModels?.length
-                            ? "Available to your signed-in ChatGPT account"
-                            : cloudModelsError
-                              ? cloudModel
-                                ? "Model list unavailable · keeping the saved selection"
-                                : "Model list unavailable · sign in and retry"
-                              : "Sign in to load your models"}
+                          ? "Loading models…"
+                          : cloudModelsError
+                            ? cloudModel
+                              ? "Model list unavailable · keeping the saved selection"
+                              : "Model list unavailable · retry loading"
+                            : cloudAvailable && cloudModels?.length === 0
+                              ? "No models available"
+                              : !cloudAvailable
+                                ? "Sign in to load your models"
+                                : null}
                       </span>
                     </span>
-                    <select
-                      className="translator-select"
-                      value={cloudModel}
-                      onChange={(event) => chooseCloudModel(event.target.value)}
-                      aria-label={"ChatGPT model"}
-                      disabled={cloudModelsLoading || !cloudModels?.length}
-                    >
-                      {!cloudModels?.length && (
-                        <option value={cloudModel}>
-                          {cloudModel
-                            ? `${cloudModel} · saved`
-                            : "Choose a ChatGPT model"}
-                        </option>
-                      )}
-                      {cloudModels?.map((model) => (
-                        <option key={model.model} value={model.model}>
-                          {model.displayName === model.model
-                            ? model.displayName
-                            : `${model.displayName} · ${model.model}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    <div className="translator-setting-actions">
+                      {cloudAvailable &&
+                        (cloudModelsError || cloudModels?.length === 0) && (
+                          <button
+                            type="button"
+                            className="translator-button translator-button-quiet"
+                            disabled={cloudChecking || cloudModelsLoading}
+                            onClick={() => void checkCloudStatus()}
+                          >
+                            Retry models
+                          </button>
+                        )}
+                      <select
+                        className="translator-select"
+                        value={cloudModel}
+                        onChange={(event) =>
+                          chooseCloudModel(event.target.value)
+                        }
+                        aria-label={"ChatGPT model"}
+                        disabled={cloudModelsLoading || !cloudModels?.length}
+                      >
+                        {!cloudModels?.length && (
+                          <option value={cloudModel}>
+                            {cloudModel
+                              ? `${cloudModel} · saved`
+                              : "Choose a ChatGPT model"}
+                          </option>
+                        )}
+                        {cloudModels?.map((model) => (
+                          <option key={model.model} value={model.model}>
+                            {model.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   <label className="translator-setting-line">
                     <span className="translator-setting-copy">
                       <strong>Reasoning</strong>
-                      <span>Applied to translation runs</span>
                     </span>
                     <select
                       className="translator-select"
@@ -1086,10 +1102,8 @@ export function SettingsDialog({
                     <span className="translator-setting-copy">
                       <strong>AI quality review &amp; repairs</strong>
                       <span>
-                        Reviews meaning, natural language, terminology, grammar,
-                        register, speaker voice, and dialogue continuity, then
-                        applies focused terminology and protected-token repairs
-                        when needed.
+                        Checks wording, terminology and protected tokens. Uses
+                        additional ChatGPT requests.
                       </span>
                     </span>
                     <label className="translator-switch">
@@ -1104,42 +1118,6 @@ export function SettingsDialog({
                       <span aria-hidden="true" />
                     </label>
                   </div>
-                  <div className="translator-setting-line">
-                    <span className="translator-setting-copy">
-                      <strong>Authentication</strong>
-                      <span>
-                        {cloudStatus?.authenticated
-                          ? cloudStatus.authentication ||
-                            "Authenticated by ChatGPT browser sign-in"
-                          : "Sign in through your browser and allow ChatGPT plan usage"}
-                      </span>
-                    </span>
-                    <span
-                      className={
-                        "translator-state " +
-                        (cloudStatus?.authenticated ? "is-ready" : "is-change")
-                      }
-                    >
-                      {cloudStatus?.authenticated ? "Ready" : "Unavailable"}
-                    </span>
-                  </div>
-                  {cloudAvailable && (
-                    <div className="translator-setting-line">
-                      <span className="translator-setting-copy">
-                        <strong>Plan usage</strong>
-                        <span>Requests use your ChatGPT plan allowance.</span>
-                      </span>
-                      <button
-                        type="button"
-                        className="translator-button translator-button-quiet"
-                        onClick={() =>
-                          void openUrl("https://chatgpt.com/settings/usage")
-                        }
-                      >
-                        Manage usage
-                      </button>
-                    </div>
-                  )}
                 </div>
                 {!cloudQualityReview && (
                   <div
@@ -1157,17 +1135,7 @@ export function SettingsDialog({
                     </p>
                   </div>
                 )}
-
-                <p className="translator-kicker">
-                  {
-                    "Translations use your ChatGPT plan and enter Review before you approve them."
-                  }
-                </p>
               </section>
-              <p className="translator-kicker">
-                External LLM batch stays separate because it is a manual file
-                export/import workflow.
-              </p>
             </section>
 
             <GlossarySettings

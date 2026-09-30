@@ -85,7 +85,8 @@ the source explanation in **Settings > Glossary**. Custom languages need a
 compatible installed pack with local Strings sources for glossary generation.
 
 For Local AI, start the service, load a supported model, check the loopback URL,
-and test again. For ChatGPT, follow the error shown by **Check status**. Sign in through your
+and test again. For ChatGPT, follow the error shown in the account row and use
+**Retry connection** or **Retry models** when offered. Sign in through your
 browser and grant plan usage if requested. Account/workspace eligibility and
 usage limits can prevent requests even after a successful sign-in.
 

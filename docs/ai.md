@@ -45,7 +45,9 @@ The app connects directly to OpenAI using its own browser-authorized session.
 No CLI installation or API key is required. The model catalog comes from your
 signed-in account; advertised reasoning capabilities limit the picker when provided.
 OpenAI checks availability and account/workspace permissions on each request.
-Manage your allowance through **Open ChatGPT settings**. Account eligibility
+The account row shows your sign-in and offers **Manage usage** and **Sign out**.
+Status is checked automatically; **Retry models** appears if model discovery fails.
+Account eligibility
 and preview availability may vary; see the [official sign-in documentation](https://developers.openai.com/siwc/token-sharing-open-source/sign-in).
 
 The renewable session is encrypted with Windows DPAPI in

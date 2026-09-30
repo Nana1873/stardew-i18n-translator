@@ -53,10 +53,14 @@ it("uses website commands, ChatGPT preferences and reasoning without CLI setup o
   fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
   await screen.findByRole("button", { name: "Sign out" });
   fireEvent.click(screen.getByRole("button", { name: /ChatGPT.*Ready/ }));
-  await screen.findByRole("option", { name: /Account model.*account-model/ });
-  expect(
-    screen.getByText("Authenticated by ChatGPT browser sign-in"),
-  ).toBeVisible();
+  await screen.findByRole("option", { name: "Account model" });
+  expect(screen.getByText("Signed in with ChatGPT")).toBeVisible();
+  expect(screen.queryByText("Authentication")).toBeNull();
+  expect(screen.queryByText("ChatGPT status")).toBeNull();
+  expect(screen.queryByText("Plan usage")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Check status" })).toBeNull();
+  expect(screen.getByText("ChatGPT account")).toBeVisible();
+  expect(screen.getByRole("button", { name: "Manage usage" })).toBeVisible();
   expect(screen.queryByLabelText("ChatGPT setup guide")).toBeNull();
   expect(screen.queryByText(/Codex|CLI/)).toBeNull();
   expect(

@@ -1159,17 +1159,13 @@ describe("SettingsDialog", () => {
     expect(screen.getByLabelText("ChatGPT reasoning")).toHaveValue("high");
     expect(screen.getByText("Connected test account")).toBeVisible();
 
-    fireEvent.click(screen.getByRole("button", { name: "Check status" }));
-    await waitFor(() =>
-      expect(
-        invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_status"),
-      ).toHaveLength(2),
-    );
-    await waitFor(() =>
-      expect(
-        invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_models"),
-      ).toHaveLength(2),
-    );
+    expect(screen.queryByRole("button", { name: "Check status" })).toBeNull();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_status"),
+    ).toHaveLength(1);
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "cloud_ai_models"),
+    ).toHaveLength(1);
 
     fireEvent.change(screen.getByLabelText("ChatGPT model"), {
       target: { value: "gpt-5.6-sol" },
@@ -1216,9 +1212,7 @@ describe("SettingsDialog", () => {
     );
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: "Check status" }),
-      ).toBeEnabled(),
+      expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled(),
     );
 
     const qualityReview = screen.getByRole("checkbox", {
@@ -1226,9 +1220,9 @@ describe("SettingsDialog", () => {
     });
     expect(qualityReview).toBeChecked();
     expect(
-      screen.getByText(/Reviews meaning, natural language, terminology/),
+      screen.getByText(/Checks wording, terminology and protected tokens/),
     ).toHaveTextContent(
-      "Reviews meaning, natural language, terminology, grammar, register, speaker voice, and dialogue continuity, then applies focused terminology and protected-token repairs when needed.",
+      "Checks wording, terminology and protected tokens. Uses additional ChatGPT requests.",
     );
     expect(
       screen.queryByRole("note", { name: "First draft quality warning" }),
@@ -1298,6 +1292,17 @@ describe("SettingsDialog", () => {
     expect(error).toHaveTextContent("ChatGPT status failed.");
     expect(error).toHaveAttribute("aria-live", "assertive");
     expect(error).toHaveAttribute("aria-atomic", "true");
+    invokeMock.mockImplementation(() =>
+      Promise.resolve({ authenticated: false }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+    expect(
+      screen.getByRole("button", { name: "Sign in with ChatGPT" }),
+    ).toBeEnabled();
+    expect(
+      screen.queryByRole("button", { name: "Retry connection" }),
+    ).toBeNull();
   });
 
   it("keeps the account signed in and asks for model discovery to be retried", async () => {
@@ -1331,17 +1336,36 @@ describe("SettingsDialog", () => {
       expect(screen.getByLabelText("ChatGPT model")).toBeDisabled(),
     );
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("");
-    expect(screen.getByText(/sign in and retry/i)).toBeVisible();
+    expect(screen.getByText(/retry loading/i)).toBeVisible();
     expect(screen.getByText("ChatGPT").closest("button")).toHaveTextContent(
       "Ready",
     );
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "cloud_ai_status")
+        return Promise.resolve({ authenticated: true });
+      if (cmd === "cloud_ai_models")
+        return Promise.resolve([
+          {
+            model: "recovered-model",
+            displayName: "Recovered model",
+            isDefault: true,
+            supportedReasoningEfforts: ["low", "medium", "high"],
+            defaultReasoningEffort: "medium",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Retry models" }));
+    await screen.findByRole("option", { name: "Recovered model" });
+    expect(screen.queryByRole("button", { name: "Retry models" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: {
           defaultEngine: "chatgpt",
-          cloudModel: null,
+          cloudModel: "recovered-model",
           cloudReasoning: "medium",
           cloudQualityReview: true,
         },

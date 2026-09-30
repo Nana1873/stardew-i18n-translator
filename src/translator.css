@@ -1771,6 +1771,14 @@
   min-width: 0;
 }
 
+#stardew-i18n-translator .translator-setting-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 #stardew-i18n-translator .translator-setting-copy strong,
 #stardew-i18n-translator .translator-setting-copy span {
   display: block;
