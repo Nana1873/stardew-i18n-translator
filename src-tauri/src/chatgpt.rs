@@ -202,3 +202,7 @@ mod review_failure_tests;
 #[cfg(test)]
 #[path = "cloud_translation/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "chatgpt/parallel_probe.rs"]
+mod parallel_probe;
