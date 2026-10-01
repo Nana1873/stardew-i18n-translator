@@ -146,16 +146,15 @@ overrides, using the same validation rules. Changed and Review values are
 included with warnings and retain their status. Choose a ZIP destination and
 confirm replacement in the Windows Save dialog if that file exists. There is
 no second app confirmation. The output uses the same installation
-folders and installer as the current-mod ZIP described below. It contains no
+folders as the current-mod ZIP described below. It contains no
 original mod assets or manifests and does not install anything itself.
 Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 
 Select a mod package and use **Export… > Translation ZIP · current mod**. Check its
-preview and choose a destination. The ZIP contains generated target-language
-i18n files and a small FOMOD installer for Vortex and MO2. Recipients still need
-the original mod; its assets, DLLs, and manifest are not included.
+preview and choose a destination. The ZIP contains only generated target-language
+i18n files. Recipients still need the original mod; its assets, DLLs, and manifest are not included.
 
 **Install folder** is relative to the game's Mods folder. Its default is the
 folder containing the component's manifest, without outer local package or
@@ -174,8 +173,7 @@ paths before using **Ignore missing data**. Do not add a copied original
 manifest to silence that warning.
 
 For manual installation, copy the translation folders from the ZIP into Mods
-using the previewed paths. The `fomod` folder is installer metadata and is not
-part of the manual installation.
+using the previewed paths.
 
 The preview and build check the package against the current Mods folder. If its
 components, version, or i18n file list changed, run **Scan** and open the preview
