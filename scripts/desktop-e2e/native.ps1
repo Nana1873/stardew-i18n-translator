@@ -1,7 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][int]$AppProcessId,
     [Parameter(Mandatory = $true)][string]$Executable,
-    [Parameter(Mandatory = $true)][ValidateSet('pick', 'save', 'cancel', 'close', 'inspect', 'metrics')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('pick', 'save', 'save-overwrite', 'cancel-overwrite', 'cancel', 'close', 'inspect', 'metrics')][string]$Action,
     [string]$Title,
     [string]$Path
 )
@@ -103,14 +103,22 @@ while ($dialog -eq [IntPtr]::Zero) {
     if ([DateTime]::UtcNow -gt $deadline) { throw "Native dialog did not appear: $Title" }
     if ($dialog -eq [IntPtr]::Zero) { Start-Sleep -Milliseconds 100 }
 }
-$savePath = $Action -eq 'save' -or ($Action -eq 'cancel' -and $Path)
+$overwriteAction = $Action -eq 'save-overwrite' -or $Action -eq 'cancel-overwrite'
+$savePath = $Action -eq 'save' -or $overwriteAction -or ($Action -eq 'cancel' -and $Path)
 if ($Action -eq 'pick' -or $savePath) {
     if (![IO.Path]::IsPathRooted($Path)) { throw 'Picker input must be an absolute fixture path.' }
     $fixtureRoot = $testRuntime
     if (![IO.Path]::GetFullPath($Path).StartsWith($fixtureRoot, [StringComparison]::OrdinalIgnoreCase)) { throw 'Picker input must stay inside this test runtime.' }
     if ($Action -eq 'pick' -and !(Test-Path -LiteralPath $Path)) { throw 'Open picker input must exist.' }
-    if ($savePath -and ((Test-Path -LiteralPath $Path) -or !(Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($Path)) -PathType Container))) {
-        throw 'Save picker input must be new, with an existing fixture parent directory.'
+    if ($savePath) {
+        if (!(Test-Path -LiteralPath ([IO.Path]::GetDirectoryName($Path)) -PathType Container)) {
+            throw 'Save picker input requires an existing fixture parent directory.'
+        }
+        if ($overwriteAction) {
+            if (!(Test-Path -LiteralPath $Path -PathType Leaf)) { throw 'Overwrite input must be an existing fixture file.' }
+        } elseif (Test-Path -LiteralPath $Path) {
+            throw 'Save picker input must be new unless explicitly testing native overwrite.'
+        }
     }
     # Standard Windows common-dialog IDs, observed through its accessibility tree.
     # UIA ValuePattern/InvokePattern are unavailable for these controls on some
@@ -142,6 +150,49 @@ $buttonId = if ($Action -eq 'cancel') { 2 } else { 1 }
 $button = [DesktopNative]::GetDlgItem($dialog, $buttonId)
 if ($button -eq [IntPtr]::Zero -or ![DesktopNative]::IsWindowEnabled($button)) { throw 'The common dialog action is unavailable.' }
 if (![DesktopNative]::PostMessage($button, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'Could not activate the native dialog button.' }
+if ($overwriteAction) {
+    Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+    $saveWindow = [System.Windows.Automation.AutomationElement]::FromHandle($dialog)
+    # DirectUI controls observed in the native overwrite dialog's accessibility
+    # tree have no HWND. Their IDs are stable across Windows UI languages.
+    $yesCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'CommandButton_6')
+    $noCondition = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::AutomationIdProperty, 'CommandButton_7')
+    $yesButton = $null
+    $noButton = $null
+    while ($null -eq $yesButton -or $null -eq $noButton) {
+        $yesButton = $saveWindow.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $yesCondition)
+        $noButton = $saveWindow.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $noCondition)
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Native overwrite confirmation did not appear.' }
+        if ($null -eq $yesButton -or $null -eq $noButton) { Start-Sleep -Milliseconds 100 }
+    }
+    $decision = if ($Action -eq 'save-overwrite') { $yesButton } else { $noButton }
+    if (!$decision.Current.IsEnabled) { throw 'Native overwrite decision is unavailable.' }
+    # These task-dialog buttons do not expose InvokePattern on this Windows
+    # build. Locate their real dialog HWND and use its documented click message.
+    $ancestor = [System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($decision)
+    while ($null -ne $ancestor -and ($ancestor.Current.ClassName -ne '#32770' -or !$ancestor.Current.NativeWindowHandle)) {
+        $ancestor = [System.Windows.Automation.TreeWalker]::RawViewWalker.GetParent($ancestor)
+    }
+    if ($null -eq $ancestor) { throw 'Native overwrite dialog window is unavailable.' }
+    $confirmation = [IntPtr]$ancestor.Current.NativeWindowHandle
+    [uint32]$confirmationOwner = 0
+    $null = [DesktopNative]::GetWindowThreadProcessId($confirmation, [ref]$confirmationOwner)
+    if ($confirmationOwner -ne $AppProcessId) { throw 'Refusing an overwrite dialog outside the test application.' }
+    $decisionId = if ($Action -eq 'save-overwrite') { 6 } else { 7 }
+    # TDM_CLICK_BUTTON = WM_USER + 102; https://learn.microsoft.com/en-us/windows/win32/controls/tdm-click-button
+    if (![DesktopNative]::PostMessage($confirmation, 0x0466, [IntPtr]$decisionId, [IntPtr]::Zero)) { throw 'Could not answer native overwrite confirmation.' }
+    while ([DesktopNative]::IsWindow($confirmation)) {
+        if ([DateTime]::UtcNow -gt $deadline) { throw 'Native overwrite confirmation did not complete.' }
+        Start-Sleep -Milliseconds 100
+    }
+    if ($Action -eq 'cancel-overwrite') {
+        # No returns to the Save dialog. Cancel it to return no destination to the app.
+        $cancelButton = [DesktopNative]::GetDlgItem($dialog, 2)
+        if ($cancelButton -eq [IntPtr]::Zero -or ![DesktopNative]::IsWindowEnabled($cancelButton)) { throw 'Save cancellation is unavailable after declining overwrite.' }
+        if (![DesktopNative]::PostMessage($cancelButton, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)) { throw 'Could not cancel the Save dialog after declining overwrite.' }
+    }
+    Write-Output 'Native overwrite confirmation answered.'
+}
 while ([DesktopNative]::IsWindow($dialog)) {
     if ([DateTime]::UtcNow -gt $deadline) { throw "Native dialog did not complete: $Title" }
     Start-Sleep -Milliseconds 100

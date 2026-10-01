@@ -464,8 +464,10 @@ export interface ZipProblem {
 }
 
 export interface ZipEntryPreview {
+  modUniqueId: string;
   modName: string;
   modVersion: string;
+  installFolder: string;
   archivePath: string;
   strings: number;
   totalSourceStrings: number;
@@ -497,6 +499,11 @@ export interface ZipBuildOutcome {
   strings: number;
 }
 
+export interface ZipInstallFolder {
+  modUniqueId: string;
+  folder: string;
+}
+
 export function previewTranslationZip(
   modsPath: string,
   packageName: string,
@@ -518,8 +525,13 @@ export function previewStardewTranslatorOutput(): Promise<ZipPreview> {
 export function buildStardewTranslatorOutput(
   destination: string,
   overwrite: boolean,
+  installFolders: ZipInstallFolder[] = [],
 ): Promise<ZipBuildOutcome> {
-  return invoke("build_stardew_translator_output", { destination, overwrite });
+  return invoke("build_stardew_translator_output", {
+    destination,
+    overwrite,
+    installFolders,
+  });
 }
 
 export function pickTranslationZipDestination(
@@ -538,6 +550,7 @@ export function buildTranslationZip(
   components: ZipComponentInput[],
   destination: string,
   overwrite: boolean,
+  installFolders: ZipInstallFolder[] = [],
 ): Promise<ZipBuildOutcome> {
   return invoke<ZipBuildOutcome>("build_translation_zip", {
     request: {
@@ -548,6 +561,7 @@ export function buildTranslationZip(
       components,
       destination,
       overwrite,
+      installFolders,
     },
   });
 }

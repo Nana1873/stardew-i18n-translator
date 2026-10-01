@@ -748,6 +748,7 @@ fn build_stardew_translator_output(
     history: State<'_, operation_history::OperationHistoryState>,
     destination: String,
     overwrite: bool,
+    install_folders: Option<Vec<release_zip::ZipInstallFolder>>,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
     use operation_log::{Outcome, Summary};
     operation_log::run(
@@ -759,6 +760,7 @@ fn build_stardew_translator_output(
                 &history,
                 Path::new(&destination),
                 overwrite,
+                install_folders.as_deref().unwrap_or_default(),
             )
         },
         |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
@@ -770,8 +772,10 @@ fn build_output_with_history(
     history: &operation_history::OperationHistoryState,
     destination: &Path,
     overwrite: bool,
+    install_folders: &[release_zip::ZipInstallFolder],
 ) -> Result<release_zip::ZipBuildOutcome, String> {
-    let result = release_zip::build_output(config, destination, overwrite)?;
+    let result =
+        release_zip::build_output_with_folders(config, destination, overwrite, install_folders)?;
     remember_zip_operation(history, &result, "Stardew Translator Output created");
     Ok(result)
 }
@@ -788,7 +792,7 @@ fn remember_zip_operation(
             outcome: operation_history::OperationOutcome::Success,
             title: title.to_string(),
             summary: format!(
-                "{} strings packaged in {} archive entries.",
+                "{} strings packaged in {} translation files.",
                 result.strings, result.entries
             ),
             item_count: result.strings,
@@ -797,7 +801,7 @@ fn remember_zip_operation(
             warnings: Vec::new(),
             details: vec![
                 operation_detail("Destination folder", &result.folder),
-                operation_detail("Archive entries", result.entries),
+                operation_detail("Translation files", result.entries),
                 operation_detail("Strings", result.strings),
             ],
         },
@@ -3130,7 +3134,7 @@ mod output_history_tests {
         let destination = root.join("combined.zip");
         std::fs::write(&destination, "existing archive").unwrap();
         assert_eq!(
-            build_output_with_history(&config, &history, &destination, false).unwrap_err(),
+            build_output_with_history(&config, &history, &destination, false, &[]).unwrap_err(),
             "OVERWRITE_REQUIRED"
         );
         let after_failure = history.list().unwrap();
@@ -3139,7 +3143,7 @@ mod output_history_tests {
         assert!(after_failure[0].can_undo);
         assert_eq!(std::fs::read(&destination).unwrap(), b"existing archive");
 
-        let result = build_output_with_history(&config, &history, &destination, true).unwrap();
+        let result = build_output_with_history(&config, &history, &destination, true, &[]).unwrap();
         let entries = history.list().unwrap();
         assert_eq!(entries.len(), 3);
         assert_ne!(entries[0].id, prior_entry.id);

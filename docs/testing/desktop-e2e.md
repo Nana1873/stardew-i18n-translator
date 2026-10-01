@@ -77,10 +77,20 @@ surface with Selenium and checks files produced by the actual Rust backend:
    second attempt: the new locale is exact and `.json.bak` preserves every byte
    of the previous export.
 8. Use **Build translation ZIP · current mod**. Cancel the real Save dialog,
-   reopen it, and save to a new synthetic path. Inspect the generated archive:
-   exactly `DesktopSmoke/i18n/de.json`, expected translations and tokens, no
-   source strings, manifest, portable state, or backup. Installed locale and
-   backup remain unchanged.
+   change the install folder to ` OriginalDesktopSmoke` (including its leading
+   space), reopen the Save dialog,
+   and save to a new synthetic path. Inspect the generated archive: exactly
+   ` OriginalDesktopSmoke/i18n/de.json` and the two FOMOD XML files, expected
+   translations and tokens, and installer source/destination paths matching
+   the locale entry. Build **Translation ZIP · all mods** through its real Save
+   dialog and verify the default `DesktopSmoke/i18n/de.json` path and the same
+   installer contract. Neither ZIP includes source strings, manifests, portable
+   state, or backups. Installed locale and backup remain unchanged.
+   Reopen the current-mod ZIP preview with a different install folder. Decline
+   the native overwrite confirmation and cancel Save: the existing ZIP stays
+   byte-identical. Retry and accept the native confirmation: the new archive
+   replaces it without a second app confirmation, with the new install paths
+   and unchanged installed locale and backup.
 9. Clear a translation through the editor, select that Open row together with
    a Done row, and export an LLM batch through the actual Save dialog. Choosing
    the destination does not write yet; **Save JSON batch** does. Verify format 2,
