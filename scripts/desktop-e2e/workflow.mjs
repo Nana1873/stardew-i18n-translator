@@ -250,8 +250,32 @@ async function click(locator) {
   );
 }
 async function fill(locator, value) {
-  const found = await element(locator);
-  await found.sendKeys(Key.chord(Key.CONTROL, "a"), Key.BACK_SPACE, value);
+  let found;
+  await driver.wait(
+    async () => {
+      try {
+        found = await driver.findElement(locator);
+        if (!(await found.isDisplayed()) || !(await found.isEnabled()))
+          return false;
+        await found.sendKeys(
+          Key.chord(Key.CONTROL, "a"),
+          Key.BACK_SPACE,
+          value,
+        );
+        return true;
+      } catch (error) {
+        // A closing dialog can briefly leave an input present but inert.
+        if (
+          error.name !== "StaleElementReferenceError" &&
+          error.name !== "ElementNotInteractableError"
+        )
+          throw error;
+        return false;
+      }
+    },
+    30000,
+    `Editable input: ${locator}`,
+  );
   await waitFor(
     "input value",
     async () => (await found.getAttribute("value")) === value,
@@ -837,15 +861,28 @@ try {
       30000,
     );
     assert.equal(await exists(destination), false);
+    await fill(
+      By.xpath("//label[contains(., 'Install folder')]/input"),
+      "OriginalDesktopSmoke",
+    );
+    await element(By.xpath("//code[.='OriginalDesktopSmoke/i18n/de.json']"));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("translation ZIP created", () => exists(destination));
     await absent(css('[aria-label="Build translation ZIP"]'));
     const files = await archive("read", destination);
-    // A translation package must contain only the locale, never the manifest,
-    // default strings, glossary, portable state, or the previous-export backup.
-    assert.deepEqual(Object.keys(files), ["DesktopSmoke/i18n/de.json"]);
-    assert.deepEqual(JSON.parse(files["DesktopSmoke/i18n/de.json"]), {
+    // Locale files plus installer metadata; no original assets or app state.
+    assert.deepEqual(Object.keys(files), [
+      "OriginalDesktopSmoke/i18n/de.json",
+      "fomod/ModuleConfig.xml",
+      "fomod/info.xml",
+    ]);
+    assert.ok(
+      files["fomod/ModuleConfig.xml"].includes(
+        'destination="OriginalDesktopSmoke\\i18n\\de.json"',
+      ),
+    );
+    assert.deepEqual(JSON.parse(files["OriginalDesktopSmoke/i18n/de.json"]), {
       ...expectedExport,
       greeting: resumed,
     });
@@ -857,6 +894,75 @@ try {
     assert.deepEqual(await readFile(`${exported}.bak`), backupBefore);
     await copyFile(destination, join(artifacts, "translation-release.zip"));
     await screenshot("translation-zip");
+  });
+  await step(
+    "translation-zip-native-overwrite-cancel-and-confirm",
+    async () => {
+      const destination = join(runtime, "translation-release.zip");
+      const archiveBefore = await readFile(destination);
+      const diskBefore = await readFile(exported);
+      const backupBefore = await readFile(`${exported}.bak`);
+      await click(button("Export …"));
+      await click(button("Translation ZIP · current mod"));
+      await element(css('[aria-label="Build translation ZIP"]'));
+      await fill(
+        By.xpath("//label[contains(., 'Install folder')]/input"),
+        "ReplacedDesktopSmoke",
+      );
+      await click(button("Choose save location …"));
+      await native("cancel-overwrite", "Save translation ZIP", destination);
+      await element(css('[aria-label="Build translation ZIP"]'));
+      assert.deepEqual(await readFile(destination), archiveBefore);
+      await click(button("Choose save location …"));
+      await native("save-overwrite", "Save translation ZIP", destination);
+      await absent(css('[aria-label="Build translation ZIP"]'));
+      await absent(css('[aria-label="Confirm ZIP overwrite"]'));
+      const files = await archive("read", destination);
+      assert.deepEqual(Object.keys(files), [
+        "ReplacedDesktopSmoke/i18n/de.json",
+        "fomod/ModuleConfig.xml",
+        "fomod/info.xml",
+      ]);
+      assert.deepEqual(JSON.parse(files["ReplacedDesktopSmoke/i18n/de.json"]), {
+        ...expectedExport,
+        greeting: resumed,
+      });
+      assert.deepEqual(await readFile(exported), diskBefore);
+      assert.deepEqual(await readFile(`${exported}.bak`), backupBefore);
+      await copyFile(destination, join(artifacts, "translation-replaced.zip"));
+      await screenshot("translation-zip-replaced");
+    },
+  );
+  await step("combined-translation-zip-installer", async () => {
+    const destination = join(runtime, "combined-translations.zip");
+    const diskBefore = await readFile(exported);
+    await click(button("Export …"));
+    await click(button("Translation ZIP · all mods"));
+    await element(css('[aria-label="Build translation ZIP · all mods"]'));
+    await click(button("Choose save location …"));
+    await native("save", "Save translation ZIP", destination);
+    await waitFor("combined translation ZIP created", () =>
+      exists(destination),
+    );
+    await absent(css('[aria-label="Build translation ZIP · all mods"]'));
+    const files = await archive("read", destination);
+    assert.deepEqual(Object.keys(files), [
+      "DesktopSmoke/i18n/de.json",
+      "fomod/ModuleConfig.xml",
+      "fomod/info.xml",
+    ]);
+    assert.deepEqual(JSON.parse(files["DesktopSmoke/i18n/de.json"]), {
+      ...expectedExport,
+      greeting: resumed,
+    });
+    assert.ok(
+      files["fomod/ModuleConfig.xml"].includes(
+        'destination="DesktopSmoke\\i18n\\de.json"',
+      ),
+    );
+    assert.deepEqual(await readFile(exported), diskBefore);
+    await copyFile(destination, join(artifacts, "combined-translations.zip"));
+    await screenshot("combined-translation-zip");
   });
   const batchFile = join(runtime, "selection.llm-batch.json");
   const returnedBatch = join(runtime, "imports/returned.llm-result.json");

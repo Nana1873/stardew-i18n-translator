@@ -1,7 +1,11 @@
 import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { useDialogAccessibility } from "../dialogAccessibility";
-import type { ZipPreview, ZipProblem } from "../tauri/commands";
+import type {
+  ZipPreview,
+  ZipProblem,
+  ZipInstallFolder,
+} from "../tauri/commands";
 
 function safeFileName(value: string): string {
   const safe = value
@@ -26,11 +30,46 @@ export function TranslationZipDialog({
   error: string | null;
   building: boolean;
   onInspect: (problem: ZipProblem) => void;
-  onBuild: (fileName: string) => void;
+  onBuild: (fileName: string, installFolders: ZipInstallFolder[]) => void;
   onClose: () => void;
 }) {
   const [version, setVersion] = useState(preview?.selectedVersion ?? "");
   const [versionConfirmed, setVersionConfirmed] = useState(false);
+  const [folderEdits, setFolderEdits] = useState<Map<string, string>>(
+    new Map(),
+  );
+  const components = Array.from(
+    new Map(
+      (preview?.entries ?? []).map((entry) => [entry.modUniqueId, entry]),
+    ).values(),
+  );
+  const folderFor = (id: string, fallback: string) =>
+    (folderEdits.get(id) ?? fallback).trim().replaceAll("\\", "/");
+  const installFolders = components.map((entry) => ({
+    modUniqueId: entry.modUniqueId,
+    folder: folderFor(entry.modUniqueId, entry.installFolder),
+  }));
+  const invalidFolder = installFolders.some(({ folder }) =>
+    folder
+      .split("/")
+      .some(
+        (segment) =>
+          !segment ||
+          segment === "." ||
+          segment === ".." ||
+          /[<>:"|?*\u0000-\u001f]/.test(segment) ||
+          /[ .]$/.test(segment) ||
+          /^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(\.|$)/i.test(segment),
+      ),
+  );
+  const duplicateFolder =
+    new Set(installFolders.map((item) => item.folder.toLowerCase())).size !==
+    installFolders.length;
+  const folderError = invalidFolder
+    ? "Use valid folder names relative to Mods, without absolute paths or '..'."
+    : duplicateFolder
+      ? "Several mods use the same installation folder. Choose distinct folders."
+      : null;
   const fileName = useMemo(
     () =>
       preview
@@ -42,7 +81,7 @@ export function TranslationZipDialog({
         : "",
     [preview, version, combined],
   );
-  const blocked = Boolean(preview?.problems.length);
+  const blocked = Boolean(preview?.problems.length) || Boolean(folderError);
   const empty = preview?.entries.length === 0;
   const hasVersionConflicts =
     !combined && Boolean(preview?.versionConflicts.length);
@@ -73,7 +112,7 @@ export function TranslationZipDialog({
             <h2 className="translator-heading">{title}</h2>
             <div className="translator-kicker">
               {combined
-                ? "Locale files from the configured Mods folder"
+                ? "Translations for all scanned mods"
                 : preview
                   ? `${preview.packageName} · ${
                       componentCount == null
@@ -222,13 +261,49 @@ export function TranslationZipDialog({
                 </>
               )}
 
+              <div className="translator-flow-fields">
+                {components.map((entry) => (
+                  <label
+                    key={entry.modUniqueId}
+                    className="translator-flow-field"
+                  >
+                    Install folder · {entry.modName}
+                    <input
+                      value={
+                        folderEdits.get(entry.modUniqueId) ??
+                        entry.installFolder
+                      }
+                      disabled={building}
+                      onChange={(event) =>
+                        setFolderEdits((current) =>
+                          new Map(current).set(
+                            entry.modUniqueId,
+                            event.target.value,
+                          ),
+                        )
+                      }
+                    />
+                  </label>
+                ))}
+              </div>
+              {folderError && (
+                <div className="translator-flow-callout is-error" role="alert">
+                  {folderError}
+                </div>
+              )}
+
               <div>
-                <strong>Included files</strong>
+                <strong>Installed files · paths relative to Mods</strong>
                 {preview.entries.length > 0 ? (
                   <ul className="translator-flow-list">
                     {preview.entries.map((entry) => (
-                      <li key={entry.archivePath}>
-                        <code>{entry.archivePath}</code>
+                      <li key={`${entry.modUniqueId}:${entry.archivePath}`}>
+                        <code>
+                          {folderFor(entry.modUniqueId, entry.installFolder)}/
+                          {entry.archivePath.slice(
+                            entry.installFolder.length + 1,
+                          )}
+                        </code>
                         <span>
                           {entry.strings}{" "}
                           {entry.strings === 1 ? "string" : "strings"}
@@ -290,81 +365,20 @@ export function TranslationZipDialog({
               (!combined && !version.trim()) ||
               !versionReady
             }
-            onClick={() => onBuild(fileName)}
+            onClick={() =>
+              onBuild(
+                fileName,
+                installFolders.filter(
+                  (item) =>
+                    item.folder !==
+                    components.find(
+                      (entry) => entry.modUniqueId === item.modUniqueId,
+                    )?.installFolder,
+                ),
+              )
+            }
           >
             {building ? "Building …" : "Choose save location …"}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-export function ZipOverwriteDialog({
-  fileName,
-  onConfirm,
-  onCancel,
-}: {
-  fileName: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}) {
-  const dialogRef = useRef<HTMLElement>(null);
-  const { onDialogKeyDown } = useDialogAccessibility({
-    dialogRef,
-    onEscape: onCancel,
-  });
-
-  return (
-    <div className="translator-flow-overlay">
-      <section
-        ref={dialogRef}
-        className="translator-flow-dialog translator-flow-dialog-compact"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Confirm ZIP overwrite"
-        onKeyDown={onDialogKeyDown}
-      >
-        <div className="translator-flow-head">
-          <div>
-            <h2 className="translator-heading">Replace existing ZIP?</h2>
-            <div className="translator-kicker">
-              Explicit overwrite confirmation
-            </div>
-          </div>
-          <button
-            className="translator-icon-button"
-            type="button"
-            aria-label="Cancel ZIP overwrite"
-            onClick={onCancel}
-          >
-            <X aria-hidden="true" />
-          </button>
-        </div>
-        <div className="translator-flow-body">
-          <div className="translator-result-path">
-            <span>Existing archive</span>
-            <code>{fileName}</code>
-          </div>
-          <div className="translator-flow-callout is-warning">
-            The existing archive is kept unless the replacement finishes
-            successfully.
-          </div>
-        </div>
-        <div className="translator-flow-foot">
-          <button
-            className="translator-button translator-button-quiet"
-            type="button"
-            onClick={onCancel}
-          >
-            Cancel
-          </button>
-          <button
-            className="translator-button translator-button-primary"
-            type="button"
-            onClick={onConfirm}
-          >
-            Replace ZIP
           </button>
         </div>
       </section>

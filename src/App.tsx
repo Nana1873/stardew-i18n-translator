@@ -36,6 +36,7 @@ import {
   type StringStatus,
   type ZipBuildOutcome,
   type ZipComponentInput,
+  type ZipInstallFolder,
   type ZipPreview,
   buildTranslationZip,
   buildStardewTranslatorOutput,
@@ -106,10 +107,7 @@ import {
 import type { LiveAiEngineOption } from "./strings/BatchTranslateDialog";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
-import {
-  TranslationZipDialog,
-  ZipOverwriteDialog,
-} from "./release/TranslationZipDialog";
+import { TranslationZipDialog } from "./release/TranslationZipDialog";
 import {
   type ResultProblem,
   type ResultTrayData,
@@ -325,6 +323,7 @@ export function App() {
   const resultToggleButtonRef = useRef<HTMLButtonElement>(null);
   const [zipPreview, setZipPreview] = useState<ZipPreview | null>(null);
   const zipPreviewRequest = useRef(0);
+  const zipInstallFolders = useRef<ZipInstallFolder[]>([]);
   const [zipError, setZipError] = useState<string | null>(null);
   const [zipBuilding, setZipBuilding] = useState(false);
   const [zipContext, setZipContext] = useState<{
@@ -332,9 +331,6 @@ export function App() {
     components: ZipComponentInput[];
     combined?: boolean;
     settingsKey?: string;
-  } | null>(null);
-  const [zipOverwrite, setZipOverwrite] = useState<{
-    destination: string;
   } | null>(null);
   const [exportConfirm, setExportConfirm] = useState<{
     kind: "selected" | "all";
@@ -1247,6 +1243,7 @@ export function App() {
   async function requestTranslationZip() {
     if (!selectedMod || !settings?.modsPath || !settings.targetLang) return;
     const request = ++zipPreviewRequest.current;
+    zipInstallFolders.current = [];
     const isCurrentRequest = () =>
       request === zipPreviewRequest.current &&
       settingsRef.current?.modsPath === settings.modsPath &&
@@ -1279,6 +1276,7 @@ export function App() {
       settings.targetLang,
     ]);
     const request = ++zipPreviewRequest.current;
+    zipInstallFolders.current = [];
     setZipContext({
       packageName: "Stardew Translator Output",
       components: [],
@@ -1315,7 +1313,6 @@ export function App() {
   function showZipOutcome(outcome: ZipBuildOutcome) {
     setZipPreview(null);
     setZipContext(null);
-    setZipOverwrite(null);
     void refreshCompletedResult(
       {
         kind: "zip",
@@ -1330,7 +1327,7 @@ export function App() {
     );
   }
 
-  async function buildZipAt(destination: string, overwrite: boolean) {
+  async function buildZipAt(destination: string) {
     if (!zipContext || !settings?.modsPath || !settings.targetLang) {
       return;
     }
@@ -1349,7 +1346,11 @@ export function App() {
           "Translation settings changed. Open the output preview again.",
         );
       const outcome = zipContext.combined
-        ? await buildStardewTranslatorOutput(destination, overwrite)
+        ? await buildStardewTranslatorOutput(
+            destination,
+            true,
+            zipInstallFolders.current,
+          )
         : await buildTranslationZip(
             settings.modsPath,
             zipContext.packageName,
@@ -1357,24 +1358,26 @@ export function App() {
             languageLabel,
             zipContext.components,
             destination,
-            overwrite,
+            true,
+            zipInstallFolders.current,
           );
       showZipOutcome(outcome);
     } catch (error) {
-      if (String(error).includes("OVERWRITE_REQUIRED")) {
-        setZipOverwrite({ destination });
-      } else {
-        logFrontendError("buildTranslationZip", String(error));
-        setZipError(String(error));
-      }
+      logFrontendError("buildTranslationZip", String(error));
+      setZipError(String(error));
     } finally {
       setZipBuilding(false);
     }
   }
 
-  async function chooseZipDestination(fileName: string) {
+  async function chooseZipDestination(
+    fileName: string,
+    installFolders: ZipInstallFolder[],
+  ) {
+    zipInstallFolders.current = installFolders;
     const destination = await pickTranslationZipDestination(fileName);
-    if (destination) await buildZipAt(destination, false);
+    // The native Save dialog has already confirmed replacement, if required.
+    if (destination) await buildZipAt(destination);
   }
 
   function problemId(
@@ -1951,7 +1954,6 @@ export function App() {
     zipPreview ||
     zipError ||
     zipContext ||
-    zipOverwrite ||
     importDialogPath !== undefined ||
     llmExportDialog,
   );
@@ -2423,26 +2425,14 @@ export function App() {
             error={zipError}
             building={zipBuilding}
             onInspect={inspectZipProblem}
-            onBuild={(fileName) => void chooseZipDestination(fileName)}
+            onBuild={(fileName, installFolders) =>
+              void chooseZipDestination(fileName, installFolders)
+            }
             onClose={() => {
               zipPreviewRequest.current++;
               setZipPreview(null);
               setZipError(null);
               setZipContext(null);
-            }}
-          />
-        )}
-        {zipOverwrite && (
-          <ZipOverwriteDialog
-            fileName={
-              zipOverwrite.destination.split(/[\\/]/).pop() ??
-              zipOverwrite.destination
-            }
-            onCancel={() => setZipOverwrite(null)}
-            onConfirm={() => {
-              const destination = zipOverwrite.destination;
-              setZipOverwrite(null);
-              void buildZipAt(destination, true);
             }}
           />
         )}

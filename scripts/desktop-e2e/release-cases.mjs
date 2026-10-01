@@ -333,6 +333,8 @@ export async function releaseCases(h) {
           "Release Split/i18n/de/Dialogue.json",
           "Release Split/i18n/de/pt-BR.json",
           "Release Split/i18n/de/pt.json",
+          "fomod/ModuleConfig.xml",
+          "fomod/info.xml",
         ].sort(),
       );
       assert.deepEqual(JSON.parse(files["DesktopSmoke/i18n/de.json"]), {

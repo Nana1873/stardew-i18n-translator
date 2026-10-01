@@ -115,17 +115,26 @@ Flat Portuguese imports prefer `i18n/pt-BR.json`; successful exports canonicaliz
 literal and do not trigger this language-filename migration. Existing targets, including
 omitted orphan keys, remain recoverable from their export backup.
 
-Translation ZIPs contain only generated target-language i18n files and preserve
-the package's component folders. Coverage and open reviews remain visible in the
-workspace and export preview.
+Translation ZIPs contain generated target-language i18n files and a minimal XML
+FOMOD installer for separate installation with Vortex or MO2. Each component's
+manifest folder name is its default installation folder under the game's Mods
+folder; local package/staging wrappers are omitted. The preview allows folder
+overrides for renamed mods or retained package layouts. Invalid paths and
+case-insensitive component-folder or output-path collisions block the build
+before replacing any archive. No original manifests or assets are included.
+Coverage and open reviews remain visible in the workspace and export preview.
 Package preview and build resolve current component/file bindings again. A
 changed component inventory, version, or file list requires a new displayed
 scan and preview before writing.
 Results retain the actual destination and filename for **Show in folder**.
-**Translation ZIP · all mods** previews and writes one locale-only ZIP for
+ZIP replacement is confirmed by the native Windows Save dialog, without a
+second app confirmation. Canceling the picker leaves the existing archive
+unchanged; a confirmed build replaces it only after the new archive is complete.
+**Translation ZIP · all mods** previews and writes one translation ZIP for
 all scanned components with effective target-language values in the configured
 Mods folder. Each included locale combines existing target values for current
-source keys with saved overrides. Like package ZIPs, it includes token-valid
+source keys with saved overrides. It uses the same installation-folder mapping
+and FOMOD metadata as package ZIPs. Like package ZIPs, it includes token-valid
 Changed and Review values with warnings without approving them. It reuses export
 validation, existing destination/overwrite behavior and the result tray. No
 Nexus, community-library, mod-manager or deployment state is required.
