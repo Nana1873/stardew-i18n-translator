@@ -80,11 +80,10 @@ surface with Selenium and checks files produced by the actual Rust backend:
    change the install folder to ` OriginalDesktopSmoke` (including its leading
    space), reopen the Save dialog,
    and save to a new synthetic path. Inspect the generated archive: exactly
-   ` OriginalDesktopSmoke/i18n/de.json` and the two FOMOD XML files, expected
-   translations and tokens, and installer source/destination paths matching
-   the locale entry. Build **Translation ZIP · all mods** through its real Save
-   dialog and verify the default `DesktopSmoke/i18n/de.json` path and the same
-   installer contract. Neither ZIP includes source strings, manifests, portable
+   ` OriginalDesktopSmoke/i18n/de.json` with expected translations and tokens.
+   Build **Translation ZIP · all mods** through its real Save dialog and verify
+   that it contains exactly `DesktopSmoke/i18n/de.json`. Neither ZIP includes
+   source strings, manifests, original assets, installer metadata, portable
    state, or backups. Installed locale and backup remain unchanged.
    Reopen the current-mod ZIP preview with a different install folder. Decline
    the native overwrite confirmation and cancel Save: the existing ZIP stays
