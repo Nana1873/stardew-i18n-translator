@@ -159,6 +159,7 @@ export function SettingsDialog({
     savedAi.cloudQualityReview ?? true,
   );
   const [cloudModel, setCloudModel] = useState(savedAi.cloudModel ?? "");
+  const [customCloudModel, setCustomCloudModel] = useState(false);
   const [cloudModels, setCloudModels] = useState<CloudAiModel[] | null>(null);
   const [cloudModelsLoading, setCloudModelsLoading] = useState(false);
   const [cloudModelsError, setCloudModelsError] = useState<string | null>(null);
@@ -190,6 +191,9 @@ export function SettingsDialog({
   const selectedCloudModel = cloudModels?.find(
     (candidate) => candidate.model === cloudModel,
   );
+  const showCloudModelInput =
+    customCloudModel ||
+    Boolean(cloudModel && cloudModels !== null && !selectedCloudModel);
   const cloudReasoningOptions = selectedCloudModel?.supportedReasoningEfforts
     .length
     ? CLOUD_REASONING_OPTIONS.filter((reasoning) =>
@@ -449,7 +453,7 @@ export function SettingsDialog({
         if (!isActive()) return;
         setCloudModels(models);
         setCloudModel((current) =>
-          models.some((model) => model.model === current)
+          current
             ? current
             : (models.find((model) => model.isDefault)?.model ??
               models[0]?.model ??
@@ -509,6 +513,11 @@ export function SettingsDialog({
   }
 
   function chooseCloudModel(model: string) {
+    if (model === "custom-model-id") {
+      setCustomCloudModel(true);
+      return;
+    }
+    setCustomCloudModel(false);
     setCloudModel(model);
   }
 
@@ -535,7 +544,7 @@ export function SettingsDialog({
         diagnosticLogging,
         ai: {
           defaultEngine: defaultEngine ?? "local",
-          cloudModel: cloudModel || null,
+          cloudModel: cloudModel.trim() || null,
           cloudReasoning,
           cloudQualityReview,
         },
@@ -1035,10 +1044,12 @@ export function SettingsDialog({
                               ? "Model list unavailable · keeping the saved selection"
                               : "Model list unavailable · retry loading"
                             : cloudAvailable && cloudModels?.length === 0
-                              ? "No models available"
+                              ? "No models listed · enter a model ID"
                               : !cloudAvailable
                                 ? "Sign in to load your models"
-                                : null}
+                                : showCloudModelInput
+                                  ? "OpenAI checks model access when translating"
+                                  : "Choose a listed model or enter its exact ID"}
                       </span>
                     </span>
                     <div className="translator-setting-actions">
@@ -1055,14 +1066,16 @@ export function SettingsDialog({
                         )}
                       <select
                         className="translator-select"
-                        value={cloudModel}
+                        value={
+                          showCloudModelInput ? "custom-model-id" : cloudModel
+                        }
                         onChange={(event) =>
                           chooseCloudModel(event.target.value)
                         }
                         aria-label={"ChatGPT model"}
-                        disabled={cloudModelsLoading || !cloudModels?.length}
+                        disabled={!cloudAvailable}
                       >
-                        {!cloudModels?.length && (
+                        {!showCloudModelInput && !selectedCloudModel && (
                           <option value={cloudModel}>
                             {cloudModel
                               ? `${cloudModel} · saved`
@@ -1074,7 +1087,22 @@ export function SettingsDialog({
                             {model.displayName}
                           </option>
                         ))}
+                        <option value="custom-model-id">Enter model ID…</option>
                       </select>
+                      {showCloudModelInput && (
+                        <input
+                          className="translator-select"
+                          aria-label="ChatGPT model ID"
+                          value={cloudModel}
+                          placeholder="e.g. gpt-6.1-sol"
+                          maxLength={160}
+                          spellCheck={false}
+                          disabled={!cloudAvailable}
+                          onChange={(event) =>
+                            setCloudModel(event.target.value)
+                          }
+                        />
+                      )}
                     </div>
                   </div>
                   <label className="translator-setting-line">
