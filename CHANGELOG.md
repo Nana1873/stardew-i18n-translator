@@ -8,15 +8,40 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-10-01
+
+### Added
+
+- Sign in with ChatGPT directly from the app, with account model discovery,
+  reasoning controls, usage access, and an encrypted renewable Windows session.
+
 ### Changed
 
 - Fit string columns to the available space, keep mod and file context under the
   key in narrow windows, and provide a control to reset manual column widths.
 - Simplify settings, scan results, AI progress and export previews. Distinguish
   translation coverage from completed reviews.
+- Preserve the source's tone, humor, emotional intent, and character voice across
+  all AI translation languages and quality review.
+- Reduce repeated file reads while saving AI suggestions and key lookups during
+  batch import.
+
+### Fixed
+
+- Scan automatically after initial setup and after changing workspace settings
+  through setup, while cancellation preserves the current workspace.
+- Run Export again through a fresh preview and confirmation, including current
+  validation, instead of repeating a previous write directly.
+- Keep Escape and Tab available for keyboard navigation during shortcut capture.
+- Preserve valid AI drafts and their quality-review warning when a review fails.
+- Prevent simultaneous app instances from writing the same portable profile.
+  Show damaged-settings recovery and incomplete ChatGPT sign-out warnings.
+- Recheck the current package inventory before building a combined output ZIP.
 
 ### Removed
 
+- The separately installed Codex CLI translation backend, replaced by native
+  Sign in with ChatGPT.
 - Translation Notes, including the menu, dialog and generated publication text.
 
 ## [2.1.0] - 2026-09-07
@@ -402,7 +427,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.1.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...HEAD
+[2.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.3...v2.1.0
 [2.0.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.2...v2.0.3
 [2.0.2]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.1...v2.0.2
