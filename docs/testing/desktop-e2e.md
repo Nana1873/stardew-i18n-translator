@@ -77,9 +77,10 @@ surface with Selenium and checks files produced by the actual Rust backend:
    second attempt: the new locale is exact and `.json.bak` preserves every byte
    of the previous export.
 8. Use **Build translation ZIP · current mod**. Cancel the real Save dialog,
-   change the install folder to `OriginalDesktopSmoke`, reopen the Save dialog,
+   change the install folder to ` OriginalDesktopSmoke` (including its leading
+   space), reopen the Save dialog,
    and save to a new synthetic path. Inspect the generated archive: exactly
-   `OriginalDesktopSmoke/i18n/de.json` and the two FOMOD XML files, expected
+   ` OriginalDesktopSmoke/i18n/de.json` and the two FOMOD XML files, expected
    translations and tokens, and installer source/destination paths matching
    the locale entry. Build **Translation ZIP · all mods** through its real Save
    dialog and verify the default `DesktopSmoke/i18n/de.json` path and the same

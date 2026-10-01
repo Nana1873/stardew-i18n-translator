@@ -863,9 +863,9 @@ try {
     assert.equal(await exists(destination), false);
     await fill(
       By.xpath("//label[contains(., 'Install folder')]/input"),
-      "OriginalDesktopSmoke",
+      " OriginalDesktopSmoke",
     );
-    await element(By.xpath("//code[.='OriginalDesktopSmoke/i18n/de.json']"));
+    await element(By.xpath("//code[.=' OriginalDesktopSmoke/i18n/de.json']"));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("translation ZIP created", () => exists(destination));
@@ -873,16 +873,16 @@ try {
     const files = await archive("read", destination);
     // Locale files plus installer metadata; no original assets or app state.
     assert.deepEqual(Object.keys(files), [
-      "OriginalDesktopSmoke/i18n/de.json",
+      " OriginalDesktopSmoke/i18n/de.json",
       "fomod/ModuleConfig.xml",
       "fomod/info.xml",
     ]);
     assert.ok(
       files["fomod/ModuleConfig.xml"].includes(
-        'destination="OriginalDesktopSmoke\\i18n\\de.json"',
+        'destination=" OriginalDesktopSmoke\\i18n\\de.json"',
       ),
     );
-    assert.deepEqual(JSON.parse(files["OriginalDesktopSmoke/i18n/de.json"]), {
+    assert.deepEqual(JSON.parse(files[" OriginalDesktopSmoke/i18n/de.json"]), {
       ...expectedExport,
       greeting: resumed,
     });

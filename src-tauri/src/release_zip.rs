@@ -744,7 +744,7 @@ fn component_install_folder(component_root: &Path) -> Result<String, String> {
 }
 
 fn normalize_install_folder(folder: &str) -> Result<String, String> {
-    let folder = folder.trim().replace('\\', "/");
+    let folder = folder.replace('\\', "/");
     validate_archive_path(&folder)?;
     for segment in folder.split('/') {
         let stem = segment.split('.').next().unwrap_or_default().to_uppercase();
@@ -1383,6 +1383,61 @@ mod tests {
     }
 
     #[test]
+    fn zip_install_paths_preserve_leading_spaces_in_scanned_and_override_folders() {
+        let (root, config, mods) = output_fixture("zip-leading-spaces");
+        let folder = output_component(
+            &mods,
+            "Local package/ ActualMod",
+            "Fixture.Actual",
+            r#"{"hello":"Hello"}"#,
+        );
+        write(&folder.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        let inputs = scanned_package(&config, &mods, "Local package");
+        let working = translations::language_root(&config, "de").unwrap();
+        assert_eq!(
+            preview_output(&config).unwrap().entries[0].install_folder,
+            " ActualMod"
+        );
+
+        for (name, install_folder, overrides) in [
+            ("default", " ActualMod", Vec::new()),
+            (
+                "custom",
+                " Original Package/ ActualMod",
+                vec![ZipInstallFolder {
+                    mod_unique_id: "Fixture.Actual".into(),
+                    folder: " Original Package\\ ActualMod".into(),
+                }],
+            ),
+        ] {
+            let single_path = root.join(format!("{name}-single.zip"));
+            let combined_path = root.join(format!("{name}-combined.zip"));
+            let mut single = request(&mods, "Local package", inputs.clone(), &single_path, false);
+            single.install_folders = overrides.clone();
+            build(&working, &single).unwrap();
+            build_output_with_folders(&config, &combined_path, false, &overrides).unwrap();
+            let expected = format!("{install_folder}/i18n/de.json");
+            for path in [&single_path, &combined_path] {
+                assert_eq!(
+                    zip_documents(path).keys().cloned().collect::<Vec<_>>(),
+                    vec![expected.clone()]
+                );
+                let mut archive = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
+                let mut xml = String::new();
+                archive
+                    .by_name("fomod/ModuleConfig.xml")
+                    .unwrap()
+                    .read_to_string(&mut xml)
+                    .unwrap();
+                let windows_path = expected.replace('/', "\\");
+                assert!(xml.contains(&format!(
+                    r#"source="{windows_path}" destination="{windows_path}""#
+                )));
+            }
+        }
+    }
+
+    #[test]
     fn ambiguous_install_folders_and_invalid_overrides_preserve_existing_archives() {
         let (root, config, mods) = output_fixture("zip-install-collisions");
         for (package, id) in [
@@ -1398,7 +1453,7 @@ mod tests {
         assert!(build_output(&config, &destination, true)
             .unwrap_err()
             .contains("distinct folders"));
-        for folder in ["../escape", "C:/escape", "/absolute", "CON", "bad."] {
+        for folder in ["../escape", "C:/escape", "/absolute", "CON", "bad.", "bad "] {
             let overrides = [ZipInstallFolder {
                 mod_unique_id: "Fixture.First".into(),
                 folder: folder.into(),
