@@ -3,12 +3,13 @@
 use super::*;
 use futures_util::{stream, StreamExt};
 use serde::Serialize;
-use std::{path::PathBuf, sync::Mutex};
+use sha2::{Digest, Sha256};
+use std::{collections::BTreeSet, path::PathBuf, sync::Mutex};
 
 const MODEL: &str = "gpt-6.1-sol";
 const REASONING: &str = "medium";
 const BATCH_COUNT: usize = 4;
-const ITEMS_PER_BATCH: usize = 12;
+const COPIED_MOD_ITEMS_PER_BATCH: usize = 75;
 
 #[derive(Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +19,8 @@ struct Metrics {
     structure_retries: usize,
     splits: usize,
     review_skipped: usize,
+    token_repair_items: usize,
+    terminology_repair_items: usize,
     input_tokens: u64,
     cached_input_tokens: u64,
     output_tokens: u64,
@@ -48,6 +51,18 @@ impl Metrics {
             ProviderProgressEvent::Split => self.splits += 1,
             ProviderProgressEvent::ReviewSkipped { item_count, .. } => {
                 self.review_skipped += item_count;
+            }
+            ProviderProgressEvent::Phase {
+                phase: ProviderPhase::TokenRepair,
+                item_count,
+            } => {
+                self.token_repair_items += item_count;
+            }
+            ProviderProgressEvent::Phase {
+                phase: ProviderPhase::TerminologyRepair,
+                item_count,
+            } => {
+                self.terminology_repair_items += item_count;
             }
             _ => {}
         }
@@ -89,6 +104,14 @@ struct Comparison {
     reasoning: &'static str,
     quality_review: bool,
     model_advertised: bool,
+    fixture_kind: &'static str,
+    source_sha256: Option<String>,
+    total_strings: usize,
+    token_rows: usize,
+    distinct_protected_tokens: BTreeSet<String>,
+    rows_with_neighbor_context: usize,
+    batch_sizes: Vec<usize>,
+    prompt_bytes: Vec<usize>,
     batch_count: usize,
     items_per_batch: usize,
     fixture: Vec<Vec<String>>,
@@ -147,6 +170,49 @@ fn fixture() -> Vec<Vec<PreparedAiItem>> {
         .collect()
 }
 
+fn copied_mod_fixture(source: &std::path::Path) -> Result<Vec<Vec<PreparedAiItem>>, String> {
+    // Inputs are an ignored temporary copy. No target language file or saved
+    // user state is loaded, so this measures a complete translation from scratch.
+    let body = crate::input_limits::read_json_text(source)?;
+    let object = crate::scanner::parse_flat_object(&body, source)?;
+    let sections = crate::scanner::extract_sections(&body);
+    let parent = source
+        .parent()
+        .ok_or("The copied source needs a parent folder.")?;
+    let rows = object
+        .iter()
+        .filter_map(|(key, value)| {
+            let text = value.as_str()?;
+            (!text.trim().is_empty()).then(|| ai::AiScopeRow {
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "parallel-probe.copied-mod".into(),
+                    relative_dir: "i18n".into(),
+                    key: key.clone(),
+                },
+                source: text.into(),
+                section: sections.get(&crate::scanner::folded_key(key)).cloned(),
+                status: "untranslated".into(),
+                default_path: source.to_path_buf(),
+                target_path: parent.join("de.json"),
+                expected_stored: None,
+                expected_revision: 0,
+            })
+        })
+        .collect::<Vec<_>>();
+    let prepared = ai::prepare_items_with_context(&rows, &rows, |_| Vec::new())?;
+    let batches = prepared
+        .chunks(COPIED_MOD_ITEMS_PER_BATCH)
+        .map(|items| items.to_vec())
+        .collect::<Vec<_>>();
+    if batches.is_empty() {
+        return Err("The copied mod has no eligible strings.".into());
+    }
+    for items in &batches {
+        build_translation_attempt_prompt("German", items, None).map_err(chatgpt_auth::message)?;
+    }
+    Ok(batches)
+}
+
 fn failure_category(failure: &ProviderFailure) -> &'static str {
     match failure {
         ProviderFailure::Cancelled => "cancelled",
@@ -156,7 +222,12 @@ fn failure_category(failure: &ProviderFailure) -> &'static str {
     }
 }
 
-async fn run_batch(items: &[PreparedAiItem], batch: usize, started: Instant) -> BatchResult {
+async fn run_batch(
+    items: &[PreparedAiItem],
+    batch: usize,
+    started: Instant,
+    pipeline_timeout: Duration,
+) -> BatchResult {
     let started_ms = millis(started);
     let metrics = Arc::new(Mutex::new(Metrics::default()));
     let captured = Arc::clone(&metrics);
@@ -166,7 +237,7 @@ async fn run_batch(items: &[PreparedAiItem], batch: usize, started: Instant) -> 
     let cancelled = Arc::new(AtomicBool::new(false));
     // The experiment bounds each complete translate/review/repair pipeline,
     // while retaining the provider's existing per-attempt timeout/recovery.
-    let translated = tokio::time::timeout(Duration::from_secs(240), async {
+    let translated = tokio::time::timeout(pipeline_timeout, async {
         let drafts = translate_chunk(
             Some(MODEL),
             REASONING,
@@ -243,16 +314,16 @@ fn maximum_overlap(batches: &[BatchResult]) -> usize {
     maximum as usize
 }
 
-fn valid_batch(batch: &BatchResult) -> bool {
+fn valid_batch(batch: &BatchResult, expected: &[PreparedAiItem]) -> bool {
     batch.outcome == "complete"
-        && batch.suggestions.len() == ITEMS_PER_BATCH
+        && batch.suggestions.len() == expected.len()
         && batch.metrics.review_skipped == 0
         && batch
             .suggestions
             .iter()
-            .enumerate()
-            .all(|(index, suggestion)| {
-                suggestion.identity.key == format!("batch-{}-item-{index}", batch.batch)
+            .zip(expected)
+            .all(|(suggestion, item)| {
+                suggestion.identity == item.identity
                     && suggestion.status == "review-needed"
                     && suggestion.token_differences.is_empty()
                     && suggestion.glossary_misses.is_empty()
@@ -260,6 +331,54 @@ fn valid_batch(batch: &BatchResult) -> bool {
 }
 
 async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
+    let copied_source = std::env::var_os("SIT_PARALLEL_PROBE_SOURCE").map(PathBuf::from);
+    let (batches, fixture_kind, source_sha256, pipeline_timeout) =
+        if let Some(source) = copied_source {
+            let batches = copied_mod_fixture(&source)?;
+            let bytes = std::fs::read(&source).map_err(|error| error.to_string())?;
+            (
+                batches,
+                "copied_mod",
+                Some(format!("{:x}", Sha256::digest(bytes))),
+                Duration::from_secs(600),
+            )
+        } else {
+            (fixture(), "synthetic", None, Duration::from_secs(240))
+        };
+    let batch_count = batches.len();
+    let total_strings = batches.iter().map(Vec::len).sum();
+    let distinct_protected_tokens = batches
+        .iter()
+        .flatten()
+        .flat_map(|item| {
+            crate::tokens::extract(&item.source)
+                .into_iter()
+                .filter(|token| token != "\n" && token != "'")
+        })
+        .collect();
+    let token_rows = batches
+        .iter()
+        .flatten()
+        .filter(|item| {
+            crate::tokens::extract(&item.source)
+                .iter()
+                .any(|token| token != "\n" && token != "'")
+        })
+        .count();
+    let rows_with_neighbor_context = batches
+        .iter()
+        .flatten()
+        .filter(|item| !item.context.before.is_empty() || !item.context.after.is_empty())
+        .count();
+    let prompt_bytes = batches
+        .iter()
+        .map(|items| {
+            let prompt = build_translation_attempt_prompt("German", items, None)
+                .map_err(chatgpt_auth::message)?;
+            Ok(complete_prompt_bytes(&prompt.instructions, &prompt.input))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    println!("Fixture: {total_strings} strings, {batch_count} batches, {token_rows} token-bearing rows, {rows_with_neighbor_context} rows with native neighboring context.");
     if !profile.join("chatgpt-session.bin").is_file() {
         return Err("Sign in in an isolated Translator test profile first; the probe does not open login or use CLI credentials.".into());
     }
@@ -274,15 +393,22 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
     let model_advertised = catalog.iter().any(|model| model.model == MODEL);
     println!("Exact requested model advertised: {model_advertised}; inference decides access.");
     std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
-    let batches = fixture();
     let mut report = Comparison {
-        schema_version: 1,
+        schema_version: 2,
         model: MODEL,
         reasoning: REASONING,
         quality_review: true,
         model_advertised,
-        batch_count: BATCH_COUNT,
-        items_per_batch: ITEMS_PER_BATCH,
+        fixture_kind,
+        source_sha256,
+        total_strings,
+        token_rows,
+        distinct_protected_tokens,
+        rows_with_neighbor_context,
+        batch_sizes: batches.iter().map(Vec::len).collect(),
+        prompt_bytes,
+        batch_count,
+        items_per_batch: batches[0].len(),
         fixture: batches
             .iter()
             .map(|items| items.iter().map(|item| item.source.clone()).collect())
@@ -290,18 +416,18 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
         runs: Vec::new(),
     };
     for concurrency in [1, 2, 4] {
-        println!("Starting {BATCH_COUNT} fixed batches at concurrency {concurrency}: {MODEL}, {REASONING}, quality review enabled.");
+        println!("Starting {batch_count} fixed batches at concurrency {concurrency}: {MODEL}, {REASONING}, quality review enabled.");
         let started = Instant::now();
         let mut pending = stream::iter(
             batches
                 .iter()
                 .enumerate()
-                .map(|(batch, items)| run_batch(items, batch, started)),
+                .map(|(batch, items)| run_batch(items, batch, started, pipeline_timeout)),
         )
         .buffer_unordered(concurrency);
         let mut results = Vec::new();
         while let Some(batch) = pending.next().await {
-            let valid = valid_batch(&batch);
+            let valid = valid_batch(&batch, &batches[batch.batch]);
             results.push(batch);
             if !valid {
                 break;
@@ -310,9 +436,11 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
         drop(pending);
         results.sort_by_key(|batch| batch.batch);
         let overlap = maximum_overlap(&results);
-        let valid = results.len() == BATCH_COUNT
-            && results.iter().all(valid_batch)
-            && overlap == concurrency;
+        let valid = results.len() == batch_count
+            && results
+                .iter()
+                .all(|batch| valid_batch(batch, &batches[batch.batch]))
+            && overlap == concurrency.min(batch_count);
         let duration_ms = millis(started);
         println!("Concurrency {concurrency}: {duration_ms} ms, maximum overlapping requests {overlap}, valid {valid}.");
         report.runs.push(RunResult {
@@ -333,7 +461,7 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
 }
 
 #[test]
-#[ignore = "Live ChatGPT plan usage: four synthetic batches at concurrency 1, 2 and 4"]
+#[ignore = "Live ChatGPT plan usage: independent batches at concurrency 1, 2 and 4"]
 fn compare_parallel_chatgpt_batches() {
     let profile = std::env::var_os("SIT_PARALLEL_PROBE_PROFILE")
         .map(PathBuf::from)
@@ -342,4 +470,29 @@ fn compare_parallel_chatgpt_batches() {
         .map(PathBuf::from)
         .expect("Set SIT_PARALLEL_PROBE_OUTPUT to an ignored experiment artifact directory.");
     tauri::async_runtime::block_on(compare(profile, output)).unwrap();
+}
+
+#[test]
+fn copied_mod_preparation_preserves_keys_sections_context_and_batch_bounds() {
+    let root = crate::test_support::temp_dir("parallel-probe-copied-mod");
+    std::fs::create_dir_all(&root).unwrap();
+    let source = root.join("default.json");
+    let rows = (0..76)
+        .map(|index| format!("\"dialogue.line{index}\": \"Hello {{{{name}}}}, reward {{0}}.\""))
+        .collect::<Vec<_>>()
+        .join(",\n");
+    std::fs::write(&source, format!("{{\n// Synthetic section\n{rows}\n}}")).unwrap();
+    let batches = copied_mod_fixture(&source).unwrap();
+    assert_eq!(batches.iter().map(Vec::len).collect::<Vec<_>>(), [75, 1]);
+    assert_eq!(batches[1][0].identity.key, "dialogue.line75");
+    assert_eq!(batches[1][0].id, "75");
+    assert_eq!(batches[1][0].section.as_deref(), Some("Synthetic section"));
+    assert_eq!(batches[1][0].context.before.len(), 2);
+    assert!(batches[1][0].context.after.is_empty());
+    for batch in &batches {
+        let prompt = build_translation_attempt_prompt("German", batch, None).unwrap();
+        assert!(complete_prompt_bytes(&prompt.instructions, &prompt.input) <= ai::MAX_CHUNK_BYTES);
+    }
+    assert!(!root.join("de.json").exists());
+    std::fs::remove_dir_all(root).unwrap();
 }

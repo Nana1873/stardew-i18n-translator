@@ -190,32 +190,44 @@ and quality review enabled. It calls the existing native ChatGPT translation,
 review, token repair, and suggestion validation functions. It does not change
 the desktop app's sequential scheduling or exercise its persistence/UI flow.
 
+To test real mod text, set `SIT_PARALLEL_PROBE_SOURCE` to `default.json` in an
+ignored temporary copy. The probe preserves the original keys, source order,
+sections, and native neighboring context. It translates every eligible source
+from scratch in fixed batches of 75, without loading existing translations or a
+glossary. This mode sends the copied mod text to OpenAI; the original mod stays
+read-only. Keep the copied sources and generated results out of Git.
+
 Use an already signed-in, isolated test profile after closing the app that
 owns it. Never point this probe at your normal portable data folder or copy
 credentials between profiles. Authentication retains exclusive profile ownership
-and the normal serialized refresh behavior. The probe sends only its synthetic
-fixture and consumes ChatGPT plan allowance.
+and the normal serialized refresh behavior. The probe sends the selected fixture
+or copied mod text and consumes ChatGPT plan allowance.
 
 From `src-tauri`, set the profile and an ignored output directory, then run:
 
 ```powershell
 $env:SIT_PARALLEL_PROBE_PROFILE = '<isolated test profile>/data'
 $env:SIT_PARALLEL_PROBE_OUTPUT = '../target/parallel-probe/<unique run>'
+# Optional: omit this variable to retain the small synthetic fixture.
+$env:SIT_PARALLEL_PROBE_SOURCE = '<ignored temporary mod copy>/default.json'
 cargo test --locked --profile ci --lib chatgpt::parallel_probe::compare_parallel_chatgpt_batches -- --ignored --exact --nocapture
 ```
 
 The account's model catalog is recorded as an availability hint; only the
 explicitly requested model is sent, and completed inference determines access.
-Each complete batch pipeline has a four-minute experiment timeout. The probe
-stops at the first invalid/failed batch and does not start a higher concurrency
+Each complete batch pipeline has a four-minute timeout for the small synthetic
+fixture or a ten-minute timeout for copied mod input; existing five-minute
+provider attempt limits remain unchanged. The probe stops at the first
+invalid/failed batch and does not start a higher concurrency
 level after a failure. Existing bounded provider recovery remains active.
 
-`comparison.json` contains synthetic sources and suggestions, batch/request
-timings, maximum overlapping client requests, token usage, retries, skipped
+`comparison.json` contains the selected sources and suggestions, source-copy
+hash, token/context coverage, prompt sizes, batch/request timings, maximum
+overlapping client requests, token usage, retries, repair counts, skipped
 reviews, and validation outcomes. Every result must retain its exact batch/row
-identity, Review status, protected tokens, and fixture glossary term. Credentials,
-account identity, and raw provider responses are excluded. Do not commit generated
-outputs. These small, single-pass timings establish feasibility in the recorded
+identity, Review status, protected tokens, and any supplied glossary terms.
+Credentials, account identity, and raw provider responses are excluded. Do not commit generated
+outputs. These single-pass timings establish feasibility in the recorded
 environment; cache warming, variable service latency, and request order can affect
 speed comparisons. They do not prove fourfold speedup or translation quality for
 large real mods.
