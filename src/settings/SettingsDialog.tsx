@@ -189,7 +189,7 @@ export function SettingsDialog({
               ? CLOUD_ENGINE_ID
               : null;
   const selectedCloudModel = cloudModels?.find(
-    (candidate) => candidate.model === cloudModel,
+    (candidate) => candidate.model === cloudModel.trim(),
   );
   const showCloudModelInput =
     customCloudModel ||
@@ -1067,7 +1067,9 @@ export function SettingsDialog({
                       <select
                         className="translator-select"
                         value={
-                          showCloudModelInput ? "custom-model-id" : cloudModel
+                          showCloudModelInput
+                            ? "custom-model-id"
+                            : (selectedCloudModel?.model ?? cloudModel)
                         }
                         onChange={(event) =>
                           chooseCloudModel(event.target.value)
@@ -1098,9 +1100,10 @@ export function SettingsDialog({
                           maxLength={160}
                           spellCheck={false}
                           disabled={!cloudAvailable}
-                          onChange={(event) =>
-                            setCloudModel(event.target.value)
-                          }
+                          onChange={(event) => {
+                            setCustomCloudModel(true);
+                            setCloudModel(event.target.value);
+                          }}
                         />
                       )}
                     </div>

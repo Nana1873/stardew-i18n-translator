@@ -1238,6 +1238,66 @@ describe("SettingsDialog", () => {
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
   });
 
+  it("applies advertised reasoning limits to a manually entered ID with whitespace", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "cloud_ai_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "cloud_ai_models")
+        return Promise.resolve([
+          {
+            model: "restricted-model",
+            displayName: "Restricted model",
+            isDefault: true,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: ["medium"],
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "chatgpt",
+            cloudModel: "gpt-6.1-sol",
+            cloudReasoning: "high",
+            cloudQualityReview: true,
+          },
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const modelId = await screen.findByLabelText("ChatGPT model ID");
+    expect(screen.getByLabelText("ChatGPT reasoning")).toHaveValue("high");
+    fireEvent.change(modelId, {
+      target: { value: "  restricted-model  " },
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("ChatGPT reasoning")).toHaveValue("medium"),
+    );
+    expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
+      "  restricted-model  ",
+    );
+    expect(
+      screen.getByLabelText("ChatGPT reasoning").querySelectorAll("option"),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({
+          cloudModel: "restricted-model",
+          cloudReasoning: "medium",
+        }),
+      }),
+    );
+  });
+
   it("keeps a manually entered model while the catalog is loading", async () => {
     const pendingModels = deferred<[]>();
     invokeMock.mockImplementation((cmd: string) => {
