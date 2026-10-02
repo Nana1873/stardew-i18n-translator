@@ -243,7 +243,7 @@ $env:SIT_PARALLEL_PROBE_LEVELS = '4,6,8'
 $env:SIT_PARALLEL_PROBE_ROUNDS = '2' # Even rounds reverse concurrency order.
 $env:SIT_PARALLEL_PROBE_LANGUAGE = 'German' # Also French, Spanish, Japanese.
 # $env:SIT_PARALLEL_PROBE_GLOSSARY = '<ignored comparison glossary>.json'
-cargo test --locked --profile ci --lib chatgpt::parallel_probe::compare_parallel_chatgpt_batches -- --ignored --exact --nocapture
+cargo test --locked --profile ci --lib chatgpt::cloud_translation::parallel_probe::compare_parallel_chatgpt_batches -- --ignored --exact --nocapture
 ```
 
 The account's model catalog is recorded as an availability hint; only the

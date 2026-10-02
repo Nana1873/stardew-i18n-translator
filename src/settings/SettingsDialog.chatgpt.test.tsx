@@ -113,3 +113,35 @@ it("asks for browser sign-in when no session exists", async () => {
   expect(screen.queryByText(/Codex|CLI/)).toBeNull();
   expect(invokeMock).not.toHaveBeenCalledWith("cloud_ai_models");
 });
+
+it.each([
+  "Signed out locally. Remote revocation was not confirmed; disconnect this app in ChatGPT settings.",
+  "Signed out in memory, but the saved session could not be removed. Close the app and remove data/chatgpt-session.bin before restarting.",
+])(
+  "keeps the sign-out warning visible after status refresh: %s",
+  async (warning) => {
+    let signedOut = false;
+    invokeMock.mockImplementation((command: string) => {
+      if (command === "cloud_ai_status")
+        return Promise.resolve({ installed: true, authenticated: !signedOut });
+      if (command === "cloud_ai_models") return Promise.resolve([]);
+      if (command === "chatgpt_sign_out") {
+        signedOut = true;
+        return Promise.reject(warning);
+      }
+      return Promise.resolve(null);
+    });
+    render(
+      <SettingsDialog
+        settings={settings}
+        onSave={() => {}}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+    await screen.findByRole("button", { name: "Sign in with ChatGPT" });
+    expect(screen.getByText(warning)).toBeVisible();
+  },
+);

@@ -1383,7 +1383,7 @@ describe("SettingsDialog", () => {
     );
 
     const qualityReview = screen.getByRole("checkbox", {
-      name: "AI quality review and repairs",
+      name: "AI quality checks",
     });
     expect(qualityReview).toBeChecked();
     expect(

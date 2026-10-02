@@ -20,7 +20,7 @@ without an AI service._
 - Translate manually or use optional Local AI, ChatGPT, or external LLM batches.
 - Review suggestions with protected-token checks and optional glossary hints.
 - Export translation files, a translation ZIP to share with other players, or
-  one combined locale-only ZIP for all scanned mods.
+  one combined translation ZIP for all scanned mods.
 
 The app works with standard SMAPI i18n files: flat `i18n/default.json` and
 `i18n/<language>.json` files, or split `i18n/default/*.json` and

@@ -1915,11 +1915,18 @@ export function StringTable({
   function adjustColumn(column: ColumnName, value: number) {
     const limits = COLUMN_LIMITS[column];
     setFitColumns(false);
+    setTargetColumnSized(true);
     setColumnWidths((current) => {
       const next = {
         ...(fitColumns ? renderedColumnWidths : current),
         [column]: Math.min(limits.max, Math.max(limits.min, value)),
       };
+      // Fitted text columns can exceed manual limits in a wide pane. Persist
+      // the same bounded widths we render when leaving automatic sizing.
+      for (const name of Object.keys(COLUMN_LIMITS) as ColumnName[]) {
+        const bound = COLUMN_LIMITS[name];
+        next[name] = Math.min(bound.max, Math.max(bound.min, next[name]));
+      }
       onColumnWidthsChange?.(next);
       return next;
     });

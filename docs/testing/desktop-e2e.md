@@ -38,9 +38,11 @@ are retained. The ZIP must remain unchanged throughout the run. Extra files
 before app launch. Small negative archive probes also exercise the extraction
 boundary on every run; these helper checks are separate from desktop evidence.
 
-There is no Vite server,
-mocked `invoke`, app test endpoint, or added production plugin. Existing Vitest
-and Rust suites remain separate and required for their respective changes.
+Filesystem workflows use the actual Rust backend. Two sign-out warning cases
+inject controlled IPC replies into the built UI; they verify persistent error
+display without using or disconnecting a real ChatGPT account. There is no Vite
+server, app test endpoint, or added production plugin. Existing Vitest and Rust
+suites remain separate and required for their respective changes.
 
 ## What passes prove
 
@@ -75,10 +77,19 @@ surface with Selenium and checks files produced by the actual Rust backend:
    second attempt: the new locale is exact and `.json.bak` preserves every byte
    of the previous export.
 8. Use **Build translation ZIP · current mod**. Cancel the real Save dialog,
-   reopen it, and save to a new synthetic path. Inspect the generated archive:
-   exactly `DesktopSmoke/i18n/de.json`, expected translations and tokens, no
-   source strings, manifest, portable state, or backup. Installed locale and
-   backup remain unchanged.
+   change the install folder to ` OriginalDesktopSmoke` (including its leading
+   space), reopen the Save dialog,
+   and save to a new synthetic path. Inspect the generated archive: exactly
+   ` OriginalDesktopSmoke/i18n/de.json` with expected translations and tokens.
+   Build **Translation ZIP · all mods** through its real Save dialog and verify
+   that it contains exactly `DesktopSmoke/i18n/de.json`. Neither ZIP includes
+   source strings, manifests, original assets, installer metadata, portable
+   state, or backups. Installed locale and backup remain unchanged.
+   Reopen the current-mod ZIP preview with a different install folder. Decline
+   the native overwrite confirmation and cancel Save: the existing ZIP stays
+   byte-identical. Retry and accept the native confirmation: the new archive
+   replaces it without a second app confirmation, with the new install paths
+   and unchanged installed locale and backup.
 9. Clear a translation through the editor, select that Open row together with
    a Done row, and export an LLM batch through the actual Save dialog. Choosing
    the destination does not write yet; **Save JSON batch** does. Verify format 2,
@@ -92,6 +103,16 @@ surface with Selenium and checks files produced by the actual Rust backend:
     and the matching editor hint. Save settings and restart; the cached hint
     returns. Both XNB inputs remain byte-identical. No actual game assets or
     prebuilt glossary cache are used.
+11. Start a second copy of the same executable while the first owns its portable
+    profile. Check the native ownership warning, dismiss it, and verify that
+    the rejected process exits while the original keeps running. The ChatGPT
+    registration remains unchanged.
+12. Inject both known sign-out errors into the built UI's local IPC transport.
+    Check that the warning stays visible after the account status refreshes to
+    signed out. No real sign-in, account disconnection, or cloud request occurs.
+13. Corrupt synthetic settings and their backup with the app closed. Restart
+    and check the visible error, disabled settings control, and absence of setup.
+    Restore the files and retry without restarting; the workspace recovers.
 
 A successful command needs both `result.json` with `passed: true` and
 `cleanup.json` with exit code 0 and `runtimeRemoved: true`. An interrupted or

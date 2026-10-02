@@ -143,6 +143,11 @@ export function ExportConfirmDialog({
                 .
               </p>
 
+              <p>
+                This writes into the installed mods. To manage translations as a
+                separate mod, use a translation ZIP instead.
+              </p>
+
               <div
                 className="translator-preflight-metrics"
                 aria-label="Export readiness"

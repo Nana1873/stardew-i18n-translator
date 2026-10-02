@@ -474,8 +474,8 @@ export function SettingsDialog({
     await modelsRequest;
   }
 
-  async function checkCloudStatus() {
-    setChatgptAuthError(null);
+  async function checkCloudStatus(clearAuthError = true) {
+    if (clearAuthError) setChatgptAuthError(null);
     setCloudChecking(true);
     try {
       const status = await cloudAiStatus();
@@ -512,7 +512,7 @@ export function SettingsDialog({
     } finally {
       setCloudModels(null);
       setCloudModel("");
-      await checkCloudStatus();
+      await checkCloudStatus(false);
     }
   }
 
@@ -1160,7 +1160,7 @@ export function SettingsDialog({
                   </label>
                   <div className="translator-setting-line">
                     <span className="translator-setting-copy">
-                      <strong>AI quality review &amp; repairs</strong>
+                      <strong>AI quality checks</strong>
                       <span>
                         Checks wording, terminology and protected tokens. Uses
                         additional ChatGPT requests.
@@ -1169,7 +1169,7 @@ export function SettingsDialog({
                     <label className="translator-switch">
                       <input
                         type="checkbox"
-                        aria-label="AI quality review and repairs"
+                        aria-label="AI quality checks"
                         checked={cloudQualityReview}
                         onChange={(event) =>
                           setCloudQualityReview(event.target.checked)

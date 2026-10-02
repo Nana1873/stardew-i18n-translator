@@ -1,9 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import {
-  TranslationZipDialog,
-  ZipOverwriteDialog,
-} from "./TranslationZipDialog";
+import { TranslationZipDialog } from "./TranslationZipDialog";
 import type { ZipPreview } from "../tauri/commands";
 
 const PREVIEW: ZipPreview = {
@@ -18,7 +15,9 @@ const PREVIEW: ZipPreview = {
     {
       modName: "[CP] Sample",
       modVersion: "2.0",
-      archivePath: "Sample Pack/[CP] Sample/i18n/de.json",
+      modUniqueId: "[CP] Sample",
+      installFolder: "[CP] Sample",
+      archivePath: "[CP] Sample/i18n/de.json",
       strings: 42,
       totalSourceStrings: 50,
       outdated: 1,
@@ -45,9 +44,7 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(
-      screen.getByText("Sample Pack/[CP] Sample/i18n/de.json"),
-    ).toBeInTheDocument();
+    expect(screen.getByText("[CP] Sample/i18n/de.json")).toBeInTheDocument();
     expect(screen.getByText(/package with 2 components/)).toBeVisible();
     expect(screen.getByText(/Framework/)).toBeInTheDocument();
     expect(screen.getByText(/Component versions differ/)).toBeInTheDocument();
@@ -85,7 +82,120 @@ describe("TranslationZipDialog", () => {
     );
     expect(build).toHaveBeenCalledWith(
       "Sample Pack - 2.1_beta - German (de).zip",
+      [],
     );
+  });
+
+  it("previews edited install paths and passes folder overrides to the build", () => {
+    const build = vi.fn();
+    render(
+      <TranslationZipDialog
+        preview={{ ...PREVIEW, versionConflicts: [] }}
+        componentCount={1}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={build}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Install folder · [CP] Sample"), {
+      target: { value: "Original Package/[CP] Sample" },
+    });
+    expect(
+      screen.getByText("Original Package/[CP] Sample/i18n/de.json"),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose save location …" }),
+    );
+    expect(build).toHaveBeenCalledWith(PREVIEW.defaultFileName, [
+      { modUniqueId: "[CP] Sample", folder: "Original Package/[CP] Sample" },
+    ]);
+  });
+
+  it("preserves valid leading spaces in default and edited install paths", () => {
+    const build = vi.fn();
+    const { container } = render(
+      <TranslationZipDialog
+        preview={{
+          ...PREVIEW,
+          versionConflicts: [],
+          entries: [
+            {
+              ...PREVIEW.entries[0],
+              installFolder: " [CP] Sample",
+              archivePath: " [CP] Sample/i18n/de.json",
+            },
+          ],
+        }}
+        componentCount={1}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={build}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(container.querySelector("code")?.textContent).toBe(
+      " [CP] Sample/i18n/de.json",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose save location …" }),
+    );
+    expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, []);
+    fireEvent.change(screen.getByLabelText("Install folder · [CP] Sample"), {
+      target: { value: " Original Package\\[CP] Sample" },
+    });
+    expect(container.querySelector("code")?.textContent).toBe(
+      " Original Package/[CP] Sample/i18n/de.json",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Choose save location …" }),
+    );
+    expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, [
+      { modUniqueId: "[CP] Sample", folder: " Original Package/[CP] Sample" },
+    ]);
+  });
+
+  it("blocks ambiguous and escaping install folders until corrected", () => {
+    render(
+      <TranslationZipDialog
+        preview={{
+          ...PREVIEW,
+          versionConflicts: [],
+          entries: [
+            ...PREVIEW.entries,
+            {
+              ...PREVIEW.entries[0],
+              modUniqueId: "Other.Mod",
+              modName: "Other mod",
+            },
+          ],
+        }}
+        combined
+        componentCount={2}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const build = screen.getByRole("button", {
+      name: "Choose save location …",
+    });
+    expect(build).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "same installation folder",
+    );
+    fireEvent.change(screen.getByLabelText("Install folder · Other mod"), {
+      target: { value: "../escape" },
+    });
+    expect(build).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Install folder · Other mod"), {
+      target: { value: "Other mod" },
+    });
+    expect(build).toBeEnabled();
   });
 
   it("blocks creation and links validation problems", () => {
@@ -171,76 +281,5 @@ describe("TranslationZipDialog", () => {
 
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
-  });
-});
-
-describe("ZipOverwriteDialog", () => {
-  it("requires an explicit replacement action", () => {
-    const confirm = vi.fn();
-    render(
-      <ZipOverwriteDialog
-        fileName="translation.zip"
-        onConfirm={confirm}
-        onCancel={vi.fn()}
-      />,
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Replace ZIP" }));
-    expect(confirm).toHaveBeenCalledOnce();
-  });
-
-  it("cancels the nested overwrite dialog on Escape", async () => {
-    const cancel = vi.fn();
-    render(
-      <ZipOverwriteDialog
-        fileName="translation.zip"
-        onConfirm={vi.fn()}
-        onCancel={cancel}
-      />,
-    );
-    const close = screen.getByRole("button", { name: "Cancel ZIP overwrite" });
-    await waitFor(() => expect(close).toHaveFocus());
-    fireEvent.keyDown(close, { key: "Escape" });
-    expect(cancel).toHaveBeenCalledOnce();
-  });
-
-  it("isolates the underlying ZIP preview while overwrite confirmation is active", async () => {
-    const zip = (
-      <TranslationZipDialog
-        preview={PREVIEW}
-        componentCount={2}
-        error={null}
-        building={false}
-        onInspect={vi.fn()}
-        onBuild={vi.fn()}
-        onClose={vi.fn()}
-      />
-    );
-    const { rerender } = render(<div id="stardew-i18n-translator">{zip}</div>);
-    expect(
-      await screen.findByRole("dialog", { name: "Build translation ZIP" }),
-    ).toBeVisible();
-
-    rerender(
-      <div id="stardew-i18n-translator">
-        {zip}
-        <ZipOverwriteDialog
-          fileName="translation.zip"
-          onConfirm={vi.fn()}
-          onCancel={vi.fn()}
-        />
-      </div>,
-    );
-
-    expect(
-      await screen.findByRole("dialog", { name: "Confirm ZIP overwrite" }),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("dialog", { name: "Build translation ZIP" }),
-    ).toBeNull();
-
-    rerender(<div id="stardew-i18n-translator">{zip}</div>);
-    expect(
-      await screen.findByRole("dialog", { name: "Build translation ZIP" }),
-    ).toBeVisible();
   });
 });

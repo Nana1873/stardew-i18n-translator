@@ -112,6 +112,8 @@ function combinedOutputPreview(): ZipPreview {
       {
         modName: "Manual mod",
         modVersion: "1",
+        modUniqueId: "Manual mod",
+        installFolder: "Manual mod",
         archivePath: "Manual mod/i18n/de.json",
         strings: 1,
         totalSourceStrings: 1,
@@ -121,6 +123,8 @@ function combinedOutputPreview(): ZipPreview {
       {
         modName: "AI mod",
         modVersion: "2",
+        modUniqueId: "AI mod",
+        installFolder: "AI mod",
         archivePath: "AI mod/i18n/de.json",
         strings: 1,
         totalSourceStrings: 1,
@@ -244,6 +248,40 @@ beforeEach(() => {
   backendHistory = [];
   fileDropHandler = null;
   localStorage.clear();
+});
+
+it("shows unreadable settings without starting setup and retries after repair", async () => {
+  const error = "Settings file is corrupted and no usable backup exists.";
+  let repaired = false;
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "load_settings")
+      return repaired ? Promise.resolve(CONFIGURED) : Promise.reject(error);
+    if (command === "scan_mods") return Promise.resolve(EMPTY_SCAN);
+    return Promise.resolve(null);
+  });
+  render(<App />);
+  expect(await screen.findByText(error)).toBeVisible();
+  expect(screen.queryByText("Game folder")).toBeNull();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === "save_settings")).toBe(
+    false,
+  );
+
+  repaired = true;
+  fireEvent.click(
+    screen.getByRole("button", { name: "Retry loading settings" }),
+  );
+  await waitFor(() =>
+    expect(invokeMock.mock.calls.some(([cmd]) => cmd === "scan_mods")).toBe(
+      true,
+    ),
+  );
+  expect(screen.queryByText(error)).toBeNull();
+  expect(screen.queryByText("Game folder")).toBeNull();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeEnabled();
+  expect(invokeMock.mock.calls.some(([cmd]) => cmd === "save_settings")).toBe(
+    false,
+  );
 });
 
 const EMPTY_SCAN = {
@@ -2810,6 +2848,8 @@ describe("App shell", () => {
         {
           modName: "Test Mod",
           modVersion: "1.0",
+          modUniqueId: "Test Mod",
+          installFolder: "Test Mod",
           archivePath: "Test Mod/i18n/de.json",
           strings: 1,
           totalSourceStrings: 1,
@@ -2866,12 +2906,12 @@ describe("App shell", () => {
           packageName: "Test Mod",
           targetLang: "de",
           destination: "C:/release/Test Mod.zip",
-          overwrite: false,
+          overwrite: true,
         }),
       }),
     );
   });
-  it("builds the combined local output through preview, overwrite confirmation and the existing result tray", async () => {
+  it("builds combined output after native save confirmation through the existing result tray", async () => {
     const preview = combinedOutputPreview();
     const previousZip = historyEntry("zip", {
       id: "previous-zip",
@@ -2920,18 +2960,26 @@ describe("App shell", () => {
       name: "Build translation ZIP · all mods",
     });
     expect(within(dialog).queryByLabelText("Package version")).toBeNull();
+    fireEvent.change(
+      within(dialog).getByLabelText("Install folder · Manual mod"),
+      { target: { value: "OriginalManual" } },
+    );
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Choose save location …" }),
     );
-    await screen.findByRole("dialog", { name: "Confirm ZIP overwrite" });
-    fireEvent.click(screen.getByRole("button", { name: "Replace ZIP" }));
     const result = await screen.findByRole("complementary", {
       name: "Operation result",
     });
     expect(result).toHaveTextContent("ZIP created");
+    expect(
+      invokeMock.mock.calls.filter(
+        ([command]) => command === "build_stardew_translator_output",
+      ),
+    ).toHaveLength(1);
     expect(invokeMock).toHaveBeenCalledWith("build_stardew_translator_output", {
       destination: "C:/output/combined.zip",
       overwrite: true,
+      installFolders: [{ modUniqueId: "Manual mod", folder: "OriginalManual" }],
     });
     expect(
       invokeMock.mock.calls.some(
@@ -3384,7 +3432,7 @@ describe("App shell", () => {
     ).toHaveValue("broken.key");
   });
 
-  it("asks before replacing an existing translation ZIP", async () => {
+  it("leaves a ZIP untouched when native Save is canceled and builds once after confirmation", async () => {
     const preview = {
       packageName: "Test Mod",
       selectedVersion: "1.0",
@@ -3397,6 +3445,8 @@ describe("App shell", () => {
         {
           modName: "Test Mod",
           modVersion: "1.0",
+          modUniqueId: "Test Mod",
+          installFolder: "Test Mod",
           archivePath: "Test Mod/i18n/de.json",
           strings: 1,
           totalSourceStrings: 1,
@@ -3410,6 +3460,7 @@ describe("App shell", () => {
       totalStrings: 1,
       totalSourceStrings: 1,
     };
+    let nativeSaveConfirmed = false;
     invokeMock.mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
@@ -3417,7 +3468,9 @@ describe("App shell", () => {
       if (cmd === "load_strings") return Promise.resolve([]);
       if (cmd === "preview_translation_zip") return Promise.resolve(preview);
       if (cmd === "pick_translation_zip_destination")
-        return Promise.resolve("C:/release/Test Mod.zip");
+        return Promise.resolve(
+          nativeSaveConfirmed ? "C:/release/Test Mod.zip" : null,
+        );
       if (
         cmd === "build_translation_zip" &&
         !(args as { request?: { overwrite?: boolean } })?.request?.overwrite
@@ -3443,10 +3496,19 @@ describe("App shell", () => {
     });
     await waitFor(() => expect(chooseLocation).toBeEnabled());
     fireEvent.click(chooseLocation);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "pick_translation_zip_destination",
+        expect.anything(),
+      ),
+    );
     expect(
-      await screen.findByRole("dialog", { name: "Confirm ZIP overwrite" }),
-    ).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Replace ZIP" }));
+      invokeMock.mock.calls.some(
+        ([command]) => command === "build_translation_zip",
+      ),
+    ).toBe(false);
+    nativeSaveConfirmed = true;
+    fireEvent.click(chooseLocation);
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
         "build_translation_zip",
@@ -3455,6 +3517,11 @@ describe("App shell", () => {
         }),
       ),
     );
+    expect(
+      invokeMock.mock.calls.filter(
+        ([command]) => command === "build_translation_zip",
+      ),
+    ).toHaveLength(1);
   });
 
   it("exposes the complete keyboard-accessible command bar", async () => {
