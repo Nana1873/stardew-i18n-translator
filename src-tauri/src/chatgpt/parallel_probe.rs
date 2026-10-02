@@ -443,6 +443,9 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
         })
         .collect::<Result<Vec<_>, String>>()?;
     println!("Fixture: {total_strings} strings, {batch_count} batches, {token_rows} token-bearing rows, {rows_with_neighbor_context} rows with native neighboring context.");
+    // The desktop now acquires ownership before initializing authentication.
+    // This standalone probe must retain the same guard for its entire run.
+    let _profile_owner = crate::portable_profile::acquire(&profile)?;
     if !profile.join("chatgpt-session.bin").is_file() {
         return Err("Sign in in an isolated Translator test profile first; the probe does not open login or use CLI credentials.".into());
     }
