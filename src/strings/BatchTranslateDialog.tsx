@@ -12,6 +12,7 @@ import { useDialogAccessibility } from "../dialogAccessibility";
 import type {
   AiEngine,
   AiRunProgress,
+  AiRunPhase,
   AiRunRecovery,
   AiRunResult,
   ProviderActivityStage,
@@ -26,6 +27,7 @@ export interface LiveAiEngineOption {
   reasoning: string;
   unavailableReason?: string;
   note: string;
+  qualityReview?: boolean;
 }
 
 /** One selected string captured when a run starts. */
@@ -64,6 +66,15 @@ const PHASE_LABELS: Record<AiRunProgress["phase"], string> = {
   tokenRepair: "Repairing protected tokens",
   saving: "Validating & saving",
 };
+
+const BATCH_PHASES: AiRunPhase[] = [
+  "translating",
+  "reviewing",
+  "preparing",
+  "terminologyRepair",
+  "tokenRepair",
+  "saving",
+];
 
 const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   transientRetry: "Retrying temporary failure",
@@ -300,7 +311,9 @@ export function BatchTranslateDialog({
   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
   const indeterminate = !liveProgress;
   const phaseLabel = cancelRequested
-    ? "Cancelling active batch"
+    ? liveProgress?.batchActivity
+      ? "Cancelling active batches"
+      : "Cancelling active batch"
     : liveProgress
       ? PHASE_LABELS[liveProgress.phase]
       : "Preparing selected strings";
@@ -319,9 +332,74 @@ export function BatchTranslateDialog({
       `${liveProgress.batchSize} ${liveProgress.batchSize === 1 ? "string" : "strings"}`,
     );
   }
-  const activityText = activityParts.join(" · ");
+  const batchActivity = liveProgress?.batchActivity;
+  const phaseRows =
+    batchActivity === undefined
+      ? []
+      : BATCH_PHASES.flatMap((phase) => {
+          const batches = batchActivity.filter(
+            (batch) => batch.phase === phase,
+          );
+          if (
+            phase !== "translating" &&
+            phase !== "reviewing" &&
+            batches.length === 0
+          )
+            return [];
+          const size = batches.reduce((sum, batch) => sum + batch.batchSize, 0);
+          const label =
+            phase === "reviewing" ? "Checking quality" : PHASE_LABELS[phase];
+          const batchLabel =
+            batches.length === 0
+              ? phase === "reviewing" && engine?.qualityReview === false
+                ? "Off"
+                : "No active batches"
+              : `${batches.length === 1 ? "Batch" : "Batches"} ${batches
+                  .map((batch) => batch.batchIndex)
+                  .sort((a, b) => a - b)
+                  .join(", ")} · ${size} ${size === 1 ? "string" : "strings"}`;
+          const recoveries = [
+            ...new Set(
+              batches.flatMap((batch) =>
+                batch.recovery ? [RECOVERY_LABELS[batch.recovery]] : [],
+              ),
+            ),
+          ];
+          return [
+            {
+              phase,
+              label,
+              batchLabel,
+              active: batches.length > 0,
+              recovery: recoveries.join(" · "),
+            },
+          ];
+        });
+  const parallelSummary =
+    batchActivity === undefined
+      ? null
+      : [
+          `${batchActivity.length} ${batchActivity.length === 1 ? "batch" : "batches"} active`,
+          ...(liveProgress?.parallelLimit
+            ? [`up to ${liveProgress.parallelLimit}`]
+            : []),
+          ...(liveProgress?.batchTotal
+            ? [`${liveProgress.batchTotal} batches total`]
+            : []),
+        ].join(" · ");
+  const activityText =
+    !cancelRequested && parallelSummary !== null
+      ? [
+          parallelSummary,
+          ...phaseRows.map((row) => `${row.label} · ${row.batchLabel}`),
+        ].join("; ")
+      : activityParts.join(" · ");
   const metaParts = [`Elapsed · ${formatElapsed(elapsedSeconds)}`];
-  if (!cancelRequested && liveProgress?.recovery) {
+  if (
+    !cancelRequested &&
+    batchActivity === undefined &&
+    liveProgress?.recovery
+  ) {
     metaParts.push(RECOVERY_LABELS[liveProgress.recovery]);
   }
   const usage = liveProgress?.usage;
@@ -389,7 +467,30 @@ export function BatchTranslateDialog({
             aria-live="polite"
             aria-atomic="true"
           >
-            {activityText}
+            {!cancelRequested && parallelSummary !== null ? (
+              <>
+                <div className="translator-ai-parallel-summary">
+                  {parallelSummary}
+                </div>
+                <div className="translator-ai-phases">
+                  {phaseRows.map((row) => (
+                    <div
+                      key={row.phase}
+                      className="translator-ai-phase"
+                      data-active={row.active}
+                    >
+                      <span>{row.label}</span>
+                      <div>
+                        <span>{row.batchLabel}</span>
+                        {row.recovery && <small>{row.recovery}</small>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              activityText
+            )}
           </div>
           <div className="translator-ai-meta">
             <span>{metaParts.join(" · ")}</span>
@@ -420,16 +521,17 @@ export function BatchTranslateDialog({
                   {CLOUD_ENGINE_LABEL} reported · {usageText}
                 </span>
               )}
-              {liveProgress?.activeBatches !== undefined && (
-                <span>
-                  {liveProgress.activeBatches}{" "}
-                  {liveProgress.activeBatches === 1 ? "batch" : "batches"}{" "}
-                  active
-                  {liveProgress.parallelLimit
-                    ? " · up to " + liveProgress.parallelLimit
-                    : ""}
-                </span>
-              )}
+              {batchActivity === undefined &&
+                liveProgress?.activeBatches !== undefined && (
+                  <span>
+                    {liveProgress.activeBatches}{" "}
+                    {liveProgress.activeBatches === 1 ? "batch" : "batches"}{" "}
+                    active
+                    {liveProgress.parallelLimit
+                      ? " · up to " + liveProgress.parallelLimit
+                      : ""}
+                  </span>
+                )}
               {Boolean(liveProgress?.retries) && (
                 <span>
                   {liveProgress?.retries}{" "}
@@ -453,7 +555,7 @@ export function BatchTranslateDialog({
               aria-valuenow={indeterminate ? undefined : done}
               aria-valuetext={
                 cancelRequested
-                  ? `Cancelling the active AI batch; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
+                  ? `Cancelling active AI work; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
                   : indeterminate
                     ? `${total} selected ${total === 1 ? "string is" : "strings are"} being prepared`
                     : `${translated} of ${total} strings translated; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`

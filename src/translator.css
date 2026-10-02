@@ -3106,6 +3106,51 @@
   overflow-wrap: anywhere;
 }
 
+#stardew-i18n-translator .translator-ai-parallel-summary {
+  margin-bottom: 8px;
+  color: var(--translator-muted);
+  font-weight: 400;
+}
+
+#stardew-i18n-translator .translator-ai-phases {
+  display: grid;
+  gap: 6px;
+}
+
+#stardew-i18n-translator .translator-ai-phase {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 8px;
+  align-items: baseline;
+  padding: 7px 9px;
+  border: 1px solid var(--translator-border);
+  border-radius: 7px;
+  background: var(--translator-canvas);
+  font-weight: 400;
+}
+
+#stardew-i18n-translator .translator-ai-phase[data-active="true"] > span {
+  color: var(--translator-brand);
+  font-weight: 600;
+}
+
+#stardew-i18n-translator .translator-ai-phase[data-active="false"] {
+  color: var(--translator-muted);
+}
+
+#stardew-i18n-translator .translator-ai-phase > div {
+  min-width: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#stardew-i18n-translator .translator-ai-phase small {
+  display: block;
+  margin-top: 3px;
+  color: var(--translator-muted);
+  font-size: 1em;
+}
+
 #stardew-i18n-translator .translator-ai-meta {
   display: flex;
   min-width: 0;

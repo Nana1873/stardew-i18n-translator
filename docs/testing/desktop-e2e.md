@@ -118,6 +118,12 @@ A successful command needs both `result.json` with `passed: true` and
 `cleanup.json` with exit code 0 and `runtimeRemoved: true`. An interrupted or
 failed run is not a pass. No workflow step is silently skipped.
 
+The ordinary suite also opens the built app’s AI progress dialog with controlled
+IPC replies and native progress events. It checks concurrent draft/quality rows,
+finished-batch removal, repairs, cancellation, and eight batches at the minimum
+desktop size. This UI case makes no provider calls and does not establish live
+translation or language quality.
+
 ## Isolation and evidence
 
 Each run prints its unique directory under ignored `target/desktop-e2e/runs/`.

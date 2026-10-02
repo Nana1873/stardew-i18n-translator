@@ -1480,6 +1480,16 @@ struct AiRunTokenUsage {
 
 #[derive(Clone, Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+struct AiRunBatchProgress {
+    batch_index: usize,
+    phase: &'static str,
+    batch_size: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    recovery: Option<&'static str>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AiRunProgress {
     run_id: String,
     phase: &'static str,
@@ -1497,6 +1507,8 @@ struct AiRunProgress {
     #[serde(skip_serializing_if = "Option::is_none")]
     active_batches: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    batch_activity: Option<Vec<AiRunBatchProgress>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     parallel_limit: Option<usize>,
     retries: usize,
     splits: usize,
@@ -1510,6 +1522,43 @@ struct AiRunProgress {
 }
 
 impl AiRunProgress {
+    fn set_batch_phase(&mut self, batch_index: usize, phase: &'static str, batch_size: usize) {
+        let batches = self.batch_activity.get_or_insert_with(Vec::new);
+        let batch = AiRunBatchProgress {
+            batch_index,
+            phase,
+            batch_size,
+            recovery: None,
+        };
+        if let Some(current) = batches
+            .iter_mut()
+            .find(|entry| entry.batch_index == batch_index)
+        {
+            *current = batch;
+        } else {
+            batches.push(batch);
+            batches.sort_by_key(|entry| entry.batch_index);
+        }
+        self.active_batches = Some(batches.len());
+    }
+
+    fn set_batch_recovery(&mut self, batch_index: usize, recovery: &'static str) {
+        if let Some(batch) = self.batch_activity.as_mut().and_then(|batches| {
+            batches
+                .iter_mut()
+                .find(|entry| entry.batch_index == batch_index)
+        }) {
+            batch.recovery = Some(recovery);
+        }
+    }
+
+    fn finish_batch(&mut self, batch_index: usize) {
+        if let Some(batches) = &mut self.batch_activity {
+            batches.retain(|entry| entry.batch_index != batch_index);
+            self.active_batches = Some(batches.len());
+        }
+    }
+
     fn record_translated(&mut self, ids: impl IntoIterator<Item = String>) {
         // Recovery can revisit drafts or skip items before saving. Count each
         // generated item ID once, independently of the persisted count.
@@ -2028,6 +2077,7 @@ async fn translate_with_local_ai(
         batch_total: Some(prepared.len()),
         batch_size: None,
         active_batches: None,
+        batch_activity: None,
         parallel_limit: None,
         retries: 0,
         splits: 0,
@@ -2372,6 +2422,7 @@ async fn translate_with_cloud_ai(
         batch_total: Some(batch_total),
         batch_size: None,
         active_batches: None,
+        batch_activity: Some(Vec::new()),
         parallel_limit: None,
         retries: 0,
         splits: 0,
@@ -2417,20 +2468,24 @@ async fn translate_with_cloud_ai(
                             ai_provider::ProviderPhase::TokenRepair => "tokenRepair",
                         };
                         progress.batch_size = Some(item_count);
+                        progress.set_batch_phase(batch_index, progress.phase, item_count);
                         progress.recovery = None;
                         progress.provider_stage = None;
                     }
                     ai_provider::ProviderProgressEvent::TransientRetry => {
                         progress.retries = progress.retries.saturating_add(1);
                         progress.recovery = Some("transientRetry");
+                        progress.set_batch_recovery(batch_index, "transientRetry");
                     }
                     ai_provider::ProviderProgressEvent::StructureRetry => {
                         progress.retries = progress.retries.saturating_add(1);
                         progress.recovery = Some("structureRetry");
+                        progress.set_batch_recovery(batch_index, "structureRetry");
                     }
                     ai_provider::ProviderProgressEvent::Split => {
                         progress.splits = progress.splits.saturating_add(1);
                         progress.recovery = Some("split");
+                        progress.set_batch_recovery(batch_index, "split");
                     }
                     ai_provider::ProviderProgressEvent::ReviewSkipped { .. } => {}
                     ai_provider::ProviderProgressEvent::Activity(activity) => {
@@ -2594,7 +2649,7 @@ async fn translate_with_cloud_ai(
                 progress.batch_index = Some(batch_index);
                 progress.batch_total = Some(batch_total);
                 progress.batch_size = Some(chunk.len());
-                progress.active_batches = Some(in_flight.len() + 1);
+                progress.set_batch_phase(batch_index, "preparing", chunk.len());
                 progress.parallel_limit = Some(parallel_limit.load(Ordering::Acquire));
                 progress.recovery = None;
                 progress.provider_stage = None;
@@ -2632,7 +2687,7 @@ async fn translate_with_cloud_ai(
         };
         update_ai_progress(&app, &progress_state, |progress| {
             progress.batch_index = Some(batch_index);
-            progress.active_batches = Some(in_flight.len());
+            progress.finish_batch(batch_index);
         });
         match result {
             Ok((translations, cancel_after_staging)) => {
@@ -2644,6 +2699,7 @@ async fn translate_with_cloud_ai(
                         update_ai_progress(&app, &progress_state, |progress| {
                             progress.phase = "saving";
                             progress.batch_size = Some(chunk.len());
+                            progress.set_batch_phase(batch_index, "saving", chunk.len());
                             progress.recovery = None;
                             progress.provider_stage = None;
                         });
@@ -2655,6 +2711,7 @@ async fn translate_with_cloud_ai(
                         );
                         update_ai_progress(&app, &progress_state, |progress| {
                             progress.completed = suggestions.len();
+                            progress.finish_batch(batch_index);
                         });
                         if let Err(cause) = staged_result {
                             log::info!(
@@ -2832,6 +2889,7 @@ async fn translate_with_cloud_ai(
     }
     update_ai_progress(&app, &progress_state, |progress| {
         progress.active_batches = Some(0);
+        progress.batch_activity = Some(Vec::new());
     });
     let source_order = prepared
         .iter()
@@ -3689,6 +3747,7 @@ mod ai_run_contract_tests {
             batch_total: Some(11),
             batch_size: Some(87),
             active_batches: Some(3),
+            batch_activity: Some(Vec::new()),
             parallel_limit: Some(4),
             retries: 1,
             splits: 2,
@@ -3717,6 +3776,41 @@ mod ai_run_contract_tests {
         assert!(value.get("codexActivitySequence").is_none());
         assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
         assert!(value.get("translatedIds").is_none());
+        // A snapshot keeps concurrent phases independent of the last event.
+        progress.set_batch_phase(3, "translating", 94);
+        progress.set_batch_phase(1, "translating", 88);
+        progress.set_batch_phase(2, "translating", 100);
+        progress.set_batch_phase(2, "reviewing", 100);
+        progress.set_batch_recovery(2, "transientRetry");
+        let value = serde_json::to_value(&progress).unwrap();
+        assert_eq!(value["activeBatches"], 3);
+        assert_eq!(value["batchActivity"][0]["batchIndex"], 1);
+        assert_eq!(value["batchActivity"][0]["phase"], "translating");
+        assert_eq!(value["batchActivity"][1]["phase"], "reviewing");
+        assert_eq!(value["batchActivity"][1]["recovery"], "transientRetry");
+        assert_eq!(value["batchActivity"][2]["batchSize"], 94);
+        progress.set_batch_phase(2, "tokenRepair", 1);
+        assert!(progress.batch_activity.as_ref().unwrap()[1]
+            .recovery
+            .is_none());
+        progress.finish_batch(2);
+        progress.finish_batch(1);
+        assert_eq!(progress.active_batches, Some(1));
+        progress.set_batch_recovery(2, "structureRetry");
+        assert_eq!(progress.active_batches, Some(1));
+        // Split recovery can reuse the original index with a smaller batch.
+        progress.set_batch_phase(2, "preparing", 50);
+        progress.set_batch_phase(2, "saving", 50);
+        progress.finish_batch(2);
+        progress.finish_batch(3);
+        assert!(progress.batch_activity.as_ref().unwrap().is_empty());
+        assert_eq!(progress.active_batches, Some(0));
+        // Local AI retains its serial progress payload.
+        progress.batch_activity = None;
+        assert!(serde_json::to_value(&progress)
+            .unwrap()
+            .get("batchActivity")
+            .is_none());
         progress.completed = 0;
         progress.translated = 0;
         progress.total = 282;

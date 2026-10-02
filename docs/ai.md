@@ -92,9 +92,12 @@ running; they are not yet saved. The saved counter and progress bar count
 persisted suggestions only. Cancelling keeps suggestions already saved and can
 also save valid drafts when a token repair is interrupted.
 
-The dialog also shows elapsed time, the current phase,
-active ChatGPT batches, the current parallel limit,
-and available provider activity/token usage. An estimated remaining time appears
+For ChatGPT, separate rows show which batches are translating drafts and which
+are checking quality. Preparing, repair, and saving phases appear while active.
+The active batch count and current parallel limit are visible above these rows;
+a batch disappears when its work finishes. Local AI keeps its serial phase
+display. The dialog also shows elapsed time and available provider
+activity/token usage. An estimated remaining time appears
 after suggestions have been saved. A quiet interval can mean the engine is
 still processing; progress cannot describe every moment inside a provider call.
 

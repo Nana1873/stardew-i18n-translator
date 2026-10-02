@@ -871,6 +871,14 @@ export interface AiRunTokenUsage {
   reasoningOutputTokens: number;
 }
 
+/** Complete active ChatGPT batch snapshot; absent for serial Local AI. */
+export interface AiRunBatchProgress {
+  batchIndex: number;
+  phase: AiRunPhase;
+  batchSize: number;
+  recovery?: AiRunRecovery;
+}
+
 export interface AiRunProgress {
   runId: string;
   phase: AiRunPhase;
@@ -882,6 +890,7 @@ export interface AiRunProgress {
   batchTotal?: number;
   batchSize?: number;
   activeBatches?: number;
+  batchActivity?: AiRunBatchProgress[];
   parallelLimit?: number;
   retries: number;
   splits: number;

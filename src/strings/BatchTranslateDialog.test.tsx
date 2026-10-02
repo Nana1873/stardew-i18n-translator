@@ -52,8 +52,8 @@ const CLOUD_ENGINE: LiveAiEngineOption = {
   id: "chatgpt",
   label: "ChatGPT",
   ready: true,
-  model: "gpt-5.6",
-  reasoning: "high",
+  model: "gpt-6.1-sol",
+  reasoning: "medium",
   note: "Uses the signed-in ChatGPT.",
 };
 
@@ -61,8 +61,8 @@ function liveResult(overrides: Partial<AiRunResult> = {}): AiRunResult {
   return {
     runId: "run-1",
     engine: "chatgpt",
-    model: "gpt-5.6",
-    reasoning: "high",
+    model: "gpt-6.1-sol",
+    reasoning: "medium",
     scope: "selected",
     requested: 2,
     completed: 2,
@@ -105,6 +105,127 @@ function renderDialog(
 }
 
 describe("BatchTranslateDialog", () => {
+  it("keeps draft and quality batches visible across interleaved snapshots", async () => {
+    const onLiveRun = vi.fn(
+      (_runId: string) => new Promise<AiRunResult>(() => {}),
+    );
+    renderDialog({ engine: CLOUD_ENGINE, onLiveRun });
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const runId = onLiveRun.mock.calls[0][0];
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    const payload = {
+      runId,
+      phase: "reviewing",
+      completed: 24,
+      translated: 177,
+      total: 1109,
+      batchIndex: 3,
+      batchTotal: 13,
+      batchSize: 94,
+      activeBatches: 4,
+      parallelLimit: 4,
+      retries: 1,
+      splits: 0,
+      batchActivity: [
+        { batchIndex: 1, phase: "reviewing", batchSize: 83 },
+        { batchIndex: 2, phase: "translating", batchSize: 100 },
+        {
+          batchIndex: 3,
+          phase: "reviewing",
+          batchSize: 94,
+          recovery: "transientRetry",
+        },
+        { batchIndex: 4, phase: "translating", batchSize: 97 },
+      ],
+    };
+    act(() => receiveProgress({ payload }));
+    expect(
+      screen.getByText("4 batches active · up to 4 · 13 batches total"),
+    ).toBeVisible();
+    expect(screen.getByText("Batches 2, 4 · 197 strings")).toBeVisible();
+    expect(screen.getByText("Batches 1, 3 · 177 strings")).toBeVisible();
+    expect(screen.getByText("Retrying temporary failure")).toBeVisible();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "24",
+    );
+    // A different batch's event must not hide concurrent quality checks.
+    act(() =>
+      receiveProgress({
+        payload: {
+          ...payload,
+          phase: "tokenRepair",
+          completed: 107,
+          translated: 277,
+          batchActivity: [
+            { batchIndex: 2, phase: "reviewing", batchSize: 100 },
+            { batchIndex: 3, phase: "tokenRepair", batchSize: 1 },
+            { batchIndex: 4, phase: "translating", batchSize: 97 },
+          ],
+        },
+      }),
+    );
+    expect(
+      screen.getByText("3 batches active · up to 4 · 13 batches total"),
+    ).toBeVisible();
+    expect(screen.getByText("Batch 2 · 100 strings")).toBeVisible();
+    expect(screen.getByText("Batch 4 · 97 strings")).toBeVisible();
+    expect(screen.getByText("Batch 3 · 1 string")).toBeVisible();
+    expect(screen.getByText("Repairing protected tokens")).toBeVisible();
+    expect(
+      screen.queryByText("Batches 1, 3 · 177 strings"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Retrying temporary failure"),
+    ).not.toBeInTheDocument();
+    act(() => receiveProgress({ payload: { ...payload, batchActivity: [] } }));
+    expect(screen.getAllByText("No active batches")).toHaveLength(2);
+    expect(
+      screen.queryByText("Repairing protected tokens"),
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows all eight batch identities and a disabled quality pass", async () => {
+    const onLiveRun = vi.fn(
+      (_runId: string) => new Promise<AiRunResult>(() => {}),
+    );
+    renderDialog({
+      engine: { ...CLOUD_ENGINE, qualityReview: false },
+      onLiveRun,
+    });
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    act(() =>
+      receiveProgress({
+        payload: {
+          runId: onLiveRun.mock.calls[0][0],
+          phase: "translating",
+          completed: 0,
+          total: 800,
+          batchTotal: 8,
+          parallelLimit: 8,
+          retries: 0,
+          splits: 0,
+          batchActivity: Array.from({ length: 8 }, (_, index) => ({
+            batchIndex: 8 - index,
+            phase: "translating",
+            batchSize: 100,
+          })),
+        },
+      }),
+    );
+    expect(
+      screen.getByText("Batches 1, 2, 3, 4, 5, 6, 7, 8 · 800 strings"),
+    ).toBeVisible();
+    expect(screen.getByText("Checking quality")).toBeVisible();
+    expect(screen.getByText("Off")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "Cancelling active batches",
+    );
+    expect(screen.queryByText("Checking quality")).not.toBeInTheDocument();
+  });
+
   it("shows translated drafts before the first batch is saved to Review", async () => {
     const onLiveRun = vi.fn(
       (_runId: string) => new Promise<AiRunResult>(() => {}),
@@ -199,8 +320,8 @@ describe("BatchTranslateDialog", () => {
       total: 2,
       outcome: "complete",
       engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
+      model: "gpt-6.1-sol",
+      reasoning: "medium",
     });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -262,8 +383,8 @@ describe("BatchTranslateDialog", () => {
       total: 2,
       outcome: "complete",
       engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
+      model: "gpt-6.1-sol",
+      reasoning: "medium",
     });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -290,7 +411,7 @@ describe("BatchTranslateDialog", () => {
       screen.getByRole("progressbar", { name: "AI translation progress" }),
     ).toHaveAttribute(
       "aria-valuetext",
-      "Cancelling the active AI batch; 0 of 2 suggestions saved to Review",
+      "Cancelling active AI work; 0 of 2 suggestions saved to Review",
     );
 
     await act(async () => resolveListen(unlistenProgress));
@@ -303,8 +424,8 @@ describe("BatchTranslateDialog", () => {
       total: 2,
       outcome: "cancelled",
       engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
+      model: "gpt-6.1-sol",
+      reasoning: "medium",
     });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -617,8 +738,8 @@ describe("BatchTranslateDialog", () => {
       total: 2,
       outcome: "cancelled",
       engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
+      model: "gpt-6.1-sol",
+      reasoning: "medium",
     });
     expect(onClose).toHaveBeenCalledOnce();
   });
@@ -638,8 +759,8 @@ describe("BatchTranslateDialog", () => {
       outcome: "error",
       error: "Error: Local AI offline",
       engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
+      model: "gpt-6.1-sol",
+      reasoning: "medium",
     });
     expect(onClose).toHaveBeenCalledOnce();
   });
