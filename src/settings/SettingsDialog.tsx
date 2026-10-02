@@ -98,6 +98,7 @@ const DEFAULT_AI_SETTINGS = {
   cloudModel: null,
   cloudReasoning: "medium" as const,
   cloudQualityReview: true,
+  cloudParallelBatches: 4,
 };
 
 const CLOUD_REASONING_OPTIONS = ["low", "medium", "high"] as const;
@@ -159,6 +160,9 @@ export function SettingsDialog({
     savedAi.cloudQualityReview ?? true,
   );
   const [cloudModel, setCloudModel] = useState(savedAi.cloudModel ?? "");
+  const [cloudParallelBatches, setCloudParallelBatches] = useState(
+    savedAi.cloudParallelBatches ?? 4,
+  );
   const [customCloudModel, setCustomCloudModel] = useState(false);
   const [cloudModels, setCloudModels] = useState<CloudAiModel[] | null>(null);
   const [cloudModelsLoading, setCloudModelsLoading] = useState(false);
@@ -547,6 +551,7 @@ export function SettingsDialog({
           cloudModel: cloudModel.trim() || null,
           cloudReasoning,
           cloudQualityReview,
+          cloudParallelBatches,
         },
         llm:
           url && llmModel
@@ -1108,6 +1113,30 @@ export function SettingsDialog({
                       )}
                     </div>
                   </div>
+                  <label className="translator-setting-line">
+                    <span className="translator-setting-copy">
+                      <strong>Parallel batches</strong>
+                      <small>
+                        Each batch includes quality checks. Lower values reduce
+                        simultaneous requests.
+                      </small>
+                    </span>
+                    <select
+                      className="translator-select"
+                      aria-label="ChatGPT parallel batches"
+                      value={cloudParallelBatches}
+                      onChange={(event) =>
+                        setCloudParallelBatches(Number(event.target.value))
+                      }
+                    >
+                      {[1, 2, 4, 6, 8].map((count) => (
+                        <option key={count} value={count}>
+                          {count}
+                          {count === 4 ? " (default)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                   <label className="translator-setting-line">
                     <span className="translator-setting-copy">
                       <strong>Reasoning</strong>

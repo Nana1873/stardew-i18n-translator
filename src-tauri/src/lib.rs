@@ -30,9 +30,10 @@ mod xnb;
 #[cfg(test)]
 mod language_compatibility;
 
+use futures_util::{stream::FuturesUnordered, StreamExt};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use std::{fs::OpenOptions, io::Write};
@@ -1493,6 +1494,10 @@ struct AiRunProgress {
     batch_total: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     batch_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    active_batches: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parallel_limit: Option<usize>,
     retries: usize,
     splits: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2022,6 +2027,8 @@ async fn translate_with_local_ai(
         batch_index: None,
         batch_total: Some(prepared.len()),
         batch_size: None,
+        active_batches: None,
+        parallel_limit: None,
         retries: 0,
         splits: 0,
         recovery: None,
@@ -2239,6 +2246,69 @@ async fn chatgpt_sign_out() -> Result<(), String> {
     chatgpt_auth::logout().await
 }
 
+/// Signal native provider workers even if the command future is dropped.
+struct CloudPipelineCancellation(Arc<AtomicBool>);
+
+impl Drop for CloudPipelineCancellation {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Release);
+    }
+}
+
+fn reduce_parallel_limit(limit: &AtomicUsize, retries: &AtomicUsize) {
+    if retries.fetch_add(1, Ordering::AcqRel) % 2 == 1 {
+        let mut current = limit.load(Ordering::Acquire);
+        while let Err(observed) = limit.compare_exchange_weak(
+            current,
+            (current / 2).max(1),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            current = observed;
+        }
+    }
+}
+
+async fn complete_cloud_batch(
+    model: Option<&str>,
+    reasoning: &str,
+    language: &str,
+    quality_review: bool,
+    chunk: &[ai::PreparedAiItem],
+    cancelled: Arc<AtomicBool>,
+    progress: ai_provider::ProviderProgressCallback,
+) -> Result<(Vec<ai::ProviderTranslation>, bool), ai::ProviderFailure> {
+    let translations = chatgpt::translate_chunk(
+        model,
+        reasoning,
+        language,
+        quality_review,
+        chunk,
+        Arc::clone(&cancelled),
+        Arc::clone(&progress),
+    )
+    .await?;
+    match chatgpt::repair_token_mismatches_once(
+        model,
+        reasoning,
+        language,
+        quality_review,
+        chunk,
+        &translations,
+        cancelled,
+        progress,
+    )
+    .await
+    {
+        Ok(repair) => Ok((repair.translations, repair.cancelled)),
+        Err(ai::ProviderFailure::Cancelled) => Ok((translations, true)),
+        Err(failure) => {
+            log::warn!(target: "ai_run", "{}", serde_json::json!({"event":"token_repair_not_applied", "errorCategory":provider_failure_category(&failure)}));
+            Ok((translations, false))
+        }
+    }
+}
+
 #[tauri::command]
 async fn translate_with_cloud_ai(
     app: AppHandle,
@@ -2257,8 +2327,18 @@ async fn translate_with_cloud_ai(
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut error = None;
     let chunks = ai::chunks(&prepared)?;
-    let mut pending = VecDeque::from(chunks);
-    let mut handled_batches = 0usize;
+    let mut pending = chunks
+        .into_iter()
+        .enumerate()
+        .map(|(index, chunk)| (index + 1, chunk))
+        .collect::<VecDeque<_>>();
+    let mut in_flight = FuturesUnordered::new();
+    let pipeline_cancelled = Arc::new(AtomicBool::new(false));
+    let _pipeline_lifetime = CloudPipelineCancellation(Arc::clone(&pipeline_cancelled));
+    let parallel_limit = Arc::new(AtomicUsize::new(settings.ai.cloud_parallel_batches));
+    let transient_retries = Arc::new(AtomicUsize::new(0));
+    let mut stopping = false;
+    let mut staging_available = true;
     let mut batch_attempt = 0usize;
     let mut batch_total = pending.len();
     let mut isolated_failures = 0usize;
@@ -2291,6 +2371,8 @@ async fn translate_with_cloud_ai(
         batch_index: None,
         batch_total: Some(batch_total),
         batch_size: None,
+        active_batches: None,
+        parallel_limit: None,
         retries: 0,
         splits: 0,
         recovery: None,
@@ -2299,14 +2381,16 @@ async fn translate_with_cloud_ai(
         usage: None,
     }));
     update_ai_progress(&app, &progress_state, |_| {});
-    // Review skips of the chunk in flight; they count only once it is saved.
-    let chunk_review_skips = Arc::new(Mutex::new(ReviewSkips::default()));
+    // Each pipeline owns its review skips; only successfully staged results count.
     let mut saved_review_skips = ReviewSkips::default();
-    let cloud_progress: ai_provider::ProviderProgressCallback = {
+    let cloud_progress = |batch_index: usize,
+                          chunk_review_skips: Arc<Mutex<ReviewSkips>>|
+     -> ai_provider::ProviderProgressCallback {
         let app = app.clone();
         let state = Arc::clone(&progress_state);
         let log_run_id = log_run_id.clone();
-        let chunk_review_skips = Arc::clone(&chunk_review_skips);
+        let parallel_limit = Arc::clone(&parallel_limit);
+        let transient_retries = Arc::clone(&transient_retries);
         Arc::new(move |event| {
             if let ai_provider::ProviderProgressEvent::ReviewSkipped { item_count, reason } = event
             {
@@ -2314,50 +2398,58 @@ async fn translate_with_cloud_ai(
                     skips.record(item_count, reason);
                 }
             }
+            if matches!(event, ai_provider::ProviderProgressEvent::TransientRetry) {
+                reduce_parallel_limit(&parallel_limit, &transient_retries);
+            }
             let log_event = event.clone();
-            update_ai_progress(&app, &state, |progress| match event {
-                ai_provider::ProviderProgressEvent::DraftsReady { ids } => {
-                    progress.record_translated(ids);
-                }
-                ai_provider::ProviderProgressEvent::Phase { phase, item_count } => {
-                    progress.phase = match phase {
-                        ai_provider::ProviderPhase::Translating => "translating",
-                        ai_provider::ProviderPhase::Reviewing => "reviewing",
-                        ai_provider::ProviderPhase::TerminologyRepair => "terminologyRepair",
-                        ai_provider::ProviderPhase::TokenRepair => "tokenRepair",
-                    };
-                    progress.batch_size = Some(item_count);
-                    progress.recovery = None;
-                    progress.provider_stage = None;
-                }
-                ai_provider::ProviderProgressEvent::TransientRetry => {
-                    progress.retries = progress.retries.saturating_add(1);
-                    progress.recovery = Some("transientRetry");
-                }
-                ai_provider::ProviderProgressEvent::StructureRetry => {
-                    progress.retries = progress.retries.saturating_add(1);
-                    progress.recovery = Some("structureRetry");
-                }
-                ai_provider::ProviderProgressEvent::Split => {
-                    progress.splits = progress.splits.saturating_add(1);
-                    progress.recovery = Some("split");
-                }
-                ai_provider::ProviderProgressEvent::ReviewSkipped { .. } => {}
-                ai_provider::ProviderProgressEvent::Activity(activity) => {
-                    progress.provider_stage = Some(provider_activity_stage(activity));
-                    progress.provider_activity_sequence =
-                        progress.provider_activity_sequence.saturating_add(1);
-                }
-                ai_provider::ProviderProgressEvent::Usage(usage) => {
-                    let total = progress.usage.get_or_insert_with(AiRunTokenUsage::default);
-                    total.input_tokens = total.input_tokens.saturating_add(usage.input_tokens);
-                    total.cached_input_tokens = total
-                        .cached_input_tokens
-                        .saturating_add(usage.cached_input_tokens);
-                    total.output_tokens = total.output_tokens.saturating_add(usage.output_tokens);
-                    total.reasoning_output_tokens = total
-                        .reasoning_output_tokens
-                        .saturating_add(usage.reasoning_output_tokens);
+            update_ai_progress(&app, &state, |progress| {
+                progress.batch_index = Some(batch_index);
+                progress.parallel_limit = Some(parallel_limit.load(Ordering::Acquire));
+                match event {
+                    ai_provider::ProviderProgressEvent::DraftsReady { ids } => {
+                        progress.record_translated(ids);
+                    }
+                    ai_provider::ProviderProgressEvent::Phase { phase, item_count } => {
+                        progress.phase = match phase {
+                            ai_provider::ProviderPhase::Translating => "translating",
+                            ai_provider::ProviderPhase::Reviewing => "reviewing",
+                            ai_provider::ProviderPhase::TerminologyRepair => "terminologyRepair",
+                            ai_provider::ProviderPhase::TokenRepair => "tokenRepair",
+                        };
+                        progress.batch_size = Some(item_count);
+                        progress.recovery = None;
+                        progress.provider_stage = None;
+                    }
+                    ai_provider::ProviderProgressEvent::TransientRetry => {
+                        progress.retries = progress.retries.saturating_add(1);
+                        progress.recovery = Some("transientRetry");
+                    }
+                    ai_provider::ProviderProgressEvent::StructureRetry => {
+                        progress.retries = progress.retries.saturating_add(1);
+                        progress.recovery = Some("structureRetry");
+                    }
+                    ai_provider::ProviderProgressEvent::Split => {
+                        progress.splits = progress.splits.saturating_add(1);
+                        progress.recovery = Some("split");
+                    }
+                    ai_provider::ProviderProgressEvent::ReviewSkipped { .. } => {}
+                    ai_provider::ProviderProgressEvent::Activity(activity) => {
+                        progress.provider_stage = Some(provider_activity_stage(activity));
+                        progress.provider_activity_sequence =
+                            progress.provider_activity_sequence.saturating_add(1);
+                    }
+                    ai_provider::ProviderProgressEvent::Usage(usage) => {
+                        let total = progress.usage.get_or_insert_with(AiRunTokenUsage::default);
+                        total.input_tokens = total.input_tokens.saturating_add(usage.input_tokens);
+                        total.cached_input_tokens = total
+                            .cached_input_tokens
+                            .saturating_add(usage.cached_input_tokens);
+                        total.output_tokens =
+                            total.output_tokens.saturating_add(usage.output_tokens);
+                        total.reasoning_output_tokens = total
+                            .reasoning_output_tokens
+                            .saturating_add(usage.reasoning_output_tokens);
+                    }
                 }
             });
             match log_event {
@@ -2471,88 +2563,82 @@ async fn translate_with_cloud_ai(
             }
         })
     };
-    while let Some(chunk) = pending.pop_front() {
+    loop {
         if lease.cancelled.load(Ordering::Acquire) {
-            outcome = ai::AiRunOutcome::Cancelled;
-            break;
+            stopping = true;
+            pipeline_cancelled.store(true, Ordering::Release);
+            if outcome == ai::AiRunOutcome::Complete {
+                outcome = ai::AiRunOutcome::Cancelled;
+            }
         }
-        batch_attempt = batch_attempt.saturating_add(1);
-        log::info!(
-            target: "ai_run",
-            "{}",
-            serde_json::json!({
-                "event": "batch_started",
-                "runId": log_run_id,
-                "batchAttempt": batch_attempt,
-                "batchIndex": handled_batches + 1,
-                "batchTotal": batch_total,
-                "batchSize": chunk.len(),
-                "completed": suggestions.len(),
-            })
-        );
-        update_ai_progress(&app, &progress_state, |progress| {
-            progress.phase = "preparing";
-            progress.batch_index = Some(handled_batches + 1);
-            progress.batch_total = Some(batch_total);
-            progress.batch_size = Some(chunk.len());
-            progress.recovery = None;
-            progress.provider_stage = None;
-        });
-        if let Ok(mut skips) = chunk_review_skips.lock() {
-            *skips = ReviewSkips::default();
-        }
-        match chatgpt::translate_chunk(
-            cloud_model.as_deref(),
-            &reasoning,
-            &target_language,
-            cloud_quality_review,
-            chunk,
-            lease.cancelled.clone(),
-            Arc::clone(&cloud_progress),
-        )
-        .await
-        {
-            Ok(translations) => {
-                let mut cancel_after_staging = false;
-                let translations = match chatgpt::repair_token_mismatches_once(
-                    cloud_model.as_deref(),
+        while !stopping && in_flight.len() < parallel_limit.load(Ordering::Acquire) {
+            let Some((batch_index, chunk)) = pending.pop_front() else {
+                break;
+            };
+            batch_attempt = batch_attempt.saturating_add(1);
+            log::info!(
+                target: "ai_run",
+                "{}",
+                serde_json::json!({
+                    "event": "batch_started",
+                    "runId": log_run_id,
+                    "batchAttempt": batch_attempt,
+                    "batchIndex": batch_index,
+                    "batchTotal": batch_total,
+                    "batchSize": chunk.len(),
+                    "completed": suggestions.len(),
+                })
+            );
+            update_ai_progress(&app, &progress_state, |progress| {
+                progress.phase = "preparing";
+                progress.batch_index = Some(batch_index);
+                progress.batch_total = Some(batch_total);
+                progress.batch_size = Some(chunk.len());
+                progress.active_batches = Some(in_flight.len() + 1);
+                progress.parallel_limit = Some(parallel_limit.load(Ordering::Acquire));
+                progress.recovery = None;
+                progress.provider_stage = None;
+            });
+            let chunk_review_skips = Arc::new(Mutex::new(ReviewSkips::default()));
+            let progress = cloud_progress(batch_index, Arc::clone(&chunk_review_skips));
+            let cancelled = Arc::clone(&pipeline_cancelled);
+            let model = cloud_model.clone();
+            let reasoning = reasoning.clone();
+            let language = target_language.clone();
+            let attempt = batch_attempt;
+            in_flight.push(async move {
+                let result = complete_cloud_batch(
+                    model.as_deref(),
                     &reasoning,
-                    &target_language,
+                    &language,
                     cloud_quality_review,
                     chunk,
-                    &translations,
-                    lease.cancelled.clone(),
-                    Arc::clone(&cloud_progress),
+                    cancelled,
+                    progress,
                 )
-                .await
-                {
-                    Ok(repair) => {
-                        cancel_after_staging = repair.cancelled;
-                        repair.translations
-                    }
-                    Err(ai::ProviderFailure::Cancelled) => {
-                        // The main translation is already structurally valid.
-                        // Persist it with its blocking token issue before
-                        // honoring cancellation of the optional repair pass.
-                        cancel_after_staging = true;
-                        translations
-                    }
-                    Err(failure) => {
-                        // Token repair is optional and gets exactly one attempt.
-                        // Keep the structurally valid original so its blocking
-                        // token validation reaches Review for a human decision.
-                        log::warn!(
-                            target: "ai_run",
-                            "{}",
-                            serde_json::json!({
-                                "event": "token_repair_not_applied",
-                                "runId": log_run_id,
-                                "errorCategory": provider_failure_category(&failure),
-                            })
-                        );
-                        translations
-                    }
-                };
+                .await;
+                (attempt, batch_index, chunk, result, chunk_review_skips)
+            });
+        }
+        if in_flight.is_empty() {
+            break;
+        }
+        let next = tokio::select! {
+            next = in_flight.next() => next,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => continue,
+        };
+        let Some((batch_attempt, batch_index, chunk, result, chunk_review_skips)) = next else {
+            break;
+        };
+        update_ai_progress(&app, &progress_state, |progress| {
+            progress.batch_index = Some(batch_index);
+            progress.active_batches = Some(in_flight.len());
+        });
+        match result {
+            Ok((translations, cancel_after_staging)) => {
+                if !staging_available {
+                    continue;
+                }
                 match ai::suggestions(chunk, translations) {
                     Ok(completed) => {
                         update_ai_progress(&app, &progress_state, |progress| {
@@ -2567,7 +2653,6 @@ async fn translate_with_cloud_ai(
                             completed,
                             &mut suggestions,
                         );
-                        handled_batches = handled_batches.saturating_add(1);
                         update_ai_progress(&app, &progress_state, |progress| {
                             progress.completed = suggestions.len();
                         });
@@ -2585,7 +2670,10 @@ async fn translate_with_cloud_ai(
                             );
                             outcome = ai::AiRunOutcome::Error;
                             error = Some(cause);
-                            break;
+                            stopping = true;
+                            staging_available = false;
+                            pipeline_cancelled.store(true, Ordering::Release);
+                            continue;
                         }
                         if let Ok(skips) = chunk_review_skips.lock() {
                             saved_review_skips.absorb(*skips);
@@ -2602,8 +2690,12 @@ async fn translate_with_cloud_ai(
                                     "completed": suggestions.len(),
                                 })
                             );
-                            outcome = ai::AiRunOutcome::Cancelled;
-                            break;
+                            if outcome == ai::AiRunOutcome::Complete {
+                                outcome = ai::AiRunOutcome::Cancelled;
+                            }
+                            stopping = true;
+                            pipeline_cancelled.store(true, Ordering::Release);
+                            continue;
                         }
                         log::info!(
                             target: "ai_run",
@@ -2630,7 +2722,8 @@ async fn translate_with_cloud_ai(
                         );
                         outcome = ai::AiRunOutcome::Error;
                         error = Some(cause);
-                        break;
+                        stopping = true;
+                        pipeline_cancelled.store(true, Ordering::Release);
                     }
                 }
             }
@@ -2646,8 +2739,11 @@ async fn translate_with_cloud_ai(
                         "completed": suggestions.len(),
                     })
                 );
-                outcome = ai::AiRunOutcome::Cancelled;
-                break;
+                if outcome == ai::AiRunOutcome::Complete {
+                    outcome = ai::AiRunOutcome::Cancelled;
+                }
+                stopping = true;
+                pipeline_cancelled.store(true, Ordering::Release);
             }
             Err(ai::ProviderFailure::InvalidResponse(_cause)) if chunk.len() > 1 => {
                 let middle = ai::recovery_split_index(chunk)
@@ -2655,9 +2751,11 @@ async fn translate_with_cloud_ai(
                 let (left, right) = chunk.split_at(middle);
                 // Process the left half first while keeping the whole operation
                 // iterative and bounded.
-                pending.push_front(right);
-                pending.push_front(left);
-                batch_total = batch_total.saturating_add(1);
+                if !stopping {
+                    batch_total = batch_total.saturating_add(1);
+                    pending.push_front((batch_total, right));
+                    pending.push_front((batch_index, left));
+                }
                 update_ai_progress(&app, &progress_state, |progress| {
                     progress.phase = "preparing";
                     progress.batch_total = Some(batch_total);
@@ -2681,7 +2779,6 @@ async fn translate_with_cloud_ai(
             Err(ai::ProviderFailure::InvalidResponse(cause)) => {
                 isolated_failures += 1;
                 last_isolated_failure = Some(cause);
-                handled_batches = handled_batches.saturating_add(1);
                 log::info!(
                     target: "ai_run",
                     "{}",
@@ -2715,9 +2812,12 @@ async fn translate_with_cloud_ai(
                         "errorCategory": error_category,
                     })
                 );
+                if outcome != ai::AiRunOutcome::Error {
+                    error = Some(cause);
+                }
                 outcome = ai::AiRunOutcome::Error;
-                error = Some(cause);
-                break;
+                stopping = true;
+                pipeline_cancelled.store(true, Ordering::Release);
             }
         }
     }
@@ -2730,6 +2830,20 @@ async fn translate_with_cloud_ai(
             "{isolated_failures} selected string(s) could not be translated after bounded response recovery. {cause}"
         ));
     }
+    update_ai_progress(&app, &progress_state, |progress| {
+        progress.active_batches = Some(0);
+    });
+    let source_order = prepared
+        .iter()
+        .enumerate()
+        .map(|(index, item)| (&item.identity, index))
+        .collect::<std::collections::HashMap<_, _>>();
+    suggestions.sort_by_key(|suggestion| {
+        source_order
+            .get(&suggestion.identity)
+            .copied()
+            .unwrap_or(usize::MAX)
+    });
     outcome = lease.finish(outcome)?;
     if let Some(warning) = review_skipped_warning(outcome, saved_review_skips) {
         error = Some(match error {
@@ -3574,6 +3688,8 @@ mod ai_run_contract_tests {
             batch_index: Some(4),
             batch_total: Some(11),
             batch_size: Some(87),
+            active_batches: Some(3),
+            parallel_limit: Some(4),
             retries: 1,
             splits: 2,
             recovery: Some("structureRetry"),
@@ -3589,6 +3705,8 @@ mod ai_run_contract_tests {
 
         let value = serde_json::to_value(&progress).unwrap();
         assert_eq!(value["completed"], 320);
+        assert_eq!(value["activeBatches"], 3);
+        assert_eq!(value["parallelLimit"], 4);
         assert_eq!(value["translated"], 407);
         assert_eq!(value["phase"], "reviewing");
         assert_eq!(value["batchIndex"], 4);
@@ -3761,6 +3879,109 @@ mod ai_run_contract_tests {
             "Manual"
         );
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn cloud_parallel_limit_shrinks_after_repeated_retries_and_stays_bounded() {
+        let limit = AtomicUsize::new(8);
+        let retries = AtomicUsize::new(0);
+        for expected in [8, 4, 4, 2, 2, 1, 1, 1] {
+            reduce_parallel_limit(&limit, &retries);
+            assert_eq!(limit.load(Ordering::Acquire), expected);
+        }
+    }
+
+    #[test]
+    fn dropping_cloud_pipeline_owner_signals_native_workers() {
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let worker_flag = Arc::clone(&cancelled);
+        {
+            let _owner = CloudPipelineCancellation(cancelled);
+            assert!(!worker_flag.load(Ordering::Acquire));
+        }
+        assert!(worker_flag.load(Ordering::Acquire));
+    }
+
+    #[test]
+    fn out_of_order_batches_keep_saved_results_when_a_later_batch_is_stale() {
+        let root = test_support::temp_dir("ai-out-of-order");
+        let source = root.join("default.json");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source, r#"{"first":"One","second":"Two","third":"Three"}"#).unwrap();
+        let state = root.join("state");
+        let make_item = |key: &str, text: &str| ai::PreparedAiItem {
+            id: key.into(),
+            identity: ai::AiStringIdentity {
+                mod_unique_id: "example.mod".into(),
+                relative_dir: "i18n".into(),
+                key: key.into(),
+            },
+            source: text.into(),
+            section: None,
+            glossary_pairs: Vec::new(),
+            context: ai::AiPromptContext::isolated(0),
+            default_path: source.clone(),
+            target_path: root.join("de.json"),
+            expected_stored: None,
+            expected_revision: 0,
+        };
+        let first = make_item("first", "One");
+        let second = make_item("second", "Two");
+        let third = make_item("third", "Three");
+        let suggestion = |item: &ai::PreparedAiItem, text: &str| ai::AiSuggestion {
+            identity: item.identity.clone(),
+            text: text.into(),
+            status: "review-needed".into(),
+            token_differences: Vec::new(),
+            glossary_misses: Vec::new(),
+        };
+        let mut saved = Vec::new();
+        stage_ai_suggestions(
+            &state,
+            std::slice::from_ref(&second),
+            vec![suggestion(&second, "Zwei")],
+            &mut saved,
+        )
+        .unwrap();
+        stage_ai_suggestions(
+            &state,
+            std::slice::from_ref(&first),
+            vec![suggestion(&first, "Eins")],
+            &mut saved,
+        )
+        .unwrap();
+        let third_key = translations::entry_key("i18n", "third");
+        translations::save_one(
+            &state,
+            "example.mod",
+            third_key.clone(),
+            translations::StoredString {
+                target: "Manual".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Three"),
+            },
+        )
+        .unwrap();
+        assert!(stage_ai_suggestions(
+            &state,
+            std::slice::from_ref(&third),
+            vec![suggestion(&third, "Drei")],
+            &mut saved
+        )
+        .is_err());
+        let restarted = translations::load(&state, "example.mod").unwrap();
+        assert_eq!(
+            restarted[&translations::entry_key("i18n", "first")].target,
+            "Eins"
+        );
+        assert_eq!(
+            restarted[&translations::entry_key("i18n", "second")].target,
+            "Zwei"
+        );
+        assert_eq!(restarted[&third_key].target, "Manual");
+        assert_eq!(saved.len(), 2);
+        assert!(!root.join("de.json").exists());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

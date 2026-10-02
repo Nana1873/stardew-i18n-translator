@@ -173,7 +173,7 @@ no provider registry, marketplace, custom cloud base URL, or API-key fallback.
 Renewable cloud credentials stay in the native backend and are encrypted with
 Windows DPAPI in the portable data folder. They never enter the WebView or logs.
 
-Requests send selected source text, section context, and matching glossary
+Requests send selected source text and keys, section context, and matching glossary
 terms to the selected backend for exactly one target language. Nearby source
 strings may be read-only context; only selected identities may be returned or
 saved. Every saved suggestion enters Review, including output that passed AI
