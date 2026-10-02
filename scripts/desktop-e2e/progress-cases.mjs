@@ -169,10 +169,14 @@ export async function progressCases(h) {
       const dialog = await h.element(
         h.css('[aria-label="AI translation progress"]'),
       );
+      // A zero-percent fill has no visible width, but its persisted count is
+      // still available on the semantic progress element.
       const bar = () =>
-        h.element(
-          h.css('[role="progressbar"][aria-label="AI translation progress"]'),
-        );
+        h
+          .driver()
+          .findElement(
+            h.css('[role="progressbar"][aria-label="AI translation progress"]'),
+          );
       const log = () =>
         h.element(h.css('[role="log"][aria-label="Batch activity"]'));
       const logSize = () =>
