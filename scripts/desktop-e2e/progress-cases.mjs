@@ -405,6 +405,17 @@ export async function progressCases(h) {
       );
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
+      // Leave the synthetic profile on its cloud engine for the following
+      // account-warning cases; the local layout probe must not change their setup.
+      await h.click(h.css('[aria-label="Settings"]'));
+      await h.click(h.button("Translation engines"));
+      await h.click(
+        By.xpath(
+          "//button[contains(@class,'translator-engine-card')][.//strong[normalize-space(.)='ChatGPT']]",
+        ),
+      );
+      await h.click(h.button("Save changes"));
+      await h.absent(h.css('[aria-label="Close settings"]'));
       h.evidence.aiProgress = {
         passed: true,
         controlledIpc: true,
