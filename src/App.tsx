@@ -1082,6 +1082,7 @@ export function App() {
     {
       id: CLOUD_ENGINE_ID,
       label: CLOUD_ENGINE_LABEL,
+      qualityReview: aiSettings.cloudQualityReview,
       ready: cloudAiReady,
       model: aiSettings.cloudModel || "Choose a ChatGPT model",
       reasoning: aiSettings.cloudReasoning,

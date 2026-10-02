@@ -7,16 +7,15 @@
  * whether to cancel an active run.
  */
 import { type CSSProperties, useEffect, useRef, useState } from "react";
-import { Sparkles } from "lucide-react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import type {
   AiEngine,
   AiRunProgress,
-  AiRunRecovery,
   AiRunResult,
   ProviderActivityStage,
 } from "../tauri/commands";
 import { listenAiRunProgress, CLOUD_ENGINE_LABEL } from "../tauri/commands";
+import { AI_PHASE_LABELS, describeProgressChanges } from "./aiRunActivity";
 
 export interface LiveAiEngineOption {
   id: AiEngine;
@@ -26,6 +25,7 @@ export interface LiveAiEngineOption {
   reasoning: string;
   unavailableReason?: string;
   note: string;
+  qualityReview?: boolean;
 }
 
 /** One selected string captured when a run starts. */
@@ -55,21 +55,6 @@ function createRunId(): string {
     `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`
   );
 }
-
-const PHASE_LABELS: Record<AiRunProgress["phase"], string> = {
-  preparing: "Preparing batch",
-  translating: "Translating draft",
-  reviewing: "Checking translation quality",
-  terminologyRepair: "Checking terminology",
-  tokenRepair: "Repairing protected tokens",
-  saving: "Validating & saving",
-};
-
-const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
-  transientRetry: "Retrying temporary failure",
-  structureRetry: "Retrying response structure",
-  split: "Splitting affected batch",
-};
 
 const CLOUD_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
   starting: "Starting request",
@@ -129,6 +114,18 @@ export function BatchTranslateDialog({
   onClose,
 }: BatchTranslateDialogProps) {
   const [done, setDone] = useState(0);
+  const [activityLog, setActivityLog] = useState([
+    {
+      id: 0,
+      seconds: 0,
+      message: "Preparing selected strings",
+      warning: false,
+    },
+  ]);
+  const previousProgressRef = useRef<AiRunProgress | null>(null);
+  const activitySequenceRef = useRef(0);
+  const activityLogRef = useRef<HTMLDivElement>(null);
+  const followActivityRef = useRef(true);
   const [liveProgress, setLiveProgress] = useState<AiRunProgress | null>(null);
   const [lastCloudActivity, setLastCloudActivity] = useState<{
     sequence: number;
@@ -165,6 +162,27 @@ export function BatchTranslateDialog({
     );
   }
 
+  function appendActivity(entries: { message: string; warning?: boolean }[]) {
+    if (entries.length === 0) return;
+    const seconds = Math.max(
+      0,
+      Math.floor((Date.now() - startedAtRef.current) / 1_000),
+    );
+    const next = entries.map((entry) => ({
+      id: ++activitySequenceRef.current,
+      seconds,
+      message: entry.message,
+      warning: Boolean(entry.warning),
+    }));
+    // Retain useful phase transitions without growing the dialog for long runs.
+    setActivityLog((current) => [...current, ...next].slice(-200));
+  }
+
+  useEffect(() => {
+    const log = activityLogRef.current;
+    if (log && followActivityRef.current) log.scrollTop = log.scrollHeight;
+  }, [activityLog]);
+
   function finish(result: BatchFinishedResult) {
     if (reportedRef.current) return;
     reportedRef.current = true;
@@ -176,6 +194,9 @@ export function BatchTranslateDialog({
     if (cancelRef.current) return;
     cancelRef.current = true;
     setCancelRequested(true);
+    appendActivity([
+      { message: "Cancellation requested · waiting for active work to stop" },
+    ]);
     setEstimatedRemainingSeconds(null);
     if (onCancelLiveRun) {
       void onCancelLiveRun(runIdRef.current).catch((cause) =>
@@ -215,6 +236,12 @@ export function BatchTranslateDialog({
       try {
         const unlisten = await listenAiRunProgress((event) => {
           if (!active || event.runId !== runId) return;
+          if (!cancelRef.current) {
+            appendActivity(
+              describeProgressChanges(previousProgressRef.current, event),
+            );
+          }
+          previousProgressRef.current = event;
           recordCompletionCheckpoint(event.completed, event.total);
           setDone(event.completed);
           setLiveProgress(event);
@@ -292,6 +319,27 @@ export function BatchTranslateDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const modelLabel =
+    engine?.id === "chatgpt" &&
+    /^gpt-\d+(?:\.\d+)?(?:-[a-z]+)*$/i.test(engine.model)
+      ? engine.model
+          .split("-")
+          .map((part) =>
+            part.toLowerCase() === "gpt"
+              ? "GPT"
+              : part.charAt(0).toUpperCase() + part.slice(1),
+          )
+          .join(" ")
+      : engine?.model;
+  const engineSummary = [
+    engine?.label ?? "AI",
+    modelLabel,
+    engine?.reasoning
+      ? engine.reasoning.charAt(0).toUpperCase() + engine.reasoning.slice(1)
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   const total = liveProgress?.total ?? items.length;
   const translated = Math.min(
     total,
@@ -300,9 +348,11 @@ export function BatchTranslateDialog({
   const progressPercent = total > 0 ? Math.round((done / total) * 100) : 0;
   const indeterminate = !liveProgress;
   const phaseLabel = cancelRequested
-    ? "Cancelling active batch"
+    ? liveProgress?.batchActivity
+      ? "Cancelling active batches"
+      : "Cancelling active batch"
     : liveProgress
-      ? PHASE_LABELS[liveProgress.phase]
+      ? AI_PHASE_LABELS[liveProgress.phase]
       : "Preparing selected strings";
   const activityParts = [phaseLabel];
   if (
@@ -319,11 +369,24 @@ export function BatchTranslateDialog({
       `${liveProgress.batchSize} ${liveProgress.batchSize === 1 ? "string" : "strings"}`,
     );
   }
-  const activityText = activityParts.join(" · ");
+  const batchActivity = liveProgress?.batchActivity;
+  const parallelSummary =
+    batchActivity === undefined
+      ? null
+      : [
+          `${batchActivity.length} ${batchActivity.length === 1 ? "batch" : "batches"} active`,
+          ...(liveProgress?.parallelLimit
+            ? [`up to ${liveProgress.parallelLimit}`]
+            : []),
+          ...(liveProgress?.batchTotal
+            ? [`${liveProgress.batchTotal} batches total`]
+            : []),
+        ].join(" · ");
+  const activityText =
+    !cancelRequested && parallelSummary !== null
+      ? parallelSummary
+      : activityParts.join(" · ");
   const metaParts = [`Elapsed · ${formatElapsed(elapsedSeconds)}`];
-  if (!cancelRequested && liveProgress?.recovery) {
-    metaParts.push(RECOVERY_LABELS[liveProgress.recovery]);
-  }
   const usage = liveProgress?.usage;
   const usageText = usage
     ? [
@@ -358,30 +421,42 @@ export function BatchTranslateDialog({
         <div className="translator-flow-head">
           <div>
             <h2 className="translator-heading">
-              <Sparkles aria-hidden="true" />{" "}
               {cancelRequested
                 ? "Cancelling…"
                 : "Translating selected strings…"}
             </h2>
-            <div className="translator-kicker">
-              {engine?.label ?? "AI"} · completed suggestions enter Review ·{" "}
-              {modName}
-            </div>
+            <div className="translator-kicker">{engineSummary}</div>
           </div>
         </div>
 
         <div className="translator-flow-body">
-          <div className="translator-ai-drafts">
-            <span>Translated</span>
-            <output aria-label="Translated strings">
-              {translated} / {total}
-            </output>
-          </div>
           <div className="translator-ai-count">
             <span>Saved to Review</span>
             <strong>
               {done} / {total}
             </strong>
+          </div>
+          <div className="translator-progress-row">
+            <span
+              role="progressbar"
+              aria-label="AI translation progress"
+              aria-valuemin={0}
+              aria-valuemax={total}
+              aria-valuenow={indeterminate ? undefined : done}
+              aria-valuetext={
+                cancelRequested
+                  ? `Cancelling active AI work; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
+                  : indeterminate
+                    ? `${total} selected ${total === 1 ? "string is" : "strings are"} being prepared`
+                    : `${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
+              }
+              data-indeterminate={indeterminate ? "true" : undefined}
+              style={
+                {
+                  "--translator-batch-progress": `${indeterminate ? 35 : progressPercent}%`,
+                } as CSSProperties
+              }
+            />
           </div>
           <div
             className="translator-ai-activity"
@@ -400,71 +475,91 @@ export function BatchTranslateDialog({
               </span>
             )}
           </div>
-          <details className="translator-ai-details">
-            <summary>Details</summary>
-            <div className="translator-ai-meta">
-              {engine && (
-                <span>
-                  {engine.model} · {engine.reasoning} reasoning
-                </span>
-              )}
-              {lastCloudActivity && activityAge !== null && (
-                <span>
-                  {CLOUD_ENGINE_LABEL} activity ·{" "}
+          <dl className="translator-ai-facts">
+            <div>
+              <dt>Mod</dt>
+              <dd>{modName}</dd>
+            </div>
+            <div>
+              <dt>Drafts received</dt>
+              <dd>
+                <output aria-label="Translated strings">
+                  {translated} / {total}
+                </output>
+              </dd>
+            </div>
+            {engine?.qualityReview !== undefined && (
+              <div>
+                <dt>Quality check</dt>
+                <dd>{engine.qualityReview ? "On" : "Off"}</dd>
+              </div>
+            )}
+            {lastCloudActivity && activityAge !== null && (
+              <div>
+                <dt>{CLOUD_ENGINE_LABEL} activity</dt>
+                <dd>
                   {CLOUD_ACTIVITY_LABELS[lastCloudActivity.stage]} ·{" "}
                   {formatActivityAge(activityAge)}
-                </span>
+                </dd>
+              </div>
+            )}
+            {usageText && (
+              <div>
+                <dt>Tokens reported</dt>
+                <dd>{usageText}</dd>
+              </div>
+            )}
+            {batchActivity === undefined &&
+              liveProgress?.activeBatches !== undefined && (
+                <div>
+                  <dt>Active batches</dt>
+                  <dd>
+                    {liveProgress.activeBatches}
+                    {liveProgress.parallelLimit
+                      ? " · up to " + liveProgress.parallelLimit
+                      : ""}
+                  </dd>
+                </div>
               )}
-              {usageText && (
-                <span>
-                  {CLOUD_ENGINE_LABEL} reported · {usageText}
-                </span>
-              )}
-              {liveProgress?.activeBatches !== undefined && (
-                <span>
-                  {liveProgress.activeBatches}{" "}
-                  {liveProgress.activeBatches === 1 ? "batch" : "batches"}{" "}
-                  active
-                  {liveProgress.parallelLimit
-                    ? " · up to " + liveProgress.parallelLimit
-                    : ""}
-                </span>
-              )}
-              {Boolean(liveProgress?.retries) && (
-                <span>
-                  {liveProgress?.retries}{" "}
-                  {liveProgress?.retries === 1 ? "retry" : "retries"}
-                </span>
-              )}
-              {Boolean(liveProgress?.splits) && (
-                <span>
-                  {liveProgress?.splits}{" "}
-                  {liveProgress?.splits === 1 ? "split" : "splits"}
-                </span>
-              )}
-            </div>
-          </details>
-          <div className="translator-progress-row">
-            <span
-              role="progressbar"
-              aria-label="AI translation progress"
-              aria-valuemin={0}
-              aria-valuemax={total}
-              aria-valuenow={indeterminate ? undefined : done}
-              aria-valuetext={
-                cancelRequested
-                  ? `Cancelling the active AI batch; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review`
-                  : indeterminate
-                    ? `${total} selected ${total === 1 ? "string is" : "strings are"} being prepared`
-                    : `${translated} of ${total} strings translated; ${done} of ${total} ${total === 1 ? "suggestion" : "suggestions"} saved to Review; ${activityText.toLowerCase()}`
-              }
-              data-indeterminate={indeterminate ? "true" : undefined}
-              style={
-                {
-                  "--translator-batch-progress": `${indeterminate ? 35 : progressPercent}%`,
-                } as CSSProperties
-              }
-            />
+            {Boolean(liveProgress?.retries) && (
+              <div>
+                <dt>Retries</dt>
+                <dd>{liveProgress?.retries}</dd>
+              </div>
+            )}
+            {Boolean(liveProgress?.splits) && (
+              <div>
+                <dt>Splits</dt>
+                <dd>{liveProgress?.splits}</dd>
+              </div>
+            )}
+          </dl>
+          <div className="translator-ai-log-heading">
+            <span>Activity log</span>
+            {activityLog.length === 200 && <small>Latest 200 events</small>}
+          </div>
+          <div
+            ref={activityLogRef}
+            className="translator-ai-log"
+            role="log"
+            aria-label="Batch activity"
+            aria-live="polite"
+            aria-relevant="additions"
+            tabIndex={0}
+            onScroll={(event) => {
+              const log = event.currentTarget;
+              followActivityRef.current =
+                log.scrollHeight - log.scrollTop - log.clientHeight < 24;
+            }}
+          >
+            <ol>
+              {activityLog.map((entry) => (
+                <li key={entry.id} data-warning={entry.warning || undefined}>
+                  <time>{formatElapsed(entry.seconds)}</time>
+                  <span>{entry.message}</span>
+                </li>
+              ))}
+            </ol>
           </div>
           {cancelError && (
             <div className="translator-flow-callout is-error" role="alert">
