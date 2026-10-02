@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { By } from "selenium-webdriver";
 
@@ -114,6 +114,10 @@ export async function progressCases(h) {
       true,
       "The controlled IPC transport must be installed.",
     );
+    const settingsPath = join(h.data, "settings.json");
+    const backupPath = settingsPath + ".bak";
+    let cloudProfile;
+    let cloudBackup;
     try {
       await h.click(h.css('[aria-label="Settings"]'));
       await h.click(h.button("Translation engines"));
@@ -333,6 +337,13 @@ export async function progressCases(h) {
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
 
+      // Restore these bytes after closing the app so later cases retain the
+      // same cloud-only configuration, not just its default-engine selection.
+      cloudProfile = await readFile(settingsPath);
+      cloudBackup = (await h.exists(backupPath))
+        ? await readFile(backupPath)
+        : null;
+
       // The Local AI command is intercepted as well: this proves the shared UI
       // without contacting a server or loading a model on the user's GPU.
       await h.click(h.css('[aria-label="Settings"]'));
@@ -405,17 +416,6 @@ export async function progressCases(h) {
       );
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
-      // Leave the synthetic profile on its cloud engine for the following
-      // account-warning cases; the local layout probe must not change their setup.
-      await h.click(h.css('[aria-label="Settings"]'));
-      await h.click(h.button("Translation engines"));
-      await h.click(
-        By.xpath(
-          "//button[contains(@class,'translator-engine-card')][.//strong[normalize-space(.)='ChatGPT']]",
-        ),
-      );
-      await h.click(h.button("Save changes"));
-      await h.absent(h.css('[aria-label="Close settings"]'));
       h.evidence.aiProgress = {
         passed: true,
         controlledIpc: true,
@@ -434,6 +434,11 @@ export async function progressCases(h) {
     } finally {
       await h.driver().executeScript(() => window.restoreProgressTest());
       await h.closeNormally();
+      if (cloudProfile) {
+        await writeFile(settingsPath, cloudProfile);
+        if (cloudBackup) await writeFile(backupPath, cloudBackup);
+        else await rm(backupPath, { force: true });
+      }
     }
   });
 }
