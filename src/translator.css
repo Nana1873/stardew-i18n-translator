@@ -2372,11 +2372,6 @@
   white-space: nowrap;
 }
 
-#stardew-i18n-translator .translator-ai-details summary {
-  cursor: pointer;
-  color: var(--translator-muted);
-}
-
 #stardew-i18n-translator .translator-scan-summary span span {
   display: block;
   margin-top: 2px;
@@ -3066,28 +3061,11 @@
   overflow-wrap: anywhere;
 }
 
-#stardew-i18n-translator .translator-ai-count,
-#stardew-i18n-translator .translator-ai-drafts {
+#stardew-i18n-translator .translator-ai-count {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
-  padding: 9px 10px;
-  background: var(--translator-canvas);
-  border: 1px solid var(--translator-border);
-  border-radius: 7px;
-}
-
-#stardew-i18n-translator .translator-ai-drafts {
-  padding: 0 10px;
-  background: none;
-  border: 0;
-  color: var(--translator-muted);
-}
-
-#stardew-i18n-translator .translator-ai-drafts output {
-  color: var(--translator-text);
-  font-variant-numeric: tabular-nums;
 }
 
 #stardew-i18n-translator .translator-ai-count strong {
@@ -3099,56 +3077,94 @@
 
 #stardew-i18n-translator .translator-ai-activity {
   min-width: 0;
-  color: var(--translator-text);
+  color: var(--translator-muted);
   font-size: 0.86em;
-  font-weight: 600;
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
 
-#stardew-i18n-translator .translator-ai-parallel-summary {
-  margin-bottom: 8px;
+#stardew-i18n-translator .translator-ai-log-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 4px;
+  font-size: 0.86em;
+  font-weight: 600;
+}
+
+#stardew-i18n-translator .translator-ai-log-heading small {
   color: var(--translator-muted);
+  font-size: 0.9em;
   font-weight: 400;
 }
 
-#stardew-i18n-translator .translator-ai-phases {
-  display: grid;
-  gap: 6px;
-}
-
-#stardew-i18n-translator .translator-ai-phase {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
-  gap: 8px;
-  align-items: baseline;
+#stardew-i18n-translator .translator-ai-log {
+  min-height: 110px;
+  max-height: 190px;
+  overflow: auto;
   padding: 7px 9px;
   border: 1px solid var(--translator-border);
   border-radius: 7px;
   background: var(--translator-canvas);
-  font-weight: 400;
+  font-size: 0.84em;
+  line-height: 1.45;
+  scrollbar-gutter: stable;
+  overflow-anchor: none;
 }
 
-#stardew-i18n-translator .translator-ai-phase[data-active="true"] > span {
-  color: var(--translator-brand);
-  font-weight: 600;
+#stardew-i18n-translator .translator-ai-log ol {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-#stardew-i18n-translator .translator-ai-phase[data-active="false"] {
+#stardew-i18n-translator .translator-ai-log li {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+}
+
+#stardew-i18n-translator .translator-ai-log time {
   color: var(--translator-muted);
-}
-
-#stardew-i18n-translator .translator-ai-phase > div {
-  min-width: 0;
-  text-align: right;
   font-variant-numeric: tabular-nums;
 }
 
-#stardew-i18n-translator .translator-ai-phase small {
-  display: block;
-  margin-top: 3px;
+#stardew-i18n-translator .translator-ai-log li span {
+  overflow-wrap: anywhere;
+}
+
+#stardew-i18n-translator .translator-ai-log li[data-warning="true"] span {
+  color: var(--translator-brand);
+}
+
+#stardew-i18n-translator .translator-ai-facts {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  font-size: max(11px, 0.84em);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+
+#stardew-i18n-translator .translator-ai-facts > div {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.5fr);
+  gap: 12px;
+  align-items: baseline;
+}
+
+#stardew-i18n-translator .translator-ai-facts dt {
   color: var(--translator-muted);
-  font-size: 1em;
+}
+
+#stardew-i18n-translator .translator-ai-facts dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 #stardew-i18n-translator .translator-ai-meta {

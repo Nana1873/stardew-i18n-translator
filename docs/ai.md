@@ -86,20 +86,28 @@ A higher setting can shorten large runs when your account accepts overlapping
 requests. Each batch still completes the selected quality checks. After repeated
 temporary failures, the app lowers parallelism for the rest of that run.
 
-The progress dialog counts translated drafts separately from suggestions saved
-to Review. A batch's drafts can be translated while its quality checks are still
-running; they are not yet saved. The saved counter and progress bar count
-persisted suggestions only. Cancelling keeps suggestions already saved and can
-also save valid drafts when a token repair is interrupted.
+The progress dialog shows the active engine, model, and reasoning setting. Its
+single **Saved to Review** counter and progress bar count persisted suggestions
+only. Drafts can be received while quality checks are still running; the
+**Drafts received** count above the activity log shows these separately.
+Cancelling keeps suggestions already saved and can also save valid drafts when
+a token repair is interrupted.
 
-For ChatGPT, separate rows show which batches are translating drafts and which
-are checking quality. Preparing, repair, and saving phases appear while active.
-The active batch count and current parallel limit are visible above these rows;
-a batch disappears when its work finishes. Local AI keeps its serial phase
-display. The dialog also shows elapsed time and available provider
-activity/token usage. An estimated remaining time appears
-after suggestions have been saved. A quiet interval can mean the engine is
-still processing; progress cannot describe every moment inside a provider call.
+The **Activity log** records batch phase changes, repairs, retries, parallel
+limit changes, and saved suggestions with elapsed timestamps. It retains the
+latest 200 events. Older entries describe earlier work; only the active batch
+summary describes current concurrency. Removing a batch from that summary does
+not establish that its suggestions were saved. Provider streaming updates do
+not add log entries. The log follows new entries unless you scroll up to read
+earlier ones.
+
+Run information stays visible above the log: the mod, received drafts, and
+available quality-check settings, provider activity, reported token usage, and
+retry/split counts. Local AI uses the same layout with serial batch activity and
+the information available from that engine. The dialog also shows elapsed time;
+an estimated remaining time appears after suggestions have been saved. A quiet
+interval can mean the engine is still processing; progress cannot describe
+every moment inside a provider call.
 
 **Cancel** stops further work while retaining suggestions already saved to
 Review. The same applies to a later error. Use **Open review queue** to inspect

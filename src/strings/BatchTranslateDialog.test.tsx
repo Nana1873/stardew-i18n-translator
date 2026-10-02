@@ -9,6 +9,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { beforeEach, vi } from "vitest";
 import {
@@ -105,24 +106,20 @@ function renderDialog(
 }
 
 describe("BatchTranslateDialog", () => {
-  it("keeps draft and quality batches visible across interleaved snapshots", async () => {
+  it("records interleaved phases once and advances only on persisted saves", async () => {
     const onLiveRun = vi.fn(
       (_runId: string) => new Promise<AiRunResult>(() => {}),
     );
     renderDialog({ engine: CLOUD_ENGINE, onLiveRun });
     await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    const runId = onLiveRun.mock.calls[0][0];
     const receiveProgress = eventApi.listen.mock.calls[0][1];
     const payload = {
-      runId,
+      runId: onLiveRun.mock.calls[0][0],
       phase: "reviewing",
       completed: 24,
       translated: 177,
       total: 1109,
-      batchIndex: 3,
       batchTotal: 13,
-      batchSize: 94,
-      activeBatches: 4,
       parallelLimit: 4,
       retries: 1,
       splits: 0,
@@ -139,21 +136,50 @@ describe("BatchTranslateDialog", () => {
       ],
     };
     act(() => receiveProgress({ payload }));
-    expect(
-      screen.getByText("4 batches active · up to 4 · 13 batches total"),
-    ).toBeVisible();
-    expect(screen.getByText("Batches 2, 4 · 197 strings")).toBeVisible();
-    expect(screen.getByText("Batches 1, 3 · 177 strings")).toBeVisible();
-    expect(screen.getByText("Retrying temporary failure")).toBeVisible();
-    expect(screen.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "24",
+    const log = screen.getByRole("log", { name: "Batch activity" });
+    expect(screen.getAllByRole("progressbar")).toHaveLength(1);
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "4 batches active · up to 4 · 13 batches total",
     );
-    // A different batch's event must not hide concurrent quality checks.
+    expect(
+      within(log).getByText("Batch 2 · Translating draft · 100 strings"),
+    ).toBeVisible();
+    expect(
+      within(log).getByText(
+        "Batch 3 · Checking translation quality · 94 strings",
+      ),
+    ).toBeVisible();
+    expect(
+      within(log).getByText("Batch 3 · Retrying temporary failure"),
+    ).toBeVisible();
+    const count = within(log).getAllByRole("listitem").length;
     act(() =>
       receiveProgress({
         payload: {
           ...payload,
+          providerStage: "writingResponse",
+          providerActivitySequence: 8,
+        },
+      }),
+    );
+    expect(within(log).getAllByRole("listitem")).toHaveLength(count);
+
+    // A vanished pipeline may have failed. It cannot advance persisted progress.
+    const removed = {
+      ...payload,
+      batchActivity: payload.batchActivity.slice(1),
+    };
+    act(() => receiveProgress({ payload: removed }));
+    expect(within(log).getAllByRole("listitem")).toHaveLength(count);
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "24",
+    );
+
+    act(() =>
+      receiveProgress({
+        payload: {
+          ...removed,
           phase: "tokenRepair",
           completed: 107,
           translated: 277,
@@ -165,27 +191,37 @@ describe("BatchTranslateDialog", () => {
         },
       }),
     );
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "3 batches active · up to 4 · 13 batches total",
+    );
     expect(
-      screen.getByText("3 batches active · up to 4 · 13 batches total"),
+      within(log).getByText("Batch 3 · Repairing protected tokens · 1 string"),
     ).toBeVisible();
-    expect(screen.getByText("Batch 2 · 100 strings")).toBeVisible();
-    expect(screen.getByText("Batch 4 · 97 strings")).toBeVisible();
-    expect(screen.getByText("Batch 3 · 1 string")).toBeVisible();
-    expect(screen.getByText("Repairing protected tokens")).toBeVisible();
     expect(
-      screen.queryByText("Batches 1, 3 · 177 strings"),
-    ).not.toBeInTheDocument();
+      within(log).getByText("83 suggestions saved to Review · 107 / 1109"),
+    ).toBeVisible();
+    // Old phase entries remain available as history, not current activity cards.
     expect(
-      screen.queryByText("Retrying temporary failure"),
-    ).not.toBeInTheDocument();
-    act(() => receiveProgress({ payload: { ...payload, batchActivity: [] } }));
-    expect(screen.getAllByText("No active batches")).toHaveLength(2);
-    expect(
-      screen.queryByText("Repairing protected tokens"),
-    ).not.toBeInTheDocument();
+      within(log).getByText(
+        "Batch 1 · Checking translation quality · 83 strings",
+      ),
+    ).toBeVisible();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "107",
+    );
+    act(() =>
+      receiveProgress({
+        payload: { ...removed, completed: 107, batchActivity: [] },
+      }),
+    );
+    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
+      "0 batches active",
+    );
+    expect(within(log).queryByText(/Batch 1.*saved/)).not.toBeInTheDocument();
   });
 
-  it("shows all eight batch identities and a disabled quality pass", async () => {
+  it("records eight batch identities and shows quality settings above the log", async () => {
     const onLiveRun = vi.fn(
       (_runId: string) => new Promise<AiRunResult>(() => {}),
     );
@@ -214,16 +250,92 @@ describe("BatchTranslateDialog", () => {
         },
       }),
     );
-    expect(
-      screen.getByText("Batches 1, 2, 3, 4, 5, 6, 7, 8 · 800 strings"),
-    ).toBeVisible();
-    expect(screen.getByText("Checking quality")).toBeVisible();
+    const log = screen.getByRole("log");
+    for (let batch = 1; batch <= 8; batch++) {
+      expect(
+        within(log).getByText(
+          `Batch ${batch} · Translating draft · 100 strings`,
+        ),
+      ).toBeVisible();
+    }
     expect(screen.getByText("Off")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Cancelling active batches",
     );
-    expect(screen.queryByText("Checking quality")).not.toBeInTheDocument();
+    expect(within(log).getByText(/Cancellation requested/)).toBeVisible();
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
+      "aria-valuenow",
+      "0",
+    );
+  });
+
+  it("bounds long activity histories without duplicating provider updates", async () => {
+    const onLiveRun = vi.fn(
+      (_runId: string) => new Promise<AiRunResult>(() => {}),
+    );
+    renderDialog({ onLiveRun });
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    act(() => {
+      for (let batchIndex = 1; batchIndex <= 205; batchIndex++) {
+        receiveProgress({
+          payload: {
+            runId: onLiveRun.mock.calls[0][0],
+            phase: "translating",
+            completed: 0,
+            total: 205,
+            batchIndex,
+            batchSize: 1,
+            retries: 0,
+            splits: 0,
+          },
+        });
+      }
+    });
+    const log = screen.getByRole("log");
+    expect(within(log).getAllByRole("listitem")).toHaveLength(200);
+    expect(screen.getByText("Latest 200 events")).toBeVisible();
+    expect(
+      within(log).queryByText("Batch 1 · Translating draft · 1 string"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(log).getByText("Batch 205 · Translating draft · 1 string"),
+    ).toBeVisible();
+    expect(within(log).queryByText(/saved to Review/)).not.toBeInTheDocument();
+  });
+
+  it("allows reading older activity without forcing the scroll back down", async () => {
+    const onLiveRun = vi.fn(
+      (_runId: string) => new Promise<AiRunResult>(() => {}),
+    );
+    renderDialog({ onLiveRun });
+    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
+    const receiveProgress = eventApi.listen.mock.calls[0][1];
+    const log = screen.getByRole("log");
+    Object.defineProperties(log, {
+      scrollHeight: { value: 300, configurable: true },
+      clientHeight: { value: 100 },
+    });
+    log.scrollTop = 40;
+    fireEvent.scroll(log);
+    const payload = {
+      runId: onLiveRun.mock.calls[0][0],
+      phase: "translating",
+      completed: 0,
+      total: 2,
+      batchIndex: 1,
+      batchSize: 2,
+      retries: 0,
+      splits: 0,
+    };
+    act(() => receiveProgress({ payload }));
+    expect(log.scrollTop).toBe(40);
+    log.scrollTop = 200;
+    fireEvent.scroll(log);
+    Object.defineProperty(log, "scrollHeight", { value: 400 });
+    act(() => receiveProgress({ payload: { ...payload, phase: "reviewing" } }));
+    expect(log.scrollTop).toBe(400);
   });
 
   it("shows translated drafts before the first batch is saved to Review", async () => {
@@ -250,6 +362,7 @@ describe("BatchTranslateDialog", () => {
     expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
       "93 / 282",
     );
+    expect(screen.getByLabelText("Translated strings")).toBeVisible();
     expect(screen.getByText("0 / 282")).toBeVisible();
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Checking translation quality · Batch 1 of 4 · 93 strings",
@@ -291,9 +404,7 @@ describe("BatchTranslateDialog", () => {
     expect(
       screen.getByRole("dialog", { name: "AI translation progress" }),
     ).toBeVisible();
-    expect(
-      screen.getByText(/ChatGPT .* completed suggestions enter Review/),
-    ).toBeVisible();
+    expect(screen.getByText("ChatGPT · GPT 6.1 Sol · Medium")).toBeVisible();
     expect(screen.getByText("Saved to Review")).toBeVisible();
     expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
       "Preparing selected strings",
@@ -504,15 +615,14 @@ describe("BatchTranslateDialog", () => {
       "Checking translation quality · Batch 4 of 11 · 87 strings",
     );
     expect(
-      screen.getByText(/Elapsed · \d\d:\d\d · Retrying response structure/),
+      within(screen.getByRole("log")).getByText(
+        "Batch 4 · Retrying response structure",
+      ),
     ).toBeVisible();
-    fireEvent.click(screen.getByText("Details"));
-    expect(
-      screen.getByText("ChatGPT activity · Reasoning · just now"),
-    ).toBeVisible();
+    expect(screen.getByText("Reasoning · just now")).toBeVisible();
     expect(
       screen.getByText(
-        "ChatGPT reported · 45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
+        "45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
       ),
     ).toBeVisible();
     expect(progress).not.toHaveAttribute("data-indeterminate");
@@ -520,7 +630,7 @@ describe("BatchTranslateDialog", () => {
     expect(progress).toHaveAttribute("aria-valuenow", "320");
     expect(progress).toHaveAttribute(
       "aria-valuetext",
-      "407 of 1000 strings translated; 320 of 1000 suggestions saved to Review; checking translation quality · batch 4 of 11 · 87 strings",
+      "320 of 1000 suggestions saved to Review; checking translation quality · batch 4 of 11 · 87 strings",
     );
 
     act(() => resolveRun(liveResult({ runId })));
