@@ -2257,9 +2257,15 @@ impl Drop for CloudPipelineCancellation {
 
 fn reduce_parallel_limit(limit: &AtomicUsize, retries: &AtomicUsize) {
     if retries.fetch_add(1, Ordering::AcqRel) % 2 == 1 {
-        let _ = limit.fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
-            Some((value / 2).max(1))
-        });
+        let mut current = limit.load(Ordering::Acquire);
+        while let Err(observed) = limit.compare_exchange_weak(
+            current,
+            (current / 2).max(1),
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            current = observed;
+        }
     }
 }
 
