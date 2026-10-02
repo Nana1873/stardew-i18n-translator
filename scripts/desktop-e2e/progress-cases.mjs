@@ -32,15 +32,28 @@ export async function progressCases(h) {
     await h.launch();
     // Controlled replies keep this UI acceptance independent of account access,
     // real model calls and translation quality. Events use the native event bridge.
-    await h.driver().executeScript(() => {
-      const original = window.__TAURI_INTERNALS__.invoke;
+    const intercepted = await h.driver().executeScript(() => {
+      const original = window.fetch;
       let resolveRun;
       let request;
-      window.__TAURI_INTERNALS__.invoke = (command, args, options) => {
+      const reply = (value) =>
+        Promise.resolve(
+          new Response(JSON.stringify(value), {
+            headers: {
+              "Content-Type": "application/json",
+              "Tauri-Response": "ok",
+            },
+          }),
+        );
+      const fetch = (url, ...args) => {
+        const endpoint = new URL(url);
+        if (endpoint.hostname !== "ipc.localhost")
+          return original(url, ...args);
+        const command = decodeURIComponent(endpoint.pathname.slice(1));
         if (command === "cloud_ai_status")
-          return Promise.resolve({ authenticated: true });
+          return reply({ authenticated: true });
         if (command === "cloud_ai_models")
-          return Promise.resolve([
+          return reply([
             {
               model: "gpt-6.1-sol",
               displayName: "GPT-6.1-Sol",
@@ -50,13 +63,16 @@ export async function progressCases(h) {
             },
           ]);
         if (command === "translate_with_cloud_ai") {
-          request = args.request;
+          const body = args[0].body;
+          request = JSON.parse(
+            typeof body === "string" ? body : new TextDecoder().decode(body),
+          ).request;
           return new Promise((resolve) => {
             resolveRun = resolve;
           });
         }
         if (command === "cancel_ai_run") {
-          resolveRun({
+          reply({
             runId: request.runId,
             engine: "chatgpt",
             model: "gpt-6.1-sol",
@@ -66,24 +82,33 @@ export async function progressCases(h) {
             completed: 0,
             outcome: "cancelled",
             suggestions: [],
-          });
-          return Promise.resolve(true);
+          }).then(resolveRun);
+          return reply(true);
         }
         if (command === "translate_with_local_ai")
           throw new Error("No live engine is allowed in this UI test.");
-        return original(command, args, options);
+        return original(url, ...args);
       };
+      window.fetch = fetch;
+      window.progressTestReady = () => Boolean(request);
       window.progressTestSnapshot = (payload) =>
-        original("plugin:event|emit", {
+        window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
           event: "ai-run-progress",
           payload: { ...payload, runId: request.runId },
         });
       window.restoreProgressTest = () => {
-        window.__TAURI_INTERNALS__.invoke = original;
+        window.fetch = original;
+        delete window.progressTestReady;
         delete window.progressTestSnapshot;
         delete window.restoreProgressTest;
       };
+      return window.fetch === fetch;
     });
+    assert.equal(
+      intercepted,
+      true,
+      "The controlled IPC transport must be installed.",
+    );
     try {
       await h.click(h.css('[aria-label="Settings"]'));
       await h.click(h.button("Translation engines"));
@@ -104,6 +129,9 @@ export async function progressCases(h) {
         By.xpath("//button[.//span[contains(.,'Translate selected with AI')]]"),
       );
       await h.element(h.css('[aria-label="AI translation progress"]'));
+      await h.waitFor("controlled translation command started", () =>
+        h.driver().executeScript(() => window.progressTestReady()),
+      );
       const snapshot = {
         phase: "reviewing",
         completed: 24,
