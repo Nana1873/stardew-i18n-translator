@@ -1,10 +1,11 @@
 //! Opt-in provider experiment. Uses the app's real ChatGPT pipeline and an
 //! exclusively owned, already signed-in synthetic test profile.
 use super::*;
+use crate::{chatgpt::models, chatgpt_auth};
 use futures_util::{stream, StreamExt};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::{collections::BTreeSet, path::PathBuf, sync::Mutex};
+use std::{collections::BTreeSet, path::PathBuf, sync::Mutex, time::Duration};
 
 const MODEL: &str = "gpt-6.1-sol";
 const REASONING: &str = "medium";
