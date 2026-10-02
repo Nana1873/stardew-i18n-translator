@@ -425,6 +425,16 @@ export function BatchTranslateDialog({
                   {CLOUD_ENGINE_LABEL} reported · {usageText}
                 </span>
               )}
+              {liveProgress?.activeBatches !== undefined && (
+                <span>
+                  {liveProgress.activeBatches}{" "}
+                  {liveProgress.activeBatches === 1 ? "batch" : "batches"}{" "}
+                  active
+                  {liveProgress.parallelLimit
+                    ? " · up to " + liveProgress.parallelLimit
+                    : ""}
+                </span>
+              )}
               {Boolean(liveProgress?.retries) && (
                 <span>
                   {liveProgress?.retries}{" "}

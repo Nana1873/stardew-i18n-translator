@@ -93,6 +93,9 @@ pub struct AiSettings {
     /// protected-token repair passes after the initial translation draft.
     #[serde(default = "default_cloud_quality_review", alias = "codexQualityReview")]
     pub cloud_quality_review: bool,
+    /// Maximum independently reviewed ChatGPT batches in one active run.
+    #[serde(default = "default_cloud_parallel_batches")]
+    pub cloud_parallel_batches: usize,
 }
 
 impl AiSettings {
@@ -108,6 +111,7 @@ impl Default for AiSettings {
             cloud_model: None,
             cloud_reasoning: default_ai_reasoning(),
             cloud_quality_review: default_cloud_quality_review(),
+            cloud_parallel_batches: default_cloud_parallel_batches(),
         }
     }
 }
@@ -197,6 +201,10 @@ fn default_ai_engine() -> String {
 
 fn default_ai_reasoning() -> String {
     "medium".to_string()
+}
+
+fn default_cloud_parallel_batches() -> usize {
+    4
 }
 
 fn default_cloud_quality_review() -> bool {
@@ -365,6 +373,12 @@ fn normalize(mut settings: AppSettings, validate_llm: bool) -> Result<AppSetting
 }
 
 fn normalize_ai(settings: &mut AiSettings, strict: bool) -> Result<(), String> {
+    if !(1..=8).contains(&settings.cloud_parallel_batches) {
+        if strict {
+            return Err("ChatGPT parallel batches must be between 1 and 8.".into());
+        }
+        settings.cloud_parallel_batches = default_cloud_parallel_batches();
+    }
     settings.default_engine = settings.default_engine.trim().to_ascii_lowercase();
     if settings.default_engine == "codex" {
         settings.default_engine = "chatgpt".to_string();
@@ -467,6 +481,38 @@ mod tests {
     }
 
     #[test]
+    fn parallel_batch_limit_defaults_and_rejects_unbounded_values() {
+        assert_eq!(
+            parse_and_normalize("{}", false)
+                .unwrap()
+                .ai
+                .cloud_parallel_batches,
+            4
+        );
+        for count in [1, 4, 6, 8] {
+            let body = format!("{{\"ai\":{{\"cloudParallelBatches\":{count}}}}}");
+            assert_eq!(
+                parse_and_normalize(&body, true)
+                    .unwrap()
+                    .ai
+                    .cloud_parallel_batches,
+                count
+            );
+        }
+        for count in [0, 9, 1000] {
+            let body = format!("{{\"ai\":{{\"cloudParallelBatches\":{count}}}}}");
+            assert!(parse_and_normalize(&body, true).is_err());
+            assert_eq!(
+                parse_and_normalize(&body, false)
+                    .unwrap()
+                    .ai
+                    .cloud_parallel_batches,
+                4
+            );
+        }
+    }
+
+    #[test]
     fn missing_file_yields_defaults() {
         let dir = crate::test_support::temp_dir("settings-missing");
         assert_eq!(load(&dir), AppSettings::default());
@@ -486,6 +532,7 @@ mod tests {
                 cloud_model: Some("gpt-5.6-sol".to_string()),
                 cloud_reasoning: "high".to_string(),
                 cloud_quality_review: false,
+                cloud_parallel_batches: 4,
             },
             shortcuts: BTreeMap::from([("editor.save".to_string(), "Ctrl+S".to_string())]),
             last_opened: BTreeMap::from([(

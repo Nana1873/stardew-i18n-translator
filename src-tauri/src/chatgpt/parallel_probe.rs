@@ -89,6 +89,7 @@ struct BatchResult {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RunResult {
+    round: usize,
     concurrency: usize,
     duration_ms: u64,
     max_overlapping_requests: usize,
@@ -104,6 +105,8 @@ struct Comparison {
     reasoning: &'static str,
     quality_review: bool,
     model_advertised: bool,
+    target_language: String,
+    glossary_pairs: usize,
     fixture_kind: &'static str,
     source_sha256: Option<String>,
     total_strings: usize,
@@ -171,6 +174,14 @@ fn fixture() -> Vec<Vec<PreparedAiItem>> {
 }
 
 fn copied_mod_fixture(source: &std::path::Path) -> Result<Vec<Vec<PreparedAiItem>>, String> {
+    copied_mod_fixture_with_options(source, COPIED_MOD_ITEMS_PER_BATCH, &[])
+}
+
+fn copied_mod_fixture_with_options(
+    source: &std::path::Path,
+    batch_size: usize,
+    glossary: &[(String, String)],
+) -> Result<Vec<Vec<PreparedAiItem>>, String> {
     // Inputs are an ignored temporary copy. No target language file or saved
     // user state is loaded, so this measures a complete translation from scratch.
     let body = crate::input_limits::read_json_text(source)?;
@@ -199,9 +210,16 @@ fn copied_mod_fixture(source: &std::path::Path) -> Result<Vec<Vec<PreparedAiItem
             })
         })
         .collect::<Vec<_>>();
-    let prepared = ai::prepare_items_with_context(&rows, &rows, |_| Vec::new())?;
+    let prepared = ai::prepare_items_with_context(&rows, &rows, |source| {
+        let source = source.to_lowercase();
+        glossary
+            .iter()
+            .filter(|(term, _)| source.contains(&term.to_lowercase()))
+            .cloned()
+            .collect()
+    })?;
     let batches = prepared
-        .chunks(COPIED_MOD_ITEMS_PER_BATCH)
+        .chunks(batch_size)
         .map(|items| items.to_vec())
         .collect::<Vec<_>>();
     if batches.is_empty() {
@@ -227,6 +245,7 @@ async fn run_batch(
     batch: usize,
     started: Instant,
     pipeline_timeout: Duration,
+    target_language: &str,
 ) -> BatchResult {
     let started_ms = millis(started);
     let metrics = Arc::new(Mutex::new(Metrics::default()));
@@ -241,7 +260,7 @@ async fn run_batch(
         let drafts = translate_chunk(
             Some(MODEL),
             REASONING,
-            "German",
+            target_language,
             true,
             items,
             Arc::clone(&cancelled),
@@ -251,7 +270,7 @@ async fn run_batch(
         let repaired = repair_token_mismatches_once(
             Some(MODEL),
             REASONING,
-            "German",
+            target_language,
             true,
             items,
             &drafts,
@@ -331,10 +350,54 @@ fn valid_batch(batch: &BatchResult, expected: &[PreparedAiItem]) -> bool {
 }
 
 async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
+    let parse_number = |name: &str, default: usize, maximum: usize| -> Result<usize, String> {
+        let value = std::env::var(name)
+            .ok()
+            .map(|value| value.parse::<usize>())
+            .transpose()
+            .map_err(|_| format!("{name} must be a positive integer."))?
+            .unwrap_or(default);
+        if value == 0 || value > maximum {
+            return Err(format!("{name} is outside its bounded range."));
+        }
+        Ok(value)
+    };
+    let batch_size = parse_number(
+        "SIT_PARALLEL_PROBE_BATCH_SIZE",
+        COPIED_MOD_ITEMS_PER_BATCH,
+        ai::MAX_CHUNK_ITEMS,
+    )?;
+    let rounds = parse_number("SIT_PARALLEL_PROBE_ROUNDS", 1, 3)?;
+    let levels = std::env::var("SIT_PARALLEL_PROBE_LEVELS")
+        .unwrap_or_else(|_| "1,2,4".into())
+        .split(',')
+        .map(|level| {
+            level
+                .trim()
+                .parse::<usize>()
+                .map_err(|_| "Invalid concurrency level.".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if levels.is_empty() || levels.len() > 8 || levels.iter().any(|level| !(1..=8).contains(level))
+    {
+        return Err("Concurrency levels must be bounded between 1 and 8.".into());
+    }
+    let target_language =
+        std::env::var("SIT_PARALLEL_PROBE_LANGUAGE").unwrap_or_else(|_| "German".into());
+    if !["German", "French", "Spanish", "Japanese"].contains(&target_language.as_str()) {
+        return Err("Unsupported experiment target language.".into());
+    }
+    let glossary: Vec<(String, String)> = std::env::var_os("SIT_PARALLEL_PROBE_GLOSSARY")
+        .map(|file| {
+            crate::input_limits::read_json_text(std::path::Path::new(&file))
+                .and_then(|body| serde_json::from_str(&body).map_err(|error| error.to_string()))
+        })
+        .transpose()?
+        .unwrap_or_default();
     let copied_source = std::env::var_os("SIT_PARALLEL_PROBE_SOURCE").map(PathBuf::from);
     let (batches, fixture_kind, source_sha256, pipeline_timeout) =
         if let Some(source) = copied_source {
-            let batches = copied_mod_fixture(&source)?;
+            let batches = copied_mod_fixture_with_options(&source, batch_size, &glossary)?;
             let bytes = std::fs::read(&source).map_err(|error| error.to_string())?;
             (
                 batches,
@@ -373,7 +436,7 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
     let prompt_bytes = batches
         .iter()
         .map(|items| {
-            let prompt = build_translation_attempt_prompt("German", items, None)
+            let prompt = build_translation_attempt_prompt(&target_language, items, None)
                 .map_err(chatgpt_auth::message)?;
             Ok(complete_prompt_bytes(&prompt.instructions, &prompt.input))
         })
@@ -394,11 +457,13 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
     println!("Exact requested model advertised: {model_advertised}; inference decides access.");
     std::fs::create_dir_all(&output).map_err(|error| error.to_string())?;
     let mut report = Comparison {
-        schema_version: 2,
+        schema_version: 3,
         model: MODEL,
         reasoning: REASONING,
         quality_review: true,
         model_advertised,
+        target_language: target_language.clone(),
+        glossary_pairs: glossary.len(),
         fixture_kind,
         source_sha256,
         total_strings,
@@ -415,46 +480,50 @@ async fn compare(profile: PathBuf, output: PathBuf) -> Result<(), String> {
             .collect(),
         runs: Vec::new(),
     };
-    for concurrency in [1, 2, 4] {
-        println!("Starting {batch_count} fixed batches at concurrency {concurrency}: {MODEL}, {REASONING}, quality review enabled.");
-        let started = Instant::now();
-        let mut pending = stream::iter(
-            batches
-                .iter()
-                .enumerate()
-                .map(|(batch, items)| run_batch(items, batch, started, pipeline_timeout)),
-        )
-        .buffer_unordered(concurrency);
-        let mut results = Vec::new();
-        while let Some(batch) = pending.next().await {
-            let valid = valid_batch(&batch, &batches[batch.batch]);
-            results.push(batch);
-            if !valid {
-                break;
-            }
+    for round in 1..=rounds {
+        let mut order = levels.clone();
+        if round % 2 == 0 {
+            order.reverse();
         }
-        drop(pending);
-        results.sort_by_key(|batch| batch.batch);
-        let overlap = maximum_overlap(&results);
-        let valid = results.len() == batch_count
-            && results
-                .iter()
-                .all(|batch| valid_batch(batch, &batches[batch.batch]))
-            && overlap == concurrency.min(batch_count);
-        let duration_ms = millis(started);
-        println!("Concurrency {concurrency}: {duration_ms} ms, maximum overlapping requests {overlap}, valid {valid}.");
-        report.runs.push(RunResult {
-            concurrency,
-            duration_ms,
-            max_overlapping_requests: overlap,
-            valid,
-            batches: results,
-        });
-        let encoded = serde_json::to_vec_pretty(&report).map_err(|error| error.to_string())?;
-        std::fs::write(output.join("comparison.json"), encoded)
-            .map_err(|error| error.to_string())?;
-        if !valid {
-            return Err("A concurrency level failed validation; higher levels were not attempted. Inspect the synthetic comparison artifact.".into());
+        for concurrency in order {
+            println!("Round {round}: starting {batch_count} fixed batches at concurrency {concurrency}: {MODEL}, {REASONING}, quality review enabled.");
+            let started = Instant::now();
+            let mut pending = stream::iter(batches.iter().enumerate().map(|(batch, items)| {
+                run_batch(items, batch, started, pipeline_timeout, &target_language)
+            }))
+            .buffer_unordered(concurrency);
+            let mut results = Vec::new();
+            while let Some(batch) = pending.next().await {
+                let valid = valid_batch(&batch, &batches[batch.batch]);
+                results.push(batch);
+                if !valid {
+                    break;
+                }
+            }
+            drop(pending);
+            results.sort_by_key(|batch| batch.batch);
+            let overlap = maximum_overlap(&results);
+            let valid = results.len() == batch_count
+                && results
+                    .iter()
+                    .all(|batch| valid_batch(batch, &batches[batch.batch]))
+                && overlap == concurrency.min(batch_count);
+            let duration_ms = millis(started);
+            println!("Concurrency {concurrency}: {duration_ms} ms, maximum overlapping requests {overlap}, valid {valid}.");
+            report.runs.push(RunResult {
+                round,
+                concurrency,
+                duration_ms,
+                max_overlapping_requests: overlap,
+                valid,
+                batches: results,
+            });
+            let encoded = serde_json::to_vec_pretty(&report).map_err(|error| error.to_string())?;
+            std::fs::write(output.join("comparison.json"), encoded)
+                .map_err(|error| error.to_string())?;
+            if !valid {
+                return Err("A concurrency level failed validation; higher levels were not attempted. Inspect the synthetic comparison artifact.".into());
+            }
         }
     }
     Ok(())

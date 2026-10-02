@@ -1130,6 +1130,7 @@ describe("SettingsDialog", () => {
             cloudModel: "gpt-5.5",
             cloudReasoning: "high",
             cloudQualityReview: true,
+            cloudParallelBatches: 4,
           },
         }}
         initialPage="ai"
@@ -1170,6 +1171,10 @@ describe("SettingsDialog", () => {
     });
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
 
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "ChatGPT parallel batches" }),
+      { target: { value: "8" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1178,6 +1183,7 @@ describe("SettingsDialog", () => {
           cloudModel: "gpt-5.6-sol",
           cloudReasoning: "high",
           cloudQualityReview: true,
+          cloudParallelBatches: 8,
         },
       }),
     );
@@ -1247,6 +1253,7 @@ describe("SettingsDialog", () => {
           cloudModel: null,
           cloudReasoning: "medium",
           cloudQualityReview: false,
+          cloudParallelBatches: 4,
         },
       }),
     );
@@ -1321,6 +1328,7 @@ describe("SettingsDialog", () => {
             defaultEngine: "chatgpt",
             cloudReasoning: "medium",
             cloudQualityReview: true,
+            cloudParallelBatches: 4,
           },
         }}
         initialPage="ai"
@@ -1366,6 +1374,7 @@ describe("SettingsDialog", () => {
           cloudModel: "recovered-model",
           cloudReasoning: "medium",
           cloudQualityReview: true,
+          cloudParallelBatches: 4,
         },
       }),
     );
@@ -1404,6 +1413,7 @@ describe("SettingsDialog", () => {
             cloudModel: "retired-model",
             cloudReasoning: "medium",
             cloudQualityReview: true,
+            cloudParallelBatches: 4,
           },
         }}
         initialPage="ai"
@@ -1474,6 +1484,7 @@ describe("SettingsDialog", () => {
           cloudModel: null,
           cloudReasoning: "medium",
           cloudQualityReview: true,
+          cloudParallelBatches: 4,
         },
       }),
     );

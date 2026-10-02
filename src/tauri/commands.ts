@@ -43,6 +43,8 @@ export interface AiSettings {
   cloudReasoning: "low" | "medium" | "high";
   /** Run the full Cloud language-quality review and focused repair stages. */
   cloudQualityReview: boolean;
+  /** Maximum ChatGPT batch pipelines in one run; absent = 4. */
+  cloudParallelBatches?: number;
 }
 
 export type WorkspaceSortColumn =
@@ -914,6 +916,8 @@ export interface AiRunProgress {
   batchIndex?: number;
   batchTotal?: number;
   batchSize?: number;
+  activeBatches?: number;
+  parallelLimit?: number;
   retries: number;
   splits: number;
   recovery?: AiRunRecovery;

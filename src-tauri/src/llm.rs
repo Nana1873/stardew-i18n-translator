@@ -278,10 +278,12 @@ pub(crate) fn translation_instructions(target_language: &str) -> String {
          - Ordinary bracketed labels or status messages that aren't token expressions, such as \
            [Right] or [Reached global max speed], are translatable prose, not protected tokens. \
            Translate their words and keep the surrounding square brackets.\n\
-         - Preserve every existing quote character EXACTLY. Never replace straight \
-           quotes/apostrophes with typographic quotes or another quote style: \
-           'test' must stay enclosed by ' characters, never become „test“, “test”, \
-           or \"test\".\n\
+         - Preserve the source's enclosing quotation mark style: quoted 'test' stays \
+           enclosed by straight ' characters, not „test“, “test”, or another quote style. \
+           Apostrophes inside English possessives and contractions are grammatical punctuation, \
+           not runtime tokens. Add, remove, or reposition them as required by natural target-language \
+           grammar; do not invent contractions or incorrect possessives merely to retain an apostrophe. \
+           Read JSON-escaped punctuation as its decoded character.\n\
          - Keep the same line breaks.\n\
          - Preserve the source's tone, humor, emotional intent, and character voice. \
            Use natural, concise language appropriate to Stardew Valley and the target language. \
@@ -847,7 +849,7 @@ mod tests {
         assert!(!messages[0].content.contains("${a^b}$"));
         assert!(messages[0]
             .content
-            .contains("Preserve every existing quote character EXACTLY"));
+            .contains("Preserve the source's enclosing quotation mark style"));
         assert!(messages[0].content.contains("'test'"));
         assert!(messages[0].content.contains("„test“"));
         assert!(!messages[0].content.contains("Do not introduce em dashes"));
@@ -950,7 +952,7 @@ mod tests {
             assert!(!messages[0].content.contains("spaced hyphens"));
             assert!(messages[0]
                 .content
-                .contains("Preserve every existing quote character EXACTLY"));
+                .contains("Preserve the source's enclosing quotation mark style"));
             assert!(messages[0].content.contains("Keep the same line breaks"));
         }
     }

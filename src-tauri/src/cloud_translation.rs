@@ -131,6 +131,7 @@ fn review_prompt_item(
     let mut object = Map::new();
     object.insert("id".to_string(), serde_json::json!(item.id));
     object.insert("source".to_string(), serde_json::json!(item.source));
+    object.insert("key".to_string(), serde_json::json!(item.identity.key));
     object.insert("draft".to_string(), serde_json::json!(draft.text));
     if let Some(section) = &item.section {
         object.insert("section".to_string(), serde_json::json!(section));
