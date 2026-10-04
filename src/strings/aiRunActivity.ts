@@ -160,7 +160,7 @@ export function describeProgressChanges(
   const saved = next.completed - (previous?.completed ?? 0);
   if (saved > 0) {
     entries.push({
-      message: `${saved} ${saved === 1 ? "suggestion" : "suggestions"} saved to Review · ${next.completed} / ${next.total}`,
+      message: `${batchPrefix(next)}${saved} ${saved === 1 ? "string" : "strings"} saved to Review`,
     });
   }
   return entries;

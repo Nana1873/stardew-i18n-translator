@@ -277,7 +277,7 @@ describe("AI progress notice", () => {
       ).toHaveLength(1);
       update({ phase: "saving", providerStage: undefined });
       update({ completed: 2 });
-      expect(messages()).toContain("2 suggestions saved to Review · 2 / 2");
+      expect(messages()).toContain("Batch 1 · 2 strings saved to Review");
       expect(screen.getByRole("progressbar")).toHaveAttribute("value", "2");
     } finally {
       window.removeEventListener("translator-ai-activity", activity);
