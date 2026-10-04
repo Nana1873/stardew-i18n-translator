@@ -49,6 +49,13 @@ suites remain separate and required for their respective changes.
 [The workflow](../../scripts/desktop-e2e/workflow.mjs) drives the actual WebView2
 surface with Selenium and checks files produced by the actual Rust backend:
 
+Text entry uses awaited keyboard events per Unicode code point, followed by
+exact value readback. This avoids character loss from bulk WebDriver typing in
+controlled WebView2 inputs without assigning DOM values or repairing mismatches.
+Every ordinary run checks repeated long searches, replacement and clearing,
+and multiline Unicode editor drafts before discarding them. Offline input-helper
+and evidence-matrix regressions run through `pnpm test:desktop:guards`.
+
 1. A new portable app opens first-time setup with no existing settings.
 2. Cancel the real game-folder picker, reopen it, choose a synthetic game folder,
    and use the real Mods picker to choose a different synthetic directory.

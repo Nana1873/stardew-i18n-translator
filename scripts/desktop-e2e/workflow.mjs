@@ -22,6 +22,7 @@ import { releaseCases } from "./release-cases.mjs";
 import { advancedCases } from "./advanced-cases.mjs";
 import { installCases } from "./install-cases.mjs";
 import { profileCases } from "./profile-cases.mjs";
+import { replaceText } from "./text-input.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
 // releasing the handshake. Direct invocation must not start an unowned app.
@@ -293,11 +294,7 @@ async function fill(locator, value) {
         found = await driver.findElement(locator);
         if (!(await found.isDisplayed()) || !(await found.isEnabled()))
           return false;
-        await found.sendKeys(
-          Key.chord(Key.CONTROL, "a"),
-          Key.BACK_SPACE,
-          value,
-        );
+        await replaceText(found, value);
         return true;
       } catch (error) {
         // A closing dialog can briefly leave an input present but inert.
@@ -311,10 +308,6 @@ async function fill(locator, value) {
     },
     30000,
     `Editable input: ${locator}`,
-  );
-  await waitFor(
-    "input value",
-    async () => (await found.getAttribute("value")) === value,
   );
 }
 async function absent(locator) {
@@ -675,6 +668,45 @@ try {
     data,
     "language-state/de/translations/E2E.DesktopSmoke.json",
   );
+  await step("webdriver-text-entry-regression", async () => {
+    const search = css('[aria-label="Search strings"]');
+    const longKey =
+      "quest.long.description.with.a.very.long.identifier.to.check.table.truncation.and.editor.layout";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await fill(search, longKey);
+      await absent(row("greeting"));
+      await fill(search, "greeting");
+      await element(row("greeting"));
+      await absent(row("shopping"));
+    }
+    await fill(search, "Grüße · 日本語");
+    await absent(row("greeting"));
+    await fill(search, "");
+    await element(row("shopping"));
+    await openEntry("greeting");
+    const translation = css("#translator-editor-translation");
+    const values = [
+      "Grüße, {{PlayerName}}!\n日本語 · e\u0301 · $h #$b# %farm, @.",
+      "Replaced draft: äöü ß — {{PlayerName}}!",
+      "",
+    ];
+    for (const value of values) await fill(translation, value);
+    await click(css('[aria-label="Close editor"]'));
+    await absent(translation);
+    assert.equal(
+      await exists(statePath),
+      false,
+      "Typing must not save a draft.",
+    );
+    assert.equal(await exists(exported), false);
+    assert.deepEqual(await json(join(i18n, "default.json")), source);
+    evidence.textEntry = {
+      longSearches: 3,
+      editorValues: values,
+      passed: true,
+    };
+    await screenshot("webdriver-text-entry");
+  });
   await step("issues-view-cross-status-and-explicit-acceptance", async () => {
     assert.equal(await exists(exported), false);
     assert.equal(await exists(statePath), false);
