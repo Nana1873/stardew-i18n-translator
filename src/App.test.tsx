@@ -821,7 +821,7 @@ describe("App shell", () => {
     );
     expect(screen.getByRole("button", { name: /^Review\b/ })).toHaveAttribute(
       "aria-pressed",
-      "true",
+      "false",
     );
     expect(screen.getByRole("button", { name: /^Issues\b/ })).toHaveAttribute(
       "aria-pressed",
@@ -856,7 +856,11 @@ describe("App shell", () => {
         expect(invokeMock).toHaveBeenCalledWith("save_settings", {
           settings: {
             ...settings,
-            workspace: { ...workspace, modSearch: "Test Mod" },
+            workspace: {
+              ...workspace,
+              statusFilter: "all",
+              modSearch: "Test Mod",
+            },
           },
         }),
       { timeout: 2_500 },
@@ -4427,7 +4431,7 @@ describe("App shell", () => {
     expect(screen.queryByText("Needs attention")).toBeNull();
   });
 
-  it("keeps Issues separate and clears it through an Overview status shortcut", async () => {
+  it("leaves Issues when selecting a status and reopens it across statuses", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
@@ -4457,7 +4461,6 @@ describe("App shell", () => {
     expect(await screen.findByText("token.issue")).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: /^Done\b/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Issues\b/ }));
     const remountedIssues = await screen.findByRole("button", {
       name: /^Issues\b/,
     });
@@ -4466,6 +4469,13 @@ describe("App shell", () => {
       "aria-pressed",
       "true",
     );
+    fireEvent.click(remountedIssues);
+    expect(remountedIssues).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: /^Done\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    expect(screen.getByText("token.issue")).toBeVisible();
   });
 
   it("opens the scan dialog when an automatic scan has warnings", async () => {
@@ -4619,6 +4629,43 @@ describe("App shell", () => {
     ).toHaveTextContent("Latest scan");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+  });
+
+  it("refreshes strings and unresolved issues after scanning unchanged file paths", async () => {
+    let target = "Hallo {{name}}";
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(true));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "token.issue",
+            source: "Hello {{name}}",
+            target,
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    await screen.findByText("Hallo {{name}}");
+    fireEvent.click(screen.getByRole("button", { name: /^Done\b/ }));
+    expect(screen.getByRole("button", { name: "Issues 0" })).toBeDisabled();
+    target = "Hallo";
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+
+    expect(await screen.findByText("Hallo")).toBeVisible();
+    expect(screen.queryByText("Hallo {{name}}")).toBeNull();
+    expect(screen.getByRole("button", { name: /^Done\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Issues 1" }));
+    expect(await screen.findByText("token.issue")).toBeVisible();
   });
 
   it("opens the exact new-string subset from the completed scan", async () => {

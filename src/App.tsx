@@ -636,7 +636,9 @@ export function App() {
         setModQuery(workspace?.modSearch ?? "");
         setSearch(workspace?.stringSearch ?? "");
         setStringScope(workspace?.stringScope ?? "mod");
-        setStatusFilter(workspace?.statusFilter ?? "all");
+        setStatusFilter(
+          workspace?.issuesOnly ? "all" : (workspace?.statusFilter ?? "all"),
+        );
         setIssuesOnly(workspace?.issuesOnly ?? false);
         setModsWidth(
           Math.min(520, Math.max(260, workspace?.modPaneWidth ?? 340)),
@@ -705,7 +707,8 @@ export function App() {
         modSearch: modQuery,
         stringSearch: search,
         stringScope,
-        statusFilter: statusFilter === "needs-review" ? "all" : statusFilter,
+        statusFilter:
+          issuesOnly || statusFilter === "needs-review" ? "all" : statusFilter,
         issuesOnly,
         sort: tableSort
           ? { column: tableSort.col, direction: tableSort.dir }
@@ -856,6 +859,8 @@ export function App() {
       );
       if (!isCurrentRequest()) return;
       setScan(result);
+      // File contents may change without changing the table's load paths.
+      setReloadToken((current) => current + 1);
       const completedAt = Date.now();
       setLastScanAt(completedAt);
       setNow(completedAt);

@@ -67,7 +67,9 @@ Existing `<language>.json` files are taken as translated when scanned; this is
 different from importing an external LLM batch, which creates Review entries.
 Done does not guarantee that the wording is correct or that validation passes.
 
-**Validation issues** is an independent filter. Missing or changed protected
+**Issues** shows unresolved validation findings across all statuses in the
+selected mod scope, keeping your search. Selecting Open, Changed, Review, Done,
+or All leaves the Issues view. Missing or changed protected
 tokens and invalid text can block export. Suspicious literal escape changes
 can produce warnings without blocking. Open an affected string to inspect the
 source and target. If a token difference is intentional, **Save anyway** accepts

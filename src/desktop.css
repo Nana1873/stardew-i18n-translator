@@ -300,12 +300,6 @@
   border-radius: 0;
   box-shadow: inset 0 -2px 0 var(--translator-brand);
 }
-#stardew-i18n-translator .desktop-issues[aria-pressed="true"] {
-  color: var(--translator-red);
-  background: var(--translator-red-soft);
-  border-radius: 3px;
-  box-shadow: none;
-}
 .desktop-filters svg {
   width: 14px;
   height: 14px;
@@ -353,6 +347,9 @@
 }
 #stardew-i18n-translator .desktop-task-label[data-status="translated"] {
   --desktop-label-color: var(--translator-green);
+}
+#stardew-i18n-translator .desktop-task-label[data-status="issues"] {
+  --desktop-label-color: var(--translator-red);
 }
 #stardew-i18n-translator button.desktop-task-label:hover:not(:disabled) {
   color: var(--desktop-label-color);

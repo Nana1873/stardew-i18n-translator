@@ -644,6 +644,82 @@ describe("StringTable workbench", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("opens Issues across statuses and leaves it when selecting a status", async () => {
+    installBackendRows({
+      "a.b": [
+        ...ROWS["a.b"],
+        { ...ROWS["a.b"][2], key: "done-token", status: "translated" },
+        {
+          ...ROWS["a.b"][2],
+          key: "accepted-token",
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    expect(screen.getByText("bye")).toBeVisible();
+    expect(screen.queryByText("done-token")).toBeNull();
+
+    const issues = screen.getByRole("button", { name: "Issues 2" });
+    fireEvent.click(issues);
+    expect(screen.getByText("token")).toBeVisible();
+    expect(screen.getByText("done-token")).toBeVisible();
+    expect(screen.queryByText("bye")).toBeNull();
+    expect(screen.queryByText("accepted-token")).toBeNull();
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+    for (const label of ["All", "Open", "Changed", "Review", "Done"])
+      expect(
+        screen.getByRole("button", { name: new RegExp(`^${label} \\d`) }),
+      ).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(issues);
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Done / }));
+    expect(issues).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("greeting")).toBeVisible();
+    expect(screen.getByText("done-token")).toBeVisible();
+    expect(screen.getByText("accepted-token")).toBeVisible();
+    expect(screen.queryByText("token")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    expect(screen.getByText("bye")).toBeVisible();
+  });
+
+  it("ignores a legacy status restriction in Issues while preserving scope and search", async () => {
+    const onIssuesOnlyChange = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        search="Hallo"
+        statusFilter="untranslated"
+        issuesOnly
+        onIssuesOnlyChange={onIssuesOnlyChange}
+        onStatusFilterChange={onStatusFilterChange}
+      />,
+    );
+    expect(await screen.findByText("token")).toBeVisible();
+    expect(screen.queryByText("greeting")).toBeNull();
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("Hallo");
+    expect(screen.getByRole("button", { name: "All mods" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^Open / })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Done / }));
+    expect(onIssuesOnlyChange).toHaveBeenCalledWith(false);
+    expect(onStatusFilterChange).toHaveBeenCalledWith("translated");
+  });
+
   it("searches and marks real mod and file metadata only in All mods", async () => {
     render(
       <StringTable
@@ -1075,6 +1151,14 @@ describe("StringTable workbench", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
     await waitFor(() => expect(screen.queryByText("token")).toBeNull());
     expect(screen.queryByRole("button", { name: /^Issues 1/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Issues 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^All \d/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("shows status help on filter focus or status-badge pointer only", async () => {

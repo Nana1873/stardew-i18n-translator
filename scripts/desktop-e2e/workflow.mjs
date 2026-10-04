@@ -9,6 +9,7 @@ import {
   writeFile,
   access,
   cp,
+  rm,
 } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -674,6 +675,109 @@ try {
     data,
     "language-state/de/translations/E2E.DesktopSmoke.json",
   );
+  await step("issues-view-cross-status-and-explicit-acceptance", async () => {
+    assert.equal(await exists(exported), false);
+    assert.equal(await exists(statePath), false);
+    await writeFile(
+      exported,
+      JSON.stringify({ greeting: "Missing protected tokens" }),
+    );
+    const rescan = async () => {
+      await click(css('[aria-label="Scan mods"]'));
+      await absent(css('[role="dialog"][aria-label="Scan"]'));
+      await waitFor(
+        "reloaded issue counts",
+        async () =>
+          (await driver.findElements(css("[data-string-row]"))).length === 4,
+      );
+    };
+    await rescan();
+    await waitFor(
+      "existing translation is Done with an unresolved issue",
+      async () =>
+        (await (await element(row("greeting"))).getAttribute("data-status")) ===
+          "translated" &&
+        (
+          await (await element(css('button[data-status="issues"]'))).getText()
+        ).includes("1"),
+    );
+    await click(button("Open"));
+    await absent(row("greeting"));
+    await element(row("shopping"));
+    const issues = css('button[data-status="issues"]');
+    await click(issues);
+    await element(row("greeting"));
+    await absent(row("shopping"));
+    for (const status of ["All", "Open", "Changed", "Review", "Done"])
+      assert.equal(
+        await (await element(button(status))).getAttribute("aria-pressed"),
+        "false",
+      );
+    await fill(css('[aria-label="Search strings"]'), "greeting");
+    await click(button("Done"));
+    assert.equal(
+      await (await element(issues)).getAttribute("aria-pressed"),
+      "false",
+    );
+    assert.equal(
+      await (
+        await element(css('[aria-label="Search strings"]'))
+      ).getAttribute("value"),
+      "greeting",
+    );
+    await element(row("greeting"));
+    await click(issues);
+    await click(button("All mods"));
+    await element(row("greeting"));
+    await screenshot("issues-view-done-token-problem");
+    await openEntry("greeting");
+    await click(button("Save"));
+    await click(button("Save anyway"));
+    await absent(css("#translator-editor-translation"));
+    await waitFor(
+      "accepted token mismatch is no longer an unresolved issue",
+      async () => (await (await element(issues)).getText()).includes("0"),
+    );
+    assert.equal(
+      await (await element(issues)).getAttribute("aria-pressed"),
+      "true",
+    );
+    await absent(row("greeting"));
+    await screenshot("issues-view-accepted-token-problem");
+    await click(button("Done"));
+    await element(row("greeting"));
+    assert.equal(
+      await (await element(row("greeting"))).getAttribute("data-status"),
+      "translated",
+    );
+    assert.equal(
+      await (
+        await element(row("greeting"))
+      )
+        .findElements(css(".translator-inline-validation"))
+        .then((items) => items.length),
+      0,
+    );
+    assert.deepEqual(
+      await json(exported),
+      { greeting: "Missing protected tokens" },
+      "Saving acceptance must not export.",
+    );
+    // Restore only the files introduced by this synthetic case before the
+    // existing edit/import/export workflow continues.
+    await rm(exported);
+    await rm(statePath);
+    await fill(css('[aria-label="Search strings"]'), "");
+    await click(button("This mod"));
+    await click(button("All"));
+    await rescan();
+    await waitFor(
+      "original Open fixture restored",
+      async () =>
+        (await (await element(row("greeting"))).getAttribute("data-status")) ===
+        "untranslated",
+    );
+  });
   await step("edit-and-save", async () => {
     await saveEntry("greeting", edited);
     const state = await json(statePath);

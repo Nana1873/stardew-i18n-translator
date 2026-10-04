@@ -20,7 +20,7 @@ export function DesktopFilters({
   issueCount: number;
   onStatus: (status: StringTableFilter) => void;
   onIssues: (issues: boolean) => void;
-  onHelp?: (target: HTMLElement, status: StringTableFilter) => void;
+  onHelp?: (target: HTMLElement, status: StringTableFilter | "issues") => void;
   onHideHelp?: () => void;
 }) {
   return (
@@ -28,7 +28,7 @@ export function DesktopFilters({
       <div
         className="desktop-status-labels"
         role="group"
-        aria-label="String status"
+        aria-label="String view"
       >
         {items.map((item) => (
           <button
@@ -36,7 +36,7 @@ export function DesktopFilters({
             className="desktop-filter-action desktop-task-label"
             type="button"
             aria-label={item.label + " " + item.count}
-            aria-pressed={status === item.value}
+            aria-pressed={!issues && status === item.value}
             data-status={item.value}
             onFocus={(event) => onHelp?.(event.currentTarget, item.value)}
             onBlur={onHideHelp}
@@ -50,19 +50,23 @@ export function DesktopFilters({
             <span className="desktop-filter-count">{item.count}</span>
           </button>
         ))}
+        <button
+          className="desktop-filter-action desktop-task-label desktop-issues"
+          type="button"
+          aria-pressed={issues}
+          aria-label={`Issues ${issueCount}`}
+          disabled={!issues && issueCount === 0}
+          data-status="issues"
+          onFocus={(event) => onHelp?.(event.currentTarget, "issues")}
+          onBlur={onHideHelp}
+          onPointerEnter={(event) => onHelp?.(event.currentTarget, "issues")}
+          onPointerLeave={onHideHelp}
+          onClick={() => onIssues(true)}
+        >
+          <CircleAlert aria-hidden /> Issues
+          <span className="desktop-filter-count">{issueCount}</span>
+        </button>
       </div>
-      <button
-        className="desktop-filter-action desktop-issues"
-        type="button"
-        aria-pressed={issues}
-        aria-label={`Issues ${issueCount}`}
-        disabled={!issues && issueCount === 0}
-        title="Show strings with validation issues"
-        onClick={() => onIssues(!issues)}
-      >
-        <CircleAlert aria-hidden /> Issues
-        <span className="desktop-filter-count">{issueCount}</span>
-      </button>
     </div>
   );
 }

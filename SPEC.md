@@ -74,7 +74,9 @@ state; they do not write into installed mods. Live AI only targets selected
 Open or Changed rows after resolving their identities from a fresh scan.
 Done and Review text is not silently replaced.
 
-**Validation issues** is an independent filter, not a status. A Review row can
+**Validation issues** is a separate table view, not a status. Selecting Issues
+shows unresolved findings across all statuses in the current scope and search;
+selecting a status leaves Issues. A Review row can
 have no validation finding; a Done row can still have one. Review is a request
 for human assessment, not an export lock: non-empty Review and Changed values
 can be exported, with their counts shown in the export confirmation.

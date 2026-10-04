@@ -689,7 +689,6 @@ export function StringTable({
   const parentRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const selectAllRef = useRef<HTMLInputElement>(null);
-  const previousLoadedIssueCount = useRef<number | null>(null);
 
   useEffect(() => {
     aiProvenanceByIdentity.current.clear();
@@ -894,11 +893,12 @@ export function StringTable({
       const identity = identityOf(row);
       if (identityFilterSet && !identityFilterSet.has(identity)) return;
       if (
-        effectiveStatus === "needs-review"
+        !effectiveIssuesOnly &&
+        (effectiveStatus === "needs-review"
           ? row.status !== "review-needed" && row.status !== "outdated"
           : effectiveStatus === "has-value"
             ? isBlankText(row.target)
-            : effectiveStatus !== "all" && row.status !== effectiveStatus
+            : effectiveStatus !== "all" && row.status !== effectiveStatus)
       ) {
         return;
       }
@@ -959,27 +959,6 @@ export function StringTable({
       issues: issueCount,
     });
   }, [visible.length, data.length, issueCount, onVisibleSummaryChange]);
-
-  useEffect(() => {
-    if (rows == null) {
-      previousLoadedIssueCount.current = null;
-      return;
-    }
-    const previous = previousLoadedIssueCount.current;
-    previousLoadedIssueCount.current = issueCount;
-    if (
-      previous != null &&
-      previous > 0 &&
-      issueCount === 0 &&
-      effectiveIssuesOnly
-    ) {
-      setIssuesValue(false);
-    }
-    // Only clear after the final real issue was resolved. A routed empty queue
-    // remains visible as `Validation issues 0` instead of silently becoming
-    // `All`.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows, issueCount, effectiveIssuesOnly]);
 
   const visibleIdentitySignature = visible
     .map((entry) => entry.identity)
@@ -1216,12 +1195,18 @@ export function StringTable({
 
   function setStatusValue(next: StringTableFilter) {
     resetSelectionForViewChange();
+    if (issuesOnly === undefined) setLocalIssuesOnly(false);
+    onIssuesOnlyChange?.(false);
     if (statusFilter === undefined) setLocalStatus(next);
     onStatusFilterChange?.(next);
   }
 
   function setIssuesValue(next: boolean) {
     resetSelectionForViewChange();
+    if (next) {
+      if (statusFilter === undefined) setLocalStatus("all");
+      onStatusFilterChange?.("all");
+    }
     if (issuesOnly === undefined) setLocalIssuesOnly(next);
     onIssuesOnlyChange?.(next);
   }
