@@ -141,6 +141,7 @@ describe("AI progress notice", () => {
       reasoning: "high",
     });
     expect(onClose).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("img", { name: "In progress" })).toBeNull();
   });
 
   it("announces a singular selected string", async () => {
@@ -212,7 +213,7 @@ describe("AI progress notice", () => {
     }
   });
 
-  it("shows actual provider steps before saving without repeating snapshots", async () => {
+  it("keeps main steps active without logging provider microsteps or inventing saves", async () => {
     const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
     const activity = vi.fn();
     window.addEventListener("translator-ai-activity", activity);
@@ -243,19 +244,28 @@ describe("AI progress notice", () => {
         );
       update({ providerStage: "working", providerActivitySequence: 1 });
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Batch 1 · Processing request",
+        "Batch 1 · Translating draft · 2 strings",
       );
       update({ providerStage: "reasoning", providerActivitySequence: 2 });
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Batch 1 · Preparing response",
+        "Batch 1 · Translating draft · 2 strings",
       );
       update({ providerStage: "writingResponse", providerActivitySequence: 3 });
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Batch 1 · Receiving response",
+        "Batch 1 · Translating draft · 2 strings",
       );
-      const logged = activity.mock.calls.length;
+      const logged = messages().length;
       update({ providerActivitySequence: 4 });
-      expect(activity).toHaveBeenCalledTimes(logged);
+      expect(messages()).toHaveLength(logged);
+      expect(screen.getByRole("img", { name: "In progress" })).toBeVisible();
+      expect(activity.mock.calls.at(-1)?.[0].detail.activeSteps).toEqual([
+        `${payload.runId}:1:translating`,
+      ]);
+      expect(messages()).not.toContainEqual(
+        expect.stringMatching(
+          /Processing request|Preparing response|Receiving response|Response received/,
+        ),
+      );
       expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
       expect(messages()).not.toContainEqual(
         expect.stringContaining("saved to Review"),
@@ -266,7 +276,7 @@ describe("AI progress notice", () => {
       update({ phase: "reviewing", providerStage: undefined });
       update({ providerStage: "writingResponse", providerActivitySequence: 6 });
       expect(screen.getByRole("status")).toHaveTextContent(
-        "Checking translation quality · Receiving response",
+        "Checking translation quality · 2 strings",
       );
       expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
       expect(messages()).toContain("Batch 1 · 2 drafts received · 2 / 2");
@@ -279,6 +289,8 @@ describe("AI progress notice", () => {
       update({ completed: 2 });
       expect(messages()).toContain("Batch 1 · 2 strings saved to Review");
       expect(screen.getByRole("progressbar")).toHaveAttribute("value", "2");
+      expect(screen.queryByRole("img", { name: "In progress" })).toBeNull();
+      expect(activity.mock.calls.at(-1)?.[0].detail.activeSteps).toEqual([]);
     } finally {
       window.removeEventListener("translator-ai-activity", activity);
     }
@@ -309,13 +321,18 @@ describe("AI progress notice", () => {
         ],
       };
       act(() => receive({ payload }));
-      expect(screen.getByRole("status")).toHaveTextContent(
-        "2 batches active · Receiving response",
-      );
+      expect(screen.getByRole("status")).toHaveTextContent("2 batches active");
       const messages = activity.mock.calls.flatMap(([event]) =>
         event.detail.entries.map((entry: { message: string }) => entry.message),
       );
-      expect(messages).toContain("Receiving response");
+      expect(messages).toContain(
+        "Batch 1 · Checking translation quality · 1 string",
+      );
+      expect(messages).toContain("Batch 2 · Translating draft · 1 string");
+      expect(activity.mock.calls.at(-1)?.[0].detail.activeSteps).toEqual([
+        `${payload.runId}:1:reviewing`,
+        `${payload.runId}:2:translating`,
+      ]);
       expect(messages).toContain("1 draft received · 1 / 2");
       expect(messages).not.toContain("Batch 2 · Receiving response");
       act(() =>
@@ -324,6 +341,9 @@ describe("AI progress notice", () => {
         }),
       );
       expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+      expect(screen.getByRole("status")).toHaveTextContent("Finishing run");
+      expect(screen.queryByRole("img", { name: "In progress" })).toBeNull();
+      expect(activity.mock.calls.at(-1)?.[0].detail.activeSteps).toEqual([]);
       const logged = activity.mock.calls.flatMap(
         ([event]) => event.detail.entries,
       );
@@ -409,6 +429,7 @@ describe("AI progress notice", () => {
       screen.getByRole("button", { name: "Cancel AI translation" }),
     ).toBeDisabled();
     expect(onFinished).not.toHaveBeenCalled();
+    expect(screen.queryByRole("img", { name: "In progress" })).toBeNull();
     await act(async () => {
       resolve(liveResult({ runId, completed: 1, outcome: "cancelled" }));
     });
@@ -435,6 +456,7 @@ describe("AI progress notice", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Cancel unavailable",
     );
+    expect(screen.getByRole("img", { name: "In progress" })).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { name: "Cancel AI translation" }),
     );
@@ -476,4 +498,38 @@ describe("AI progress notice", () => {
     unmount();
     expect(unlistenProgress).toHaveBeenCalledOnce();
   });
+
+  it.each(["complete", "cancelled", "error", "unmount"] as const)(
+    "clears the Activity log's active steps on %s",
+    async (outcome) => {
+      let resolve!: (result: AiRunResult) => void;
+      const run = vi.fn(
+        (_id: string) =>
+          new Promise<AiRunResult>((done) => {
+            resolve = done;
+          }),
+      );
+      const activity = vi.fn();
+      window.addEventListener("translator-ai-activity", activity);
+      try {
+        const view = renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
+        await waitFor(() => expect(run).toHaveBeenCalledOnce());
+        const runId = run.mock.calls[0][0];
+        expect(activity.mock.calls.at(-1)?.[0].detail.activeSteps).toHaveLength(
+          1,
+        );
+        if (outcome === "unmount") view.unmount();
+        else
+          await act(async () => {
+            resolve(liveResult({ runId, outcome }));
+          });
+        expect(activity.mock.calls.at(-1)?.[0].detail).toMatchObject({
+          runId,
+          activeSteps: [],
+        });
+      } finally {
+        window.removeEventListener("translator-ai-activity", activity);
+      }
+    },
+  );
 });

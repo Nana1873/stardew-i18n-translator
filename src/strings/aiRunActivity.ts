@@ -2,8 +2,8 @@ import type {
   AiRunProgress,
   AiRunPhase,
   AiRunRecovery,
-  ProviderActivityStage,
 } from "../tauri/commands";
+import type { AiActivityMessage } from "../ui/activity";
 
 export const AI_PHASE_LABELS: Record<AiRunPhase, string> = {
   preparing: "Preparing batch",
@@ -20,15 +20,6 @@ const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   split: "Splitting affected batch",
 };
 
-const PROVIDER_ACTIVITY_LABELS: Record<ProviderActivityStage, string> = {
-  starting: "Requesting response",
-  working: "Processing request",
-  reasoning: "Preparing response",
-  writingResponse: "Receiving response",
-  completed: "Response received",
-  failed: "Provider request failed",
-};
-
 function batchPrefix(progress: AiRunProgress) {
   // Aggregate provider events do not identify a batch in parallel snapshots.
   return progress.batchActivity === undefined &&
@@ -40,23 +31,40 @@ function batchPrefix(progress: AiRunProgress) {
 
 export function describeCurrentActivity(progress: AiRunProgress) {
   const active = progress.batchActivity?.length ?? progress.activeBatches;
-  const prefix =
-    active !== undefined && active > 1
-      ? `${active} batches active · `
-      : batchPrefix(progress);
-  const phase = AI_PHASE_LABELS[progress.phase];
-  const stage = progress.providerStage;
-  const activity =
-    stage && progress.phase !== "preparing" && progress.phase !== "saving"
-      ? PROVIDER_ACTIVITY_LABELS[stage]
-      : undefined;
+  if (active === 0) return "Finishing run";
+  if (active !== undefined && active > 1) return `${active} batches active`;
+  const batch = progress.batchActivity?.[0] ?? progress;
   return (
-    prefix +
-    (activity
-      ? progress.phase === "translating"
-        ? activity
-        : `${phase} · ${activity}`
-      : phase)
+    (batch.batchIndex === undefined ? "" : `Batch ${batch.batchIndex} · `) +
+    (batch.recovery
+      ? RECOVERY_LABELS[batch.recovery]
+      : AI_PHASE_LABELS[batch.phase]) +
+    (batch.batchSize === undefined
+      ? ""
+      : ` · ${batch.batchSize} ${batch.batchSize === 1 ? "string" : "strings"}`)
+  );
+}
+
+export function aiStepKey(
+  runId: string,
+  batchIndex: number | undefined,
+  phase: AiRunPhase,
+) {
+  return `${runId}:${batchIndex ?? "run"}:${phase}`;
+}
+
+export function activeProgressSteps(progress: AiRunProgress) {
+  if (progress.completed >= progress.total) return [];
+  // A provider failure is not an active sequential step. Parallel provider
+  // events have no batch identity; their explicit batch snapshots remain authoritative.
+  if (
+    progress.batchActivity === undefined &&
+    progress.providerStage === "failed" &&
+    !progress.recovery
+  )
+    return [];
+  return (progress.batchActivity ?? [progress]).map((batch) =>
+    aiStepKey(progress.runId, batch.batchIndex, batch.phase),
   );
 }
 
@@ -65,7 +73,7 @@ export function describeProgressChanges(
   previous: AiRunProgress | null,
   next: AiRunProgress,
 ) {
-  const entries: { message: string; warning?: boolean }[] = [];
+  const entries: AiActivityMessage[] = [];
   if (
     next.parallelLimit !== undefined &&
     next.parallelLimit !== previous?.parallelLimit
@@ -75,15 +83,10 @@ export function describeProgressChanges(
     });
   }
 
-  if (
-    next.providerStage &&
-    (next.providerStage !== previous?.providerStage ||
-      (batchPrefix(next) !== "" &&
-        batchPrefix(next) !== (previous ? batchPrefix(previous) : "")))
-  ) {
+  if (next.providerStage === "failed" && previous?.providerStage !== "failed") {
     entries.push({
-      message: batchPrefix(next) + PROVIDER_ACTIVITY_LABELS[next.providerStage],
-      ...(next.providerStage === "failed" ? { warning: true } : {}),
+      message: batchPrefix(next) + "Provider request failed",
+      warning: true,
     });
   }
 
@@ -118,7 +121,8 @@ export function describeProgressChanges(
     if (
       !before ||
       before.phase !== batch.phase ||
-      before.batchSize !== batch.batchSize
+      before.batchSize !== batch.batchSize ||
+      (before.recovery && !batch.recovery)
     ) {
       entries.push({
         message:
@@ -127,12 +131,14 @@ export function describeProgressChanges(
           (batch.batchSize === undefined
             ? ""
             : ` · ${batch.batchSize} ${batch.batchSize === 1 ? "string" : "strings"}`),
+        aiStep: aiStepKey(next.runId, batch.batchIndex, batch.phase),
       });
     }
     if (batch.recovery && batch.recovery !== before?.recovery) {
       entries.push({
         message: prefix + RECOVERY_LABELS[batch.recovery],
         warning: true,
+        aiStep: aiStepKey(next.runId, batch.batchIndex, batch.phase),
       });
     }
   }

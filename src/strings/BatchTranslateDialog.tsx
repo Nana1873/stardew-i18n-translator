@@ -7,9 +7,13 @@ import {
   type AiRunResult,
 } from "../tauri/commands";
 import {
+  activeProgressSteps,
+  aiStepKey,
   describeCurrentActivity,
   describeProgressChanges,
 } from "./aiRunActivity";
+import type { AiActivityMessage, AiActivityUpdate } from "../ui/activity";
+import { WorkingDots } from "../ui/WorkingDots";
 export interface LiveAiEngineOption {
   id: AiEngine;
   label: string;
@@ -57,16 +61,13 @@ export function BatchTranslateDialog(props: BatchTranslateDialogProps) {
   return <AiRunProgressNotice {...snapshot} />;
 }
 function reportActivity(
-  entries: Array<{
-    message: string;
-    warning?: boolean;
-    tone?: "info" | "success" | "warning" | "error";
-  }>,
+  entries: AiActivityMessage[],
+  activity?: Pick<AiActivityUpdate, "runId" | "activeSteps">,
 ) {
-  if (!entries.length) return;
+  if (!entries.length && !activity) return;
   window.dispatchEvent(
     new CustomEvent("translator-ai-activity", {
-      detail: { time: Date.now(), entries },
+      detail: { time: Date.now(), entries, ...activity },
     }),
   );
 }
@@ -89,6 +90,7 @@ function AiRunProgressNotice({
   const [progress, setProgress] = useState<AiRunProgress | null>(null);
   const [cancelRequested, setCancelRequested] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [runFinished, setRunFinished] = useState(false);
   const noticeRef = useRef<HTMLElement>(null);
   useEffect(() => {
     const notice = noticeRef.current;
@@ -112,6 +114,8 @@ function AiRunProgressNotice({
   function finish(result: BatchFinishedResult) {
     if (finished.current) return;
     finished.current = true;
+    setRunFinished(true);
+    reportActivity([], { runId: runId.current, activeSteps: [] });
     const restoreFocus = noticeRef.current?.contains(document.activeElement);
     onFinished(result);
     onClose();
@@ -125,8 +129,12 @@ function AiRunProgressNotice({
     void (async () => {
       try {
         const release = await listenAiRunProgress((event) => {
-          if (!active || event.runId !== runId.current) return;
-          reportActivity(describeProgressChanges(previous.current, event));
+          if (!active || finished.current || event.runId !== runId.current)
+            return;
+          reportActivity(describeProgressChanges(previous.current, event), {
+            runId: runId.current,
+            activeSteps: cancelling.current ? [] : activeProgressSteps(event),
+          });
           previous.current = event;
           setProgress(event);
         });
@@ -145,9 +153,21 @@ function AiRunProgressNotice({
           {
             message: `AI translation started for ${modName}. ${engine?.label ?? "AI"}${engine?.model ? ` (${engine.model})` : ""}.`,
           },
-          { message: "Preparing selected strings." },
+          {
+            message: "Preparing selected strings.",
+            aiStep: aiStepKey(runId.current, undefined, "preparing"),
+          },
         ]);
       }
+      reportActivity([], {
+        runId: runId.current,
+        activeSteps:
+          cancelling.current || finished.current
+            ? []
+            : previous.current
+              ? activeProgressSteps(previous.current)
+              : [aiStepKey(runId.current, undefined, "preparing")],
+      });
       if (cancelling.current) {
         finish({
           runId: runId.current,
@@ -191,6 +211,7 @@ function AiRunProgressNotice({
     return () => {
       active = false;
       unlisten?.();
+      reportActivity([], { runId: runId.current, activeSteps: [] });
     };
     // The selection and callbacks belong to one immutable run, as in #254.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +222,10 @@ function AiRunProgressNotice({
     cancelling.current = true;
     setCancelRequested(true);
     setCancelError(null);
-    reportActivity([{ message: "AI translation cancellation requested." }]);
+    reportActivity([{ message: "AI translation cancellation requested." }], {
+      runId: runId.current,
+      activeSteps: [],
+    });
     try {
       const accepted = await onCancelLiveRun(runId.current);
       if (!accepted && runPromise.current && !finished.current)
@@ -214,7 +238,12 @@ function AiRunProgressNotice({
       cancelling.current = false;
       setCancelRequested(false);
       setCancelError(message);
-      reportActivity([{ message, tone: "error" }]);
+      reportActivity([{ message, tone: "error" }], {
+        runId: runId.current,
+        activeSteps: previous.current
+          ? activeProgressSteps(previous.current)
+          : [aiStepKey(runId.current, undefined, "preparing")],
+      });
     }
   }
 
@@ -224,7 +253,11 @@ function AiRunProgressNotice({
     ? "Cancelling…"
     : progress
       ? describeCurrentActivity(progress)
-      : "Preparing selected strings…";
+      : "Preparing selected strings";
+  const working =
+    !cancelRequested &&
+    !runFinished &&
+    (!progress || activeProgressSteps(progress).length > 0);
   const target =
     document.getElementById("ai-progress-slot") ??
     document.getElementById("stardew-i18n-translator") ??
@@ -270,6 +303,7 @@ function AiRunProgressNotice({
       />
       <div className="desktop-ai-progress-phase" role="status">
         {phase}
+        {working && <WorkingDots />}
       </div>
       {cancelError && (
         <p className="desktop-ai-progress-error" role="alert">

@@ -2,6 +2,18 @@ import type { OperationHistoryEntry } from "../tauri/commands";
 import type { ResultTrayData } from "../results/ResultTray";
 
 export type ActivityTone = "info" | "success" | "warning" | "error";
+export interface AiActivityMessage {
+  message: string;
+  warning?: boolean;
+  tone?: ActivityTone;
+  aiStep?: string;
+}
+export interface AiActivityUpdate {
+  time: number;
+  entries: AiActivityMessage[];
+  runId?: string;
+  activeSteps?: string[];
+}
 export interface NoticeOptions {
   /** Routine clipboard/selection feedback needs only a toast. */
   activity?: boolean;
@@ -24,6 +36,7 @@ export type ActivityEvent =
       message: string;
       tone: ActivityTone;
       details?: ActivityDetails;
+      aiStep?: string;
     };
 export interface ActivityEntry {
   id: number;
@@ -31,6 +44,7 @@ export interface ActivityEntry {
   message: string;
   tone: ActivityTone;
   details?: ActivityDetails;
+  aiStep?: string;
   saves?: { modUniqueId: string; identities: string[] };
 }
 export interface ActivityBuffer {
@@ -99,6 +113,7 @@ export function appendActivity(
       message: event.message,
       tone: event.tone,
       details: event.details,
+      aiStep: event.aiStep,
     });
   }
   let omitted = buffer.omitted;

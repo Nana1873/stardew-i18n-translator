@@ -8,8 +8,9 @@ import {
   type ActivityBuffer,
   type ActivityDetails,
   type ActivityEvent,
-  type ActivityTone,
+  type AiActivityUpdate,
 } from "./activity";
+import { WorkingDots } from "./WorkingDots";
 
 export function ActivityLog({
   lastScanAt,
@@ -45,6 +46,10 @@ export function ActivityLog({
     omitted: 0,
   });
   const sequence = useRef(0);
+  const [aiActivity, setAiActivity] = useState<{
+    runId: string;
+    steps: string[];
+  } | null>(null);
   const seenOperations = useRef(new Set<string>());
   const seenScan = useRef<number | null>(null);
   const logRef = useRef<HTMLDivElement>(null);
@@ -73,22 +78,22 @@ export function ActivityLog({
       append(detail.event, detail.time);
     }
     function onAiActivity(event: Event) {
-      const { time, entries } = (
-        event as CustomEvent<{
-          time: number;
-          entries: Array<{
-            message: string;
-            warning?: boolean;
-            tone?: ActivityTone;
-          }>;
-        }>
+      const { time, entries, runId, activeSteps } = (
+        event as CustomEvent<AiActivityUpdate>
       ).detail;
+      if (runId && activeSteps)
+        setAiActivity((current) =>
+          activeSteps.length || current?.runId === runId
+            ? { runId, steps: activeSteps }
+            : current,
+        );
       for (const entry of entries)
         append(
           {
             kind: "message",
             message: entry.message,
             tone: entry.tone ?? (entry.warning ? "warning" : "info"),
+            aiStep: entry.aiStep,
           },
           time,
         );
@@ -188,6 +193,13 @@ export function ActivityLog({
       setCopyState("error");
     }
   }
+  // A retry may revisit a phase. Only its newest entry can be active.
+  const latestSteps = new Map(
+    buffer.entries
+      .filter((entry) => entry.aiStep)
+      .map((entry) => [entry.aiStep, entry.id]),
+  );
+  const activeSteps = new Set(aiActivity?.steps);
   return (
     <section className="desktop-log-panel" aria-label="Activity log">
       <div
@@ -298,15 +310,24 @@ export function ActivityLog({
           <p>Ready. Scan your mods to begin.</p>
         ) : (
           buffer.entries.map((entry) => {
+            const working =
+              !!entry.aiStep &&
+              activeSteps.has(entry.aiStep) &&
+              latestSteps.get(entry.aiStep) === entry.id;
             const available =
               entry.details?.kind !== "scan" ||
               (entry.details.time === lastScanAt && !scanning && !scanError);
             return (
-              <p key={entry.id} data-tone={entry.tone}>
+              <p
+                key={entry.id}
+                data-tone={entry.tone}
+                data-ai-active={working || undefined}
+              >
                 <time dateTime={new Date(entry.time).toISOString()}>
                   {new Date(entry.time).toLocaleTimeString("en-GB")}
                 </time>{" "}
                 {entry.message}
+                {working && <WorkingDots />}
                 {entry.details && (
                   <button
                     type="button"

@@ -113,6 +113,13 @@ acceptances, batch edits, AI progress, and operation results. Consecutive manual
 saves in the same mod are grouped briefly. Routine clipboard and selection
 notifications stay out of the log; failures are recorded.
 
+AI runs record main batch steps, received draft counts, saved counts, and
+recovery or failure messages. Subtle dots mark each currently active step;
+they stop when that step ends or the run is cancelled or finishes. The dots
+indicate an ongoing step, not a provider heartbeat or completed translation.
+Reduced-motion settings show static dots. **Saved to Review** counts only
+persisted suggestions; receiving a draft does not increment that count.
+
 Use **Details** beside a result to reopen that operation, or beside the latest
 scan to inspect its report. Older operation entries retain their summary and
 backend details after they leave the five-result history; they do not restore

@@ -7,6 +7,7 @@ import {
   operationActivity,
   reportActivity,
   type ActivityBuffer,
+  type AiActivityUpdate,
   type ManualSaveActivity,
 } from "./activity";
 import type { OperationHistoryEntry } from "../tauri/commands";
@@ -55,6 +56,78 @@ beforeEach(() => {
     configurable: true,
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
   });
+});
+
+it("animates only each batch's current step, keeps history static, and ignores stale run cleanup", async () => {
+  render(<ActivityLog {...props} />);
+  const log = screen.getByRole("log");
+  const update = (detail: Omit<AiActivityUpdate, "time">) =>
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("translator-ai-activity", {
+          detail: { time: 1000, ...detail },
+        }),
+      );
+    });
+  update({
+    runId: "first",
+    activeSteps: ["first:1:translating", "first:2:reviewing"],
+    entries: [
+      {
+        message: "Batch 1 · Translating draft · 86 strings",
+        aiStep: "first:1:translating",
+      },
+      {
+        message: "Batch 2 · Checking translation quality · 86 strings",
+        aiStep: "first:2:reviewing",
+      },
+    ],
+  });
+  expect(within(log).getAllByRole("img", { name: "In progress" })).toHaveLength(
+    2,
+  );
+  update({ runId: "first", activeSteps: ["first:2:reviewing"], entries: [] });
+  expect(log.querySelectorAll("p")).toHaveLength(2);
+  expect(within(log).getAllByRole("img", { name: "In progress" })).toHaveLength(
+    1,
+  );
+  update({
+    runId: "first",
+    activeSteps: ["first:1:translating"],
+    entries: [
+      {
+        message: "Batch 1 · Translating draft · 86 strings",
+        aiStep: "first:1:translating",
+      },
+    ],
+  });
+  const repeated = within(log).getAllByText(/Batch 1 · Translating draft/);
+  expect(repeated[0]).not.toHaveAttribute("data-ai-active");
+  expect(repeated[1]).toHaveAttribute("data-ai-active", "true");
+  fireEvent.click(screen.getByRole("button", { name: "Copy log" }));
+  await screen.findByRole("button", { name: "Copied" });
+  const copied = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0];
+  expect(copied).not.toMatch(/In progress|\.\.\./);
+  update({
+    runId: "second",
+    activeSteps: ["second:1:preparing"],
+    entries: [
+      {
+        message: "Batch 1 · Preparing batch · 2 strings",
+        aiStep: "second:1:preparing",
+      },
+    ],
+  });
+  update({ runId: "first", activeSteps: [], entries: [] });
+  expect(within(log).getAllByRole("img", { name: "In progress" })).toHaveLength(
+    1,
+  );
+  expect(within(log).getByText(/Preparing batch/)).toHaveAttribute(
+    "data-ai-active",
+    "true",
+  );
+  update({ runId: "second", activeSteps: [], entries: [] });
+  expect(within(log).queryByRole("img", { name: "In progress" })).toBeNull();
 });
 
 it("groups distinct manual saves without recording translation text or losing explicit acceptance", () => {
