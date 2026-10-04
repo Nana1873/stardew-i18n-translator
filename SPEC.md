@@ -75,9 +75,9 @@ Open or Changed rows after resolving their identities from a fresh scan.
 Done and Review text is not silently replaced.
 
 **Validation issues** is a separate table view, not a status. Selecting Issues
-shows unresolved findings across all statuses in the current scope and search;
-selecting a status leaves Issues. A Review row can
-have no validation finding; a Done row can still have one. Review is a request
+shows validation findings, including accepted token mismatches, across all
+statuses in the current scope and search; selecting a status leaves Issues.
+A Review row can have no validation finding; a Done row can still have one. Review is a request
 for human assessment, not an export lock: non-empty Review and Changed values
 can be exported, with their counts shown in the export confirmation.
 
@@ -88,6 +88,10 @@ placeholder, and formatting tokens. Missing or added protected values block
 export by default. **Save anyway** accepts a particular source/target mismatch
 for direct export and ZIP creation; editing the target or changing the source
 invalidates that acceptance.
+Accepted token mismatches remain visible in Issues with a yellow warning icon
+and a tooltip identifying the acceptance and export permission. Ordinary
+non-blocking warnings also use yellow; unresolved export blockers use red.
+Acceptance does not change a Done row's workflow status or waive other errors.
 
 Literal-escape differences are non-blocking warnings. Ordinary quote punctuation
 and physical newline-count differences are ignored. Identical non-empty source

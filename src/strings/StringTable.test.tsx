@@ -663,12 +663,12 @@ describe("StringTable workbench", () => {
     expect(screen.getByText("bye")).toBeVisible();
     expect(screen.queryByText("done-token")).toBeNull();
 
-    const issues = screen.getByRole("button", { name: "Issues 2" });
+    const issues = screen.getByRole("button", { name: "Issues 3" });
     fireEvent.click(issues);
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.getByText("done-token")).toBeVisible();
     expect(screen.queryByText("bye")).toBeNull();
-    expect(screen.queryByText("accepted-token")).toBeNull();
+    expect(screen.getByText("accepted-token")).toBeVisible();
     expect(issues).toHaveAttribute("aria-pressed", "true");
     for (const label of ["All", "Open", "Changed", "Review", "Done"])
       expect(
@@ -1086,6 +1086,13 @@ describe("StringTable workbench", () => {
           status: "translated",
           tokenMismatchAccepted: true,
         },
+        {
+          ...ROWS["a.b"][2],
+          key: "accepted-with-invalid-text",
+          target: "Hallo\uD800",
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
       ],
     });
     render(<StringTable mod={MOD} />);
@@ -1106,9 +1113,14 @@ describe("StringTable workbench", () => {
     ).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("accepted")).getByRole("button", {
-        name: /^Warning: does not block export\./,
+        name: /^Accepted token mismatch: export allowed\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
+    expect(
+      within(rowFor("accepted-with-invalid-text")).getByRole("button", {
+        name: /^Error: blocks export\. Token mismatch explicitly accepted; other errors remain\./,
+      }),
+    ).toHaveAttribute("data-severity", "error");
 
     fireEvent.focus(warning);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
@@ -1120,8 +1132,19 @@ describe("StringTable workbench", () => {
       "Error: blocks export. Token count mismatch",
     );
     fireEvent.blur(error);
-    fireEvent.click(screen.getByRole("button", { name: "Issues 4" }));
-    expect(dataRows()).toHaveLength(4);
+    const accepted = within(rowFor("accepted")).getByRole("button", {
+      name: /^Accepted token mismatch: export allowed\./,
+    });
+    fireEvent.focus(accepted);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Accepted token mismatch: export allowed. Token count mismatch",
+    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Literal escape sequences differ from the original",
+    );
+    fireEvent.blur(accepted);
+    fireEvent.click(screen.getByRole("button", { name: "Issues 5" }));
+    expect(dataRows()).toHaveLength(5);
   });
 
   it("keeps checkbox and modifier selection gestures out of the editor", async () => {
@@ -1152,7 +1175,7 @@ describe("StringTable workbench", () => {
     expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
   });
 
-  it("treats an accepted token mismatch as resolved in issues and visuals", async () => {
+  it("keeps accepted token mismatches visible as non-blocking Issues until corrected", async () => {
     installBackendRows({
       "a.b": [
         ROWS["a.b"][0],
@@ -1168,10 +1191,16 @@ describe("StringTable workbench", () => {
     render(<StringTable mod={MOD} onBulkApplied={onBulkApplied} />);
     await screen.findByText("token");
 
-    expect(screen.getByRole("button", { name: "Issues 0" })).toBeDisabled();
+    const issues = screen.getByRole("button", { name: "Issues 1" });
+    expect(issues).toBeEnabled();
     expect(
-      rowFor("token").querySelector(".translator-inline-validation"),
-    ).toBeNull();
+      within(rowFor("token")).getByRole("button", {
+        name: /^Accepted token mismatch: export allowed\./,
+      }),
+    ).toHaveAttribute("data-severity", "warning");
+    fireEvent.click(issues);
+    expect(dataRows()).toHaveLength(1);
+    expect(rowFor("token")).toHaveAttribute("data-status", "translated");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
     fireEvent.keyDown(screen.getByRole("button", { name: /1 selected/ }), {
@@ -1179,6 +1208,11 @@ describe("StringTable workbench", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
     await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "Issues 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByText("token")).toBeNull();
     expect(onBulkApplied).toHaveBeenCalledWith(
       batchHistoryEntry("Kept original text", 1),
     );

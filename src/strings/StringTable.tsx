@@ -264,7 +264,7 @@ const STATUS_HELP: Record<StringStatus | "all" | "issues", string> = {
   "review-needed":
     "This imported or AI-generated suggestion still needs human approval.",
   issues:
-    "Strings with unresolved errors or warnings. Warnings do not block export.",
+    "Strings with errors, warnings, or accepted token mismatches. Warnings and accepted token mismatches do not block export.",
   translated:
     "The translation was explicitly saved or accepted for the current English source.",
 };
@@ -349,9 +349,10 @@ function rowValidationIssues(row: Row) {
   if (!issues) {
     const validated = validate(row.source, row.target, row.targetPresent);
     issues = row.tokenMismatchAccepted
-      ? validated.filter(
-          (issue) =>
-            issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
+      ? validated.map((issue) =>
+          issue.ruleId === "token-missing" || issue.ruleId === "token-added"
+            ? { ...issue, severity: "warning" as const }
+            : issue,
         )
       : validated;
     validationIssuesByRow.set(row, issues);
@@ -3322,8 +3323,20 @@ function RowView({
   const statusHelp = noTranslationNeeded(row.source, row.target)
     ? "The source is empty; no translation text is needed."
     : STATUS_HELP[row.status];
+  const acceptedTokenMismatch =
+    row.tokenMismatchAccepted &&
+    issues.some(
+      (issue) =>
+        issue.ruleId === "token-missing" || issue.ruleId === "token-added",
+    );
+  const issueSummary =
+    severity === "error"
+      ? `Error: blocks export.${acceptedTokenMismatch ? " Token mismatch explicitly accepted; other errors remain." : ""}`
+      : acceptedTokenMismatch
+        ? "Accepted token mismatch: export allowed."
+        : "Warning: does not block export.";
   const issueHelp = severity
-    ? `${severity === "error" ? "Error: blocks export." : "Warning: does not block export."} ${issues.map((issue) => issue.message).join(" ")}`
+    ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";
   const matchesSearch = (field: SearchField, metadata = false) =>
     (!metadata || searchAllMetadata) &&

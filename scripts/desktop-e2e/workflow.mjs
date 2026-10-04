@@ -735,14 +735,22 @@ try {
     await click(button("Save anyway"));
     await absent(css("#translator-editor-translation"));
     await waitFor(
-      "accepted token mismatch is no longer an unresolved issue",
-      async () => (await (await element(issues)).getText()).includes("0"),
+      "accepted token mismatch remains a non-blocking issue",
+      async () => {
+        const marker = await (
+          await element(row("greeting"))
+        ).findElement(css(".translator-inline-validation"));
+        return (
+          (await (await element(issues)).getText()).includes("1") &&
+          (await marker.getAttribute("data-severity")) === "warning"
+        );
+      },
     );
     assert.equal(
       await (await element(issues)).getAttribute("aria-pressed"),
       "true",
     );
-    await absent(row("greeting"));
+    await element(row("greeting"));
     await screenshot("issues-view-accepted-token-problem");
     await click(button("Done"));
     await element(row("greeting"));
@@ -750,14 +758,42 @@ try {
       await (await element(row("greeting"))).getAttribute("data-status"),
       "translated",
     );
-    assert.equal(
-      await (
-        await element(row("greeting"))
-      )
-        .findElements(css(".translator-inline-validation"))
-        .then((items) => items.length),
-      0,
+    const acceptedMarker = await (
+      await element(row("greeting"))
+    ).findElement(css(".translator-inline-validation"));
+    assert.equal(await acceptedMarker.getAttribute("data-severity"), "warning");
+    assert.match(
+      await acceptedMarker.getAttribute("aria-label"),
+      /^Accepted token mismatch: export allowed\./,
     );
+    await openEntry("greeting");
+    assert.match(
+      await (await element(css(".editor__issue--warning"))).getText(),
+      /Protected-token mismatch explicitly accepted for this exact translation\./,
+    );
+    await click(button("Save"));
+    await absent(css("#translator-editor-translation"));
+    await absent(button("Save anyway"));
+
+    await fill(css('[aria-label="Search strings"]'), "");
+    await click(button("This mod"));
+    await click(button("All"));
+    await rescan();
+    await click(issues);
+    await waitFor("accepted mismatch survives a real rescan", async () => {
+      const marker = await (
+        await element(row("greeting"))
+      ).findElement(css(".translator-inline-validation"));
+      return (await marker.getAttribute("data-severity")) === "warning";
+    });
+    await click(button("Export …"));
+    await click(button("Export current mod"));
+    assert.equal(
+      await (await element(button("Export and replace"))).isEnabled(),
+      true,
+    );
+    await click(button("Cancel"));
+    await absent(button("Export and replace"));
     assert.deepEqual(
       await json(exported),
       { greeting: "Missing protected tokens" },
