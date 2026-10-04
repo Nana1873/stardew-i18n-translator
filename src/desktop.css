@@ -143,7 +143,10 @@
     sans-serif;
 }
 #stardew-i18n-translator .translator-window {
-  grid-template-rows: auto minmax(0, 1fr) 106px;
+  grid-template-rows: auto minmax(0, 1fr) min(
+      var(--translator-log-height, 106px),
+      45vh
+    );
   gap: 0;
   padding: 0;
   border-radius: 0;
@@ -166,7 +169,10 @@
   margin-left: 0;
 }
 #stardew-i18n-translator .translator-window[data-embedded-toolbar="true"] {
-  grid-template-rows: minmax(0, 1fr) 106px;
+  grid-template-rows: minmax(0, 1fr) min(
+      var(--translator-log-height, 106px),
+      45vh
+    );
 }
 #stardew-i18n-translator
   .translator-window[data-embedded-toolbar="true"]
@@ -524,8 +530,9 @@
   background: var(--translator-title);
 }
 
-/* The log follows actual preview scans, notifications, and operation history. */
+/* Shared session activity, with a bounded, resizable reading area. */
 #stardew-i18n-translator .desktop-log-panel {
+  position: relative;
   display: flex;
   grid-row: 3;
   flex-direction: column;
@@ -566,6 +573,43 @@
   padding: 2px 6px;
   min-height: 24px;
   font-size: 12px;
+}
+.desktop-log-head > button svg {
+  width: 13px;
+  height: 13px;
+}
+.desktop-log-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 6px;
+  cursor: ns-resize;
+  touch-action: none;
+}
+.desktop-log-resize:hover,
+.desktop-log-resize:focus-visible {
+  background: var(--translator-brand-soft);
+  outline: 1px solid var(--translator-brand);
+  outline-offset: -1px;
+}
+#stardew-i18n-translator .desktop-log-details {
+  margin-left: 8px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--translator-blue);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+#stardew-i18n-translator .desktop-log-details:disabled {
+  color: var(--translator-faint);
+  text-decoration: none;
+  cursor: default;
+}
+.desktop-log-omitted {
+  color: var(--translator-faint);
 }
 #ai-progress-slot {
   flex: 1;

@@ -1557,7 +1557,9 @@ describe("StringTable workbench", () => {
       screen.getByRole("button", { name: "Clear string selection" }),
     );
     expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
-    expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info");
+    expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info", {
+      activity: false,
+    });
   });
 
   it("opens Batch actions with ArrowDown and closes menus when focus leaves", async () => {
@@ -1620,6 +1622,7 @@ describe("StringTable workbench", () => {
     expect(onNotify).toHaveBeenCalledWith(
       "No selected strings needed a change.",
       "info",
+      { activity: false },
     );
     expect(onBulkApplied).not.toHaveBeenCalled();
     expect(
@@ -3164,6 +3167,7 @@ it("does not save an exemption or create undo history for Done on an already bla
     expect(onNotify).toHaveBeenCalledWith(
       "No selected strings needed a change.",
       "info",
+      { activity: false },
     ),
   );
   expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
@@ -3191,4 +3195,70 @@ it("counts NEL as no-work and BOM as physical text without overlap", async () =>
   expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
     false,
   );
+});
+
+it("reports a new manual token acceptance only after persistence, and not again on an unchanged resave", async () => {
+  const onManualSave = vi.fn();
+  render(<StringTable mod={MOD} onManualSave={onManualSave} />);
+  await screen.findByRole("button", { name: "token" });
+  fireEvent.click(screen.getByRole("button", { name: "token" }));
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Translation" }), {
+    key: "Enter",
+    ctrlKey: true,
+  });
+  const confirmation = await screen.findByRole("button", {
+    name: "Save anyway",
+  });
+  expect(onManualSave).not.toHaveBeenCalled();
+  fireEvent.click(confirmation);
+  await waitFor(() => expect(onManualSave).toHaveBeenCalledOnce());
+  expect(onManualSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      modUniqueId: "a.b",
+      modName: "Test Mod",
+      key: "token",
+      acceptedMismatch: true,
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "token" }));
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Translation" }), {
+    key: "Enter",
+    ctrlKey: true,
+  });
+  await waitFor(() => expect(onManualSave).toHaveBeenCalledTimes(2));
+  expect(onManualSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ acceptedMismatch: false }),
+  );
+});
+
+it("records the actual manual save failure without recording a successful save", async () => {
+  const backend = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, args?: unknown) =>
+    cmd === "save_string"
+      ? Promise.reject(new Error("Disk unavailable"))
+      : backend(cmd, args),
+  );
+  const onManualSave = vi.fn();
+  const onNotify = vi.fn();
+  render(
+    <StringTable mod={MOD} onManualSave={onManualSave} onNotify={onNotify} />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "greeting" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: "Hallo Welt" },
+  });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Translation" }), {
+    key: "Enter",
+    ctrlKey: true,
+  });
+  await waitFor(() =>
+    expect(onNotify).toHaveBeenCalledWith(
+      "Translation not saved · Test Mod · greeting: Error: Disk unavailable",
+      "error",
+    ),
+  );
+  expect(onManualSave).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("textbox", { name: "Translation" }),
+  ).toBeInTheDocument();
 });

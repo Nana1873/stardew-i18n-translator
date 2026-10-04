@@ -237,7 +237,13 @@ mods, supporting search, filters, selection, keyboard use, and batch actions.
 Operations show compact notifications with actionable causes and progress.
 Details expose the actual operation data and the five newest completed backend
 operations in the session. **Latest result** reopens the newest result. AI progress
-remains nonmodal, with batch events in the shared Activity log. One reversible
+remains nonmodal, with batch events in the shared Activity log. The resizable,
+copyable session log also records successful manual saves and explicit token
+mismatch acceptances, coalesces consecutive manual saves by mod, and links
+results to their exact details. Routine clipboard/selection successes are
+toast-only. It retains up to 500 entries, protecting the latest 100 warnings
+and errors from routine progress, and reports omissions. Earlier scan details
+and expired Undo actions are not restored through log links. One reversible
 batch edit has a memory-only undo snapshot until another
 completed operation replaces it. A later successful edit to any touched
 component permanently invalidates that snapshot, even if the value is changed

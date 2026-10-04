@@ -106,6 +106,26 @@ Save & next, and Alt+Left/Right for editor navigation. Navigation saves dirty
 edits when possible; resolve any validation confirmation before continuing.
 See **Settings > Shortcuts** for all bindings and customization.
 
+## Activity log
+
+The Activity log records scans, saved translations, explicit token-mismatch
+acceptances, batch edits, AI progress, and operation results. Consecutive manual
+saves in the same mod are grouped briefly. Routine clipboard and selection
+notifications stay out of the log; failures are recorded.
+
+Use **Details** beside a result to reopen that operation, or beside the latest
+scan to inspect its report. Older operation entries retain their summary and
+backend details after they leave the five-result history; they do not restore
+expired Undo actions. Earlier scan reports are not retained.
+
+Expand the log or drag its top edge to read more. The focused resize separator
+also responds to Up and Down Arrow. **Copy log** copies the retained entries.
+Scrolling upward pauses automatic following; **Latest entries** returns to the
+bottom. This is a bounded, session-only log: it keeps up to 500 entries and
+protects the latest 100 warnings and errors from routine progress updates.
+An omission notice appears when older entries are removed. The separate
+diagnostic logging setting does not control this panel.
+
 ## Build a glossary
 
 Open **Settings > Glossary** and choose **Build glossary** when sources are

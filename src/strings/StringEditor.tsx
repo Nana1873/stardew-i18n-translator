@@ -80,6 +80,7 @@ import {
   matchesShortcut,
 } from "../shortcuts";
 import { useModalIsolation } from "../dialogAccessibility";
+import type { NoticeOptions } from "../ui/activity";
 
 export interface EditorRow {
   /** Stable package identity; file/key alone are not unique in All mods. */
@@ -129,7 +130,11 @@ interface StringEditorProps {
   onClose: () => void;
   onNavigate: (delta: number) => void;
   onOpenEngineSettings?: () => void;
-  onNotify?: (message: string, tone?: "info" | "success" | "error") => void;
+  onNotify?: (
+    message: string,
+    tone?: "info" | "success" | "error",
+    options?: NoticeOptions,
+  ) => void;
   shortcuts?: ResolvedShortcuts;
 }
 
@@ -595,6 +600,7 @@ export function StringEditor({
       onNotify?.(
         kind === "source" ? "Source copied." : "Translation copied.",
         "success",
+        { activity: false },
       );
       window.setTimeout(() => setCopyState("idle"), 1200);
     } catch {

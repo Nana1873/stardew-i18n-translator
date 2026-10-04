@@ -746,6 +746,10 @@ try {
         );
       },
     );
+    assert.match(
+      await (await element(css('.desktop-log[role="log"]'))).getText(),
+      /Translation saved · Desktop Smoke · greeting · Token mismatch accepted; export allowed\./,
+    );
     assert.equal(
       await (await element(issues)).getAttribute("aria-pressed"),
       "true",
@@ -774,6 +778,13 @@ try {
     await click(button("Save"));
     await absent(css("#translator-editor-translation"));
     await absent(button("Save anyway"));
+    assert.equal(
+      (await (await element(css('.desktop-log[role="log"]'))).getText()).split(
+        "Token mismatch accepted; export allowed.",
+      ).length - 1,
+      1,
+      "Saving an already accepted pair must not log another acceptance.",
+    );
 
     await fill(css('[aria-label="Search strings"]'), "");
     await click(button("This mod"));
@@ -866,6 +877,45 @@ try {
     }
     await screenshot("imported");
   });
+  let importLogResultId;
+  await step("activity-log-controls-and-import-details", async () => {
+    const activity = await element(css('.desktop-log[role="log"]'));
+    const text = await activity.getText();
+    assert.match(text, /translations? saved · Desktop Smoke/);
+    assert.match(text, /LLM batch imported · Desktop Smoke/);
+    assert.match(text, /Local translations preserved: 1/);
+    await click(css('[aria-label="Expand Activity log"]'));
+    assert.ok(
+      (await (await element(css(".desktop-log-panel"))).getRect()).height >=
+        290,
+    );
+    await (
+      await element(css('[aria-label="Resize Activity log"]'))
+    ).sendKeys(Key.ARROW_UP);
+    assert.equal(
+      await (
+        await element(css('[aria-label="Resize Activity log"]'))
+      ).getAttribute("aria-valuenow"),
+      "340",
+    );
+    await click(button("Copy log"));
+    await element(button("Copied"));
+    assert.doesNotMatch(await activity.getText(), /Activity log copied/);
+    await click(css('[aria-label^="Details: LLM batch imported"]'));
+    importLogResultId = await (
+      await element(css('[aria-label="Recent operation results"]'))
+    ).getAttribute("value");
+    assert.ok(importLogResultId);
+    await screenshot("activity-log-expanded-import-details");
+    await click(css('[aria-label="Hide result"]'));
+    await click(css('[aria-label="Collapse Activity log"]'));
+    assert.equal(
+      await (
+        await element(css('[aria-label="Resize Activity log"]'))
+      ).getAttribute("aria-valuenow"),
+      "106",
+    );
+  });
   await step("export-and-verify-files", async () => {
     await click(button("Export …"));
     await click(button("Export current mod"));
@@ -879,6 +929,15 @@ try {
     assert.ok((await json(exported)).shopping.includes("{{Count}}"));
     await copyFile(exported, join(artifacts, "exported-de.json"));
     await screenshot("exported");
+    await click(css('[aria-label^="Details: LLM batch imported"]'));
+    assert.equal(
+      await (
+        await element(css('[aria-label="Recent operation results"]'))
+      ).getAttribute("value"),
+      importLogResultId,
+      "The older import log entry must reopen that import, not the newer export.",
+    );
+    await click(css('[aria-label="Hide result"]'));
   });
   await step("save-after-export-and-close", async () => {
     // Prove restored work comes from portable state, not the exported locale.

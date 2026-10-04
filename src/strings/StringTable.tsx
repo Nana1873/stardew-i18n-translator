@@ -1,4 +1,5 @@
 import { DesktopFilters, ValidationIcon } from "../ui/WorkspaceControls";
+import type { ManualSaveActivity, NoticeOptions } from "../ui/activity";
 /**
  * Primary string workbench.
  *
@@ -236,10 +237,15 @@ export interface StringTableProps {
   onVisibleSummaryChange?: (summary: StringTableSummary) => void;
   onBulkApplied?: (entry: OperationHistoryEntry) => void;
   onAiBatchFinished?: (result: AiBatchFinishedResult) => void;
-  onNotify?: (message: string, tone?: StringTableNoticeTone) => void;
+  onNotify?: (
+    message: string,
+    tone?: StringTableNoticeTone,
+    options?: NoticeOptions,
+  ) => void;
   onOpenEngineSettings?: () => void;
   onOpenMod?: (uniqueId: string) => void;
   onStringSaved?: (snapshot: SavedStringSnapshot) => void;
+  onManualSave?: (activity: ManualSaveActivity) => void;
   onEditorOpen?: () => void;
   bottomClearance?: number;
   reloadToken?: number;
@@ -594,6 +600,7 @@ export function StringTable({
   onOpenEngineSettings,
   onClearFilters,
   onStringSaved,
+  onManualSave,
   onEditorOpen,
   bottomClearance = 0,
   reloadToken = 0,
@@ -1483,15 +1490,23 @@ export function StringTable({
     const row = index === undefined ? undefined : data[index];
     if (!row) return;
     if (isBlankText(target)) nextStatus = "untranslated";
-    await saveString(
-      row.modUniqueId,
-      row.file,
-      row.key,
-      target,
-      nextStatus,
-      row.source,
-      tokenMismatchAccepted,
-    );
+    try {
+      await saveString(
+        row.modUniqueId,
+        row.file,
+        row.key,
+        target,
+        nextStatus,
+        row.source,
+        tokenMismatchAccepted,
+      );
+    } catch (cause) {
+      onNotify?.(
+        `Translation not saved · ${row.modName} · ${row.key}: ${String(cause)}`,
+        "error",
+      );
+      throw cause;
+    }
     aiProvenanceByIdentity.current.delete(identity);
     const next = data.map((candidate) =>
       identityOf(candidate) === identity
@@ -1506,6 +1521,15 @@ export function StringTable({
     rowsRef.current = next;
     setRows(next);
     reportCounts(next, new Set([row.modUniqueId]));
+    onManualSave?.({
+      identity,
+      modUniqueId: row.modUniqueId,
+      modName: row.modName,
+      key: row.key,
+      acceptedMismatch:
+        tokenMismatchAccepted &&
+        (!row.tokenMismatchAccepted || row.target !== target),
+    });
     onStringSaved?.({
       modUniqueId: row.modUniqueId,
       relativeDir: row.file,
@@ -1546,7 +1570,9 @@ export function StringTable({
       setContextMenu(null);
       setBulkMenuOpen(false);
       setSelection(new Set());
-      onNotify?.("No selected strings needed a change.", "info");
+      onNotify?.("No selected strings needed a change.", "info", {
+        activity: false,
+      });
       return;
     }
 
@@ -1662,6 +1688,7 @@ export function StringTable({
         String(planned.length) +
           (planned.length === 1 ? " string updated." : " strings updated."),
         "success",
+        { activity: false },
       );
       onBulkApplied?.(historyEntry);
       setSelection((current) => {
@@ -1688,6 +1715,7 @@ export function StringTable({
       onNotify?.(
         field === "source" ? "Source text copied." : "Translations copied.",
         "success",
+        { activity: false },
       );
     } catch {
       onNotify?.("Could not access the clipboard.", "error");
@@ -2404,7 +2432,9 @@ export function StringTable({
                     setSelection(new Set());
                     setBulkMenuOpen(false);
                     anchor.current = null;
-                    onNotify?.("Selection cleared.", "info");
+                    onNotify?.("Selection cleared.", "info", {
+                      activity: false,
+                    });
                   }}
                 >
                   <X aria-hidden="true" />

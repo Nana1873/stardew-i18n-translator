@@ -1,5 +1,6 @@
 import { FolderOpen as FileIcon } from "lucide-react";
 import { ActivityLog, FileActionLabel } from "./ui/WorkspaceControls";
+import { reportActivity } from "./ui/activity";
 /**
  * Application shell.
  *
@@ -109,6 +110,7 @@ import {
   type ResultProblem,
   type ResultTrayData,
   ResultTray,
+  resultActivity,
 } from "./results/ResultTray";
 import {
   type FileDragDropEvent,
@@ -380,6 +382,7 @@ export function App() {
     scanDetails?: boolean;
   } | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
+  const [activityLogHeight, setActivityLogHeight] = useState(106);
 
   useEffect(() => {
     const update = () =>
@@ -396,6 +399,12 @@ export function App() {
   }, []);
 
   function presentResult(data: ResultTrayData) {
+    if (!data.pending && !data.operationId)
+      reportActivity({
+        kind: "message",
+        ...resultActivity(data),
+        details: { kind: "result", data },
+      });
     latestResultRef.current = data;
     setToast(null);
     setSelectedHistoryId(data.operationId ?? null);
@@ -504,11 +513,17 @@ export function App() {
     }
   }
 
-  function selectHistoryEntry(entry: OperationHistoryEntry) {
+  function selectHistoryEntry(
+    entry: OperationHistoryEntry,
+    inspectDetails = false,
+  ) {
+    setToast(null);
     const detail = resultDetails[entry.id];
     setSelectedHistoryId(entry.id);
     setResultTray(
-      detail ? { ...detail, collapsed: false } : historyResult(entry),
+      detail
+        ? { ...detail, collapsed: false, inspectDetails }
+        : historyResult(entry),
     );
     setResultHidden(false);
   }
@@ -542,7 +557,10 @@ export function App() {
     message: string,
     tone: "info" | "success" | "warning" | "error" = "info",
     scanDetails = false,
+    activity = true,
   ) {
+    if (activity && !scanDetails)
+      reportActivity({ kind: "message", message, tone });
     setResultHidden(true);
     setToast({ id: Date.now(), message, tone, scanDetails });
   }
@@ -2044,6 +2062,11 @@ export function App() {
       <div
         className="translator-window"
         data-embedded-toolbar={!settingsLoadError}
+        style={
+          {
+            "--translator-log-height": `${activityLogHeight}px`,
+          } as CSSProperties
+        }
       >
         {Boolean(settingsLoadError) && workspaceToolbar}
         <ActivityLog
@@ -2062,8 +2085,31 @@ export function App() {
           }
           scanError={scanError}
           history={operationHistory}
-          notice={toast?.scanDetails ? null : (toast?.message ?? null)}
-          noticeTone={toast?.tone}
+          modNames={new Map(scan?.mods.map((mod) => [mod.uniqueId, mod.name]))}
+          height={activityLogHeight}
+          onHeightChange={setActivityLogHeight}
+          onDetails={(details) => {
+            if (details.kind === "scan") {
+              if (details.time === lastScanAt && !scanning && !scanError)
+                openLatestScan(true);
+            } else if (details.kind === "operation") {
+              selectHistoryEntry(
+                operationHistory.find(
+                  (entry) => entry.id === details.entry.id,
+                ) ?? details.entry,
+                true,
+              );
+            } else {
+              setToast(null);
+              setSelectedHistoryId(details.data.operationId ?? null);
+              setResultTray({
+                ...details.data,
+                collapsed: false,
+                inspectDetails: true,
+              });
+              setResultHidden(false);
+            }
+          }}
         />
         {settingsLoadError ? (
           <section
@@ -2283,7 +2329,12 @@ export function App() {
                   }}
                   onBulkApplied={handleBulkApplied}
                   onAiBatchFinished={handleAiBatchFinished}
-                  onNotify={notify}
+                  onNotify={(message, tone, options) =>
+                    notify(message, tone, false, options?.activity ?? true)
+                  }
+                  onManualSave={(save) =>
+                    reportActivity({ kind: "save", save })
+                  }
                   onOpenEngineSettings={() => {
                     setSettingsPage("ai");
                     if (settings) setSettingsOpen(true);
@@ -2386,7 +2437,7 @@ export function App() {
             onUndoBulk={
               selectedHistoryEntry?.canUndo ? undoLatestBulk : undefined
             }
-            onNotify={(message) => notify(message, "success")}
+            onNotify={(message) => notify(message, "success", false, false)}
           />
         )}
         {exportConfirm && (

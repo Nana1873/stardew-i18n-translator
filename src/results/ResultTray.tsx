@@ -22,6 +22,19 @@ export interface ResultProblem {
   resolved: boolean;
 }
 
+/** Share the same outcome/cause wording with the session Activity log. */
+export function resultActivity(data: ResultTrayData) {
+  const presentation = presentationFor(
+    data,
+    data.problems.filter((problem) => !problem.resolved),
+  );
+  return {
+    message: `${presentation.label} · ${data.title}: ${data.error ?? presentation.copy}`,
+    tone:
+      presentation.tone === "pending" ? ("info" as const) : presentation.tone,
+  };
+}
+
 interface ResultTrayBase {
   inspectDetails?: boolean;
   /** Canonical backend history identity once the operation completed. */
