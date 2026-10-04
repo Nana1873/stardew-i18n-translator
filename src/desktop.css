@@ -491,6 +491,27 @@
   .translator-inline-validation[data-severity="warning"]:hover {
   background: color-mix(in srgb, var(--translator-brand) 15%, transparent);
 }
+#stardew-i18n-translator [data-string-row] .translator-row-more {
+  background: transparent;
+  border-color: transparent;
+  border-radius: 3px;
+}
+#stardew-i18n-translator [data-string-row] .translator-row-more svg {
+  width: 14px;
+  height: 14px;
+}
+#stardew-i18n-translator [data-string-row] .translator-row-more:hover,
+#stardew-i18n-translator
+  [data-string-row]
+  .translator-row-more[aria-expanded="true"] {
+  opacity: 1;
+  color: var(--translator-text);
+  background: var(--translator-brand-soft);
+}
+#stardew-i18n-translator [data-string-row] .translator-row-more:focus-visible {
+  outline: 1px solid var(--translator-brand);
+  outline-offset: -1px;
+}
 #stardew-i18n-translator .translator-string-row {
   font-size: 13px;
 }
