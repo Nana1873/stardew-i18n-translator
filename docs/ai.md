@@ -155,7 +155,10 @@ and [llm.rs](../src-tauri/src/llm.rs).
   suggestion to Review, and continues past item-specific failures. Connection,
   HTTP-status, client-setup, cancellation, stale-state, and save failures stop
   remaining work. An error after a save is reported as completed with issues;
-  before any save it is a failure. Token mismatch has one targeted retry.
+  before any save it is a failure. Missing, unexpected, or duplicated protected
+  tokens trigger one targeted retry with the source's exact token counts. The
+  retry replaces the first draft only when it reduces count errors without
+  worsening another token. Unresolved mismatches remain visible in Review.
 - ChatGPT chunks contain at most 100 strings; each complete serialized prompt is
   bounded to 96 KiB. Repeated neighboring context is pooled without losing its
   order or boundaries. Oversized single-item prompts trim the farthest context

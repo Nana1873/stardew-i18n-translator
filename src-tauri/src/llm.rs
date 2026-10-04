@@ -19,6 +19,10 @@ use crate::tokens;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_READ_ONLY_NEIGHBORS: usize = 2;
 
+#[cfg(test)]
+#[path = "llm/repair_tests.rs"]
+mod repair_tests;
+
 pub fn validate_base_url(base_url: &str) -> Result<reqwest::Url, String> {
     let url = reqwest::Url::parse(base_url.trim())
         .map_err(|error| format!("Invalid local-AI base URL: {error}"))?;
@@ -343,14 +347,14 @@ fn parse_chat_response(body: &[u8]) -> Result<String, String> {
 }
 
 /// Build the chat messages for one translation. Pure (no I/O) so it is unit-
-/// tested. `glossary_pairs` are injected as exact-term guidance; `retry_missing`,
-/// when present, adds a stricter reminder listing tokens a prior attempt dropped.
+/// tested. `glossary_pairs` are injected as exact-term guidance; retry differences
+/// add exact source counts for missing, unexpected, or duplicated tokens.
 pub(crate) fn build_messages(
     source: &str,
     target_language: &str,
     section: Option<&str>,
     glossary_pairs: &[(String, String)],
-    retry_missing: Option<&[String]>,
+    retry_differences: Option<&[tokens::TokenDifference]>,
 ) -> Vec<ChatMessage> {
     build_messages_inner(
         source,
@@ -359,7 +363,7 @@ pub(crate) fn build_messages(
         &[],
         &[],
         glossary_pairs,
-        retry_missing,
+        retry_differences,
     )
 }
 
@@ -373,7 +377,7 @@ pub(crate) fn build_messages_with_context(
     before_context: &[String],
     after_context: &[String],
     glossary_pairs: &[(String, String)],
-    retry_missing: Option<&[String]>,
+    retry_differences: Option<&[tokens::TokenDifference]>,
 ) -> Vec<ChatMessage> {
     if before_context.is_empty() && after_context.is_empty() {
         return build_messages(
@@ -381,7 +385,7 @@ pub(crate) fn build_messages_with_context(
             target_language,
             section,
             glossary_pairs,
-            retry_missing,
+            retry_differences,
         );
     }
     build_messages_inner(
@@ -391,7 +395,7 @@ pub(crate) fn build_messages_with_context(
         before_context,
         after_context,
         glossary_pairs,
-        retry_missing,
+        retry_differences,
     )
 }
 
@@ -402,7 +406,7 @@ fn build_messages_inner(
     before_context: &[String],
     after_context: &[String],
     glossary_pairs: &[(String, String)],
-    retry_missing: Option<&[String]>,
+    retry_differences: Option<&[tokens::TokenDifference]>,
 ) -> Vec<ChatMessage> {
     let mut system = translation_instructions(target_language);
     system.push_str("\n- For this single-string request, return only the translated text.");
@@ -437,34 +441,29 @@ fn build_messages_inner(
         }
     }
 
-    if let Some(missing) = retry_missing {
-        if !missing.is_empty() {
-            let literal_tokens = missing
-                .iter()
-                .filter(|token| !tokens::is_gender_switch_shape(token))
-                .cloned()
-                .collect::<Vec<_>>();
-            let switch_shapes = missing
-                .iter()
-                .filter(|token| tokens::is_gender_switch_shape(token))
-                .cloned()
-                .collect::<Vec<_>>();
-            if !literal_tokens.is_empty() {
-                system.push_str(&format!(
-                    "\nIMPORTANT: your previous attempt dropped these required tokens: {}. \
-                     You MUST include every one of them verbatim in the translation.",
-                    literal_tokens.join(", ")
-                ));
-            }
-            if !switch_shapes.is_empty() {
-                system.push_str(&format!(
-                    "\nIMPORTANT: your previous attempt damaged gender-switch structure. \
-                     These shape descriptors show the required separator and branch count: {}. \
-                     Restore the corresponding complete blocks from the source with translated \
-                     branch prose; do not insert these empty shape templates literally.",
-                    switch_shapes.join(", ")
-                ));
-            }
+    if let Some(differences) = retry_differences.filter(|differences| !differences.is_empty()) {
+        system.push_str(
+            "\nIMPORTANT: your previous attempt changed protected-token counts. \
+             Regenerate only the selected source, without adding neighboring text. \
+             Match these source counts exactly; remove tokens whose expected count is zero:",
+        );
+        for difference in differences {
+            let token = serde_json::to_string(&difference.token)
+                .expect("serializing a token string cannot fail");
+            system.push_str(&format!(
+                "\n- {token}: expected {}, previous response {}.",
+                difference.source_count, difference.target_count,
+            ));
+        }
+        if differences
+            .iter()
+            .any(|difference| tokens::is_gender_switch_shape(&difference.token))
+        {
+            system.push_str(
+                "\nGender-switch entries are shape descriptors for the separator and branch \
+                 count. Restore the corresponding complete blocks from the source with \
+                 translated branch prose; do not insert these empty shape templates literally.",
+            );
         }
     }
 
@@ -572,6 +571,23 @@ fn apply_model_compatibility(
     Ok((messages, None))
 }
 
+/// A retry must reduce the count errors without damaging another token.
+fn improves_token_counts(
+    previous: &[tokens::TokenDifference],
+    candidate: &[tokens::TokenDifference],
+) -> bool {
+    let distance = |difference: &tokens::TokenDifference| {
+        difference.source_count.abs_diff(difference.target_count)
+    };
+    candidate.iter().map(distance).sum::<usize>() < previous.iter().map(distance).sum::<usize>()
+        && candidate.iter().all(|difference| {
+            previous
+                .iter()
+                .find(|previous| previous.token == difference.token)
+                .is_some_and(|previous| distance(difference) <= distance(previous))
+        })
+}
+
 /// Translate one selected source string with up to two nearby English sources
 /// on either side as read-only context. Only the selected source is eligible to
 /// become the returned translation; retries preserve the same context boundary.
@@ -590,10 +606,10 @@ pub async fn translate_with_context(
     let budget = output_token_budget(source);
     let stop = stop_sequences(source);
     let temperature = effective_temperature(temperature);
-    let result = |text: String, missing_tokens: Vec<String>| TranslationResult {
+    let result = |text: String| TranslationResult {
         glossary_misses: glossary_misses(&text, glossary_pairs),
+        missing_tokens: tokens::missing_token_list(source, &text),
         text,
-        missing_tokens,
     };
 
     let first = chat(
@@ -613,9 +629,9 @@ pub async fn translate_with_context(
         stop.clone(),
     )
     .await?;
-    let missing = tokens::missing_token_list(source, &first);
-    if missing.is_empty() {
-        return Ok(result(first, vec![]));
+    let differences = tokens::token_differences(source, &first);
+    if differences.is_empty() {
+        return Ok(result(first));
     }
 
     let second = chat(
@@ -628,20 +644,19 @@ pub async fn translate_with_context(
             before_context,
             after_context,
             glossary_pairs,
-            Some(&missing),
+            Some(&differences),
         ),
         temperature,
         budget,
         stop,
     )
     .await?;
-    let missing_second = tokens::missing_token_list(source, &second);
+    let second_differences = tokens::token_differences(source, &second);
 
-    // Prefer the retry only if it is at least as good as the first attempt.
-    if missing_second.len() <= missing.len() {
-        Ok(result(second, missing_second))
+    if improves_token_counts(&differences, &second_differences) {
+        Ok(result(second))
     } else {
-        Ok(result(first, missing))
+        Ok(result(first))
     }
 }
 
@@ -893,7 +908,7 @@ mod tests {
     #[test]
     fn token_retry_keeps_the_same_context_boundary() {
         let before = vec!["Neighbor {{other}}".to_string()];
-        let missing = vec!["{{name}}".to_string()];
+        let differences = tokens::token_differences("Hello {{name}}", "Hallo {{other}}");
         let messages = build_messages_with_context(
             "Hello {{name}}",
             "German",
@@ -901,13 +916,16 @@ mod tests {
             &before,
             &[],
             &[],
-            Some(&missing),
+            Some(&differences),
         );
         let input: serde_json::Value = serde_json::from_str(&messages[1].content).unwrap();
 
         assert!(messages[0]
             .content
-            .contains("dropped these required tokens: {{name}}"));
+            .contains("\"{{name}}\": expected 1, previous response 0"));
+        assert!(messages[0]
+            .content
+            .contains("\"{{other}}\": expected 0, previous response 1"));
         assert_eq!(input["selectedSource"], "Hello {{name}}");
         assert_eq!(
             input["readOnlyContext"]["before"],
@@ -1082,20 +1100,21 @@ mod tests {
     }
 
     #[test]
-    fn retry_reminder_lists_the_dropped_tokens() {
-        let missing = vec!["{{name}}".to_string(), "$b".to_string()];
-        let messages = build_messages("Hi {{name}}$b", "German", None, &[], Some(&missing));
+    fn retry_reminder_lists_exact_counts_for_missing_and_duplicate_tokens() {
+        let differences = tokens::token_differences("Hi {{name}}$b", "Hallo $b$b");
+        let messages = build_messages("Hi {{name}}$b", "German", None, &[], Some(&differences));
         assert!(messages[0]
             .content
-            .contains("dropped these required tokens"));
-        assert!(messages[0].content.contains("{{name}}"));
-        assert!(messages[0].content.contains("$b"));
+            .contains("\"{{name}}\": expected 1, previous response 0"));
+        assert!(messages[0]
+            .content
+            .contains("\"$b\": expected 1, previous response 2"));
     }
 
     #[test]
     fn retry_reminder_treats_switch_shapes_as_descriptors() {
-        let missing = vec!["${^^}$".to_string()];
-        let messages = build_messages("${one^two^three}$", "German", None, &[], Some(&missing));
+        let differences = tokens::token_differences("${one^two^three}$", "Only one branch");
+        let messages = build_messages("${one^two^three}$", "German", None, &[], Some(&differences));
         assert!(messages[0].content.contains("shape descriptors"));
         assert!(messages[0].content.contains("${^^}$"));
         assert!(messages[0]
