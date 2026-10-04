@@ -178,5 +178,10 @@ and [llm.rs](../src-tauri/src/llm.rs).
   failure retain saved suggestions; unfinished Open/Changed work can be retried.
   There is no persistent AI job queue or separate checkpoint history.
 - Progress forwards safe provider activity stages, not raw reasoning, commands,
-  identities, paths, or errors. The estimate uses saved-string checkpoints and
-  changes when more results are persisted; no token-by-token heartbeat is assumed.
+  identities, paths, or errors. The compact progress notice shows the current
+  step; the Activity log records provider stage changes, drafts received, quality
+  checks, recovery, and suggestions saved to Review. Repeated snapshots do not
+  add log entries. Received drafts can still change during review and do not
+  advance the saved-string progress bar. Local AI reports each completed response,
+  without streaming intermediate provider stages. No token-by-token heartbeat is
+  assumed.

@@ -17,7 +17,7 @@ import {
   type BatchItem,
   type LiveAiEngineOption,
 } from "./BatchTranslateDialog";
-import type { AiRunResult } from "../tauri/commands";
+import type { AiRunProgress, AiRunResult } from "../tauri/commands";
 
 const eventApi = vi.hoisted(() => ({ listen: vi.fn() }));
 vi.mock("@tauri-apps/api/event", () => ({ listen: eventApi.listen }));
@@ -206,6 +206,131 @@ describe("AI progress notice", () => {
       expect(screen.getByRole("progressbar")).toHaveAttribute(
         "aria-valuetext",
         "93 of 282 suggestions saved to Review",
+      );
+    } finally {
+      window.removeEventListener("translator-ai-activity", activity);
+    }
+  });
+
+  it("shows actual provider steps before saving without repeating snapshots", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    const activity = vi.fn();
+    window.addEventListener("translator-ai-activity", activity);
+    try {
+      renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
+      await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      const receive = eventApi.listen.mock.calls[0][1];
+      let payload: AiRunProgress = {
+        runId: run.mock.calls[0][0],
+        phase: "translating",
+        batchIndex: 1,
+        batchSize: 2,
+        completed: 0,
+        translated: 0,
+        total: 2,
+        retries: 0,
+        splits: 0,
+      };
+      const update = (changes: Partial<AiRunProgress>) => {
+        payload = { ...payload, ...changes };
+        act(() => receive({ payload }));
+      };
+      const messages = () =>
+        activity.mock.calls.flatMap(([event]) =>
+          event.detail.entries.map(
+            (entry: { message: string }) => entry.message,
+          ),
+        );
+      update({ providerStage: "working", providerActivitySequence: 1 });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Batch 1 · Processing request",
+      );
+      update({ providerStage: "reasoning", providerActivitySequence: 2 });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Batch 1 · Preparing response",
+      );
+      update({ providerStage: "writingResponse", providerActivitySequence: 3 });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Batch 1 · Receiving response",
+      );
+      const logged = activity.mock.calls.length;
+      update({ providerActivitySequence: 4 });
+      expect(activity).toHaveBeenCalledTimes(logged);
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+      expect(messages()).not.toContainEqual(
+        expect.stringContaining("saved to Review"),
+      );
+
+      update({ providerStage: "completed", providerActivitySequence: 5 });
+      update({ translated: 2 });
+      update({ phase: "reviewing", providerStage: undefined });
+      update({ providerStage: "writingResponse", providerActivitySequence: 6 });
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "Checking translation quality · Receiving response",
+      );
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+      expect(messages()).toContain("Batch 1 · 2 drafts received · 2 / 2");
+      expect(
+        messages().filter((message: string) =>
+          message.includes("drafts received"),
+        ),
+      ).toHaveLength(1);
+      update({ phase: "saving", providerStage: undefined });
+      update({ completed: 2 });
+      expect(messages()).toContain("2 suggestions saved to Review · 2 / 2");
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "2");
+    } finally {
+      window.removeEventListener("translator-ai-activity", activity);
+    }
+  });
+
+  it("does not assign aggregate provider activity to a parallel batch or infer saves", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    const activity = vi.fn();
+    window.addEventListener("translator-ai-activity", activity);
+    try {
+      renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
+      await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      const receive = eventApi.listen.mock.calls[0][1];
+      const payload: AiRunProgress = {
+        runId: run.mock.calls[0][0],
+        phase: "translating",
+        batchIndex: 2,
+        completed: 0,
+        translated: 1,
+        total: 2,
+        retries: 0,
+        splits: 0,
+        providerStage: "writingResponse",
+        providerActivitySequence: 1,
+        batchActivity: [
+          { batchIndex: 1, phase: "reviewing", batchSize: 1 },
+          { batchIndex: 2, phase: "translating", batchSize: 1 },
+        ],
+      };
+      act(() => receive({ payload }));
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "2 batches active · Receiving response",
+      );
+      const messages = activity.mock.calls.flatMap(([event]) =>
+        event.detail.entries.map((entry: { message: string }) => entry.message),
+      );
+      expect(messages).toContain("Receiving response");
+      expect(messages).toContain("1 draft received · 1 / 2");
+      expect(messages).not.toContain("Batch 2 · Receiving response");
+      act(() =>
+        receive({
+          payload: { ...payload, batchActivity: [], providerStage: undefined },
+        }),
+      );
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+      const logged = activity.mock.calls.flatMap(
+        ([event]) => event.detail.entries,
+      );
+      expect(logged).not.toContainEqual(
+        expect.objectContaining({
+          message: expect.stringContaining("saved to Review"),
+        }),
       );
     } finally {
       window.removeEventListener("translator-ai-activity", activity);

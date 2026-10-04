@@ -6,7 +6,10 @@ import {
   type AiRunProgress,
   type AiRunResult,
 } from "../tauri/commands";
-import { AI_PHASE_LABELS, describeProgressChanges } from "./aiRunActivity";
+import {
+  describeCurrentActivity,
+  describeProgressChanges,
+} from "./aiRunActivity";
 export interface LiveAiEngineOption {
   id: AiEngine;
   label: string;
@@ -217,14 +220,10 @@ function AiRunProgressNotice({
 
   const total = progress?.total ?? items.length;
   const done = progress?.completed ?? 0;
-  const activeBatches =
-    progress?.batchActivity?.length ?? progress?.activeBatches;
   const phase = cancelRequested
     ? "Cancelling…"
     : progress
-      ? activeBatches != null
-        ? `${activeBatches} ${activeBatches === 1 ? "batch" : "batches"} active`
-        : AI_PHASE_LABELS[progress.phase]
+      ? describeCurrentActivity(progress)
       : "Preparing selected strings…";
   const target =
     document.getElementById("ai-progress-slot") ??
