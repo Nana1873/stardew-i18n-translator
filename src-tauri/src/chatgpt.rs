@@ -1,18 +1,16 @@
 //! Direct ChatGPT plan access in the desktop app. No external helper process.
 use crate::{
-    ai::{self, PreparedAiItem, ProviderFailure, ProviderPrompt, ProviderTranslation},
+    ai::{ProviderFailure, ProviderPrompt},
     ai_provider::*,
     chatgpt_auth,
 };
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 use std::{
-    collections::{HashMap, VecDeque},
-    future::Future,
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 pub async fn status() -> CloudAiStatus {
@@ -149,56 +147,6 @@ pub async fn run_prompt(
         }
     }
 }
-include!("cloud_translation.rs");
-
-#[allow(clippy::too_many_arguments)]
-async fn run_prompt_once(
-    model: Option<String>,
-    reasoning: String,
-    prompt: ProviderPrompt,
-    expected: Vec<PreparedAiItem>,
-    output_contract: PromptOutputContract,
-    cancelled: Arc<AtomicBool>,
-    progress: ProviderProgressCallback,
-) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
-    let started = Instant::now();
-    log::info!(target: "chatgpt", "{}", serde_json::json!({
-        "event": "attempt_started", "engine": "chatgpt", "transport": "responses",
-        "itemCount": expected.len(), "model": safe_model_for_log(model.as_deref()), "reasoning": reasoning,
-    }));
-    let result = async {
-        let text = run_prompt(model, reasoning, prompt, cancelled, Arc::clone(&progress)).await?;
-        let parsed = ai::parse_provider_output(&text).map_err(ProviderFailure::InvalidResponse)?;
-        match output_contract {
-            PromptOutputContract::Exact => ai::validate_provider_output(&expected, parsed),
-            PromptOutputContract::Sparse => ai::validate_provider_output_subset(&expected, parsed),
-        }
-        .map_err(ProviderFailure::InvalidResponse)
-    }
-    .await;
-    let outcome = match &result {
-        Ok(_) => "complete",
-        Err(ProviderFailure::Cancelled) => "cancelled",
-        Err(ProviderFailure::Transient(_)) => "transient_error",
-        Err(ProviderFailure::InvalidResponse(_)) => "invalid_response",
-        Err(ProviderFailure::Message(_)) => "error",
-    };
-    if result.is_err() && !matches!(&result, Err(ProviderFailure::Cancelled)) {
-        progress(ProviderProgressEvent::Activity(ProviderActivity::Failed));
-    }
-    log::info!(target: "chatgpt", "{}", serde_json::json!({
-        "event": "attempt_finished", "engine": "chatgpt", "transport": "responses",
-        "itemCount": expected.len(), "durationMs": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX), "outcome": outcome,
-    }));
-    result
-}
-
-#[cfg(test)]
-#[path = "cloud_translation/merge_followup_tests.rs"]
-mod merge_followup_tests;
-#[cfg(test)]
-#[path = "cloud_translation/review_failure_tests.rs"]
-mod review_failure_tests;
-#[cfg(test)]
-#[path = "cloud_translation/tests.rs"]
-mod tests;
+#[path = "cloud_translation.rs"]
+mod cloud_translation;
+pub(crate) use cloud_translation::{repair_token_mismatches_once, translate_chunk};

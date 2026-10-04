@@ -15,6 +15,11 @@ If Microsoft Edge WebView2 Runtime is missing, the native startup message offers
 to open Microsoft's download page. Install the runtime and launch the app again.
 The translator does not download or install it automatically.
 
+Only one running translator can use the same portable `data/` folder. If startup
+reports that the profile is unavailable, close the other instance and retry.
+Also check the folder's write permissions. The lock is released on exit; a
+remaining `chatgpt-session.lock` file does not itself mean the profile is busy.
+
 ## Updating and moving the app
 
 1. Close the app before changing its files.
@@ -47,6 +52,8 @@ before exporting. For a consistent full rollback, restore matching backups of
 both the app's data and affected mod translation files.
 
 Corrupt settings can recover automatically from a valid `settings.json.bak`.
+If recovery fails, the app shows the error instead of opening setup. Restore or
+repair the settings file, then choose **Retry loading settings**.
 Translation-state errors identify the affected file: with the app closed, keep
 the damaged file and restore its `.bak` sibling if available. If no usable
 backup exists, report the error before deleting `data/` or starting over.

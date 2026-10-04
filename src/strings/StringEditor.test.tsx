@@ -1045,7 +1045,8 @@ describe("StringEditor", () => {
   it("uses the exact changed-source heading and exposes status help", async () => {
     renderEditor({ status: "outdated" });
 
-    expect(screen.getByText("English source update")).toBeInTheDocument();
+    expect(screen.getByText("Current English source")).toBeInTheDocument();
+    expect(screen.queryByText("Previous English source")).toBeNull();
     const status = screen.getByText("Changed");
     expect(status).toHaveAttribute(
       "aria-description",

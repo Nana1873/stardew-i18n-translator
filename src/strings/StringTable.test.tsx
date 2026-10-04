@@ -402,7 +402,7 @@ describe("StringTable workbench", () => {
     expect(toolbar).toHaveClass("is-selection-active");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Clear selected strings" }),
+      screen.getByRole("button", { name: "Clear string selection" }),
     );
     expect(toolbar).not.toHaveClass("is-selection-active");
   });
@@ -1307,7 +1307,7 @@ describe("StringTable workbench", () => {
     ).toBeVisible();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Clear selected strings" }),
+      screen.getByRole("button", { name: "Clear string selection" }),
     );
     expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
     expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info");
@@ -1752,6 +1752,11 @@ describe("StringTable workbench", () => {
       ),
     );
     expect(onBulkApplied).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Select bye" })).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select tomorrow" }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: /2 selected/ })).toBeEnabled();
     expect(
       rowFor("bye").querySelector(".translator-translation-cell"),
     ).toHaveTextContent("—");
@@ -2402,14 +2407,18 @@ describe("StringTable workbench", () => {
     fireEvent.click(exportAction);
 
     await waitFor(() => expect(onLlmBatchExportForMod).toHaveBeenCalled());
-    expect(onLlmBatchExportForMod).toHaveBeenCalledWith(MOD, [
-      { relativeDir: "i18n", key: "bye", source: "Bye" },
-      {
-        relativeDir: "i18n",
-        key: "token",
-        source: "Hi {{name}}",
-      },
-    ]);
+    expect(onLlmBatchExportForMod).toHaveBeenCalledWith(
+      MOD,
+      [
+        { relativeDir: "i18n", key: "bye", source: "Bye" },
+        {
+          relativeDir: "i18n",
+          key: "token",
+          source: "Hi {{name}}",
+        },
+      ],
+      3,
+    );
   });
 
   it("focuses search with Ctrl+F and opens row actions with Shift+F10", async () => {
@@ -2514,6 +2523,117 @@ describe("StringTable workbench", () => {
         screen.queryByRole("menu", { name: "String actions" }),
       ).not.toBeInTheDocument(),
     );
+  });
+
+  it("retains the smallest manual widths when remounted from persisted settings", async () => {
+    const changed = vi.fn();
+    const view = render(
+      <StringTable
+        mod={MOD}
+        initialColumnWidths={{ status: 92, key: 116, source: 176, target: 176 }}
+        onColumnWidthsChange={changed}
+      />,
+    );
+    await screen.findByText("greeting");
+    const minimums = [
+      ["Resize status column", 76],
+      ["Resize key column", 100],
+      ["Resize English source column", 160],
+      ["Resize translation column", 160],
+    ] as const;
+    for (const [name, value] of minimums) {
+      fireEvent.keyDown(screen.getByRole("separator", { name }), {
+        key: "ArrowLeft",
+      });
+      expect(screen.getByRole("separator", { name })).toHaveAttribute(
+        "aria-valuenow",
+        String(value),
+      );
+    }
+    const persisted = JSON.parse(JSON.stringify(changed.mock.lastCall?.[0]));
+    expect(persisted).toMatchObject({
+      status: 76,
+      key: 100,
+      source: 160,
+      target: 160,
+    });
+    view.unmount();
+    render(<StringTable mod={MOD} initialColumnWidths={persisted} />);
+    await screen.findByText("greeting");
+    for (const [name, value] of minimums) {
+      expect(screen.getByRole("separator", { name })).toHaveAttribute(
+        "aria-valuenow",
+        String(value),
+      );
+    }
+  });
+
+  it("fixes the inherited target width when another Fit column is resized", async () => {
+    const changed = vi.fn();
+    const view = render(
+      <StringTable mod={MOD} onColumnWidthsChange={changed} />,
+    );
+    await screen.findByText("greeting");
+    const workbench = view.container.querySelector(
+      ".translator-string-workbench",
+    );
+    if (!workbench) throw new Error("Missing string workbench");
+    Object.defineProperty(workbench, "clientWidth", { value: 1_200 });
+    fireEvent(window, new Event("resize"));
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize key column" }),
+      {
+        key: "ArrowLeft",
+      },
+    );
+    const grid = "34px 80px 124px 444px 444px minmax(0, 1fr) 58px";
+    expect(
+      view.container.querySelector(".translator-string-table-head"),
+    ).toHaveStyle({
+      gridTemplateColumns: grid,
+    });
+    const persisted = JSON.parse(JSON.stringify(changed.mock.lastCall?.[0]));
+    expect(persisted.target).toBe(444);
+    view.unmount();
+    const restored = render(
+      <StringTable mod={MOD} initialColumnWidths={persisted} />,
+    );
+    await screen.findByText("greeting");
+    expect(
+      restored.container.querySelector(".translator-string-table-head"),
+    ).toHaveStyle({
+      gridTemplateColumns: grid,
+    });
+  });
+
+  it("bounds every inherited Fit width before persisting a manual resize", async () => {
+    const changed = vi.fn();
+    const { container } = render(
+      <StringTable mod={MOD} onColumnWidthsChange={changed} />,
+    );
+    await screen.findByText("greeting");
+    const workbench = container.querySelector(".translator-string-workbench");
+    if (!workbench) throw new Error("Missing string workbench");
+    Object.defineProperty(workbench, "clientWidth", { value: 4_000 });
+    fireEvent(window, new Event("resize"));
+    expect(
+      screen.getByRole("separator", { name: "Resize English source column" }),
+    ).toHaveAttribute("aria-valuenow", "1844");
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize key column" }),
+      { key: "ArrowRight" },
+    );
+    expect(changed).toHaveBeenLastCalledWith({
+      mod: 100,
+      file: 80,
+      status: 80,
+      key: 156,
+      source: 720,
+      target: 1600,
+    });
+    expect(
+      screen.getByRole("separator", { name: "Resize English source column" }),
+    ).toHaveAttribute("aria-valuenow", "720");
   });
 
   it("resizes status and content columns while action and issue controls stay fixed", async () => {

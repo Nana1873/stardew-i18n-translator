@@ -466,8 +466,8 @@ export function SettingsDialog({
     await modelsRequest;
   }
 
-  async function checkCloudStatus() {
-    setChatgptAuthError(null);
+  async function checkCloudStatus(clearAuthError = true) {
+    if (clearAuthError) setChatgptAuthError(null);
     setCloudChecking(true);
     try {
       const status = await cloudAiStatus();
@@ -504,7 +504,7 @@ export function SettingsDialog({
     } finally {
       setCloudModels(null);
       setCloudModel("");
-      await checkCloudStatus();
+      await checkCloudStatus(false);
     }
   }
 
@@ -1312,8 +1312,10 @@ function GlossarySettings({
 }) {
   const supported = Boolean(targetLang && gameSupportsLanguage(targetLang));
   const cached = glossary?.cached ?? null;
-  const community = cached?.source === "communityPack";
-  const available = Boolean(glossary?.sourceAvailable);
+  const available = Boolean(
+    glossary?.sourceAvailable && (supported || glossary.packAvailable),
+  );
+  const usableCache = Boolean(cached && !glossary?.outdatedCache);
   const canBuild = Boolean(
     targetLang &&
     glossary &&
@@ -1325,7 +1327,9 @@ function GlossarySettings({
     : glossary.outdatedCache
       ? "Glossary cache needs rebuild"
       : cached
-        ? "Glossary is up to date"
+        ? available
+          ? "Glossary is up to date"
+          : "Cached glossary available"
         : canBuild
           ? "Glossary can be built"
           : "Glossary unavailable";
@@ -1337,9 +1341,9 @@ function GlossarySettings({
         : "";
   const source = !glossary
     ? "Checking local Stardew content"
-    : community
+    : available && !supported && glossary.packAvailable
       ? "Installed community language pack" +
-        (cached?.packName ? " · " + cached.packName : "")
+        (glossary.packName ? " · " + glossary.packName : "")
       : available
         ? "Official local Content/Strings sources · processed read-only"
         : "Unavailable";
@@ -1377,7 +1381,7 @@ function GlossarySettings({
       <div className="translator-settings-group">
         <div className="translator-setting-line">
           <span className="translator-setting-copy">
-            <strong>Source</strong>
+            <strong>{cached ? "Rebuild source" : "Source"}</strong>
             <span>{source}</span>
           </span>
           <span
@@ -1403,29 +1407,32 @@ function GlossarySettings({
           </div>
         )}
 
-        {!supported && glossary?.packAvailable && !available && (
-          <div className="translator-setting-line">
-            <span className="translator-setting-copy">
-              <strong>Notice</strong>
-              <span>
-                A community language pack was detected
-                {glossary.packName ? " (" + glossary.packName + ")" : ""}, but
-                the app could not read a local English Strings source.
+        {!supported &&
+          glossary?.packAvailable &&
+          !available &&
+          !usableCache && (
+            <div className="translator-setting-line">
+              <span className="translator-setting-copy">
+                <strong>Notice</strong>
+                <span>
+                  A community language pack was detected
+                  {glossary.packName ? " (" + glossary.packName + ")" : ""}, but
+                  the app could not read a local English Strings source.
+                </span>
               </span>
-            </span>
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={() =>
-                void openUrl("https://github.com/Pathoschild/StardewXnbHack")
-              }
-            >
-              Get StardewXnbHack ↗
-            </button>
-          </div>
-        )}
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                onClick={() =>
+                  void openUrl("https://github.com/Pathoschild/StardewXnbHack")
+                }
+              >
+                Get StardewXnbHack ↗
+              </button>
+            </div>
+          )}
 
-        {!supported && glossary && !glossary.packAvailable && (
+        {!supported && glossary && !glossary.packAvailable && !usableCache && (
           <div className="translator-setting-line">
             <span className="translator-setting-copy">
               <strong>Notice</strong>
@@ -1438,24 +1445,27 @@ function GlossarySettings({
           </div>
         )}
 
-        {supported && glossary && !available && (
+        {glossary && !available && (supported || usableCache) && (
           <div className="translator-setting-line">
             <span className="translator-setting-copy">
               <strong>Notice</strong>
               <span>
-                No glossary-ready game Strings were found. Direct game XNB files
-                are used first; StardewXnbHack is only a fallback.
+                {cached && !glossary.outdatedCache
+                  ? "Cached terms remain available. Rebuilding needs a local source."
+                  : "Game Strings could not be read. StardewXnbHack can supply unpacked sources."}
               </span>
             </span>
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={() =>
-                void openUrl("https://github.com/Pathoschild/StardewXnbHack")
-              }
-            >
-              Get StardewXnbHack ↗
-            </button>
+            {(supported || glossary.packAvailable) && (
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                onClick={() =>
+                  void openUrl("https://github.com/Pathoschild/StardewXnbHack")
+                }
+              >
+                Get StardewXnbHack ↗
+              </button>
+            )}
           </div>
         )}
 

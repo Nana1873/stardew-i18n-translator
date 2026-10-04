@@ -216,6 +216,7 @@ export interface StringTableProps {
   onLlmBatchExportForMod?: (
     mod: ScannedMod,
     items: LlmBatchItem[],
+    selectedCount?: number,
   ) => Promise<LlmExportOutcome | null>;
   onCountsChange?: (
     translatedKeys: number,
@@ -1131,7 +1132,6 @@ export function StringTable({
       if (
         event.defaultPrevented ||
         editorSession ||
-        batch ||
         document.querySelector('[role="dialog"][aria-modal="true"]')
       )
         return;
@@ -1280,7 +1280,6 @@ export function StringTable({
       event.stopPropagation();
       if (
         editorSession ||
-        batch ||
         contextMenu ||
         bulkMenuOpen ||
         document.querySelector('[role="dialog"][aria-modal="true"]')
@@ -1632,6 +1631,11 @@ export function StringTable({
           (planned.length === 1 ? " string updated." : " strings updated."),
         "success",
       );
+      setSelection((current) => {
+        const next = new Set(current);
+        for (const identity of selectedIdentities) next.delete(identity);
+        return next;
+      });
     } catch (cause) {
       onNotify?.(`The batch edit was not saved. ${String(cause)}`, "error");
     } finally {
@@ -1639,11 +1643,6 @@ export function StringTable({
       setBulkSaving(false);
       setContextMenu(null);
       setBulkMenuOpen(false);
-      setSelection((current) => {
-        const next = new Set(current);
-        for (const identity of selectedIdentities) next.delete(identity);
-        return next;
-      });
     }
   }
 
@@ -1905,8 +1904,9 @@ export function StringTable({
     }));
     setContextMenu(null);
     setBulkMenuOpen(false);
+    bulkTriggerRef.current?.focus();
     try {
-      await onLlmBatchExportForMod(batchMod, items);
+      await onLlmBatchExportForMod(batchMod, items, selectedRows.length);
     } catch {
       // The shell owns persistent operation reporting.
     }
@@ -1915,11 +1915,18 @@ export function StringTable({
   function adjustColumn(column: ColumnName, value: number) {
     const limits = COLUMN_LIMITS[column];
     setFitColumns(false);
+    setTargetColumnSized(true);
     setColumnWidths((current) => {
       const next = {
         ...(fitColumns ? renderedColumnWidths : current),
         [column]: Math.min(limits.max, Math.max(limits.min, value)),
       };
+      // Fitted text columns can exceed manual limits in a wide pane. Persist
+      // the same bounded widths we render when leaving automatic sizing.
+      for (const name of Object.keys(COLUMN_LIMITS) as ColumnName[]) {
+        const bound = COLUMN_LIMITS[name];
+        next[name] = Math.min(bound.max, Math.max(bound.min, next[name]));
+      }
       onColumnWidthsChange?.(next);
       return next;
     });
@@ -2439,7 +2446,7 @@ export function StringTable({
               <button
                 className="translator-query-clear"
                 type="button"
-                aria-label="Clear selected strings"
+                aria-label="Clear string selection"
                 onClick={() => {
                   setSelection(new Set());
                   setBulkMenuOpen(false);

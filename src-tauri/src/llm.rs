@@ -572,33 +572,6 @@ fn apply_model_compatibility(
     Ok((messages, None))
 }
 
-/// Translate one source string. Validates protected tokens against the source;
-/// on a dropped token, retries once with a stricter reminder and returns the
-/// better of the two attempts (with any still-missing tokens flagged). Injected
-/// glossary terms that the result does not appear to use are reported softly.
-pub async fn translate(
-    base_url: &str,
-    model: &str,
-    source: &str,
-    target_language: &str,
-    section: Option<&str>,
-    glossary_pairs: &[(String, String)],
-    temperature: Option<f32>,
-) -> Result<TranslationResult, String> {
-    translate_with_context(
-        base_url,
-        model,
-        source,
-        target_language,
-        section,
-        glossary_pairs,
-        &[],
-        &[],
-        temperature,
-    )
-    .await
-}
-
 /// Translate one selected source string with up to two nearby English sources
 /// on either side as read-only context. Only the selected source is eligible to
 /// become the returned translation; retries preserve the same context boundary.

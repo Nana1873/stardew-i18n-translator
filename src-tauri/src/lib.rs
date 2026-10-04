@@ -18,6 +18,7 @@ mod language;
 mod llm;
 mod operation_history;
 mod operation_log;
+mod portable_profile;
 mod release_zip;
 mod scan_snapshot;
 mod scanner;
@@ -29,7 +30,7 @@ mod xnb;
 #[cfg(test)]
 mod language_compatibility;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -280,19 +281,6 @@ fn stored_save_entries(entries: Vec<SaveStringInput>) -> Vec<(String, translatio
             )
         })
         .collect()
-}
-
-/// Save many strings of one mod in a single load-modify-write cycle. The bulk
-/// actions (context menu) must use this instead of N parallel `save_string`
-/// calls, which would race the per-mod state file and lose updates.
-#[tauri::command]
-fn save_strings(
-    app: AppHandle,
-    mod_unique_id: String,
-    entries: Vec<SaveStringInput>,
-) -> Result<(), String> {
-    let entries = stored_save_entries(entries);
-    translations::save_many(&translation_config_dir(&app)?, &mod_unique_id, entries)
 }
 
 /// Persist one real batch edit across one or more i18n components and retain
@@ -701,8 +689,16 @@ fn preview_translation_zip(
         "preview_translation_zip",
         || {
             let target_lang = language::normalize_target_code(&target_lang)?;
+            let config = config_dir(&app)?;
+            let components = release_zip::resolve_components(
+                &config,
+                Path::new(&mods_path),
+                &package_name,
+                &target_lang,
+                &components,
+            )?;
             release_zip::preview(
-                &translation_config_dir(&app)?,
+                &translations::language_root(&config, &target_lang)?,
                 Path::new(&mods_path),
                 &package_name,
                 &target_lang,
@@ -752,6 +748,7 @@ fn build_stardew_translator_output(
     history: State<'_, operation_history::OperationHistoryState>,
     destination: String,
     overwrite: bool,
+    install_folders: Option<Vec<release_zip::ZipInstallFolder>>,
 ) -> Result<release_zip::ZipBuildOutcome, String> {
     use operation_log::{Outcome, Summary};
     operation_log::run(
@@ -763,6 +760,7 @@ fn build_stardew_translator_output(
                 &history,
                 Path::new(&destination),
                 overwrite,
+                install_folders.as_deref().unwrap_or_default(),
             )
         },
         |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
@@ -774,8 +772,10 @@ fn build_output_with_history(
     history: &operation_history::OperationHistoryState,
     destination: &Path,
     overwrite: bool,
+    install_folders: &[release_zip::ZipInstallFolder],
 ) -> Result<release_zip::ZipBuildOutcome, String> {
-    let result = release_zip::build_output(config, destination, overwrite)?;
+    let result =
+        release_zip::build_output_with_folders(config, destination, overwrite, install_folders)?;
     remember_zip_operation(history, &result, "Stardew Translator Output created");
     Ok(result)
 }
@@ -792,7 +792,7 @@ fn remember_zip_operation(
             outcome: operation_history::OperationOutcome::Success,
             title: title.to_string(),
             summary: format!(
-                "{} strings packaged in {} archive entries.",
+                "{} strings packaged in {} translation files.",
                 result.strings, result.entries
             ),
             item_count: result.strings,
@@ -801,7 +801,7 @@ fn remember_zip_operation(
             warnings: Vec::new(),
             details: vec![
                 operation_detail("Destination folder", &result.folder),
-                operation_detail("Archive entries", result.entries),
+                operation_detail("Translation files", result.entries),
                 operation_detail("Strings", result.strings),
             ],
         },
@@ -841,7 +841,18 @@ fn build_translation_zip(
         || {
             let _export_guard = export_write_guard()?;
             request.target_lang = language::normalize_target_code(&request.target_lang)?;
-            let result = release_zip::build(&translation_config_dir(&app)?, &request)?;
+            let config = config_dir(&app)?;
+            request.components = release_zip::resolve_components(
+                &config,
+                Path::new(&request.mods_path),
+                &request.package_name,
+                &request.target_lang,
+                &request.components,
+            )?;
+            let result = release_zip::build(
+                &translations::language_root(&config, &request.target_lang)?,
+                &request,
+            )?;
             remember_zip_operation(&history, &result, "Translation ZIP created");
             Ok(result)
         },
@@ -1022,45 +1033,6 @@ fn remember_llm_batch_import(
             ],
         },
     );
-}
-
-/// Import a translated LLM batch/result file for one mod. Opens
-/// a file picker; matches keys against the mod's current strings; stages all
-/// accepted values as `review-needed` in ONE state write. `None` = cancelled.
-#[tauri::command]
-fn import_llm_batch(
-    app: AppHandle,
-    history: State<'_, operation_history::OperationHistoryState>,
-    mod_unique_id: String,
-    files: Vec<export::ExportFileInput>,
-) -> Result<Option<batch::ImportSummary>, String> {
-    use operation_log::{Outcome, Summary};
-    operation_log::run(
-        "import_llm_batch",
-        || {
-            let picked = app
-                .dialog()
-                .file()
-                .set_title("Import LLM translation result")
-                .add_filter("JSON", &["json"])
-                .blocking_pick_file();
-            let Some(picked) = picked else {
-                return Ok(None);
-            };
-            let source = picked
-                .into_path()
-                .map_err(|error| format!("Could not read the selected path: {error}"))?;
-            let summary = import_llm_batch_from_path(&app, &mod_unique_id, &files, &source).inspect_err(
-        |error| log::error!(target: "app", "import_llm_batch({mod_unique_id}) failed: {error}"),
-    )?;
-            remember_llm_batch_import(&history, &summary, &source, &mod_unique_id);
-            Ok(Some(summary))
-        },
-        |r| match r {
-            Some(r) => Summary::new(Outcome::Success, r.imported, 0, r.unmatched),
-            None => Summary::new(Outcome::Cancelled, 0, 0, 0),
-        },
-    )
 }
 
 /// Pick an external LLM result without importing it. The caller can use the
@@ -1395,45 +1367,6 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
             Err(error)
         }
     }
-}
-
-/// Translate one source string via the configured local LLM.
-/// Injects matching official-glossary terms into the prompt and validates the
-/// result's protected tokens (with one stricter retry). `temperature` is the
-/// optional user setting (None = low default).
-// Tauri delivers each field as a named argument from the JS bridge, so the flat
-// parameter list mirrors the `translateString` call rather than a wrapper struct.
-#[allow(clippy::too_many_arguments)]
-#[tauri::command]
-async fn translate_string(
-    app: AppHandle,
-    base_url: String,
-    model: String,
-    source: String,
-    target_lang: String,
-    target_language: String,
-    section: Option<String>,
-    temperature: Option<f32>,
-) -> Result<llm::TranslationResult, String> {
-    llm::validate_base_url(&base_url)?;
-    let target_lang = language::normalize_target_code(&target_lang)?;
-    // Load only the glossary currently valid for the active language. For
-    // unsupported languages, a community-pack cache is ignored after the pack is
-    // removed so stale official-term hints never reach the prompt.
-    let glossary_pairs = load_active_glossary(&config_dir(&app)?, &target_lang)
-        .map(|g| glossary::match_terms(&source, &g))
-        .unwrap_or_default();
-    llm::translate(
-        &base_url,
-        &model,
-        &source,
-        &target_language,
-        section.as_deref(),
-        &glossary_pairs,
-        temperature,
-    )
-    .await
-    .inspect_err(|error| log::error!(target: "app", "translate_string failed: {error}"))
 }
 
 fn prepare_ai_request(
@@ -1803,6 +1736,18 @@ fn stage_ai_suggestions(
     }
     let mut groups = Vec::<(String, Vec<translations::ConditionalSaveEntry>)>::new();
     let mut completed = Vec::with_capacity(generated.len());
+    let mut wanted_states = HashMap::<String, HashSet<String>>::new();
+    for item in items {
+        wanted_states
+            .entry(item.identity.mod_unique_id.to_lowercase())
+            .or_default()
+            .insert(translations::entry_key(
+                &item.identity.relative_dir,
+                &item.identity.key,
+            ));
+    }
+    let mut current_states = HashMap::new();
+    let mut current_files = HashMap::new();
     for (item, mut suggestion) in items.iter().zip(generated) {
         if suggestion.identity != item.identity {
             return Err(
@@ -1810,19 +1755,48 @@ fn stage_ai_suggestions(
             );
         }
 
-        // Re-read the real source/target files and current portable state before
-        // preparing the transaction. The provider may have taken minutes; a
-        // newer user edit or source update must win instead of being overwritten.
-        let current_state = translations::load(translation_root, &item.identity.mod_unique_id)?;
-        let current_rows = scanner::load_strings_checked(
-            &item.default_path,
-            &item.target_path,
-            &current_state,
-            &item.identity.relative_dir,
-        )?;
+        // Refresh each component and file once for this transaction. The
+        // provider may have taken minutes; never reuse a previous chunk's view.
+        // Conditional revisions still protect edits made after these reads.
+        let mod_id = item.identity.mod_unique_id.to_lowercase();
+        let wanted = &wanted_states[&mod_id];
+        let current_state = match current_states.entry(mod_id.clone()) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
+                translations::load(translation_root, &item.identity.mod_unique_id)?
+                    .into_iter()
+                    .filter(|(key, _)| wanted.contains(key))
+                    .collect::<translations::ModState>(),
+            ),
+        };
+        let file = (
+            mod_id,
+            item.default_path.clone(),
+            item.target_path.clone(),
+            item.identity.relative_dir.clone(),
+        );
+        let current_rows = match current_files.entry(file) {
+            std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+            std::collections::hash_map::Entry::Vacant(entry) => entry.insert(
+                scanner::load_strings_checked(
+                    &item.default_path,
+                    &item.target_path,
+                    current_state,
+                    &item.identity.relative_dir,
+                )?
+                .into_iter()
+                .filter(|row| {
+                    wanted.contains(&translations::entry_key(
+                        &item.identity.relative_dir,
+                        &row.key,
+                    ))
+                })
+                .map(|row| (row.key.clone(), row))
+                .collect::<HashMap<_, _>>(),
+            ),
+        };
         let current = current_rows
-            .iter()
-            .find(|row| row.key == item.identity.key)
+            .get(&item.identity.key)
             .filter(|row| {
                 row.source == item.source
                     && (row.status == "untranslated" || row.status == "outdated")
@@ -2977,7 +2951,7 @@ fn active_target_lang(app: &AppHandle) -> Result<String, String> {
 /// attached to a bug report — never to the OS log dir. Local only: there is no
 /// network target, consistent with the no-telemetry guarantee. Best-effort: if
 /// the portable path can't be resolved we log to stderr only, and the writable
-/// folder check in `.setup()` still surfaces real problems to the user.
+/// folder check before app construction still surfaces real problems to the user.
 fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
     let mut targets = vec![Target::new(TargetKind::Stderr)];
     if let Ok(dir) = portable_logs_dir() {
@@ -2999,15 +2973,28 @@ fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Tauri creates configured WebViews before calling setup. Own the profile
+    // before constructing the app, its logging plugin, or any command handlers.
+    let data_dir = match ensure_portable_data_dir() {
+        Ok(directory) => directory,
+        Err(error) => {
+            portable_profile::show_startup_error(&error);
+            return;
+        }
+    };
+    let owner = match portable_profile::acquire(&data_dir) {
+        Ok(owner) => owner,
+        Err(error) => {
+            portable_profile::show_startup_error(&error);
+            return;
+        }
+    };
     tauri::Builder::default()
+        .manage(owner)
         .manage(ai::AiRuntimeState::default())
         .manage(operation_history::OperationHistoryState::default())
         .plugin(log_plugin())
-        .setup(|app| {
-            let data_dir = ensure_portable_data_dir().map_err(|error| {
-                log::error!(target: "app", "Portable data folder unusable: {error}");
-                std::io::Error::other(error)
-            })?;
+        .setup(move |app| {
             apply_diagnostic_logging(settings::load(&data_dir).diagnostic_logging);
             if let Err(error) = chatgpt_auth::initialize(data_dir) {
                 chatgpt_auth::record_initialization_error(error);
@@ -3029,7 +3016,6 @@ pub fn run() {
             scan_mods,
             load_strings,
             save_string,
-            save_strings,
             save_string_groups_with_undo,
             list_operation_history,
             undo_batch_edit,
@@ -3044,7 +3030,6 @@ pub fn run() {
             export_llm_batch,
             pick_llm_batch_destination,
             export_llm_batch_to_path,
-            import_llm_batch,
             pick_llm_batch_file,
             preflight_llm_batch_path,
             import_llm_batch_path,
@@ -3052,7 +3037,6 @@ pub fn run() {
             glossary_status,
             load_glossary,
             llm_models,
-            translate_string,
             translate_with_local_ai,
             cloud_ai_status,
             cloud_ai_models,
@@ -3150,7 +3134,7 @@ mod output_history_tests {
         let destination = root.join("combined.zip");
         std::fs::write(&destination, "existing archive").unwrap();
         assert_eq!(
-            build_output_with_history(&config, &history, &destination, false).unwrap_err(),
+            build_output_with_history(&config, &history, &destination, false, &[]).unwrap_err(),
             "OVERWRITE_REQUIRED"
         );
         let after_failure = history.list().unwrap();
@@ -3159,7 +3143,7 @@ mod output_history_tests {
         assert!(after_failure[0].can_undo);
         assert_eq!(std::fs::read(&destination).unwrap(), b"existing archive");
 
-        let result = build_output_with_history(&config, &history, &destination, true).unwrap();
+        let result = build_output_with_history(&config, &history, &destination, true, &[]).unwrap();
         let entries = history.list().unwrap();
         assert_eq!(entries.len(), 3);
         assert_ne!(entries[0].id, prior_entry.id);
@@ -3837,5 +3821,121 @@ mod ai_run_contract_tests {
             "Manual"
         );
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn ai_staging_refreshes_source_files_between_chunks() {
+        let root = test_support::temp_dir("ai-stage-fresh-chunks");
+        let i18n = root.join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        let default_path = i18n.join("default.json");
+        std::fs::write(&default_path, r#"{"first":"One","second":"Two"}"#).unwrap();
+        let state_root = root.join("state");
+        let item = |key: &str, source: &str| ai::PreparedAiItem {
+            id: key.into(),
+            identity: ai::AiStringIdentity {
+                mod_unique_id: "Fixture.FreshChunks".into(),
+                relative_dir: "i18n".into(),
+                key: key.into(),
+            },
+            source: source.into(),
+            section: None,
+            glossary_pairs: Vec::new(),
+            context: ai::AiPromptContext::isolated(0),
+            default_path: default_path.clone(),
+            target_path: i18n.join("de.json"),
+            expected_stored: None,
+            expected_revision: 0,
+        };
+        let generated = |item: &ai::PreparedAiItem| ai::AiSuggestion {
+            identity: item.identity.clone(),
+            text: format!("AI {}", item.source),
+            status: "review-needed".into(),
+            token_differences: Vec::new(),
+            glossary_misses: Vec::new(),
+        };
+        let first = item("first", "One");
+        let second = item("second", "Two");
+        let mut staged = Vec::new();
+        stage_ai_suggestions(
+            &state_root,
+            std::slice::from_ref(&first),
+            vec![generated(&first)],
+            &mut staged,
+        )
+        .unwrap();
+        std::fs::write(&default_path, r#"{"first":"One","second":"Updated"}"#).unwrap();
+        assert!(stage_ai_suggestions(
+            &state_root,
+            std::slice::from_ref(&second),
+            vec![generated(&second)],
+            &mut staged
+        )
+        .is_err());
+        assert_eq!(staged.len(), 1);
+        let state = translations::load(&state_root, "Fixture.FreshChunks").unwrap();
+        assert_eq!(
+            state[&translations::entry_key("i18n", "first")].target,
+            "AI One"
+        );
+        assert!(!state.contains_key(&translations::entry_key("i18n", "second")));
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn ai_staging_keeps_identical_keys_in_different_files_and_components_separate() {
+        let root = test_support::temp_dir("ai-stage-multiple-files");
+        let mut items = Vec::new();
+        for component in ["Fixture.First", "Fixture.Second"] {
+            for unit in ["i18n", "extra/i18n"] {
+                let directory = root.join(component).join(unit);
+                std::fs::create_dir_all(&directory).unwrap();
+                let source = format!("{component} {unit}");
+                let default_path = directory.join("default.json");
+                std::fs::write(
+                    &default_path,
+                    serde_json::json!({"same":source}).to_string(),
+                )
+                .unwrap();
+                items.push(ai::PreparedAiItem {
+                    id: format!("{}", items.len()),
+                    identity: ai::AiStringIdentity {
+                        mod_unique_id: component.into(),
+                        relative_dir: unit.into(),
+                        key: "same".into(),
+                    },
+                    source,
+                    section: None,
+                    glossary_pairs: Vec::new(),
+                    context: ai::AiPromptContext::isolated(0),
+                    default_path,
+                    target_path: directory.join("de.json"),
+                    expected_stored: None,
+                    expected_revision: 0,
+                });
+            }
+        }
+        let generated = items
+            .iter()
+            .map(|item| ai::AiSuggestion {
+                identity: item.identity.clone(),
+                text: format!("AI {}", item.source),
+                status: "review-needed".into(),
+                token_differences: Vec::new(),
+                glossary_misses: Vec::new(),
+            })
+            .collect();
+        let state_root = root.join("state");
+        let mut staged = Vec::new();
+        stage_ai_suggestions(&state_root, &items, generated, &mut staged).unwrap();
+        assert_eq!(staged.len(), 4);
+        for item in items {
+            let state = translations::load(&state_root, &item.identity.mod_unique_id).unwrap();
+            let entry =
+                &state[&translations::entry_key(&item.identity.relative_dir, &item.identity.key)];
+            assert_eq!(entry.target, format!("AI {}", item.source));
+            assert_eq!(entry.status, "review-needed");
+        }
+        std::fs::remove_dir_all(root).unwrap();
     }
 }

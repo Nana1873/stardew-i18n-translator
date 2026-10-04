@@ -49,9 +49,6 @@ struct Session {
     expires_at: u64,
 }
 struct AuthState {
-    // A portable profile has one owner. Windows sharing rules release the
-    // lock on process exit, including crashes, preventing rotating-token races.
-    _owner: std::fs::File,
     directory: PathBuf,
     registration: Registration,
     session: Option<Session>,
@@ -87,15 +84,6 @@ pub fn generation() -> u64 {
 }
 
 pub fn initialize(directory: PathBuf) -> Result<(), String> {
-    let mut options = std::fs::OpenOptions::new();
-    options.read(true).write(true).create(true).truncate(false);
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::OpenOptionsExt;
-        options.share_mode(0);
-    }
-    let owner = options.open(directory.join("chatgpt-session.lock"))
-        .map_err(|_| "ChatGPT cannot own this portable profile. Close another Translator using this folder and restart; also check that the data folder is writable.")?;
     let path = directory.join("chatgpt-registration.json");
     let registration = if path.exists() {
         serde_json::from_slice::<Registration>(&bounded_file(&path)?).map_err(|_| {
@@ -156,7 +144,6 @@ pub fn initialize(directory: PathBuf) -> Result<(), String> {
     };
     STATE
         .set(Mutex::new(AuthState {
-            _owner: owner,
             directory,
             registration,
             session,

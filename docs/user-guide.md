@@ -124,8 +124,10 @@ warning.** They do not become Done as a result. Empty entries are omitted so
 SMAPI can fall back to English. Unresolved blocking validation issues must be
 fixed or an intentional token mismatch explicitly accepted before export.
 
-Export writes `i18n/<language>.json` files inside the selected mods. Existing
-targets receive a `.bak` backup, for example `de.json.bak`. Export replaces these
+Export writes `i18n/<language>.json` files directly inside the selected installed
+mods. Use a translation ZIP to manage the translation as a separate mod manager
+entry. Existing targets receive a `.bak` backup, for example `de.json.bak`.
+Export replaces these
 targets rather than appending to them: target-only keys without an English
 source are omitted. A file with no nonempty translations is removed after
 backup. Ordinary failures partway through a multi-file export roll back the
@@ -136,22 +138,48 @@ For flat locale files, Portuguese export uses `i18n/pt.json`; an existing
 `i18n/pt-BR.json` is accepted on import and backed up when normalized during
 export. Split document names such as `i18n/de/pt.json` are kept literally.
 
-For a combined locale-only archive, choose **Export… > Build Stardew Translator
-Output**. Its preview includes all scanned components with effective
+For a combined translation archive, choose **Export… > Translation ZIP · all
+mods**. Its preview includes all scanned components with effective
 target-language values in the configured Mods folder. Each included locale
 combines the existing target values for current source keys with saved
 overrides, using the same validation rules. Changed and Review values are
 included with warnings and retain their status. Choose a ZIP destination and
-confirm replacement if that file exists. The output preserves mod-relative
-folders; it contains no mod assets or manifests and does not install anything.
+confirm replacement in the Windows Save dialog if that file exists. There is
+no second app confirmation. The output uses the same installation
+folders and installer as the current-mod ZIP described below. It contains no
+original mod assets or manifests and does not install anything itself.
 Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 
 Select a mod package and use **Export… > Translation ZIP · current mod**. Check its
-preview and choose a destination. The ZIP preserves component folder paths and
-contains only generated target-language i18n files. Recipients still need the
-original mod; the ZIP does not include its assets, DLLs, or manifest.
+preview and choose a destination. The ZIP contains generated target-language
+i18n files and a small FOMOD installer for Vortex and MO2. Recipients still need
+the original mod; its assets, DLLs, and manifest are not included.
+
+**Install folder** is relative to the game's Mods folder. Its default is the
+folder containing the component's manifest, without outer local package or
+staging folders. For example, `Local package/ActualMod/i18n/de.json` becomes
+`ActualMod/i18n/de.json`. If the original mod was renamed or installed in a
+nested package, edit the folder to match that installation. The displayed file
+paths update immediately. Components must use distinct installation folders;
+invalid paths and collisions block ZIP creation.
+
+Install the ZIP as a separate translation mod. In MO2, give it a higher file
+priority than the original mod. In Vortex, resolve existing locale-file
+conflicts with **Load after** the original mod, then deploy. Disable the
+translation entry to stop applying its files. Older MO2 Stardew support plugins
+can report missing valid game data for a locale-only overlay: verify its folder
+paths before using **Ignore missing data**. Do not add a copied original
+manifest to silence that warning.
+
+For manual installation, copy the translation folders from the ZIP into Mods
+using the previewed paths. The `fomod` folder is installer metadata and is not
+part of the manual installation.
+
+The preview and build check the package against the current Mods folder. If its
+components, version, or i18n file list changed, run **Scan** and open the preview
+again. A stale package selection is rejected before writing a ZIP.
 
 Check coverage, Review, and Changed in the app and the ZIP preview before
 sharing the archive. Uploading and publication happen outside the desktop app.

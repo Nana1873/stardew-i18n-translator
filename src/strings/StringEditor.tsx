@@ -1048,7 +1048,7 @@ export function StringEditor({
               <div className="translator-editor-field-head">
                 <span>
                   {shownStatus === "outdated"
-                    ? "English source update"
+                    ? "Current English source"
                     : "English source"}
                 </span>
                 <button
@@ -1064,20 +1064,7 @@ export function StringEditor({
                   )}
                 </button>
               </div>
-              {shownStatus === "outdated" ? (
-                <div className="translator-update-source">
-                  <div className="translator-update-source-row is-previous">
-                    <span>Previous English</span>
-                    <div>Unavailable</div>
-                  </div>
-                  <div className="translator-update-source-row is-current">
-                    <span>Current English</span>
-                    <div>{row.source}</div>
-                  </div>
-                </div>
-              ) : (
-                <div className="translator-editor-source">{row.source}</div>
-              )}
+              <div className="translator-editor-source">{row.source}</div>
             </div>
             <div className="editor__pane translator-field translator-editor-field">
               <span className="translator-editor-field-head">

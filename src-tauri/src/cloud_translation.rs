@@ -1,4 +1,21 @@
-// Bounded cloud translation/review workflow, shared by the two concrete transports.
+//! Bounded cloud translation and review workflow.
+
+use super::run_prompt;
+use crate::{
+    ai::{self, PreparedAiItem, ProviderFailure, ProviderPrompt, ProviderTranslation},
+    ai_provider::*,
+};
+use serde_json::{Map, Value};
+use std::{
+    collections::{HashMap, VecDeque},
+    future::Future,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Instant,
+};
+
 const MAX_STRUCTURAL_HINT_CHARS: usize = 240;
 const PROMPT_INPUT_SEPARATOR: &str = "\n\nInput JSON:\n";
 const STRUCTURE_RETRY_RESERVE_BYTES: usize = MAX_STRUCTURAL_HINT_CHARS * 4 + 1024;
@@ -174,9 +191,7 @@ fn serialize_review_input(
     }
     input.insert("strings".to_string(), serde_json::json!(strings));
     serde_json::to_string(&Value::Object(input)).map_err(|error| {
-        ProviderFailure::Message(format!(
-            "Could not prepare the AI review request: {error}"
-        ))
+        ProviderFailure::Message(format!("Could not prepare the AI review request: {error}"))
     })
 }
 
@@ -1321,3 +1336,55 @@ pub async fn repair_token_mismatches_once(
     )
     .await
 }
+
+#[allow(clippy::too_many_arguments)]
+async fn run_prompt_once(
+    model: Option<String>,
+    reasoning: String,
+    prompt: ProviderPrompt,
+    expected: Vec<PreparedAiItem>,
+    output_contract: PromptOutputContract,
+    cancelled: Arc<AtomicBool>,
+    progress: ProviderProgressCallback,
+) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
+    let started = Instant::now();
+    log::info!(target: "chatgpt", "{}", serde_json::json!({
+        "event": "attempt_started", "engine": "chatgpt", "transport": "responses",
+        "itemCount": expected.len(), "model": safe_model_for_log(model.as_deref()), "reasoning": reasoning,
+    }));
+    let result = async {
+        let text = run_prompt(model, reasoning, prompt, cancelled, Arc::clone(&progress)).await?;
+        let parsed = ai::parse_provider_output(&text).map_err(ProviderFailure::InvalidResponse)?;
+        match output_contract {
+            PromptOutputContract::Exact => ai::validate_provider_output(&expected, parsed),
+            PromptOutputContract::Sparse => ai::validate_provider_output_subset(&expected, parsed),
+        }
+        .map_err(ProviderFailure::InvalidResponse)
+    }
+    .await;
+    let outcome = match &result {
+        Ok(_) => "complete",
+        Err(ProviderFailure::Cancelled) => "cancelled",
+        Err(ProviderFailure::Transient(_)) => "transient_error",
+        Err(ProviderFailure::InvalidResponse(_)) => "invalid_response",
+        Err(ProviderFailure::Message(_)) => "error",
+    };
+    if result.is_err() && !matches!(&result, Err(ProviderFailure::Cancelled)) {
+        progress(ProviderProgressEvent::Activity(ProviderActivity::Failed));
+    }
+    log::info!(target: "chatgpt", "{}", serde_json::json!({
+        "event": "attempt_finished", "engine": "chatgpt", "transport": "responses",
+        "itemCount": expected.len(), "durationMs": u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX), "outcome": outcome,
+    }));
+    result
+}
+
+#[cfg(test)]
+#[path = "cloud_translation/merge_followup_tests.rs"]
+mod merge_followup_tests;
+#[cfg(test)]
+#[path = "cloud_translation/review_failure_tests.rs"]
+mod review_failure_tests;
+#[cfg(test)]
+#[path = "cloud_translation/tests.rs"]
+mod tests;

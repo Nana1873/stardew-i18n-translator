@@ -21,6 +21,13 @@ function renderDialog(
 }
 
 describe("LlmBatchExportDialog", () => {
+  it("shows the excluded portion of the original selection without changing export eligibility", () => {
+    renderDialog({ eligibleCount: 1, selectedCount: 2 });
+    expect(screen.getByText("1 of 2 selected strings included")).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Save JSON batch" }),
+    ).toBeEnabled();
+  });
   it("confirms the real selection and closes after the native save succeeds", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onClose = vi.fn();

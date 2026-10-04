@@ -4,6 +4,7 @@ import { useDialogAccessibility } from "../dialogAccessibility";
 
 interface LlmBatchExportDialogProps {
   eligibleCount: number;
+  selectedCount?: number;
   modName: string;
   suggestedFileName: string;
   /** Opens the native Save picker without writing yet. */
@@ -15,6 +16,7 @@ interface LlmBatchExportDialogProps {
 
 export function LlmBatchExportDialog({
   eligibleCount,
+  selectedCount = eligibleCount,
   modName,
   suggestedFileName,
   onChooseDestination,
@@ -94,6 +96,11 @@ export function LlmBatchExportDialog({
           </button>
         </div>
         <div className="translator-flow-body">
+          {selectedCount > eligibleCount && (
+            <p className="translator-batch-selection-summary">
+              {eligibleCount} of {selectedCount} selected strings included
+            </p>
+          )}
           <label className="translator-flow-field">
             File name
             <input value={displayedFileName} readOnly />

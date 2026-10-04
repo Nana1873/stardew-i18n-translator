@@ -32,8 +32,10 @@ pub struct ZipProblem {
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ZipEntryPreview {
+    pub mod_unique_id: String,
     pub mod_name: String,
     pub mod_version: String,
+    pub install_folder: String,
     pub archive_path: String,
     pub strings: usize,
     pub total_source_strings: usize,
@@ -86,6 +88,113 @@ pub struct ZipBuildRequest {
     pub components: Vec<ZipComponentInput>,
     pub destination: String,
     pub overwrite: bool,
+    #[serde(default)]
+    pub install_folders: Vec<ZipInstallFolder>,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ZipInstallFolder {
+    pub mod_unique_id: String,
+    pub folder: String,
+}
+
+/// Bind a package preview or build to the configured workspace and a fresh
+/// scan. A changed inventory requires a new displayed scan and preview.
+pub(crate) fn resolve_components(
+    config: &Path,
+    mods_path: &Path,
+    package_name: &str,
+    target_lang: &str,
+    requests: &[ZipComponentInput],
+) -> Result<Vec<ZipComponentInput>, String> {
+    validate_segment(package_name, "package folder")?;
+    let (mods, language) = output_context(&crate::settings::load_checked(config)?)?;
+    if language != target_lang
+        || std::fs::canonicalize(&mods)
+            .ok()
+            .filter(|path| {
+                std::fs::canonicalize(mods_path).is_ok_and(|requested| *path == requested)
+            })
+            .is_none()
+    {
+        return Err("Translation settings changed. Open the ZIP preview again.".into());
+    }
+    let scan = scanner::scan_mods(&mods, &language, config);
+    if !scan.traversal_complete
+        || scan.skipped_components.iter().any(|component| {
+            component.requires_attention && component.package_id.as_deref() == Some(package_name)
+        })
+    {
+        return Err(
+            "Resolve this package's scan errors before creating its translation ZIP.".into(),
+        );
+    }
+    let current = scan
+        .mods
+        .iter()
+        .filter(|component| component.package_id == package_name)
+        .collect::<Vec<_>>();
+    let requested_ids = requests
+        .iter()
+        .map(|component| component.unique_id.to_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let current_ids = current
+        .iter()
+        .map(|component| component.unique_id.to_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let stale = "The selected package changed. Run Scan and open the ZIP preview again.";
+    if requests.is_empty() || current_ids != requested_ids || requests.len() != current.len() {
+        return Err(stale.into());
+    }
+    for request in requests {
+        let component = current
+            .iter()
+            .find(|component| component.unique_id.eq_ignore_ascii_case(&request.unique_id))
+            .ok_or(stale)?;
+        if component.version != request.version
+            || std::fs::canonicalize(&component.folder_path)
+                .ok()
+                .filter(|path| {
+                    std::fs::canonicalize(&request.folder_path)
+                        .is_ok_and(|requested| *path == requested)
+                })
+                .is_none()
+        {
+            return Err(stale.into());
+        }
+    }
+    let inputs = requests
+        .iter()
+        .map(|component| crate::export::ExportModInput {
+            mod_unique_id: component.unique_id.clone(),
+            mod_name: component.name.clone(),
+            files: component.files.clone(),
+        })
+        .collect::<Vec<_>>();
+    let resolved = crate::export::resolve_scanned_inputs(&scan, &inputs)
+        .map_err(|error| format!("{error} Run Scan and open the ZIP preview again."))?;
+    let files = resolved
+        .iter()
+        .flat_map(|component| component.files.iter().cloned())
+        .collect::<Vec<_>>();
+    crate::export::validate_paths(&mods, &language, &files)?;
+    Ok(resolved
+        .into_iter()
+        .map(|input| {
+            let component = current
+                .iter()
+                .find(|component| component.unique_id == input.mod_unique_id)
+                .expect("resolved component came from this package's current scan");
+            ZipComponentInput {
+                unique_id: input.mod_unique_id,
+                name: component.name.clone(),
+                version: component.version.clone(),
+                folder_path: component.folder_path.clone(),
+                files: input.files,
+            }
+        })
+        .collect())
 }
 
 struct PreparedEntry {
@@ -127,7 +236,7 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
         return Err("OVERWRITE_REQUIRED".to_string());
     }
 
-    let prepared = prepare(
+    let mut prepared = prepare(
         config_dir,
         Path::new(&request.mods_path),
         &request.package_name,
@@ -135,6 +244,7 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
         &request.target_language,
         &request.components,
     )?;
+    apply_install_folders(&mut prepared, &request.install_folders)?;
     write_prepared(prepared, destination, request.overwrite)
 }
 
@@ -161,6 +271,7 @@ fn write_prepared(
     if prepared.entries.is_empty() {
         return Err("This package has no translated strings to include.".to_string());
     }
+    validate_install_folders(&prepared)?;
 
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent)
@@ -186,6 +297,14 @@ fn write_prepared(
             writer
                 .write_all(&entry.body)
                 .map_err(|error| format!("Could not write ZIP entry: {error}"))?;
+        }
+        for (path, body) in installer_files(&prepared) {
+            writer
+                .start_file(path, options)
+                .map_err(|error| format!("Could not add installer metadata: {error}"))?;
+            writer
+                .write_all(body.as_bytes())
+                .map_err(|error| format!("Could not write installer metadata: {error}"))?;
         }
         writer
             .finish()
@@ -264,6 +383,7 @@ fn prepare(
             )
         })?;
         validate_relative_path(relative_component)?;
+        let install_folder = component_install_folder(component_root)?;
         let state = translations::load(config_dir, &component.unique_id)?;
         let mut component_entries = 0;
         for file in &component.files {
@@ -330,18 +450,16 @@ fn prepare(
                 continue;
             }
             let body = serialize_json(&output)?;
-            let archive_path = archive_path(
-                package_name,
-                relative_component,
-                relative_i18n,
-                &target_lang,
-            )?;
+            let archive_path =
+                archive_path(&install_folder, Path::new(""), relative_i18n, &target_lang)?;
             let strings = output.len();
             total_strings += strings;
             component_entries += 1;
             let entry_preview = ZipEntryPreview {
+                mod_unique_id: component.unique_id.clone(),
                 mod_name: component.name.clone(),
                 mod_version: component.version.clone(),
+                install_folder: install_folder.clone(),
                 archive_path,
                 strings,
                 total_source_strings: source_strings,
@@ -403,10 +521,20 @@ pub(crate) fn preview_output(config: &Path) -> Result<ZipPreview, String> {
     Ok(prepare_output(config)?.preview)
 }
 
+#[cfg(test)]
 pub(crate) fn build_output(
     config: &Path,
     destination: &Path,
     overwrite: bool,
+) -> Result<ZipBuildOutcome, String> {
+    build_output_with_folders(config, destination, overwrite, &[])
+}
+
+pub(crate) fn build_output_with_folders(
+    config: &Path,
+    destination: &Path,
+    overwrite: bool,
+    install_folders: &[ZipInstallFolder],
 ) -> Result<ZipBuildOutcome, String> {
     let settings = crate::settings::load_checked(config)?;
     let (mods, _) = output_context(&settings)?;
@@ -432,7 +560,9 @@ pub(crate) fn build_output(
     {
         return Err("The output destination must be a regular ZIP file.".into());
     }
-    write_prepared(prepare_output(config)?, destination, overwrite)
+    let mut prepared = prepare_output(config)?;
+    apply_install_folders(&mut prepared, install_folders)?;
+    write_prepared(prepared, destination, overwrite)
 }
 
 fn output_context(settings: &crate::settings::AppSettings) -> Result<(PathBuf, String), String> {
@@ -481,12 +611,13 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
         entries: Vec::new(), source_checks: Vec::new(),
     };
     let mut identities = std::collections::HashSet::new();
-    let mut paths = std::collections::HashSet::new();
     for component in scan.mods {
         if !identities.insert(component.unique_id.to_lowercase()) {
             return Err("Ambiguous component identity in the current scan.".into());
         }
         let state = translations::load(&working, &component.unique_id)?;
+        let component_root = Path::new(&component.folder_path);
+        let install_folder = component_install_folder(component_root)?;
         let mut component_entries = 0;
         for file in component.i18n_files {
             let input = ExportFileInput {
@@ -496,15 +627,12 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             };
             crate::export::validate_paths(&mods, &language, std::slice::from_ref(&input))?;
             let relative_target = Path::new(&file.target_path)
-                .strip_prefix(&mods)
-                .map_err(|_| "Output path is outside the Mods folder.")?;
-            let mut parts = Vec::new();
+                .strip_prefix(component_root)
+                .map_err(|_| "Output path is outside its mod folder.")?;
+            let mut parts = vec![install_folder.clone()];
             append_parts(&mut parts, relative_target)?;
             let archive_path = parts.join("/");
             validate_archive_path(&archive_path)?;
-            if !paths.insert(archive_path.to_lowercase()) {
-                return Err("Duplicate translation ZIP output path.".into());
-            }
             let source_path = Path::new(&file.default_path);
             let source_text = crate::input_limits::read_json_text(source_path)?;
             let rows = scanner::load_strings_checked(
@@ -575,8 +703,10 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 ));
             }
             let preview = ZipEntryPreview {
+                mod_unique_id: component.unique_id.clone(),
                 mod_name: component.name.clone(),
                 mod_version: component.version.clone(),
+                install_folder: install_folder.clone(),
                 archive_path,
                 strings: output.len(),
                 total_source_strings: source_count,
@@ -602,6 +732,117 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
         .map(|entry| entry.preview.clone())
         .collect();
     Ok(prepared)
+}
+
+fn component_install_folder(component_root: &Path) -> Result<String, String> {
+    normalize_install_folder(
+        component_root
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("The mod folder has no valid name.")?,
+    )
+}
+
+fn normalize_install_folder(folder: &str) -> Result<String, String> {
+    let folder = folder.trim().replace('\\', "/");
+    validate_archive_path(&folder)?;
+    for segment in folder.split('/') {
+        let stem = segment.split('.').next().unwrap_or_default().to_uppercase();
+        if segment.ends_with([' ', '.'])
+            || segment
+                .chars()
+                .any(|c| c.is_control() || "<>:\"|?*".contains(c))
+            || matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
+            || (stem.len() == 4
+                && (stem.starts_with("COM") || stem.starts_with("LPT"))
+                && matches!(stem.as_bytes()[3], b'1'..=b'9'))
+        {
+            return Err(format!("Invalid installation folder: '{folder}'."));
+        }
+    }
+    Ok(folder)
+}
+
+fn apply_install_folders(
+    prepared: &mut PreparedPackage,
+    folders: &[ZipInstallFolder],
+) -> Result<(), String> {
+    let ids = prepared
+        .entries
+        .iter()
+        .map(|entry| entry.preview.mod_unique_id.to_lowercase())
+        .collect::<std::collections::HashSet<_>>();
+    let mut overrides = std::collections::HashMap::new();
+    for item in folders {
+        let id = item.mod_unique_id.to_lowercase();
+        if !ids.contains(&id) {
+            return Err("The ZIP component selection changed. Open its preview again.".into());
+        }
+        if overrides
+            .insert(id, normalize_install_folder(&item.folder)?)
+            .is_some()
+        {
+            return Err("Duplicate installation-folder selection.".into());
+        }
+    }
+    for entry in &mut prepared.entries {
+        if let Some(folder) = overrides.get(&entry.preview.mod_unique_id.to_lowercase()) {
+            let prefix = format!("{}/", entry.preview.install_folder);
+            let relative = entry
+                .preview
+                .archive_path
+                .strip_prefix(&prefix)
+                .ok_or("Invalid translation ZIP path binding.")?;
+            entry.preview.archive_path = format!("{folder}/{relative}");
+            entry.preview.install_folder = folder.clone();
+        }
+    }
+    validate_install_folders(prepared)?;
+    prepared.preview.entries = prepared
+        .entries
+        .iter()
+        .map(|entry| entry.preview.clone())
+        .collect();
+    Ok(())
+}
+
+fn validate_install_folders(prepared: &PreparedPackage) -> Result<(), String> {
+    let mut owners = std::collections::HashMap::new();
+    for entry in &prepared.entries {
+        let folder = normalize_install_folder(&entry.preview.install_folder)?;
+        if let Some(owner) = owners.insert(folder.to_lowercase(), &entry.preview.mod_unique_id) {
+            if !owner.eq_ignore_ascii_case(&entry.preview.mod_unique_id) {
+                return Err(format!("Several mods use installation folder '{folder}'. Choose distinct folders in the ZIP preview."));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn xml_text(value: &str) -> String {
+    value.chars().filter(|c| matches!(c, '\t' | '\n' | '\r' | '\u{20}'..='\u{d7ff}' | '\u{e000}'..='\u{fffd}' | '\u{10000}'..='\u{10ffff}')).collect::<String>()
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+fn installer_files(prepared: &PreparedPackage) -> [(&'static str, String); 2] {
+    let title = xml_text(&format!(
+        "{} - {} translation",
+        prepared.preview.package_name, prepared.preview.target_language
+    ));
+    let mut config = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<config xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:noNamespaceSchemaLocation=\"http://qconsulting.ca/fo3/ModConfig5.0.xsd\">\n  <moduleName>{title}</moduleName>\n  <requiredInstallFiles>\n");
+    for entry in &prepared.entries {
+        let path = xml_text(&entry.preview.archive_path.replace('/', "\\"));
+        config.push_str(&format!(
+            "    <file source=\"{path}\" destination=\"{path}\" priority=\"0\" />\n"
+        ));
+    }
+    config.push_str("  </requiredInstallFiles>\n</config>\n");
+    let info = format!("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<fomod>\n  <Name>{title}</Name>\n  <Description>Requires the original mods. Install as a separate translation mod and give its locale files priority over the original mods. Folder paths are relative to the Stardew Valley Mods folder.</Description>\n</fomod>\n");
+    [("fomod/ModuleConfig.xml", config), ("fomod/info.xml", info)]
 }
 
 fn select_version(
@@ -877,11 +1118,100 @@ mod tests {
         .unwrap();
     }
 
+    fn scanned_package(config: &Path, mods: &Path, package: &str) -> Vec<ZipComponentInput> {
+        scanner::scan_mods(mods, "de", config)
+            .mods
+            .into_iter()
+            .filter(|component| component.package_id == package)
+            .map(|component| ZipComponentInput {
+                unique_id: component.unique_id,
+                name: component.name,
+                version: component.version,
+                folder_path: component.folder_path,
+                files: component
+                    .i18n_files
+                    .into_iter()
+                    .map(|file| ExportFileInput {
+                        relative_dir: file.relative_dir,
+                        default_path: file.default_path,
+                        target_path: file.target_path,
+                    })
+                    .collect(),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn package_zip_requires_a_new_scan_for_added_files_and_includes_them_after_rescan() {
+        let (root, config, mods) = output_fixture("package-fresh-files");
+        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        write(&component.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        let displayed = scanned_package(&config, &mods, "Pack");
+        assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_ok());
+        write(
+            &component.join("extra/i18n/default.json"),
+            r#"{"bye":"Goodbye"}"#,
+        );
+        write(
+            &component.join("extra/i18n/de.json"),
+            r#"{"bye":"Tschüss"}"#,
+        );
+        assert!(resolve_components(&config, &mods, "Pack", "de", &displayed)
+            .unwrap_err()
+            .contains("Run Scan"));
+        let current = scanned_package(&config, &mods, "Pack");
+        let resolved = resolve_components(&config, &mods, "Pack", "de", &current).unwrap();
+        assert_eq!(resolved[0].files.len(), 2);
+        let destination = root.join("package.zip");
+        build(
+            &translations::language_root(&config, "de").unwrap(),
+            &request(&mods, "Pack", resolved, &destination, false),
+        )
+        .unwrap();
+        assert_eq!(zip_documents(&destination).len(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn package_zip_rejects_changed_versions_components_and_workspace() {
+        let (root, config, mods) = output_fixture("package-fresh-binding");
+        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        let displayed = scanned_package(&config, &mods, "Pack");
+        write(
+            &component.join("manifest.json"),
+            r#"{"Name":"Pack","UniqueID":"Fixture.Package","Version":"2.0.0"}"#,
+        );
+        assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_err());
+        let current = scanned_package(&config, &mods, "Pack");
+        assert_eq!(
+            resolve_components(&config, &mods, "Pack", "de", &current).unwrap()[0].version,
+            "2.0.0"
+        );
+        output_component(&mods, "Pack/Child", "Fixture.Child", r#"{"child":"Child"}"#);
+        assert!(resolve_components(&config, &mods, "Pack", "de", &current).is_err());
+        let current = scanned_package(&config, &mods, "Pack");
+        assert_eq!(
+            resolve_components(&config, &mods, "Pack", "de", &current)
+                .unwrap()
+                .len(),
+            2
+        );
+        assert!(resolve_components(&config, &mods, "Pack", "fr", &current).is_err());
+        assert!(resolve_components(&config, &root, "Pack", "de", &current).is_err());
+        let mut substituted = current.clone();
+        substituted[0].files[0].default_path = root.join("outside.json").display().to_string();
+        assert!(resolve_components(&config, &mods, "Pack", "de", &substituted).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn zip_documents(path: &Path) -> std::collections::BTreeMap<String, Value> {
         let mut zip = zip::ZipArchive::new(File::open(path).unwrap()).unwrap();
         let mut result = std::collections::BTreeMap::new();
         for i in 0..zip.len() {
             let mut entry = zip.by_index(i).unwrap();
+            if !entry.name().ends_with(".json") {
+                continue;
+            }
             let mut body = String::new();
             entry.read_to_string(&mut body).unwrap();
             result.insert(
@@ -893,7 +1223,7 @@ mod tests {
     }
 
     #[test]
-    fn output_preserves_local_values_and_saved_overrides_at_actual_mod_paths() {
+    fn output_preserves_local_values_and_saved_overrides_at_install_paths() {
         let (root, config, mods) = output_fixture("output-saved-only");
         let first = output_component(
             &mods,
@@ -977,7 +1307,7 @@ mod tests {
         let documents = zip_documents(&destination);
         assert_eq!(documents.len(), 3);
         assert_eq!(
-            documents["Pack/[CP] First/i18n/de.json"],
+            documents["[CP] First/i18n/de.json"],
             serde_json::json!({"manual":"Hallo @","ai":"Tschüss","import":"Danke","deployed":"Keep local translation"})
         );
         assert_eq!(
@@ -995,6 +1325,103 @@ mod tests {
         assert!(std::fs::read_to_string(first.join("i18n/de.json"))
             .unwrap()
             .contains("Omit orphan"));
+    }
+
+    #[test]
+    fn package_and_combined_zips_strip_staging_wrappers_and_support_custom_install_folders() {
+        let (root, config, mods) = output_fixture("zip-install-folders");
+        let folder = output_component(
+            &mods,
+            "Local package/ActualMod",
+            "Fixture.Actual",
+            r#"{"hello":"Hello"}"#,
+        );
+        write(&folder.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        write(&folder.join("assets/map.png"), "original asset");
+        let inputs = scanned_package(&config, &mods, "Local package");
+        let default_zip = root.join("default.zip");
+        let custom_zip = root.join("custom.zip");
+        let combined_zip = root.join("combined.zip");
+        let working = translations::language_root(&config, "de").unwrap();
+        let mut single = request(&mods, "Local package", inputs, &default_zip, false);
+        build(&working, &single).unwrap();
+        assert_eq!(
+            zip_documents(&default_zip)
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>(),
+            vec!["ActualMod/i18n/de.json"]
+        );
+        single.destination = custom_zip.display().to_string();
+        single.install_folders = vec![ZipInstallFolder {
+            mod_unique_id: "Fixture.Actual".into(),
+            folder: "Original & Friends/ActualMod".into(),
+        }];
+        build(&working, &single).unwrap();
+        build_output_with_folders(&config, &combined_zip, false, &single.install_folders).unwrap();
+        assert_eq!(zip_documents(&custom_zip), zip_documents(&combined_zip));
+        assert!(
+            zip_documents(&custom_zip).contains_key("Original & Friends/ActualMod/i18n/de.json")
+        );
+        let mut archive = zip::ZipArchive::new(File::open(&custom_zip).unwrap()).unwrap();
+        assert_eq!(archive.len(), 3);
+        let mut xml = String::new();
+        archive
+            .by_name("fomod/ModuleConfig.xml")
+            .unwrap()
+            .read_to_string(&mut xml)
+            .unwrap();
+        assert!(xml.contains(r#"source="Original &amp; Friends\ActualMod\i18n\de.json" destination="Original &amp; Friends\ActualMod\i18n\de.json""#));
+        assert_eq!(
+            std::fs::read_to_string(folder.join("i18n/de.json")).unwrap(),
+            r#"{"hello":"Hallo"}"#
+        );
+        assert_eq!(
+            std::fs::read_to_string(folder.join("assets/map.png")).unwrap(),
+            "original asset"
+        );
+    }
+
+    #[test]
+    fn ambiguous_install_folders_and_invalid_overrides_preserve_existing_archives() {
+        let (root, config, mods) = output_fixture("zip-install-collisions");
+        for (package, id) in [
+            ("First/Common", "Fixture.First"),
+            ("Second/common", "Fixture.Second"),
+        ] {
+            let folder = output_component(&mods, package, id, r#"{"hello":"Hello"}"#);
+            write(&folder.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        }
+        let destination = root.join("existing.zip");
+        write(&destination, "keep existing archive");
+        assert_eq!(preview_output(&config).unwrap().entries.len(), 2);
+        assert!(build_output(&config, &destination, true)
+            .unwrap_err()
+            .contains("distinct folders"));
+        for folder in ["../escape", "C:/escape", "/absolute", "CON", "bad."] {
+            let overrides = [ZipInstallFolder {
+                mod_unique_id: "Fixture.First".into(),
+                folder: folder.into(),
+            }];
+            assert!(build_output_with_folders(&config, &destination, true, &overrides).is_err());
+            assert_eq!(
+                std::fs::read_to_string(&destination).unwrap(),
+                "keep existing archive"
+            );
+            assert!(!sibling(&destination, ".tmp").exists());
+        }
+        let unknown = [ZipInstallFolder {
+            mod_unique_id: "Unknown.Mod".into(),
+            folder: "Other".into(),
+        }];
+        assert!(build_output_with_folders(&config, &destination, true, &unknown).is_err());
+        let valid = [ZipInstallFolder {
+            mod_unique_id: "Fixture.First".into(),
+            folder: "OriginalFirst".into(),
+        }];
+        build_output_with_folders(&config, &destination, true, &valid).unwrap();
+        assert_eq!(zip_documents(&destination).len(), 2);
+        assert!(zip_documents(&destination).contains_key("OriginalFirst/i18n/de.json"));
     }
 
     #[test]
@@ -1055,6 +1482,7 @@ mod tests {
                 }],
                 destination: single.display().to_string(),
                 overwrite: false,
+                install_folders: Vec::new(),
             },
         )
         .unwrap();
@@ -1243,6 +1671,7 @@ mod tests {
             components,
             destination: destination.display().to_string(),
             overwrite,
+            install_folders: Vec::new(),
         }
     }
 
@@ -1287,13 +1716,15 @@ mod tests {
         assert_eq!(
             names,
             vec![
-                "Sample Pack/[CP] Sample/i18n/de.json",
-                "Sample Pack/[JA] Sample/i18n/de.json"
+                "[CP] Sample/i18n/de.json",
+                "[JA] Sample/i18n/de.json",
+                "fomod/ModuleConfig.xml",
+                "fomod/info.xml"
             ]
         );
         let mut body = String::new();
         archive
-            .by_name("Sample Pack/[CP] Sample/i18n/de.json")
+            .by_name("[CP] Sample/i18n/de.json")
             .unwrap()
             .read_to_string(&mut body)
             .unwrap();

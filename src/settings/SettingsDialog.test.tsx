@@ -941,6 +941,56 @@ describe("SettingsDialog", () => {
     expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
   });
 
+  it.each([false, true])(
+    "distinguishes a cached community glossary from its missing rebuild source (source available: %s)",
+    async (sourceAvailable) => {
+      invokeMock.mockImplementation((cmd: string) =>
+        cmd === "glossary_status"
+          ? Promise.resolve({
+              gameXnbPresent: sourceAvailable,
+              unpackedPresent: false,
+              sourceAvailable,
+              cached: {
+                targetLang: "th",
+                termCount: 7,
+                source: "communityPack",
+                packName: "Thai",
+              },
+              outdatedCache: false,
+              packAvailable: false,
+              packXnbAvailable: false,
+            })
+          : Promise.resolve(null),
+      );
+      render(
+        <SettingsDialog
+          settings={{ ...baseSettings, targetLang: "th" }}
+          onSave={() => {}}
+          onClose={() => {}}
+          onReRunSetup={() => {}}
+        />,
+      );
+      fireEvent.click(screen.getByRole("tab", { name: "Glossary" }));
+      expect(
+        await screen.findByText("Cached glossary available"),
+      ).toBeVisible();
+      expect(screen.getByText("Rebuild source")).toBeVisible();
+      expect(screen.getByText(/Cached terms remain available/)).toBeVisible();
+      expect(
+        screen.queryByText(/Installed community language pack/),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Get StardewXnbHack/ }),
+      ).toBeNull();
+      expect(
+        screen.queryByText(/so no official glossary is available/),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: /Build from community pack/ }),
+      ).toBeNull();
+    },
+  );
+
   it("offers Build from community pack for an unsupported language when a pack is detected", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
@@ -972,7 +1022,11 @@ describe("SettingsDialog", () => {
         name: "Build from community pack",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Stardew Valley - THAI/)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Installed community language pack · Stardew Valley - THAI/,
+      ),
+    ).toBeInTheDocument();
     // The dead-end "no glossary" message must NOT be shown when a pack exists.
     expect(
       screen.queryByText(/so no official glossary is available/i),

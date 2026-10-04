@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  act,
+} from "@testing-library/react";
 import { vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -57,6 +63,38 @@ async function gotoGlossaryStep(lang = "de") {
 }
 
 describe("SetupWizard", () => {
+  it("does not reuse a previous folder validation while a new folder is being checked", async () => {
+    let finishValidation!: (valid: boolean) => void;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "pick_folder") return Promise.resolve("E:/OtherGame");
+      if (cmd === "validate_stardew_path")
+        return new Promise<boolean>((resolve) => {
+          finishValidation = resolve;
+        });
+      return Promise.resolve(null);
+    });
+    render(
+      <SetupWizard
+        initial={{
+          stardewPath: "E:/SDV",
+          modsPath: "E:/SDV/Mods",
+          sourceLang: "default",
+          targetLang: "de",
+        }}
+        onComplete={() => {}}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Browse..." }));
+    await screen.findByText("E:/OtherGame");
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    await act(async () => finishValidation(false));
+    expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
+    expect(
+      screen.getByText(/does not look like a Stardew Valley folder/),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Browse..." })).toBeEnabled();
+  });
   it("presents the four setup steps and updates visible progress", async () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
 
@@ -158,10 +196,45 @@ describe("SetupWizard", () => {
     await gotoGlossaryStep("th");
 
     expect(
-      await screen.findByText(/Stardew Valley doesn’t include this language/i),
+      await screen.findByText(
+        /No local glossary source was found for this language/i,
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Build glossary" })).toBeNull();
   });
+
+  it.each([false, true])(
+    "keeps a cached community glossary usable when its pack is missing (source available: %s)",
+    async (sourceAvailable) => {
+      const originalInvoke = invokeMock.getMockImplementation()!;
+      invokeMock.mockImplementation((cmd: string) =>
+        cmd === "glossary_status"
+          ? Promise.resolve({
+              gameXnbPresent: sourceAvailable,
+              unpackedPresent: false,
+              sourceAvailable,
+              cached: {
+                targetLang: "th",
+                termCount: 7,
+                source: "communityPack",
+                packName: "Thai",
+              },
+              outdatedCache: false,
+              packAvailable: false,
+              packXnbAvailable: false,
+            })
+          : originalInvoke(cmd),
+      );
+      render(<SetupWizard initial={null} onComplete={() => {}} />);
+      await gotoGlossaryStep("th");
+      expect(
+        await screen.findByText("Cached glossary available"),
+      ).toBeVisible();
+      expect(screen.getByText(/7 cached terms remain available/)).toBeVisible();
+      expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
+      expect(screen.queryByText("No glossary for this language")).toBeNull();
+    },
+  );
 
   it("auto-builds from community pack for an unsupported language with a detected pack", async () => {
     invokeMock.mockImplementation((cmd: string) => {
