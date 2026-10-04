@@ -17,8 +17,8 @@ target segment, even when filenames differ. Ambiguous or mixed layouts are
 reported rather than guessed. Multi-part packages are grouped in the mod list.
 Mods that do not use standard SMAPI i18n files cannot be translated here.
 
-**Overview** shows scan totals and recently opened mods. Open **Workspace** and
-select a mod or component to work on its strings. Use **Scan** after installing
+The app opens directly in the translation workspace. Select a mod or component
+to work on its strings. Use **Scan** after installing
 or updating mods. After two complete scans, the app can report English strings
 that were added, changed, or removed. A scan with an attention-requiring skipped
 component keeps the last complete baseline; comparison counts are unavailable
@@ -116,7 +116,7 @@ see [data sent to AI](ai.md#data-and-privacy).
 
 ## Export translation files
 
-Choose **Export…** for the current mod or all scanned mods. The confirmation
+Choose **Files… > Export JSON** for the selected mod or all scanned mods. The confirmation
 shows the scope, replacement information, and strings needing attention.
 
 **Nonempty Review and Changed translations are included in export after a
@@ -138,8 +138,8 @@ For flat locale files, Portuguese export uses `i18n/pt.json`; an existing
 `i18n/pt-BR.json` is accepted on import and backed up when normalized during
 export. Split document names such as `i18n/de/pt.json` are kept literally.
 
-For a combined translation archive, choose **Export… > Translation ZIP · all
-mods**. Its preview includes all scanned components with effective
+For a combined translation archive, choose **Files… > Export ZIP for all
+mods…**. Its preview includes all scanned components with effective
 target-language values in the configured Mods folder. Each included locale
 combines the existing target values for current source keys with saved
 overrides, using the same validation rules. Changed and Review values are
@@ -152,7 +152,7 @@ Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 
-Select a mod package and use **Export… > Translation ZIP · current mod**. Check its
+Select a mod package and use **Files… > Export ZIP for selected mod…**. Check its
 preview and choose a destination. The ZIP contains generated target-language
 i18n files and a small FOMOD installer for Vortex and MO2. Recipients still need
 the original mod; its assets, DLLs, and manifest are not included.

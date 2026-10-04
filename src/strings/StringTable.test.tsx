@@ -216,6 +216,88 @@ function dataRows(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(".stringrow--data"));
 }
 
+it.each(["mod", "reload"] as const)(
+  "waits for the current strings before fulfilling an Open Review focus request after %s changes",
+  async (change) => {
+    const pending = deferred<readonly unknown[]>();
+    let delay = false;
+    invokeMock.mockImplementation((command: string, args?: unknown) => {
+      if (command !== "load_strings") return Promise.resolve(undefined);
+      const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+      return delay ? pending.promise : Promise.resolve(ROWS[id]);
+    });
+    const table = (mod: ScannedMod, reloadToken: number) => (
+      <>
+        <button>Outside the table</button>
+        <StringTable mod={mod} reloadToken={reloadToken} />
+      </>
+    );
+    const { rerender } = render(table(MOD, 0));
+    await screen.findByText("greeting");
+    const outside = screen.getByRole("button", { name: "Outside the table" });
+    outside.focus();
+    delay = true;
+    act(() => {
+      window.dispatchEvent(new Event("translator-focus-filters"));
+      rerender(table(change === "mod" ? OTHER_MOD : MOD, 1));
+    });
+    expect(outside).toHaveFocus();
+    expect(screen.getByText("Loading strings…")).toBeVisible();
+    act(() => pending.resolve(ROWS[change === "mod" ? "c.d" : "a.b"]));
+    const current = await screen.findByRole("button", {
+      name: change === "mod" ? "All 1" : "All 3",
+    });
+    await waitFor(() => expect(current).toHaveFocus());
+  },
+);
+
+it("keeps one AI run alive while another mod loads, fails, and retries", async () => {
+  const run = deferred<AiRunResult>();
+  let rejectLoad!: (reason: Error) => void;
+  const load = new Promise<readonly unknown[]>((_resolve, reject) => {
+    rejectLoad = reject;
+  });
+  let retry = false;
+  invokeMock.mockImplementation((command: string, args?: unknown) => {
+    if (command !== "load_strings") return Promise.resolve(undefined);
+    const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+    return id === "c.d" && !retry ? load : Promise.resolve(ROWS[id]);
+  });
+  const onRunAi = vi.fn(() => run.promise);
+  const props = {
+    liveAiEngines: [LOCAL_AI_ENGINE],
+    defaultAiEngine: "local" as const,
+    onRunAi,
+  };
+  const { rerender } = render(<StringTable mod={MOD} {...props} />);
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Select bye" }));
+  fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+  );
+  await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+  const notice = screen.getByLabelText("AI translation progress");
+  rerender(<StringTable mod={OTHER_MOD} {...props} />);
+  expect(screen.getByText("Loading strings…")).toBeVisible();
+  expect(screen.getByLabelText("AI translation progress")).toBe(notice);
+  await act(async () => rejectLoad(new Error("Fixture load failed")));
+  expect(await screen.findByText(/Fixture load failed/)).toBeVisible();
+  expect(screen.getByLabelText("AI translation progress")).toBe(notice);
+  retry = true;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("tomorrow");
+  expect(screen.getByLabelText("AI translation progress")).toBe(notice);
+  expect(onRunAi).toHaveBeenCalledOnce();
+  act(() =>
+    run.resolve(
+      liveAiResult({ outcome: "cancelled", completed: 0, suggestions: [] }),
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.queryByLabelText("AI translation progress")).toBeNull(),
+  );
+});
+
 function rowFor(text: string): HTMLElement {
   const node = screen.getByText(text);
   const row = node.closest<HTMLElement>(".stringrow--data");
@@ -257,18 +339,14 @@ describe("StringTable workbench", () => {
     installBackendRows({ "a.b": [ROWS["a.b"][1]] });
     render(<StringTable mod={MOD} />);
 
-    expect(
-      await screen.findByText(/1 of 1 string · All · This mod/),
-    ).toBeVisible();
+    expect(await screen.findByText(/1 of 1 string shown/)).toBeVisible();
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search strings" }),
       {
         target: { value: "bye" },
       },
     );
-    expect(
-      screen.getByText("Search preview: 1 matching row · 1 string in This mod"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 1 string shown")).toBeVisible();
   });
 
   it("does not continue a superseded multi-file load after its active request returns", async () => {
@@ -437,7 +515,7 @@ describe("StringTable workbench", () => {
       screen.getByRole("heading", { name: /Test Package.*Test Mod/ }),
     ).toBeVisible();
     expect(screen.getByText("German (de)")).toBeVisible();
-    expect(screen.getByText("2 / 3 covered · 67%")).toBeVisible();
+    expect(screen.getByText("2 / 3 covered")).toBeVisible();
     expect(screen.getByText("scanned just now")).toBeVisible();
   });
 
@@ -456,7 +534,7 @@ describe("StringTable workbench", () => {
       ),
     );
     render(<StringTable mod={MOD} />);
-    expect(await screen.findByText("199 / 200 covered · 99.5%")).toBeVisible();
+    expect(await screen.findByText("199 / 200 covered")).toBeVisible();
   });
 
   it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
@@ -511,9 +589,7 @@ describe("StringTable workbench", () => {
     expect(await screen.findByText("tomorrow")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "1 of 4 strings · New strings from latest scan · All mods",
-      ),
+      screen.getByText("New strings from latest scan · 1 of 4 strings shown"),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(onClearFilters).toHaveBeenCalledOnce();
@@ -558,7 +634,7 @@ describe("StringTable workbench", () => {
     expect(screen.queryByText("token")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^All \d/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Validation issues/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Issues/ }));
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
 
@@ -584,11 +660,7 @@ describe("StringTable workbench", () => {
 
     expect(screen.getByText("tomorrow")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Search preview: 1 matching row · 4 strings in All mods",
-      ),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 4 strings shown")).toBeVisible();
     const modCell = rowFor("tomorrow").querySelector(
       '.translator-global-mod-col[data-search-field="mod"]',
     );
@@ -824,9 +896,7 @@ describe("StringTable workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     select("token");
-    fireEvent.click(
-      screen.getByRole("button", { name: /^Validation issues 1$/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Issues 1$/ }));
     expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
@@ -962,9 +1032,7 @@ describe("StringTable workbench", () => {
     render(<StringTable mod={MOD} onBulkApplied={onBulkApplied} />);
     await screen.findByText("token");
 
-    expect(
-      screen.queryByRole("button", { name: /^Validation issues/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Issues 0" })).toBeDisabled();
     expect(
       rowFor("token").querySelector(".translator-inline-validation"),
     ).toBeNull();
@@ -1000,17 +1068,13 @@ describe("StringTable workbench", () => {
   it("refreshes cached validation after a batch replaces an invalid row", async () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("token");
-    fireEvent.click(
-      screen.getByRole("button", { name: /^Validation issues 1/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Issues 1/ }));
     expect(screen.getByText("token")).toBeVisible();
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
     fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
     await waitFor(() => expect(screen.queryByText("token")).toBeNull());
-    expect(
-      screen.queryByRole("button", { name: /^Validation issues 1/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Issues 1/ })).toBeNull();
   });
 
   it("shows status help on filter focus or status-badge pointer only", async () => {
@@ -1121,7 +1185,9 @@ describe("StringTable workbench", () => {
     expect(await screen.findByText("greeting")).toBeVisible();
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("bye")).not.toBeInTheDocument();
-    expect(screen.getByText(/2 of 3 strings · Has target text/)).toBeVisible();
+    expect(
+      screen.getByText(/Has target text · 2 of 3 strings shown/),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /Has target text/ }),
     ).not.toBeInTheDocument();
@@ -1828,14 +1894,14 @@ describe("StringTable workbench", () => {
       { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
       { modUniqueId: "c.d", relativeDir: "i18n/dialogue", key: "tomorrow" },
     ]);
-    expect(
-      screen.getByRole("dialog", { name: "AI translation progress" }),
-    ).toBeVisible();
+    expect(screen.getByLabelText("AI translation progress")).toBeVisible();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Start AI translation/ }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
+    );
     act(() =>
       releaseRun(
         liveAiResult({
@@ -1852,7 +1918,7 @@ describe("StringTable workbench", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "AI translation progress" }),
+        screen.queryByLabelText("AI translation progress"),
       ).not.toBeInTheDocument(),
     );
     expect(onAiBatchFinished).toHaveBeenCalledWith(
@@ -1899,7 +1965,7 @@ describe("StringTable workbench", () => {
     );
     fireEvent.click(action);
     expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
+      screen.queryByLabelText("AI translation progress"),
     ).not.toBeInTheDocument();
   });
 
@@ -2024,7 +2090,7 @@ describe("StringTable workbench", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "AI translation progress" }),
+        screen.queryByLabelText("AI translation progress"),
       ).not.toBeInTheDocument(),
     );
   });
@@ -2090,9 +2156,7 @@ describe("StringTable workbench", () => {
         { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
       ],
     });
-    const progressDialog = screen.getByRole("dialog", {
-      name: "AI translation progress",
-    });
+    const progressDialog = screen.getByLabelText("AI translation progress");
     expect(progressDialog).toBeVisible();
     expect(
       within(progressDialog).queryByRole("combobox"),
@@ -2152,7 +2216,7 @@ describe("StringTable workbench", () => {
       }),
     );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
-    expect(onStatusFilterChange).toHaveBeenCalledWith("review-needed");
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
     expect(onStringSaved).toHaveBeenCalledTimes(2);
     expect(onStringSaved).toHaveBeenNthCalledWith(
       1,
@@ -2225,7 +2289,9 @@ describe("StringTable workbench", () => {
     );
     await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
     const request = onRunAi.mock.calls[0][1];
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Cancel AI translation" }),
+    );
     act(() =>
       releaseRun(
         liveAiResult({
@@ -2269,7 +2335,7 @@ describe("StringTable workbench", () => {
     );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
     expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
+      screen.queryByLabelText("AI translation progress"),
     ).not.toBeInTheDocument();
   });
 
@@ -2343,7 +2409,7 @@ describe("StringTable workbench", () => {
     );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
     expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
+      screen.queryByLabelText("AI translation progress"),
     ).not.toBeInTheDocument();
   });
 
@@ -2829,7 +2895,7 @@ it("derives blank source status and reopens it after a source update, retaining 
   await screen.findByText("blank");
   expect(rowFor("blank")).toHaveAttribute("data-status", "translated");
   expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
-  expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(screen.getByText("2 / 2 covered")).toBeInTheDocument();
   expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
     "data-complete",
     "false",
@@ -2896,7 +2962,7 @@ it("reports both working counters after clearing a personal target on a blank so
     expect.objectContaining({ target: "", status: "untranslated" }),
   );
   expect(rowFor("greeting")).toHaveAttribute("data-status", "translated");
-  expect(screen.getByText("1 / 1 covered · 100%")).toBeInTheDocument();
+  expect(screen.getByText("1 / 1 covered")).toBeInTheDocument();
 });
 
 it("does not save an exemption or create undo history for Done on an already blank pair", async () => {
@@ -2940,7 +3006,7 @@ it("counts NEL as no-work and BOM as physical text without overlap", async () =>
     expect.objectContaining({ translated: 2 }),
     1,
   );
-  expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(screen.getByText("2 / 2 covered")).toBeInTheDocument();
   expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
     false,
   );

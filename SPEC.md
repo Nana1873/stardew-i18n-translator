@@ -222,15 +222,17 @@ automation belong to the [release process](docs/release/release-process.md).
 
 ## Interface and Runtime
 
-After setup, the app opens on Overview with real scan totals, diagnostics,
-recent mods, and available current-session results. Missing data remains
-unavailable; production screens never substitute demo data. Workspace combines
+After setup, the app opens directly in the translation workspace with real scan
+data. Missing data remains unavailable; production screens never substitute
+demo data. The workspace combines
 a resizable package/mod pane with one virtualized table for This mod and All
 mods, supporting search, filters, selection, keyboard use, and batch actions.
 
-The result tray shows actual operation details and the five newest completed
-backend operations in the session. **Latest result** always reopens the newest
-result. One reversible batch edit has a memory-only undo snapshot until another
+Operations show compact notifications with actionable causes and progress.
+Details expose the actual operation data and the five newest completed backend
+operations in the session. **Latest result** reopens the newest result. AI progress
+remains nonmodal, with batch events in the shared Activity log. One reversible
+batch edit has a memory-only undo snapshot until another
 completed operation replaces it. A later successful edit to any touched
 component permanently invalidates that snapshot, even if the value is changed
 back. Undo must never overwrite newer edits.

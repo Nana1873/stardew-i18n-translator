@@ -27,6 +27,7 @@ export function LlmBatchExportDialog({
   const [choosing, setChoosing] = useState(false);
   const [destinationPath, setDestinationPath] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
   const dialogRef = useRef<HTMLElement>(null);
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
@@ -69,21 +70,18 @@ export function LlmBatchExportDialog({
     <div className="translator-flow-overlay">
       <section
         ref={dialogRef}
-        className="translator-flow-dialog"
+        className={
+          "translator-flow-dialog desktop-zip-dialog desktop-batch-export-dialog"
+        }
         role="dialog"
         aria-modal="true"
-        aria-label="Save LLM batch"
+        aria-label="Export LLM batch"
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">
-              Export selection as LLM batch
-            </h2>
-            <div className="translator-kicker">
-              {eligibleCount} eligible{" "}
-              {eligibleCount === 1 ? "string" : "strings"} · {modName}
-            </div>
+            <h2 className="translator-heading">{"Export LLM batch"}</h2>
+            <div className="translator-kicker">{modName}</div>
           </div>
           <button
             className="translator-icon-button"
@@ -96,35 +94,47 @@ export function LlmBatchExportDialog({
           </button>
         </div>
         <div className="translator-flow-body">
-          {selectedCount > eligibleCount && (
-            <p className="translator-batch-selection-summary">
-              {eligibleCount} of {selectedCount} selected strings included
-            </p>
-          )}
-          <label className="translator-flow-field">
-            File name
-            <input value={displayedFileName} readOnly />
-          </label>
-          <div className="translator-file-choice">
-            <span>
-              <strong>Save location</strong>
-              <br />
-              <code>
-                {destinationPath ?? "Choose in the native Save dialog"}
-              </code>
-            </span>
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              disabled={pending || choosing}
-              onClick={() => void chooseDestination()}
-            >
-              {choosing ? "Choosing…" : "Change …"}
-            </button>
-          </div>
-          <div className="translator-flow-callout">
-            Only selected open or changed strings are exported. Done entries and
-            strings already awaiting review are excluded.
+          {
+            <>
+              <div className="desktop-export-summary">
+                <p>
+                  <strong>{eligibleCount}</strong> of {selectedCount} selected{" "}
+                  {selectedCount === 1 ? "string" : "strings"} included
+                </p>
+              </div>
+              <div className="translator-flow-field desktop-zip-filename">
+                <span>Batch file</span>
+                <output aria-label="Batch file">{displayedFileName}</output>
+              </div>
+            </>
+          }
+          {
+            <div className="desktop-save-location">
+              <span>
+                <strong>Save location</strong>
+                <br />
+                <code>
+                  {destinationPath ?? "Choose in the native Save dialog"}
+                </code>
+              </span>
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                disabled={pending || choosing}
+                onClick={() => void chooseDestination()}
+              >
+                {choosing
+                  ? "Choosing…"
+                  : destinationPath
+                    ? "Change…"
+                    : "Choose…"}
+              </button>
+            </div>
+          }
+          <div className="translator-kicker">
+            {
+              "Only Open and Changed strings are included. Done and Review are excluded."
+            }
           </div>
           {error && (
             <div className="translator-flow-callout is-error" role="alert">
@@ -147,7 +157,11 @@ export function LlmBatchExportDialog({
             onClick={() => void save()}
             disabled={pending || choosing || eligibleCount === 0}
           >
-            {pending ? "Saving…" : "Save JSON batch"}
+            {pending
+              ? "Saving…"
+              : destinationPath
+                ? "Save batch"
+                : "Save batch…"}
           </button>
         </div>
       </section>

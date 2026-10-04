@@ -56,18 +56,18 @@ surface with Selenium and checks files produced by the actual Rust backend:
    finds one mod and four source keys.
 3. Open a row through the keyboard and save a translation. Check its portable
    state, status, and source hash; the mod still has no `de.json`.
-4. Use **Import …** and the real Windows file picker to load a prepared format-2
+4. Use **Files… > Import LLM batch…** and the real Windows file picker to load a prepared format-2
    LLM result JSON. Imported text enters Review, while a conflicting value
    preserves the saved personal edit. Approve both imported suggestions through
    the editor and check Done. Import does not write an installed locale file.
-5. Use **Export … → Export current mod** and confirm its preview. Check the
+5. Use **Files… → Export JSON for selected mod…** and confirm its preview. Check the
    complete output dictionary, omitted empty source, Unicode text, and preserved
    `{{PlayerName}}`, `{{Count}}`, `$h`, `#$b#`, `%farm`, and `@` tokens. Source and
    import inputs remain unchanged.
 6. Save a different value after export, persist a string search and Done filter,
    then leave an unsaved editor draft open. Close through the normal Windows
    window-close request and wait for process exit. Restart the same portable
-   copy: Overview opens without setup; Workspace restores its mod, search,
+   copy: the workspace opens without setup and restores its mod, search,
    filter, saved edit, and imported text. Row selection and the open editor are
    session-only; the unsaved draft is absent. The exported file remains at its
    earlier value, proving the saved work was restored from portable state.
@@ -76,7 +76,7 @@ surface with Selenium and checks files produced by the actual Rust backend:
    Cancel replacement export: neither locale nor backup changes. Confirm the
    second attempt: the new locale is exact and `.json.bak` preserves every byte
    of the previous export.
-8. Use **Build translation ZIP · current mod**. Cancel the real Save dialog,
+8. Use **Files… → Export ZIP for selected mod…**. Cancel the real Save dialog,
    change the install folder to `OriginalDesktopSmoke`, reopen the Save dialog,
    and save to a new synthetic path. Inspect the generated archive: exactly
    `OriginalDesktopSmoke/i18n/de.json` and the two FOMOD XML files, expected

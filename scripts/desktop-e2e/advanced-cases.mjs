@@ -30,7 +30,7 @@ export async function advancedCases(h) {
   const launch = async (scale) => {
     await h.launch(scale);
     driver = h.driver();
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
   };
   const selectMod = async (id) => {
     await click(css(`[data-tree-id="mod:${id}"]`));
@@ -39,6 +39,8 @@ export async function advancedCases(h) {
   };
   const rescan = async () => {
     await click(css('[aria-label="Scan mods"]'));
+    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await click(css('button[aria-label$="open scan diagnostics"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
     await absent(css('[role="dialog"][aria-label="Scan"]'));

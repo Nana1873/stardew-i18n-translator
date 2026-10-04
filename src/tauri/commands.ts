@@ -870,6 +870,15 @@ export interface AiRunTokenUsage {
 }
 
 export interface AiRunProgress {
+  /** Optional parallel snapshots emitted by newer native backends. */
+  activeBatches?: number;
+  parallelLimit?: number;
+  batchActivity?: Array<{
+    batchIndex: number;
+    phase: AiRunPhase;
+    batchSize: number;
+    recovery?: AiRunRecovery;
+  }>;
   runId: string;
   phase: AiRunPhase;
   completed: number;

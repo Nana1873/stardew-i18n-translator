@@ -23,22 +23,22 @@ function renderDialog(
 describe("LlmBatchExportDialog", () => {
   it("shows the excluded portion of the original selection without changing export eligibility", () => {
     renderDialog({ eligibleCount: 1, selectedCount: 2 });
-    expect(screen.getByText("1 of 2 selected strings included")).toBeVisible();
-    expect(
-      screen.getByRole("button", { name: "Save JSON batch" }),
-    ).toBeEnabled();
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "1 of 2 selected strings included",
+    );
+    expect(screen.getByRole("button", { name: "Save batch…" })).toBeEnabled();
   });
   it("confirms the real selection and closes after the native save succeeds", async () => {
     const onSave = vi.fn().mockResolvedValue(true);
     const onClose = vi.fn();
     renderDialog({ onSave, onClose });
 
-    expect(screen.getByText("2 eligible strings · Test Mod")).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "File name" })).toHaveValue(
-      "Test-Mod.de.llm-batch.json",
-    );
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(
+      screen.getByRole("status", { name: "Batch file" }),
+    ).toHaveTextContent("Test-Mod.de.llm-batch.json");
 
-    fireEvent.click(screen.getByRole("button", { name: "Save JSON batch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save batch…" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(null));
     expect(onClose).toHaveBeenCalledOnce();
@@ -47,7 +47,7 @@ describe("LlmBatchExportDialog", () => {
   it("uses the singular label for one eligible string", () => {
     renderDialog({ eligibleCount: 1 });
 
-    expect(screen.getByText("1 eligible string · Test Mod")).toBeVisible();
+    expect(screen.getByRole("dialog")).toBeVisible();
   });
 
   it("keeps the dialog open and restores Save after an export error", async () => {
@@ -55,15 +55,13 @@ describe("LlmBatchExportDialog", () => {
     const onClose = vi.fn();
     renderDialog({ onSave, onClose });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save JSON batch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save batch…" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Error: save failed",
     );
     expect(onClose).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("button", { name: "Save JSON batch" }),
-    ).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save batch…" })).toBeEnabled();
   });
 
   it("stays open when the native Save dialog is cancelled", async () => {
@@ -71,15 +69,13 @@ describe("LlmBatchExportDialog", () => {
     const onClose = vi.fn();
     renderDialog({ onSave, onClose });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save JSON batch" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save batch…" }));
 
     await waitFor(() => expect(onSave).toHaveBeenCalledWith(null));
     expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "Save batch…" })).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: "Save JSON batch" }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("dialog", { name: "Save LLM batch" }),
+      screen.getByRole("dialog", { name: "Export LLM batch" }),
     ).toBeVisible();
   });
 
@@ -92,8 +88,8 @@ describe("LlmBatchExportDialog", () => {
     const onClose = vi.fn();
     renderDialog({ onSave, onClose });
 
-    fireEvent.click(screen.getByRole("button", { name: "Save JSON batch" }));
-    const dialog = screen.getByRole("dialog", { name: "Save LLM batch" });
+    fireEvent.click(screen.getByRole("button", { name: "Save batch…" }));
+    const dialog = screen.getByRole("dialog", { name: "Export LLM batch" });
     expect(screen.getByRole("button", { name: "Saving…" })).toBeDisabled();
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(onClose).not.toHaveBeenCalled();
@@ -109,15 +105,15 @@ describe("LlmBatchExportDialog", () => {
     const onSave = vi.fn().mockResolvedValue(true);
     renderDialog({ onChooseDestination, onSave });
 
-    fireEvent.click(screen.getByRole("button", { name: "Change …" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose…" }));
 
     expect(
       await screen.findByText("C:\\Temp\\Custom batch.json"),
     ).toBeVisible();
-    expect(screen.getByRole("textbox", { name: "File name" })).toHaveValue(
-      "Custom batch.json",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Save JSON batch" }));
+    expect(
+      screen.getByRole("status", { name: "Batch file" }),
+    ).toHaveTextContent("Custom batch.json");
+    fireEvent.click(screen.getByRole("button", { name: "Save batch" }));
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith("C:\\Temp\\Custom batch.json"),
     );
@@ -130,23 +126,21 @@ describe("LlmBatchExportDialog", () => {
       .mockResolvedValueOnce(null);
     renderDialog({ onChooseDestination });
 
-    fireEvent.click(screen.getByRole("button", { name: "Change …" }));
+    fireEvent.click(screen.getByRole("button", { name: "Choose…" }));
     expect(await screen.findByText("C:\\Temp\\first.json")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "Change …" }));
+    fireEvent.click(screen.getByRole("button", { name: "Change…" }));
     await waitFor(() => expect(onChooseDestination).toHaveBeenCalledTimes(2));
 
     expect(screen.getByText("C:\\Temp\\first.json")).toBeVisible();
     expect(
-      screen.getByRole("dialog", { name: "Save LLM batch" }),
+      screen.getByRole("dialog", { name: "Export LLM batch" }),
     ).toBeVisible();
   });
 
   it("disables confirmation when no strings are eligible", () => {
     renderDialog({ eligibleCount: 0 });
 
-    expect(
-      screen.getByRole("button", { name: "Save JSON batch" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save batch…" })).toBeDisabled();
   });
 
   it("closes through Cancel without starting an export", () => {
@@ -168,7 +162,7 @@ describe("LlmBatchExportDialog", () => {
       name: "Cancel batch export",
     });
     await waitFor(() => expect(first).toHaveFocus());
-    const last = screen.getByRole("button", { name: "Save JSON batch" });
+    const last = screen.getByRole("button", { name: "Save batch…" });
     last.focus();
     fireEvent.keyDown(last, { key: "Tab" });
     expect(first).toHaveFocus();

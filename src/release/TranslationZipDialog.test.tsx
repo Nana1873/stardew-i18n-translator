@@ -45,12 +45,10 @@ describe("TranslationZipDialog", () => {
       />,
     );
     expect(screen.getByText("[CP] Sample/i18n/de.json")).toBeInTheDocument();
-    expect(screen.getByText(/package with 2 components/)).toBeVisible();
+    expect(screen.getByRole("dialog")).toHaveTextContent(PREVIEW.packageName);
     expect(screen.getByText(/Framework/)).toBeInTheDocument();
     expect(screen.getByText(/Component versions differ/)).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Choose save location …" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeDisabled();
   });
 
   it("updates the safe filename when the package version is corrected", () => {
@@ -66,10 +64,10 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Package version"), {
+    fireEvent.change(screen.getByLabelText("Version"), {
       target: { value: "2.1/beta" },
     });
-    expect(screen.getByLabelText("Archive name")).toHaveValue(
+    expect(screen.getByLabelText("ZIP file")).toHaveTextContent(
       "Sample Pack - 2.1_beta - German (de).zip",
     );
     fireEvent.click(
@@ -77,9 +75,7 @@ describe("TranslationZipDialog", () => {
         /I verified the advertised package version 2\.1\/beta/,
       ),
     );
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose save location …" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     expect(build).toHaveBeenCalledWith(
       "Sample Pack - 2.1_beta - German (de).zip",
       [],
@@ -99,15 +95,14 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.change(screen.getByLabelText("Install folder · [CP] Sample"), {
+    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.change(screen.getByLabelText("Install folder"), {
       target: { value: "Original Package/[CP] Sample" },
     });
     expect(
       screen.getByText("Original Package/[CP] Sample/i18n/de.json"),
     ).toBeVisible();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Choose save location …" }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     expect(build).toHaveBeenCalledWith(PREVIEW.defaultFileName, [
       { modUniqueId: "[CP] Sample", folder: "Original Package/[CP] Sample" },
     ]);
@@ -138,17 +133,17 @@ describe("TranslationZipDialog", () => {
       />,
     );
     const build = screen.getByRole("button", {
-      name: "Choose save location …",
+      name: "Save ZIP…",
     });
     expect(build).toBeDisabled();
     expect(screen.getByRole("alert")).toHaveTextContent(
       "same installation folder",
     );
-    fireEvent.change(screen.getByLabelText("Install folder · Other mod"), {
+    fireEvent.change(screen.getByLabelText("Other mod"), {
       target: { value: "../escape" },
     });
     expect(build).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Install folder · Other mod"), {
+    fireEvent.change(screen.getByLabelText("Other mod"), {
       target: { value: "Other mod" },
     });
     expect(build).toBeEnabled();
@@ -174,9 +169,7 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: "Choose save location …" }),
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
     expect(inspect).toHaveBeenCalledWith(problem);
   });
@@ -223,14 +216,14 @@ describe("TranslationZipDialog", () => {
     );
 
     const dialog = screen.getByRole("dialog", {
-      name: "Build translation ZIP",
+      name: "Export translation ZIP",
     });
     expect(dialog).toHaveAttribute("aria-busy", "true");
     expect(
       screen.getByRole("button", { name: "Close ZIP preview" }),
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
-    expect(screen.getByLabelText("Package version")).toBeDisabled();
+    expect(screen.getByLabelText("Version")).toBeDisabled();
     expect(
       screen.getByLabelText(/I verified the advertised package version/),
     ).toBeDisabled();

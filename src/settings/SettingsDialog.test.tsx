@@ -558,8 +558,12 @@ describe("SettingsDialog", () => {
       screen.getByRole("heading", { name: "Glossary" }),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "About" }));
-    expect(screen.getByRole("heading", { name: "About" })).toBeInTheDocument();
-    expect(screen.getByText(packageInfo.version)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Stardew i18n Translator" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(`Version ${packageInfo.version}`),
+    ).toBeInTheDocument();
     expect(
       screen.getByText("Author & license").parentElement,
     ).toHaveTextContent("GPL-3.0-or-later");
@@ -612,7 +616,7 @@ describe("SettingsDialog", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "About" }));
     const logging = screen.getByRole("checkbox", {
-      name: "Enable local diagnostic logging",
+      name: "Enable logging",
     });
     expect(logging).toBeChecked();
     fireEvent.click(logging);
@@ -635,7 +639,7 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("tab", { name: "About" }));
     expect(
       screen.getByRole("checkbox", {
-        name: "Enable local diagnostic logging",
+        name: "Enable logging",
       }),
     ).toBeChecked();
   });

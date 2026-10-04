@@ -1,3 +1,4 @@
+import { DesktopFilters, ValidationIcon } from "../ui/WorkspaceControls";
 /**
  * Primary string workbench.
  *
@@ -79,7 +80,8 @@ import {
 } from "../shortcuts";
 
 export type StringTableScope = "mod" | "all";
-export type StringTableFilter = StringStatus | "all" | "has-value";
+export type StringTableFilter =
+  StringStatus | "all" | "has-value" | "needs-review";
 export type StringTableNoticeTone = "info" | "success" | "error";
 
 export interface StringTableSummary {
@@ -177,6 +179,7 @@ export interface SavedStringSnapshot {
 }
 
 export interface StringTableProps {
+  headerActions?: React.ReactNode;
   mod: ScannedMod | null;
   mods?: ScannedMod[];
   scope?: StringTableScope;
@@ -268,6 +271,7 @@ const STATUS_HELP: Record<StringStatus | "all" | "issues", string> = {
 const FILTER_LABEL: Record<StringTableFilter, string> = {
   all: "All",
   "has-value": "Has target text",
+  "needs-review": "Needs review",
   untranslated: DISPLAY_STATUS.untranslated.label,
   translated: DISPLAY_STATUS.translated.label,
   outdated: DISPLAY_STATUS.outdated.label,
@@ -550,6 +554,7 @@ function scopedPlan(
 }
 
 export function StringTable({
+  headerActions,
   mod,
   mods,
   scope,
@@ -603,6 +608,7 @@ export function StringTable({
   const effectiveIssuesOnly = issuesOnly ?? localIssuesOnly;
 
   const [rows, setRows] = useState<Row[] | null>(null);
+  const [loadedContext, setLoadedContext] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editorSession, setEditorSession] = useState<EditorSession | null>(
     null,
@@ -616,6 +622,14 @@ export function StringTable({
   const [sort, setSort] = useState<StringTableSort | null>(initialSort);
   const [batch, setBatch] = useState<BatchItem[] | null>(null);
   const [batchModLabel, setBatchModLabel] = useState("");
+  const [filterFocusRequest, setFilterFocusRequest] = useState(0);
+  const consumedFilterFocus = useRef(0);
+  useEffect(() => {
+    const request = () => setFilterFocusRequest((value) => value + 1);
+    window.addEventListener("translator-focus-filters", request);
+    return () =>
+      window.removeEventListener("translator-focus-filters", request);
+  }, []);
   const [statusTooltip, setStatusTooltip] = useState<StatusTooltipState | null>(
     null,
   );
@@ -795,6 +809,9 @@ export function StringTable({
       }
       if (!active) return;
       rowsRef.current = loaded;
+      setLoadedContext(
+        JSON.stringify([planSignature, reloadToken, postSaveReloadToken]),
+      );
       setRows(loaded);
       reportCounts(loaded);
     })().catch((cause) => {
@@ -810,6 +827,31 @@ export function StringTable({
     // planSignature is the complete immutable load contract.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planSignature, reloadToken, postSaveReloadToken]);
+
+  useEffect(() => {
+    if (
+      rows === null ||
+      error ||
+      loadedContext !==
+        JSON.stringify([planSignature, reloadToken, postSaveReloadToken]) ||
+      consumedFilterFocus.current === filterFocusRequest
+    )
+      return;
+    const target = workbenchRef.current?.querySelector<HTMLButtonElement>(
+      '.desktop-filter-action[aria-pressed="true"]',
+    );
+    if (!target) return;
+    consumedFilterFocus.current = filterFocusRequest;
+    target.focus();
+  }, [
+    rows,
+    error,
+    loadedContext,
+    planSignature,
+    reloadToken,
+    postSaveReloadToken,
+    filterFocusRequest,
+  ]);
 
   const data = rows ?? [];
   const rowIndex = useMemo(() => {
@@ -852,9 +894,11 @@ export function StringTable({
       const identity = identityOf(row);
       if (identityFilterSet && !identityFilterSet.has(identity)) return;
       if (
-        effectiveStatus === "has-value"
-          ? isBlankText(row.target)
-          : effectiveStatus !== "all" && row.status !== effectiveStatus
+        effectiveStatus === "needs-review"
+          ? row.status !== "review-needed" && row.status !== "outdated"
+          : effectiveStatus === "has-value"
+            ? isBlankText(row.target)
+            : effectiveStatus !== "all" && row.status !== effectiveStatus
       ) {
         return;
       }
@@ -979,7 +1023,7 @@ export function StringTable({
     count: display.length,
     getScrollElement: () => parentRef.current,
     estimateSize: (index) =>
-      display[index]?.kind === "section" ? 26 : compactMetadata ? 48 : 38,
+      display[index]?.kind === "section" ? 24 : compactMetadata ? 44 : 32,
     overscan: 16,
   });
 
@@ -1034,7 +1078,9 @@ export function StringTable({
         candidate.uniqueId === batchEligibleRows[0]?.modUniqueId,
     ) ?? null;
   const canRunAi =
-    liveAiEligibleRows.length > 0 && Boolean(onRunAi && activeLiveEngine);
+    !batch &&
+    liveAiEligibleRows.length > 0 &&
+    Boolean(onRunAi && activeLiveEngine);
   const llmExportHandlerAvailable = Boolean(onLlmBatchExportForMod);
   const canExportLlm =
     singleModSelection &&
@@ -1613,7 +1659,6 @@ export function StringTable({
         reportCounts(completedRows, completedMods);
         setPostSaveReloadToken((current) => current + 1);
       }
-      onBulkApplied?.(historyEntry);
       for (const { row, target, tokenMismatchAccepted } of planned) {
         if (!completedMods.has(row.modUniqueId)) continue;
         onStringSaved?.({
@@ -1631,6 +1676,7 @@ export function StringTable({
           (planned.length === 1 ? " string updated." : " strings updated."),
         "success",
       );
+      onBulkApplied?.(historyEntry);
       setSelection((current) => {
         const next = new Set(current);
         for (const identity of selectedIdentities) next.delete(identity);
@@ -1664,7 +1710,7 @@ export function StringTable({
   }
 
   function startBatch() {
-    if (bulkSavingRef.current || !canRunAi) return;
+    if (batch || bulkSavingRef.current || !canRunAi) return;
     onEditorOpen?.();
     const items: BatchItem[] = liveAiEligibleRows.map((row) => ({
       modUniqueId: row.modUniqueId,
@@ -1727,7 +1773,8 @@ export function StringTable({
         });
       }
     }
-    const current = rowsRef.current ?? [];
+    const current = rowsRef.current;
+    if (!current) return;
     const next = current.map((row) => {
       const suggestion = suggestions.get(identityOf(row));
       if (!suggestion) return row;
@@ -1849,10 +1896,7 @@ export function StringTable({
   function finishBatch(result: BatchFinishedResult) {
     const current = rowsRef.current ?? [];
     reportCounts(current);
-    if (result.outcome === "complete" && result.done > 0) {
-      setStatusValue("review-needed");
-      setIssuesValue(false);
-    }
+
     if (result.outcome === "complete") {
       onNotify?.(
         String(result.done) +
@@ -2090,6 +2134,16 @@ export function StringTable({
     ].filter(Boolean),
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
+  const workspaceMetaItems = [
+    ...(targetLanguageLabel ? [targetLanguageLabel] : []),
+    data.length > 0
+      ? String(workingTranslated) + " / " + String(data.length) + " covered"
+      : "No translatable strings",
+    ...(noTextNeeded
+      ? [String(noTextNeeded) + " need no translation text"]
+      : []),
+    ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
+  ];
   const gridStyle = {
     "--translator-key-column": String(keyWidth) + "px",
     "--translator-source-column": String(sourceWidth) + "px",
@@ -2110,18 +2164,65 @@ export function StringTable({
     />
   );
 
+  const batchNotice = batch && (
+    <BatchTranslateDialog
+      items={batch}
+      modName={batchModLabel}
+      engine={activeLiveEngine}
+      onLiveRun={runLiveBatch}
+      onCancelLiveRun={onCancelAi}
+      onFinished={finishBatch}
+      onClose={closeBatch}
+    />
+  );
+
   if (rows === null) {
     return (
-      <div className="panel__empty translator-empty-state" role="status">
-        Loading strings…
-      </div>
+      <>
+        {batchNotice}
+        <div
+          className="stringtable translator-string-workbench"
+          ref={workbenchRef}
+        >
+          <div className="translator-string-head desktop-loading-head">
+            <div className="translator-string-title">
+              <h1 tabIndex={-1}>{headerTitle ?? mod?.name ?? "All mods"}</h1>
+            </div>
+            {headerActions}
+          </div>
+          <div className="panel__empty translator-empty-state" role="status">
+            Loading strings…
+          </div>
+        </div>
+      </>
     );
   }
   if (error) {
     return (
-      <div className="panel__empty translator-empty-state" role="alert">
-        {error}
-      </div>
+      <>
+        {batchNotice}
+        <div
+          className="stringtable translator-string-workbench"
+          ref={workbenchRef}
+        >
+          <div className="translator-string-head desktop-loading-head">
+            <div className="translator-string-title">
+              <h1 tabIndex={-1}>{headerTitle ?? mod?.name ?? "All mods"}</h1>
+            </div>
+            {headerActions}
+          </div>
+          <div className="panel__empty translator-empty-state" role="alert">
+            <p>{error}</p>
+            <button
+              type="button"
+              className="translator-button translator-button-quiet"
+              onClick={() => setPostSaveReloadToken((token) => token + 1)}
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -2197,306 +2298,669 @@ export function StringTable({
           ? "Choose a target language first."
           : null;
 
-  return (
-    <div
-      ref={workbenchRef}
-      className={
-        "stringtable translator-string-workbench" +
-        (showFileColumn ? " stringtable--multifile" : "") +
-        (showModColumn ? " translator-string-workbench--global" : "")
-      }
-      style={gridStyle}
-      data-scope={effectiveScope}
-    >
-      <div className="translator-string-head">
-        <div className="translator-string-title">
-          <h1 tabIndex={-1}>
-            {effectiveHeaderContext && (
-              <span className="translator-string-parent-context">
-                <span>{effectiveHeaderContext}</span>
-                <span aria-hidden="true">›</span>
-              </span>
-            )}
-            <span>{effectiveHeaderTitle}</span>
-          </h1>
-          <div className="translator-string-meta">
-            {headerMetaItems.map((item, index) => (
-              <span key={String(index) + "-" + item}>{item}</span>
-            ))}
-            {data.length > 0 && (
-              <span
-                className="translator-progress-inline"
-                data-complete={
-                  data.length > 0 && statusCounts.translated >= data.length
-                }
-                aria-hidden="true"
-              >
-                <span style={{ width: String(workingProgress) + "%" }} />
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="translator-string-scope">
-          <span
-            className="translator-string-scope-label"
-            id="translator-string-scope-label"
-          >
-            Show strings from:
-          </span>
-          <div
-            className="translator-scope-toggle"
-            role="group"
-            aria-labelledby="translator-string-scope-label"
-          >
-            <button
-              type="button"
-              aria-pressed={effectiveScope === "mod"}
-              disabled={!mod}
-              onClick={() => setScopeValue("mod")}
-            >
-              This mod
-            </button>
-            <button
-              type="button"
-              aria-pressed={effectiveScope === "all"}
-              disabled={plan.length === 0 && effectiveScope !== "all"}
-              onClick={() => setScopeValue("all")}
-            >
-              All mods
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div
-        className={
-          "translator-string-toolbar" +
-          (selection.size > 0 ? " is-selection-active" : "")
-        }
+  const scopeControls = (
+    <div className="translator-string-scope">
+      <span
+        className="translator-string-scope-label"
+        id="translator-string-scope-label"
       >
-        <div className="translator-string-search-line">
-          <input
-            ref={searchRef}
-            className="translator-search"
-            type="search"
-            aria-label="Search strings"
-            placeholder={
-              effectiveScope === "all"
-                ? "Key, source, or translation across all mods …"
-                : "Key, source, or translation …"
-            }
-            value={effectiveSearch}
-            onChange={(event) => setSearchValue(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape" || !effectiveSearch) return;
-              event.preventDefault();
-              event.stopPropagation();
-              setSearchValue("");
-              event.currentTarget.focus();
-            }}
-          />
-          <div
-            className="translator-query-summary"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            <span>
-              {effectiveSearch.trim()
-                ? identityFilterSet
-                  ? `Search preview: ${visible.length} matching ${visible.length === 1 ? "row" : "rows"} · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                  : `Search preview: ${visible.length} matching ${visible.length === 1 ? "row" : "rows"} · ${data.length} ${data.length === 1 ? "string" : "strings"} in ${effectiveScope === "all" ? "All mods" : "This mod"}`
-                : `${visible.length} of ${data.length} ${data.length === 1 ? "string" : "strings"} · ${filterSummary} · ${effectiveScope === "all" ? "All mods" : "This mod"}`}
-            </span>
-            {(effectiveSearch.trim() ||
-              effectiveStatus !== "all" ||
-              effectiveIssuesOnly ||
-              identityFilterSet) && (
-              <button
-                className="translator-query-clear"
-                type="button"
-                onClick={clearFilters}
-              >
-                Clear
-              </button>
-            )}
+        Show strings from:
+      </span>
+      <div
+        className="translator-scope-toggle"
+        role="group"
+        aria-labelledby="translator-string-scope-label"
+      >
+        <button
+          type="button"
+          aria-pressed={effectiveScope === "mod"}
+          disabled={!mod}
+          onClick={() => setScopeValue("mod")}
+        >
+          This mod
+        </button>
+        <button
+          type="button"
+          aria-pressed={effectiveScope === "all"}
+          disabled={plan.length === 0 && effectiveScope !== "all"}
+          onClick={() => setScopeValue("all")}
+        >
+          All mods
+        </button>
+      </div>
+    </div>
+  );
+
+  return (
+    <>
+      {batchNotice}
+      <div
+        ref={workbenchRef}
+        className={
+          "stringtable translator-string-workbench" +
+          (showFileColumn ? " stringtable--multifile" : "") +
+          (showModColumn ? " translator-string-workbench--global" : "")
+        }
+        style={gridStyle}
+        data-scope={effectiveScope}
+      >
+        <div className="translator-string-head">
+          <div className="translator-string-title">
+            <h1 tabIndex={-1}>
+              {effectiveHeaderContext && (
+                <span className="translator-string-parent-context">
+                  <span>{effectiveHeaderContext}</span>
+                  <span aria-hidden="true">›</span>
+                </span>
+              )}
+              <span>{effectiveHeaderTitle}</span>
+            </h1>
+            <div className="translator-string-meta">
+              {workspaceMetaItems.map((item, index) => (
+                <span key={String(index) + "-" + item}>{item}</span>
+              ))}
+              {data.length > 0 && (
+                <span
+                  className="translator-progress-inline"
+                  data-complete={
+                    data.length > 0 && statusCounts.translated >= data.length
+                  }
+                  aria-hidden="true"
+                >
+                  <span style={{ width: String(workingProgress) + "%" }} />
+                </span>
+              )}
+            </div>
           </div>
+          {headerActions}
         </div>
 
         <div
-          className="translator-filters"
-          aria-label="Filter by string status"
+          className={
+            "translator-string-toolbar" +
+            (selection.size > 0 ? " is-selection-active" : "")
+          }
         >
-          <span
-            className="translator-status-filter-set"
-            role="group"
-            aria-label="Status"
-          >
-            {statusButtons.map((item) => (
-              <button
-                key={item.value}
-                className="translator-filter"
-                type="button"
-                aria-pressed={effectiveStatus === item.value}
-                aria-description={
-                  STATUS_HELP[item.value === "has-value" ? "all" : item.value]
-                }
-                data-status-help={
-                  STATUS_HELP[item.value === "has-value" ? "all" : item.value]
-                }
-                onPointerEnter={(event) =>
-                  showStatusHelp(
-                    event.currentTarget,
-                    STATUS_HELP[
-                      item.value === "has-value" ? "all" : item.value
-                    ],
-                  )
-                }
-                onPointerLeave={hideStatusHelp}
-                onFocus={(event) =>
-                  showStatusHelp(
-                    event.currentTarget,
-                    STATUS_HELP[
-                      item.value === "has-value" ? "all" : item.value
-                    ],
-                  )
-                }
-                onBlur={hideStatusHelp}
-                onClick={() => setStatusValue(item.value)}
-              >
-                {item.label}{" "}
-                <span className="translator-filter-count">{item.count}</span>
-              </button>
-            ))}
-          </span>
-          {(issueCount > 0 || effectiveIssuesOnly) && (
-            <>
-              <span
-                className="translator-filter-separator"
-                role="separator"
-                aria-orientation="vertical"
-              />
-              <button
-                className="translator-filter translator-issue-filter"
-                type="button"
-                aria-pressed={effectiveIssuesOnly}
-                aria-description={STATUS_HELP.issues}
-                data-status-help={STATUS_HELP.issues}
-                onPointerEnter={(event) =>
-                  showStatusHelp(event.currentTarget, STATUS_HELP.issues)
-                }
-                onPointerLeave={hideStatusHelp}
-                onFocus={(event) =>
-                  showStatusHelp(event.currentTarget, STATUS_HELP.issues)
-                }
-                onBlur={hideStatusHelp}
-                onClick={() => setIssuesValue(!effectiveIssuesOnly)}
-              >
-                Validation issues{" "}
-                <span className="translator-filter-count">{issueCount}</span>
-              </button>
-            </>
-          )}
-        </div>
+          <div className="translator-string-search-line">
+            <input
+              ref={searchRef}
+              className="translator-search"
+              type="search"
+              aria-label="Search strings"
+              placeholder={"Search strings…"}
+              value={effectiveSearch}
+              onChange={(event) => setSearchValue(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" || !effectiveSearch) return;
+                event.preventDefault();
+                event.stopPropagation();
+                setSearchValue("");
+                event.currentTarget.focus();
+              }}
+            />
+            <div
+              className="translator-query-summary"
+              data-filter-active={Boolean(
+                effectiveSearch.trim() ||
+                effectiveStatus !== "all" ||
+                effectiveIssuesOnly ||
+                identityFilterSet,
+              )}
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <span>
+                {[
+                  identityFilterLabel,
+                  effectiveStatus === "has-value"
+                    ? FILTER_LABEL[effectiveStatus]
+                    : null,
+                  `${visible.length} of ${data.length} ${data.length === 1 ? "string" : "strings"} shown`,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+              {(effectiveSearch.trim() ||
+                effectiveStatus !== "all" ||
+                effectiveIssuesOnly ||
+                identityFilterSet) && (
+                <button
+                  className="translator-query-clear"
+                  type="button"
+                  onClick={clearFilters}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
 
-        <div className="translator-bulk-wrap">
-          <button
-            className="translator-icon-button"
-            type="button"
-            aria-label="Fit columns"
-            title="Fit columns to the available space"
-            onClick={() => {
-              setFitColumns(true);
-              setTargetColumnSized(false);
-              onColumnWidthsChange?.({});
-              if (tableWrapRef.current) tableWrapRef.current.scrollLeft = 0;
-            }}
-          >
-            <Columns2 aria-hidden="true" />
-          </button>
-          {selection.size > 0 && (
-            <span className="translator-selection-hint">
-              Ctrl+click adds more
-            </span>
-          )}
-          {selection.size > 0 && (
-            <>
-              <button
-                ref={bulkTriggerRef}
-                className="translator-button translator-button-quiet translator-bulk-button"
-                type="button"
-                aria-haspopup="menu"
-                aria-expanded={bulkMenuOpen}
-                data-has-selection="true"
-                onClick={() => setBulkMenuOpen((current) => !current)}
-                onKeyDown={(event) => {
-                  if (event.key !== "ArrowDown") return;
-                  event.preventDefault();
-                  if (!bulkMenuOpen) setBulkMenuOpen(true);
-                  else {
-                    requestAnimationFrame(() => {
-                      const menu = bulkMenuRef.current;
-                      focusMenuItem(menu, menuButtons(menu)[0]);
-                    });
+          {
+            <div className="desktop-workspace-filter-controls">
+              {scopeControls}
+              <DesktopFilters
+                status={effectiveStatus}
+                items={
+                  effectiveStatus === "needs-review"
+                    ? [
+                        ...statusButtons,
+                        {
+                          value: "needs-review",
+                          label: "Needs review",
+                          count:
+                            statusCounts["review-needed"] +
+                            statusCounts.outdated,
+                        },
+                      ]
+                    : statusButtons
+                }
+                issues={effectiveIssuesOnly}
+                issueCount={issueCount}
+                onStatus={setStatusValue}
+                onIssues={setIssuesValue}
+                onHelp={(target, status) =>
+                  showStatusHelp(
+                    target,
+                    status === "needs-review"
+                      ? "Review and Changed translations that need checking."
+                      : STATUS_HELP[status === "has-value" ? "all" : status],
+                  )
+                }
+                onHideHelp={hideStatusHelp}
+              />
+            </div>
+          }
+
+          <div className="translator-bulk-wrap">
+            <button
+              className="translator-icon-button"
+              type="button"
+              aria-label="Fit columns"
+              title="Fit columns to the available space"
+              onClick={() => {
+                setFitColumns(true);
+                setTargetColumnSized(false);
+                onColumnWidthsChange?.({});
+                if (tableWrapRef.current) tableWrapRef.current.scrollLeft = 0;
+              }}
+            >
+              <Columns2 aria-hidden="true" />
+            </button>
+            {selection.size > 0 && (
+              <span className="translator-selection-hint">
+                Ctrl+click adds more
+              </span>
+            )}
+            {selection.size > 0 && (
+              <>
+                <button
+                  ref={bulkTriggerRef}
+                  className="translator-button translator-button-quiet translator-bulk-button"
+                  type="button"
+                  aria-haspopup="menu"
+                  aria-expanded={bulkMenuOpen}
+                  data-has-selection="true"
+                  onClick={() => setBulkMenuOpen((current) => !current)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "ArrowDown") return;
+                    event.preventDefault();
+                    if (!bulkMenuOpen) setBulkMenuOpen(true);
+                    else {
+                      requestAnimationFrame(() => {
+                        const menu = bulkMenuRef.current;
+                        focusMenuItem(menu, menuButtons(menu)[0]);
+                      });
+                    }
+                  }}
+                >
+                  <ListChecks aria-hidden="true" />
+                  <span>{selection.size} selected</span>
+                </button>
+                <button
+                  className="translator-query-clear"
+                  type="button"
+                  aria-label="Clear string selection"
+                  onClick={() => {
+                    setSelection(new Set());
+                    setBulkMenuOpen(false);
+                    anchor.current = null;
+                    onNotify?.("Selection cleared.", "info");
+                  }}
+                >
+                  Clear selection
+                </button>
+              </>
+            )}
+            {bulkMenuOpen && (
+              <div
+                ref={bulkMenuRef}
+                className="translator-popover"
+                role="menu"
+                aria-label="Batch actions"
+                onKeyDown={(event) =>
+                  moveMenuFocus(event, bulkMenuRef.current, () =>
+                    closeBulkMenu(),
+                  )
+                }
+                onBlur={(event) => {
+                  const next = event.relatedTarget as Node | null;
+                  if (!next || !event.currentTarget.contains(next)) {
+                    closeBulkMenu(false);
                   }
                 }}
               >
-                <ListChecks aria-hidden="true" />
-                <span>{selection.size} selected</span>
-              </button>
+                <span className="translator-popover-note" role="presentation">
+                  <strong>{selection.size} selected</strong> ·{" "}
+                  <span>
+                    {batchEligibleRows.length} Open/Changed
+                    {batchEligibleRows.length > 0 &&
+                      (singleModSelection
+                        ? " exportable"
+                        : ` · ${batchEligibleModIds.size} mods`)}
+                    {liveAiExcludedCount > 0
+                      ? ` · ${liveAiEligibleRows.length} AI-ready`
+                      : ""}
+                  </span>
+                </span>
+                <ActionButtons
+                  mutationPending={bulkSaving}
+                  canRunAi={canRunAi}
+                  llmActionEnabled={llmActionEnabled}
+                  aiUnavailableReason={aiUnavailableReason}
+                  llmUnavailableReason={llmUnavailableReason}
+                  llmCount={
+                    batchEligibleRows.length > 0 && !singleModSelection
+                      ? "select one mod"
+                      : undefined
+                  }
+                  onCopySource={() => void copySelection("source")}
+                  onCopyTarget={() => void copySelection("target")}
+                  onMarkDone={() =>
+                    void applyStatus("translated", "keep", "Updated status")
+                  }
+                  onKeepOriginal={() =>
+                    void applyStatus(
+                      "translated",
+                      "source",
+                      "Kept original text",
+                    )
+                  }
+                  onClear={() =>
+                    void applyStatus(
+                      "untranslated",
+                      "clear",
+                      "Cleared translations",
+                    )
+                  }
+                  onAi={startBatch}
+                  onLlmExport={() => void startLlmBatchExport()}
+                />
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="translator-table-wrap" ref={tableWrapRef}>
+          <span className="translator-sr-only" id="translator-table-help">
+            Use Up and Down Arrow to move between rows, Enter to edit, Space to
+            select, and Shift plus F10 for row actions.
+          </span>
+          {visible.length === 0 ? (
+            <div className="tableempty translator-empty-state">
+              <SearchX aria-hidden="true" />
+              <strong>No matching strings</strong>
+              <span>Change the filter, scope, or search text.</span>
               <button
-                className="translator-query-clear"
+                className="translator-button translator-button-quiet"
                 type="button"
-                aria-label="Clear string selection"
-                onClick={() => {
-                  setSelection(new Set());
-                  setBulkMenuOpen(false);
-                  anchor.current = null;
-                  onNotify?.("Selection cleared.", "info");
+                onClick={clearFilters}
+              >
+                Clear filter
+              </button>
+            </div>
+          ) : (
+            <div
+              className="translator-string-table"
+              role="table"
+              aria-label="Translation strings"
+              aria-describedby="translator-table-help"
+              style={{ minWidth: tableMinWidth }}
+            >
+              <div
+                className="stringrow stringrow--head translator-string-table-head"
+                role="row"
+                style={{
+                  gridTemplateColumns,
+                  columnGap: 0,
+                  padding: 0,
+                  minWidth: tableMinWidth,
                 }}
               >
-                Clear selection
-              </button>
-            </>
+                <span
+                  className="translator-select-col"
+                  role="columnheader"
+                  style={{
+                    height: "27px",
+                    display: "flex",
+                    alignItems: "center",
+                    padding: "0 8px",
+                  }}
+                >
+                  <input
+                    ref={selectAllRef}
+                    className="translator-selection-box"
+                    type="checkbox"
+                    aria-label="Select all visible strings"
+                    checked={allVisibleSelected}
+                    onChange={toggleAllVisible}
+                  />
+                </span>
+                {showModColumn && (
+                  <SortHeader
+                    label="Mod"
+                    col="mod"
+                    sort={sort}
+                    onSort={toggleSort}
+                    resizer={resizerFor("mod", "Resize mod column")}
+                  />
+                )}
+                {showFileColumn && (
+                  <SortHeader
+                    label="File"
+                    col="file"
+                    sort={sort}
+                    onSort={toggleSort}
+                    resizer={resizerFor("file", "Resize file column")}
+                  />
+                )}
+                <SortHeader
+                  label="Status"
+                  col="status"
+                  sort={sort}
+                  onSort={toggleSort}
+                  resizer={resizerFor("status", "Resize status column")}
+                />
+                <SortHeader
+                  label="Key"
+                  col="key"
+                  sort={sort}
+                  onSort={toggleSort}
+                  resizer={resizerFor("key", "Resize key column")}
+                />
+                <SortHeader
+                  label="English source"
+                  col="source"
+                  sort={sort}
+                  onSort={toggleSort}
+                  resizer={resizerFor("source", "Resize English source column")}
+                />
+                <SortHeader
+                  label={translationColumnLabel}
+                  col="target"
+                  sort={sort}
+                  onSort={toggleSort}
+                  resizer={resizerFor(
+                    "target",
+                    translationColumnLabel === "Translation"
+                      ? "Resize translation column"
+                      : `Resize ${translationColumnLabel} column`,
+                  )}
+                />
+                <span
+                  className="translator-row-actions-col"
+                  role="columnheader"
+                  aria-label="Row actions"
+                  style={{ gridColumn: "-2 / -1" }}
+                />
+              </div>
+
+              <div
+                ref={parentRef}
+                className="stringtable__body translator-string-table-body"
+                role="rowgroup"
+                onKeyDown={onBodyKeyDown}
+              >
+                <div
+                  data-testid="stringtable-scroll-content"
+                  style={{
+                    height: virtualizer.getTotalSize() + bottomClearance,
+                    position: "relative",
+                  }}
+                >
+                  {virtualizer.getVirtualItems().map((item) => {
+                    const entry = display[item.index];
+                    if (!entry) return null;
+                    if (entry.kind === "section") {
+                      return (
+                        <div
+                          key={"section-" + item.index + "-" + entry.title}
+                          className="sectionrow translator-section-row"
+                          style={{
+                            position: "absolute",
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            height: item.size,
+                            transform: "translateY(" + item.start + "px)",
+                          }}
+                        >
+                          <span className="sectionrow__title">
+                            // {entry.title}
+                          </span>
+                        </div>
+                      );
+                    }
+                    return (
+                      <RowView
+                        key={entry.identity}
+                        row={entry.row}
+                        identity={entry.identity}
+                        dataIndex={entry.index}
+                        showMod={showModColumn}
+                        showFile={showFileColumn}
+                        metadataContext={
+                          compactMetadata
+                            ? [
+                                hasModMetadata ? entry.row.modName : "",
+                                hasFileMetadata
+                                  ? entry.row.file.replace("/@split/", "/")
+                                  : "",
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")
+                            : undefined
+                        }
+                        searchNeedles={searchNeedles}
+                        searchLocale={targetLanguageCode}
+                        searchAllMetadata={effectiveScope === "all"}
+                        translationColumnLabel={translationColumnLabel}
+                        selected={selection.has(entry.identity)}
+                        tabStop={entry.identity === effectiveActiveIdentity}
+                        top={item.start}
+                        height={item.size}
+                        gridTemplateColumns={gridTemplateColumns}
+                        tableMinWidth={tableMinWidth}
+                        menuOpen={
+                          contextMenu?.returnIdentity === entry.identity
+                        }
+                        onToggle={() => toggleRow(entry.identity, entry.pos)}
+                        onSelect={(event) =>
+                          selectRow(entry.identity, entry.pos, event)
+                        }
+                        onContextMenu={(event) => {
+                          event.preventDefault();
+                          openContextMenu(
+                            entry.identity,
+                            entry.pos,
+                            event.clientX,
+                            event.clientY,
+                          );
+                        }}
+                        onOpen={() => openEditor(entry.identity)}
+                        onMoreActions={(event) => {
+                          event.stopPropagation();
+                          const rect =
+                            event.currentTarget.getBoundingClientRect();
+                          openContextMenu(
+                            entry.identity,
+                            entry.pos,
+                            rect.left,
+                            rect.bottom,
+                            event.currentTarget,
+                          );
+                        }}
+                        onKeyDown={(event) =>
+                          onRowKeyDown(event, entry.identity, entry.pos)
+                        }
+                        onFocus={() => {
+                          rowFocusActive.current = true;
+                          setActiveIdentity(entry.identity);
+                        }}
+                        onBlur={(event) => {
+                          const next =
+                            event.relatedTarget as HTMLElement | null;
+                          if (
+                            next &&
+                            !next.matches(".stringrow--data") &&
+                            !next.closest(".translator-context-menu")
+                          ) {
+                            rowFocusActive.current = false;
+                          }
+                        }}
+                        onShowStatusHelp={showStatusHelp}
+                        onHideStatusHelp={hideStatusHelp}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           )}
-          {bulkMenuOpen && (
+        </div>
+
+        {statusTooltip && (
+          <div
+            ref={statusTooltipRef}
+            className="translator-status-tooltip"
+            role="tooltip"
+            style={{ left: statusTooltip.left, top: statusTooltip.top }}
+          >
+            {statusTooltip.text}
+          </div>
+        )}
+
+        {editingRow && editingIdentity && editorSession && (
+          <StringEditor
+            row={editingRow}
+            index={editorSession.position}
+            total={editorSession.identities.length}
+            modName={editingRow.modName}
+            targetLanguageLabel={targetLanguageLabel}
+            aiEngineLabel={activeLiveEngine?.label ?? "Local AI"}
+            aiModel={activeLiveEngine?.model ?? localAiModel}
+            aiReasoning={activeLiveEngine?.reasoning}
+            suggestionProvenance={
+              aiProvenanceByIdentity.current.get(editingIdentity) ?? undefined
+            }
+            translationAllowed={editingAiAllowed}
+            translationUnavailableReason={editorAiUnavailableReason}
+            reviewProgress={
+              editorSession.review
+                ? {
+                    current: editorSession.position + 1,
+                    total: editorSession.identities.length,
+                  }
+                : undefined
+            }
+            glossary={glossary}
+            onTranslate={editorTranslate}
+            onSave={(value, nextStatus, tokenMismatchAccepted) =>
+              saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
+            }
+            onClose={() => setEditorSession(null)}
+            onNavigate={(delta) =>
+              setEditorSession((current) => {
+                if (!current) return current;
+                const position = current.position + delta;
+                return position >= 0 && position < current.identities.length
+                  ? { ...current, position }
+                  : current;
+              })
+            }
+            onOpenEngineSettings={onOpenEngineSettings}
+            onNotify={onNotify}
+            shortcuts={shortcuts}
+          />
+        )}
+
+        {contextMenu && (
+          <>
             <div
-              ref={bulkMenuRef}
-              className="translator-popover"
+              className="ctxmenu__scrim translator-context-scrim"
+              onMouseDown={() => closeContextMenu(false)}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                closeContextMenu(false);
+              }}
+            />
+            <ul
+              ref={contextMenuRef}
+              className="ctxmenu translator-context-menu"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
               role="menu"
-              aria-label="Batch actions"
+              aria-label="String actions"
               onKeyDown={(event) =>
-                moveMenuFocus(event, bulkMenuRef.current, () => closeBulkMenu())
+                moveMenuFocus(event, contextMenuRef.current, () =>
+                  closeContextMenu(),
+                )
               }
               onBlur={(event) => {
                 const next = event.relatedTarget as Node | null;
                 if (!next || !event.currentTarget.contains(next)) {
-                  closeBulkMenu(false);
+                  closeContextMenu(false);
                 }
               }}
             >
-              <span className="translator-popover-note" role="presentation">
-                <strong>{selection.size} selected</strong> ·{" "}
-                <span>
-                  {batchEligibleRows.length} Open/Changed
-                  {batchEligibleRows.length > 0 &&
-                    (singleModSelection
-                      ? " exportable"
-                      : ` · ${batchEligibleModIds.size} mods`)}
-                  {liveAiExcludedCount > 0
-                    ? ` · ${liveAiEligibleRows.length} AI-ready`
-                    : ""}
-                </span>
-              </span>
+              {selection.size > 1 && (
+                <li className="ctxmenu__count translator-popover-note">
+                  {selection.size} selected
+                </li>
+              )}
+              <li role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  tabIndex={-1}
+                  disabled={selection.size !== 1}
+                  onFocus={(event) =>
+                    setMenuTabStop(contextMenuRef.current, event.currentTarget)
+                  }
+                  onClick={() =>
+                    openEditor(
+                      selectedRows[0] ? identityOf(selectedRows[0]) : null,
+                    )
+                  }
+                >
+                  <span className="translator-menu-label">
+                    <Pencil aria-hidden="true" /> Edit string
+                  </span>
+                  <span className="translator-context-shortcut">
+                    {displayShortcut(shortcuts["table.edit"])}
+                  </span>
+                </button>
+              </li>
               <ActionButtons
+                listItems
                 mutationPending={bulkSaving}
                 canRunAi={canRunAi}
                 llmActionEnabled={llmActionEnabled}
                 aiUnavailableReason={aiUnavailableReason}
                 llmUnavailableReason={llmUnavailableReason}
+                localAiCount={liveAiEligibleRows.length}
                 llmCount={
                   batchEligibleRows.length > 0 && !singleModSelection
                     ? "select one mod"
-                    : undefined
+                    : batchEligibleRows.length
                 }
                 onCopySource={() => void copySelection("source")}
                 onCopyTarget={() => void copySelection("target")}
@@ -2516,404 +2980,11 @@ export function StringTable({
                 onAi={startBatch}
                 onLlmExport={() => void startLlmBatchExport()}
               />
-            </div>
-          )}
-        </div>
-      </div>
-
-      <div className="translator-table-wrap" ref={tableWrapRef}>
-        <span className="translator-sr-only" id="translator-table-help">
-          Use Up and Down Arrow to move between rows, Enter to edit, Space to
-          select, and Shift plus F10 for row actions.
-        </span>
-        {visible.length === 0 ? (
-          <div className="tableempty translator-empty-state">
-            <SearchX aria-hidden="true" />
-            <strong>No matching strings</strong>
-            <span>Change the filter, scope, or search text.</span>
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={clearFilters}
-            >
-              Clear filter
-            </button>
-          </div>
-        ) : (
-          <div
-            className="translator-string-table"
-            role="table"
-            aria-label="Translation strings"
-            aria-describedby="translator-table-help"
-            style={{ minWidth: tableMinWidth }}
-          >
-            <div
-              className="stringrow stringrow--head translator-string-table-head"
-              role="row"
-              style={{
-                gridTemplateColumns,
-                columnGap: 0,
-                padding: 0,
-                minWidth: tableMinWidth,
-              }}
-            >
-              <span
-                className="translator-select-col"
-                role="columnheader"
-                style={{
-                  height: "27px",
-                  display: "flex",
-                  alignItems: "center",
-                  padding: "0 8px",
-                }}
-              >
-                <input
-                  ref={selectAllRef}
-                  className="translator-selection-box"
-                  type="checkbox"
-                  aria-label="Select all visible strings"
-                  checked={allVisibleSelected}
-                  onChange={toggleAllVisible}
-                />
-              </span>
-              {showModColumn && (
-                <SortHeader
-                  label="Mod"
-                  col="mod"
-                  sort={sort}
-                  onSort={toggleSort}
-                  resizer={resizerFor("mod", "Resize mod column")}
-                />
-              )}
-              {showFileColumn && (
-                <SortHeader
-                  label="File"
-                  col="file"
-                  sort={sort}
-                  onSort={toggleSort}
-                  resizer={resizerFor("file", "Resize file column")}
-                />
-              )}
-              <SortHeader
-                label="Status"
-                col="status"
-                sort={sort}
-                onSort={toggleSort}
-                resizer={resizerFor("status", "Resize status column")}
-              />
-              <SortHeader
-                label="Key"
-                col="key"
-                sort={sort}
-                onSort={toggleSort}
-                resizer={resizerFor("key", "Resize key column")}
-              />
-              <SortHeader
-                label="English source"
-                col="source"
-                sort={sort}
-                onSort={toggleSort}
-                resizer={resizerFor("source", "Resize English source column")}
-              />
-              <SortHeader
-                label={translationColumnLabel}
-                col="target"
-                sort={sort}
-                onSort={toggleSort}
-                resizer={resizerFor(
-                  "target",
-                  translationColumnLabel === "Translation"
-                    ? "Resize translation column"
-                    : `Resize ${translationColumnLabel} column`,
-                )}
-              />
-              <span
-                className="translator-row-actions-col"
-                role="columnheader"
-                aria-label="Row actions"
-                style={{ gridColumn: "-2 / -1" }}
-              />
-            </div>
-
-            <div
-              ref={parentRef}
-              className="stringtable__body translator-string-table-body"
-              role="rowgroup"
-              onKeyDown={onBodyKeyDown}
-            >
-              <div
-                data-testid="stringtable-scroll-content"
-                style={{
-                  height: virtualizer.getTotalSize() + bottomClearance,
-                  position: "relative",
-                }}
-              >
-                {virtualizer.getVirtualItems().map((item) => {
-                  const entry = display[item.index];
-                  if (!entry) return null;
-                  if (entry.kind === "section") {
-                    return (
-                      <div
-                        key={"section-" + item.index + "-" + entry.title}
-                        className="sectionrow translator-section-row"
-                        style={{
-                          position: "absolute",
-                          top: 0,
-                          left: 0,
-                          right: 0,
-                          height: item.size,
-                          transform: "translateY(" + item.start + "px)",
-                        }}
-                      >
-                        <span className="sectionrow__title">
-                          // {entry.title}
-                        </span>
-                      </div>
-                    );
-                  }
-                  return (
-                    <RowView
-                      key={entry.identity}
-                      row={entry.row}
-                      identity={entry.identity}
-                      dataIndex={entry.index}
-                      showMod={showModColumn}
-                      showFile={showFileColumn}
-                      metadataContext={
-                        compactMetadata
-                          ? [
-                              hasModMetadata ? entry.row.modName : "",
-                              hasFileMetadata
-                                ? entry.row.file.replace("/@split/", "/")
-                                : "",
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")
-                          : undefined
-                      }
-                      searchNeedles={searchNeedles}
-                      searchLocale={targetLanguageCode}
-                      searchAllMetadata={effectiveScope === "all"}
-                      translationColumnLabel={translationColumnLabel}
-                      selected={selection.has(entry.identity)}
-                      tabStop={entry.identity === effectiveActiveIdentity}
-                      top={item.start}
-                      height={item.size}
-                      gridTemplateColumns={gridTemplateColumns}
-                      tableMinWidth={tableMinWidth}
-                      menuOpen={contextMenu?.returnIdentity === entry.identity}
-                      onToggle={() => toggleRow(entry.identity, entry.pos)}
-                      onSelect={(event) =>
-                        selectRow(entry.identity, entry.pos, event)
-                      }
-                      onContextMenu={(event) => {
-                        event.preventDefault();
-                        openContextMenu(
-                          entry.identity,
-                          entry.pos,
-                          event.clientX,
-                          event.clientY,
-                        );
-                      }}
-                      onOpen={() => openEditor(entry.identity)}
-                      onMoreActions={(event) => {
-                        event.stopPropagation();
-                        const rect =
-                          event.currentTarget.getBoundingClientRect();
-                        openContextMenu(
-                          entry.identity,
-                          entry.pos,
-                          rect.left,
-                          rect.bottom,
-                          event.currentTarget,
-                        );
-                      }}
-                      onKeyDown={(event) =>
-                        onRowKeyDown(event, entry.identity, entry.pos)
-                      }
-                      onFocus={() => {
-                        rowFocusActive.current = true;
-                        setActiveIdentity(entry.identity);
-                      }}
-                      onBlur={(event) => {
-                        const next = event.relatedTarget as HTMLElement | null;
-                        if (
-                          next &&
-                          !next.matches(".stringrow--data") &&
-                          !next.closest(".translator-context-menu")
-                        ) {
-                          rowFocusActive.current = false;
-                        }
-                      }}
-                      onShowStatusHelp={showStatusHelp}
-                      onHideStatusHelp={hideStatusHelp}
-                    />
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+            </ul>
+          </>
         )}
       </div>
-
-      {statusTooltip && (
-        <div
-          ref={statusTooltipRef}
-          className="translator-status-tooltip"
-          role="tooltip"
-          style={{ left: statusTooltip.left, top: statusTooltip.top }}
-        >
-          {statusTooltip.text}
-        </div>
-      )}
-
-      {editingRow && editingIdentity && editorSession && (
-        <StringEditor
-          row={editingRow}
-          index={editorSession.position}
-          total={editorSession.identities.length}
-          modName={editingRow.modName}
-          targetLanguageLabel={targetLanguageLabel}
-          aiEngineLabel={activeLiveEngine?.label ?? "Local AI"}
-          aiModel={activeLiveEngine?.model ?? localAiModel}
-          aiReasoning={activeLiveEngine?.reasoning}
-          suggestionProvenance={
-            aiProvenanceByIdentity.current.get(editingIdentity) ?? undefined
-          }
-          translationAllowed={editingAiAllowed}
-          translationUnavailableReason={editorAiUnavailableReason}
-          reviewProgress={
-            editorSession.review
-              ? {
-                  current: editorSession.position + 1,
-                  total: editorSession.identities.length,
-                }
-              : undefined
-          }
-          glossary={glossary}
-          onTranslate={editorTranslate}
-          onSave={(value, nextStatus, tokenMismatchAccepted) =>
-            saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
-          }
-          onClose={() => setEditorSession(null)}
-          onNavigate={(delta) =>
-            setEditorSession((current) => {
-              if (!current) return current;
-              const position = current.position + delta;
-              return position >= 0 && position < current.identities.length
-                ? { ...current, position }
-                : current;
-            })
-          }
-          onOpenEngineSettings={onOpenEngineSettings}
-          onNotify={onNotify}
-          shortcuts={shortcuts}
-        />
-      )}
-
-      {contextMenu && (
-        <>
-          <div
-            className="ctxmenu__scrim translator-context-scrim"
-            onMouseDown={() => closeContextMenu(false)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              closeContextMenu(false);
-            }}
-          />
-          <ul
-            ref={contextMenuRef}
-            className="ctxmenu translator-context-menu"
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-            role="menu"
-            aria-label="String actions"
-            onKeyDown={(event) =>
-              moveMenuFocus(event, contextMenuRef.current, () =>
-                closeContextMenu(),
-              )
-            }
-            onBlur={(event) => {
-              const next = event.relatedTarget as Node | null;
-              if (!next || !event.currentTarget.contains(next)) {
-                closeContextMenu(false);
-              }
-            }}
-          >
-            {selection.size > 1 && (
-              <li className="ctxmenu__count translator-popover-note">
-                {selection.size} selected
-              </li>
-            )}
-            <li role="none">
-              <button
-                type="button"
-                role="menuitem"
-                tabIndex={-1}
-                disabled={selection.size !== 1}
-                onFocus={(event) =>
-                  setMenuTabStop(contextMenuRef.current, event.currentTarget)
-                }
-                onClick={() =>
-                  openEditor(
-                    selectedRows[0] ? identityOf(selectedRows[0]) : null,
-                  )
-                }
-              >
-                <span className="translator-menu-label">
-                  <Pencil aria-hidden="true" /> Edit string
-                </span>
-                <span className="translator-context-shortcut">
-                  {displayShortcut(shortcuts["table.edit"])}
-                </span>
-              </button>
-            </li>
-            <ActionButtons
-              listItems
-              mutationPending={bulkSaving}
-              canRunAi={canRunAi}
-              llmActionEnabled={llmActionEnabled}
-              aiUnavailableReason={aiUnavailableReason}
-              llmUnavailableReason={llmUnavailableReason}
-              localAiCount={liveAiEligibleRows.length}
-              llmCount={
-                batchEligibleRows.length > 0 && !singleModSelection
-                  ? "select one mod"
-                  : batchEligibleRows.length
-              }
-              onCopySource={() => void copySelection("source")}
-              onCopyTarget={() => void copySelection("target")}
-              onMarkDone={() =>
-                void applyStatus("translated", "keep", "Updated status")
-              }
-              onKeepOriginal={() =>
-                void applyStatus("translated", "source", "Kept original text")
-              }
-              onClear={() =>
-                void applyStatus(
-                  "untranslated",
-                  "clear",
-                  "Cleared translations",
-                )
-              }
-              onAi={startBatch}
-              onLlmExport={() => void startLlmBatchExport()}
-            />
-          </ul>
-        </>
-      )}
-
-      {batch && (
-        <BatchTranslateDialog
-          items={batch}
-          modName={batchModLabel}
-          engine={activeLiveEngine}
-          onLiveRun={runLiveBatch}
-          onCancelLiveRun={onCancelAi}
-          onFinished={finishBatch}
-          onClose={closeBatch}
-        />
-      )}
-    </div>
+    </>
   );
 }
 function ActionButtons({
@@ -3510,7 +3581,7 @@ function RowView({
               onOpen();
             }}
           >
-            !
+            <ValidationIcon />
           </button>
         )}
         <button

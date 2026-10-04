@@ -1,251 +1,103 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 import { ExportConfirmDialog } from "./ExportConfirmDialog";
-
-describe("ExportConfirmDialog", () => {
-  it("describes a selected-mod overwrite and its backup", () => {
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={1}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
+function show(
+  options: Partial<React.ComponentProps<typeof ExportConfirmDialog>> = {},
+) {
+  const props = {
+    modName: "Test Mod",
+    existingFiles: 1,
+    onConfirm: vi.fn(),
+    onCancel: vi.fn(),
+    ...options,
+  };
+  render(<ExportConfirmDialog {...props} />);
+  return props;
+}
+describe("JSON export confirmation", () => {
+  it("warns about replacement and backup before confirmation", () => {
+    show();
+    expect(screen.getByRole("dialog")).toHaveTextContent(
+      "Replaces 1 existing translation file",
     );
-
-    const dialog = screen.getByRole("dialog", {
-      name: "Confirm export overwrite",
+    expect(screen.getByRole("dialog")).toHaveTextContent(".json.bak");
+  });
+  it("reports affected mods and separates existing targets from new files", () => {
+    show({
+      mods: 3,
+      newFiles: 2,
+      existingTargetPaths: ["Mods/Test/i18n/de.json"],
+      newTargetPaths: [
+        "Mods/Test/assets/i18n/de.json",
+        "Mods/Other/i18n/de.json",
+      ],
     });
-    expect(dialog).toHaveClass("translator-export-dialog");
+    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    expect(screen.getByText("3 mods included.")).toBeVisible();
     expect(
-      dialog.querySelector(":scope > .translator-flow-head"),
-    ).not.toBeNull();
-    expect(
-      dialog.querySelector(":scope > .translator-flow-body"),
-    ).not.toBeNull();
-    expect(
-      dialog.querySelector(":scope > .translator-flow-foot"),
-    ).not.toBeNull();
-    expect(dialog).toHaveTextContent("replaces 1 existing translation file");
-    expect(dialog).toHaveTextContent(".json.bak");
+      screen.getByText("Files to replace").parentElement,
+    ).toHaveTextContent("Mods/Test/i18n/de.json");
+    expect(screen.getByText("New files").parentElement).toHaveTextContent(
+      "Mods/Other/i18n/de.json",
+    );
   });
-
-  it("reports affected mods for Export All", () => {
-    render(
-      <ExportConfirmDialog
-        modName="All mods"
-        existingFiles={4}
-        mods={3}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
+  it("includes Review and Changed values while explaining omitted Open values", () => {
+    show({
+      willWrite: 8,
+      openOmitted: 2,
+      changedIncluded: 1,
+      reviewIncluded: 2,
+      blockingValidationAvailable: true,
+    });
+    expect(screen.getByLabelText("Export contents")).toHaveTextContent(
+      "8 translations included",
     );
-
-    expect(screen.getByText(/across/)).toHaveTextContent("3 mods");
-  });
-
-  it("separates existing backups from newly created targets", () => {
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={1}
-        newFiles={2}
-        existingTargetPaths={["E:/Fixtures/Mods/Test/i18n/de.json"]}
-        newTargetPaths={[
-          "E:/Fixtures/Mods/Test/assets/i18n/de.json",
-          "E:/Fixtures/Mods/Test/optional/i18n/de.json",
-        ]}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
+    expect(screen.getByLabelText("Export contents")).toHaveTextContent(
+      "2 untranslated omitted",
     );
-
-    expect(screen.getByText(/This export replaces/)).toHaveTextContent(
-      "replaces 1 existing translation file and creates 2 new translation files",
-    );
-    const existingTargets = screen
-      .getByText("Existing target · backed up as .json.bak")
-      .closest(".translator-result-path");
-    const newTargets = screen
-      .getByText("New targets · created by this export")
-      .closest(".translator-result-path");
-    expect(existingTargets).not.toBeNull();
-    expect(newTargets).not.toBeNull();
-    expect(
-      within(existingTargets as HTMLElement).getByText(/Test\/i18n\/de.json/),
-    ).toBeVisible();
-    expect(
-      within(existingTargets as HTMLElement).queryByText(
-        /assets\/i18n\/de.json/,
-      ),
-    ).toBeNull();
-    expect(
-      within(newTargets as HTMLElement).getAllByText(/i18n\/de.json/),
-    ).toHaveLength(2);
-  });
-
-  it("labels supplied counts as current-scan aggregates", () => {
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={1}
-        willWrite={8}
-        openOmitted={2}
-        changedIncluded={1}
-        reviewIncluded={2}
-        acceptedMismatches={0}
-        existingTargetPaths={["E:/Fixtures/Mods/Test/i18n/de.json"]}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
-    );
-
-    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "8texts with a value",
-    );
-    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "2open strings omitted",
-    );
-    expect(
-      screen.getByText("E:/Fixtures/Mods/Test/i18n/de.json"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /3 included strings are not Done: 1 Changed and 2 in Review/,
-      ),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/Check these strings before sharing/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Includes 3 translations/)).toBeVisible();
+    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    expect(screen.getByText(/2 in Review, 1 Changed/)).toBeVisible();
     expect(
       screen.getByText(/Counts reflect the current scan/),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Unavailable before export")).toBeNull();
+    ).toHaveTextContent("Protected-token checks passed.");
   });
-
-  it("reports a completed blocker preflight alongside non-Done counts", () => {
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={1}
-        changedIncluded={1}
-        reviewIncluded={2}
-        acceptedMismatches={0}
-        blockingValidationAvailable
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
-    );
-
+  it("does not invent counts or claim readiness when preflight data is missing", () => {
+    show();
+    expect(screen.getByText("Translation count unavailable")).toBeVisible();
     expect(
-      screen.getByText(/3 included strings are not Done/),
-    ).toHaveTextContent("Check these strings before sharing the translation.");
-  });
-
-  it("keeps unavailable current-scan aggregates explicit", () => {
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={1}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
-    );
-
-    expect(screen.getAllByText("Unavailable")).toHaveLength(2);
-    expect(screen.getByText("Unavailable before export")).toBeInTheDocument();
-    expect(
-      screen.getByText(/Review and Changed counts are unavailable/),
-    ).toBeInTheDocument();
-  });
-
-  it("does not claim Ready while protected-token preflight is unavailable", () => {
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={0}
-        newFiles={1}
-        willWrite={8}
-        openOmitted={0}
-        changedIncluded={0}
-        reviewIncluded={0}
-        onConfirm={() => {}}
-        onCancel={() => {}}
-      />,
-    );
-
+      screen.getByText("Review and Changed counts unavailable."),
+    ).toBeVisible();
     expect(screen.queryByText(/Ready to export/)).toBeNull();
-    expect(
-      screen.getByText(/Protected tokens will be checked before writing/),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
   });
-
-  it("blocks export and opens a supplied backend validation problem", () => {
-    const inspect = vi.fn();
-    const confirm = vi.fn();
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={1}
-        blockingProblem={{
-          key: "status.saved",
-          reason: "is missing {{saveName}}",
-        }}
-        acceptedMismatches={1}
-        onInspectProblem={inspect}
-        onConfirm={confirm}
-        onCancel={() => {}}
-      />,
-    );
-
-    expect(
-      screen.getByRole("button", { name: "Export and replace" }),
-    ).toBeDisabled();
-    expect(screen.getByLabelText("Export readiness")).toHaveTextContent(
-      "1accepted mismatch",
-    );
-    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
-    expect(inspect).toHaveBeenCalledOnce();
-    expect(confirm).not.toHaveBeenCalled();
+  it("blocks writing and exposes the actual blocking string", () => {
+    const props = show({
+      blockingProblem: {
+        key: "status.saved",
+        reason: "is missing {{saveName}}",
+      },
+      acceptedMismatches: 1,
+      onInspectProblem: vi.fn(),
+    });
+    expect(screen.getByRole("button", { name: "Export JSON" })).toBeDisabled();
+    expect(screen.getByRole("alert")).toHaveTextContent("status.saved");
+    fireEvent.click(screen.getByRole("button", { name: "Open string" }));
+    expect(props.onInspectProblem).toHaveBeenCalledOnce();
+    expect(props.onConfirm).not.toHaveBeenCalled();
   });
-
-  it("calls the selected action", () => {
-    const onConfirm = vi.fn();
-    const onCancel = vi.fn();
-    render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={2}
-        onConfirm={onConfirm}
-        onCancel={onCancel}
-      />,
-    );
-
+  it("calls only the selected action", () => {
+    const props = show();
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    expect(props.onConfirm).toHaveBeenCalledOnce();
+    expect(props.onCancel).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-
-    expect(onConfirm).toHaveBeenCalledOnce();
-    expect(onCancel).toHaveBeenCalledOnce();
+    expect(props.onCancel).toHaveBeenCalledOnce();
   });
-
-  it("closes with Escape without treating the backdrop as an action", () => {
-    const onCancel = vi.fn();
-    const { container } = render(
-      <ExportConfirmDialog
-        modName="Test Mod"
-        existingFiles={0}
-        onConfirm={() => {}}
-        onCancel={onCancel}
-      />,
-    );
-
-    fireEvent.mouseDown(container.querySelector(".translator-flow-overlay")!);
-    expect(onCancel).not.toHaveBeenCalled();
-    fireEvent.keyDown(
-      screen.getByRole("dialog", { name: "Confirm export overwrite" }),
-      { key: "Escape" },
-    );
-    expect(onCancel).toHaveBeenCalledOnce();
+  it("treats Escape as cancellation and leaves backdrop clicks inert", () => {
+    const props = show();
+    fireEvent.mouseDown(screen.getByRole("dialog").parentElement!);
+    expect(props.onCancel).not.toHaveBeenCalled();
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(props.onCancel).toHaveBeenCalledOnce();
   });
 });

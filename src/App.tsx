@@ -1,7 +1,9 @@
+import { FolderOpen as FileIcon } from "lucide-react";
+import { ActivityLog, FileActionLabel } from "./ui/WorkspaceControls";
 /**
  * Application shell.
  *
- * Dashboard plus toolbar and two-panel workspace: left = mod list,
+ * Toolbar and two-panel translation workspace: left = mod list,
  * right = string table. The Setup Wizard opens on first launch and via
  * Settings. Scans run in the Rust backend and populate the workspace.
  */
@@ -77,7 +79,6 @@ import {
   FolderUp,
   Folders,
   Info,
-  LayoutDashboard,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
@@ -89,11 +90,7 @@ import {
 import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
-import {
-  Dashboard,
-  type DashboardLastExport,
-  type OverviewFilter,
-} from "./dashboard/Dashboard";
+import { type DashboardLastExport } from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import {
@@ -291,9 +288,7 @@ export function App() {
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(340);
   const [modsCollapsed, setModsCollapsed] = useState(false);
-  // Dashboard home vs. two-panel work view. Overview is the app's
-  // landing view; opening a mod or choosing Workspace enters the workbench.
-  const [view, setView] = useState<"home" | "work">("home");
+
   // modId -> epoch ms of the last open. This is only resume ordering, not an
   // edit timestamp. It is persisted with portable settings.
   const [lastOpened, setLastOpened] = useState<Record<string, number>>({});
@@ -382,10 +377,27 @@ export function App() {
     id: number;
     message: string;
     tone: "info" | "success" | "warning" | "error";
+    scanDetails?: boolean;
   } | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  useEffect(() => {
+    const update = () =>
+      setModalOpen(Boolean(document.querySelector('[aria-modal="true"]')));
+    const observer = new MutationObserver(update);
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["aria-modal"],
+    });
+    update();
+    return () => observer.disconnect();
+  }, []);
 
   function presentResult(data: ResultTrayData) {
     latestResultRef.current = data;
+    setToast(null);
     setSelectedHistoryId(data.operationId ?? null);
     setResultTray(data);
     setResultHidden(false);
@@ -421,6 +433,7 @@ export function App() {
   ) {
     const attached = { ...data, operationId: entry.id } as ResultTrayData;
     latestResultRef.current = attached;
+    setToast(null);
     setResultDetails((current) => ({ ...current, [entry.id]: attached }));
     setSelectedHistoryId(entry.id);
     setResultTray(attached);
@@ -514,7 +527,11 @@ export function App() {
   function reopenLatestResult() {
     const remembered = latestResultRef.current;
     if (!remembered) return;
-    const latest = { ...remembered, collapsed: false } as ResultTrayData;
+    const latest = {
+      ...remembered,
+      collapsed: false,
+      inspectDetails: true,
+    } as ResultTrayData;
     setSelectedHistoryId(latest.operationId ?? null);
     setResultTray(latest);
     setResultHidden(false);
@@ -524,16 +541,18 @@ export function App() {
   function notify(
     message: string,
     tone: "info" | "success" | "warning" | "error" = "info",
+    scanDetails = false,
   ) {
-    setToast({ id: Date.now(), message, tone });
+    setResultHidden(true);
+    setToast({ id: Date.now(), message, tone, scanDetails });
   }
 
   useEffect(() => {
-    if (!toast) return;
+    if (!toast || modalOpen) return;
     if (toast.tone === "error") return;
     const timer = window.setTimeout(() => setToast(null), 2800);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [toast, modalOpen]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -686,7 +705,7 @@ export function App() {
         modSearch: modQuery,
         stringSearch: search,
         stringScope,
-        statusFilter,
+        statusFilter: statusFilter === "needs-review" ? "all" : statusFilter,
         issuesOnly,
         sort: tableSort
           ? { column: tableSort.col, direction: tableSort.dir }
@@ -852,6 +871,23 @@ export function App() {
         )[0];
       setSelectedModId(preferred?.uniqueId ?? null);
       setStringScope(preferred ? scopeBeforeScan : "all");
+      const quietScan =
+        result.warnings.length === 0 &&
+        result.skippedComponents != null &&
+        !result.skippedComponents.some(
+          (component) => component.requiresAttention,
+        );
+      if (quietScan && showProgress) {
+        notify(
+          "Scan complete. " +
+            result.modCount +
+            (result.modCount === 1 ? " mod, " : " mods, ") +
+            result.fileCount +
+            (result.fileCount === 1 ? " i18n file." : " i18n files."),
+          "success",
+          true,
+        );
+      }
       // Retain every manually requested completed scan until the user closes
       // it. Silent scans still surface real
       // diagnostics without interrupting a clean startup or language switch.
@@ -860,7 +896,7 @@ export function App() {
         (showProgress || options.showDiagnostics !== false)
       ) {
         setScanDialogOpen(
-          showProgress ||
+          (!quietScan && showProgress) ||
             result.warnings.length > 0 ||
             (result.skippedComponents?.some(
               (component) => component.requiresAttention,
@@ -954,11 +990,10 @@ export function App() {
     setImportDialogPath(path);
   }
 
-  /** Open a mod in the work view and remember it for the resume cards. */
+  /** Open a mod and remember it for the next startup. */
   function openMod(uniqueId: string) {
     setSelectedModId(uniqueId);
     setStringScope("mod");
-    setView("work");
     const nextLastOpened = { ...lastOpened, [uniqueId]: Date.now() };
     setLastOpened(nextLastOpened);
     if (settings) {
@@ -968,14 +1003,6 @@ export function App() {
         logFrontendError("saveLastOpened", String(error)),
       );
     }
-  }
-
-  function openOverviewFilter(filter: OverviewFilter) {
-    setSearch("");
-    setIssuesOnly(false);
-    setStatusFilter(filter);
-    setStringScope("all");
-    setView("work");
   }
 
   function openLatestScan(focusDiagnostics = false) {
@@ -1010,7 +1037,6 @@ export function App() {
     setStatusFilter("all");
     setIssuesOnly(false);
     setStringScope("all");
-    setView("work");
     closeScanDialog();
   }
 
@@ -1083,6 +1109,7 @@ export function App() {
     {
       id: CLOUD_ENGINE_ID,
       label: CLOUD_ENGINE_LABEL,
+      qualityReview: aiSettings.cloudQualityReview,
       ready: cloudAiReady,
       model: aiSettings.cloudModel || "Choose a ChatGPT model",
       reasoning: aiSettings.cloudReasoning,
@@ -1712,7 +1739,6 @@ export function App() {
 
   function inspectResultProblem(problem: ResultProblem) {
     if (problem.modUniqueId) openMod(problem.modUniqueId);
-    else setView("work");
     setStatusFilter("all");
     setSearch(problem.key);
     setResultHidden(true);
@@ -1804,6 +1830,17 @@ export function App() {
     );
   }
 
+  function reportAiActivity(
+    message: string,
+    tone: "info" | "warning" | "error",
+  ) {
+    window.dispatchEvent(
+      new CustomEvent("translator-ai-activity", {
+        detail: { time: Date.now(), entries: [{ message, tone }] },
+      }),
+    );
+  }
+
   function handleAiBatchFinished(result: AiBatchFinishedResult) {
     const completedWithIssues = Boolean(
       result.error && result.done > 0 && result.outcome !== "cancelled",
@@ -1844,12 +1881,12 @@ export function App() {
       }
     }
     if (completedWithIssues) {
-      notify(
+      reportAiActivity(
         `AI translation completed with issues: ${result.done} of ${result.total} saved in Review.`,
         "warning",
       );
     } else if (result.outcome !== "complete") {
-      notify(
+      reportAiActivity(
         `AI translation ${result.outcome === "cancelled" ? "cancelled" : "failed"} after ${result.done} of ${result.total}. Finished suggestions are in Review.`,
         result.outcome === "error" ? "error" : "info",
       );
@@ -1858,15 +1895,22 @@ export function App() {
 
   function openResultReviewQueue() {
     const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
+    const exportModIds =
+      resultTray?.kind === "export" && resultTray.retry.kind === "selected"
+        ? [resultTray.retry.modUniqueId]
+        : [];
     const reviewModIds = [
       ...new Set(
-        (resultTray?.reviewModUniqueIds ?? []).filter((id) =>
+        (resultTray?.reviewModUniqueIds ?? exportModIds).filter((id) =>
           knownModIds.has(id),
         ),
       ),
     ];
     setSearch("");
-    setStatusFilter("review-needed");
+    setScanStringFilter(null);
+    setStatusFilter(
+      resultTray?.kind === "export" ? "needs-review" : "review-needed",
+    );
     setIssuesOnly(false);
     if (reviewModIds.length === 1) {
       openMod(reviewModIds[0]);
@@ -1875,16 +1919,8 @@ export function App() {
       // All mods guarantees the requested Review results are not hidden.
       setStringScope("all");
     }
-    setView("work");
     setResultHidden(true);
-    window.requestAnimationFrame(() => {
-      const review = Array.from(
-        document.querySelectorAll<HTMLButtonElement>(
-          '.translator-filter[aria-pressed="true"]',
-        ),
-      ).find((button) => button.textContent?.includes("Review"));
-      review?.focus();
-    });
+    window.dispatchEvent(new Event("translator-focus-filters"));
   }
 
   async function undoLatestBulk() {
@@ -1913,10 +1949,6 @@ export function App() {
           undoAvailable: false,
         },
         undone,
-      );
-      notify(
-        `${undone.itemCount} ${undone.itemCount === 1 ? "string" : "strings"} restored.`,
-        "success",
       );
     } catch (error) {
       logFrontendError("undoBulk", String(error));
@@ -1971,46 +2003,62 @@ export function App() {
     (entry) => entry?.id === selectedHistoryId,
   );
 
+  const workspaceToolbar = (
+    <AppToolbar
+      onScan={handleScan}
+      scanEnabled={configured && !scanning && !exporting}
+      scanning={scanning}
+      onExport={requestExport}
+      exportEnabled={Boolean(selectedMod) && !exporting}
+      onExportAll={requestExportAll}
+      exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
+      exporting={exporting}
+      checkingExportReadiness={checkingExportReadiness}
+      onBuildZip={() => void requestTranslationZip()}
+      buildZipEnabled={Boolean(selectedMod) && !zipBuilding && !exporting}
+      onBuildOutput={() => void requestTranslatorOutput()}
+      outputEnabled={
+        Boolean(scan?.mods.length) && !zipBuilding && !exporting && !scanning
+      }
+      onImportBatch={() => void handleImportBatch()}
+      importBatchEnabled={Boolean(selectedMod) && !exporting}
+      onOpenSettings={() => {
+        setSettingsPage("folders");
+        if (settings) setSettingsOpen(true);
+        else setWizardOpen(true);
+      }}
+      settingsEnabled={loaded && !settingsLoadError && !exporting}
+      latestResultAvailable={Boolean(resultTray && resultHidden)}
+      latestResultButtonRef={latestResultButtonRef}
+      onReopenResult={reopenLatestResult}
+    />
+  );
+
   return (
     <div id="stardew-i18n-translator" className="app">
-      <div className="translator-window">
-        <AppToolbar
-          activeView={view === "work" ? "workspace" : "overview"}
-          onWorkspace={() => {
-            setView("work");
-          }}
-          onOverview={() => {
-            setView("home");
-          }}
-          onScan={handleScan}
-          scanEnabled={configured && !scanning && !exporting}
-          scanning={scanning}
-          onExport={requestExport}
-          exportEnabled={Boolean(selectedMod) && !exporting}
-          onExportAll={requestExportAll}
-          exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
-          exporting={exporting}
-          checkingExportReadiness={checkingExportReadiness}
-          onBuildZip={() => void requestTranslationZip()}
-          buildZipEnabled={Boolean(selectedMod) && !zipBuilding && !exporting}
-          onBuildOutput={() => void requestTranslatorOutput()}
-          outputEnabled={
-            Boolean(scan?.mods.length) &&
-            !zipBuilding &&
-            !exporting &&
-            !scanning
+      <div
+        className="translator-window"
+        data-embedded-toolbar={!settingsLoadError}
+      >
+        {Boolean(settingsLoadError) && workspaceToolbar}
+        <ActivityLog
+          lastScanAt={lastScanAt}
+          modCount={scan?.modCount ?? 0}
+          totalStrings={
+            scan?.mods.reduce((total, mod) => total + mod.totalKeys, 0) ?? 0
           }
-          onImportBatch={() => void handleImportBatch()}
-          importBatchEnabled={Boolean(selectedMod) && !exporting}
-          onOpenSettings={() => {
-            setSettingsPage("folders");
-            if (settings) setSettingsOpen(true);
-            else setWizardOpen(true);
-          }}
-          settingsEnabled={loaded && !settingsLoadError && !exporting}
-          latestResultAvailable={Boolean(resultTray && resultHidden)}
-          latestResultButtonRef={latestResultButtonRef}
-          onReopenResult={reopenLatestResult}
+          language={languageLine}
+          scanning={scanning}
+          warningCount={scan?.warnings.length ?? 0}
+          skippedCount={
+            scan?.skippedComponents?.filter(
+              (component) => component.requiresAttention,
+            ).length ?? null
+          }
+          scanError={scanError}
+          history={operationHistory}
+          notice={toast?.scanDetails ? null : (toast?.message ?? null)}
+          noticeTone={toast?.tone}
         />
         {settingsLoadError ? (
           <section
@@ -2031,36 +2079,10 @@ export function App() {
               Retry loading settings
             </button>
           </section>
-        ) : view === "home" ? (
-          <section
-            className="translator-view-panel is-active"
-            aria-label="Translation overview"
-          >
-            <Dashboard
-              scan={scan}
-              scanning={scanning}
-              lastScanAt={lastScanAt}
-              now={now}
-              languageLine={languageLine}
-              onScan={handleScan}
-              scanEnabled={configured && !scanning && !exporting}
-              onOpenMod={openMod}
-              onBrowse={() => {
-                setView("work");
-              }}
-              lastOpened={lastOpened}
-              onShowScanDetails={scan ? () => openLatestScan(false) : undefined}
-              onOpenOverviewFilter={openOverviewFilter}
-              lastExport={lastSuccessfulExport}
-              onShowLastExport={
-                lastSuccessfulExport
-                  ? () => {
-                      void openFolder(lastSuccessfulExport.folder);
-                    }
-                  : undefined
-              }
-            />
-          </section>
+        ) : !loaded ? (
+          <div className="panel__empty" role="status">
+            Loading settings…
+          </div>
         ) : (
           <section
             className="translator-view-panel is-active"
@@ -2215,6 +2237,7 @@ export function App() {
                 aria-label="String table"
               >
                 <StringTable
+                  headerActions={workspaceToolbar}
                   mod={selectedMod}
                   mods={scan?.mods ?? []}
                   scope={stringScope}
@@ -2267,7 +2290,7 @@ export function App() {
                       current ? { ...current, collapsed: true } : current,
                     )
                   }
-                  bottomClearance={trayScrollClearance}
+                  bottomClearance={0}
                   reloadToken={reloadToken}
                   shortcuts={shortcuts}
                 />
@@ -2342,6 +2365,10 @@ export function App() {
             }
             onOpenFolder={(path) => void openFolder(path)}
             onOpenReview={
+              (resultTray.kind === "export" &&
+                (resultTray.result?.totalReviewNeeded ?? 0) +
+                  (resultTray.result?.totalOutdated ?? 0) >
+                  0) ||
               (resultTray.kind === "import" && resultTray.summary?.imported) ||
               resultTray.kind === "ai-batch" ||
               (resultTray.kind === "history" &&
@@ -2422,6 +2449,8 @@ export function App() {
           <TranslationZipDialog
             key={zipPreview?.defaultFileName ?? "loading"}
             preview={zipPreview}
+            modFolders={scan?.mods}
+            modsPath={settings?.modsPath ?? undefined}
             combined={zipContext?.combined}
             componentCount={zipContext?.components.length ?? null}
             error={zipError}
@@ -2521,7 +2550,19 @@ export function App() {
               <Info aria-hidden />
             )}
             <span>{toast.message}</span>
-            {toast.tone === "error" && (
+            {toast.scanDetails && (
+              <button
+                className="translator-button translator-button-quiet desktop-scan-toast-details"
+                type="button"
+                onClick={() => {
+                  setToast(null);
+                  openLatestScan();
+                }}
+              >
+                Details…
+              </button>
+            )}
+            {(toast.tone === "error" || true) && (
               <button
                 className="translator-toast-dismiss"
                 type="button"
@@ -2581,9 +2622,6 @@ function LlmBatchDropOverlay({
 }
 
 function AppToolbar({
-  activeView,
-  onWorkspace,
-  onOverview,
   onScan,
   scanEnabled,
   scanning,
@@ -2605,9 +2643,6 @@ function AppToolbar({
   latestResultButtonRef,
   onReopenResult,
 }: {
-  activeView: "workspace" | "overview";
-  onWorkspace: () => void;
-  onOverview: () => void;
   onScan: () => void;
   scanEnabled: boolean;
   scanning: boolean;
@@ -2699,24 +2734,7 @@ function AppToolbar({
 
   return (
     <div className="translator-commandbar">
-      <nav className="translator-command-nav" aria-label="Main views">
-        <button
-          className="translator-nav-button"
-          type="button"
-          aria-pressed={activeView === "overview"}
-          onClick={onOverview}
-        >
-          <LayoutDashboard aria-hidden /> Overview
-        </button>
-        <button
-          className="translator-nav-button"
-          type="button"
-          aria-pressed={activeView === "workspace"}
-          onClick={onWorkspace}
-        >
-          <Table2 aria-hidden /> Workspace
-        </button>
-      </nav>
+      {false}
       <div className="translator-command-actions">
         <button
           className="translator-button translator-button-quiet"
@@ -2731,26 +2749,13 @@ function AppToolbar({
             {scanning ? "Scanning…" : "Scan"}
           </span>
         </button>
-        <button
-          className="translator-button translator-button-quiet"
-          type="button"
-          aria-label="Import LLM batch"
-          title="Import LLM batch"
-          onClick={onImportBatch}
-          disabled={!importBatchEnabled}
-        >
-          <Download aria-hidden />
-          <span className="translator-action-label-compact">
-            Import LLM batch …
-          </span>
-        </button>
         <div className="translator-menu" ref={menuRef}>
           <button
             ref={exportTriggerRef}
             className="translator-button translator-button-quiet"
             type="button"
-            aria-label="Export actions"
-            title="Export actions"
+            aria-label={"File actions"}
+            title={"File actions"}
             aria-haspopup="menu"
             aria-expanded={exportOpen}
             onClick={() => {
@@ -2771,24 +2776,25 @@ function AppToolbar({
                 exportEnabled ||
                 exportAllEnabled ||
                 buildZipEnabled ||
-                outputEnabled
+                outputEnabled ||
+                importBatchEnabled
               ) || exporting
             }
           >
-            <Upload aria-hidden />
+            {<FileIcon aria-hidden />}
             <span className="translator-action-label-compact">
               {checkingExportReadiness
                 ? "Checking…"
                 : exporting
                   ? "Exporting…"
-                  : "Export …"}
+                  : "Files…"}
             </span>
           </button>
           {exportOpen && (
             <div
-              className="translator-popover"
+              className="translator-popover desktop-export-menu"
               role="menu"
-              aria-label="Export"
+              aria-label={"Files"}
               onKeyDown={handleExportMenuKey}
               onBlur={(event) => {
                 const next = event.relatedTarget;
@@ -2800,8 +2806,31 @@ function AppToolbar({
                 }
               }}
             >
+              {
+                <>
+                  <span className="translator-popover-note" role="presentation">
+                    Import
+                  </span>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => run(onImportBatch)}
+                    disabled={!importBatchEnabled}
+                  >
+                    <Download aria-hidden />
+                    <FileActionLabel
+                      title="Import LLM batch…"
+                      description="Load an external AI result for the selected mod into Review."
+                    />
+                  </button>
+                  <div
+                    className="translator-popover-divider"
+                    role="separator"
+                  />
+                </>
+              }
               <span className="translator-popover-note" role="presentation">
-                JSON files
+                <FileActionLabel title="Write JSON to Mods folders" />
               </span>
               <button
                 type="button"
@@ -2809,7 +2838,11 @@ function AppToolbar({
                 onClick={() => run(onExportAll)}
                 disabled={!exportAllEnabled}
               >
-                <Folders aria-hidden /> Export all mods …
+                <Folders aria-hidden />
+                <FileActionLabel
+                  title="Export JSON for all mods…"
+                  description="Write translation files into the installed mod folders."
+                />
               </button>
               <button
                 type="button"
@@ -2817,11 +2850,15 @@ function AppToolbar({
                 onClick={() => run(onExport)}
                 disabled={!exportEnabled}
               >
-                <FolderUp aria-hidden /> Export current mod
+                <FolderUp aria-hidden />
+                <FileActionLabel
+                  title="Export JSON for selected mod…"
+                  description="Write translation files into the selected mod’s folder."
+                />
               </button>
               <div className="translator-popover-divider" role="separator" />
               <span className="translator-popover-note" role="presentation">
-                ZIP archives
+                <FileActionLabel title="Save ZIP for MO2 or Vortex" />
               </span>
               <button
                 type="button"
@@ -2829,7 +2866,11 @@ function AppToolbar({
                 onClick={() => run(onBuildZip)}
                 disabled={!buildZipEnabled}
               >
-                <Archive aria-hidden /> Translation ZIP · current mod
+                <Archive aria-hidden />
+                <FileActionLabel
+                  title="Export ZIP for selected mod…"
+                  description="One installable translation package for the selected mod."
+                />
               </button>
               <button
                 type="button"
@@ -2837,7 +2878,11 @@ function AppToolbar({
                 onClick={() => run(onBuildOutput)}
                 disabled={!outputEnabled}
               >
-                <Archive aria-hidden /> Translation ZIP · all mods
+                <Archive aria-hidden />
+                <FileActionLabel
+                  title="Export ZIP for all mods…"
+                  description="One combined package for all scanned translations."
+                />
               </button>
             </div>
           )}

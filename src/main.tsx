@@ -5,6 +5,7 @@ import { logFrontendError } from "./tauri/commands";
 import "./styles.css";
 import "./translator.css";
 import "./translator-overrides.css";
+import "./desktop.css";
 
 // Funnel otherwise-uncaught errors into the portable backend log file
 // so they survive into a bug report. Both handlers are best-effort.

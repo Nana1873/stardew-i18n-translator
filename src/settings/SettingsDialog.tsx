@@ -1,3 +1,4 @@
+import appIcon from "../assets/app-icon.png";
 import {
   type KeyboardEvent as ReactKeyboardEvent,
   useEffect,
@@ -116,6 +117,7 @@ export function SettingsDialog({
     savedAi.defaultEngine === CLOUD_ENGINE_ID
       ? savedAi.defaultEngine
       : null;
+
   const [page, setPage] = useState<SettingsPage>(initialPage);
   const [preferredEngine, setPreferredEngine] = useState<AiEngine | null>(
     savedDefaultEngine,
@@ -306,6 +308,8 @@ export function SettingsDialog({
       return;
     }
     let active = true;
+    setGlossary(null);
+    setGlossaryError(null);
     glossaryStatus(stardewPath, targetLang)
       .then((status) => active && setGlossary(status))
       .catch(
@@ -326,12 +330,18 @@ export function SettingsDialog({
     };
   }, [stardewPath, targetLang]);
 
+  const glossaryContext = JSON.stringify([stardewPath, targetLang]);
+  const glossaryContextRef = useRef(glossaryContext);
+  glossaryContextRef.current = glossaryContext;
+
   async function handleBuildGlossary() {
     if (!stardewPath || !targetLang) return;
+    const context = glossaryContextRef.current;
     setGlossaryBuilding(true);
     setGlossaryError(null);
     try {
       const info = await buildGlossary(stardewPath, targetLang);
+      if (context !== glossaryContextRef.current) return;
       setGlossary((previous) => ({
         gameXnbPresent: previous?.gameXnbPresent ?? false,
         unpackedPresent: previous?.unpackedPresent ?? false,
@@ -343,7 +353,8 @@ export function SettingsDialog({
         packName: previous?.packName,
       }));
     } catch (cause) {
-      setGlossaryError(String(cause));
+      if (context === glossaryContextRef.current)
+        setGlossaryError(String(cause));
     } finally {
       setGlossaryBuilding(false);
     }
@@ -950,10 +961,6 @@ export function SettingsDialog({
                     </button>
                   </div>
                 </div>
-                <p className="translator-kicker">
-                  If the service is unavailable, manual translation, import, and
-                  export remain fully available.
-                </p>
               </section>
 
               <section
@@ -1153,113 +1160,88 @@ export function SettingsDialog({
               onChange={setShortcuts}
             />
 
-            <section
-              id="settings-panel-about"
-              className={
-                "translator-settings-page" +
-                (page === "about" ? " is-active" : "")
-              }
-              role="tabpanel"
-              aria-label="About"
-              hidden={page !== "about"}
-            >
-              <h3>About</h3>
-              <p className="translator-settings-intro">
-                Stardew i18n Translator
-              </p>
-              <div className="translator-settings-group">
-                <div className="translator-setting-line">
-                  <span className="translator-setting-copy">
-                    <strong>Version</strong>
-                    <span>Portable Windows application</span>
-                  </span>
-                  <span>{packageInfo.version}</span>
-                </div>
-                <div className="translator-setting-line">
-                  <span className="translator-setting-copy">
-                    <strong>Author & license</strong>
-                    <span>Nana · GPL-3.0-or-later</span>
-                  </span>
-                  <div className="translator-settings-actions">
-                    <button
-                      className="translator-button translator-button-quiet"
-                      type="button"
-                      onClick={() =>
-                        void openUrl(
-                          "https://github.com/Nana1873/stardew-i18n-translator",
-                        )
-                      }
-                    >
-                      GitHub
-                    </button>
-                    <button
-                      className="translator-button translator-button-quiet"
-                      type="button"
-                      onClick={() =>
-                        void openUrl(
-                          "https://github.com/Nana1873/stardew-i18n-translator/blob/main/LICENSE",
-                        )
-                      }
-                    >
-                      License
-                    </button>
+            {
+              <section
+                id="settings-panel-about"
+                className={
+                  "translator-settings-page" +
+                  (page === "about" ? " is-active" : "")
+                }
+                role="tabpanel"
+                aria-label="About"
+                hidden={page !== "about"}
+              >
+                <div className="desktop-about-brand">
+                  <img src={appIcon} alt="" width="64" height="64" />
+                  <div>
+                    <h3>Stardew i18n Translator</h3>
+                    <p>Version {packageInfo.version}</p>
                   </div>
                 </div>
-                <div className="translator-setting-line">
-                  <span className="translator-setting-copy">
-                    <strong>Technology</strong>
-                    <span>Tauri 2 · Rust · React · TypeScript</span>
-                  </span>
-                </div>
-                <div className="translator-setting-line">
-                  <span className="translator-setting-copy">
-                    <strong>Portable data</strong>
-                    <span>
-                      Stored next to the application in the Data folder
+                <div className="translator-settings-group">
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
+                      <strong>Author & license</strong>
+                      <span>Nana · GPL-3.0-or-later</span>
                     </span>
-                  </span>
-                  <span className="translator-state is-ready">Local</span>
-                </div>
-                <div className="translator-setting-line">
-                  <span className="translator-setting-copy">
-                    <strong>Local diagnostic logs</strong>
-                    <span>
-                      Rotating · AI run metadata only, never translation text ·
-                      never sent automatically
+                    <div className="translator-settings-actions">
+                      <button
+                        className="translator-button translator-button-quiet"
+                        type="button"
+                        onClick={() =>
+                          void openUrl(
+                            "https://github.com/Nana1873/stardew-i18n-translator",
+                          )
+                        }
+                      >
+                        GitHub
+                      </button>
+                      <button
+                        className="translator-button translator-button-quiet"
+                        type="button"
+                        onClick={() =>
+                          void openUrl(
+                            "https://github.com/Nana1873/stardew-i18n-translator/blob/main/LICENSE",
+                          )
+                        }
+                      >
+                        License
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="translator-setting-line">
+                    <span className="translator-setting-copy">
+                      <strong>Logging</strong>
                     </span>
-                  </span>
-                  <label className="translator-switch">
-                    <input
-                      type="checkbox"
-                      checked={diagnosticLogging}
-                      aria-label="Enable local diagnostic logging"
-                      onChange={(event) =>
-                        setDiagnosticLogging(event.target.checked)
-                      }
-                    />
-                    <span />
-                  </label>
+                    <div className="translator-settings-actions desktop-about-actions">
+                      <label className="translator-switch">
+                        <input
+                          type="checkbox"
+                          checked={diagnosticLogging}
+                          aria-label="Enable logging"
+                          onChange={(event) =>
+                            setDiagnosticLogging(event.target.checked)
+                          }
+                        />
+                        <span />
+                      </label>
+                      <button
+                        className="translator-button translator-button-quiet"
+                        type="button"
+                        onClick={() => void openLogsDir()}
+                      >
+                        Open logs
+                      </button>
+                    </div>
+                  </div>
                 </div>
-                <div className="translator-setting-line">
-                  <span className="translator-setting-copy">
-                    <strong>Logs for bug reports</strong>
-                    <span>Opens the portable logs folder</span>
-                  </span>
-                  <button
-                    className="translator-button translator-button-quiet"
-                    type="button"
-                    onClick={() => void openLogsDir()}
-                  >
-                    Open logs
-                  </button>
-                </div>
-              </div>
-              <p className="translator-kicker">
-                Stardew Valley and ConcernedApe are trademarks or property of
-                their respective owners. This project is independent and not
-                officially affiliated.
-              </p>
-            </section>
+                <p className="desktop-about-data">
+                  Data is stored in the <code>Data</code> folder next to the
+                  application.
+                </p>
+              </section>
+            }
           </div>
         </fieldset>
 
@@ -1369,6 +1351,9 @@ function GlossarySettings({
         <div className="translator-glossary-main">
           <strong>{state}</strong>
           <span>{language}</span>
+          {state === "Glossary unavailable" && (
+            <span>Translation works without a glossary.</span>
+          )}
         </div>
         <div className="translator-glossary-number">
           <strong>
@@ -1384,13 +1369,15 @@ function GlossarySettings({
             <strong>{cached ? "Rebuild source" : "Source"}</strong>
             <span>{source}</span>
           </span>
-          <span
-            className={
-              "translator-state " + (available ? "is-ready" : "is-change")
-            }
-          >
-            {available ? "Available" : "Unavailable"}
-          </span>
+          {available && (
+            <span
+              className={
+                "translator-state " + (available ? "is-ready" : "is-change")
+              }
+            >
+              Available
+            </span>
+          )}
         </div>
 
         {!supported && glossary?.packAvailable && available && (
@@ -1517,12 +1504,7 @@ function GlossarySettings({
           {error}
         </p>
       )}
-      {!available && (
-        <p className="translator-kicker">
-          If the glossary is unavailable, scanning, translation, review, and
-          export still work normally.
-        </p>
-      )}
+      {false}
     </section>
   );
 }

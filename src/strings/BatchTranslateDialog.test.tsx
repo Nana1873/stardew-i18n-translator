@@ -104,161 +104,34 @@ function renderDialog(
   return { ...view, onLiveRun, onFinished, onClose };
 }
 
-describe("BatchTranslateDialog", () => {
-  it("shows translated drafts before the first batch is saved to Review", async () => {
-    const onLiveRun = vi.fn(
-      (_runId: string) => new Promise<AiRunResult>(() => {}),
-    );
-    renderDialog({ engine: CLOUD_ENGINE, onLiveRun });
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    const runId = onLiveRun.mock.calls[0][0];
-    const receiveProgress = eventApi.listen.mock.calls[0][1];
-    const payload = {
-      runId,
-      phase: "reviewing",
-      completed: 0,
-      translated: 93,
-      total: 282,
-      batchIndex: 1,
-      batchTotal: 4,
-      batchSize: 93,
-      retries: 0,
-      splits: 0,
-    };
-    act(() => receiveProgress({ payload }));
-    expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
-      "93 / 282",
-    );
-    expect(screen.getByText("0 / 282")).toBeVisible();
-    expect(
-      screen.getByText(/Quality checks run before drafts are saved to Review/),
-    ).toBeVisible();
-    expect(screen.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "0",
-    );
-    act(() =>
-      receiveProgress({
-        payload: { ...payload, phase: "saving", completed: 93 },
-      }),
-    );
-    expect(screen.getByRole("progressbar")).toHaveAttribute(
-      "aria-valuenow",
-      "93",
-    );
-    expect(
-      screen.queryByText(
-        /Quality checks run before drafts are saved to Review/,
-      ),
-    ).toBeNull();
-  });
-
-  it("starts the configured live engine immediately with only compact progress and Cancel", async () => {
-    let resolveRun: (result: AiRunResult) => void = () => {};
-    const onLiveRun = vi.fn(
-      (_runId: string) =>
-        new Promise<AiRunResult>((resolve) => {
-          resolveRun = resolve;
+describe("AI progress notice", () => {
+  it("starts once, stays nonmodal and reports the authoritative result", async () => {
+    let resolve!: (result: AiRunResult) => void;
+    const run = vi.fn(
+      (_id: string) =>
+        new Promise<AiRunResult>((done) => {
+          resolve = done;
         }),
     );
     const { onFinished, onClose } = renderDialog({
       engine: CLOUD_ENGINE,
-      onLiveRun,
-    });
-
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    const runId = onLiveRun.mock.calls[0][0];
-    expect(runId).toEqual(expect.any(String));
-    expect(
-      screen.getByRole("dialog", { name: "AI translation progress" }),
-    ).toBeVisible();
-    expect(
-      screen.getByText(/ChatGPT .* completed suggestions enter Review/),
-    ).toBeVisible();
-    expect(screen.getByText("Saved to Review")).toBeVisible();
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
-      "Preparing selected strings",
-    );
-    expect(screen.getByText(/Elapsed · 00:00/)).toBeVisible();
-    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
-    expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
-    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Start AI translation/ }),
-    ).not.toBeInTheDocument();
-    const progress = screen.getByRole("progressbar", {
-      name: "AI translation progress",
-    });
-    expect(progress).toHaveAttribute("data-indeterminate", "true");
-    expect(progress).not.toHaveAttribute("aria-valuenow");
-
-    act(() => resolveRun(liveResult({ runId })));
-
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-    expect(onFinished).toHaveBeenCalledWith({
-      runId,
-      done: 2,
-      total: 2,
-      outcome: "complete",
-      engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
-    });
-    expect(onClose).toHaveBeenCalledOnce();
-  });
-
-  it("announces one selected string with singular grammar", async () => {
-    let resolveRun: (result: AiRunResult) => void = () => {};
-    const onLiveRun = vi.fn(
-      (_runId: string) =>
-        new Promise<AiRunResult>((resolve) => {
-          resolveRun = resolve;
-        }),
-    );
-    const { onFinished } = renderDialog({
-      items: [ITEMS[0]],
-      engine: CLOUD_ENGINE,
-      onLiveRun,
-    });
-
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    expect(
-      screen.getByRole("progressbar", { name: "AI translation progress" }),
-    ).toHaveAttribute("aria-valuetext", "1 selected string is being prepared");
-
-    const runId = onLiveRun.mock.calls[0][0];
-    act(() =>
-      resolveRun(
-        liveResult({
-          runId,
-          requested: 1,
-          completed: 1,
-        }),
-      ),
-    );
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-  });
-
-  it("starts only one live backend run under React StrictMode", async () => {
-    let resolveRun: (result: AiRunResult) => void = () => {};
-    const onLiveRun = vi.fn(
-      (_runId: string) =>
-        new Promise<AiRunResult>((resolve) => {
-          resolveRun = resolve;
-        }),
-    );
-    const { onFinished, onClose } = renderDialog({
-      engine: CLOUD_ENGINE,
-      onLiveRun,
+      onLiveRun: run,
       strict: true,
     });
-
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    const runId = onLiveRun.mock.calls[0][0];
-    act(() => resolveRun(liveResult({ runId })));
-
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-    expect(onFinished).toHaveBeenCalledWith({
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText("AI translation progress")).toBeVisible();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.getByText("Test Mod")).toBeVisible();
+    expect(screen.queryByText("Details")).toBeNull();
+    const progress = screen.getByRole("progressbar", {
+      name: "Strings saved to Review",
+    });
+    expect(progress).not.toHaveAttribute("value");
+    const runId = run.mock.calls[0][0];
+    await act(async () => {
+      resolve(liveResult({ runId }));
+    });
+    expect(onFinished).toHaveBeenCalledExactlyOnceWith({
       runId,
       done: 2,
       total: 2,
@@ -270,380 +143,212 @@ describe("BatchTranslateDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("does not start a live backend run when Cancel wins the listener setup race", async () => {
-    let resolveListen: (unlisten: typeof unlistenProgress) => void = () => {};
-    eventApi.listen.mockReturnValueOnce(
-      new Promise<typeof unlistenProgress>((resolve) => {
-        resolveListen = resolve;
-      }),
-    );
-    const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
-    const onCancelLiveRun = vi.fn(async () => false);
-    const { onFinished, onClose } = renderDialog({
-      engine: CLOUD_ENGINE,
-      onLiveRun,
-      onCancelLiveRun,
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(onCancelLiveRun).toHaveBeenCalledOnce();
-    expect(onLiveRun).not.toHaveBeenCalled();
-    expect(
-      screen.getByRole("progressbar", { name: "AI translation progress" }),
-    ).toHaveAttribute(
+  it("announces a singular selected string", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    renderDialog({ items: [ITEMS[0]], engine: CLOUD_ENGINE, onLiveRun: run });
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuetext",
-      "Cancelling the active AI batch; 0 of 2 suggestions saved to Review",
+      "1 selected string is being prepared",
     );
-
-    await act(async () => resolveListen(unlistenProgress));
-
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-    expect(onLiveRun).not.toHaveBeenCalled();
-    expect(onFinished).toHaveBeenCalledWith({
-      runId: expect.any(String),
-      done: 0,
-      total: 2,
-      outcome: "cancelled",
-      engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
-    });
-    expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("shows matching live backend progress and ignores progress from other runs", async () => {
-    let resolveRun: (result: AiRunResult) => void = () => {};
-    const onLiveRun = vi.fn(
-      (_runId: string) =>
-        new Promise<AiRunResult>((resolve) => {
-          resolveRun = resolve;
-        }),
-    );
-    const { onFinished } = renderDialog({
-      engine: CLOUD_ENGINE,
-      onLiveRun,
-    });
-
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    const runId = onLiveRun.mock.calls[0][0];
-    expect(eventApi.listen).toHaveBeenCalledWith(
-      "ai-run-progress",
-      expect.any(Function),
-    );
-    const receiveProgress = eventApi.listen.mock.calls[0][1];
-    const progress = screen.getByRole("progressbar", {
-      name: "AI translation progress",
-    });
-
-    act(() =>
-      receiveProgress({
-        payload: {
-          runId: "another-run",
-          phase: "translating",
-          completed: 99,
-          total: 100,
-          retries: 0,
-          splits: 0,
-        },
-      }),
-    );
-    expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
-      "0 / 2",
-    );
-    expect(progress).toHaveAttribute("data-indeterminate", "true");
-
-    act(() =>
-      receiveProgress({
-        payload: {
-          runId,
-          phase: "reviewing",
-          completed: 320,
-          translated: 407,
-          total: 1_000,
-          batchIndex: 4,
-          batchTotal: 11,
-          batchSize: 87,
-          retries: 1,
-          splits: 2,
-          recovery: "structureRetry",
-          providerStage: "reasoning",
-          providerActivitySequence: 7,
-          usage: {
-            inputTokens: 45_200,
-            cachedInputTokens: 32_900,
-            outputTokens: 2_100,
-            reasoningOutputTokens: 900,
-          },
-        },
-      }),
-    );
-    expect(screen.getByText("320 / 1000")).toBeVisible();
-    expect(screen.getByLabelText("Translated strings")).toHaveTextContent(
-      "407 / 1000",
-    );
-    expect(
-      screen.getByText(/Quality checks run before drafts are saved to Review/),
-    ).toBeVisible();
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
-      "Reviewing quality · Batch 4 of 11 · 87 strings",
-    );
-    expect(
-      screen.getByText(/Elapsed · \d\d:\d\d · Retrying response structure/),
-    ).toBeVisible();
-    fireEvent.click(screen.getByText("Details"));
-    expect(
-      screen.getByText("ChatGPT activity · Reasoning · just now"),
-    ).toBeVisible();
-    expect(
-      screen.getByText(
-        "ChatGPT reported · 45.2k input (32.9k cached) · 2.1k output · 900 reasoning",
-      ),
-    ).toBeVisible();
-    expect(progress).not.toHaveAttribute("data-indeterminate");
-    expect(progress).toHaveAttribute("aria-valuemax", "1000");
-    expect(progress).toHaveAttribute("aria-valuenow", "320");
-    expect(progress).toHaveAttribute(
-      "aria-valuetext",
-      "407 of 1000 strings translated; 320 of 1000 suggestions saved to Review; reviewing quality · batch 4 of 11 · 87 strings",
-    );
-
-    act(() => resolveRun(liveResult({ runId })));
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-  });
-
-  it("updates a stable ETA only when more suggestions have been saved", async () => {
-    const startedAt = Date.parse("2026-08-27T10:00:00Z");
-    const now = vi.spyOn(Date, "now").mockReturnValue(startedAt);
-    let resolveRun: (result: AiRunResult) => void = () => {};
-    const onLiveRun = vi.fn(
-      (_runId: string) =>
-        new Promise<AiRunResult>((resolve) => {
-          resolveRun = resolve;
-        }),
-    );
-    const onCancelLiveRun = vi.fn(async () => true);
+  it("shows saved progress only and sends batch activity to the shared log", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    const activity = vi.fn();
+    window.addEventListener("translator-ai-activity", activity);
     try {
-      const { onFinished } = renderDialog({
-        engine: CLOUD_ENGINE,
-        onLiveRun,
-        onCancelLiveRun,
-      });
-      await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-      const runId = onLiveRun.mock.calls[0][0];
-      const receiveProgress = eventApi.listen.mock.calls[0][1];
-
-      expect(screen.queryByText(/Estimated remaining/)).not.toBeInTheDocument();
-
-      now.mockReturnValue(startedAt + 480_000);
+      renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
+      await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      const runId = run.mock.calls[0][0],
+        receive = eventApi.listen.mock.calls[0][1];
       act(() =>
-        receiveProgress({
+        receive({
           payload: {
-            runId,
+            runId: "other",
             phase: "saving",
-            completed: 80,
-            total: 400,
-            batchIndex: 1,
-            batchTotal: 5,
-            batchSize: 80,
+            completed: 99,
+            total: 100,
             retries: 0,
             splits: 0,
           },
         }),
       );
+      expect(screen.getByRole("progressbar")).not.toHaveAttribute("value");
+      const payload = {
+        runId,
+        phase: "reviewing",
+        completed: 0,
+        translated: 93,
+        total: 282,
+        batchIndex: 1,
+        batchTotal: 4,
+        batchSize: 93,
+        retries: 0,
+        splits: 0,
+      };
+      act(() => receive({ payload }));
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "0");
+      expect(screen.getByText("0 / 282")).toBeVisible();
+      expect(screen.queryByText("93 / 282")).toBeNull();
+      expect(screen.queryByRole("log")).toBeNull();
       expect(
-        screen.getByText("Estimated remaining · about 32 min"),
-      ).toBeVisible();
-
-      now.mockReturnValue(startedAt + 600_000);
-      act(() =>
-        receiveProgress({
-          payload: {
-            runId,
-            phase: "translating",
-            completed: 80,
-            total: 400,
-            batchIndex: 2,
-            batchTotal: 5,
-            batchSize: 80,
-            retries: 1,
-            splits: 0,
-            recovery: "transientRetry",
-          },
-        }),
-      );
-      expect(
-        screen.getByText("Estimated remaining · about 32 min"),
-      ).toBeVisible();
-
-      now.mockReturnValue(startedAt + 900_000);
-      act(() =>
-        receiveProgress({
-          payload: {
-            runId,
-            phase: "saving",
-            completed: 160,
-            total: 400,
-            batchIndex: 2,
-            batchTotal: 5,
-            batchSize: 80,
-            retries: 1,
-            splits: 0,
-          },
-        }),
-      );
-      expect(
-        screen.getByText("Estimated remaining · about 23 min"),
-      ).toBeVisible();
-
-      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-      expect(screen.queryByText(/Estimated remaining/)).not.toBeInTheDocument();
-      expect(onCancelLiveRun).toHaveBeenCalledWith(runId);
-
-      act(() =>
-        resolveRun(
-          liveResult({
-            runId,
-            requested: 400,
-            completed: 160,
-            outcome: "cancelled",
-          }),
+        activity.mock.calls.some(([event]) =>
+          event.detail.entries.some((entry: { message: string }) =>
+            entry.message.includes("Checking translation quality"),
+          ),
         ),
+      ).toBe(true);
+      act(() =>
+        receive({ payload: { ...payload, phase: "saving", completed: 93 } }),
       );
-      await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
+      expect(screen.getByRole("progressbar")).toHaveAttribute("value", "93");
+      expect(screen.getByRole("progressbar")).toHaveAttribute(
+        "aria-valuetext",
+        "93 of 282 suggestions saved to Review",
+      );
     } finally {
-      now.mockRestore();
+      window.removeEventListener("translator-ai-activity", activity);
     }
   });
 
-  it("removes the live progress listener when the dialog unmounts", async () => {
-    const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
-    const { unmount } = renderDialog({
-      engine: CLOUD_ENGINE,
-      onLiveRun,
-    });
-
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    unmount();
-
-    expect(unlistenProgress).toHaveBeenCalledOnce();
-  });
-
-  it("updates the elapsed timer while the live backend is running", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-08-27T10:00:00Z"));
-    try {
-      const onLiveRun = vi.fn(() => new Promise<AiRunResult>(() => {}));
-      const { unmount } = renderDialog({
-        onLiveRun,
-      });
-
-      expect(screen.getByText(/Elapsed · 00:00/)).toBeVisible();
-      act(() => {
-        vi.advanceTimersByTime(34_000);
-      });
-      expect(screen.getByText(/Elapsed · 00:34/)).toBeVisible();
-      unmount();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("forwards live cancellation to the backend and keeps backend Review work authoritative", async () => {
-    let resolveRun: (result: AiRunResult) => void = () => {};
-    const onLiveRun = vi.fn(
-      (_runId: string) =>
-        new Promise<AiRunResult>((resolve) => {
-          resolveRun = resolve;
-        }),
+  it("keeps the original selection, engine and callbacks when the workspace changes", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    const replacement = vi.fn();
+    const view = renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    view.rerender(
+      <BatchTranslateDialog
+        items={[ITEMS[0]]}
+        modName="Other mod"
+        engine={{ ...CLOUD_ENGINE, label: "Local AI" }}
+        onLiveRun={replacement}
+        onFinished={vi.fn()}
+        onClose={vi.fn()}
+      />,
     );
-    const onCancelLiveRun = vi.fn(async () => true);
-    const { onFinished, onClose } = renderDialog({
-      engine: CLOUD_ENGINE,
-      onLiveRun,
-      onCancelLiveRun,
-    });
+    expect(screen.getByText("Test Mod")).toBeVisible();
+    expect(screen.getByText("ChatGPT")).toBeVisible();
+    expect(screen.getByText("0 / 2")).toBeVisible();
+    expect(replacement).not.toHaveBeenCalled();
+  });
 
-    await waitFor(() => expect(onLiveRun).toHaveBeenCalledOnce());
-    const runId = onLiveRun.mock.calls[0][0];
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(onCancelLiveRun).toHaveBeenCalledWith(runId);
-    expect(screen.getByRole("heading", { name: "Cancelling…" })).toBeVisible();
-    const receiveProgress = eventApi.listen.mock.calls[0][1];
-    act(() =>
-      receiveProgress({
-        payload: {
-          runId,
-          phase: "reviewing",
-          completed: 1,
-          total: 2,
-          batchIndex: 1,
-          batchTotal: 1,
-          batchSize: 2,
-          retries: 0,
-          splits: 0,
-        },
+  it("cancels before listener setup without launching a backend run", async () => {
+    let resolve!: (release: () => void) => void;
+    eventApi.listen.mockReturnValueOnce(
+      new Promise<() => void>((done) => {
+        resolve = done;
       }),
     );
-    expect(screen.getByRole("status", { name: "" })).toHaveTextContent(
-      "Cancelling active batch",
+    const run = vi.fn(() => new Promise<AiRunResult>(() => {}));
+    const cancel = vi.fn(async () => false);
+    const { onFinished, onClose } = renderDialog({
+      engine: CLOUD_ENGINE,
+      onLiveRun: run,
+      onCancelLiveRun: cancel,
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
     );
-    expect(screen.queryByText(/Reviewing quality/)).not.toBeInTheDocument();
+    await act(async () => {
+      resolve(unlistenProgress as () => void);
+    });
+    expect(run).not.toHaveBeenCalled();
+    expect(onFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ done: 0, total: 2, outcome: "cancelled" }),
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+  });
 
-    act(() =>
-      resolveRun(
-        liveResult({
-          runId,
-          requested: 2,
-          completed: 1,
-          outcome: "cancelled",
-          suggestions: [
-            {
-              identity: {
-                modUniqueId: "a.b",
-                relativeDir: "i18n",
-                key: "first.key",
-              },
-              text: "Eins",
-              status: "review-needed",
-              tokenDifferences: [],
-              glossaryMisses: [],
-            },
-          ],
+  it("waits for backend cancellation and preserves the saved partial result", async () => {
+    let resolve!: (result: AiRunResult) => void;
+    const run = vi.fn(
+      (_id: string) =>
+        new Promise<AiRunResult>((done) => {
+          resolve = done;
+        }),
+    );
+    const cancel = vi.fn(async () => true);
+    const { onFinished } = renderDialog({
+      engine: CLOUD_ENGINE,
+      onLiveRun: run,
+      onCancelLiveRun: cancel,
+    });
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    const runId = run.mock.calls[0][0];
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
+    );
+    expect(cancel).toHaveBeenCalledWith(runId);
+    expect(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
+    ).toBeDisabled();
+    expect(onFinished).not.toHaveBeenCalled();
+    await act(async () => {
+      resolve(liveResult({ runId, completed: 1, outcome: "cancelled" }));
+    });
+    expect(onFinished).toHaveBeenCalledWith(
+      expect.objectContaining({ done: 1, total: 2, outcome: "cancelled" }),
+    );
+  });
+
+  it("allows a failed cancellation to be retried", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    const cancel = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("Cancel unavailable"))
+      .mockResolvedValueOnce(true);
+    renderDialog({
+      engine: CLOUD_ENGINE,
+      onLiveRun: run,
+      onCancelLiveRun: cancel,
+    });
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Cancel unavailable",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
+    );
+    expect(cancel).toHaveBeenCalledTimes(2);
+  });
+
+  it("still completes when progress events cannot be subscribed", async () => {
+    eventApi.listen.mockRejectedValueOnce(new Error("No events"));
+    const { onFinished } = renderDialog({ engine: CLOUD_ENGINE });
+    await waitFor(() =>
+      expect(onFinished).toHaveBeenCalledWith(
+        expect.objectContaining({ done: 2, outcome: "complete" }),
+      ),
+    );
+  });
+
+  it("reports launch errors with their actual cause", async () => {
+    const { onFinished, onClose } = renderDialog({
+      engine: CLOUD_ENGINE,
+      onLiveRun: vi.fn().mockRejectedValue(new Error("Local AI offline")),
+    });
+    await waitFor(() =>
+      expect(onFinished).toHaveBeenCalledWith(
+        expect.objectContaining({
+          done: 0,
+          total: 2,
+          outcome: "error",
+          error: "Error: Local AI offline",
         }),
       ),
     );
-
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-    expect(onFinished).toHaveBeenCalledWith({
-      runId,
-      done: 1,
-      total: 2,
-      outcome: "cancelled",
-      engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
-    });
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("reports a live backend error and closes", async () => {
-    const onLiveRun = vi.fn().mockRejectedValue(new Error("Local AI offline"));
-    const { onFinished, onClose } = renderDialog({
-      engine: CLOUD_ENGINE,
-      onLiveRun,
-    });
-
-    await waitFor(() => expect(onFinished).toHaveBeenCalledOnce());
-    expect(onFinished).toHaveBeenCalledWith({
-      runId: expect.any(String),
-      done: 0,
-      total: 2,
-      outcome: "error",
-      error: "Error: Local AI offline",
-      engine: "ChatGPT",
-      model: "gpt-5.6",
-      reasoning: "high",
-    });
-    expect(onClose).toHaveBeenCalledOnce();
+  it("removes the event listener on unmount", async () => {
+    const run = vi.fn((_id: string) => new Promise<AiRunResult>(() => {}));
+    const { unmount } = renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
+    await waitFor(() => expect(run).toHaveBeenCalledOnce());
+    unmount();
+    expect(unlistenProgress).toHaveBeenCalledOnce();
   });
 });

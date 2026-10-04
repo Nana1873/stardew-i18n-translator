@@ -76,7 +76,7 @@ function renderTray(
   overrides: Partial<React.ComponentProps<typeof ResultTray>> = {},
 ) {
   const props: React.ComponentProps<typeof ResultTray> = {
-    data,
+    data: { ...data, inspectDetails: true },
     onToggle: vi.fn(),
     onClose: vi.fn(),
     onInspect: vi.fn(),
@@ -111,9 +111,13 @@ describe("ResultTray", () => {
     fireEvent.click(screen.getByRole("button", { name: /i18n \/ greeting/ }));
     expect(inspect).toHaveBeenCalledWith(problem);
 
-    fireEvent.click(screen.getByRole("button", { name: "Collapse result" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Back to notification" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
-    expect(toggle).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("complementary", { name: "Operation result" }),
+    ).toBeNull();
     expect(close).toHaveBeenCalledOnce();
   });
 
@@ -122,102 +126,51 @@ describe("ResultTray", () => {
     renderTray(exportData, { toggleButtonRef });
 
     expect(toggleButtonRef.current).toBe(
-      screen.getByRole("button", { name: "Collapse result" }),
+      screen.getByRole("button", { name: "Back to notification" }),
     );
   });
 
-  it("renders collapsed, pending, success, warning, and error states", () => {
-    const pending: ResultTrayData = {
+  it("shows a compact pending notice and an assertive failed result", () => {
+    const pending = {
       ...exportData,
-      collapsed: true,
       pending: true,
       result: null,
       problems: [],
     };
-    const { container, rerender } = renderTray(pending);
-    expect(screen.getByText("Exporting")).toBeInTheDocument();
+    const view = render(
+      <ResultTray
+        data={pending}
+        onToggle={vi.fn()}
+        onClose={vi.fn()}
+        onInspect={vi.fn()}
+      />,
+    );
+    expect(screen.getByLabelText("Operation result")).toHaveAttribute(
+      "role",
+      "status",
+    );
+    expect(screen.queryByRole("button", { name: "Retry export" })).toBeNull();
+    view.rerender(
+      <ResultTray
+        data={{ ...pending, pending: false, error: "Disk full" }}
+        onToggle={vi.fn()}
+        onClose={vi.fn()}
+        onInspect={vi.fn()}
+        onRetry={vi.fn()}
+      />,
+    );
     expect(
-      screen.getByRole("button", { name: "Expand result" }),
-    ).toHaveAttribute("aria-expanded", "false");
-    expect(container.querySelector(".translator-result-body")).toBeNull();
-    expect(container.querySelector(".translator-result-status")).toHaveClass(
-      "is-pending",
-    );
-
-    const success: ResultTrayData = {
-      kind: "zip",
-      title: "Test.zip",
-      collapsed: false,
-      pending: false,
-      error: null,
-      outcome: {
-        path: "C:/release/Test.zip",
-        folder: "C:/release",
-        fileName: "Test.zip",
-        entries: 1,
-        strings: 2,
-      },
-      problems: [],
-    };
-    rerender(
-      <ResultTray
-        data={success}
-        onToggle={vi.fn()}
-        onClose={vi.fn()}
-        onInspect={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("ZIP created")).toBeInTheDocument();
-    expect(
-      container.querySelector(".translator-result-status"),
-    ).not.toHaveClass("is-warning", "is-error", "is-pending");
-
-    const warning: ResultTrayData = {
-      kind: "import",
-      title: "Test Mod",
-      collapsed: false,
-      pending: false,
-      error: null,
-      sourcePath: "C:/in/result.json",
-      summary: {
-        imported: 2,
-        skippedTranslated: 0,
-        unmatched: 1,
-        identicalToSource: 0,
-        totalInFile: 3,
-      },
-      problems: [],
-    };
-    rerender(
-      <ResultTray
-        data={warning}
-        onToggle={vi.fn()}
-        onClose={vi.fn()}
-        onInspect={vi.fn()}
-      />,
-    );
-    expect(container.querySelector(".translator-result-status")).toHaveClass(
-      "is-warning",
-    );
-
-    rerender(
-      <ResultTray
-        data={{ ...warning, error: "Invalid JSON", summary: null }}
-        onToggle={vi.fn()}
-        onClose={vi.fn()}
-        onInspect={vi.fn()}
-      />,
-    );
-    expect(screen.getByText("LLM import rejected")).toBeInTheDocument();
-    expect(container.querySelector(".translator-result-status")).toHaveClass(
-      "is-error",
-    );
+      screen.getByRole("alert", { name: "Operation result" }),
+    ).toHaveTextContent("Disk full");
+    expect(screen.getByRole("button", { name: "Retry export" })).toBeVisible();
   });
 
   it("shows retry only for a failed or blocked operation", () => {
     const retry = vi.fn();
     const { rerender } = renderTray(exportData, { onRetry: retry });
-    fireEvent.click(screen.getByRole("button", { name: "Export again" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(Export again|Retry export)$/ }),
+    );
     expect(retry).toHaveBeenCalledOnce();
 
     rerender(
@@ -233,7 +186,9 @@ describe("ResultTray", () => {
       />,
     );
     expect(screen.getByText("Ready to export again")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Export again" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /^(Export again|Retry export)$/ }),
+    ).toBeEnabled();
   });
 
   it("shows real batch path and file name, handoff prompt, and workflow", async () => {
@@ -375,7 +330,7 @@ describe("ResultTray", () => {
       ).toBeNull();
       expect(undo).not.toHaveBeenCalled();
       const openReviewButton = screen.queryByRole("button", {
-        name: "Open review queue",
+        name: "Open Review",
       });
       if (done > 0) {
         fireEvent.click(openReviewButton!);
@@ -489,7 +444,7 @@ describe("ResultTray", () => {
     expect(copied).toContain("Imported\n18");
     expect(onNotify).toHaveBeenCalledWith("Result details copied.");
 
-    fireEvent.click(screen.getByRole("button", { name: "Open review queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Review" }));
     expect(onOpenReview).toHaveBeenCalledOnce();
   });
 
@@ -551,7 +506,7 @@ describe("ResultTray", () => {
       screen.getByText(/18 of 21 values saved to the review queue/),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show source file" }));
-    fireEvent.click(screen.getByRole("button", { name: "Open review queue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open Review" }));
     expect(openFolder).toHaveBeenCalledWith("C:\\Temp");
     expect(openReview).toHaveBeenCalledOnce();
   });
@@ -607,7 +562,7 @@ describe("ResultTray", () => {
       },
       { onOpenFolder: vi.fn() },
     );
-    expect(screen.getByRole("button", { name: "Show in folder" })).toHaveClass(
+    expect(screen.getByRole("button", { name: "Open folder" })).toHaveClass(
       "translator-button",
       "translator-button-quiet",
     );

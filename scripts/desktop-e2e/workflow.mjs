@@ -207,10 +207,45 @@ async function archive(action, zip, extra = []) {
   );
 }
 const css = (selector) => By.css(selector);
-const button = (name) =>
-  By.xpath(
-    `//button[normalize-space(.)=${JSON.stringify(name)} or normalize-space(text())=${JSON.stringify(name)}]`,
+const button = (name) => {
+  if (name === "Export …") return css('button[aria-label="File actions"]');
+  const statuses = {
+    All: "all",
+    Open: "untranslated",
+    Changed: "outdated",
+    Review: "review-needed",
+    Done: "translated",
+  };
+  if (statuses[name])
+    return css(
+      'button.desktop-filter-action[data-status="' + statuses[name] + '"]',
+    );
+  const titles = {
+    "Export current mod": "Export JSON for selected mod…",
+    "Export all mods …": "Export JSON for all mods…",
+    "Translation ZIP · current mod": "Export ZIP for selected mod…",
+    "Translation ZIP · all mods": "Export ZIP for all mods…",
+  };
+  if (titles[name])
+    return By.xpath(
+      '//button[@role="menuitem"][.//span[normalize-space(.)=' +
+        JSON.stringify(titles[name]) +
+        "]]",
+    );
+  name =
+    {
+      Export: "Export JSON",
+      "Choose save location …": "Save ZIP…",
+      "Save JSON batch": "Save batch",
+    }[name] ?? name;
+  return By.xpath(
+    "//button[normalize-space(.)=" +
+      JSON.stringify(name) +
+      " or normalize-space(text())=" +
+      JSON.stringify(name) +
+      "]",
   );
+};
 const browseFolder = (label) =>
   By.xpath(
     `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse..."]`,
@@ -616,6 +651,8 @@ try {
     await waitFor("native scan snapshot", () =>
       exists(join(data, "scan-source-snapshot.json")),
     );
+    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await click(css('button[aria-label$="open scan diagnostics"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
     await absent(css('[role="dialog"][aria-label="Scan"]'));
@@ -623,7 +660,7 @@ try {
     assert.equal(settings.stardewPath, game);
     assert.equal(settings.modsPath, mods);
     assert.equal(settings.targetLang, "de");
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await click(css('[role="treeitem"][data-tree-id="mod:E2E.DesktopSmoke"]'));
     await element(row("greeting"));
     assert.equal(
@@ -725,10 +762,11 @@ try {
   });
   await step("restart-and-resume", async () => {
     await launch();
-    await element(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     assert.equal(
-      await (await element(button("Overview"))).getAttribute("aria-pressed"),
-      "true",
+      (await driver.findElements(css('[aria-label="Main views"]'))).length,
+      0,
+      "The app resumes directly in the workspace.",
     );
     assert.equal(
       (await driver.findElements(css('[aria-label="Setup"]'))).length,
@@ -738,7 +776,7 @@ try {
       (await driver.findElements(css("#translator-editor-translation"))).length,
       0,
     );
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await waitFor(
       "restored search",
       async () =>
@@ -853,7 +891,7 @@ try {
     const backupBefore = await readFile(`${exported}.bak`);
     await click(button("Export …"));
     await click(button("Translation ZIP · current mod"));
-    await element(css('[aria-label="Build translation ZIP"]'));
+    await element(css('[aria-label="Export translation ZIP"]'));
     await click(button("Choose save location …"));
     await native("cancel", "Save translation ZIP", destination);
     await driver.wait(
@@ -865,11 +903,12 @@ try {
       By.xpath("//label[contains(., 'Install folder')]/input"),
       "OriginalDesktopSmoke",
     );
+    await click(css(".desktop-zip-details summary"));
     await element(By.xpath("//code[.='OriginalDesktopSmoke/i18n/de.json']"));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("translation ZIP created", () => exists(destination));
-    await absent(css('[aria-label="Build translation ZIP"]'));
+    await absent(css('[aria-label="Export translation ZIP"]'));
     const files = await archive("read", destination);
     // Locale files plus installer metadata; no original assets or app state.
     assert.deepEqual(Object.keys(files), [
@@ -904,18 +943,18 @@ try {
       const backupBefore = await readFile(`${exported}.bak`);
       await click(button("Export …"));
       await click(button("Translation ZIP · current mod"));
-      await element(css('[aria-label="Build translation ZIP"]'));
+      await element(css('[aria-label="Export translation ZIP"]'));
       await fill(
         By.xpath("//label[contains(., 'Install folder')]/input"),
         "ReplacedDesktopSmoke",
       );
       await click(button("Choose save location …"));
       await native("cancel-overwrite", "Save translation ZIP", destination);
-      await element(css('[aria-label="Build translation ZIP"]'));
+      await element(css('[aria-label="Export translation ZIP"]'));
       assert.deepEqual(await readFile(destination), archiveBefore);
       await click(button("Choose save location …"));
       await native("save-overwrite", "Save translation ZIP", destination);
-      await absent(css('[aria-label="Build translation ZIP"]'));
+      await absent(css('[aria-label="Export translation ZIP"]'));
       await absent(css('[aria-label="Confirm ZIP overwrite"]'));
       const files = await archive("read", destination);
       assert.deepEqual(Object.keys(files), [
@@ -938,13 +977,13 @@ try {
     const diskBefore = await readFile(exported);
     await click(button("Export …"));
     await click(button("Translation ZIP · all mods"));
-    await element(css('[aria-label="Build translation ZIP · all mods"]'));
+    await element(css('[aria-label="Export translation ZIP"]'));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("combined translation ZIP created", () =>
       exists(destination),
     );
-    await absent(css('[aria-label="Build translation ZIP · all mods"]'));
+    await absent(css('[aria-label="Export translation ZIP"]'));
     const files = await archive("read", destination);
     assert.deepEqual(Object.keys(files), [
       "DesktopSmoke/i18n/de.json",
@@ -978,10 +1017,10 @@ try {
         "untranslated",
     );
     if (
-      (await driver.findElements(css('[aria-label="Clear selected strings"]')))
+      (await driver.findElements(css('[aria-label="Clear string selection"]')))
         .length
     )
-      await click(css('[aria-label="Clear selected strings"]'));
+      await click(css('[aria-label="Clear string selection"]'));
     for (const key of ["farewell", "greeting"])
       await click(css(`input[aria-label="Select ${key}"]`));
     await click(css('button[data-has-selection="true"]'));
@@ -990,8 +1029,8 @@ try {
         '//button[.//span[normalize-space(.)="Export selection as LLM batch"]]',
       ),
     );
-    await element(css('[aria-label="Save LLM batch"]'));
-    await click(button("Change …"));
+    await element(css('[aria-label="Export LLM batch"]'));
+    await click(button("Choose…"));
     await native("save", "Export LLM translation batch", batchFile);
     assert.equal(
       await exists(batchFile),
@@ -1000,7 +1039,7 @@ try {
     );
     await click(button("Save JSON batch"));
     await waitFor("batch exported", () => exists(batchFile));
-    await absent(css('[aria-label="Save LLM batch"]'));
+    await absent(css('[aria-label="Export LLM batch"]'));
     const batch = await json(batchFile);
     assert.equal(batch.format, "stardew-translator-llm-batch");
     assert.equal(batch.version, 2);
@@ -1025,7 +1064,12 @@ try {
     await screenshot("llm-batch-exported");
   });
   async function chooseBatch(file) {
-    await click(css('[aria-label="Import LLM batch"]'));
+    await click(button("Export …"));
+    await click(
+      By.xpath(
+        '//button[@role="menuitem"][.//span[normalize-space(.)="Import LLM batch…"]]',
+      ),
+    );
     await click(button("Choose file …"));
     await native("pick", "Choose LLM translation result", file);
     await element(css('[aria-label="LLM import preflight"]'));
@@ -1150,7 +1194,7 @@ try {
     await copyFile(cache, join(artifacts, "glossary-de.json"));
     await closeNormally();
     await launch();
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await openEntry("shopping");
     await waitFor("glossary hint restored after restart", async () => {
       const hints = await driver.findElements(css(".translator-glossary-term"));
