@@ -588,6 +588,39 @@ fn improves_token_counts(
         })
 }
 
+/// Some models return a JSON-encoded string despite the plain-text contract.
+/// Decode one layer only when source punctuation/layout and token counts make
+/// that interpretation safe. Real source quotation marks remain in the value.
+fn decode_translation_string(source: &str, response: String) -> String {
+    let Ok(decoded) = serde_json::from_str::<String>(&response) else {
+        return response;
+    };
+    if decoded.trim().is_empty() || decoded.contains('\0') {
+        return response;
+    }
+    for character in ['"', '\n', '\r', '\\'] {
+        if source.matches(character).count() != decoded.matches(character).count() {
+            return response;
+        }
+    }
+    let fully_quoted = |text: &str, quote: char| {
+        let text = text.trim();
+        text.len() > 1 && text.starts_with(quote) && text.ends_with(quote)
+    };
+    for quote in ['"', '\''] {
+        if fully_quoted(source, quote) != fully_quoted(&decoded, quote) {
+            return response;
+        }
+    }
+    let previous = tokens::token_differences(source, &response);
+    let candidate = tokens::token_differences(source, &decoded);
+    if candidate == previous || improves_token_counts(&previous, &candidate) {
+        decoded
+    } else {
+        response
+    }
+}
+
 /// Translate one selected source string with up to two nearby English sources
 /// on either side as read-only context. Only the selected source is eligible to
 /// become the returned translation; retries preserve the same context boundary.
@@ -629,6 +662,7 @@ pub async fn translate_with_context(
         stop.clone(),
     )
     .await?;
+    let first = decode_translation_string(source, first);
     let differences = tokens::token_differences(source, &first);
     if differences.is_empty() {
         return Ok(result(first));
@@ -651,6 +685,7 @@ pub async fn translate_with_context(
         stop,
     )
     .await?;
+    let second = decode_translation_string(source, second);
     let second_differences = tokens::token_differences(source, &second);
 
     if improves_token_counts(&differences, &second_differences) {
@@ -663,6 +698,44 @@ pub async fn translate_with_context(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn json_string_decoding_preserves_real_quotes_layout_and_escapes() {
+        for (source, translated) in [
+            ("Hello {{name}}!", "Hallo {{name}}!"),
+            ("\"Hello {{name}}!\"", "\"Hallo {{name}}!\""),
+            ("Say \"hello\".", "Sag \"hallo\"."),
+            ("'Hello!'", "'Hallo!'"),
+            ("Hello\n{{name}}!", "Hallo\n{{name}}!"),
+            ("Read C:\\notes\\{{name}}.", "Lies C:\\Notizen\\{{name}}."),
+        ] {
+            let encoded = serde_json::to_string(translated).unwrap();
+            assert_eq!(decode_translation_string(source, encoded), translated);
+        }
+    }
+
+    #[test]
+    fn ambiguous_quotes_invalid_json_and_added_runtime_tokens_stay_untouched() {
+        for (source, response) in [
+            ("\"Hello!\"", "\"Hallo!\""),
+            ("Hello!", "Hallo!"),
+            ("Hello!", "```\"Hallo!\"```"),
+            ("Hello!", "{\"translation\":\"Hallo!\"}"),
+            ("Hello!", "\"Hallo!\" commentary"),
+            ("Hello!", "\"\""),
+            ("Hello!", "\"\\u0000\""),
+            ("Hello!", "\"\\u0040\""),
+            ("Hello!", "\"Hallo!\\nMore\""),
+            ("Hello!", "\"\\\"Hallo!\\\"\""),
+            ("Hello!", "\"'Hallo!'\""),
+            ("C:\\notes", "\"C:notes\""),
+        ] {
+            assert_eq!(
+                decode_translation_string(source, response.to_string()),
+                response
+            );
+        }
+    }
 
     #[test]
     fn parses_openai_model_list() {

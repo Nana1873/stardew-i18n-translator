@@ -159,6 +159,12 @@ and [llm.rs](../src-tauri/src/llm.rs).
   tokens trigger one targeted retry with the source's exact token counts. The
   retry replaces the first draft only when it reduces count errors without
   worsening another token. Unresolved mismatches remain visible in Review.
+- If a Local AI response is a valid JSON-encoded string, the client decodes one
+  layer only when it preserves the source's quotation layout, double-quote,
+  line-break, and backslash counts without worsening protected-token validation.
+  Genuine quotation marks stay in the translation. Ambiguous or malformed
+  responses remain unchanged for Review; decoding does not check wording or
+  meaning and does not require structured-output support from the service.
 - ChatGPT chunks contain at most 100 strings; each complete serialized prompt is
   bounded to 96 KiB. Repeated neighboring context is pooled without losing its
   order or boundaries. Oversized single-item prompts trim the farthest context

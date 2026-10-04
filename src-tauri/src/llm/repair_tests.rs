@@ -181,3 +181,25 @@ fn preserves_legitimate_quotes_and_does_not_retry_soft_layout_differences() {
         assert!(result.missing_tokens.is_empty());
     }
 }
+
+#[test]
+fn encoded_translation_is_decoded_before_saving_or_retrying_tokens() {
+    for (source, translated) in [
+        ("Hello {{name}}!", "Hallo {{name}}!"),
+        ("\"Hello {{name}}!\"", "\"Hallo {{name}}!\""),
+    ] {
+        let encoded = serde_json::to_string(translated).unwrap();
+        let (result, requests) = translate(source, &[&encoded]);
+        assert_eq!(result.text, translated);
+        assert_eq!(requests.len(), 1);
+    }
+    let first = serde_json::to_string("Hallo {{name}} {{Other}}!").unwrap();
+    let repaired = serde_json::to_string("Hallo {{name}}!").unwrap();
+    let (result, requests) = translate("Hello {{name}}!", &[&first, &repaired]);
+    assert_eq!(result.text, "Hallo {{name}}!");
+    assert_eq!(requests.len(), 2);
+    assert!(requests[1]["messages"][0]["content"]
+        .as_str()
+        .unwrap()
+        .contains("\"{{Other}}\": expected 0, previous response 1"));
+}
