@@ -87,7 +87,7 @@ export async function advancedCases(h) {
           height: 780,
         });
         await selectMod("E2E.DesktopSmoke");
-        const measure = async (name, selectors) => {
+        const measure = async (name, selectors, expectedWidth = 1100) => {
           const result = await driver.executeScript((selectors) => {
             const controls = selectors.flatMap((selector) => {
               const nodes = [...document.querySelectorAll(selector)];
@@ -123,6 +123,21 @@ export async function advancedCases(h) {
               ratio: devicePixelRatio,
               overflow: document.documentElement.scrollWidth > innerWidth + 1,
               controls,
+              workspaceRects: Object.fromEntries(
+                [
+                  ".translator-string-head",
+                  ".translator-string-toolbar",
+                  ".desktop-workspace-filter-controls",
+                  ".translator-string-table-head",
+                  '[aria-label="Select greeting"]',
+                ].map((selector) => [
+                  selector,
+                  document
+                    .querySelector(selector)
+                    ?.getBoundingClientRect()
+                    .toJSON(),
+                ]),
+              ),
               editorFooter: footer && {
                 contentLeft:
                   footer.getBoundingClientRect().left +
@@ -140,7 +155,7 @@ export async function advancedCases(h) {
           );
           assert.equal(
             result.width,
-            1100,
+            expectedWidth,
             "Keep the logical viewport fixed across rendering scales.",
           );
           assert.equal(result.height, 780);
@@ -180,12 +195,62 @@ export async function advancedCases(h) {
             assert.ok(saves[0].bottom + 5 <= saves[1].top);
           }
           await screenshot(`layout-${scale}-${name}`);
+          return result;
         };
         await measure("workspace", [
           '[aria-label="Settings"]',
           '[aria-label="Search strings"]',
           '[aria-label="Scan mods"]',
         ]);
+        for (const width of [1024, 1100, 1315]) {
+          await driver.manage().window().setRect({ width, height: 780 });
+          const before = await measure(`selection-${width}-none`, [], width);
+          const unchanged = (after) => {
+            for (const [selector, rect] of Object.entries(
+              before.workspaceRects,
+            )) {
+              assert.ok(rect && after.workspaceRects[selector], selector);
+              for (const dimension of ["x", "y", "width", "height"])
+                assert.ok(
+                  Math.abs(
+                    rect[dimension] - after.workspaceRects[selector][dimension],
+                  ) < 1,
+                  `Selection must not move ${selector} (${dimension}) at width ${width}.`,
+                );
+            }
+          };
+          await click(css('[aria-label="Select greeting"]'));
+          await element(
+            css('.translator-bulk-button[data-has-selection="true"]'),
+          );
+          unchanged(
+            await measure(
+              `selection-${width}-one`,
+              [
+                ".translator-bulk-button",
+                '[aria-label="Clear string selection"]',
+              ],
+              width,
+            ),
+          );
+          await click(css('[aria-label="Select all visible strings"]'));
+          unchanged(
+            await measure(
+              `selection-${width}-all`,
+              [
+                ".translator-bulk-button",
+                '[aria-label="Clear string selection"]',
+              ],
+              width,
+            ),
+          );
+          await click(css('[aria-label="Clear string selection"]'));
+          await absent(
+            css('.translator-bulk-button[data-has-selection="true"]'),
+          );
+          unchanged(await measure(`selection-${width}-cleared`, [], width));
+        }
+        await driver.manage().window().setRect({ width: 1100, height: 780 });
         await openEntry("greeting");
         await measure("editor", [
           "#translator-editor-translation",

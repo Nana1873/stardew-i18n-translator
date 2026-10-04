@@ -1437,7 +1437,10 @@ describe("StringTable workbench", () => {
     fireEvent.click(rowFor("greeting"));
     fireEvent.click(rowFor("token"), { shiftKey: true });
     expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
-    expect(screen.getByText("Ctrl+click adds more")).toBeVisible();
+    expect(screen.getByRole("button", { name: /3 selected/ })).toHaveAttribute(
+      "title",
+      "Ctrl+click adds more",
+    );
   });
 
   it("handles Ctrl+A across the workspace while preserving native input selection", async () => {

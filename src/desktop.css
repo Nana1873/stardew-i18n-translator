@@ -206,8 +206,36 @@
 }
 #stardew-i18n-translator .translator-string-head {
   min-height: 44px;
+  flex-shrink: 0;
   padding: 6px 8px;
   background: var(--translator-title);
+}
+#stardew-i18n-translator .translator-string-title {
+  flex: 1;
+}
+#stardew-i18n-translator .translator-string-pane {
+  container-type: inline-size;
+}
+#stardew-i18n-translator .translator-string-meta {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+/* Reserve selection actions in the header so selecting rows never reflows filters. */
+#stardew-i18n-translator .translator-string-head > .translator-bulk-wrap {
+  flex: none;
+  width: 168px;
+  min-height: 29px;
+}
+#stardew-i18n-translator .translator-string-head .translator-bulk-button {
+  white-space: nowrap;
+}
+@container (max-width: 700px) {
+  #stardew-i18n-translator .translator-string-head > .translator-bulk-wrap {
+    width: 104px;
+  }
+  #stardew-i18n-translator .translator-selection-label {
+    display: none;
+  }
 }
 #stardew-i18n-translator .translator-string-parent-context {
   display: none;
@@ -234,6 +262,7 @@
   background: transparent;
 }
 #stardew-i18n-translator .translator-string-toolbar {
+  flex-shrink: 0;
   grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) auto;
   gap: 8px;
   padding: 6px 8px;
@@ -553,7 +582,7 @@
     grid-row: 2;
     flex-wrap: wrap;
   }
-  #stardew-i18n-translator .translator-bulk-wrap {
+  #stardew-i18n-translator .translator-column-tools {
     grid-column: 2;
     grid-row: 1;
   }

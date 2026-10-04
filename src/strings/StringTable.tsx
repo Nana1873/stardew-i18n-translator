@@ -41,6 +41,7 @@ import {
   Pencil,
   SearchX,
   Sparkles,
+  X,
 } from "lucide-react";
 import {
   type AiEngine,
@@ -2173,6 +2174,7 @@ export function StringTable({
             <div className="translator-string-title">
               <h1 tabIndex={-1}>{headerTitle ?? mod?.name ?? "All mods"}</h1>
             </div>
+            <div className="translator-bulk-wrap" />
             {headerActions}
           </div>
           <div className="panel__empty translator-empty-state" role="status">
@@ -2194,6 +2196,7 @@ export function StringTable({
             <div className="translator-string-title">
               <h1 tabIndex={-1}>{headerTitle ?? mod?.name ?? "All mods"}</h1>
             </div>
+            <div className="translator-bulk-wrap" />
             {headerActions}
           </div>
           <div className="panel__empty translator-empty-state" role="alert">
@@ -2357,6 +2360,123 @@ export function StringTable({
               )}
             </div>
           </div>
+          <div className="translator-bulk-wrap">
+            {selection.size > 0 && (
+              <>
+                <button
+                  ref={bulkTriggerRef}
+                  className="translator-button translator-button-quiet translator-bulk-button"
+                  type="button"
+                  title="Ctrl+click adds more"
+                  aria-label={`${selection.size} selected`}
+                  aria-haspopup="menu"
+                  aria-expanded={bulkMenuOpen}
+                  data-has-selection="true"
+                  onClick={() => setBulkMenuOpen((current) => !current)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "ArrowDown") return;
+                    event.preventDefault();
+                    if (!bulkMenuOpen) setBulkMenuOpen(true);
+                    else {
+                      requestAnimationFrame(() => {
+                        const menu = bulkMenuRef.current;
+                        focusMenuItem(menu, menuButtons(menu)[0]);
+                      });
+                    }
+                  }}
+                >
+                  <ListChecks aria-hidden="true" />
+                  <span>
+                    {selection.size}
+                    <span className="translator-selection-label">
+                      {" "}
+                      selected
+                    </span>
+                  </span>
+                </button>
+                <button
+                  className="translator-icon-button"
+                  type="button"
+                  aria-label="Clear string selection"
+                  title="Clear selection"
+                  onClick={() => {
+                    setSelection(new Set());
+                    setBulkMenuOpen(false);
+                    anchor.current = null;
+                    onNotify?.("Selection cleared.", "info");
+                  }}
+                >
+                  <X aria-hidden="true" />
+                </button>
+              </>
+            )}
+            {bulkMenuOpen && (
+              <div
+                ref={bulkMenuRef}
+                className="translator-popover"
+                role="menu"
+                aria-label="Batch actions"
+                onKeyDown={(event) =>
+                  moveMenuFocus(event, bulkMenuRef.current, () =>
+                    closeBulkMenu(),
+                  )
+                }
+                onBlur={(event) => {
+                  const next = event.relatedTarget as Node | null;
+                  if (!next || !event.currentTarget.contains(next)) {
+                    closeBulkMenu(false);
+                  }
+                }}
+              >
+                <span className="translator-popover-note" role="presentation">
+                  <strong>{selection.size} selected</strong> ·{" "}
+                  <span>
+                    {batchEligibleRows.length} Open/Changed
+                    {batchEligibleRows.length > 0 &&
+                      (singleModSelection
+                        ? " exportable"
+                        : ` · ${batchEligibleModIds.size} mods`)}
+                    {liveAiExcludedCount > 0
+                      ? ` · ${liveAiEligibleRows.length} AI-ready`
+                      : ""}
+                  </span>
+                </span>
+                <ActionButtons
+                  mutationPending={bulkSaving}
+                  canRunAi={canRunAi}
+                  llmActionEnabled={llmActionEnabled}
+                  aiUnavailableReason={aiUnavailableReason}
+                  llmUnavailableReason={llmUnavailableReason}
+                  llmCount={
+                    batchEligibleRows.length > 0 && !singleModSelection
+                      ? "select one mod"
+                      : undefined
+                  }
+                  onCopySource={() => void copySelection("source")}
+                  onCopyTarget={() => void copySelection("target")}
+                  onMarkDone={() =>
+                    void applyStatus("translated", "keep", "Updated status")
+                  }
+                  onKeepOriginal={() =>
+                    void applyStatus(
+                      "translated",
+                      "source",
+                      "Kept original text",
+                    )
+                  }
+                  onClear={() =>
+                    void applyStatus(
+                      "untranslated",
+                      "clear",
+                      "Cleared translations",
+                    )
+                  }
+                  onAi={startBatch}
+                  onLlmExport={() => void startLlmBatchExport()}
+                />
+              </div>
+            )}
+          </div>
           {headerActions}
         </div>
 
@@ -2456,7 +2576,7 @@ export function StringTable({
             </div>
           }
 
-          <div className="translator-bulk-wrap">
+          <div className="translator-column-tools">
             <button
               className="translator-icon-button"
               type="button"
@@ -2471,117 +2591,6 @@ export function StringTable({
             >
               <Columns2 aria-hidden="true" />
             </button>
-            {selection.size > 0 && (
-              <span className="translator-selection-hint">
-                Ctrl+click adds more
-              </span>
-            )}
-            {selection.size > 0 && (
-              <>
-                <button
-                  ref={bulkTriggerRef}
-                  className="translator-button translator-button-quiet translator-bulk-button"
-                  type="button"
-                  aria-haspopup="menu"
-                  aria-expanded={bulkMenuOpen}
-                  data-has-selection="true"
-                  onClick={() => setBulkMenuOpen((current) => !current)}
-                  onKeyDown={(event) => {
-                    if (event.key !== "ArrowDown") return;
-                    event.preventDefault();
-                    if (!bulkMenuOpen) setBulkMenuOpen(true);
-                    else {
-                      requestAnimationFrame(() => {
-                        const menu = bulkMenuRef.current;
-                        focusMenuItem(menu, menuButtons(menu)[0]);
-                      });
-                    }
-                  }}
-                >
-                  <ListChecks aria-hidden="true" />
-                  <span>{selection.size} selected</span>
-                </button>
-                <button
-                  className="translator-query-clear"
-                  type="button"
-                  aria-label="Clear string selection"
-                  onClick={() => {
-                    setSelection(new Set());
-                    setBulkMenuOpen(false);
-                    anchor.current = null;
-                    onNotify?.("Selection cleared.", "info");
-                  }}
-                >
-                  Clear selection
-                </button>
-              </>
-            )}
-            {bulkMenuOpen && (
-              <div
-                ref={bulkMenuRef}
-                className="translator-popover"
-                role="menu"
-                aria-label="Batch actions"
-                onKeyDown={(event) =>
-                  moveMenuFocus(event, bulkMenuRef.current, () =>
-                    closeBulkMenu(),
-                  )
-                }
-                onBlur={(event) => {
-                  const next = event.relatedTarget as Node | null;
-                  if (!next || !event.currentTarget.contains(next)) {
-                    closeBulkMenu(false);
-                  }
-                }}
-              >
-                <span className="translator-popover-note" role="presentation">
-                  <strong>{selection.size} selected</strong> ·{" "}
-                  <span>
-                    {batchEligibleRows.length} Open/Changed
-                    {batchEligibleRows.length > 0 &&
-                      (singleModSelection
-                        ? " exportable"
-                        : ` · ${batchEligibleModIds.size} mods`)}
-                    {liveAiExcludedCount > 0
-                      ? ` · ${liveAiEligibleRows.length} AI-ready`
-                      : ""}
-                  </span>
-                </span>
-                <ActionButtons
-                  mutationPending={bulkSaving}
-                  canRunAi={canRunAi}
-                  llmActionEnabled={llmActionEnabled}
-                  aiUnavailableReason={aiUnavailableReason}
-                  llmUnavailableReason={llmUnavailableReason}
-                  llmCount={
-                    batchEligibleRows.length > 0 && !singleModSelection
-                      ? "select one mod"
-                      : undefined
-                  }
-                  onCopySource={() => void copySelection("source")}
-                  onCopyTarget={() => void copySelection("target")}
-                  onMarkDone={() =>
-                    void applyStatus("translated", "keep", "Updated status")
-                  }
-                  onKeepOriginal={() =>
-                    void applyStatus(
-                      "translated",
-                      "source",
-                      "Kept original text",
-                    )
-                  }
-                  onClear={() =>
-                    void applyStatus(
-                      "untranslated",
-                      "clear",
-                      "Cleared translations",
-                    )
-                  }
-                  onAi={startBatch}
-                  onLlmExport={() => void startLlmBatchExport()}
-                />
-              </div>
-            )}
           </div>
         </div>
 
