@@ -351,6 +351,18 @@
 #stardew-i18n-translator .desktop-task-label[data-status="issues"] {
   --desktop-label-color: var(--translator-red);
 }
+#stardew-i18n-translator .desktop-issues {
+  position: relative;
+  margin-inline-start: 10px;
+}
+#stardew-i18n-translator .desktop-issues::before {
+  content: "";
+  position: absolute;
+  inset-block: 4px;
+  inset-inline-start: -9px;
+  border-inline-start: 1px solid var(--translator-border);
+  pointer-events: none;
+}
 #stardew-i18n-translator button.desktop-task-label:hover:not(:disabled) {
   color: var(--desktop-label-color);
   background: var(--translator-surface-soft);
