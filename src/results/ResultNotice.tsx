@@ -1,4 +1,4 @@
-import { type RefObject, useEffect, useRef } from "react";
+import { type RefObject } from "react";
 import { AlertTriangle, CheckCircle2, CircleX, Loader2, X } from "lucide-react";
 import type { ResultProblem, ResultTrayData } from "../results/ResultTray";
 
@@ -40,25 +40,6 @@ export function ResultNotice({
   onClose: () => void;
   toggleButtonRef?: RefObject<HTMLButtonElement | null>;
 }) {
-  const noticeRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const notice = noticeRef.current;
-    const app = document.getElementById("stardew-i18n-translator");
-    if (!notice || !app) return;
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(() => {
-      app.style.setProperty(
-        "--desktop-result-height",
-        `${notice.offsetHeight}px`,
-      );
-    });
-    observer.observe(notice);
-    return () => {
-      observer.disconnect();
-      app.style.removeProperty("--desktop-result-height");
-    };
-  }, []);
-
   const { tone } = presentation;
   const unresolved = data.problems.filter((problem) => !problem.resolved);
   const warnings = presentation.notices.filter((notice) => notice.tone);
@@ -170,7 +151,6 @@ export function ResultNotice({
           : CheckCircle2;
   return (
     <aside
-      ref={noticeRef}
       className={`translator-toast desktop-result-notice is-${tone}`}
       data-visible="true"
       data-operation-tone={tone}

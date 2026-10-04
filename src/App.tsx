@@ -2057,6 +2057,103 @@ export function App() {
     />
   );
 
+  const workspaceNotifications = (
+    <>
+      {toast && (
+        <div
+          className={`translator-toast is-${toast.tone}`}
+          role={toast.tone === "error" ? "alert" : "status"}
+          aria-live={toast.tone === "error" ? "assertive" : "polite"}
+          data-visible="true"
+          key={toast.id}
+        >
+          {toast.tone === "success" ? (
+            <CheckCircle2 aria-hidden />
+          ) : toast.tone === "warning" ? (
+            <AlertTriangle aria-hidden />
+          ) : toast.tone === "error" ? (
+            <CircleX aria-hidden />
+          ) : (
+            <Info aria-hidden />
+          )}
+          <span>{toast.message}</span>
+          {toast.scanDetails && (
+            <button
+              className="translator-button translator-button-quiet desktop-scan-toast-details"
+              type="button"
+              onClick={() => {
+                setToast(null);
+                openLatestScan();
+              }}
+            >
+              Details…
+            </button>
+          )}
+          {(toast.tone === "error" || true) && (
+            <button
+              className="translator-toast-dismiss"
+              type="button"
+              aria-label="Dismiss notification"
+              onClick={() => setToast(null)}
+            >
+              <X aria-hidden />
+            </button>
+          )}
+        </div>
+      )}
+      {resultTray && !resultHidden && (
+        <ResultTray
+          data={resultTray}
+          history={operationHistory}
+          selectedHistoryId={selectedHistoryId}
+          onSelectHistory={selectHistoryEntry}
+          onToggle={() =>
+            setResultTray((current) =>
+              current ? { ...current, collapsed: !current.collapsed } : current,
+            )
+          }
+          toggleButtonRef={resultToggleButtonRef}
+          onClose={() => {
+            setResultHidden(true);
+            window.requestAnimationFrame(() =>
+              latestResultButtonRef.current?.focus(),
+            );
+          }}
+          onInspect={inspectResultProblem}
+          onRetry={
+            resultTray.kind === "export"
+              ? retryResultExport
+              : resultTray.kind === "import"
+                ? () => {
+                    setImportDialogInitialError(null);
+                    setImportDialogPath(null);
+                  }
+                : undefined
+          }
+          onOpenFolder={(path) => void openFolder(path)}
+          onOpenReview={
+            (resultTray.kind === "export" &&
+              (resultTray.result?.totalReviewNeeded ?? 0) +
+                (resultTray.result?.totalOutdated ?? 0) >
+                0) ||
+            (resultTray.kind === "import" && resultTray.summary?.imported) ||
+            resultTray.kind === "ai-batch" ||
+            (resultTray.kind === "history" &&
+              (resultTray.entry.kind === "import" ||
+                resultTray.entry.kind === "ai") &&
+              resultTray.entry.itemCount > 0)
+              ? openResultReviewQueue
+              : undefined
+          }
+          onUndoBulk={
+            selectedHistoryEntry?.canUndo ? undoLatestBulk : undefined
+          }
+          onNotify={(message) => notify(message, "success", false, false)}
+        />
+      )}
+    </>
+  );
+
   return (
     <div id="stardew-i18n-translator" className="app">
       <div
@@ -2070,6 +2167,7 @@ export function App() {
       >
         {Boolean(settingsLoadError) && workspaceToolbar}
         <ActivityLog
+          notifications={workspaceNotifications}
           lastScanAt={lastScanAt}
           modCount={scan?.modCount ?? 0}
           totalStrings={
@@ -2388,58 +2486,6 @@ export function App() {
             onClose={closeScanDialog}
           />
         )}
-        {resultTray && !resultHidden && (
-          <ResultTray
-            data={resultTray}
-            history={operationHistory}
-            selectedHistoryId={selectedHistoryId}
-            onSelectHistory={selectHistoryEntry}
-            onToggle={() =>
-              setResultTray((current) =>
-                current
-                  ? { ...current, collapsed: !current.collapsed }
-                  : current,
-              )
-            }
-            toggleButtonRef={resultToggleButtonRef}
-            onClose={() => {
-              setResultHidden(true);
-              window.requestAnimationFrame(() =>
-                latestResultButtonRef.current?.focus(),
-              );
-            }}
-            onInspect={inspectResultProblem}
-            onRetry={
-              resultTray.kind === "export"
-                ? retryResultExport
-                : resultTray.kind === "import"
-                  ? () => {
-                      setImportDialogInitialError(null);
-                      setImportDialogPath(null);
-                    }
-                  : undefined
-            }
-            onOpenFolder={(path) => void openFolder(path)}
-            onOpenReview={
-              (resultTray.kind === "export" &&
-                (resultTray.result?.totalReviewNeeded ?? 0) +
-                  (resultTray.result?.totalOutdated ?? 0) >
-                  0) ||
-              (resultTray.kind === "import" && resultTray.summary?.imported) ||
-              resultTray.kind === "ai-batch" ||
-              (resultTray.kind === "history" &&
-                (resultTray.entry.kind === "import" ||
-                  resultTray.entry.kind === "ai") &&
-                resultTray.entry.itemCount > 0)
-                ? openResultReviewQueue
-                : undefined
-            }
-            onUndoBulk={
-              selectedHistoryEntry?.canUndo ? undoLatestBulk : undefined
-            }
-            onNotify={(message) => notify(message, "success", false, false)}
-          />
-        )}
         {exportConfirm && (
           <ExportConfirmDialog
             modName={exportConfirm.title}
@@ -2587,48 +2633,6 @@ export function App() {
             onSave={savePendingLlmBatch}
             onClose={() => setLlmExportDialog(null)}
           />
-        )}
-        {toast && (
-          <div
-            className={`translator-toast is-${toast.tone}`}
-            role={toast.tone === "error" ? "alert" : "status"}
-            aria-live={toast.tone === "error" ? "assertive" : "polite"}
-            data-visible="true"
-            key={toast.id}
-          >
-            {toast.tone === "success" ? (
-              <CheckCircle2 aria-hidden />
-            ) : toast.tone === "warning" ? (
-              <AlertTriangle aria-hidden />
-            ) : toast.tone === "error" ? (
-              <CircleX aria-hidden />
-            ) : (
-              <Info aria-hidden />
-            )}
-            <span>{toast.message}</span>
-            {toast.scanDetails && (
-              <button
-                className="translator-button translator-button-quiet desktop-scan-toast-details"
-                type="button"
-                onClick={() => {
-                  setToast(null);
-                  openLatestScan();
-                }}
-              >
-                Details…
-              </button>
-            )}
-            {(toast.tone === "error" || true) && (
-              <button
-                className="translator-toast-dismiss"
-                type="button"
-                aria-label="Dismiss notification"
-                onClick={() => setToast(null)}
-              >
-                <X aria-hidden />
-              </button>
-            )}
-          </div>
         )}
       </div>
     </div>

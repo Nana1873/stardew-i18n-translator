@@ -92,24 +92,6 @@ function AiRunProgressNotice({
   const [cancelError, setCancelError] = useState<string | null>(null);
   const [runFinished, setRunFinished] = useState(false);
   const noticeRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const notice = noticeRef.current;
-    const root = document.getElementById("stardew-i18n-translator");
-    if (!notice || !root) return;
-    const measure = () =>
-      root.style.setProperty(
-        "--desktop-ai-height",
-        `${notice.getBoundingClientRect().height}px`,
-      );
-    if (typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(notice);
-    measure();
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty("--desktop-ai-height");
-    };
-  }, []);
 
   function finish(result: BatchFinishedResult) {
     if (finished.current) return;

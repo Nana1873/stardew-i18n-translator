@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChevronDown, ChevronUp, Copy } from "lucide-react";
 import type { OperationHistoryEntry } from "../tauri/commands";
 import {
@@ -26,6 +26,7 @@ export function ActivityLog({
   height,
   onHeightChange,
   onDetails,
+  notifications,
 }: {
   lastScanAt: number | null;
   modCount: number;
@@ -40,6 +41,7 @@ export function ActivityLog({
   height: number;
   onHeightChange: (height: number) => void;
   onDetails: (details: ActivityDetails) => void;
+  notifications?: ReactNode;
 }) {
   const [buffer, setBuffer] = useState<ActivityBuffer>({
     entries: [],
@@ -203,6 +205,14 @@ export function ActivityLog({
   return (
     <section className="desktop-log-panel" aria-label="Activity log">
       <div
+        className="desktop-notifications"
+        role="region"
+        aria-label="Notifications"
+      >
+        {notifications}
+        <div id="ai-progress-slot" />
+      </div>
+      <div
         className="desktop-log-resize"
         role="separator"
         aria-label="Resize Activity log"
@@ -254,7 +264,6 @@ export function ActivityLog({
             Latest entries
           </button>
         )}
-        <div id="ai-progress-slot" />
         <button
           type="button"
           className="translator-button translator-button-quiet"

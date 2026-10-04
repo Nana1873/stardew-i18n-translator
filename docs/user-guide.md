@@ -113,6 +113,11 @@ acceptances, batch edits, AI progress, and operation results. Consecutive manual
 saves in the same mod are grouped briefly. Routine clipboard and selection
 notifications stay out of the log; failures are recorded.
 
+Notifications and ongoing AI progress share a stack just above the Activity
+log. Resizing the log moves that stack with its top edge, keeping entries and
+log controls clear. Multiple notices stack vertically; a tall stack scrolls
+within the available workspace height.
+
 AI runs record main batch steps, received draft counts, saved counts, and
 recovery or failure messages. Subtle dots mark each currently active step;
 they stop when that step ends or the run is cancelled or finishes. The dots
