@@ -72,7 +72,9 @@ selected mod scope, keeping your search. Selecting Open, Changed, Review, Done,
 or All leaves the Issues view. Missing or changed protected
 tokens and invalid text can block export. Suspicious literal escape changes
 can produce warnings without blocking. Open an affected string to inspect the
-source and target. If a token difference is intentional, **Save anyway** accepts
+source and target. Yellow triangles mark warnings; red circles mark errors that
+block export. Hover or focus an icon to see the finding and its effect on export.
+If a token difference is intentional, **Save anyway** accepts
 that exact source/target mismatch; editing it again can require a new decision.
 
 ## Search, select, and work in batches

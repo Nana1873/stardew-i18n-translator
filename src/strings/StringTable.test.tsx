@@ -1064,6 +1064,66 @@ describe("StringTable workbench", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("distinguishes export-blocking errors from warnings in one Issues view", async () => {
+    installBackendRows({
+      "a.b": [
+        {
+          ...ROWS["a.b"][0],
+          key: "warning",
+          source: "Line one\\nLine two",
+          target: "Zeile eins\nZeile zwei",
+        },
+        { ...ROWS["a.b"][2], key: "error" },
+        {
+          ...ROWS["a.b"][2],
+          key: "mixed",
+          source: "Hello {{name}}\\n",
+        },
+        {
+          ...ROWS["a.b"][2],
+          key: "accepted",
+          source: "Hello {{name}}\\n",
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("warning");
+
+    const warning = within(rowFor("warning")).getByRole("button", {
+      name: /^Warning: does not block export\./,
+    });
+    const error = within(rowFor("error")).getByRole("button", {
+      name: /^Error: blocks export\./,
+    });
+    expect(warning).toHaveAttribute("data-severity", "warning");
+    expect(error).toHaveAttribute("data-severity", "error");
+    expect(
+      within(rowFor("mixed")).getByRole("button", {
+        name: /^Error: blocks export\./,
+      }),
+    ).toHaveAttribute("data-severity", "error");
+    expect(
+      within(rowFor("accepted")).getByRole("button", {
+        name: /^Warning: does not block export\./,
+      }),
+    ).toHaveAttribute("data-severity", "warning");
+
+    fireEvent.focus(warning);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Warning: does not block export. Literal escape sequences differ from the original",
+    );
+    fireEvent.blur(warning);
+    fireEvent.focus(error);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Error: blocks export. Token count mismatch",
+    );
+    fireEvent.blur(error);
+    fireEvent.click(screen.getByRole("button", { name: "Issues 4" }));
+    expect(dataRows()).toHaveLength(4);
+  });
+
   it("keeps checkbox and modifier selection gestures out of the editor", async () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");

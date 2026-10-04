@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { CircleAlert } from "lucide-react";
+import { CircleAlert, TriangleAlert } from "lucide-react";
 import type { OperationHistoryEntry } from "../tauri/commands";
 import type { StringTableFilter } from "../strings/StringTable";
+import type { Severity } from "../strings/validation";
 
 // Workspace status controls and activity feedback.
 export function DesktopFilters({
@@ -71,8 +72,9 @@ export function DesktopFilters({
   );
 }
 
-export function ValidationIcon() {
-  return <CircleAlert className="desktop-validation-icon" aria-hidden />;
+export function ValidationIcon({ severity }: { severity: Severity }) {
+  const Icon = severity === "warning" ? TriangleAlert : CircleAlert;
+  return <Icon className="desktop-validation-icon" aria-hidden />;
 }
 
 export function FileActionLabel({

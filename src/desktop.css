@@ -349,7 +349,7 @@
   --desktop-label-color: var(--translator-green);
 }
 #stardew-i18n-translator .desktop-task-label[data-status="issues"] {
-  --desktop-label-color: var(--translator-red);
+  --desktop-label-color: var(--translator-brand);
 }
 #stardew-i18n-translator .desktop-issues {
   position: relative;
@@ -403,6 +403,14 @@
 }
 #stardew-i18n-translator .translator-inline-validation:hover {
   background: var(--translator-red-soft);
+}
+#stardew-i18n-translator
+  .translator-inline-validation[data-severity="warning"] {
+  color: var(--translator-brand);
+}
+#stardew-i18n-translator
+  .translator-inline-validation[data-severity="warning"]:hover {
+  background: color-mix(in srgb, var(--translator-brand) 15%, transparent);
 }
 #stardew-i18n-translator .translator-string-row {
   font-size: 13px;

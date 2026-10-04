@@ -263,7 +263,7 @@ const STATUS_HELP: Record<StringStatus | "all" | "issues", string> = {
   "review-needed":
     "This imported or AI-generated suggestion still needs human approval.",
   issues:
-    "Only strings with an unresolved validation problem, such as a missing protected token.",
+    "Strings with unresolved errors or warnings. Warnings do not block export.",
   translated:
     "The translation was explicitly saved or accepted for the current English source.",
 };
@@ -3313,7 +3313,9 @@ function RowView({
   const statusHelp = noTranslationNeeded(row.source, row.target)
     ? "The source is empty; no translation text is needed."
     : STATUS_HELP[row.status];
-  const issueHelp = issues.map((issue) => issue.message).join(" ");
+  const issueHelp = severity
+    ? `${severity === "error" ? "Error: blocks export." : "Warning: does not block export."} ${issues.map((issue) => issue.message).join(" ")}`
+    : "";
   const matchesSearch = (field: SearchField, metadata = false) =>
     (!metadata || searchAllMetadata) &&
     searchFieldMatches(row, field, searchNeedles, searchLocale);
@@ -3550,6 +3552,7 @@ function RowView({
           <button
             className="translator-inline-validation"
             type="button"
+            data-severity={severity}
             aria-label={issueHelp}
             data-status-help={issueHelp}
             onPointerEnter={(event) =>
@@ -3566,7 +3569,7 @@ function RowView({
               onOpen();
             }}
           >
-            <ValidationIcon />
+            <ValidationIcon severity={severity} />
           </button>
         )}
         <button
