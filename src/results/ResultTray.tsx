@@ -46,6 +46,8 @@ interface ResultTrayBase {
   problems: ResultProblem[];
   /** Components associated with the Review result, when known. */
   reviewModUniqueIds?: string[];
+  /** Workspace owning Review entries from a captured live run. */
+  reviewWorkspace?: { modsPath: string | null; targetLang: string | null };
 }
 
 export type ResultTrayData =
@@ -79,6 +81,7 @@ export type ResultTrayData =
       done: number;
       total: number;
       engine: string;
+      targetLanguage?: string;
       undoAvailable: boolean;
     })
   | (ResultTrayBase & {

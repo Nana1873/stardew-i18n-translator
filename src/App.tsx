@@ -1881,8 +1881,13 @@ export function App() {
       done: result.done,
       total: result.total,
       engine: result.engine,
+      targetLanguage: languageLine,
       undoAvailable: false,
       reviewModUniqueIds: result.modUniqueIds,
+      reviewWorkspace: {
+        modsPath: settings?.modsPath ?? null,
+        targetLang: settings?.targetLang ?? null,
+      },
     };
     const historyEntry = result.runId
       ? aiHistoryByRunIdRef.current.get(result.runId)
@@ -1926,6 +1931,12 @@ export function App() {
   }
 
   function openResultReviewQueue() {
+    if (
+      resultTray?.reviewWorkspace &&
+      (resultTray.reviewWorkspace.modsPath !== settings?.modsPath ||
+        resultTray.reviewWorkspace.targetLang !== settings?.targetLang)
+    )
+      return;
     const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
     const exportModIds =
       resultTray?.kind === "export" && resultTray.retry.kind === "selected"
@@ -2141,16 +2152,20 @@ export function App() {
           }
           onOpenFolder={(path) => void openFolder(path)}
           onOpenReview={
-            (resultTray.kind === "export" &&
+            (!resultTray.reviewWorkspace ||
+              (resultTray.reviewWorkspace.modsPath === settings?.modsPath &&
+                resultTray.reviewWorkspace.targetLang ===
+                  settings?.targetLang)) &&
+            ((resultTray.kind === "export" &&
               (resultTray.result?.totalReviewNeeded ?? 0) +
                 (resultTray.result?.totalOutdated ?? 0) >
                 0) ||
-            (resultTray.kind === "import" && resultTray.summary?.imported) ||
-            resultTray.kind === "ai-batch" ||
-            (resultTray.kind === "history" &&
-              (resultTray.entry.kind === "import" ||
-                resultTray.entry.kind === "ai") &&
-              resultTray.entry.itemCount > 0)
+              (resultTray.kind === "import" && resultTray.summary?.imported) ||
+              resultTray.kind === "ai-batch" ||
+              (resultTray.kind === "history" &&
+                (resultTray.entry.kind === "import" ||
+                  resultTray.entry.kind === "ai") &&
+                resultTray.entry.itemCount > 0))
               ? openResultReviewQueue
               : undefined
           }

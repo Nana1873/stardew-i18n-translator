@@ -509,6 +509,14 @@ export async function progressCases(h) {
       });
       await h.absent(h.css('[aria-label="AI translation progress"]'));
       await h.element(h.css('[aria-label="Operation result"]'));
+      const completedNotice = await h.element(
+        h.css('[aria-label="Operation result"]'),
+      );
+      assert.ok((await completedNotice.getText()).includes("German (de)"));
+      assert.equal(
+        (await completedNotice.findElements(h.button("Open Review"))).length,
+        0,
+      );
       assert.deepEqual(
         await h.driver().executeScript(() => window.progressTestScans()),
         scansBeforeFinish,

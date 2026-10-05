@@ -2154,11 +2154,39 @@ describe("App shell", () => {
       );
       expect(screen.getByText("Current workspace translation")).toBeVisible();
       expect(screen.queryByText("Stale German suggestion")).toBeNull();
+      const result = screen.getByLabelText("Operation result");
+      expect(result).toHaveTextContent("German (de)");
+      expect(
+        within(result).queryByRole("button", { name: "Open Review" }),
+      ).toBeNull();
       expect(
         invokeMock.mock.calls
           .slice(beforeFinish)
           .filter(([cmd]) => cmd === "scan_mods" || cmd === "load_strings"),
       ).toEqual([]);
+      if (change === "language") {
+        fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+        fireEvent.change(screen.getByLabelText("Target language"), {
+          target: { value: "de" },
+        });
+        fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+        await waitFor(() =>
+          expect(invokeMock.mock.calls.slice(beforeFinish)).toContainEqual([
+            "load_strings",
+            expect.objectContaining({
+              targetPath: "E:/SDV/Mods/Test/i18n/de.json",
+            }),
+          ]),
+        );
+        expect(
+          within(screen.getByLabelText("Operation result")).getByRole(
+            "button",
+            {
+              name: "Open Review",
+            },
+          ),
+        ).toBeEnabled();
+      }
     },
   );
 

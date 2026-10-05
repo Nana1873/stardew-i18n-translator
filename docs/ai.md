@@ -93,6 +93,11 @@ only. Drafts can be received while quality checks are still running; the
 Cancelling keeps suggestions already saved and can also save valid drafts when
 a token repair is interrupted.
 
+A running batch remains tied to its original language and Mods folder when you
+change workspace settings. Its completion does not replace the new workspace's
+strings. The result identifies its language; **Open Review** is available when
+you return to the workspace that owns those suggestions.
+
 The **Activity log** records batch phase changes, repairs, retries, parallel
 limit changes, and saved suggestions with elapsed timestamps. It retains the
 latest 200 events. Older entries describe earlier work; only the active batch

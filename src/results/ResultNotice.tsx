@@ -46,7 +46,7 @@ export function ResultNotice({
   const exportResult = data.kind === "export" ? data.result : null;
   let copy = presentation.copy;
   if (data.kind === "ai-batch") {
-    copy = `${data.done} of ${data.total} saved to Review.`;
+    copy = `${data.done} of ${data.total} saved to Review${data.targetLanguage ? ` · ${data.targetLanguage}` : "."}`;
   }
   let cause = warnings[0]?.text ?? "";
   if (exportResult) {
