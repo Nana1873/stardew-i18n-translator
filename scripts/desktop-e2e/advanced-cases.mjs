@@ -294,7 +294,7 @@ export async function advancedCases(h) {
                 .querySelector('section[aria-label="ChatGPT"]')
                 .querySelectorAll(".translator-setting-line").length,
           ),
-          4,
+          5,
         );
         assert.equal(
           /Authentication|ChatGPT status|Check status|Plan usage/.test(
@@ -309,6 +309,7 @@ export async function advancedCases(h) {
         await measure("settings-chatgpt", [
           'section[aria-label="ChatGPT"] .translator-setting-actions button',
           '[aria-label="ChatGPT model"]',
+          '[aria-label="ChatGPT parallel batches"]',
           '[aria-label="ChatGPT reasoning"]',
           '.translator-switch:has([aria-label="AI quality checks"])',
           '[aria-label="Close settings"]',
