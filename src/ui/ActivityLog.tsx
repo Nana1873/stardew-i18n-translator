@@ -96,6 +96,7 @@ export function ActivityLog({
             message: entry.message,
             tone: entry.tone ?? (entry.warning ? "warning" : "info"),
             aiStep: entry.aiStep,
+            startsGroup: entry.startsGroup,
           },
           time,
         );
@@ -108,8 +109,26 @@ export function ActivityLog({
     };
   }, []);
   useEffect(() => {
+    // Completion history can arrive in the same render as its refresh scan.
+    // Append the completed operation before starting the new scan group.
+    for (const entry of [...history].reverse()) {
+      if (seenOperations.current.has(entry.id)) continue;
+      seenOperations.current.add(entry.id);
+      append(operationActivity(entry, modNames), entry.completedAtEpochMs);
+    }
+    while (seenOperations.current.size > 1000)
+      seenOperations.current.delete(
+        seenOperations.current.values().next().value!,
+      );
+  }, [history]);
+  useEffect(() => {
     if (scanning)
-      append({ kind: "message", message: "Scanning mods…", tone: "info" });
+      append({
+        kind: "message",
+        message: "Scanning mods…",
+        tone: "info",
+        startsGroup: true,
+      });
   }, [scanning]);
   useEffect(() => {
     if (scanError)
@@ -147,19 +166,6 @@ export function ActivityLog({
     );
   }, [lastScanAt]);
   useEffect(() => {
-    // A refresh may contain several completed operations, or only changed undo
-    // availability. Log each identity once, in completion order.
-    for (const entry of [...history].reverse()) {
-      if (seenOperations.current.has(entry.id)) continue;
-      seenOperations.current.add(entry.id);
-      append(operationActivity(entry, modNames), entry.completedAtEpochMs);
-    }
-    while (seenOperations.current.size > 1000)
-      seenOperations.current.delete(
-        seenOperations.current.values().next().value!,
-      );
-  }, [history]);
-  useEffect(() => {
     if (logRef.current && followTail.current)
       logRef.current.scrollTop = logRef.current.scrollHeight;
     else if (buffer.entries.length) setUnread(true);
@@ -179,10 +185,10 @@ export function ActivityLog({
       await navigator.clipboard.writeText(
         [
           ...prefix,
-          ...buffer.entries.map(
-            (entry) =>
-              `${new Date(entry.time).toLocaleTimeString("en-GB")} [${entry.tone}] ${entry.message}`,
-          ),
+          ...buffer.entries.flatMap((entry, index) => [
+            ...(index > 0 && entry.startsGroup ? [""] : []),
+            `${new Date(entry.time).toLocaleTimeString("en-GB")} [${entry.tone}] ${entry.message}`,
+          ]),
         ].join("\n"),
       );
       setCopyState("copied");
@@ -318,7 +324,7 @@ export function ActivityLog({
         {buffer.entries.length === 0 ? (
           <p>Ready. Scan your mods to begin.</p>
         ) : (
-          buffer.entries.map((entry) => {
+          buffer.entries.map((entry, index) => {
             const working =
               !!entry.aiStep &&
               activeSteps.has(entry.aiStep) &&
@@ -331,6 +337,7 @@ export function ActivityLog({
                 key={entry.id}
                 data-tone={entry.tone}
                 data-ai-active={working || undefined}
+                data-group-start={(index > 0 && entry.startsGroup) || undefined}
               >
                 <time dateTime={new Date(entry.time).toISOString()}>
                   {new Date(entry.time).toLocaleTimeString("en-GB")}

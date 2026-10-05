@@ -39,14 +39,16 @@ rejected with setup guidance; choose a compatible model if shown that message.
 
 1. Open **Settings > Translation engines > ChatGPT** and select **Sign in with ChatGPT**.
 2. Complete sign-in in your browser and allow this app to use your ChatGPT plan.
-3. Return to the app, choose a listed model or **Enter model ID…**, select
+3. Return to the app, keep the suggested model or choose a listed model or
+   **Enter model ID…**, select
    Low/Medium/High reasoning, and save.
 
 The app connects directly to OpenAI using its own browser-authorized session.
 No CLI installation or API key is required. The model catalog comes from your
 signed-in account; advertised reasoning capabilities limit the picker when provided.
 The catalog can omit usable models. **Enter model ID…** lets you specify an exact
-ID such as `gpt-6.1-sol`. Catalog refreshes preserve your saved selection even
+ID such as `gpt-6.1-sol`. If no model selection is saved, the model field starts
+with `gpt-6.1-sol`. Catalog refreshes and sign-out preserve your selection even
 when it is not listed.
 OpenAI checks availability and account/workspace permissions on each request.
 The account row shows your sign-in and offers **Manage usage** and **Sign out**.

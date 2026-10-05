@@ -2335,6 +2335,7 @@ describe("StringTable workbench", () => {
         }),
     );
     const onAiBatchFinished = vi.fn();
+    const onNotify = vi.fn();
     const onStatusFilterChange = vi.fn();
     const onStringSaved = vi.fn();
     render(
@@ -2362,6 +2363,7 @@ describe("StringTable workbench", () => {
         defaultAiEngine="local"
         onRunAi={onRunAi}
         onAiBatchFinished={onAiBatchFinished}
+        onNotify={onNotify}
         onStatusFilterChange={onStatusFilterChange}
         onStringSaved={onStringSaved}
       />,
@@ -2436,6 +2438,7 @@ describe("StringTable workbench", () => {
     );
 
     await waitFor(() => expect(onAiBatchFinished).toHaveBeenCalledOnce());
+    expect(onNotify).not.toHaveBeenCalled();
     expect(onAiBatchFinished).toHaveBeenCalledWith(
       expect.objectContaining({
         outcome: "complete",

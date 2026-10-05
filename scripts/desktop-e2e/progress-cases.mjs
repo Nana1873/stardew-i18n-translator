@@ -34,6 +34,11 @@ export async function progressCases(h) {
         ),
       ),
     );
+    const settingsPath = join(h.data, "settings.json");
+    const backupPath = settingsPath + ".bak";
+    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+    settings.ai = { ...settings.ai, cloudModel: null };
+    await writeFile(settingsPath, JSON.stringify(settings));
     await h.launch();
     // Controlled replies keep this UI acceptance independent of account access,
     // real model calls and translation quality. Events use the native event bridge.
@@ -42,6 +47,7 @@ export async function progressCases(h) {
       let resolveRun;
       let request;
       let engine;
+      let completedHistory;
       const scans = [];
       const reply = (value) =>
         Promise.resolve(
@@ -57,6 +63,10 @@ export async function progressCases(h) {
         if (endpoint.hostname !== "ipc.localhost")
           return original(url, ...args);
         const command = decodeURIComponent(endpoint.pathname.slice(1));
+        if (command === "list_operation_history" && completedHistory)
+          return original(url, ...args).then(async (response) =>
+            reply([completedHistory, ...(await response.json())].slice(0, 5)),
+          );
         if (command === "scan_mods") {
           const body = args[0].body;
           scans.push(
@@ -70,8 +80,8 @@ export async function progressCases(h) {
         if (command === "cloud_ai_models")
           return reply([
             {
-              model: "gpt-6.1-sol",
-              displayName: "GPT-6.1-Sol",
+              model: "e2e-catalog-model",
+              displayName: "E2E catalog model",
               isDefault: true,
               defaultReasoningEffort: "medium",
               supportedReasoningEfforts: ["low", "medium", "high"],
@@ -112,8 +122,20 @@ export async function progressCases(h) {
         Boolean(request) && engine === expected;
       window.progressTestRunId = () => request?.runId;
       window.progressTestScans = () => scans;
-      window.progressTestComplete = () =>
-        reply({
+      window.progressTestComplete = () => {
+        completedHistory = {
+          id: `progress-completion-${request.runId}`,
+          kind: "ai",
+          outcome: "success",
+          title: `${engine === "chatgpt" ? "ChatGPT" : "Local AI"} translation run`,
+          summary: "1 suggestion staged for review.",
+          itemCount: 1,
+          canUndo: false,
+          warnings: [],
+          details: [{ label: "Scope", value: "Selected strings" }],
+          completedAtEpochMs: Date.now(),
+        };
+        return reply({
           runId: request.runId,
           engine,
           model: "e2e-local-model",
@@ -132,6 +154,7 @@ export async function progressCases(h) {
             },
           ],
         }).then(resolveRun);
+      };
       window.progressTestSnapshot = (payload) =>
         window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
           event: "ai-run-progress",
@@ -153,8 +176,6 @@ export async function progressCases(h) {
       true,
       "The controlled IPC transport must be installed.",
     );
-    const settingsPath = join(h.data, "settings.json");
-    const backupPath = settingsPath + ".bak";
     let cloudProfile;
     let cloudBackup;
     try {
@@ -166,8 +187,20 @@ export async function progressCases(h) {
         ),
       );
       await h.element(h.button("Sign out"));
+      await h.waitFor(
+        "app default survives an unrelated model catalog",
+        async () =>
+          (await (
+            await h.element(h.css('[aria-label="ChatGPT model ID"]'))
+          ).getAttribute("value")) === "gpt-6.1-sol",
+      );
+      await h.screenshot("chatgpt-default-model");
       await h.click(h.button("Save changes"));
       await h.absent(h.css('[aria-label="Close settings"]'));
+      assert.equal(
+        JSON.parse(await readFile(settingsPath, "utf8")).ai.cloudModel,
+        "gpt-6.1-sol",
+      );
       await h.click(h.css('[data-tree-id="mod:E2E.ProgressSmoke"]'));
       await h.click(h.button("All"));
       await h.click(h.css('[aria-label="Select all visible strings"]'));
@@ -283,6 +316,37 @@ export async function progressCases(h) {
         inlineLayout,
         true,
         "A nonmodal notice with one progress bar must sit above the shared activity log.",
+      );
+      const groups = await h.driver().executeScript(() => {
+        const rows = Array.from(
+          document.querySelectorAll("#activity-log-entries > p"),
+        );
+        const starts = rows.filter((row) => row.dataset.groupStart === "true");
+        return {
+          separatedAi: starts.some((row) =>
+            row.textContent.includes("AI translation started"),
+          ),
+          separatedBatch: starts.some((row) =>
+            row.textContent.includes("Batch "),
+          ),
+          thinDividers: starts.every((row) => {
+            const style = getComputedStyle(row);
+            return (
+              style.borderTopStyle === "solid" &&
+              parseFloat(style.borderTopWidth) === 1 &&
+              parseFloat(style.marginTop) < 12
+            );
+          }),
+        };
+      });
+      assert.deepEqual(
+        groups,
+        {
+          separatedAi: true,
+          separatedBatch: false,
+          thinDividers: true,
+        },
+        "A thin divider must separate a new AI run while its parallel batch steps remain together.",
       );
       await h.screenshot("activity-log-cloud");
       await writeFile(
@@ -450,8 +514,42 @@ export async function progressCases(h) {
         await localDialog.takeScreenshot(),
         "base64",
       );
-      await h.click(h.button("Cancel"));
+      await h.driver().executeAsyncScript((done) => {
+        window.progressTestComplete().then(
+          () => done(null),
+          (error) => done(String(error)),
+        );
+      });
       await h.absent(h.css('[aria-label="AI translation progress"]'));
+      await h.waitFor("one AI completion before its automatic scan", () =>
+        h.driver().executeScript(() => {
+          const rows = Array.from(
+            document.querySelectorAll("#activity-log-entries > p"),
+          );
+          const completions = rows.filter((row) =>
+            row.textContent.includes("Local AI translation run"),
+          );
+          const finished = rows.indexOf(completions[0]);
+          const scan = rows.findIndex(
+            (row, index) =>
+              index > finished && row.textContent.includes("Scanning mods"),
+          );
+          return (
+            completions.length === 1 &&
+            finished >= 0 &&
+            scan > finished &&
+            !completions[0].dataset.groupStart &&
+            Boolean(completions[0].querySelector("button")) &&
+            rows[scan].dataset.groupStart === "true" &&
+            !rows.some((row) =>
+              row.textContent.includes("1 AI suggestion saved to Review"),
+            )
+          );
+        }),
+      );
+      await h.click(h.css('[aria-label="Expand Activity log"]'));
+      await h.screenshot("activity-log-ai-completion-before-scan");
+      await h.click(h.css('[aria-label="Collapse Activity log"]'));
       // Finish a delayed German run after a real native settings/scan switch.
       // Same string identities exist in both languages, so identity alone must
       // not allow German suggestions or a stale German scan into French state.
@@ -464,6 +562,8 @@ export async function progressCases(h) {
       const previousRunId = await h
         .driver()
         .executeScript(() => window.progressTestRunId());
+      // A successful run clears the selection; select fresh input for the next.
+      await h.click(h.css('[aria-label="Select all visible strings"]'));
       await h.click(h.css(".translator-bulk-button"));
       await h.click(
         By.xpath("//button[.//span[contains(.,'Translate selected with AI')]]"),

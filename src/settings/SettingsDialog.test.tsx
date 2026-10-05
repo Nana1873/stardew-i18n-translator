@@ -1471,7 +1471,7 @@ describe("SettingsDialog", () => {
       expect.objectContaining({
         ai: {
           defaultEngine: "chatgpt",
-          cloudModel: null,
+          cloudModel: "gpt-6.1-sol",
           cloudReasoning: "medium",
           cloudQualityReview: false,
           cloudParallelBatches: 4,
@@ -1562,8 +1562,8 @@ describe("SettingsDialog", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("ChatGPT model")).toBeEnabled(),
     );
-    expect(screen.getByLabelText("ChatGPT model")).toHaveValue("");
-    expect(screen.getByText(/retry loading/i)).toBeVisible();
+    expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-6.1-sol");
+    expect(screen.getByText(/keeping the model ID/i)).toBeVisible();
     expect(screen.getByText("ChatGPT").closest("button")).toHaveTextContent(
       "Ready",
     );
@@ -1572,7 +1572,7 @@ describe("SettingsDialog", () => {
       target: { value: "custom-model-id" },
     });
     fireEvent.change(screen.getByLabelText("ChatGPT model ID"), {
-      target: { value: "gpt-6.1-sol" },
+      target: { value: "my-model-id" },
     });
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "cloud_ai_status")
@@ -1593,7 +1593,7 @@ describe("SettingsDialog", () => {
     await screen.findByRole("option", { name: "Recovered model" });
     expect(screen.queryByRole("button", { name: "Retry models" })).toBeNull();
     expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
-      "gpt-6.1-sol",
+      "my-model-id",
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -1601,7 +1601,7 @@ describe("SettingsDialog", () => {
       expect.objectContaining({
         ai: {
           defaultEngine: "chatgpt",
-          cloudModel: "gpt-6.1-sol",
+          cloudModel: "my-model-id",
           cloudReasoning: "medium",
           cloudQualityReview: true,
           cloudParallelBatches: 4,
@@ -1659,7 +1659,9 @@ describe("SettingsDialog", () => {
         "true",
       );
       expect(screen.getByRole("region", { name: "ChatGPT" })).toBeVisible();
-      expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
+      expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
+        "gpt-6.1-sol",
+      );
     });
     expect(screen.getByText("Local AI").closest("button")).toHaveAttribute(
       "aria-pressed",
@@ -1711,7 +1713,7 @@ describe("SettingsDialog", () => {
       expect.objectContaining({
         ai: {
           defaultEngine: "local",
-          cloudModel: null,
+          cloudModel: "gpt-6.1-sol",
           cloudReasoning: "medium",
           cloudQualityReview: true,
           cloudParallelBatches: 4,

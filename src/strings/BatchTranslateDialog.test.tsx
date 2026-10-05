@@ -161,6 +161,15 @@ describe("AI progress notice", () => {
     try {
       renderDialog({ engine: CLOUD_ENGINE, onLiveRun: run });
       await waitFor(() => expect(run).toHaveBeenCalledOnce());
+      expect(
+        activity.mock.calls
+          .flatMap(([event]) => event.detail.entries)
+          .filter((entry) => entry.startsGroup),
+      ).toEqual([
+        expect.objectContaining({
+          message: expect.stringContaining("AI translation started"),
+        }),
+      ]);
       const runId = run.mock.calls[0][0],
         receive = eventApi.listen.mock.calls[0][1];
       act(() =>

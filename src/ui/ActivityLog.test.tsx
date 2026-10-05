@@ -58,6 +58,117 @@ beforeEach(() => {
   });
 });
 
+it("separates scan and AI runs while retaining each run's steps and copied spacing", async () => {
+  const view = render(<ActivityLog {...props} lastScanAt={1000} />);
+  const log = screen.getByRole("log");
+  const ai = (entries: AiActivityUpdate["entries"]) =>
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("translator-ai-activity", {
+          detail: { time: 2000, entries },
+        }),
+      );
+    });
+  ai([
+    { message: "AI translation started for Test mod.", startsGroup: true },
+    { message: "Preparing selected strings." },
+    { message: "Batch 1 · Translating draft · 86 strings" },
+    { message: "Batch 2 · Checking translation quality · 86 strings" },
+    { message: "172 strings saved to Review." },
+  ]);
+  expect(log.querySelectorAll('[data-group-start="true"]')).toHaveLength(1);
+  view.rerender(<ActivityLog {...props} lastScanAt={1000} scanning />);
+  view.rerender(<ActivityLog {...props} lastScanAt={3000} />);
+  ai([
+    { message: "AI translation started for Next mod.", startsGroup: true },
+    { message: "Preparing selected strings." },
+  ]);
+  expect(
+    Array.from(log.querySelectorAll('[data-group-start="true"]')).map(
+      (entry) => entry.textContent,
+    ),
+  ).toEqual([
+    expect.stringContaining("AI translation started for Test mod."),
+    expect.stringContaining("Scanning mods"),
+    expect.stringContaining("AI translation started for Next mod."),
+  ]);
+  expect(log.querySelector("p:first-child")).not.toHaveAttribute(
+    "data-group-start",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Copy log" }));
+  await screen.findByRole("button", { name: "Copied" });
+  const copied = vi.mocked(navigator.clipboard.writeText).mock.calls[0][0];
+  expect(copied.split("\n\n")).toHaveLength(4);
+  expect(copied).toMatch(
+    /Translating draft[^\n]+\n[^\n]+Checking translation quality/,
+  );
+});
+
+it.each(["success", "warning", "cancelled", "failed"] as const)(
+  "keeps the AI completion and its details before a simultaneous refresh scan (%s)",
+  (outcome) => {
+    const view = render(<ActivityLog {...props} lastScanAt={1000} />);
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("translator-ai-activity", {
+          detail: {
+            time: 1500,
+            entries: [
+              {
+                message: "AI translation started for Test mod.",
+                startsGroup: true,
+              },
+              { message: "Batch 1 · 2 strings saved to Review" },
+            ],
+          },
+        }),
+      );
+    });
+    const completion: OperationHistoryEntry = {
+      ...operation,
+      id: "ai-1",
+      kind: "ai",
+      outcome,
+      title: "ChatGPT translation run",
+      summary: "2 suggestions staged for review.",
+      completedAtEpochMs: 2000,
+    };
+    view.rerender(
+      <ActivityLog
+        {...props}
+        lastScanAt={1000}
+        history={[completion]}
+        scanning
+      />,
+    );
+    view.rerender(
+      <ActivityLog {...props} lastScanAt={3000} history={[completion]} />,
+    );
+    const log = screen.getByRole("log");
+    const rows = Array.from(log.querySelectorAll("p"));
+    const finished = rows.findIndex((row) =>
+      row.textContent?.includes(completion.title),
+    );
+    const scan = rows.findIndex((row) =>
+      row.textContent?.includes("Scanning mods"),
+    );
+    expect(finished).toBeGreaterThan(0);
+    expect(finished).toBeLessThan(scan);
+    expect(rows[finished]).not.toHaveAttribute("data-group-start");
+    expect(rows[scan]).toHaveAttribute("data-group-start", "true");
+    expect(within(log).getAllByText(/ChatGPT translation run/)).toHaveLength(1);
+    fireEvent.click(
+      within(log).getByRole("button", {
+        name: /Details: ChatGPT translation run/,
+      }),
+    );
+    expect(props.onDetails).toHaveBeenCalledWith({
+      kind: "operation",
+      entry: { ...completion, canUndo: false },
+    });
+  },
+);
+
 it("animates only each batch's current step, keeps history static, and ignores stale run cleanup", async () => {
   render(<ActivityLog {...props} />);
   const log = screen.getByRole("log");
@@ -214,12 +325,16 @@ it("keeps early warnings through a long run, bounds memory, and reports omission
 it("includes actual import counts and mod identity with an immutable operation reference", () => {
   const event = operationActivity(operation, props.modNames);
   expect(event).toMatchObject({
+    startsGroup: true,
     tone: "warning",
     message:
       "LLM batch imported · Test mod · warning: 3 suggestions staged for review. Local translations preserved: 2 · Skipped empty values: 1.",
     details: { kind: "operation", entry: { id: "import-1", canUndo: false } },
   });
   expect(operation.canUndo).toBe(true);
+  expect(
+    operationActivity({ ...operation, kind: "ai" }, props.modNames),
+  ).toMatchObject({ startsGroup: false });
 });
 
 it("records repeated notifications and several operations once even with StrictMode or refreshed history", () => {

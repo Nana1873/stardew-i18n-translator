@@ -28,8 +28,12 @@ export function resultActivity(data: ResultTrayData) {
     data,
     data.problems.filter((problem) => !problem.resolved),
   );
+  const summary =
+    data.kind === "ai-batch"
+      ? `${data.done} of ${data.total} saved to Review.${data.error ? ` ${data.error}` : ""}`
+      : (data.error ?? presentation.copy);
   return {
-    message: `${presentation.label} · ${data.title}: ${data.error ?? presentation.copy}`,
+    message: `${presentation.label} · ${data.title}: ${summary}`,
     tone:
       presentation.tone === "pending" ? ("info" as const) : presentation.tone,
   };

@@ -701,21 +701,31 @@ fn callback_response() -> String {
     let style = r#":root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
 * { box-sizing: border-box; }
 body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: 24px; background: #101214; color: #f2f3f5; }
-main { width: 100%; max-width: 440px; padding: 32px; background: #1b1f24; border: 1px solid #414953; border-radius: 12px; }
-.brand { margin: 0 0 24px; color: #e3b85f; font-size: 13px; font-weight: 600; }
-h1 { margin: 0 0 12px; font-size: 24px; line-height: 1.3; }
-.hint { margin: 0; color: #b0b6be; font-size: 14px; line-height: 1.6; }"#;
+main { width: 100%; max-width: 480px; background: #1b1f24; border: 1px solid #414953; border-radius: 4px; }
+header { display: flex; align-items: center; gap: 12px; padding: 16px 20px; border-bottom: 1px solid #414953; }
+header img { width: 40px; height: 40px; flex: 0 0 auto; }
+.brand { margin: 0; font-size: 13px; font-weight: 600; line-height: 1.5; }
+.context { margin: 2px 0 0; color: #b0b6be; font-size: 12px; line-height: 1.5; }
+section { padding: 24px 20px; }
+h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; line-height: 1.35; }
+.hint { margin: 0; color: #b0b6be; font-size: 14px; line-height: 1.6; }
+@media (max-width: 360px) { body { padding: 16px; } }"#;
     let style_hash =
         base64::engine::general_purpose::STANDARD.encode(Sha256::digest(style.as_bytes()));
+    let icon = base64::engine::general_purpose::STANDARD
+        .encode(include_bytes!("../../src/assets/app-icon.png"));
     let body = format!(
         r#"<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Stardew i18n Translator</title><style>{style}</style></head>
-<body><main aria-labelledby="callback-title"><p class="brand">Stardew i18n Translator</p>
-<h1 id="callback-title">You can close this tab.</h1>
-<p class="hint">Your sign-in status is shown in the app.</p></main></body></html>"#
+<title>ChatGPT sign-in · Stardew i18n Translator</title><style>{style}</style></head>
+<body><main aria-labelledby="callback-title"><header>
+<img src="data:image/png;base64,{icon}" alt="" width="40" height="40">
+<div><p class="brand">Stardew i18n Translator</p><p class="context">ChatGPT sign-in</p></div>
+</header><section><h1 id="callback-title">Continue in the app</h1>
+<p class="hint">Your ChatGPT sign-in status is shown in the app.<br>You can close this tab.</p>
+</section></main></body></html>"#
     );
-    format!("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'; style-src 'sha256-{style_hash}'; frame-ancestors 'none'\r\nContent-Length: {}\r\n\r\n{body}", body.len())
+    format!("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/html; charset=utf-8\r\nCache-Control: no-store\r\nContent-Security-Policy: default-src 'none'; style-src 'sha256-{style_hash}'; img-src data:; frame-ancestors 'none'\r\nContent-Length: {}\r\n\r\n{body}", body.len())
 }
 
 async fn accept_callback(listener: TcpListener, attempt: Attempt) -> Result<Session, String> {
@@ -917,7 +927,7 @@ pub async fn logout() -> Result<(), String> {
 mod tests {
     use super::*;
     #[test]
-    fn callback_page_has_app_colors_and_only_allows_its_static_style() {
+    fn callback_page_is_self_contained_and_does_not_claim_sign_in_succeeded() {
         let response = callback_response();
         let (headers, body) = response.split_once("\r\n\r\n").unwrap();
         let style = body
@@ -931,10 +941,16 @@ mod tests {
             base64::engine::general_purpose::STANDARD.encode(Sha256::digest(style.as_bytes()));
         assert!(headers.contains(&format!("style-src 'sha256-{hash}'")));
         assert!(headers.contains("default-src 'none'"));
+        assert!(headers.contains("img-src data:"));
+        assert!(headers.contains("frame-ancestors 'none'"));
         assert!(headers.contains("Cache-Control: no-store"));
         assert!(headers.contains(&format!("Content-Length: {}", body.len())));
         assert!(body.contains("background: #101214"));
         assert!(body.contains("You can close this tab."));
+        assert!(body.contains("Continue in the app"));
+        assert!(body.contains("Your ChatGPT sign-in status is shown in the app."));
+        assert!(body.contains("data:image/png;base64,"));
+        assert!(!body.contains("success"));
         assert!(!body.contains("<script"));
         assert!(!body.contains("https://"));
     }

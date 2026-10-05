@@ -2438,6 +2438,8 @@ describe("App shell", () => {
 
   it("opens a multi-mod AI result without hiding Review rows in one component", async () => {
     const scan = exportScan(false);
+    const refreshScan = deferred<ScanResult>();
+    let scanCount = 0;
     scan.mods.push({
       ...scan.mods[0],
       uniqueId: "second.mod",
@@ -2479,7 +2481,8 @@ describe("App shell", () => {
           },
         });
       if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "scan_mods")
+        return ++scanCount === 1 ? Promise.resolve(scan) : refreshScan.promise;
       if (cmd === "load_strings") {
         const modUniqueId = (args as { modUniqueId: string }).modUniqueId;
         const first = modUniqueId === "a.b";
@@ -2577,6 +2580,22 @@ describe("App shell", () => {
     });
 
     const result = await inspectLatestResult();
+    const log = screen.getByRole("log");
+    await waitFor(() => {
+      const rows = Array.from(log.querySelectorAll("p"));
+      const completions = rows.filter((row) =>
+        row.textContent?.includes("Local AI translation run"),
+      );
+      expect(completions).toHaveLength(1);
+      const lastScan = rows.reduce(
+        (latest, row, index) =>
+          row.textContent?.includes("Scanning mods") ? index : latest,
+        -1,
+      );
+      expect(rows.indexOf(completions[0])).toBeLessThan(lastScan);
+    });
+    expect(log).not.toHaveTextContent("2 AI suggestions saved to Review.");
+    act(() => refreshScan.resolve(scan));
     fireEvent.click(
       within(result).getByRole("button", { name: "Open Review" }),
     );
