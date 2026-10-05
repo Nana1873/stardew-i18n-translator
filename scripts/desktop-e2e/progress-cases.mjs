@@ -5,6 +5,11 @@ import { By } from "selenium-webdriver";
 
 export async function progressCases(h) {
   await h.step("ai-progress-activity-log", async () => {
+    assert.equal(
+      h.mods,
+      join(h.artifacts, "runtime", "synthetic Mods"),
+      "Progress fixtures must use the isolated runtime's Mods folder.",
+    );
     const folder = join(h.mods, "ProgressSmoke");
     await mkdir(join(folder, "i18n"), { recursive: true });
     await writeFile(
@@ -439,6 +444,7 @@ export async function progressCases(h) {
         if (cloudBackup) await writeFile(backupPath, cloudBackup);
         else await rm(backupPath, { force: true });
       }
+      await rm(folder, { recursive: true, force: true });
     }
   });
 }
