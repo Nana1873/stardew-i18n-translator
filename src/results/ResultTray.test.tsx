@@ -4,12 +4,35 @@ import { beforeEach, expect, vi } from "vitest";
 import {
   LLM_BATCH_HANDOFF_PROMPT,
   ResultTray,
+  resultActivity,
   type ResultProblem,
   type ResultTrayData,
 } from "./ResultTray";
 import type { OperationHistoryEntry } from "../tauri/commands";
 
 const writeText = vi.fn();
+
+it.each(["complete", "cancelled", "error"] as const)(
+  "retains saved counts and the cause in one AI log summary without backend history (%s)",
+  (outcome) => {
+    const data: ResultTrayData = {
+      kind: "ai-batch",
+      title: "Test mod",
+      collapsed: false,
+      pending: false,
+      problems: [],
+      outcome,
+      done: 1,
+      total: 2,
+      engine: "Local AI",
+      undoAvailable: false,
+      error: "One string failed validation.",
+    };
+    expect(resultActivity(data).message).toContain(
+      "1 of 2 saved to Review. One string failed validation.",
+    );
+  },
+);
 
 beforeEach(() => {
   writeText.mockReset();

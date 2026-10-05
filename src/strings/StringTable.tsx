@@ -1926,7 +1926,7 @@ export function StringTable({
     if (aiContextRef.current.version === aiContextVersion)
       reportCounts(current);
 
-    if (result.outcome === "complete") {
+    if (result.outcome === "complete" && !onAiBatchFinished) {
       onNotify?.(
         String(result.done) +
           (result.done === 1

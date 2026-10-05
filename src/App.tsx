@@ -1856,21 +1856,7 @@ export function App() {
     );
   }
 
-  function reportAiActivity(
-    message: string,
-    tone: "info" | "warning" | "error",
-  ) {
-    window.dispatchEvent(
-      new CustomEvent("translator-ai-activity", {
-        detail: { time: Date.now(), entries: [{ message, tone }] },
-      }),
-    );
-  }
-
   function handleAiBatchFinished(result: AiBatchFinishedResult) {
-    const completedWithIssues = Boolean(
-      result.error && result.done > 0 && result.outcome !== "cancelled",
-    );
     const data: ResultTrayData = {
       kind: "ai-batch",
       title: result.modName || selectedMod?.name || "Selected strings",
@@ -1917,17 +1903,6 @@ export function App() {
         preserveSelection: true,
         showDiagnostics: false,
       });
-    }
-    if (completedWithIssues) {
-      reportAiActivity(
-        `AI translation completed with issues: ${result.done} of ${result.total} saved in Review.`,
-        "warning",
-      );
-    } else if (result.outcome !== "complete") {
-      reportAiActivity(
-        `AI translation ${result.outcome === "cancelled" ? "cancelled" : "failed"} after ${result.done} of ${result.total}. Finished suggestions are in Review.`,
-        result.outcome === "error" ? "error" : "info",
-      );
     }
   }
 

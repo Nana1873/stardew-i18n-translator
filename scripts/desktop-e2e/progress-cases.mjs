@@ -47,6 +47,7 @@ export async function progressCases(h) {
       let resolveRun;
       let request;
       let engine;
+      let completedHistory;
       const scans = [];
       const reply = (value) =>
         Promise.resolve(
@@ -62,6 +63,10 @@ export async function progressCases(h) {
         if (endpoint.hostname !== "ipc.localhost")
           return original(url, ...args);
         const command = decodeURIComponent(endpoint.pathname.slice(1));
+        if (command === "list_operation_history" && completedHistory)
+          return original(url, ...args).then(async (response) =>
+            reply([completedHistory, ...(await response.json())].slice(0, 5)),
+          );
         if (command === "scan_mods") {
           const body = args[0].body;
           scans.push(
@@ -117,8 +122,20 @@ export async function progressCases(h) {
         Boolean(request) && engine === expected;
       window.progressTestRunId = () => request?.runId;
       window.progressTestScans = () => scans;
-      window.progressTestComplete = () =>
-        reply({
+      window.progressTestComplete = () => {
+        completedHistory = {
+          id: `progress-completion-${request.runId}`,
+          kind: "ai",
+          outcome: "success",
+          title: `${engine === "chatgpt" ? "ChatGPT" : "Local AI"} translation run`,
+          summary: "1 suggestion staged for review.",
+          itemCount: 1,
+          canUndo: false,
+          warnings: [],
+          details: [{ label: "Scope", value: "Selected strings" }],
+          completedAtEpochMs: Date.now(),
+        };
+        return reply({
           runId: request.runId,
           engine,
           model: "e2e-local-model",
@@ -137,6 +154,7 @@ export async function progressCases(h) {
             },
           ],
         }).then(resolveRun);
+      };
       window.progressTestSnapshot = (payload) =>
         window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
           event: "ai-run-progress",
@@ -496,8 +514,42 @@ export async function progressCases(h) {
         await localDialog.takeScreenshot(),
         "base64",
       );
-      await h.click(h.button("Cancel"));
+      await h.driver().executeAsyncScript((done) => {
+        window.progressTestComplete().then(
+          () => done(null),
+          (error) => done(String(error)),
+        );
+      });
       await h.absent(h.css('[aria-label="AI translation progress"]'));
+      await h.waitFor("one AI completion before its automatic scan", () =>
+        h.driver().executeScript(() => {
+          const rows = Array.from(
+            document.querySelectorAll("#activity-log-entries > p"),
+          );
+          const completions = rows.filter((row) =>
+            row.textContent.includes("Local AI translation run"),
+          );
+          const finished = rows.indexOf(completions[0]);
+          const scan = rows.findIndex(
+            (row, index) =>
+              index > finished && row.textContent.includes("Scanning mods"),
+          );
+          return (
+            completions.length === 1 &&
+            finished >= 0 &&
+            scan > finished &&
+            !completions[0].dataset.groupStart &&
+            Boolean(completions[0].querySelector("button")) &&
+            rows[scan].dataset.groupStart === "true" &&
+            !rows.some((row) =>
+              row.textContent.includes("1 AI suggestion saved to Review"),
+            )
+          );
+        }),
+      );
+      await h.click(h.css('[aria-label="Expand Activity log"]'));
+      await h.screenshot("activity-log-ai-completion-before-scan");
+      await h.click(h.css('[aria-label="Collapse Activity log"]'));
       // Finish a delayed German run after a real native settings/scan switch.
       // Same string identities exist in both languages, so identity alone must
       // not allow German suggestions or a stale German scan into French state.
@@ -510,6 +562,8 @@ export async function progressCases(h) {
       const previousRunId = await h
         .driver()
         .executeScript(() => window.progressTestRunId());
+      // A successful run clears the selection; select fresh input for the next.
+      await h.click(h.css('[aria-label="Select all visible strings"]'));
       await h.click(h.css(".translator-bulk-button"));
       await h.click(
         By.xpath("//button[.//span[contains(.,'Translate selected with AI')]]"),

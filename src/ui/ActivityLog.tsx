@@ -109,6 +109,19 @@ export function ActivityLog({
     };
   }, []);
   useEffect(() => {
+    // Completion history can arrive in the same render as its refresh scan.
+    // Append the completed operation before starting the new scan group.
+    for (const entry of [...history].reverse()) {
+      if (seenOperations.current.has(entry.id)) continue;
+      seenOperations.current.add(entry.id);
+      append(operationActivity(entry, modNames), entry.completedAtEpochMs);
+    }
+    while (seenOperations.current.size > 1000)
+      seenOperations.current.delete(
+        seenOperations.current.values().next().value!,
+      );
+  }, [history]);
+  useEffect(() => {
     if (scanning)
       append({
         kind: "message",
@@ -152,19 +165,6 @@ export function ActivityLog({
       lastScanAt,
     );
   }, [lastScanAt]);
-  useEffect(() => {
-    // A refresh may contain several completed operations, or only changed undo
-    // availability. Log each identity once, in completion order.
-    for (const entry of [...history].reverse()) {
-      if (seenOperations.current.has(entry.id)) continue;
-      seenOperations.current.add(entry.id);
-      append(operationActivity(entry, modNames), entry.completedAtEpochMs);
-    }
-    while (seenOperations.current.size > 1000)
-      seenOperations.current.delete(
-        seenOperations.current.values().next().value!,
-      );
-  }, [history]);
   useEffect(() => {
     if (logRef.current && followTail.current)
       logRef.current.scrollTop = logRef.current.scrollHeight;

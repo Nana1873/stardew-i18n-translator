@@ -104,6 +104,71 @@ it("separates scan and AI runs while retaining each run's steps and copied spaci
   );
 });
 
+it.each(["success", "warning", "cancelled", "failed"] as const)(
+  "keeps the AI completion and its details before a simultaneous refresh scan (%s)",
+  (outcome) => {
+    const view = render(<ActivityLog {...props} lastScanAt={1000} />);
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("translator-ai-activity", {
+          detail: {
+            time: 1500,
+            entries: [
+              {
+                message: "AI translation started for Test mod.",
+                startsGroup: true,
+              },
+              { message: "Batch 1 · 2 strings saved to Review" },
+            ],
+          },
+        }),
+      );
+    });
+    const completion: OperationHistoryEntry = {
+      ...operation,
+      id: "ai-1",
+      kind: "ai",
+      outcome,
+      title: "ChatGPT translation run",
+      summary: "2 suggestions staged for review.",
+      completedAtEpochMs: 2000,
+    };
+    view.rerender(
+      <ActivityLog
+        {...props}
+        lastScanAt={1000}
+        history={[completion]}
+        scanning
+      />,
+    );
+    view.rerender(
+      <ActivityLog {...props} lastScanAt={3000} history={[completion]} />,
+    );
+    const log = screen.getByRole("log");
+    const rows = Array.from(log.querySelectorAll("p"));
+    const finished = rows.findIndex((row) =>
+      row.textContent?.includes(completion.title),
+    );
+    const scan = rows.findIndex((row) =>
+      row.textContent?.includes("Scanning mods"),
+    );
+    expect(finished).toBeGreaterThan(0);
+    expect(finished).toBeLessThan(scan);
+    expect(rows[finished]).not.toHaveAttribute("data-group-start");
+    expect(rows[scan]).toHaveAttribute("data-group-start", "true");
+    expect(within(log).getAllByText(/ChatGPT translation run/)).toHaveLength(1);
+    fireEvent.click(
+      within(log).getByRole("button", {
+        name: /Details: ChatGPT translation run/,
+      }),
+    );
+    expect(props.onDetails).toHaveBeenCalledWith({
+      kind: "operation",
+      entry: { ...completion, canUndo: false },
+    });
+  },
+);
+
 it("animates only each batch's current step, keeps history static, and ignores stale run cleanup", async () => {
   render(<ActivityLog {...props} />);
   const log = screen.getByRole("log");

@@ -114,6 +114,8 @@ saves in the same mod are grouped briefly. Routine clipboard and selection
 notifications stay out of the log; failures are recorded.
 Thin dividers separate new scans and operations while keeping an AI run's batch
 steps together.
+Each AI run ends with one summary linked to its details, before any automatic
+refresh scan starts.
 
 Notifications and ongoing AI progress share a stack just above the Activity
 log. Resizing the log moves that stack with its top edge, keeping entries and
