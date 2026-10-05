@@ -298,6 +298,53 @@ it("keeps one AI run alive while another mod loads, fails, and retries", async (
   );
 });
 
+it.each(["language", "folder", "round trip"])(
+  "does not apply an AI result to rows after a workspace %s change",
+  async (change) => {
+    installBackendRows();
+    const run = deferred<AiRunResult>();
+    const onRunAi = vi.fn(() => run.promise);
+    const onStringSaved = vi.fn();
+    const props = { liveAiEngines: [LOCAL_AI_ENGINE], onRunAi, onStringSaved };
+    const original = (
+      <StringTable mod={MOD} targetLanguageCode="de" {...props} />
+    );
+    const { rerender } = render(original);
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select bye" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const changedMod = {
+      ...MOD,
+      i18nFiles: MOD.i18nFiles.map((file) => ({
+        ...file,
+        defaultPath: "other/i18n/default.json",
+        targetPath: "other/i18n/de.json",
+      })),
+    };
+    rerender(
+      <StringTable
+        mod={change === "folder" ? changedMod : MOD}
+        targetLanguageCode={change === "folder" ? "de" : "fr"}
+        {...props}
+      />,
+    );
+    if (change === "round trip") rerender(original);
+    await act(async () => run.resolve(liveAiResult()));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("AI translation progress")).toBeNull(),
+    );
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("—");
+    expect(onStringSaved).not.toHaveBeenCalled();
+  },
+);
+
 function rowFor(text: string): HTMLElement {
   const node = screen.getByText(text);
   const row = node.closest<HTMLElement>(".stringrow--data");

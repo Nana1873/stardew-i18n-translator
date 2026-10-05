@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { By } from "selenium-webdriver";
+import { By, Key } from "selenium-webdriver";
 
 export async function progressCases(h) {
   await h.step("ai-progress-activity-log", async () => {
@@ -42,6 +42,7 @@ export async function progressCases(h) {
       let resolveRun;
       let request;
       let engine;
+      const scans = [];
       const reply = (value) =>
         Promise.resolve(
           new Response(JSON.stringify(value), {
@@ -56,6 +57,14 @@ export async function progressCases(h) {
         if (endpoint.hostname !== "ipc.localhost")
           return original(url, ...args);
         const command = decodeURIComponent(endpoint.pathname.slice(1));
+        if (command === "scan_mods") {
+          const body = args[0].body;
+          scans.push(
+            JSON.parse(
+              typeof body === "string" ? body : new TextDecoder().decode(body),
+            ),
+          );
+        }
         if (command === "cloud_ai_status")
           return reply({ authenticated: true });
         if (command === "cloud_ai_models")
@@ -101,6 +110,28 @@ export async function progressCases(h) {
       window.fetch = fetch;
       window.progressTestReady = (expected) =>
         Boolean(request) && engine === expected;
+      window.progressTestRunId = () => request?.runId;
+      window.progressTestScans = () => scans;
+      window.progressTestComplete = () =>
+        reply({
+          runId: request.runId,
+          engine,
+          model: "e2e-local-model",
+          reasoning: "default",
+          scope: "selected",
+          requested: request.identities.length,
+          completed: 1,
+          outcome: "complete",
+          suggestions: [
+            {
+              identity: request.identities[0],
+              text: "Hallo {{PlayerName}} 0.",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }).then(resolveRun);
       window.progressTestSnapshot = (payload) =>
         window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
           event: "ai-run-progress",
@@ -110,6 +141,9 @@ export async function progressCases(h) {
         window.fetch = original;
         delete window.progressTestReady;
         delete window.progressTestSnapshot;
+        delete window.progressTestScans;
+        delete window.progressTestComplete;
+        delete window.progressTestRunId;
         delete window.restoreProgressTest;
       };
       return window.fetch === fetch;
@@ -341,7 +375,6 @@ export async function progressCases(h) {
       await h.screenshot("activity-log-eight-batches");
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
-
       // Restore these bytes after closing the app so later cases retain the
       // same cloud-only configuration, not just its default-engine selection.
       cloudProfile = await readFile(settingsPath);
@@ -419,6 +452,74 @@ export async function progressCases(h) {
       );
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
+      // Finish a delayed German run after a real native settings/scan switch.
+      // Same string identities exist in both languages, so identity alone must
+      // not allow German suggestions or a stale German scan into French state.
+      await writeFile(
+        join(folder, "i18n/fr.json"),
+        JSON.stringify({
+          "row.0": "Bonjour {{PlayerName}} 0.",
+        }),
+      );
+      const previousRunId = await h
+        .driver()
+        .executeScript(() => window.progressTestRunId());
+      await h.click(h.css(".translator-bulk-button"));
+      await h.click(
+        By.xpath("//button[.//span[contains(.,'Translate selected with AI')]]"),
+      );
+      await h.element(h.css('[aria-label="AI translation progress"]'));
+      await h.waitFor("new German AI run started", () =>
+        h
+          .driver()
+          .executeScript(
+            (previous) => window.progressTestRunId() !== previous,
+            previousRunId,
+          ),
+      );
+      await h.click(h.css('[aria-label="Settings"]'));
+      await h.click(h.button("Folders & language"));
+      await (
+        await h.element(h.css('[aria-label="Target language"]'))
+      ).sendKeys("French", Key.ENTER);
+      await h.click(h.button("Save changes"));
+      await h.absent(h.css('[aria-label="Close settings"]'));
+      await h.waitFor("French strings loaded during German AI run", async () =>
+        (await h.element(h.row("row.0")))
+          .getText()
+          .then((text) => text.includes("Bonjour")),
+      );
+      const scansBeforeFinish = await h
+        .driver()
+        .executeScript(() => window.progressTestScans());
+      assert.equal(scansBeforeFinish.at(-1).targetLang, "fr");
+      const frenchStatePath = join(
+        h.data,
+        "language-state",
+        "fr",
+        "translations",
+        "E2E.ProgressSmoke.json",
+      );
+      const frenchStateBefore = await readFile(frenchStatePath);
+      await h.driver().executeAsyncScript((done) => {
+        window.progressTestComplete().then(
+          () => done(null),
+          (error) => done(String(error)),
+        );
+      });
+      await h.absent(h.css('[aria-label="AI translation progress"]'));
+      await h.element(h.css('[aria-label="Operation result"]'));
+      assert.deepEqual(
+        await h.driver().executeScript(() => window.progressTestScans()),
+        scansBeforeFinish,
+      );
+      assert.ok(
+        (await (await h.element(h.row("row.0"))).getText()).includes("Bonjour"),
+      );
+      assert.deepEqual(await readFile(frenchStatePath), frenchStateBefore);
+      assert.equal((await h.json(settingsPath)).targetLang, "fr");
+      await h.screenshot("activity-log-ai-workspace-switch");
+
       h.evidence.aiProgress = {
         passed: true,
         controlledIpc: true,
@@ -435,6 +536,7 @@ export async function progressCases(h) {
         eightBatchesFit: true,
         localSerialLayout: true,
         cancellation: true,
+        workspaceSwitchSafe: true,
       };
     } finally {
       await h.driver().executeScript(() => window.restoreProgressTest());

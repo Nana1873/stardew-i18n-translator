@@ -2048,6 +2048,120 @@ describe("App shell", () => {
     );
   });
 
+  it.each(["language", "Mods folder"])(
+    "does not reload the original workspace after an AI run finishes following a %s change",
+    async (change) => {
+      let releaseTranslation!: (result: AiRunResult) => void;
+      let activeRunId = "";
+      let currentSettings: AppSettings = {
+        ...CONFIGURED,
+        llm: {
+          provider: "custom",
+          baseUrl: "http://127.0.0.1:1234/v1",
+          model: "local-test",
+          temperature: 0.2,
+        },
+      };
+      invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+        if (cmd === "load_settings") return Promise.resolve(currentSettings);
+        if (cmd === "save_settings") {
+          currentSettings = (args as { settings: AppSettings }).settings;
+          return Promise.resolve(null);
+        }
+        if (cmd === "pick_folder") return Promise.resolve("E:/Other/Mods");
+        if (cmd === "scan_mods") {
+          const { modsPath, targetLang } = args as {
+            modsPath: string;
+            targetLang: string;
+          };
+          const scan = exportScan(false);
+          scan.mods[0].i18nFiles[0].defaultPath = `${modsPath}/Test/i18n/default.json`;
+          scan.mods[0].i18nFiles[0].targetPath = `${modsPath}/Test/i18n/${targetLang}.json`;
+          return Promise.resolve(scan);
+        }
+        if (cmd === "load_strings")
+          return Promise.resolve([
+            {
+              key: "greeting",
+              source: "Hello",
+              target:
+                currentSettings.targetLang !== "de" ||
+                currentSettings.modsPath !== CONFIGURED.modsPath
+                  ? "Current workspace translation"
+                  : "",
+              targetPresent: false,
+              status: "untranslated",
+            },
+          ]);
+        if (cmd === "translate_with_local_ai") {
+          activeRunId = (args as { request: { runId: string } }).request.runId;
+          return new Promise<AiRunResult>((resolve) => {
+            releaseTranslation = resolve;
+          });
+        }
+        return Promise.resolve(null);
+      });
+      render(<App />);
+      fireEvent.click(
+        await screen.findByRole("checkbox", { name: "Select greeting" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+      fireEvent.click(
+        screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+      );
+      await waitFor(() => expect(activeRunId).not.toBe(""));
+      fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+      if (change === "language") {
+        fireEvent.change(screen.getByLabelText("Target language"), {
+          target: { value: "fr" },
+        });
+      } else {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Change Mods folder" }),
+        );
+        await screen.findByText("E:/Other/Mods");
+      }
+      fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+      await screen.findByText("Current workspace translation");
+      const beforeFinish = invokeMock.mock.calls.length;
+      await act(async () => {
+        releaseTranslation({
+          runId: activeRunId,
+          engine: "local",
+          model: "local-test",
+          reasoning: "default",
+          scope: "selected",
+          requested: 1,
+          completed: 1,
+          outcome: "complete",
+          suggestions: [
+            {
+              identity: {
+                modUniqueId: "a.b",
+                relativeDir: "i18n",
+                key: "greeting",
+              },
+              text: "Stale German suggestion",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        });
+      });
+      await waitFor(() =>
+        expect(screen.queryByLabelText("AI translation progress")).toBeNull(),
+      );
+      expect(screen.getByText("Current workspace translation")).toBeVisible();
+      expect(screen.queryByText("Stale German suggestion")).toBeNull();
+      expect(
+        invokeMock.mock.calls
+          .slice(beforeFinish)
+          .filter(([cmd]) => cmd === "scan_mods" || cmd === "load_strings"),
+      ).toEqual([]);
+    },
+  );
+
   it("replaces a cancelled AI progress dialog with the exact partial result", async () => {
     let releaseTranslation: ((result: AiRunResult) => void) | null = null;
     let activeRunId = "";

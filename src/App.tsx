@@ -286,6 +286,8 @@ export function App() {
   } | null>(null);
   const scanDismissedRef = useRef(false);
   const scanGenerationRef = useRef(0);
+  const runScanRef = useRef(runScan);
+  runScanRef.current = runScan;
   const [selectedModId, setSelectedModId] = useState<string | null>(null);
   const [modQuery, setModQuery] = useState("");
   const [modsWidth, setModsWidth] = useState(340);
@@ -1894,14 +1896,21 @@ export function App() {
       // older AI history entry.
       presentResult(data);
     }
-    if (result.done > 0) {
+    const currentSettings = settingsRef.current;
+    const sameWorkspace =
+      settings &&
+      currentSettings &&
+      settings.targetLang === currentSettings.targetLang &&
+      settings.modsPath === currentSettings.modsPath &&
+      settings.stardewPath === currentSettings.stardewPath;
+    // The notice keeps the run's original callbacks. Refresh only that
+    // workspace, using the latest scan callback to preserve current selection.
+    if (result.done > 0 && sameWorkspace) {
       setReloadToken((token) => token + 1);
-      if (settings) {
-        void runScan(settings, false, () => true, {
-          preserveSelection: true,
-          showDiagnostics: false,
-        });
-      }
+      void runScanRef.current(currentSettings, false, () => true, {
+        preserveSelection: true,
+        showDiagnostics: false,
+      });
     }
     if (completedWithIssues) {
       reportAiActivity(

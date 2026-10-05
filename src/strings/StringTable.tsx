@@ -725,6 +725,15 @@ export function StringTable({
       ]),
     ]),
   );
+  const aiContextKey = JSON.stringify([planSignature, targetLanguageCode]);
+  const aiContextRef = useRef({ key: aiContextKey, version: 0 });
+  if (aiContextRef.current.key !== aiContextKey) {
+    aiContextRef.current = {
+      key: aiContextKey,
+      version: aiContextRef.current.version + 1,
+    };
+  }
+  const aiContextVersion = aiContextRef.current.version;
 
   useEffect(() => {
     rowsRef.current = rows;
@@ -1749,6 +1758,9 @@ export function StringTable({
   }
 
   function applyLiveSuggestions(result: AiRunResult, showReview = true) {
+    // Results are already persisted by the native run. Never project them into
+    // a different table context, even if the user switched away and back.
+    if (aiContextRef.current.version !== aiContextVersion) return;
     if (result.suggestions.length === 0) return;
     const suggestions = new Map(
       result.suggestions.map((suggestion) => [
@@ -1905,12 +1917,14 @@ export function StringTable({
     setBatch(null);
     setBatchModLabel("");
     const current = rowsRef.current ?? [];
-    reportCounts(current);
+    if (aiContextRef.current.version === aiContextVersion)
+      reportCounts(current);
   }
 
   function finishBatch(result: BatchFinishedResult) {
     const current = rowsRef.current ?? [];
-    reportCounts(current);
+    if (aiContextRef.current.version === aiContextVersion)
+      reportCounts(current);
 
     if (result.outcome === "complete") {
       onNotify?.(
