@@ -284,6 +284,32 @@ export async function progressCases(h) {
         true,
         "A nonmodal notice with one progress bar must sit above the shared activity log.",
       );
+      const groups = await h.driver().executeScript(() => {
+        const rows = Array.from(
+          document.querySelectorAll("#activity-log-entries > p"),
+        );
+        const starts = rows.filter((row) => row.dataset.groupStart === "true");
+        return {
+          separatedAi: starts.some((row) =>
+            row.textContent.includes("AI translation started"),
+          ),
+          separatedBatch: starts.some((row) =>
+            row.textContent.includes("Batch "),
+          ),
+          spaced: starts.every(
+            (row) => parseFloat(getComputedStyle(row).marginTop) === 12,
+          ),
+        };
+      });
+      assert.deepEqual(
+        groups,
+        {
+          separatedAi: true,
+          separatedBatch: false,
+          spaced: true,
+        },
+        "A new AI run must have spacing while its parallel batch steps remain together.",
+      );
       await h.screenshot("activity-log-cloud");
       await writeFile(
         join(h.artifacts, "activity-log-cloud-dialog.png"),

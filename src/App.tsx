@@ -405,6 +405,7 @@ export function App() {
       reportActivity({
         kind: "message",
         ...resultActivity(data),
+        startsGroup: data.kind !== "ai-batch",
         details: { kind: "result", data },
       });
     latestResultRef.current = data;

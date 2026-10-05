@@ -134,6 +134,7 @@ function AiRunProgressNotice({
         reportActivity([
           {
             message: `AI translation started for ${modName}. ${engine?.label ?? "AI"}${engine?.model ? ` (${engine.model})` : ""}.`,
+            startsGroup: true,
           },
           {
             message: "Preparing selected strings.",

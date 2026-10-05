@@ -4,6 +4,7 @@ import type { ResultTrayData } from "../results/ResultTray";
 export type ActivityTone = "info" | "success" | "warning" | "error";
 export interface AiActivityMessage {
   message: string;
+  startsGroup?: boolean;
   warning?: boolean;
   tone?: ActivityTone;
   aiStep?: string;
@@ -37,6 +38,7 @@ export type ActivityEvent =
       tone: ActivityTone;
       details?: ActivityDetails;
       aiStep?: string;
+      startsGroup?: boolean;
     };
 export interface ActivityEntry {
   id: number;
@@ -45,6 +47,7 @@ export interface ActivityEntry {
   tone: ActivityTone;
   details?: ActivityDetails;
   aiStep?: string;
+  startsGroup?: boolean;
   saves?: { modUniqueId: string; identities: string[] };
 }
 export interface ActivityBuffer {
@@ -114,6 +117,7 @@ export function appendActivity(
       tone: event.tone,
       details: event.details,
       aiStep: event.aiStep,
+      startsGroup: event.startsGroup,
     });
   }
   let omitted = buffer.omitted;
@@ -157,6 +161,7 @@ export function operationActivity(
   const outcome = entry.outcome === "success" ? "" : ` · ${entry.outcome}`;
   return {
     kind: "message",
+    startsGroup: entry.kind !== "ai",
     message: `${entry.title}${context ? ` · ${context}` : ""}${outcome}: ${entry.summary}${counts.length ? ` ${counts.join(" · ")}.` : ""}`,
     tone:
       entry.outcome === "failed"

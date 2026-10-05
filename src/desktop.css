@@ -564,6 +564,9 @@
   margin-right: 6px;
   color: var(--translator-faint);
 }
+.desktop-log p[data-group-start="true"] {
+  margin-top: 12px;
+}
 .desktop-working-dots {
   display: inline-flex;
   width: 1.4em;
