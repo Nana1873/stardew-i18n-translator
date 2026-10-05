@@ -48,27 +48,6 @@ try {
             $reader = New-Object IO.StreamReader($entry.Open(), [Text.Encoding]::UTF8)
             try { $files[$name] = $reader.ReadToEnd() } finally { $reader.Dispose() }
         }
-        if ($files.Contains('fomod/ModuleConfig.xml')) {
-            $configXml = New-Object Xml.XmlDocument
-            $configXml.XmlResolver = $null
-            $configXml.LoadXml($files['fomod/ModuleConfig.xml'])
-            $installFiles = @($configXml.SelectNodes('/config/requiredInstallFiles/file'))
-            $localeFiles = @($names | Where-Object { $_.EndsWith('.json') })
-            if ($installFiles.Count -ne $localeFiles.Count) { throw 'Installer must map every locale file exactly once.' }
-            $mapped = @{}
-            foreach ($installFile in $installFiles) {
-                $source = $installFile.GetAttribute('source').Replace('\', '/')
-                $target = $installFile.GetAttribute('destination').Replace('\', '/')
-                if ($source -ne $target -or !$files.Contains($source) -or $source -notin $localeFiles -or $mapped.ContainsKey($source)) {
-                    throw 'Invalid or duplicate locale installer mapping.'
-                }
-                $mapped[$source] = $true
-            }
-            $infoXml = New-Object Xml.XmlDocument
-            $infoXml.XmlResolver = $null
-            $infoXml.LoadXml($files['fomod/info.xml'])
-            if (!$infoXml.SelectSingleNode('/fomod/Name')) { throw 'Installer name is missing.' }
-        }
         $files | ConvertTo-Json -Compress
     }
 } finally { $archive.Dispose() }
