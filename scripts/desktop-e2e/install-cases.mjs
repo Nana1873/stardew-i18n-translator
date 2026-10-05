@@ -8,7 +8,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { Key } from "selenium-webdriver";
+import { By, Key } from "selenium-webdriver";
 
 export async function installCases(h) {
   const {
@@ -33,7 +33,6 @@ export async function installCases(h) {
     screenshot,
     openEntry,
     saveEntry,
-    chooseBatch,
     native,
     browseFolder,
     closeNormally,
@@ -41,6 +40,23 @@ export async function installCases(h) {
   const baseline = await json(
     join(repo, "scripts/desktop-e2e/upgrade-baseline.json"),
   );
+  assert.equal(
+    baseline.version,
+    "2.0.3",
+    "Review the previous-version selectors when changing the baseline.",
+  );
+  const oldStatus = (name) =>
+    By.xpath(
+      '//button[contains(concat(" ", normalize-space(@class), " "), " translator-filter ")][normalize-space(text())=' +
+        JSON.stringify(name) +
+        "]",
+    );
+  const chooseOldBatch = async (file) => {
+    await click(css('button[aria-label="Import LLM batch"]'));
+    await click(button("Choose file …"));
+    await native("pick", "Choose LLM translation result", file);
+    await element(css('[aria-label="LLM import preflight"]'));
+  };
   // Both app roots satisfy the archive helper's generated runtime/app boundary.
   const oldApp = join(runtime, "previous version/runtime/app");
   const newApp = join(runtime, "updated version/runtime/app");
@@ -224,7 +240,7 @@ export async function installCases(h) {
         },
       }),
     );
-    await chooseBatch(batchFile);
+    await chooseOldBatch(batchFile);
     await click(button("Import file"));
     await absent(css('[aria-label="LLM import preflight"]'));
     await waitFor(
@@ -239,7 +255,7 @@ export async function installCases(h) {
     await launch(oldExe);
     await click(button("Workspace"));
     await click(css('[data-tree-id="mod:E2E.UpgradeSmoke"]'));
-    await click(button("All"));
+    await click(oldStatus("All"));
     await waitFor(
       "old version marks changed source",
       async () =>
@@ -250,7 +266,7 @@ export async function installCases(h) {
       await (await element(row("blank"))).getAttribute("data-status"),
       "untranslated",
     );
-    await click(button("Review"));
+    await click(oldStatus("Review"));
     await fill(css('[aria-label="Search strings"]'), "review");
     await waitFor(
       "old workspace preferences saved",
@@ -319,7 +335,7 @@ export async function installCases(h) {
   });
   await step("install-updated-version-resumes-work", async () => {
     await launch(newExe);
-    await element(button("Workspace"));
+    await element(css('[aria-label="Translation workspace"]'));
     assert.equal(
       (await driver.findElements(css('[aria-label="Setup"]'))).length,
       0,
@@ -328,7 +344,6 @@ export async function installCases(h) {
       (await driver.findElements(css("#translator-editor-translation"))).length,
       0,
     );
-    await click(button("Workspace"));
     await waitFor(
       "upgraded search preference restored",
       async () =>
@@ -404,7 +419,7 @@ export async function installCases(h) {
     );
     await closeNormally();
     await launch(newExe);
-    await click(button("Workspace"));
+    await element(css('[aria-label="Translation workspace"]'));
     await waitFor(
       "upgraded cleared search restored",
       async () =>

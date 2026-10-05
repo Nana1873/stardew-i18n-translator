@@ -12,7 +12,7 @@ interface ImportBatchDialogProps {
   onPreflight: (path: string) => Promise<LlmImportPreflight>;
   onImport: (path: string) => Promise<void>;
   canSwitchToMatchingMod?: (modUniqueId: string) => boolean;
-  onSwitchToMatchingMod?: (modUniqueId: string) => void;
+  onSwitchToMatchingMod?: (modUniqueId: string, path: string) => void;
   onClose: () => void;
 }
 
@@ -297,9 +297,10 @@ export function ImportBatchDialog({
                   <button
                     className="translator-button translator-button-quiet"
                     type="button"
-                    onClick={() =>
-                      onSwitchToMatchingMod(preflight.batchModUniqueId)
-                    }
+                    onClick={() => {
+                      if (path)
+                        onSwitchToMatchingMod(preflight.batchModUniqueId, path);
+                    }}
                   >
                     Switch to matching mod
                   </button>

@@ -104,6 +104,7 @@ interface StringEditorProps {
   total: number;
   modName: string;
   targetLanguageLabel?: string;
+  targetLanguageCode?: string;
   /** Real configured engine metadata for this editor session. */
   aiEngineLabel?: string;
   aiModel?: string;
@@ -228,6 +229,7 @@ export function StringEditor({
   total,
   modName,
   targetLanguageLabel = "Translation",
+  targetLanguageCode,
   aiEngineLabel = "AI",
   aiModel,
   aiReasoning,
@@ -260,6 +262,8 @@ export function StringEditor({
   // True once the user changed anything (text, AI translate). Navigation
   // auto-saves on dirty.
   const [dirty, setDirty] = useState(false);
+  const [acceptedSource, setAcceptedSource] = useState(row.source);
+  const [sourceConflict, setSourceConflict] = useState(false);
   const [mismatchAccepted, setMismatchAccepted] = useState(
     row.tokenMismatchAccepted,
   );
@@ -304,9 +308,17 @@ export function StringEditor({
   overlayStateRef.current = { discardOpen, pendingSave, pendingMove };
   const aiRequest = useRef(0);
   const launcherRef = useRef<HTMLElement | null>(null);
-  const rowIdentity = `${row.modUniqueId}\0${row.file}\0${row.key}\0${row.source}`;
-  const rowIdentityRef = useRef(rowIdentity);
-  rowIdentityRef.current = rowIdentity;
+  const rowIdentity = JSON.stringify([
+    row.modUniqueId,
+    row.file,
+    row.key,
+    targetLanguageCode,
+  ]);
+  const aiIdentity = JSON.stringify([rowIdentity, row.source]);
+  const rowIdentityRef = useRef(aiIdentity);
+  rowIdentityRef.current = aiIdentity;
+  const sourceSaveBlocked =
+    sourceConflict || (dirty && row.source !== acceptedSource);
   useModalIsolation(dialogRef);
 
   useLayoutEffect(() => {
@@ -344,8 +356,29 @@ export function StringEditor({
     return () => launcherRef.current?.focus();
   }, []);
 
-  // Reset the field whenever the row changes (including via prev/next).
+  const draftIdentityRef = useRef(rowIdentity);
+  // A background update of the same row must preserve a manual draft.
   useEffect(() => {
+    if (draftIdentityRef.current === rowIdentity && (dirty || sourceConflict)) {
+      if (row.source !== acceptedSource) {
+        setSourceConflict(true);
+        aiRequest.current += 1;
+        setTranslating(false);
+        setMismatchAccepted(false);
+        setPendingSave(null);
+        setPendingMove(null);
+        return;
+      }
+      setSourceConflict(false);
+      setTranslateMsg(
+        "The saved translation changed in the background. Your draft is preserved; saving will replace the saved translation.",
+      );
+      setTranslateMsgKind("note");
+      return;
+    }
+    draftIdentityRef.current = rowIdentity;
+    setAcceptedSource(row.source);
+    setSourceConflict(false);
     aiRequest.current += 1;
     setTranslating(false);
     setValue(row.target);
@@ -375,6 +408,7 @@ export function StringEditor({
     textareaRef.current?.focus();
   }, [
     rowIdentity,
+    row.source,
     row.target,
     row.status,
     row.tokenMismatchAccepted,
@@ -411,7 +445,7 @@ export function StringEditor({
     destination: "close" | "next",
     acceptTokenMismatch: boolean,
   ) {
-    if (saving) return;
+    if (saving || sourceSaveBlocked) return;
     setSaving(true);
     setPendingSave(null);
     setTranslateMsg(null);
@@ -431,7 +465,7 @@ export function StringEditor({
 
   /** Save normally, or pause for a per-string token-error waiver. */
   function requestConfirmedSave(destination: "close" | "next") {
-    if (saving || translating) return;
+    if (saving || translating || sourceSaveBlocked) return;
     if (blockingTokenIssues.length > 0 && !mismatchAccepted) {
       setPendingSave(destination);
       return;
@@ -458,7 +492,7 @@ export function StringEditor({
   }
 
   async function handleTranslate() {
-    if (translating) return;
+    if (translating || sourceSaveBlocked) return;
     if (!translationAllowed || !onTranslate) {
       setTranslateMsg(
         translationUnavailableReason ??
@@ -468,7 +502,7 @@ export function StringEditor({
       return;
     }
     const request = ++aiRequest.current;
-    const identity = rowIdentity;
+    const identity = aiIdentity;
     setTranslating(true);
     setTranslateMsg(null);
     setTranslateMsgKind("note");
@@ -526,7 +560,7 @@ export function StringEditor({
   }
 
   async function navigate(delta: number) {
-    if (saving || translating) return;
+    if (saving || translating || sourceSaveBlocked) return;
     if (!(aiDraftPending || dirty || value !== row.target)) {
       aiRequest.current += 1;
       onNavigate(delta);
@@ -543,6 +577,7 @@ export function StringEditor({
     delta: number,
     acceptTokenMismatch: boolean,
   ) {
+    if (saving || sourceSaveBlocked) return;
     setSaving(true);
     setPendingMove(null);
     try {
@@ -1145,6 +1180,30 @@ export function StringEditor({
             )}
           </div>
 
+          {sourceSaveBlocked && (
+            <div className="translator-flow-callout is-warning" role="alert">
+              <span>
+                English source changed while you were editing. Your draft is
+                preserved. Review the updated source before saving.
+                <br />
+                Previous source: {acceptedSource}
+              </span>
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                onClick={() => {
+                  setAcceptedSource(row.source);
+                  setSourceConflict(false);
+                  setMismatchAccepted(false);
+                  setPendingSave(null);
+                  setPendingMove(null);
+                  textareaRef.current?.focus();
+                }}
+              >
+                Use updated source
+              </button>
+            </div>
+          )}
           {translateMsg && translateMsgKind !== "note" && (
             <div
               className="translator-flow-callout is-error translator-editor-ai-error"
@@ -1248,7 +1307,9 @@ export function StringEditor({
               type="button"
               className="editor__iconbtn translator-icon-button"
               onClick={() => void navigate(-1)}
-              disabled={saving || translating || index === 0}
+              disabled={
+                saving || translating || sourceSaveBlocked || index === 0
+              }
               aria-label="Previous string"
               title={`Previous string — saves changes (${displayShortcut(shortcuts["editor.previous"])})`}
             >
@@ -1258,7 +1319,9 @@ export function StringEditor({
               type="button"
               className="editor__iconbtn translator-icon-button"
               onClick={() => void navigate(1)}
-              disabled={saving || translating || index >= total - 1}
+              disabled={
+                saving || translating || sourceSaveBlocked || index >= total - 1
+              }
               aria-label="Next string"
               title={`Next string — saves changes (${displayShortcut(shortcuts["editor.next"])})`}
             >
@@ -1292,7 +1355,12 @@ export function StringEditor({
               type="button"
               className="editor__ai-btn translator-button translator-button-quiet"
               onClick={() => void handleTranslate()}
-              disabled={translating || saving || !translationAllowed}
+              disabled={
+                translating ||
+                saving ||
+                sourceSaveBlocked ||
+                !translationAllowed
+              }
               title={
                 translationAllowed && onTranslate
                   ? `Translate with ${aiEngineLabel} — result lands in Review (${displayShortcut(shortcuts["editor.translate"])})`
@@ -1312,7 +1380,7 @@ export function StringEditor({
               type="button"
               className="translator-button translator-button-quiet"
               onClick={() => requestConfirmedSave("close")}
-              disabled={saving || translating}
+              disabled={saving || translating || sourceSaveBlocked}
               title={`${saveLabel} (${displayShortcut(shortcuts["editor.save"])})`}
             >
               {saveLabel} <Kbd>{displayShortcut(shortcuts["editor.save"])}</Kbd>
@@ -1321,7 +1389,7 @@ export function StringEditor({
               type="button"
               className="editor__save translator-button translator-button-primary"
               onClick={() => requestConfirmedSave("next")}
-              disabled={saving || translating}
+              disabled={saving || translating || sourceSaveBlocked}
               title={`${saveNextLabel} (${displayShortcut(shortcuts["editor.saveNext"])})`}
             >
               {saveNextLabel}{" "}

@@ -409,12 +409,15 @@ function mockExportConfigured(
   });
 }
 
-function mockConfigured(scanResult: unknown = EMPTY_SCAN) {
+function mockConfigured(
+  scanResult: unknown = EMPTY_SCAN,
+  strings: Promise<unknown[]> = Promise.resolve([]),
+) {
   invokeMock.mockImplementation((cmd: string) => {
     if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
     if (cmd === "scan_mods") return Promise.resolve(scanResult);
     if (cmd === "load_glossary") return Promise.resolve(null);
-    if (cmd === "load_strings") return Promise.resolve([]);
+    if (cmd === "load_strings") return strings;
     return Promise.resolve(null);
   });
 }
@@ -457,7 +460,8 @@ function deferred<T>() {
 
 describe("App shell", () => {
   it("opens the complete workspace directly", async () => {
-    mockConfigured();
+    const strings = deferred<unknown[]>();
+    mockConfigured(exportScan(false), strings.promise);
     render(<App />);
 
     await screen.findByRole("region", { name: "Translation workspace" });
@@ -470,9 +474,15 @@ describe("App shell", () => {
     expect(
       screen.getByRole("region", { name: "Mod list" }),
     ).toBeInTheDocument();
+    await screen.findByText("Loading strings…");
     expect(
-      screen.getByRole("searchbox", { name: "Search strings" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("searchbox", { name: "Search strings" }),
+    ).toBeNull();
+    const searchReady = screen.findByRole("searchbox", {
+      name: "Search strings",
+    });
+    act(() => strings.resolve([]));
+    expect(await searchReady).toBeInTheDocument();
     const paneResizer = screen.getByRole("separator", {
       name: "Resize mod list",
     });
@@ -1262,13 +1272,32 @@ describe("App shell", () => {
     expect(within(reopened).getByText("Test Mod")).toBeVisible();
   });
 
-  it("blocks export from the read-only preflight and opens the exact issue", async () => {
+  it("blocks export from the read-only preflight and opens the exact issue outside a scan subset", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "scan_mods")
+        return Promise.resolve({
+          ...exportScan(false),
+          sourceDeltas: {
+            sourcesChanged: 0,
+            stringsAdded: 1,
+            stringsRemoved: 0,
+            addedStrings: [
+              { modUniqueId: "a.b", relativeDir: "i18n", key: "new.key" },
+            ],
+            changedSources: [],
+          },
+        });
       if (cmd === "load_strings")
         return Promise.resolve([
+          {
+            key: "new.key",
+            source: "New",
+            target: "Neu",
+            targetPresent: true,
+            status: "translated",
+          },
           {
             key: "greeting",
             source: "Hello {{name}}",
@@ -1294,6 +1323,16 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+    const scanToast = await screen.findByRole("status");
+    fireEvent.click(
+      within(scanToast).getByRole("button", { name: "Details…" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show new strings (1)" }),
+    );
+    expect(await screen.findByText("new.key")).toBeVisible();
+    expect(screen.queryByText("greeting")).toBeNull();
     chooseToolbarAction("File actions", "Export current mod");
     const preflight = await screen.findByRole("dialog", {
       name: "Confirm export overwrite",
@@ -1708,6 +1747,40 @@ describe("App shell", () => {
           "Batch edit undone",
         ).length,
       ).toBeGreaterThan(0),
+    );
+  });
+
+  it("removes the undo action when changing target language", async () => {
+    mockConfigured();
+    backendHistory = [batchEditHistory()];
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Details: Batch edit saved/ }),
+    );
+    const result = await screen.findByRole("complementary", {
+      name: "Operation result",
+    });
+    expect(
+      within(result).getByRole("button", {
+        name: "Undo the latest batch edit",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Target language"), {
+      target: { value: "fr" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("dialog", { name: "Settings" }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      screen.queryByRole("button", { name: "Undo the latest batch edit" }),
+    ).not.toBeInTheDocument();
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "undo_batch_edit",
+      expect.anything(),
     );
   });
 
@@ -3319,7 +3392,7 @@ describe("App shell", () => {
     });
   });
 
-  it("closes the ZIP preview when opening a blocking problem", async () => {
+  it("closes the ZIP preview and exposes a blocking problem outside a scan subset", async () => {
     const preview = {
       packageName: "Test Mod",
       selectedVersion: "1.0",
@@ -3346,8 +3419,36 @@ describe("App shell", () => {
     invokeMock.mockImplementation((command: string) => {
       if (command === "load_settings") return Promise.resolve(CONFIGURED);
       if (command === "load_glossary") return Promise.resolve(null);
-      if (command === "scan_mods") return Promise.resolve(exportScan(true));
-      if (command === "load_strings") return Promise.resolve([]);
+      if (command === "scan_mods")
+        return Promise.resolve({
+          ...exportScan(true),
+          sourceDeltas: {
+            sourcesChanged: 0,
+            stringsAdded: 1,
+            stringsRemoved: 0,
+            addedStrings: [
+              { modUniqueId: "a.b", relativeDir: "i18n", key: "new.key" },
+            ],
+            changedSources: [],
+          },
+        });
+      if (command === "load_strings")
+        return Promise.resolve([
+          {
+            key: "new.key",
+            source: "New",
+            target: "Neu",
+            targetPresent: true,
+            status: "translated",
+          },
+          {
+            key: "broken.key",
+            source: "Hello {{name}}",
+            target: "Hallo",
+            targetPresent: true,
+            status: "translated",
+          },
+        ]);
       if (command === "preview_translation_zip")
         return Promise.resolve(preview);
       return Promise.resolve(null);
@@ -3355,6 +3456,16 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    fireEvent.click(screen.getByLabelText("Scan mods"));
+    const scanToast = await screen.findByRole("status");
+    fireEvent.click(
+      within(scanToast).getByRole("button", { name: "Details…" }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Show new strings (1)" }),
+    );
+    expect(await screen.findByText("new.key")).toBeVisible();
+    expect(screen.queryByText("broken.key")).toBeNull();
     chooseToolbarAction("File actions", "Translation ZIP · current mod");
     const problems = await screen.findByRole("list", {
       name: "Blocking ZIP problems",
@@ -3369,6 +3480,10 @@ describe("App shell", () => {
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
     ).toHaveValue("broken.key");
+    fireEvent.doubleClick(await screen.findByText("broken.key"));
+    expect(
+      await screen.findByRole("dialog", { name: "broken.key" }),
+    ).toBeVisible();
   });
 
   it("leaves a ZIP untouched when native Save is canceled and builds once after confirmation", async () => {
@@ -4135,6 +4250,15 @@ describe("App shell", () => {
       name: "Import LLM batch",
     });
     expect(switchedDialog).toHaveTextContent("Target: Second Mod");
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "preflight_llm_batch_path",
+        expect.objectContaining({
+          modUniqueId: "second.mod",
+          path: "C:/results/second.llm-result.json",
+        }),
+      ),
+    );
     fireEvent.click(
       within(switchedDialog).getByRole("button", { name: "Cancel import" }),
     );

@@ -59,12 +59,17 @@ pub fn entry_key(relative_dir: &str, key: &str) -> String {
     format!("{relative_dir}\u{0}{key}")
 }
 
+/// Resolve the isolated state root without creating or migrating files.
+pub fn language_root_path(config_dir: &Path, target_lang: &str) -> Result<PathBuf, String> {
+    let safe_lang = crate::language::normalize_target_code(target_lang)?;
+    Ok(config_dir.join("language-state").join(safe_lang))
+}
+
 /// Return the isolated state root for one target language. A pre-v1.1
 /// `data/translations/` folder is moved once into the first active language,
 /// which is the language stored in settings when upgrading.
 pub fn language_root(config_dir: &Path, target_lang: &str) -> Result<PathBuf, String> {
-    let safe_lang = crate::language::normalize_target_code(target_lang)?;
-    let root = config_dir.join("language-state").join(safe_lang);
+    let root = language_root_path(config_dir, target_lang)?;
     let legacy = config_dir.join("translations");
     let destination = root.join("translations");
     if legacy.is_dir() && !destination.exists() {

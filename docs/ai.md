@@ -88,10 +88,11 @@ A higher setting can shorten large runs when your account accepts overlapping
 requests. Each batch still completes the selected quality checks. After repeated
 temporary failures, the app lowers parallelism for the rest of that run.
 
-The progress dialog shows the active engine, model, and reasoning setting. Its
+The progress notice above the Activity log shows the active engine, mod scope,
+and current phase. Its
 single **Saved to Review** counter and progress bar count persisted suggestions
-only. Drafts can be received while quality checks are still running; the
-**Drafts received** count above the activity log shows these separately.
+only. Drafts can be received while quality checks are still running; they do not
+advance the saved counter.
 Cancelling keeps suggestions already saved and can also save valid drafts when
 a token repair is interrupted.
 
@@ -102,19 +103,15 @@ you return to the workspace that owns those suggestions.
 
 The **Activity log** records batch phase changes, repairs, retries, parallel
 limit changes, and saved suggestions with elapsed timestamps. It retains the
-latest 200 events. Older entries describe earlier work; only the active batch
-summary describes current concurrency. Removing a batch from that summary does
-not establish that its suggestions were saved. Provider streaming updates do
+latest 500 entries, retaining up to 100 warnings/errors when pruning older
+routine entries. Older entries describe earlier work. Provider streaming updates do
 not add log entries. The log follows new entries unless you scroll up to read
 earlier ones.
 
-Run information stays visible above the log: the mod, received drafts, and
-available quality-check settings, provider activity, reported token usage, and
-retry/split counts. Local AI uses the same layout with serial batch activity and
-the information available from that engine. The dialog also shows elapsed time;
-an estimated remaining time appears after suggestions have been saved. A quiet
-interval can mean the engine is still processing; progress cannot describe
-every moment inside a provider call.
+Open the completed result's details for engine, model, reasoning, reported token
+usage, and recovery information when available. Local AI uses the same progress
+notice with serial work. A quiet interval can mean the engine is still processing;
+progress cannot describe every moment inside a provider call.
 
 **Cancel** stops further work while retaining suggestions already saved to
 Review. The same applies to a later error. Use **Open review queue** to inspect

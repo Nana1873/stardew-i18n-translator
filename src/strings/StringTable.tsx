@@ -704,6 +704,7 @@ export function StringTable({
   }, [targetLanguageCode]);
   const rowFocusActive = useRef(false);
   const rowsRef = useRef<Row[] | null>(null);
+  const manualSaveRevision = useRef(0);
   const bulkSavingRef = useRef(false);
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
@@ -786,53 +787,72 @@ export function StringTable({
     }
   }
 
+  const requestedPlanRef = useRef<string | null>(null);
   useEffect(() => {
     let active = true;
-    aiProvenanceByIdentity.current.clear();
-    rowsRef.current = null;
-    setRows(null);
+    const sameContext =
+      requestedPlanRef.current === aiContextKey &&
+      rowsRef.current !== null &&
+      editorSession !== null;
+    requestedPlanRef.current = aiContextKey;
+    if (!sameContext) {
+      aiProvenanceByIdentity.current.clear();
+      rowsRef.current = null;
+      setRows(null);
+      setSelection(new Set());
+      setActiveIdentity(null);
+      setEditorSession(null);
+      anchor.current = null;
+    }
     setError(null);
-    setSelection(new Set());
-    setActiveIdentity(null);
     setContextMenu(null);
     setBulkMenuOpen(false);
-    setEditorSession(null);
-    anchor.current = null;
 
     (async () => {
-      const loaded: Row[] = [];
-      for (const candidate of plan) {
-        if (!active) return;
-        for (const file of candidate.i18nFiles) {
+      // A successful save can race an already captured load response. Reload
+      // only when a real write crossed this attempt, retaining other row updates.
+      while (active) {
+        const revision = manualSaveRevision.current;
+        const loaded: Row[] = [];
+        for (const candidate of plan) {
           if (!active) return;
-          const fileRows = await loadStrings(
-            candidate.uniqueId,
-            file.relativeDir,
-            file.defaultPath,
-            file.targetPath,
-          );
-          if (!active) return;
-          for (const row of fileRows) {
-            loaded.push({
-              ...row,
-              status: derivedStringStatus(row.source, row.target, row.status),
-              modUniqueId: candidate.uniqueId,
-              modName: candidate.name,
-              packageId: candidate.packageId,
-              file: file.relativeDir,
-            });
+          for (const file of candidate.i18nFiles) {
+            if (!active) return;
+            const fileRows = await loadStrings(
+              candidate.uniqueId,
+              file.relativeDir,
+              file.defaultPath,
+              file.targetPath,
+            );
+            if (!active) return;
+            for (const row of fileRows) {
+              loaded.push({
+                ...row,
+                status: derivedStringStatus(row.source, row.target, row.status),
+                modUniqueId: candidate.uniqueId,
+                modName: candidate.name,
+                packageId: candidate.packageId,
+                file: file.relativeDir,
+              });
+            }
           }
         }
+        if (!active) return;
+        if (revision !== manualSaveRevision.current) continue;
+        rowsRef.current = loaded;
+        setLoadedContext(
+          JSON.stringify([planSignature, reloadToken, postSaveReloadToken]),
+        );
+        setRows(loaded);
+        reportCounts(loaded);
+        return;
       }
-      if (!active) return;
-      rowsRef.current = loaded;
-      setLoadedContext(
-        JSON.stringify([planSignature, reloadToken, postSaveReloadToken]),
-      );
-      setRows(loaded);
-      reportCounts(loaded);
     })().catch((cause) => {
       if (!active) return;
+      if (sameContext) {
+        onNotify?.(`Could not refresh strings: ${String(cause)}`, "error");
+        return;
+      }
       rowsRef.current = [];
       setRows([]);
       setError(String(cause));
@@ -843,7 +863,7 @@ export function StringTable({
     };
     // planSignature is the complete immutable load contract.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [planSignature, reloadToken, postSaveReloadToken]);
+  }, [planSignature, targetLanguageCode, reloadToken, postSaveReloadToken]);
 
   useEffect(() => {
     if (
@@ -1516,8 +1536,10 @@ export function StringTable({
       );
       throw cause;
     }
+    if (aiContextRef.current.version !== aiContextVersion) return;
+    manualSaveRevision.current += 1;
     aiProvenanceByIdentity.current.delete(identity);
-    const next = data.map((candidate) =>
+    const next = (rowsRef.current ?? data).map((candidate) =>
       identityOf(candidate) === identity
         ? {
             ...candidate,
@@ -2895,6 +2917,7 @@ export function StringTable({
             total={editorSession.identities.length}
             modName={editingRow.modName}
             targetLanguageLabel={targetLanguageLabel}
+            targetLanguageCode={targetLanguageCode}
             aiEngineLabel={activeLiveEngine?.label ?? "Local AI"}
             aiModel={activeLiveEngine?.model ?? localAiModel}
             aiReasoning={activeLiveEngine?.reasoning}

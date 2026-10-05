@@ -418,46 +418,103 @@ describe("StringEditor", () => {
     expect(screen.queryByText(/just now/i)).not.toBeInTheDocument();
   });
 
-  it("resets editor-local state between mods with the same file and key", () => {
+  it.each(["mod", "file", "key", "language"])(
+    "resets editor-local state when its %s identity changes",
+    (change) => {
+      const onSave = vi.fn();
+      const onClose = vi.fn();
+      const onNavigate = vi.fn();
+      const first = row({ modUniqueId: "first.mod" });
+      const second = row({
+        modUniqueId: change === "mod" ? "second.mod" : "first.mod",
+        file: change === "file" ? "other/i18n" : first.file,
+        key: change === "key" ? "other.key" : first.key,
+      });
+      const { rerender } = render(
+        <StringEditor
+          row={first}
+          index={0}
+          total={2}
+          modName="First Mod"
+          targetLanguageCode="de"
+          onSave={onSave}
+          onClose={onClose}
+          onNavigate={onNavigate}
+        />,
+      );
+
+      fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+        target: { value: "Unsaved first-mod edit" },
+      });
+      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+        "Unsaved first-mod edit",
+      );
+
+      rerender(
+        <StringEditor
+          row={second}
+          index={1}
+          total={2}
+          modName="Second Mod"
+          targetLanguageCode={change === "language" ? "fr" : "de"}
+          onSave={onSave}
+          onClose={onClose}
+          onNavigate={onNavigate}
+        />,
+      );
+
+      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+        "Hallo",
+      );
+    },
+  );
+
+  it("requires a fresh source decision and token waiver for each source change", () => {
     const onSave = vi.fn();
-    const onClose = vi.fn();
-    const onNavigate = vi.fn();
-    const first = row({ modUniqueId: "first.mod" });
-    const second = row({ modUniqueId: "second.mod" });
+    const props = {
+      index: 0,
+      total: 2,
+      modName: "Test Mod",
+      onSave,
+      onClose: vi.fn(),
+      onNavigate: vi.fn(),
+    };
     const { rerender } = render(
-      <StringEditor
-        row={first}
-        index={0}
-        total={2}
-        modName="First Mod"
-        onSave={onSave}
-        onClose={onClose}
-        onNavigate={onNavigate}
-      />,
+      <StringEditor {...props} row={row({ tokenMismatchAccepted: true })} />,
     );
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
-      target: { value: "Unsaved first-mod edit" },
-    });
-    expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
-      "Unsaved first-mod edit",
-    );
-
+    const input = screen.getByRole("textbox", { name: "Translation" });
+    fireEvent.change(input, { target: { value: "Draft" } });
     rerender(
       <StringEditor
-        row={second}
-        index={1}
-        total={2}
-        modName="Second Mod"
-        onSave={onSave}
-        onClose={onClose}
-        onNavigate={onNavigate}
+        {...props}
+        row={row({ source: "Hello {{first}}", tokenMismatchAccepted: true })}
       />,
     );
-
-    expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
-      "Hallo",
+    fireEvent.change(input, { target: { value: "Hallo" } });
+    expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Use updated source" }));
+    fireEvent.change(input, { target: { value: "Second draft" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(
+      screen.getByRole("dialog", { name: "Protected token mismatch" }),
+    ).toBeVisible();
+    rerender(
+      <StringEditor
+        {...props}
+        row={row({ source: "Hello {{second}}", tokenMismatchAccepted: true })}
+      />,
     );
+    expect(
+      screen.queryByRole("dialog", { name: "Protected token mismatch" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+    expect(input).toHaveValue("Second draft");
+    fireEvent.click(screen.getByRole("button", { name: "Use updated source" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    expect(
+      screen.getByRole("dialog", { name: "Protected token mismatch" }),
+    ).toHaveTextContent("{{second}}");
+    expect(onSave).not.toHaveBeenCalled();
   });
 
   it("passes the row section to the configured AI translation callback", async () => {

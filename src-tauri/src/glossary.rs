@@ -503,6 +503,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
 /// gate, so only genuine translations remain.
 pub fn build_from_pack(
     unpacked_content: &Path,
+    pack_root: &Path,
     pack_strings_dir: &Path,
     pack_format: StringAssetFormat,
     target_lang: &str,
@@ -526,12 +527,22 @@ pub fn build_from_pack(
         ));
     }
 
-    let target_map = |asset: &str| match pack_format {
-        StringAssetFormat::Json => read_string_map(&pack_strings_dir.join(format!("{asset}.json"))),
-        StringAssetFormat::Xnb => xnb::read_string_dictionary(
-            &pack_strings_dir.join(format!("{asset}_{target_lang}.xnb")),
-        )
-        .ok(),
+    let pack_root = pack_root
+        .canonicalize()
+        .map_err(|error| format!("Could not identify the language pack folder: {error}"))?;
+    let target_map = |asset: &str| {
+        let filename = match pack_format {
+            StringAssetFormat::Json => format!("{asset}.json"),
+            StringAssetFormat::Xnb => format!("{asset}_{target_lang}.xnb"),
+        };
+        let path = pack_strings_dir.join(filename).canonicalize().ok()?;
+        if !path.starts_with(&pack_root) {
+            return None;
+        }
+        match pack_format {
+            StringAssetFormat::Json => read_string_map(&path),
+            StringAssetFormat::Xnb => xnb::read_string_dictionary(&path).ok(),
+        }
     };
     let entries = if let Some(game_strings) = game_strings.as_ref().filter(|dir| dir.is_dir()) {
         build_entries(
@@ -1143,6 +1154,7 @@ mod tests {
 
         let glossary = build_from_pack(
             &root.join("Content (unpacked)"),
+            &root.join("pack"),
             &pack,
             StringAssetFormat::Json,
             "th",
@@ -1163,6 +1175,58 @@ mod tests {
     }
 
     #[test]
+    fn pack_extraction_rejects_an_external_asset_link() {
+        let root = crate::test_support::temp_dir("glossary-external-pack-asset");
+        let english = root.join("Content (unpacked)");
+        let pack = root.join("pack");
+        write(&english.join("Strings/Objects.json"), r#"{"24":"Parsnip"}"#);
+        let outside = root.join("outside.json");
+        write(&outside, r#"{"24":"Outside Term"}"#);
+        std::fs::create_dir_all(pack.join("Strings")).unwrap();
+        let link = pack.join("Strings/Objects.json");
+        #[cfg(windows)]
+        let linked = std::os::windows::fs::symlink_file(&outside, &link);
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&outside, &link);
+        if let Err(error) = linked {
+            #[cfg(windows)]
+            if error.kind() == std::io::ErrorKind::PermissionDenied
+                || error.raw_os_error() == Some(1314)
+            {
+                eprintln!("External asset link test requires Windows Developer Mode or symlink privilege: {error}");
+                std::fs::remove_dir_all(root).unwrap();
+                return;
+            }
+            panic!("Could not create synthetic asset link: {error}");
+        }
+        assert!(build_from_pack(
+            &english,
+            &pack,
+            &pack.join("Strings"),
+            StringAssetFormat::Json,
+            "th",
+            "Linked Pack"
+        )
+        .is_err());
+        std::fs::remove_file(link).unwrap();
+        write(&pack.join("Strings/Objects.json"), r#"{"24":"Local Term"}"#);
+        assert_eq!(
+            build_from_pack(
+                &english,
+                &pack,
+                &pack.join("Strings"),
+                StringAssetFormat::Json,
+                "th",
+                "Valid Pack"
+            )
+            .unwrap()
+            .term_count,
+            1
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn builds_from_xnb_only_pack_pairing_direct_game_xnb_with_pack_strings() {
         let root = crate::test_support::temp_dir("glossary-pack-xnb");
         let game = root.join("Content").join("Strings");
@@ -1178,6 +1242,7 @@ mod tests {
 
         let glossary = build_from_pack(
             &root.join("Content (unpacked)"),
+            &root.join("pack"),
             &pack,
             StringAssetFormat::Xnb,
             "vi",
@@ -1194,6 +1259,52 @@ mod tests {
         std::fs::remove_dir_all(&root).ok();
     }
 
+    fn checked_xnb_entries(strings: &Path) -> Vec<GlossaryEntry> {
+        let read = |path: PathBuf| {
+            if path.is_file() {
+                Some(xnb::read_string_dictionary(&path).unwrap_or_else(|error| {
+                    panic!(
+                        "Configured XNB dictionary {} must decode: {error}",
+                        path.display()
+                    )
+                }))
+            } else {
+                None
+            }
+        };
+        build_entries(
+            &|asset| read(strings.join(format!("{asset}.xnb"))),
+            &|asset| read(strings.join(format!("{asset}.de-DE.xnb"))),
+        )
+    }
+
+    #[test]
+    fn direct_xnb_comparison_cannot_fall_back_to_valid_json() {
+        let root = crate::test_support::temp_dir("strict-xnb-comparison");
+        let strings = root.join("Content/Strings");
+        write_bytes(
+            &strings.join("Objects.xnb"),
+            &test_xnb_dictionary(&[("24", "Parsnip")]),
+        );
+        write_bytes(
+            &strings.join("Objects.de-DE.xnb"),
+            &test_xnb_dictionary(&[("24", "Pastinake")]),
+        );
+        write(
+            &root.join("Content (unpacked)/Strings/Objects.json"),
+            r#"{"24":"Parsnip"}"#,
+        );
+        write(
+            &root.join("Content (unpacked)/Strings/Objects.de-DE.json"),
+            r#"{"24":"Pastinake"}"#,
+        );
+        assert_eq!(checked_xnb_entries(&strings).len(), 1);
+        write_bytes(&strings.join("Objects.xnb"), b"broken XNB");
+        assert_eq!(build_from_game(&root, "de").unwrap().term_count, 1);
+        assert!(std::panic::catch_unwind(|| checked_xnb_entries(&strings)).is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     #[test]
     fn real_direct_xnb_matches_unpacked_json_when_available() {
         let Ok(stardew) = std::env::var("SIT_REAL_STARDEW") else {
@@ -1201,22 +1312,22 @@ mod tests {
             return;
         };
         let stardew = Path::new(&stardew);
-        let direct = match build_from_game(stardew, "de") {
-            Ok(glossary) => glossary,
-            Err(error) => {
-                eprintln!("glossary: direct XNB build skipped ({error})");
-                return;
-            }
-        };
-        let fallback = match build(&default_unpacked_path(stardew), "de") {
-            Ok(glossary) => glossary,
-            Err(error) => {
-                eprintln!("glossary: unpacked JSON comparison skipped ({error})");
-                return;
-            }
-        };
+        assert!(
+            stardew.is_dir(),
+            "Configured Stardew test directory is missing."
+        );
+        let direct = checked_xnb_entries(&default_game_strings_path(stardew));
+        assert!(
+            !direct.is_empty(),
+            "Configured XNB source produced no terms."
+        );
+        let fallback = build(&default_unpacked_path(stardew), "de")
+            .expect("Configured unpacked JSON comparison must build successfully.");
+        assert!(
+            fallback.term_count > 0,
+            "Configured unpacked JSON source produced no terms."
+        );
         let mut direct_entries: Vec<_> = direct
-            .entries
             .iter()
             .map(|entry| {
                 (
@@ -1262,6 +1373,7 @@ mod tests {
 
         let err = build_from_pack(
             &root.join("Content (unpacked)"),
+            &root.join("pack"),
             &pack,
             StringAssetFormat::Json,
             "th",
