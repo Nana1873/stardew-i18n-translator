@@ -216,6 +216,135 @@ function dataRows(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(".stringrow--data"));
 }
 
+it.each(["mod", "reload"] as const)(
+  "waits for the current strings before fulfilling an Open Review focus request after %s changes",
+  async (change) => {
+    const pending = deferred<readonly unknown[]>();
+    let delay = false;
+    invokeMock.mockImplementation((command: string, args?: unknown) => {
+      if (command !== "load_strings") return Promise.resolve(undefined);
+      const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+      return delay ? pending.promise : Promise.resolve(ROWS[id]);
+    });
+    const table = (mod: ScannedMod, reloadToken: number) => (
+      <>
+        <button>Outside the table</button>
+        <StringTable mod={mod} reloadToken={reloadToken} />
+      </>
+    );
+    const { rerender } = render(table(MOD, 0));
+    await screen.findByText("greeting");
+    const outside = screen.getByRole("button", { name: "Outside the table" });
+    outside.focus();
+    delay = true;
+    act(() => {
+      window.dispatchEvent(new Event("translator-focus-filters"));
+      rerender(table(change === "mod" ? OTHER_MOD : MOD, 1));
+    });
+    expect(outside).toHaveFocus();
+    expect(screen.getByText("Loading strings…")).toBeVisible();
+    act(() => pending.resolve(ROWS[change === "mod" ? "c.d" : "a.b"]));
+    const current = await screen.findByRole("button", {
+      name: change === "mod" ? "All 1" : "All 3",
+    });
+    await waitFor(() => expect(current).toHaveFocus());
+  },
+);
+
+it("keeps one AI run alive while another mod loads, fails, and retries", async () => {
+  const run = deferred<AiRunResult>();
+  let rejectLoad!: (reason: Error) => void;
+  const load = new Promise<readonly unknown[]>((_resolve, reject) => {
+    rejectLoad = reject;
+  });
+  let retry = false;
+  invokeMock.mockImplementation((command: string, args?: unknown) => {
+    if (command !== "load_strings") return Promise.resolve(undefined);
+    const id = (args as { modUniqueId: "a.b" | "c.d" }).modUniqueId;
+    return id === "c.d" && !retry ? load : Promise.resolve(ROWS[id]);
+  });
+  const onRunAi = vi.fn(() => run.promise);
+  const props = {
+    liveAiEngines: [LOCAL_AI_ENGINE],
+    defaultAiEngine: "local" as const,
+    onRunAi,
+  };
+  const { rerender } = render(<StringTable mod={MOD} {...props} />);
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Select bye" }));
+  fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+  fireEvent.click(
+    screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+  );
+  await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+  const notice = screen.getByLabelText("AI translation progress");
+  rerender(<StringTable mod={OTHER_MOD} {...props} />);
+  expect(screen.getByText("Loading strings…")).toBeVisible();
+  expect(screen.getByLabelText("AI translation progress")).toBe(notice);
+  await act(async () => rejectLoad(new Error("Fixture load failed")));
+  expect(await screen.findByText(/Fixture load failed/)).toBeVisible();
+  expect(screen.getByLabelText("AI translation progress")).toBe(notice);
+  retry = true;
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  await screen.findByText("tomorrow");
+  expect(screen.getByLabelText("AI translation progress")).toBe(notice);
+  expect(onRunAi).toHaveBeenCalledOnce();
+  act(() =>
+    run.resolve(
+      liveAiResult({ outcome: "cancelled", completed: 0, suggestions: [] }),
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.queryByLabelText("AI translation progress")).toBeNull(),
+  );
+});
+
+it.each(["language", "folder", "round trip"])(
+  "does not apply an AI result to rows after a workspace %s change",
+  async (change) => {
+    installBackendRows();
+    const run = deferred<AiRunResult>();
+    const onRunAi = vi.fn(() => run.promise);
+    const onStringSaved = vi.fn();
+    const props = { liveAiEngines: [LOCAL_AI_ENGINE], onRunAi, onStringSaved };
+    const original = (
+      <StringTable mod={MOD} targetLanguageCode="de" {...props} />
+    );
+    const { rerender } = render(original);
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select bye" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    const changedMod = {
+      ...MOD,
+      i18nFiles: MOD.i18nFiles.map((file) => ({
+        ...file,
+        defaultPath: "other/i18n/default.json",
+        targetPath: "other/i18n/de.json",
+      })),
+    };
+    rerender(
+      <StringTable
+        mod={change === "folder" ? changedMod : MOD}
+        targetLanguageCode={change === "folder" ? "de" : "fr"}
+        {...props}
+      />,
+    );
+    if (change === "round trip") rerender(original);
+    await act(async () => run.resolve(liveAiResult()));
+    await waitFor(() =>
+      expect(screen.queryByLabelText("AI translation progress")).toBeNull(),
+    );
+    expect(
+      rowFor("bye").querySelector(".translator-translation-cell"),
+    ).toHaveTextContent("—");
+    expect(onStringSaved).not.toHaveBeenCalled();
+  },
+);
+
 function rowFor(text: string): HTMLElement {
   const node = screen.getByText(text);
   const row = node.closest<HTMLElement>(".stringrow--data");
@@ -257,18 +386,14 @@ describe("StringTable workbench", () => {
     installBackendRows({ "a.b": [ROWS["a.b"][1]] });
     render(<StringTable mod={MOD} />);
 
-    expect(
-      await screen.findByText(/1 of 1 string · All · This mod/),
-    ).toBeVisible();
+    expect(await screen.findByText(/1 of 1 string shown/)).toBeVisible();
     fireEvent.change(
       screen.getByRole("searchbox", { name: "Search strings" }),
       {
         target: { value: "bye" },
       },
     );
-    expect(
-      screen.getByText("Search preview: 1 matching row · 1 string in This mod"),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 1 string shown")).toBeVisible();
   });
 
   it("does not continue a superseded multi-file load after its active request returns", async () => {
@@ -402,7 +527,7 @@ describe("StringTable workbench", () => {
     expect(toolbar).toHaveClass("is-selection-active");
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Clear selected strings" }),
+      screen.getByRole("button", { name: "Clear string selection" }),
     );
     expect(toolbar).not.toHaveClass("is-selection-active");
   });
@@ -437,7 +562,7 @@ describe("StringTable workbench", () => {
       screen.getByRole("heading", { name: /Test Package.*Test Mod/ }),
     ).toBeVisible();
     expect(screen.getByText("German (de)")).toBeVisible();
-    expect(screen.getByText("2 / 3 covered · 67%")).toBeVisible();
+    expect(screen.getByText("2 / 3 covered")).toBeVisible();
     expect(screen.getByText("scanned just now")).toBeVisible();
   });
 
@@ -456,7 +581,7 @@ describe("StringTable workbench", () => {
       ),
     );
     render(<StringTable mod={MOD} />);
-    expect(await screen.findByText("199 / 200 covered · 99.5%")).toBeVisible();
+    expect(await screen.findByText("199 / 200 covered")).toBeVisible();
   });
 
   it("loads every real mod in all-mod scope and hides a redundant File column", async () => {
@@ -511,9 +636,7 @@ describe("StringTable workbench", () => {
     expect(await screen.findByText("tomorrow")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
     expect(
-      screen.getByText(
-        "1 of 4 strings · New strings from latest scan · All mods",
-      ),
+      screen.getByText("New strings from latest scan · 1 of 4 strings shown"),
     ).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
     expect(onClearFilters).toHaveBeenCalledOnce();
@@ -558,7 +681,7 @@ describe("StringTable workbench", () => {
     expect(screen.queryByText("token")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /^All \d/ }));
-    fireEvent.click(screen.getByRole("button", { name: /^Validation issues/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Issues/ }));
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
 
@@ -566,6 +689,82 @@ describe("StringTable workbench", () => {
     expect(
       screen.queryByRole("button", { name: /^Needs attention/ }),
     ).not.toBeInTheDocument();
+  });
+
+  it("opens Issues across statuses and leaves it when selecting a status", async () => {
+    installBackendRows({
+      "a.b": [
+        ...ROWS["a.b"],
+        { ...ROWS["a.b"][2], key: "done-token", status: "translated" },
+        {
+          ...ROWS["a.b"][2],
+          key: "accepted-token",
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("greeting");
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    expect(screen.getByText("bye")).toBeVisible();
+    expect(screen.queryByText("done-token")).toBeNull();
+
+    const issues = screen.getByRole("button", { name: "Issues 3" });
+    fireEvent.click(issues);
+    expect(screen.getByText("token")).toBeVisible();
+    expect(screen.getByText("done-token")).toBeVisible();
+    expect(screen.queryByText("bye")).toBeNull();
+    expect(screen.getByText("accepted-token")).toBeVisible();
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+    for (const label of ["All", "Open", "Changed", "Review", "Done"])
+      expect(
+        screen.getByRole("button", { name: new RegExp(`^${label} \\d`) }),
+      ).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(issues);
+    expect(issues).toHaveAttribute("aria-pressed", "true");
+
+    fireEvent.click(screen.getByRole("button", { name: /^Done / }));
+    expect(issues).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("greeting")).toBeVisible();
+    expect(screen.getByText("done-token")).toBeVisible();
+    expect(screen.getByText("accepted-token")).toBeVisible();
+    expect(screen.queryByText("token")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+    expect(screen.getByText("bye")).toBeVisible();
+  });
+
+  it("ignores a legacy status restriction in Issues while preserving scope and search", async () => {
+    const onIssuesOnlyChange = vi.fn();
+    const onStatusFilterChange = vi.fn();
+    render(
+      <StringTable
+        mod={MOD}
+        mods={[MOD, OTHER_MOD]}
+        scope="all"
+        search="Hallo"
+        statusFilter="untranslated"
+        issuesOnly
+        onIssuesOnlyChange={onIssuesOnlyChange}
+        onStatusFilterChange={onStatusFilterChange}
+      />,
+    );
+    expect(await screen.findByText("token")).toBeVisible();
+    expect(screen.queryByText("greeting")).toBeNull();
+    expect(
+      screen.getByRole("searchbox", { name: "Search strings" }),
+    ).toHaveValue("Hallo");
+    expect(screen.getByRole("button", { name: "All mods" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^Open / })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Done / }));
+    expect(onIssuesOnlyChange).toHaveBeenCalledWith(false);
+    expect(onStatusFilterChange).toHaveBeenCalledWith("translated");
   });
 
   it("searches and marks real mod and file metadata only in All mods", async () => {
@@ -584,11 +783,7 @@ describe("StringTable workbench", () => {
 
     expect(screen.getByText("tomorrow")).toBeVisible();
     expect(screen.queryByText("greeting")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(
-        "Search preview: 1 matching row · 4 strings in All mods",
-      ),
-    ).toBeVisible();
+    expect(screen.getByText("1 of 4 strings shown")).toBeVisible();
     const modCell = rowFor("tomorrow").querySelector(
       '.translator-global-mod-col[data-search-field="mod"]',
     );
@@ -824,9 +1019,7 @@ describe("StringTable workbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
     select("token");
-    fireEvent.click(
-      screen.getByRole("button", { name: /^Validation issues 1$/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Issues 1$/ }));
     expect(rowFor("token")).toHaveAttribute("aria-selected", "false");
     fireEvent.click(screen.getByRole("button", { name: "Clear" }));
 
@@ -918,6 +1111,89 @@ describe("StringTable workbench", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("distinguishes export-blocking errors from warnings in one Issues view", async () => {
+    installBackendRows({
+      "a.b": [
+        {
+          ...ROWS["a.b"][0],
+          key: "warning",
+          source: "Line one\\nLine two",
+          target: "Zeile eins\nZeile zwei",
+        },
+        { ...ROWS["a.b"][2], key: "error" },
+        {
+          ...ROWS["a.b"][2],
+          key: "mixed",
+          source: "Hello {{name}}\\n",
+        },
+        {
+          ...ROWS["a.b"][2],
+          key: "accepted",
+          source: "Hello {{name}}\\n",
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
+        {
+          ...ROWS["a.b"][2],
+          key: "accepted-with-invalid-text",
+          target: "Hallo\uD800",
+          status: "translated",
+          tokenMismatchAccepted: true,
+        },
+      ],
+    });
+    render(<StringTable mod={MOD} />);
+    await screen.findByText("warning");
+
+    const warning = within(rowFor("warning")).getByRole("button", {
+      name: /^Warning: does not block export\./,
+    });
+    const error = within(rowFor("error")).getByRole("button", {
+      name: /^Error: blocks export\./,
+    });
+    expect(warning).toHaveAttribute("data-severity", "warning");
+    expect(error).toHaveAttribute("data-severity", "error");
+    expect(
+      within(rowFor("mixed")).getByRole("button", {
+        name: /^Error: blocks export\./,
+      }),
+    ).toHaveAttribute("data-severity", "error");
+    expect(
+      within(rowFor("accepted")).getByRole("button", {
+        name: /^Accepted token mismatch: export allowed\./,
+      }),
+    ).toHaveAttribute("data-severity", "warning");
+    expect(
+      within(rowFor("accepted-with-invalid-text")).getByRole("button", {
+        name: /^Error: blocks export\. Token mismatch explicitly accepted; other errors remain\./,
+      }),
+    ).toHaveAttribute("data-severity", "error");
+
+    fireEvent.focus(warning);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Warning: does not block export. Literal escape sequences differ from the original",
+    );
+    fireEvent.blur(warning);
+    fireEvent.focus(error);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Error: blocks export. Token count mismatch",
+    );
+    fireEvent.blur(error);
+    const accepted = within(rowFor("accepted")).getByRole("button", {
+      name: /^Accepted token mismatch: export allowed\./,
+    });
+    fireEvent.focus(accepted);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Accepted token mismatch: export allowed. Token count mismatch",
+    );
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "Literal escape sequences differ from the original",
+    );
+    fireEvent.blur(accepted);
+    fireEvent.click(screen.getByRole("button", { name: "Issues 5" }));
+    expect(dataRows()).toHaveLength(5);
+  });
+
   it("keeps checkbox and modifier selection gestures out of the editor", async () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("greeting");
@@ -946,7 +1222,7 @@ describe("StringTable workbench", () => {
     expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
   });
 
-  it("treats an accepted token mismatch as resolved in issues and visuals", async () => {
+  it("keeps accepted token mismatches visible as non-blocking Issues until corrected", async () => {
     installBackendRows({
       "a.b": [
         ROWS["a.b"][0],
@@ -962,12 +1238,16 @@ describe("StringTable workbench", () => {
     render(<StringTable mod={MOD} onBulkApplied={onBulkApplied} />);
     await screen.findByText("token");
 
+    const issues = screen.getByRole("button", { name: "Issues 1" });
+    expect(issues).toBeEnabled();
     expect(
-      screen.queryByRole("button", { name: /^Validation issues/ }),
-    ).not.toBeInTheDocument();
-    expect(
-      rowFor("token").querySelector(".translator-inline-validation"),
-    ).toBeNull();
+      within(rowFor("token")).getByRole("button", {
+        name: /^Accepted token mismatch: export allowed\./,
+      }),
+    ).toHaveAttribute("data-severity", "warning");
+    fireEvent.click(issues);
+    expect(dataRows()).toHaveLength(1);
+    expect(rowFor("token")).toHaveAttribute("data-status", "translated");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
     fireEvent.keyDown(screen.getByRole("button", { name: /1 selected/ }), {
@@ -975,6 +1255,11 @@ describe("StringTable workbench", () => {
     });
     fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
     await waitFor(() => expect(onBulkApplied).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", { name: "Issues 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.queryByText("token")).toBeNull();
     expect(onBulkApplied).toHaveBeenCalledWith(
       batchHistoryEntry("Kept original text", 1),
     );
@@ -1000,17 +1285,21 @@ describe("StringTable workbench", () => {
   it("refreshes cached validation after a batch replaces an invalid row", async () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("token");
-    fireEvent.click(
-      screen.getByRole("button", { name: /^Validation issues 1/ }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /^Issues 1/ }));
     expect(screen.getByText("token")).toBeVisible();
     fireEvent.click(screen.getByRole("checkbox", { name: "Select token" }));
     fireEvent.click(screen.getByRole("button", { name: /1 selected/ }));
     fireEvent.click(screen.getByRole("menuitem", { name: /Keep original/ }));
     await waitFor(() => expect(screen.queryByText("token")).toBeNull());
-    expect(
-      screen.queryByRole("button", { name: /^Validation issues 1/ }),
-    ).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Issues 1/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Issues 0" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /^All \d/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
   });
 
   it("shows status help on filter focus or status-badge pointer only", async () => {
@@ -1121,7 +1410,9 @@ describe("StringTable workbench", () => {
     expect(await screen.findByText("greeting")).toBeVisible();
     expect(screen.getByText("token")).toBeVisible();
     expect(screen.queryByText("bye")).not.toBeInTheDocument();
-    expect(screen.getByText(/2 of 3 strings · Has target text/)).toBeVisible();
+    expect(
+      screen.getByText(/Has target text · 2 of 3 strings shown/),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: /Has target text/ }),
     ).not.toBeInTheDocument();
@@ -1227,7 +1518,10 @@ describe("StringTable workbench", () => {
     fireEvent.click(rowFor("greeting"));
     fireEvent.click(rowFor("token"), { shiftKey: true });
     expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
-    expect(screen.getByText("Ctrl+click adds more")).toBeVisible();
+    expect(screen.getByRole("button", { name: /3 selected/ })).toHaveAttribute(
+      "title",
+      "Ctrl+click adds more",
+    );
   });
 
   it("handles Ctrl+A across the workspace while preserving native input selection", async () => {
@@ -1307,10 +1601,12 @@ describe("StringTable workbench", () => {
     ).toBeVisible();
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Clear selected strings" }),
+      screen.getByRole("button", { name: "Clear string selection" }),
     );
     expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
-    expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info");
+    expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info", {
+      activity: false,
+    });
   });
 
   it("opens Batch actions with ArrowDown and closes menus when focus leaves", async () => {
@@ -1373,6 +1669,7 @@ describe("StringTable workbench", () => {
     expect(onNotify).toHaveBeenCalledWith(
       "No selected strings needed a change.",
       "info",
+      { activity: false },
     );
     expect(onBulkApplied).not.toHaveBeenCalled();
     expect(
@@ -1752,6 +2049,11 @@ describe("StringTable workbench", () => {
       ),
     );
     expect(onBulkApplied).not.toHaveBeenCalled();
+    expect(screen.getByRole("checkbox", { name: "Select bye" })).toBeChecked();
+    expect(
+      screen.getByRole("checkbox", { name: "Select tomorrow" }),
+    ).toBeChecked();
+    expect(screen.getByRole("button", { name: /2 selected/ })).toBeEnabled();
     expect(
       rowFor("bye").querySelector(".translator-translation-cell"),
     ).toHaveTextContent("—");
@@ -1823,14 +2125,14 @@ describe("StringTable workbench", () => {
       { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
       { modUniqueId: "c.d", relativeDir: "i18n/dialogue", key: "tomorrow" },
     ]);
-    expect(
-      screen.getByRole("dialog", { name: "AI translation progress" }),
-    ).toBeVisible();
+    expect(screen.getByLabelText("AI translation progress")).toBeVisible();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /Start AI translation/ }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Cancel AI translation" }),
+    );
     act(() =>
       releaseRun(
         liveAiResult({
@@ -1847,7 +2149,7 @@ describe("StringTable workbench", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "AI translation progress" }),
+        screen.queryByLabelText("AI translation progress"),
       ).not.toBeInTheDocument(),
     );
     expect(onAiBatchFinished).toHaveBeenCalledWith(
@@ -1894,7 +2196,7 @@ describe("StringTable workbench", () => {
     );
     fireEvent.click(action);
     expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
+      screen.queryByLabelText("AI translation progress"),
     ).not.toBeInTheDocument();
   });
 
@@ -2019,7 +2321,7 @@ describe("StringTable workbench", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "AI translation progress" }),
+        screen.queryByLabelText("AI translation progress"),
       ).not.toBeInTheDocument(),
     );
   });
@@ -2085,9 +2387,7 @@ describe("StringTable workbench", () => {
         { modUniqueId: "a.b", relativeDir: "i18n", key: "token" },
       ],
     });
-    const progressDialog = screen.getByRole("dialog", {
-      name: "AI translation progress",
-    });
+    const progressDialog = screen.getByLabelText("AI translation progress");
     expect(progressDialog).toBeVisible();
     expect(
       within(progressDialog).queryByRole("combobox"),
@@ -2147,7 +2447,7 @@ describe("StringTable workbench", () => {
       }),
     );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
-    expect(onStatusFilterChange).toHaveBeenCalledWith("review-needed");
+    expect(onStatusFilterChange).not.toHaveBeenCalled();
     expect(onStringSaved).toHaveBeenCalledTimes(2);
     expect(onStringSaved).toHaveBeenNthCalledWith(
       1,
@@ -2220,7 +2520,9 @@ describe("StringTable workbench", () => {
     );
     await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
     const request = onRunAi.mock.calls[0][1];
-    fireEvent.click(await screen.findByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Cancel AI translation" }),
+    );
     act(() =>
       releaseRun(
         liveAiResult({
@@ -2264,7 +2566,7 @@ describe("StringTable workbench", () => {
     );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
     expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
+      screen.queryByLabelText("AI translation progress"),
     ).not.toBeInTheDocument();
   });
 
@@ -2338,7 +2640,7 @@ describe("StringTable workbench", () => {
     );
     expect(onAiBatchFinished.mock.calls[0][0]).not.toHaveProperty("undo");
     expect(
-      screen.queryByRole("dialog", { name: "AI translation progress" }),
+      screen.queryByLabelText("AI translation progress"),
     ).not.toBeInTheDocument();
   });
 
@@ -2402,14 +2704,18 @@ describe("StringTable workbench", () => {
     fireEvent.click(exportAction);
 
     await waitFor(() => expect(onLlmBatchExportForMod).toHaveBeenCalled());
-    expect(onLlmBatchExportForMod).toHaveBeenCalledWith(MOD, [
-      { relativeDir: "i18n", key: "bye", source: "Bye" },
-      {
-        relativeDir: "i18n",
-        key: "token",
-        source: "Hi {{name}}",
-      },
-    ]);
+    expect(onLlmBatchExportForMod).toHaveBeenCalledWith(
+      MOD,
+      [
+        { relativeDir: "i18n", key: "bye", source: "Bye" },
+        {
+          relativeDir: "i18n",
+          key: "token",
+          source: "Hi {{name}}",
+        },
+      ],
+      3,
+    );
   });
 
   it("focuses search with Ctrl+F and opens row actions with Shift+F10", async () => {
@@ -2820,7 +3126,7 @@ it("derives blank source status and reopens it after a source update, retaining 
   await screen.findByText("blank");
   expect(rowFor("blank")).toHaveAttribute("data-status", "translated");
   expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
-  expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(screen.getByText("2 / 2 covered")).toBeInTheDocument();
   expect(document.querySelector(".translator-progress-inline")).toHaveAttribute(
     "data-complete",
     "false",
@@ -2887,7 +3193,7 @@ it("reports both working counters after clearing a personal target on a blank so
     expect.objectContaining({ target: "", status: "untranslated" }),
   );
   expect(rowFor("greeting")).toHaveAttribute("data-status", "translated");
-  expect(screen.getByText("1 / 1 covered · 100%")).toBeInTheDocument();
+  expect(screen.getByText("1 / 1 covered")).toBeInTheDocument();
 });
 
 it("does not save an exemption or create undo history for Done on an already blank pair", async () => {
@@ -2908,6 +3214,7 @@ it("does not save an exemption or create undo history for Done on an already bla
     expect(onNotify).toHaveBeenCalledWith(
       "No selected strings needed a change.",
       "info",
+      { activity: false },
     ),
   );
   expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
@@ -2931,8 +3238,74 @@ it("counts NEL as no-work and BOM as physical text without overlap", async () =>
     expect.objectContaining({ translated: 2 }),
     1,
   );
-  expect(screen.getByText("2 / 2 covered · 100%")).toBeInTheDocument();
+  expect(screen.getByText("2 / 2 covered")).toBeInTheDocument();
   expect(invokeMock.mock.calls.some(([cmd]) => cmd.startsWith("save_"))).toBe(
     false,
   );
+});
+
+it("reports a new manual token acceptance only after persistence, and not again on an unchanged resave", async () => {
+  const onManualSave = vi.fn();
+  render(<StringTable mod={MOD} onManualSave={onManualSave} />);
+  await screen.findByRole("button", { name: "token" });
+  fireEvent.click(screen.getByRole("button", { name: "token" }));
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Translation" }), {
+    key: "Enter",
+    ctrlKey: true,
+  });
+  const confirmation = await screen.findByRole("button", {
+    name: "Save anyway",
+  });
+  expect(onManualSave).not.toHaveBeenCalled();
+  fireEvent.click(confirmation);
+  await waitFor(() => expect(onManualSave).toHaveBeenCalledOnce());
+  expect(onManualSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      modUniqueId: "a.b",
+      modName: "Test Mod",
+      key: "token",
+      acceptedMismatch: true,
+    }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "token" }));
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Translation" }), {
+    key: "Enter",
+    ctrlKey: true,
+  });
+  await waitFor(() => expect(onManualSave).toHaveBeenCalledTimes(2));
+  expect(onManualSave).toHaveBeenLastCalledWith(
+    expect.objectContaining({ acceptedMismatch: false }),
+  );
+});
+
+it("records the actual manual save failure without recording a successful save", async () => {
+  const backend = invokeMock.getMockImplementation()!;
+  invokeMock.mockImplementation((cmd: string, args?: unknown) =>
+    cmd === "save_string"
+      ? Promise.reject(new Error("Disk unavailable"))
+      : backend(cmd, args),
+  );
+  const onManualSave = vi.fn();
+  const onNotify = vi.fn();
+  render(
+    <StringTable mod={MOD} onManualSave={onManualSave} onNotify={onNotify} />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "greeting" }));
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: "Hallo Welt" },
+  });
+  fireEvent.keyDown(screen.getByRole("textbox", { name: "Translation" }), {
+    key: "Enter",
+    ctrlKey: true,
+  });
+  await waitFor(() =>
+    expect(onNotify).toHaveBeenCalledWith(
+      "Translation not saved · Test Mod · greeting: Error: Disk unavailable",
+      "error",
+    ),
+  );
+  expect(onManualSave).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("textbox", { name: "Translation" }),
+  ).toBeInTheDocument();
 });

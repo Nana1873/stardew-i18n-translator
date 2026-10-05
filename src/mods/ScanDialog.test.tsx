@@ -64,12 +64,12 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-    expect(screen.getByText("Scan completed")).toBeInTheDocument();
+    expect(screen.getByText("Scan results")).toBeInTheDocument();
     expect(
       screen.getByText(/Read 12 mods and 18 i18n files/),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/1 scanner warning · 1 component skipped/),
+      screen.getByText(/1 scanner warning, 1 component skipped/),
     ).toBeInTheDocument();
     expect(screen.getAllByText(/invalid manifest JSON/)).toHaveLength(1);
     expect(
@@ -82,17 +82,17 @@ describe("ScanDialog", () => {
         .closest(".translator-preflight-metric"),
     ).toHaveTextContent("2English strings changed");
     expect(
-      screen.getByText("strings added").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("3strings added");
+      screen.getByText("Strings added").closest(".translator-preflight-metric"),
+    ).toHaveTextContent("3Strings added");
     expect(
       screen
-        .getByText("string removed")
+        .getByText("String removed")
         .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1string removed");
+    ).toHaveTextContent("1String removed");
     const skippedMetric = screen
-      .getByText("component skipped")
+      .getByText("Component skipped")
       .closest(".translator-preflight-metric");
-    expect(skippedMetric).toHaveTextContent("1component skipped");
+    expect(skippedMetric).toHaveTextContent("1Component skipped");
     expect(screen.getByText("Broken Component")).toBeInTheDocument();
     expect(screen.getByText("Package: Sample Pack")).toBeInTheDocument();
     expect(screen.getByText("Sample/Broken/manifest.json")).toBeInTheDocument();
@@ -130,34 +130,34 @@ describe("ScanDialog", () => {
     );
 
     expect(
-      screen.getByText("mod found").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1mod found");
+      screen.getByText("Mod found").closest(".translator-preflight-metric"),
+    ).toHaveTextContent("1Mod found");
     expect(
-      screen.getByText("i18n file").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1i18n file");
+      screen.getByText("I18n file").closest(".translator-preflight-metric"),
+    ).toHaveTextContent("1I18n file");
     expect(
       screen
         .getByText("English string changed")
         .closest(".translator-preflight-metric"),
     ).toHaveTextContent("1English string changed");
     expect(
-      screen.getByText("string added").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1string added");
+      screen.getByText("String added").closest(".translator-preflight-metric"),
+    ).toHaveTextContent("1String added");
     expect(
       screen
-        .getByText("string removed")
+        .getByText("String removed")
         .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1string removed");
+    ).toHaveTextContent("1String removed");
     expect(
       screen
-        .getByText("component skipped")
+        .getByText("Component skipped")
         .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1component skipped");
+    ).toHaveTextContent("1Component skipped");
     expect(
-      screen.getByRole("button", { name: "Open new string · 1" }),
+      screen.getByRole("button", { name: "Show new strings (1)" }),
     ).toBeEnabled();
     expect(
-      screen.getByRole("button", { name: "Review changed string · 1" }),
+      screen.getByRole("button", { name: "Show changed strings (1)" }),
     ).toBeEnabled();
     expect(document.querySelector(".translator-sr-only")).toHaveTextContent(
       "Scan complete. 1 mod and 1 i18n file found.",
@@ -175,9 +175,9 @@ describe("ScanDialog", () => {
     );
 
     let skippedMetric = screen
-      .getByText("components skipped")
+      .getByText("Components skipped")
       .closest(".translator-preflight-metric");
-    expect(skippedMetric).toHaveTextContent("0components skipped");
+    expect(skippedMetric).toHaveTextContent("0Components skipped");
     expect(screen.queryByText("No components were skipped.")).toBeNull();
     expect(
       screen.queryByText(
@@ -195,9 +195,9 @@ describe("ScanDialog", () => {
     );
 
     skippedMetric = screen
-      .getByText("components skipped")
+      .getByText("Components skipped")
       .closest(".translator-preflight-metric");
-    expect(skippedMetric).toHaveTextContent("Unavailablecomponents skipped");
+    expect(skippedMetric).toHaveTextContent("UnavailableComponents skipped");
     expect(
       screen.getByText(/Skipped-component details unavailable/),
     ).toBeInTheDocument();
@@ -230,7 +230,7 @@ describe("ScanDialog", () => {
     );
 
     expect(screen.getByText("Latest scan")).toBeInTheDocument();
-    expect(screen.queryByText("Scan completed")).toBeNull();
+    expect(screen.queryByText("Scan results")).toBeNull();
   });
 
   it("labels a missing scan result as unavailable instead of retained", () => {
@@ -423,9 +423,9 @@ describe("ScanDialog", () => {
     expect(screen.queryByText(/1 component skipped/)).toBeNull();
     expect(
       screen
-        .getByText("components skipped")
+        .getByText("Components skipped")
         .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("0components skipped");
+    ).toHaveTextContent("0Components skipped");
     expect(document.querySelector("[data-scan-diagnostics]")).not.toHaveClass(
       "is-warning",
     );
@@ -484,9 +484,7 @@ describe("ScanDialog", () => {
       />,
     );
 
-    expect(
-      screen.getAllByText("No scanner warnings were reported."),
-    ).toHaveLength(1);
+    expect(screen.getAllByText("No scanner warnings.")).toHaveLength(1);
     expect(document.querySelectorAll("[data-scan-diagnostics]")).toHaveLength(
       1,
     );
@@ -509,10 +507,10 @@ describe("ScanDialog", () => {
     );
 
     fireEvent.click(
-      screen.getByRole("button", { name: "Open new strings · 3" }),
+      screen.getByRole("button", { name: "Show new strings (3)" }),
     );
     fireEvent.click(
-      screen.getByRole("button", { name: "Review changed strings · 2" }),
+      screen.getByRole("button", { name: "Show changed strings (2)" }),
     );
     expect(onOpenAddedStrings).toHaveBeenCalledOnce();
     expect(onReviewChangedSources).toHaveBeenCalledOnce();

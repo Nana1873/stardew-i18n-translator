@@ -9,6 +9,7 @@ import {
   writeFile,
   access,
   cp,
+  rm,
 } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import { createServer } from "node:net";
@@ -21,6 +22,7 @@ import { releaseCases } from "./release-cases.mjs";
 import { advancedCases } from "./advanced-cases.mjs";
 import { installCases } from "./install-cases.mjs";
 import { profileCases } from "./profile-cases.mjs";
+import { replaceText } from "./text-input.mjs";
 import { progressCases } from "./progress-cases.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
@@ -208,10 +210,45 @@ async function archive(action, zip, extra = []) {
   );
 }
 const css = (selector) => By.css(selector);
-const button = (name) =>
-  By.xpath(
-    `//button[normalize-space(.)=${JSON.stringify(name)} or normalize-space(text())=${JSON.stringify(name)}]`,
+const button = (name) => {
+  if (name === "Export …") return css('button[aria-label="File actions"]');
+  const statuses = {
+    All: "all",
+    Open: "untranslated",
+    Changed: "outdated",
+    Review: "review-needed",
+    Done: "translated",
+  };
+  if (statuses[name])
+    return css(
+      'button.desktop-filter-action[data-status="' + statuses[name] + '"]',
+    );
+  const titles = {
+    "Export current mod": "Export JSON for selected mod…",
+    "Export all mods …": "Export JSON for all mods…",
+    "Translation ZIP · current mod": "Export ZIP for selected mod…",
+    "Translation ZIP · all mods": "Export ZIP for all mods…",
+  };
+  if (titles[name])
+    return By.xpath(
+      '//button[@role="menuitem"][.//span[normalize-space(.)=' +
+        JSON.stringify(titles[name]) +
+        "]]",
+    );
+  name =
+    {
+      Export: "Export JSON",
+      "Choose save location …": "Save ZIP…",
+      "Save JSON batch": "Save batch",
+    }[name] ?? name;
+  return By.xpath(
+    "//button[normalize-space(.)=" +
+      JSON.stringify(name) +
+      " or normalize-space(text())=" +
+      JSON.stringify(name) +
+      "]",
   );
+};
 const browseFolder = (label) =>
   By.xpath(
     `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse..."]`,
@@ -258,11 +295,7 @@ async function fill(locator, value) {
         found = await driver.findElement(locator);
         if (!(await found.isDisplayed()) || !(await found.isEnabled()))
           return false;
-        await found.sendKeys(
-          Key.chord(Key.CONTROL, "a"),
-          Key.BACK_SPACE,
-          value,
-        );
+        await replaceText(found, value);
         return true;
       } catch (error) {
         // A closing dialog can briefly leave an input present but inert.
@@ -276,10 +309,6 @@ async function fill(locator, value) {
     },
     30000,
     `Editable input: ${locator}`,
-  );
-  await waitFor(
-    "input value",
-    async () => (await found.getAttribute("value")) === value,
   );
 }
 async function absent(locator) {
@@ -617,6 +646,8 @@ try {
     await waitFor("native scan snapshot", () =>
       exists(join(data, "scan-source-snapshot.json")),
     );
+    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await click(css('button[aria-label$="open scan diagnostics"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
     await absent(css('[role="dialog"][aria-label="Scan"]'));
@@ -624,7 +655,7 @@ try {
     assert.equal(settings.stardewPath, game);
     assert.equal(settings.modsPath, mods);
     assert.equal(settings.targetLang, "de");
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await click(css('[role="treeitem"][data-tree-id="mod:E2E.DesktopSmoke"]'));
     await element(row("greeting"));
     assert.equal(
@@ -638,6 +669,195 @@ try {
     data,
     "language-state/de/translations/E2E.DesktopSmoke.json",
   );
+  await step("webdriver-text-entry-regression", async () => {
+    const search = css('[aria-label="Search strings"]');
+    const longKey =
+      "quest.long.description.with.a.very.long.identifier.to.check.table.truncation.and.editor.layout";
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await fill(search, longKey);
+      await absent(row("greeting"));
+      await fill(search, "greeting");
+      await element(row("greeting"));
+      await absent(row("shopping"));
+    }
+    await fill(search, "Grüße · 日本語");
+    await absent(row("greeting"));
+    await fill(search, "");
+    await element(row("shopping"));
+    await openEntry("greeting");
+    const translation = css("#translator-editor-translation");
+    const values = [
+      "Grüße, {{PlayerName}}!\n日本語 · e\u0301 · $h #$b# %farm, @.",
+      "Replaced draft: äöü ß — {{PlayerName}}!",
+      "",
+    ];
+    for (const value of values) await fill(translation, value);
+    await click(css('[aria-label="Close editor"]'));
+    await absent(translation);
+    assert.equal(
+      await exists(statePath),
+      false,
+      "Typing must not save a draft.",
+    );
+    assert.equal(await exists(exported), false);
+    assert.deepEqual(await json(join(i18n, "default.json")), source);
+    evidence.textEntry = {
+      longSearches: 3,
+      editorValues: values,
+      passed: true,
+    };
+    await screenshot("webdriver-text-entry");
+  });
+  await step("issues-view-cross-status-and-explicit-acceptance", async () => {
+    assert.equal(await exists(exported), false);
+    assert.equal(await exists(statePath), false);
+    await writeFile(
+      exported,
+      JSON.stringify({ greeting: "Missing protected tokens" }),
+    );
+    const rescan = async () => {
+      await click(css('[aria-label="Scan mods"]'));
+      await absent(css('[role="dialog"][aria-label="Scan"]'));
+      await waitFor(
+        "reloaded issue counts",
+        async () =>
+          (await driver.findElements(css("[data-string-row]"))).length === 4,
+      );
+    };
+    await rescan();
+    await waitFor(
+      "existing translation is Done with an unresolved issue",
+      async () =>
+        (await (await element(row("greeting"))).getAttribute("data-status")) ===
+          "translated" &&
+        (
+          await (await element(css('button[data-status="issues"]'))).getText()
+        ).includes("1"),
+    );
+    await click(button("Open"));
+    await absent(row("greeting"));
+    await element(row("shopping"));
+    const issues = css('button[data-status="issues"]');
+    await click(issues);
+    await element(row("greeting"));
+    await absent(row("shopping"));
+    for (const status of ["All", "Open", "Changed", "Review", "Done"])
+      assert.equal(
+        await (await element(button(status))).getAttribute("aria-pressed"),
+        "false",
+      );
+    await fill(css('[aria-label="Search strings"]'), "greeting");
+    await click(button("Done"));
+    assert.equal(
+      await (await element(issues)).getAttribute("aria-pressed"),
+      "false",
+    );
+    assert.equal(
+      await (
+        await element(css('[aria-label="Search strings"]'))
+      ).getAttribute("value"),
+      "greeting",
+    );
+    await element(row("greeting"));
+    await click(issues);
+    await click(button("All mods"));
+    await element(row("greeting"));
+    await screenshot("issues-view-done-token-problem");
+    await openEntry("greeting");
+    await click(button("Save"));
+    await click(button("Save anyway"));
+    await absent(css("#translator-editor-translation"));
+    await waitFor(
+      "accepted token mismatch remains a non-blocking issue",
+      async () => {
+        const marker = await (
+          await element(row("greeting"))
+        ).findElement(css(".translator-inline-validation"));
+        return (
+          (await (await element(issues)).getText()).includes("1") &&
+          (await marker.getAttribute("data-severity")) === "warning"
+        );
+      },
+    );
+    assert.match(
+      await (await element(css('.desktop-log[role="log"]'))).getText(),
+      /Translation saved · Desktop Smoke · greeting · Token mismatch accepted; export allowed\./,
+    );
+    assert.equal(
+      await (await element(issues)).getAttribute("aria-pressed"),
+      "true",
+    );
+    await element(row("greeting"));
+    await screenshot("issues-view-accepted-token-problem");
+    await click(button("Done"));
+    await element(row("greeting"));
+    assert.equal(
+      await (await element(row("greeting"))).getAttribute("data-status"),
+      "translated",
+    );
+    const acceptedMarker = await (
+      await element(row("greeting"))
+    ).findElement(css(".translator-inline-validation"));
+    assert.equal(await acceptedMarker.getAttribute("data-severity"), "warning");
+    assert.match(
+      await acceptedMarker.getAttribute("aria-label"),
+      /^Accepted token mismatch: export allowed\./,
+    );
+    await openEntry("greeting");
+    assert.match(
+      await (await element(css(".editor__issue--warning"))).getText(),
+      /Protected-token mismatch explicitly accepted for this exact translation\./,
+    );
+    await click(button("Save"));
+    await absent(css("#translator-editor-translation"));
+    await absent(button("Save anyway"));
+    assert.equal(
+      (await (await element(css('.desktop-log[role="log"]'))).getText()).split(
+        "Token mismatch accepted; export allowed.",
+      ).length - 1,
+      1,
+      "Saving an already accepted pair must not log another acceptance.",
+    );
+
+    await fill(css('[aria-label="Search strings"]'), "");
+    await click(button("This mod"));
+    await click(button("All"));
+    await rescan();
+    await click(issues);
+    await waitFor("accepted mismatch survives a real rescan", async () => {
+      const marker = await (
+        await element(row("greeting"))
+      ).findElement(css(".translator-inline-validation"));
+      return (await marker.getAttribute("data-severity")) === "warning";
+    });
+    await click(button("Export …"));
+    await click(button("Export current mod"));
+    assert.equal(
+      await (await element(button("Export and replace"))).isEnabled(),
+      true,
+    );
+    await click(button("Cancel"));
+    await absent(button("Export and replace"));
+    assert.deepEqual(
+      await json(exported),
+      { greeting: "Missing protected tokens" },
+      "Saving acceptance must not export.",
+    );
+    // Restore only the files introduced by this synthetic case before the
+    // existing edit/import/export workflow continues.
+    await rm(exported);
+    await rm(statePath);
+    await fill(css('[aria-label="Search strings"]'), "");
+    await click(button("This mod"));
+    await click(button("All"));
+    await rescan();
+    await waitFor(
+      "original Open fixture restored",
+      async () =>
+        (await (await element(row("greeting"))).getAttribute("data-status")) ===
+        "untranslated",
+    );
+  });
   await step("edit-and-save", async () => {
     await saveEntry("greeting", edited);
     const state = await json(statePath);
@@ -690,6 +910,45 @@ try {
     }
     await screenshot("imported");
   });
+  let importLogResultId;
+  await step("activity-log-controls-and-import-details", async () => {
+    const activity = await element(css('.desktop-log[role="log"]'));
+    const text = await activity.getText();
+    assert.match(text, /translations? saved · Desktop Smoke/);
+    assert.match(text, /LLM batch imported · Desktop Smoke/);
+    assert.match(text, /Local translations preserved: 1/);
+    await click(css('[aria-label="Expand Activity log"]'));
+    assert.ok(
+      (await (await element(css(".desktop-log-panel"))).getRect()).height >=
+        290,
+    );
+    await (
+      await element(css('[aria-label="Resize Activity log"]'))
+    ).sendKeys(Key.ARROW_UP);
+    assert.equal(
+      await (
+        await element(css('[aria-label="Resize Activity log"]'))
+      ).getAttribute("aria-valuenow"),
+      "340",
+    );
+    await click(button("Copy log"));
+    await element(button("Copied"));
+    assert.doesNotMatch(await activity.getText(), /Activity log copied/);
+    await click(css('[aria-label^="Details: LLM batch imported"]'));
+    importLogResultId = await (
+      await element(css('[aria-label="Recent operation results"]'))
+    ).getAttribute("value");
+    assert.ok(importLogResultId);
+    await screenshot("activity-log-expanded-import-details");
+    await click(css('[aria-label="Hide result"]'));
+    await click(css('[aria-label="Collapse Activity log"]'));
+    assert.equal(
+      await (
+        await element(css('[aria-label="Resize Activity log"]'))
+      ).getAttribute("aria-valuenow"),
+      "106",
+    );
+  });
   await step("export-and-verify-files", async () => {
     await click(button("Export …"));
     await click(button("Export current mod"));
@@ -703,6 +962,15 @@ try {
     assert.ok((await json(exported)).shopping.includes("{{Count}}"));
     await copyFile(exported, join(artifacts, "exported-de.json"));
     await screenshot("exported");
+    await click(css('[aria-label^="Details: LLM batch imported"]'));
+    assert.equal(
+      await (
+        await element(css('[aria-label="Recent operation results"]'))
+      ).getAttribute("value"),
+      importLogResultId,
+      "The older import log entry must reopen that import, not the newer export.",
+    );
+    await click(css('[aria-label="Hide result"]'));
   });
   await step("save-after-export-and-close", async () => {
     // Prove restored work comes from portable state, not the exported locale.
@@ -726,10 +994,11 @@ try {
   });
   await step("restart-and-resume", async () => {
     await launch();
-    await element(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     assert.equal(
-      await (await element(button("Overview"))).getAttribute("aria-pressed"),
-      "true",
+      (await driver.findElements(css('[aria-label="Main views"]'))).length,
+      0,
+      "The app resumes directly in the workspace.",
     );
     assert.equal(
       (await driver.findElements(css('[aria-label="Setup"]'))).length,
@@ -739,7 +1008,7 @@ try {
       (await driver.findElements(css("#translator-editor-translation"))).length,
       0,
     );
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await waitFor(
       "restored search",
       async () =>
@@ -854,7 +1123,7 @@ try {
     const backupBefore = await readFile(`${exported}.bak`);
     await click(button("Export …"));
     await click(button("Translation ZIP · current mod"));
-    await element(css('[aria-label="Build translation ZIP"]'));
+    await element(css('[aria-label="Export translation ZIP"]'));
     await click(button("Choose save location …"));
     await native("cancel", "Save translation ZIP", destination);
     await driver.wait(
@@ -866,11 +1135,12 @@ try {
       By.xpath("//label[contains(., 'Install folder')]/input"),
       " OriginalDesktopSmoke",
     );
+    await click(css(".desktop-zip-details summary"));
     await element(By.xpath("//code[.=' OriginalDesktopSmoke/i18n/de.json']"));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("translation ZIP created", () => exists(destination));
-    await absent(css('[aria-label="Build translation ZIP"]'));
+    await absent(css('[aria-label="Export translation ZIP"]'));
     const files = await archive("read", destination);
     // Only locale files; no original assets, installer metadata, or app state.
     assert.deepEqual(Object.keys(files), [
@@ -898,18 +1168,18 @@ try {
       const backupBefore = await readFile(`${exported}.bak`);
       await click(button("Export …"));
       await click(button("Translation ZIP · current mod"));
-      await element(css('[aria-label="Build translation ZIP"]'));
+      await element(css('[aria-label="Export translation ZIP"]'));
       await fill(
         By.xpath("//label[contains(., 'Install folder')]/input"),
         "ReplacedDesktopSmoke",
       );
       await click(button("Choose save location …"));
       await native("cancel-overwrite", "Save translation ZIP", destination);
-      await element(css('[aria-label="Build translation ZIP"]'));
+      await element(css('[aria-label="Export translation ZIP"]'));
       assert.deepEqual(await readFile(destination), archiveBefore);
       await click(button("Choose save location …"));
       await native("save-overwrite", "Save translation ZIP", destination);
-      await absent(css('[aria-label="Build translation ZIP"]'));
+      await absent(css('[aria-label="Export translation ZIP"]'));
       await absent(css('[aria-label="Confirm ZIP overwrite"]'));
       const files = await archive("read", destination);
       assert.deepEqual(Object.keys(files), [
@@ -930,13 +1200,13 @@ try {
     const diskBefore = await readFile(exported);
     await click(button("Export …"));
     await click(button("Translation ZIP · all mods"));
-    await element(css('[aria-label="Build translation ZIP · all mods"]'));
+    await element(css('[aria-label="Export translation ZIP"]'));
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("combined translation ZIP created", () =>
       exists(destination),
     );
-    await absent(css('[aria-label="Build translation ZIP · all mods"]'));
+    await absent(css('[aria-label="Export translation ZIP"]'));
     const files = await archive("read", destination);
     assert.deepEqual(Object.keys(files), ["DesktopSmoke/i18n/de.json"]);
     assert.deepEqual(JSON.parse(files["DesktopSmoke/i18n/de.json"]), {
@@ -961,10 +1231,10 @@ try {
         "untranslated",
     );
     if (
-      (await driver.findElements(css('[aria-label="Clear selected strings"]')))
+      (await driver.findElements(css('[aria-label="Clear string selection"]')))
         .length
     )
-      await click(css('[aria-label="Clear selected strings"]'));
+      await click(css('[aria-label="Clear string selection"]'));
     for (const key of ["farewell", "greeting"])
       await click(css(`input[aria-label="Select ${key}"]`));
     await click(css('button[data-has-selection="true"]'));
@@ -973,8 +1243,8 @@ try {
         '//button[.//span[normalize-space(.)="Export selection as LLM batch"]]',
       ),
     );
-    await element(css('[aria-label="Save LLM batch"]'));
-    await click(button("Change …"));
+    await element(css('[aria-label="Export LLM batch"]'));
+    await click(button("Choose…"));
     await native("save", "Export LLM translation batch", batchFile);
     assert.equal(
       await exists(batchFile),
@@ -983,7 +1253,7 @@ try {
     );
     await click(button("Save JSON batch"));
     await waitFor("batch exported", () => exists(batchFile));
-    await absent(css('[aria-label="Save LLM batch"]'));
+    await absent(css('[aria-label="Export LLM batch"]'));
     const batch = await json(batchFile);
     assert.equal(batch.format, "stardew-translator-llm-batch");
     assert.equal(batch.version, 2);
@@ -1008,7 +1278,12 @@ try {
     await screenshot("llm-batch-exported");
   });
   async function chooseBatch(file) {
-    await click(css('[aria-label="Import LLM batch"]'));
+    await click(button("Export …"));
+    await click(
+      By.xpath(
+        '//button[@role="menuitem"][.//span[normalize-space(.)="Import LLM batch…"]]',
+      ),
+    );
     await click(button("Choose file …"));
     await native("pick", "Choose LLM translation result", file);
     await element(css('[aria-label="LLM import preflight"]'));
@@ -1133,7 +1408,7 @@ try {
     await copyFile(cache, join(artifacts, "glossary-de.json"));
     await closeNormally();
     await launch();
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await openEntry("shopping");
     await waitFor("glossary hint restored after restart", async () => {
       const hints = await driver.findElements(css(".translator-glossary-term"));

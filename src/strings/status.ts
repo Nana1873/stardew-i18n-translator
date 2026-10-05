@@ -27,8 +27,8 @@ export const STATUS_META: Record<
   outdated: {
     label: "Outdated",
     glyph: "↻",
-    color: "#b98cdb",
-    edge: "#b98cdb",
+    color: "#7db4d4",
+    edge: "#7db4d4",
   },
   "review-needed": {
     label: "Needs review",

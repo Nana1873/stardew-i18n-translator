@@ -74,8 +74,10 @@ state; they do not write into installed mods. Live AI only targets selected
 Open or Changed rows after resolving their identities from a fresh scan.
 Done and Review text is not silently replaced.
 
-**Validation issues** is an independent filter, not a status. A Review row can
-have no validation finding; a Done row can still have one. Review is a request
+**Validation issues** is a separate table view, not a status. Selecting Issues
+shows validation findings, including accepted token mismatches, across all
+statuses in the current scope and search; selecting a status leaves Issues.
+A Review row can have no validation finding; a Done row can still have one. Review is a request
 for human assessment, not an export lock: non-empty Review and Changed values
 can be exported, with their counts shown in the export confirmation.
 
@@ -86,6 +88,10 @@ placeholder, and formatting tokens. Missing or added protected values block
 export by default. **Save anyway** accepts a particular source/target mismatch
 for direct export and ZIP creation; editing the target or changing the source
 invalidates that acceptance.
+Accepted token mismatches remain visible in Issues with a yellow warning icon
+and a tooltip identifying the acceptance and export permission. Ordinary
+non-blocking warnings also use yellow; unresolved export blockers use red.
+Acceptance does not change a Done row's workflow status or waive other errors.
 
 Literal-escape differences are non-blocking warnings. Ordinary quote punctuation
 and physical newline-count differences are ignored. Identical non-empty source
@@ -221,15 +227,23 @@ automation belong to the [release process](docs/release/release-process.md).
 
 ## Interface and Runtime
 
-After setup, the app opens on Overview with real scan totals, diagnostics,
-recent mods, and available current-session results. Missing data remains
-unavailable; production screens never substitute demo data. Workspace combines
+After setup, the app opens directly in the translation workspace with real scan
+data. Missing data remains unavailable; production screens never substitute
+demo data. The workspace combines
 a resizable package/mod pane with one virtualized table for This mod and All
 mods, supporting search, filters, selection, keyboard use, and batch actions.
 
-The result tray shows actual operation details and the five newest completed
-backend operations in the session. **Latest result** always reopens the newest
-result. One reversible batch edit has a memory-only undo snapshot until another
+Operations show compact notifications with actionable causes and progress.
+Details expose the actual operation data and the five newest completed backend
+operations in the session. **Latest result** reopens the newest result. AI progress
+remains nonmodal, with batch events in the shared Activity log. The resizable,
+copyable session log also records successful manual saves and explicit token
+mismatch acceptances, coalesces consecutive manual saves by mod, and links
+results to their exact details. Routine clipboard/selection successes are
+toast-only. It retains up to 500 entries, protecting the latest 100 warnings
+and errors from routine progress, and reports omissions. Earlier scan details
+and expired Undo actions are not restored through log links. One reversible
+batch edit has a memory-only undo snapshot until another
 completed operation replaces it. A later successful edit to any touched
 component permanently invalidates that snapshot, even if the value is changed
 back. Undo must never overwrite newer edits.

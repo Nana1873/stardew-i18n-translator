@@ -17,8 +17,8 @@ target segment, even when filenames differ. Ambiguous or mixed layouts are
 reported rather than guessed. Multi-part packages are grouped in the mod list.
 Mods that do not use standard SMAPI i18n files cannot be translated here.
 
-**Overview** shows scan totals and recently opened mods. Open **Workspace** and
-select a mod or component to work on its strings. Use **Scan** after installing
+The app opens directly in the translation workspace. Select a mod or component
+to work on its strings. Use **Scan** after installing
 or updating mods. After two complete scans, the app can report English strings
 that were added, changed, or removed. A scan with an attention-requiring skipped
 component keeps the last complete baseline; comparison counts are unavailable
@@ -67,11 +67,18 @@ Existing `<language>.json` files are taken as translated when scanned; this is
 different from importing an external LLM batch, which creates Review entries.
 Done does not guarantee that the wording is correct or that validation passes.
 
-**Validation issues** is an independent filter. Missing or changed protected
+**Issues** shows validation findings, including accepted token mismatches, across
+all statuses in the selected mod scope, keeping your search. Selecting Open,
+Changed, Review, Done, or All leaves the Issues view. Missing or changed protected
 tokens and invalid text can block export. Suspicious literal escape changes
 can produce warnings without blocking. Open an affected string to inspect the
-source and target. If a token difference is intentional, **Save anyway** accepts
-that exact source/target mismatch; editing it again can require a new decision.
+source and target. Yellow triangles mark warnings and accepted token mismatches;
+red circles mark errors that block export. Hover or focus an icon to see the
+finding and its effect on export.
+If a token difference is intentional, **Save anyway** accepts
+that exact source/target mismatch. It stays visible in Issues with a tooltip
+confirming that export is allowed, and a Done row stays Done. Editing the target
+or changing the source requires confirmation again if the mismatch remains.
 
 ## Search, select, and work in batches
 
@@ -99,6 +106,38 @@ Save & next, and Alt+Left/Right for editor navigation. Navigation saves dirty
 edits when possible; resolve any validation confirmation before continuing.
 See **Settings > Shortcuts** for all bindings and customization.
 
+## Activity log
+
+The Activity log records scans, saved translations, explicit token-mismatch
+acceptances, batch edits, AI progress, and operation results. Consecutive manual
+saves in the same mod are grouped briefly. Routine clipboard and selection
+notifications stay out of the log; failures are recorded.
+
+Notifications and ongoing AI progress share a stack just above the Activity
+log. Resizing the log moves that stack with its top edge, keeping entries and
+log controls clear. Multiple notices stack vertically; a tall stack scrolls
+within the available workspace height.
+
+AI runs record main batch steps, received draft counts, saved counts, and
+recovery or failure messages. Subtle dots mark each currently active step;
+they stop when that step ends or the run is cancelled or finishes. The dots
+indicate an ongoing step, not a provider heartbeat or completed translation.
+Reduced-motion settings show static dots. **Saved to Review** counts only
+persisted suggestions; receiving a draft does not increment that count.
+
+Use **Details** beside a result to reopen that operation, or beside the latest
+scan to inspect its report. Older operation entries retain their summary and
+backend details after they leave the five-result history; they do not restore
+expired Undo actions. Earlier scan reports are not retained.
+
+Expand the log or drag its top edge to read more. The focused resize separator
+also responds to Up and Down Arrow. **Copy log** copies the retained entries.
+Scrolling upward pauses automatic following; **Latest entries** returns to the
+bottom. This is a bounded, session-only log: it keeps up to 500 entries and
+protects the latest 100 warnings and errors from routine progress updates.
+An omission notice appears when older entries are removed. The separate
+diagnostic logging setting does not control this panel.
+
 ## Build a glossary
 
 Open **Settings > Glossary** and choose **Build glossary** when sources are
@@ -116,7 +155,7 @@ see [data sent to AI](ai.md#data-and-privacy).
 
 ## Export translation files
 
-Choose **Export…** for the current mod or all scanned mods. The confirmation
+Choose **Files… > Export JSON** for the selected mod or all scanned mods. The confirmation
 shows the scope, replacement information, and strings needing attention.
 
 **Nonempty Review and Changed translations are included in export after a
@@ -138,8 +177,8 @@ For flat locale files, Portuguese export uses `i18n/pt.json`; an existing
 `i18n/pt-BR.json` is accepted on import and backed up when normalized during
 export. Split document names such as `i18n/de/pt.json` are kept literally.
 
-For a combined translation archive, choose **Export… > Translation ZIP · all
-mods**. Its preview includes all scanned components with effective
+For a combined translation archive, choose **Files… > Export ZIP for all
+mods…**. Its preview includes all scanned components with effective
 target-language values in the configured Mods folder. Each included locale
 combines the existing target values for current source keys with saved
 overrides, using the same validation rules. Changed and Review values are
@@ -152,7 +191,7 @@ Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 
-Select a mod package and use **Export… > Translation ZIP · current mod**. Check its
+Select a mod package and use **Files… > Export ZIP for selected mod…**. Check its
 preview and choose a destination. The ZIP contains only generated target-language
 i18n files. Recipients still need the original mod; its assets, DLLs, and manifest are not included.
 

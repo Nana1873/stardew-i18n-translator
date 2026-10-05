@@ -44,7 +44,45 @@ function EmptyDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+function DetailsDialog() {
+  const dialogRef = useRef<HTMLElement>(null);
+  const { onDialogKeyDown } = useDialogAccessibility({
+    dialogRef,
+    onEscape: () => {},
+  });
+  return (
+    <section ref={dialogRef} role="dialog" onKeyDown={onDialogKeyDown}>
+      <button>Close</button>
+      <details>
+        <summary>Details</summary>
+        <button>Hidden action</button>
+      </details>
+      <button>Save</button>
+    </section>
+  );
+}
+
 describe("dialog accessibility", () => {
+  it("lets Tab continue from a native summary and skips closed details contents", () => {
+    render(<DetailsDialog />);
+    const summary = screen.getByText("Details");
+    summary.focus();
+    const tab = new KeyboardEvent("keydown", {
+      key: "Tab",
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(summary, tab);
+    expect(tab.defaultPrevented).toBe(false);
+    const hidden = screen.getByText("Hidden action");
+    hidden.focus();
+    fireEvent.keyDown(hidden, { key: "Tab" });
+    expect(screen.getByText("Close")).toHaveFocus();
+    const save = screen.getByText("Save");
+    save.focus();
+    fireEvent.keyDown(save, { key: "Tab" });
+    expect(screen.getByText("Close")).toHaveFocus();
+  });
   it("isolates every sibling layer and restores it when the modal unmounts", () => {
     const onClose = vi.fn();
     const { rerender } = render(

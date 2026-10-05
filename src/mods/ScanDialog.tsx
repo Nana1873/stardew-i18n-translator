@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { type CSSProperties, useRef } from "react";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw, X } from "lucide-react";
 import type { ExtraKeyDiagnostic, ScanResult } from "../tauri/commands";
@@ -65,22 +66,23 @@ export function ScanDialog({
           : "Scan unavailable";
 
   return (
-    <div className="translator-flow-overlay">
+    <div className="translator-flow-overlay desktop-scan-overlay">
       <section
         ref={dialogRef}
         className="translator-flow-dialog translator-scan-dialog"
         role="dialog"
         aria-modal="true"
         aria-label="Scan"
+        data-scanning={scanning}
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">{title}</h2>
-            <div className="translator-kicker">
-              Local Mods folder · read-only
-            </div>
+            <h2 className="translator-heading">
+              {complete && !retainedResult ? "Scan results" : title}
+            </h2>
+            <div className="translator-kicker">{"Mods folder (read-only)"}</div>
           </div>
           {!scanning && (
             <button
@@ -138,15 +140,8 @@ export function ScanDialog({
         </div>
 
         <div className="translator-flow-foot">
-          <button
-            className="translator-button translator-button-quiet"
-            type="button"
-            disabled={scanning}
-            onClick={onClose}
-          >
-            Close
-          </button>
           {!scanning &&
+            !error &&
             Boolean(sourceDeltas?.stringsAdded && onOpenAddedStrings) && (
               <button
                 className="translator-button translator-button-quiet"
@@ -166,19 +161,19 @@ export function ScanDialog({
                 }
                 onClick={onOpenAddedStrings}
               >
-                Open new{" "}
-                {countLabel(
-                  sourceDeltas?.stringsAdded ?? "Unavailable",
-                  "string",
-                  "strings",
-                )}{" "}
-                · {sourceDeltas?.stringsAdded ?? "Unavailable"}
+                {
+                  <>
+                    Show new strings (
+                    {sourceDeltas?.stringsAdded ?? "Unavailable"})
+                  </>
+                }
               </button>
             )}
           {!scanning &&
+            !error &&
             Boolean(sourceDeltas?.sourcesChanged && onReviewChangedSources) && (
               <button
-                className="translator-button translator-button-primary"
+                className={"translator-button translator-button-quiet"}
                 type="button"
                 disabled={
                   scanning ||
@@ -195,15 +190,22 @@ export function ScanDialog({
                 }
                 onClick={onReviewChangedSources}
               >
-                Review changed{" "}
-                {countLabel(
-                  sourceDeltas?.sourcesChanged ?? "Unavailable",
-                  "string",
-                  "strings",
-                )}{" "}
-                · {sourceDeltas?.sourcesChanged ?? "Unavailable"}
+                {
+                  <>
+                    Show changed strings (
+                    {sourceDeltas?.sourcesChanged ?? "Unavailable"})
+                  </>
+                }
               </button>
             )}
+          <button
+            className="translator-button translator-button-quiet desktop-scan-close"
+            type="button"
+            disabled={scanning}
+            onClick={onClose}
+          >
+            Close
+          </button>
         </div>
 
         <span className="translator-sr-only" aria-live="polite">
@@ -248,7 +250,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
 
   return (
     <>
-      <p>
+      <p className="desktop-scan-completion">
         <CheckCircle2 aria-hidden="true" /> Read {result.modCount}{" "}
         {result.modCount === 1 ? "mod" : "mods"} and {result.fileCount}{" "}
         {result.fileCount === 1 ? "i18n file" : "i18n files"}.
@@ -308,7 +310,11 @@ function ScanResultContent({ result }: { result: ScanResult }) {
           <section className="translator-scan-warning-section">
             <p>
               <AlertTriangle aria-hidden="true" />{" "}
-              <strong>{warningParts.join(" · ")}.</strong>
+              <strong>
+                <span className="desktop-scan-copy">
+                  {warningParts.join(", ")}.
+                </span>
+              </strong>
               {(warnings.length > 0 || skippedForAttention.length > 0) &&
                 " Existing work was preserved."}
             </p>
@@ -364,7 +370,9 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         )}
 
         {!hasWarningDiagnostics && !hasInformation && (
-          <p>No scanner warnings were reported.</p>
+          <p>
+            <span className="desktop-scan-copy">No scanner warnings.</span>
+          </p>
         )}
 
         {expectedExclusions.length > 0 && (
@@ -507,7 +515,9 @@ function Metric({ value, label }: { value: number | string; label: string }) {
   return (
     <div className="translator-preflight-metric">
       <strong>{value}</strong>
-      <span>{label}</span>
+      <span className="desktop-scan-copy">
+        {label.charAt(0).toUpperCase() + label.slice(1)}
+      </span>
     </div>
   );
 }

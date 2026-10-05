@@ -2372,6 +2372,11 @@
   white-space: nowrap;
 }
 
+#stardew-i18n-translator .translator-ai-details summary {
+  cursor: pointer;
+  color: var(--translator-muted);
+}
+
 #stardew-i18n-translator .translator-scan-summary span span {
   display: block;
   margin-top: 2px;

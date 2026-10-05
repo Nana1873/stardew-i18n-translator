@@ -36,7 +36,7 @@ installed before the game can use them.
    `stardew-i18n-translator.exe`. There is no installer.
 3. Select your Stardew Valley folder, Mods folder, and target language. Let the
    app scan your mods.
-4. Open **Workspace**, choose a mod, and double-click a string to edit it.
+4. Choose a mod in the workspace and double-click a string to edit it.
    Save your translation or use **Save & next** to keep working.
 5. Check **Review**, **Changed**, and **Validation issues**, then choose an action
    from **Export…** to write the translation files.

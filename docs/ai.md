@@ -93,6 +93,11 @@ only. Drafts can be received while quality checks are still running; the
 Cancelling keeps suggestions already saved and can also save valid drafts when
 a token repair is interrupted.
 
+A running batch remains tied to its original language and Mods folder when you
+change workspace settings. Its completion does not replace the new workspace's
+strings. The result identifies its language; **Open Review** is available when
+you return to the workspace that owns those suggestions.
+
 The **Activity log** records batch phase changes, repairs, retries, parallel
 limit changes, and saved suggestions with elapsed timestamps. It retains the
 latest 200 events. Older entries describe earlier work; only the active batch
@@ -186,7 +191,16 @@ and [llm.rs](../src-tauri/src/llm.rs).
   suggestion to Review, and continues past item-specific failures. Connection,
   HTTP-status, client-setup, cancellation, stale-state, and save failures stop
   remaining work. An error after a save is reported as completed with issues;
-  before any save it is a failure. Token mismatch has one targeted retry.
+  before any save it is a failure. Missing, unexpected, or duplicated protected
+  tokens trigger one targeted retry with the source's exact token counts. The
+  retry replaces the first draft only when it reduces count errors without
+  worsening another token. Unresolved mismatches remain visible in Review.
+- If a Local AI response is a valid JSON-encoded string, the client decodes one
+  layer only when it preserves the source's quotation layout, double-quote,
+  line-break, and backslash counts without worsening protected-token validation.
+  Genuine quotation marks stay in the translation. Ambiguous or malformed
+  responses remain unchanged for Review; decoding does not check wording or
+  meaning and does not require structured-output support from the service.
 - ChatGPT chunks contain at most 100 strings; each complete serialized prompt is
   bounded to 96 KiB. Repeated neighboring context is pooled without losing its
   order or boundaries. Oversized single-item prompts trim the farthest context
@@ -216,8 +230,13 @@ and [llm.rs](../src-tauri/src/llm.rs).
   failure retain saved suggestions; unfinished Open/Changed work can be retried.
   There is no persistent AI job queue or separate checkpoint history.
 - Progress forwards safe provider activity stages, not raw reasoning, commands,
-  identities, paths, or errors. The estimate uses saved-string checkpoints and
-  changes when more results are persisted; no token-by-token heartbeat is assumed.
+  identities, paths, or errors. The compact progress notice shows the current
+  step; the Activity log records batch preparation, translation, quality checks,
+  recovery, drafts received, and suggestions saved to Review. Repeated snapshots do not
+  add log entries. Received drafts can still change during review and do not
+  advance the saved-string progress bar. Local AI reports each completed response,
+  without streaming intermediate provider stages. No token-by-token heartbeat is
+  assumed.
 
 ## Experimental parallel provider probe
 

@@ -158,6 +158,7 @@ export function SetupWizard({
       const path = await pickFolder("Select your Stardew Valley folder");
       if (path) {
         setStardewPath(path);
+        setStardewValid(null);
         const valid = await validateStardewPath(path);
         setStardewValid(valid);
         if (valid && !modsPath) {
@@ -330,7 +331,8 @@ export function SetupWizard({
                 </div>
                 <PathDisplay
                   path={modsPath}
-                  valid={modsPath ? true : null}
+                  valid={null}
+                  selectionOnly
                   label="Mods folder"
                 />
               </section>
@@ -421,6 +423,16 @@ export function SetupWizard({
                       : ""}
                     .
                   </StatusCard>
+                ) : glossary.cached &&
+                  !glossary.outdatedCache &&
+                  (!glossary.sourceAvailable ||
+                    (targetLang &&
+                      !gameSupportsLanguage(targetLang) &&
+                      !glossary.packAvailable)) ? (
+                  <StatusCard tone="ready" title="Cached glossary available">
+                    {glossary.cached.termCount} cached terms remain available. A
+                    local source is needed only to rebuild them.
+                  </StatusCard>
                 ) : targetLang && !gameSupportsLanguage(targetLang) ? (
                   glossary.packAvailable && glossary.sourceAvailable ? (
                     <StatusCard
@@ -467,17 +479,16 @@ export function SetupWizard({
                       A community language pack
                       {glossary.packName ? ` (${glossary.packName})` : ""} was
                       detected, but the app could not read a local English
-                      Strings source. StardewXnbHack is only needed as a
-                      fallback if the direct game files are unavailable.
+                      Strings source. You can finish setup without building a
+                      glossary.
                     </StatusCard>
                   ) : (
                     <StatusCard
                       tone="neutral"
                       title="No glossary for this language"
                     >
-                      Stardew Valley doesn’t include this language, so no
-                      official glossary is available. You can still translate
-                      and export fully.
+                      No local glossary source was found for this language. You
+                      can finish setup without a glossary.
                     </StatusCard>
                   )
                 ) : glossary.sourceAvailable ? (
@@ -509,8 +520,16 @@ export function SetupWizard({
                   </StatusCard>
                 ) : (
                   <StatusCard
-                    tone="warning"
-                    title="One preparation step is needed"
+                    tone={
+                      glossary.cached && !glossary.outdatedCache
+                        ? "ready"
+                        : "neutral"
+                    }
+                    title={
+                      glossary.cached && !glossary.outdatedCache
+                        ? "Cached glossary available"
+                        : "Glossary source unavailable"
+                    }
                     action={
                       <button
                         type="button"
@@ -524,9 +543,11 @@ export function SetupWizard({
                       </button>
                     }
                   >
-                    The app could not read glossary-ready game Strings. If the
-                    direct game files are unavailable, run StardewXnbHack once
-                    and re-open Setup.
+                    {glossary.cached && !glossary.outdatedCache
+                      ? `${glossary.cached.termCount} cached terms remain available. A local source is needed only to rebuild them.`
+                      : glossary.outdatedCache
+                        ? "The cached glossary needs a rebuild. You can finish setup and add a local source later."
+                        : "You can finish setup without a glossary and add hints later using local game Strings or StardewXnbHack."}
                   </StatusCard>
                 )}
               </section>
@@ -566,7 +587,7 @@ export function SetupWizard({
               type="button"
               className="wizard__primary"
               onClick={goToModsStep}
-              disabled={!canLeaveStep1}
+              disabled={busy || !canLeaveStep1}
             >
               Next
             </button>
@@ -576,7 +597,7 @@ export function SetupWizard({
               type="button"
               className="wizard__primary"
               onClick={() => setStep(3)}
-              disabled={!canLeaveStep2}
+              disabled={busy || !canLeaveStep2}
             >
               Next
             </button>
@@ -586,7 +607,7 @@ export function SetupWizard({
               type="button"
               className="wizard__primary"
               onClick={() => setStep(4)}
-              disabled={!canLeaveStep3}
+              disabled={busy || !canLeaveStep3}
             >
               Next
             </button>
@@ -629,10 +650,12 @@ function PathDisplay({
   path,
   valid,
   label,
+  selectionOnly = false,
 }: {
   path: string;
   valid: boolean | null;
   label: string;
+  selectionOnly?: boolean;
 }) {
   const invalid = valid === false;
   return (
@@ -642,11 +665,18 @@ function PathDisplay({
       }`}
     >
       <span className="wizard__path-status" aria-hidden="true">
-        {path && valid === true ? "✓" : invalid ? "!" : "..."}
+        {selectionOnly
+          ? "—"
+          : path && valid === true
+            ? "✓"
+            : invalid
+              ? "!"
+              : "..."}
       </span>
       <span className="wizard__path-content">
         <strong>{label}</strong>
         {path ? <code>{path}</code> : <span>No folder selected yet</span>}
+        {selectionOnly && path && <small>Selected folder</small>}
         {invalid && (
           <small className="wizard__bad">
             This does not look like a Stardew Valley folder.

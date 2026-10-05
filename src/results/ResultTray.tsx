@@ -1,4 +1,5 @@
-import { type RefObject, useEffect, useMemo, useState } from "react";
+import { ResultNotice } from "./ResultNotice";
+import { type RefObject, useEffect, useMemo, useState, useRef } from "react";
 import { ChevronDown, ChevronUp, Copy, X } from "lucide-react";
 import type {
   ExportResult,
@@ -21,7 +22,21 @@ export interface ResultProblem {
   resolved: boolean;
 }
 
+/** Share the same outcome/cause wording with the session Activity log. */
+export function resultActivity(data: ResultTrayData) {
+  const presentation = presentationFor(
+    data,
+    data.problems.filter((problem) => !problem.resolved),
+  );
+  return {
+    message: `${presentation.label} · ${data.title}: ${data.error ?? presentation.copy}`,
+    tone:
+      presentation.tone === "pending" ? ("info" as const) : presentation.tone,
+  };
+}
+
 interface ResultTrayBase {
+  inspectDetails?: boolean;
   /** Canonical backend history identity once the operation completed. */
   operationId?: string | null;
   title: string;
@@ -31,6 +46,8 @@ interface ResultTrayBase {
   problems: ResultProblem[];
   /** Components associated with the Review result, when known. */
   reviewModUniqueIds?: string[];
+  /** Workspace owning Review entries from a captured live run. */
+  reviewWorkspace?: { modsPath: string | null; targetLang: string | null };
 }
 
 export type ResultTrayData =
@@ -64,6 +81,7 @@ export type ResultTrayData =
       done: number;
       total: number;
       engine: string;
+      targetLanguage?: string;
       undoAvailable: boolean;
     })
   | (ResultTrayBase & {
@@ -288,7 +306,10 @@ function presentationFor(
       paths,
       workflow: [],
       openFolderPath: paths[0] ? folderOf(paths[0].path) : null,
-      canOpenReview: false,
+      canOpenReview: Boolean(
+        exportResult &&
+        exportResult.totalReviewNeeded + exportResult.totalOutdated > 0,
+      ),
     };
     if (data.failedMod) {
       result.notices.push({
@@ -635,6 +656,17 @@ export function ResultTray({
   selectedHistoryId?: string | null;
   onSelectHistory?: (entry: OperationHistoryEntry) => void;
 }) {
+  const [resultDetails, setResultDetails] = useState(false);
+  const detailActionRef = useRef<HTMLButtonElement>(null);
+  const transitionFocus = useRef(false);
+  useEffect(() => {
+    if (!transitionFocus.current) return;
+    transitionFocus.current = false;
+    (resultDetails
+      ? detailActionRef.current
+      : toggleButtonRef?.current
+    )?.focus();
+  }, [resultDetails]);
   const unresolved = data.problems.filter((problem) => !problem.resolved);
   const presentation = useMemo(
     () => presentationFor(data, unresolved),
@@ -649,6 +681,16 @@ export function ResultTray({
   const [undoUsed, setUndoUsed] = useState(false);
   const [undoRunning, setUndoRunning] = useState(false);
   const key = resultKey(data);
+  const inspectDetails = Boolean(
+    (data as ResultTrayData & { inspectDetails?: boolean }).inspectDetails,
+  );
+  useEffect(
+    () =>
+      setResultDetails(
+        !data.collapsed && (inspectDetails || data.kind === "history"),
+      ),
+    [key, data.pending, data.error, data.collapsed, inspectDetails],
+  );
 
   useEffect(() => {
     setCopyState("idle");
@@ -715,9 +757,31 @@ export function ResultTray({
     onUndoBulk,
   );
 
+  if (!resultDetails) {
+    return (
+      <ResultNotice
+        data={data}
+        presentation={presentation}
+        issue={issue}
+        onInspect={onInspect}
+        onOpenFolder={onOpenFolder}
+        onOpenReview={onOpenReview}
+        onRetry={showRetry ? onRetry : undefined}
+        retryLabel={retryLabel}
+        onUndo={showUndo ? () => void undoBulk() : undefined}
+        undoRunning={undoRunning}
+        onDetails={() => {
+          transitionFocus.current = true;
+          setResultDetails(true);
+        }}
+        onClose={onClose}
+        toggleButtonRef={toggleButtonRef}
+      />
+    );
+  }
   return (
     <aside
-      className="translator-result"
+      className={"translator-result desktop-result-report"}
       aria-live="polite"
       aria-label="Operation result"
     >
@@ -740,12 +804,18 @@ export function ResultTray({
           <span>{data.title}</span>
         </div>
         <button
-          ref={toggleButtonRef}
+          ref={(node) => {
+            detailActionRef.current = node;
+            if (toggleButtonRef) toggleButtonRef.current = node;
+          }}
           className="translator-icon-button"
           type="button"
-          aria-label={data.collapsed ? "Expand result" : "Collapse result"}
-          aria-expanded={!data.collapsed}
-          onClick={onToggle}
+          aria-label={"Back to notification"}
+          aria-expanded={true}
+          onClick={() => {
+            transitionFocus.current = true;
+            setResultDetails(false);
+          }}
         >
           {data.collapsed ? (
             <ChevronUp aria-hidden="true" />
@@ -763,9 +833,8 @@ export function ResultTray({
         </button>
       </div>
 
-      {!data.collapsed && (
+      {true && (
         <div className="translator-result-body">
-          <div className="translator-kicker">{presentation.kicker}</div>
           {history.length > 0 && onSelectHistory && (
             <label className="translator-result-history">
               <span>Result</span>
@@ -926,7 +995,7 @@ export function ResultTray({
                     ? "Show source file"
                     : data.kind === "history" && data.entry.fileName
                       ? "Show file"
-                      : "Show in folder"}
+                      : "Open folder"}
               </button>
             )}
             {presentation.canOpenReview && onOpenReview && (
@@ -935,7 +1004,7 @@ export function ResultTray({
                 type="button"
                 onClick={onOpenReview}
               >
-                Open review queue
+                Open Review
               </button>
             )}
             {issue && (

@@ -7,15 +7,22 @@ import {
 } from "react";
 
 const FOCUSABLE_SELECTOR =
-  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex]:not([tabindex="-1"])';
+
+function availableForFocus(element: HTMLElement): boolean {
+  const closedDetails = element.closest("details:not([open])");
+  return (
+    !element.matches(":disabled") &&
+    !element.closest("[hidden], [inert]") &&
+    !element.closest('[aria-hidden="true"]') &&
+    (!closedDetails || element === closedDetails.querySelector("summary"))
+  );
+}
 
 function focusableElements(dialog: HTMLElement): HTMLElement[] {
   return Array.from(
     dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR),
-  ).filter(
-    (element) =>
-      !element.closest("[hidden]") && !element.closest('[aria-hidden="true"]'),
-  );
+  ).filter((element) => element.tabIndex >= 0 && availableForFocus(element));
 }
 
 interface IsolationSnapshot {
@@ -83,8 +90,16 @@ export function useDialogAccessibility({
   const focusInitial = useCallback(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
-    const preferred = dialog.querySelector<HTMLElement>(initialFocusSelector);
-    (preferred ?? focusableElements(dialog)[0] ?? dialog).focus();
+    const focusable = focusableElements(dialog);
+    // A deliberate initial target may be programmatically focusable (-1),
+    // such as scan diagnostics, without joining the normal Tab order.
+    const preferred =
+      initialFocusSelector === FOCUSABLE_SELECTOR
+        ? focusable[0]
+        : Array.from(
+            dialog.querySelectorAll<HTMLElement>(initialFocusSelector),
+          ).find(availableForFocus);
+    (preferred ?? focusable[0] ?? dialog).focus();
   }, [dialogRef, initialFocusSelector]);
 
   useEffect(() => {

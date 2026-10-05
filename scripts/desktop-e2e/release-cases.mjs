@@ -37,7 +37,7 @@ export async function releaseCases(h) {
   };
   // Release behavior through the actual UI, native pickers and shipped EXE.
   await launch();
-  await click(button("Workspace"));
+  await element(css('[aria-label="Search strings"]'));
   const flatRoot = join(mods, "Release Flat/i18n");
   const splitRoot = join(mods, "Release Split/i18n");
   const flatSource = {
@@ -79,6 +79,8 @@ export async function releaseCases(h) {
   };
   const rescan = async () => {
     await click(css('[aria-label="Scan mods"]'));
+    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await click(css('button[aria-label$="open scan diagnostics"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
     await absent(css('[role="dialog"][aria-label="Scan"]'));
@@ -306,9 +308,10 @@ export async function releaseCases(h) {
       await click(button("Export …"));
       await click(button("Translation ZIP · all mods"));
       const preview = css(
-        '[role="dialog"][aria-label="Build translation ZIP · all mods"]',
+        '[role="dialog"][aria-label="Export translation ZIP"]',
       );
       await element(preview);
+      await click(css(".desktop-zip-details summary"));
       await waitFor("combined preview includes pending work", async () => {
         const text = await (await element(preview)).getText();
         return (
@@ -394,7 +397,7 @@ export async function releaseCases(h) {
     await screenshot("release-workspace-1440x900");
     await closeNormally();
     await launch();
-    await click(button("Workspace"));
+    await element(css('[aria-label="Search strings"]'));
     await selectMod("E2E.ReleaseSplit");
     await openEntry("literal.pt");
     assert.equal(

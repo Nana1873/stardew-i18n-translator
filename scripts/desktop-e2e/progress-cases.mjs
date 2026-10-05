@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
-import { By } from "selenium-webdriver";
+import { By, Key } from "selenium-webdriver";
 
 export async function progressCases(h) {
   await h.step("ai-progress-activity-log", async () => {
+    assert.equal(
+      h.mods,
+      join(h.artifacts, "runtime", "synthetic Mods"),
+      "Progress fixtures must use the isolated runtime's Mods folder.",
+    );
     const folder = join(h.mods, "ProgressSmoke");
     await mkdir(join(folder, "i18n"), { recursive: true });
     await writeFile(
@@ -37,6 +42,7 @@ export async function progressCases(h) {
       let resolveRun;
       let request;
       let engine;
+      const scans = [];
       const reply = (value) =>
         Promise.resolve(
           new Response(JSON.stringify(value), {
@@ -51,6 +57,14 @@ export async function progressCases(h) {
         if (endpoint.hostname !== "ipc.localhost")
           return original(url, ...args);
         const command = decodeURIComponent(endpoint.pathname.slice(1));
+        if (command === "scan_mods") {
+          const body = args[0].body;
+          scans.push(
+            JSON.parse(
+              typeof body === "string" ? body : new TextDecoder().decode(body),
+            ),
+          );
+        }
         if (command === "cloud_ai_status")
           return reply({ authenticated: true });
         if (command === "cloud_ai_models")
@@ -96,6 +110,28 @@ export async function progressCases(h) {
       window.fetch = fetch;
       window.progressTestReady = (expected) =>
         Boolean(request) && engine === expected;
+      window.progressTestRunId = () => request?.runId;
+      window.progressTestScans = () => scans;
+      window.progressTestComplete = () =>
+        reply({
+          runId: request.runId,
+          engine,
+          model: "e2e-local-model",
+          reasoning: "default",
+          scope: "selected",
+          requested: request.identities.length,
+          completed: 1,
+          outcome: "complete",
+          suggestions: [
+            {
+              identity: request.identities[0],
+              text: "Hallo {{PlayerName}} 0.",
+              status: "review-needed",
+              tokenDifferences: [],
+              glossaryMisses: [],
+            },
+          ],
+        }).then(resolveRun);
       window.progressTestSnapshot = (payload) =>
         window.__TAURI_INTERNALS__.invoke("plugin:event|emit", {
           event: "ai-run-progress",
@@ -105,6 +141,9 @@ export async function progressCases(h) {
         window.fetch = original;
         delete window.progressTestReady;
         delete window.progressTestSnapshot;
+        delete window.progressTestScans;
+        delete window.progressTestComplete;
+        delete window.progressTestRunId;
         delete window.restoreProgressTest;
       };
       return window.fetch === fetch;
@@ -129,7 +168,6 @@ export async function progressCases(h) {
       await h.element(h.button("Sign out"));
       await h.click(h.button("Save changes"));
       await h.absent(h.css('[aria-label="Close settings"]'));
-      await h.click(h.button("Workspace"));
       await h.click(h.css('[data-tree-id="mod:E2E.ProgressSmoke"]'));
       await h.click(h.button("All"));
       await h.click(h.css('[aria-label="Select all visible strings"]'));
@@ -178,23 +216,24 @@ export async function progressCases(h) {
       const bar = () =>
         h
           .driver()
-          .findElement(
-            h.css('[role="progressbar"][aria-label="AI translation progress"]'),
-          );
-      const log = () =>
-        h.element(h.css('[role="log"][aria-label="Batch activity"]'));
+          .findElement(h.css('progress[aria-label="Strings saved to Review"]'));
+      const log = () => h.element(h.css('#activity-log-entries[role="log"]'));
       const logSize = () =>
         h
           .driver()
           .executeScript(
-            () => document.querySelectorAll('[role="log"] li').length,
+            () => document.querySelectorAll("#activity-log-entries > p").length,
           );
       const waitText = (description, text) =>
         h.waitFor(description, async () =>
           (await dialog.getText()).includes(text),
         );
+      const waitLogText = (description, text) =>
+        h.waitFor(description, async () =>
+          (await (await log()).getText()).includes(text),
+        );
       await emit(snapshot);
-      await waitText(
+      await waitLogText(
         "concurrent batch history",
         "Batch 3 · Checking translation quality · 94 strings",
       );
@@ -203,7 +242,7 @@ export async function progressCases(h) {
           "Batch 2 · Translating draft · 100 strings",
         ),
       );
-      assert.equal(await (await bar()).getAttribute("aria-valuenow"), "24");
+      assert.equal(await (await bar()).getAttribute("value"), "24");
       const initialLogSize = await logSize();
       const withProvider = {
         ...snapshot,
@@ -217,7 +256,7 @@ export async function progressCases(h) {
         },
       };
       await emit(withProvider);
-      await waitText("provider usage displayed", "18.2k input");
+      await waitText("parallel progress remains active", "4 batches active");
       assert.equal(
         await logSize(),
         initialLogSize,
@@ -228,20 +267,22 @@ export async function progressCases(h) {
           '[aria-label="AI translation progress"]',
         );
         return (
-          dialog.querySelectorAll('[role="progressbar"]').length === 1 &&
+          dialog.querySelectorAll("progress").length === 1 &&
           !dialog.querySelector("details") &&
-          !dialog.querySelector(".translator-flow-head svg") &&
-          dialog.querySelector(".translator-kicker").textContent ===
-            "ChatGPT · GPT 6.1 Sol · Medium" &&
-          dialog.querySelector(".translator-ai-facts").getBoundingClientRect()
-            .bottom <=
-            dialog.querySelector('[role="log"]').getBoundingClientRect().top
+          !dialog.querySelector('[role="log"]') &&
+          !dialog.hasAttribute("aria-modal") &&
+          dialog
+            .querySelector(".desktop-ai-progress-head")
+            .textContent.includes("ChatGPT") &&
+          dialog.getBoundingClientRect().bottom <=
+            document.querySelector(".desktop-log-panel").getBoundingClientRect()
+              .top
         );
       });
       assert.equal(
         inlineLayout,
         true,
-        "One progress bar and inline run facts must precede the activity log.",
+        "A nonmodal notice with one progress bar must sit above the shared activity log.",
       );
       await h.screenshot("activity-log-cloud");
       await writeFile(
@@ -257,7 +298,7 @@ export async function progressCases(h) {
       });
       await waitText("current concurrency updated", "3 batches active");
       assert.equal(
-        await (await bar()).getAttribute("aria-valuenow"),
+        await (await bar()).getAttribute("value"),
         "24",
         "Removal alone must not advance saved progress.",
       );
@@ -278,9 +319,9 @@ export async function progressCases(h) {
           { batchIndex: 4, phase: "translating", batchSize: 97 },
         ],
       });
-      await waitText(
+      await waitLogText(
         "repair and persisted save recorded",
-        "83 suggestions saved to Review · 107 / 1109",
+        "83 strings saved to Review",
       );
       const history = await (await log()).getText();
       assert.ok(
@@ -290,7 +331,7 @@ export async function progressCases(h) {
         history.includes("Batch 1 · Checking translation quality · 83 strings"),
         "Completed phases remain in chronological history.",
       );
-      assert.equal(await (await bar()).getAttribute("aria-valuenow"), "107");
+      assert.equal(await (await bar()).getAttribute("value"), "107");
       await h.driver().manage().window().setRect({ width: 1040, height: 740 });
       await emit({
         ...withProvider,
@@ -305,27 +346,25 @@ export async function progressCases(h) {
           batchSize: 100,
         })),
       });
-      await waitText(
+      await waitLogText(
         "eight batch identities logged",
         "Batch 11 · Translating draft · 100 strings",
       );
-      await waitText(
-        "eight batches currently active",
-        "8 batches active · up to 8",
-      );
+      await waitText("eight batches currently active", "8 batches active");
       const fits = await h.driver().executeScript(() => {
         const dialog = document.querySelector(
           '[aria-label="AI translation progress"]',
         );
         const box = dialog.getBoundingClientRect();
-        const log = dialog.querySelector('[role="log"]');
+        const log = document.querySelector("#activity-log-entries");
+        const logPanel = document.querySelector(".desktop-log-panel");
         return (
           box.left >= 0 &&
           box.right <= innerWidth &&
           box.top >= 0 &&
           box.bottom <= innerHeight &&
           log.scrollWidth <= log.clientWidth &&
-          log.clientHeight <= 190
+          box.bottom <= logPanel.getBoundingClientRect().top
         );
       });
       assert.equal(
@@ -336,7 +375,6 @@ export async function progressCases(h) {
       await h.screenshot("activity-log-eight-batches");
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
-
       // Restore these bytes after closing the app so later cases retain the
       // same cloud-only configuration, not just its default-engine selection.
       cloudProfile = await readFile(settingsPath);
@@ -396,18 +434,16 @@ export async function progressCases(h) {
         ),
       );
       const localText = await localDialog.getText();
-      assert.ok(localText.includes("Local AI · e2e-local-model · Default"));
-      assert.ok(localText.includes("Drafts received"));
+      assert.ok(localText.includes("Local AI"));
       assert.equal(localText.includes("ChatGPT activity"), false);
       assert.equal(localText.includes("Quality check"), false);
       assert.equal(localText.includes("Tokens reported"), false);
       await emit({ ...serial, phase: "saving", completed: 1, translated: 1 });
-      await h.waitFor("local saved progress", async () =>
-        (await localDialog.getText()).includes(
-          "1 suggestion saved to Review · 1 / 1109",
-        ),
+      await waitLogText(
+        "local saved progress",
+        "Batch 1 · 1 string saved to Review",
       );
-      assert.equal(await (await bar()).getAttribute("aria-valuenow"), "1");
+      assert.equal(await (await bar()).getAttribute("value"), "1");
       await h.screenshot("activity-log-local");
       await writeFile(
         join(h.artifacts, "activity-log-local-dialog.png"),
@@ -416,6 +452,82 @@ export async function progressCases(h) {
       );
       await h.click(h.button("Cancel"));
       await h.absent(h.css('[aria-label="AI translation progress"]'));
+      // Finish a delayed German run after a real native settings/scan switch.
+      // Same string identities exist in both languages, so identity alone must
+      // not allow German suggestions or a stale German scan into French state.
+      await writeFile(
+        join(folder, "i18n/fr.json"),
+        JSON.stringify({
+          "row.0": "Bonjour {{PlayerName}} 0.",
+        }),
+      );
+      const previousRunId = await h
+        .driver()
+        .executeScript(() => window.progressTestRunId());
+      await h.click(h.css(".translator-bulk-button"));
+      await h.click(
+        By.xpath("//button[.//span[contains(.,'Translate selected with AI')]]"),
+      );
+      await h.element(h.css('[aria-label="AI translation progress"]'));
+      await h.waitFor("new German AI run started", () =>
+        h
+          .driver()
+          .executeScript(
+            (previous) => window.progressTestRunId() !== previous,
+            previousRunId,
+          ),
+      );
+      await h.click(h.css('[aria-label="Settings"]'));
+      await h.click(h.button("Folders & language"));
+      await (
+        await h.element(h.css('[aria-label="Target language"]'))
+      ).sendKeys("French", Key.ENTER);
+      await h.click(h.button("Save changes"));
+      await h.absent(h.css('[aria-label="Close settings"]'));
+      await h.waitFor("French strings loaded during German AI run", async () =>
+        (await h.element(h.row("row.0")))
+          .getText()
+          .then((text) => text.includes("Bonjour")),
+      );
+      const scansBeforeFinish = await h
+        .driver()
+        .executeScript(() => window.progressTestScans());
+      assert.equal(scansBeforeFinish.at(-1).targetLang, "fr");
+      const frenchStatePath = join(
+        h.data,
+        "language-state",
+        "fr",
+        "translations",
+        "E2E.ProgressSmoke.json",
+      );
+      const frenchStateBefore = await readFile(frenchStatePath);
+      await h.driver().executeAsyncScript((done) => {
+        window.progressTestComplete().then(
+          () => done(null),
+          (error) => done(String(error)),
+        );
+      });
+      await h.absent(h.css('[aria-label="AI translation progress"]'));
+      await h.element(h.css('[aria-label="Operation result"]'));
+      const completedNotice = await h.element(
+        h.css('[aria-label="Operation result"]'),
+      );
+      assert.ok((await completedNotice.getText()).includes("German (de)"));
+      assert.equal(
+        (await completedNotice.findElements(h.button("Open Review"))).length,
+        0,
+      );
+      assert.deepEqual(
+        await h.driver().executeScript(() => window.progressTestScans()),
+        scansBeforeFinish,
+      );
+      assert.ok(
+        (await (await h.element(h.row("row.0"))).getText()).includes("Bonjour"),
+      );
+      assert.deepEqual(await readFile(frenchStatePath), frenchStateBefore);
+      assert.equal((await h.json(settingsPath)).targetLang, "fr");
+      await h.screenshot("activity-log-ai-workspace-switch");
+
       h.evidence.aiProgress = {
         passed: true,
         controlledIpc: true,
@@ -426,10 +538,13 @@ export async function progressCases(h) {
         phaseHistory: true,
         providerUpdateDedup: true,
         repairVisible: true,
-        inlineFacts: true,
+        nonmodalNotice: true,
+        sharedActivityLog: true,
+        noticeAboveLog: true,
         eightBatchesFit: true,
         localSerialLayout: true,
         cancellation: true,
+        workspaceSwitchSafe: true,
       };
     } finally {
       await h.driver().executeScript(() => window.restoreProgressTest());
@@ -439,6 +554,7 @@ export async function progressCases(h) {
         if (cloudBackup) await writeFile(backupPath, cloudBackup);
         else await rm(backupPath, { force: true });
       }
+      await rm(folder, { recursive: true, force: true });
     }
   });
 }
