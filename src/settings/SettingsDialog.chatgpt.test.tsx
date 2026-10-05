@@ -39,6 +39,62 @@ beforeEach(() => {
   });
 });
 
+it.each([null, undefined, "   "])(
+  "prefills the app default when no model is saved (%s), even if the catalog suggests another model",
+  async (cloudModel) => {
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{ ...settings, ai: { ...settings.ai!, cloudModel } }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+    await screen.findByRole("option", { name: "Account model" });
+    expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
+      "gpt-6.1-sol",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({ cloudModel: "gpt-6.1-sol" }),
+      }),
+    );
+  },
+);
+
+it("keeps the chosen model when signing out and saving settings", async () => {
+  let signedOut = false;
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "cloud_ai_status")
+      return Promise.resolve({ authenticated: !signedOut });
+    if (command === "cloud_ai_models") return Promise.resolve([]);
+    if (command === "chatgpt_sign_out") signedOut = true;
+    return Promise.resolve(null);
+  });
+  const onSave = vi.fn();
+  render(
+    <SettingsDialog
+      settings={settings}
+      initialPage="ai"
+      onSave={onSave}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+  await screen.findByRole("button", { name: "Sign in with ChatGPT" });
+  expect(screen.getByLabelText("ChatGPT model")).toHaveValue("account-model");
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(onSave).toHaveBeenCalledWith(
+    expect.objectContaining({
+      ai: expect.objectContaining({ cloudModel: "account-model" }),
+    }),
+  );
+});
+
 it("uses website commands, ChatGPT preferences and reasoning without CLI setup or quota calls", async () => {
   expect(commands.CLOUD_ENGINE_ID).toBe("chatgpt");
   const onSave = vi.fn();

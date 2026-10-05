@@ -103,6 +103,7 @@ const DEFAULT_AI_SETTINGS = {
 };
 
 const CLOUD_REASONING_OPTIONS = ["low", "medium", "high"] as const;
+const DEFAULT_CHATGPT_MODEL = "gpt-6.1-sol";
 const englishNumberFormat = new Intl.NumberFormat("en-US");
 
 export function SettingsDialog({
@@ -161,7 +162,9 @@ export function SettingsDialog({
   const [cloudQualityReview, setCloudQualityReview] = useState(
     savedAi.cloudQualityReview ?? true,
   );
-  const [cloudModel, setCloudModel] = useState(savedAi.cloudModel ?? "");
+  const [cloudModel, setCloudModel] = useState(
+    savedAi.cloudModel?.trim() || DEFAULT_CHATGPT_MODEL,
+  );
   const [cloudParallelBatches, setCloudParallelBatches] = useState(
     savedAi.cloudParallelBatches ?? 4,
   );
@@ -467,13 +470,6 @@ export function SettingsDialog({
       .then((models) => {
         if (!isActive()) return;
         setCloudModels(models);
-        setCloudModel((current) =>
-          current
-            ? current
-            : (models.find((model) => model.isDefault)?.model ??
-              models[0]?.model ??
-              current),
-        );
       })
       .catch((cause) => {
         if (isActive()) setCloudModelsError(String(cause));
@@ -522,7 +518,6 @@ export function SettingsDialog({
       setChatgptAuthError(String(cause));
     } finally {
       setCloudModels(null);
-      setCloudModel("");
       await checkCloudStatus(false);
     }
   }
@@ -1053,10 +1048,10 @@ export function SettingsDialog({
                           ? "Loading models…"
                           : cloudModelsError
                             ? cloudModel
-                              ? "Model list unavailable · keeping the saved selection"
+                              ? "Model list unavailable · keeping the model ID"
                               : "Model list unavailable · retry loading"
                             : cloudAvailable && cloudModels?.length === 0
-                              ? "No models listed · enter a model ID"
+                              ? "No models listed · enter or keep a model ID"
                               : !cloudAvailable
                                 ? "Sign in to load your models"
                                 : showCloudModelInput
@@ -1091,9 +1086,7 @@ export function SettingsDialog({
                       >
                         {!showCloudModelInput && !selectedCloudModel && (
                           <option value={cloudModel}>
-                            {cloudModel
-                              ? `${cloudModel} · saved`
-                              : "Choose a ChatGPT model"}
+                            {cloudModel || "Choose a ChatGPT model"}
                           </option>
                         )}
                         {cloudModels?.map((model) => (

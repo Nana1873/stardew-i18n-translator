@@ -34,6 +34,11 @@ export async function progressCases(h) {
         ),
       ),
     );
+    const settingsPath = join(h.data, "settings.json");
+    const backupPath = settingsPath + ".bak";
+    const settings = JSON.parse(await readFile(settingsPath, "utf8"));
+    settings.ai = { ...settings.ai, cloudModel: null };
+    await writeFile(settingsPath, JSON.stringify(settings));
     await h.launch();
     // Controlled replies keep this UI acceptance independent of account access,
     // real model calls and translation quality. Events use the native event bridge.
@@ -70,8 +75,8 @@ export async function progressCases(h) {
         if (command === "cloud_ai_models")
           return reply([
             {
-              model: "gpt-6.1-sol",
-              displayName: "GPT-6.1-Sol",
+              model: "e2e-catalog-model",
+              displayName: "E2E catalog model",
               isDefault: true,
               defaultReasoningEffort: "medium",
               supportedReasoningEfforts: ["low", "medium", "high"],
@@ -153,8 +158,6 @@ export async function progressCases(h) {
       true,
       "The controlled IPC transport must be installed.",
     );
-    const settingsPath = join(h.data, "settings.json");
-    const backupPath = settingsPath + ".bak";
     let cloudProfile;
     let cloudBackup;
     try {
@@ -166,8 +169,20 @@ export async function progressCases(h) {
         ),
       );
       await h.element(h.button("Sign out"));
+      await h.waitFor(
+        "app default survives an unrelated model catalog",
+        async () =>
+          (await (
+            await h.element(h.css('[aria-label="ChatGPT model ID"]'))
+          ).getAttribute("value")) === "gpt-6.1-sol",
+      );
+      await h.screenshot("chatgpt-default-model");
       await h.click(h.button("Save changes"));
       await h.absent(h.css('[aria-label="Close settings"]'));
+      assert.equal(
+        JSON.parse(await readFile(settingsPath, "utf8")).ai.cloudModel,
+        "gpt-6.1-sol",
+      );
       await h.click(h.css('[data-tree-id="mod:E2E.ProgressSmoke"]'));
       await h.click(h.button("All"));
       await h.click(h.css('[aria-label="Select all visible strings"]'));
