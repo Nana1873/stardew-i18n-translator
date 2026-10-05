@@ -439,7 +439,7 @@ async function inspectLatestResult() {
   if (screen.queryByRole("button", { name: "Hide result" })) {
     fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
   }
-  fireEvent.click(screen.getByRole("button", { name: "Latest result" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Latest result" }));
   await screen.findByRole("button", { name: "Back to notification" });
   return screen.getByRole("complementary", { name: "Operation result" });
 }
@@ -2742,6 +2742,11 @@ describe("App shell", () => {
       target: { value: "OriginalManual" },
     });
     fireEvent.click(within(dialog).getByRole("button", { name: "Save ZIP…" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Operation result")).toHaveTextContent(
+        "combined.zip",
+      ),
+    );
     const result = await inspectLatestResult();
     expect(result).toHaveTextContent("ZIP created");
     expect(
