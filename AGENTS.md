@@ -22,8 +22,9 @@ proportional to that goal.
 - Treat real game and Mods folders as read-only test inputs. Run writes and
   destructive tests only on synthetic fixtures or temporary copies; never
   commit user data, game assets, translations, personal paths, or credentials.
-- Report changes, relevant checks, and remaining limitations in German. Keep
-  code, CLI text, commits, PRs, issues, and repository documentation in English.
+- Report changes, relevant checks, and remaining limitations in the contributor's
+  preferred language. Keep code, CLI text, commits, PRs, issues, and repository
+  documentation in English.
 - For releases, follow the [release process](docs/release/release-process.md).
   Preserve an explicitly requested draft or user-test step. Labels and curated
   release notes are useful when they add value, not mandatory ceremony.

@@ -310,15 +310,13 @@ export async function advancedCases(h) {
           'section[aria-label="ChatGPT"] .translator-setting-actions button',
           '[aria-label="ChatGPT model"]',
           '[aria-label="ChatGPT reasoning"]',
-          '.translator-switch:has([aria-label="AI quality review and repairs"])',
+          '.translator-switch:has([aria-label="AI quality checks"])',
           '[aria-label="Close settings"]',
         ]);
         const qualitySwitch = css(
-          '.translator-switch:has([aria-label="AI quality review and repairs"])',
+          '.translator-switch:has([aria-label="AI quality checks"])',
         );
-        const qualityInput = css(
-          '[aria-label="AI quality review and repairs"]',
-        );
+        const qualityInput = css('[aria-label="AI quality checks"]');
         const qualityEnabled = await (
           await driver.findElement(qualityInput)
         ).isSelected();
@@ -552,9 +550,7 @@ export async function advancedCases(h) {
         // Keep quality review enabled: the normal draft + review path is covered.
         assert.equal(
           await (
-            await driver.findElement(
-              css('[aria-label="AI quality review and repairs"]'),
-            )
+            await driver.findElement(css('[aria-label="AI quality checks"]'))
           ).isSelected(),
           true,
         );

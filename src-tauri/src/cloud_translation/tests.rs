@@ -548,7 +548,7 @@ fn terminology_prompt_is_conservative_exact_and_bounded() {
         .contains("Gender-switch blocks `${...}$` contain translatable branch prose."));
     assert!(prompt
         .instructions
-        .contains("Preserve every existing quote character EXACTLY."));
+        .contains("Preserve the source's enclosing quotation mark style"));
     assert!(prompt.instructions.contains("Keep the same line breaks."));
     let correction = build_terminology_repair_attempt_prompt(
         "German",

@@ -1188,6 +1188,7 @@ describe("SettingsDialog", () => {
             cloudModel: "gpt-5.5",
             cloudReasoning: "high",
             cloudQualityReview: true,
+            cloudParallelBatches: 4,
           },
         }}
         initialPage="ai"
@@ -1228,6 +1229,10 @@ describe("SettingsDialog", () => {
     });
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
 
+    fireEvent.change(
+      screen.getByRole("combobox", { name: "ChatGPT parallel batches" }),
+      { target: { value: "8" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1236,7 +1241,171 @@ describe("SettingsDialog", () => {
           cloudModel: "gpt-5.6-sol",
           cloudReasoning: "high",
           cloudQualityReview: true,
+          cloudParallelBatches: 8,
         },
+      }),
+    );
+  });
+
+  it("preserves a saved model omitted from the account catalog", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "cloud_ai_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "cloud_ai_models")
+        return Promise.resolve([
+          {
+            model: "gpt-5.6-sol",
+            displayName: "GPT-5.6-Sol",
+            isDefault: true,
+            defaultReasoningEffort: "low",
+            supportedReasoningEfforts: ["low", "medium", "high"],
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "chatgpt",
+            cloudModel: "gpt-6.1-sol",
+            cloudReasoning: "low",
+            cloudQualityReview: true,
+          },
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    expect(await screen.findByLabelText("ChatGPT model ID")).toHaveValue(
+      "gpt-6.1-sol",
+    );
+    expect(screen.getByLabelText("ChatGPT model")).toHaveTextContent(
+      "GPT-5.6-Sol",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({ cloudModel: "gpt-6.1-sol" }),
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText("ChatGPT model"), {
+      target: { value: "gpt-5.6-sol" },
+    });
+    expect(screen.queryByLabelText("ChatGPT model ID")).toBeNull();
+    expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-5.6-sol");
+  });
+
+  it("applies advertised reasoning limits to a manually entered ID with whitespace", async () => {
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "cloud_ai_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "cloud_ai_models")
+        return Promise.resolve([
+          {
+            model: "restricted-model",
+            displayName: "Restricted model",
+            isDefault: true,
+            defaultReasoningEffort: "medium",
+            supportedReasoningEfforts: ["medium"],
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "chatgpt",
+            cloudModel: "gpt-6.1-sol",
+            cloudReasoning: "high",
+            cloudQualityReview: true,
+          },
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    const modelId = await screen.findByLabelText("ChatGPT model ID");
+    expect(screen.getByLabelText("ChatGPT reasoning")).toHaveValue("high");
+    fireEvent.change(modelId, {
+      target: { value: "  restricted-model  " },
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText("ChatGPT reasoning")).toHaveValue("medium"),
+    );
+    expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
+      "  restricted-model  ",
+    );
+    expect(
+      screen.getByLabelText("ChatGPT reasoning").querySelectorAll("option"),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({
+          cloudModel: "restricted-model",
+          cloudReasoning: "medium",
+        }),
+      }),
+    );
+  });
+
+  it("keeps a manually entered model while the catalog is loading", async () => {
+    const pendingModels = deferred<[]>();
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "cloud_ai_status")
+        return Promise.resolve({ installed: true, authenticated: true });
+      if (cmd === "cloud_ai_models") return pendingModels.promise;
+      return Promise.resolve(null);
+    });
+    const onSave = vi.fn();
+    render(
+      <SettingsDialog
+        settings={{
+          ...baseSettings,
+          ai: {
+            defaultEngine: "chatgpt",
+            cloudReasoning: "low",
+            cloudQualityReview: true,
+          },
+        }}
+        initialPage="ai"
+        onSave={onSave}
+        onClose={() => {}}
+        onReRunSetup={() => {}}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(screen.getByLabelText("ChatGPT model")).toBeEnabled(),
+    );
+    fireEvent.change(screen.getByLabelText("ChatGPT model"), {
+      target: { value: "custom-model-id" },
+    });
+    fireEvent.change(screen.getByLabelText("ChatGPT model ID"), {
+      target: { value: "  gpt-6.1-sol  " },
+    });
+    pendingModels.resolve([]);
+    await screen.findByText(/No models listed/);
+    expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
+      "  gpt-6.1-sol  ",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ai: expect.objectContaining({ cloudModel: "gpt-6.1-sol" }),
       }),
     );
   });
@@ -1272,7 +1441,7 @@ describe("SettingsDialog", () => {
     );
 
     const qualityReview = screen.getByRole("checkbox", {
-      name: "AI quality review and repairs",
+      name: "AI quality checks",
     });
     expect(qualityReview).toBeChecked();
     expect(
@@ -1305,6 +1474,7 @@ describe("SettingsDialog", () => {
           cloudModel: null,
           cloudReasoning: "medium",
           cloudQualityReview: false,
+          cloudParallelBatches: 4,
         },
       }),
     );
@@ -1379,6 +1549,7 @@ describe("SettingsDialog", () => {
             defaultEngine: "chatgpt",
             cloudReasoning: "medium",
             cloudQualityReview: true,
+            cloudParallelBatches: 4,
           },
         }}
         initialPage="ai"
@@ -1389,7 +1560,7 @@ describe("SettingsDialog", () => {
     );
 
     await waitFor(() =>
-      expect(screen.getByLabelText("ChatGPT model")).toBeDisabled(),
+      expect(screen.getByLabelText("ChatGPT model")).toBeEnabled(),
     );
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("");
     expect(screen.getByText(/retry loading/i)).toBeVisible();
@@ -1397,6 +1568,12 @@ describe("SettingsDialog", () => {
       "Ready",
     );
     expect(screen.getByRole("button", { name: "Sign out" })).toBeEnabled();
+    fireEvent.change(screen.getByLabelText("ChatGPT model"), {
+      target: { value: "custom-model-id" },
+    });
+    fireEvent.change(screen.getByLabelText("ChatGPT model ID"), {
+      target: { value: "gpt-6.1-sol" },
+    });
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "cloud_ai_status")
         return Promise.resolve({ authenticated: true });
@@ -1415,15 +1592,19 @@ describe("SettingsDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: "Retry models" }));
     await screen.findByRole("option", { name: "Recovered model" });
     expect(screen.queryByRole("button", { name: "Retry models" })).toBeNull();
+    expect(screen.getByLabelText("ChatGPT model ID")).toHaveValue(
+      "gpt-6.1-sol",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(onSave).toHaveBeenCalledWith(
       expect.objectContaining({
         ai: {
           defaultEngine: "chatgpt",
-          cloudModel: "recovered-model",
+          cloudModel: "gpt-6.1-sol",
           cloudReasoning: "medium",
           cloudQualityReview: true,
+          cloudParallelBatches: 4,
         },
       }),
     );
@@ -1459,9 +1640,10 @@ describe("SettingsDialog", () => {
           ...baseSettings,
           ai: {
             defaultEngine: "local",
-            cloudModel: "retired-model",
+            cloudModel: null,
             cloudReasoning: "medium",
             cloudQualityReview: true,
+            cloudParallelBatches: 4,
           },
         }}
         initialPage="ai"
@@ -1532,6 +1714,7 @@ describe("SettingsDialog", () => {
           cloudModel: null,
           cloudReasoning: "medium",
           cloudQualityReview: true,
+          cloudParallelBatches: 4,
         },
       }),
     );

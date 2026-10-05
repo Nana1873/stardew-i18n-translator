@@ -1,0 +1,49 @@
+[size=5][b]Stardew i18n Translator[/b][/size]
+A portable Windows x64 app for translating Stardew Valley SMAPI mods. Find strings, edit source and translation side by side, and check protected tokens without working through large JSON files by hand.
+
+[size=4][b]Translation workflow[/b][/size]
+[list]
+[*]Scan your Mods folder, group multi-part mods, and use existing translations. Scanning is read-only.
+[*]Work in Overview and Workspace with search across mods, status and validation filters, multi-select, batch actions, keyboard shortcuts, and columns that fit the available space.
+[*]Track changed English strings and review protected Stardew, SMAPI, Content Patcher, dialogue, mail, placeholder, and formatting tokens.
+[*]Save manual edits, review AI suggestions, import external LLM results, and export target-language files or translation ZIPs.
+[*]Use Build Stardew Translator Output to create one locale-only ZIP for all scanned mods while preserving their installed folder paths.
+[/list]
+The four states are [b]Open[/b], [b]Changed[/b], [b]Review[/b], and [b]Done[/b]. Validation issues are shown separately. AI and external LLM suggestions enter Review and are never marked Done automatically.
+
+Saving keeps your work in the app. [b]Export is the separate step that writes into installed mods.[/b] Nonempty Review and Changed text can be exported after a warning, so check those queues before sharing. Blocking token findings require correction or an explicit acceptance of the exact source/target mismatch. Existing target files receive .bak backups; a failed multi-file export rolls back earlier writes.
+
+[size=4][b]Optional AI[/b][/size]
+Manual editing, scanning, glossary building, validation, and export work without AI.
+[list]
+[*][b]Local AI[/b] connects to a loopback service you configure, such as LM Studio or Ollama.
+[*][b]ChatGPT[/b] uses direct browser sign-in and your ChatGPT plan. No separately installed CLI or API key is required. Choose an available account model and reasoning level in Settings. Account eligibility and model availability may vary.
+[*][b]External LLM batches[/b] export a self-contained JSON file for a file-capable LLM. Returned files are checked for stale sources, identities, protected tokens, and existing translations before import.
+[/list]
+AI instructions preserve the source's tone, humor, emotional intent, and character voice in every target language. ChatGPT quality review is enabled by default and can be disabled for fewer calls and lower time/token use; first drafts may need more manual correction. Validation and human Review still apply.
+
+[size=4][b]Glossary and privacy[/b][/size]
+Build optional language-specific glossary hints from local Stardew strings or a compatible installed community language pack. A glossary is never required for translation or export.
+
+Selected English text, limited neighboring context, and matching glossary terms go only to the chosen AI backend. Local AI uses your loopback service; ChatGPT sends them directly to OpenAI. External batches leave your computer only when you upload them yourself. The renewable ChatGPT session is encrypted with Windows DPAPI and bound to your Windows user and portable profile. Moving it to another account or computer requires signing in again. The app has no analytics or telemetry.
+
+[size=4][b]Supported files and languages[/b][/size]
+Supports flat i18n/default.json and i18n/<language>.json files, plus split i18n/default/*.json and i18n/<language>/*.json folders. It does not translate arbitrary content.json or XNB assets, manage mods, or download updates.
+
+Built-in targets: German, Spanish, French, Hungarian, Italian, Japanese, Korean, Portuguese, Russian, Turkish, and Chinese.
+Custom targets: Vietnamese, Indonesian, Ukrainian, Polish, Finnish, Dutch, Czech, and Thai. Using custom-language files in Stardew requires a matching language mod.
+
+[size=4][b]Installation and updates[/b][/size]
+[list=1]
+[*]Download the portable Windows ZIP from Files or GitHub Releases.
+[*]Extract the entire ZIP to a writable folder and run stardew-i18n-translator.exe. There is no installer.
+[*]Choose the Stardew Valley folder, Mods folder, and target language. Setup scans your mods automatically.
+[*]Open Workspace, double-click a string to edit it, then review and export your work.
+[/list]
+For updates, close the app and replace the executable and README. [b]Keep the data/ folder beside the executable[/b]: it contains your settings, translation work, and glossary caches. One running app can use a portable profile at a time. If you previously used Codex CLI translation, sign in again through Settings > Translation engines > ChatGPT.
+
+The executable is unsigned, so Windows may show a SmartScreen warning. Microsoft Edge WebView2 Runtime is required. If missing, the app offers Microsoft's download page; nothing is installed automatically.
+
+[url=https://github.com/Nana1873/stardew-i18n-translator]Source code, downloads, changelog, and issue tracker[/url] | [url=https://github.com/Nana1873/stardew-i18n-translator/blob/main/docs/user-guide.md]User guide[/url] | GPL-3.0-or-later
+
+Built with substantial help from AI coding agents. I guide the project, review and test the results, and decide what ships.

@@ -84,13 +84,13 @@ and evidence-matrix regressions run through `pnpm test:desktop:guards`.
    second attempt: the new locale is exact and `.json.bak` preserves every byte
    of the previous export.
 8. Use **Files… → Export ZIP for selected mod…**. Cancel the real Save dialog,
-   change the install folder to `OriginalDesktopSmoke`, reopen the Save dialog,
+   change the install folder to ` OriginalDesktopSmoke` (including its leading
+   space), reopen the Save dialog,
    and save to a new synthetic path. Inspect the generated archive: exactly
-   `OriginalDesktopSmoke/i18n/de.json` and the two FOMOD XML files, expected
-   translations and tokens, and installer source/destination paths matching
-   the locale entry. Build **Translation ZIP · all mods** through its real Save
-   dialog and verify the default `DesktopSmoke/i18n/de.json` path and the same
-   installer contract. Neither ZIP includes source strings, manifests, portable
+   ` OriginalDesktopSmoke/i18n/de.json` with expected translations and tokens.
+   Use **Files… → Export ZIP for all mods…** through its real Save dialog and verify
+   that it contains exactly `DesktopSmoke/i18n/de.json`. Neither ZIP includes
+   source strings, manifests, original assets, installer metadata, portable
    state, or backups. Installed locale and backup remain unchanged.
    Reopen the current-mod ZIP preview with a different install folder. Decline
    the native overwrite confirmation and cancel Save: the existing ZIP stays
@@ -124,6 +124,14 @@ and evidence-matrix regressions run through `pnpm test:desktop:guards`.
 A successful command needs both `result.json` with `passed: true` and
 `cleanup.json` with exit code 0 and `runtimeRemoved: true`. An interrupted or
 failed run is not a pass. No workflow step is silently skipped.
+
+The ordinary suite also opens the built app’s AI progress dialog with controlled
+IPC replies and native progress events. It checks the single saved-progress
+bar, concurrent batch history, provider-update deduplication, repairs, inline
+run information, cancellation, and eight batches at the minimum desktop size.
+It also checks the same layout with controlled serial Local AI events. This UI
+case makes no provider calls and does not establish live translation or language
+quality.
 
 ## Isolation and evidence
 

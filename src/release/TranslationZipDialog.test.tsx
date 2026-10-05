@@ -108,6 +108,47 @@ describe("TranslationZipDialog", () => {
     ]);
   });
 
+  it("preserves valid leading spaces in default and edited install paths", () => {
+    const build = vi.fn();
+    const { container } = render(
+      <TranslationZipDialog
+        preview={{
+          ...PREVIEW,
+          versionConflicts: [],
+          entries: [
+            {
+              ...PREVIEW.entries[0],
+              installFolder: " [CP] Sample",
+              archivePath: " [CP] Sample/i18n/de.json",
+            },
+          ],
+        }}
+        componentCount={1}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={build}
+        onClose={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    expect(
+      container.querySelector(".desktop-zip-files code")?.textContent,
+    ).toBe(" [CP] Sample/i18n/de.json");
+    fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
+    expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, []);
+    fireEvent.change(screen.getByLabelText("Install folder"), {
+      target: { value: " Original Package\\[CP] Sample" },
+    });
+    expect(
+      container.querySelector(".desktop-zip-files code")?.textContent,
+    ).toBe(" Original Package/[CP] Sample/i18n/de.json");
+    fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
+    expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, [
+      { modUniqueId: "[CP] Sample", folder: " Original Package/[CP] Sample" },
+    ]);
+  });
+
   it("blocks ambiguous and escaping install folders until corrected", () => {
     render(
       <TranslationZipDialog

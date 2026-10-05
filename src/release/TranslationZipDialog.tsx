@@ -50,7 +50,7 @@ export function TranslationZipDialog({
     ).values(),
   );
   const folderFor = (id: string, fallback: string) =>
-    (folderEdits.get(id) ?? fallback).trim().replaceAll("\\", "/");
+    (folderEdits.get(id) ?? fallback).replaceAll("\\", "/");
   const installFolders = components.map((entry) => ({
     modUniqueId: entry.modUniqueId,
     folder: folderFor(entry.modUniqueId, entry.installFolder),

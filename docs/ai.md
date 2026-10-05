@@ -39,11 +39,15 @@ rejected with setup guidance; choose a compatible model if shown that message.
 
 1. Open **Settings > Translation engines > ChatGPT** and select **Sign in with ChatGPT**.
 2. Complete sign-in in your browser and allow this app to use your ChatGPT plan.
-3. Return to the app, choose an available model and Low/Medium/High reasoning, and save.
+3. Return to the app, choose a listed model or **Enter model ID…**, select
+   Low/Medium/High reasoning, and save.
 
 The app connects directly to OpenAI using its own browser-authorized session.
 No CLI installation or API key is required. The model catalog comes from your
 signed-in account; advertised reasoning capabilities limit the picker when provided.
+The catalog can omit usable models. **Enter model ID…** lets you specify an exact
+ID such as `gpt-6.1-sol`. Catalog refreshes preserve your saved selection even
+when it is not listed.
 OpenAI checks availability and account/workspace permissions on each request.
 The account row shows your sign-in and offers **Manage usage** and **Sign out**.
 Status is checked automatically; **Retry models** appears if model discovery fails.
@@ -76,16 +80,34 @@ NUL-containing values, and sources larger than 64 KiB are excluded from the
 AI-ready count. The [external file workflow](#external-llm-batches) can still
 export selected source values outside these live-engine limits.
 
-The progress dialog counts translated drafts separately from suggestions saved
-to Review. A batch's drafts can be translated while its quality checks are still
-running; they are not yet saved. The saved counter and progress bar count
-persisted suggestions only. Cancelling keeps suggestions already saved and can
-also save valid drafts when a token repair is interrupted.
+ChatGPT runs up to four batches in parallel by default. In **Settings >
+Translation engines > ChatGPT > Parallel batches**, choose 1, 2, 4, 6, or 8.
+A higher setting can shorten large runs when your account accepts overlapping
+requests. Each batch still completes the selected quality checks. After repeated
+temporary failures, the app lowers parallelism for the rest of that run.
 
-The dialog also shows elapsed time, the current phase,
-and available provider activity/token usage. An estimated remaining time appears
-after suggestions have been saved. A quiet interval can mean the engine is
-still processing; progress cannot describe every moment inside a provider call.
+The progress dialog shows the active engine, model, and reasoning setting. Its
+single **Saved to Review** counter and progress bar count persisted suggestions
+only. Drafts can be received while quality checks are still running; the
+**Drafts received** count above the activity log shows these separately.
+Cancelling keeps suggestions already saved and can also save valid drafts when
+a token repair is interrupted.
+
+The **Activity log** records batch phase changes, repairs, retries, parallel
+limit changes, and saved suggestions with elapsed timestamps. It retains the
+latest 200 events. Older entries describe earlier work; only the active batch
+summary describes current concurrency. Removing a batch from that summary does
+not establish that its suggestions were saved. Provider streaming updates do
+not add log entries. The log follows new entries unless you scroll up to read
+earlier ones.
+
+Run information stays visible above the log: the mod, received drafts, and
+available quality-check settings, provider activity, reported token usage, and
+retry/split counts. Local AI uses the same layout with serial batch activity and
+the information available from that engine. The dialog also shows elapsed time;
+an estimated remaining time appears after suggestions have been saved. A quiet
+interval can mean the engine is still processing; progress cannot describe
+every moment inside a provider call.
 
 **Cancel** stops further work while retaining suggestions already saved to
 Review. The same applies to a later error. Use **Open review queue** to inspect
@@ -123,10 +145,19 @@ translations trustworthy.
 
 ## Data and privacy
 
-Live requests send selected English source text, section context, and matching
+Live requests send selected English source text and its key, section context, and matching
 glossary terms. They may include up to two preceding and two following English
 strings from the same component, i18n file, section, and related key group.
 These neighbors provide read-only context; only selected strings can be saved.
+Every batch receives the same saved language settings and matching glossary
+entries. Concurrent batches do not exchange drafts. Runtime concatenation or
+speaker relationships cannot be inferred reliably from keys alone; a mod's
+source comments can supply explicit context, and composed labels still need
+manual checking in the mod.
+
+The shared instructions preserve enclosing quotation marks and runtime tokens.
+Apostrophes in English possessives or contractions may change when the target
+language's grammar requires it. This applies to every target language.
 
 Local AI requests go to the configured loopback service. ChatGPT requests go
 directly to OpenAI using your ChatGPT plan. External batches leave your computer
@@ -169,6 +200,13 @@ and [llm.rs](../src-tauri/src/llm.rs).
   bounded to 96 KiB. Repeated neighboring context is pooled without losing its
   order or boundaries. Oversized single-item prompts trim the farthest context
   first, never the selected source.
+- One AI run owns the portable profile. ChatGPT has a bounded queue of complete
+  batch pipelines, with a saved limit of 1–8 and a default of four. Every second
+  temporary retry halves the dispatch limit to a minimum of one; active requests
+  may finish above the newly reduced limit. HTTP quota/status errors retain their
+  existing stop behavior. Completed batches are validated and saved serially,
+  even when they finish out of source order. Returned suggestions follow source
+  order. Cancellation stops dispatch and signals every active pipeline.
 - Each ChatGPT attempt has a five-minute ceiling. A transient failure can be retried
   once; invalid structured output gets one corrected attempt. Persistent invalid
   output splits only the affected batch until the failing string is isolated.
@@ -194,3 +232,60 @@ and [llm.rs](../src-tauri/src/llm.rs).
   advance the saved-string progress bar. Local AI reports each completed response,
   without streaming intermediate provider stages. No token-by-token heartbeat is
   assumed.
+
+## Experimental parallel provider probe
+
+The `compare_parallel_chatgpt_batches` Rust test is an opt-in experiment,
+excluded from ordinary tests. It sends the same four synthetic batches of 12
+strings with concurrency 1, 2, then 4, using `gpt-6.1-sol`, Medium reasoning,
+and quality review enabled. It calls the existing native ChatGPT translation,
+review, token repair, and suggestion validation functions. It does not change
+the desktop queue or exercise its persistence/UI flow.
+
+To test real mod text, set `SIT_PARALLEL_PROBE_SOURCE` to `default.json` in an
+ignored temporary copy. The probe preserves the original keys, source order,
+sections, and native neighboring context. It translates every eligible source
+from scratch in fixed batches of 75, without loading existing translations. An optional comparison glossary can be
+provided as a UTF-8 JSON array of `[source, target]` pairs. This mode sends the copied mod text to OpenAI; the original mod stays
+read-only. Keep the copied sources and generated results out of Git.
+
+Use an already signed-in, isolated test profile after closing the app that
+owns it. Never point this probe at your normal portable data folder or copy
+credentials between profiles. Authentication retains exclusive profile ownership
+and the normal serialized refresh behavior. The probe sends the selected fixture
+or copied mod text and consumes ChatGPT plan allowance.
+
+From `src-tauri`, set the profile and an ignored output directory, then run:
+
+```powershell
+$env:SIT_PARALLEL_PROBE_PROFILE = '<isolated test profile>/data'
+$env:SIT_PARALLEL_PROBE_OUTPUT = '../target/parallel-probe/<unique run>'
+# Optional: omit this variable to retain the small synthetic fixture.
+$env:SIT_PARALLEL_PROBE_SOURCE = '<ignored temporary mod copy>/default.json'
+# Optional comparison controls for copied input (defaults: 75, 1/2/4, one round):
+$env:SIT_PARALLEL_PROBE_BATCH_SIZE = '25'
+$env:SIT_PARALLEL_PROBE_LEVELS = '4,6,8'
+$env:SIT_PARALLEL_PROBE_ROUNDS = '2' # Even rounds reverse concurrency order.
+$env:SIT_PARALLEL_PROBE_LANGUAGE = 'German' # Also French, Spanish, Japanese.
+# $env:SIT_PARALLEL_PROBE_GLOSSARY = '<ignored comparison glossary>.json'
+cargo test --locked --profile ci --lib chatgpt::cloud_translation::parallel_probe::compare_parallel_chatgpt_batches -- --ignored --exact --nocapture
+```
+
+The account's model catalog is recorded as an availability hint; only the
+explicitly requested model is sent, and completed inference determines access.
+Each complete batch pipeline has a four-minute timeout for the small synthetic
+fixture or a ten-minute timeout for copied mod input; existing five-minute
+provider attempt limits remain unchanged. The probe stops at the first
+invalid/failed batch and does not start a higher concurrency
+level after a failure. Existing bounded provider recovery remains active.
+
+`comparison.json` contains the selected sources and suggestions, source-copy
+hash, token/context coverage, prompt sizes, batch/request timings, maximum
+overlapping client requests, token usage, retries, repair counts, skipped
+reviews, and validation outcomes. Every result must retain its exact batch/row
+identity, Review status, protected tokens, and any supplied glossary terms.
+Credentials, account identity, and raw provider responses are excluded. Do not commit generated
+outputs. These timings establish feasibility in the recorded
+environment; cache warming, variable service latency, and request order can affect
+speed comparisons. They do not prove fourfold speedup or translation quality for
+large real mods.
