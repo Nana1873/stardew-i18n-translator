@@ -311,9 +311,14 @@ export async function progressCases(h) {
           separatedBatch: starts.some((row) =>
             row.textContent.includes("Batch "),
           ),
-          spaced: starts.every(
-            (row) => parseFloat(getComputedStyle(row).marginTop) === 12,
-          ),
+          thinDividers: starts.every((row) => {
+            const style = getComputedStyle(row);
+            return (
+              style.borderTopStyle === "solid" &&
+              parseFloat(style.borderTopWidth) === 1 &&
+              parseFloat(style.marginTop) < 12
+            );
+          }),
         };
       });
       assert.deepEqual(
@@ -321,9 +326,9 @@ export async function progressCases(h) {
         {
           separatedAi: true,
           separatedBatch: false,
-          spaced: true,
+          thinDividers: true,
         },
-        "A new AI run must have spacing while its parallel batch steps remain together.",
+        "A thin divider must separate a new AI run while its parallel batch steps remain together.",
       );
       await h.screenshot("activity-log-cloud");
       await writeFile(

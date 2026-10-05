@@ -112,6 +112,8 @@ The Activity log records scans, saved translations, explicit token-mismatch
 acceptances, batch edits, AI progress, and operation results. Consecutive manual
 saves in the same mod are grouped briefly. Routine clipboard and selection
 notifications stay out of the log; failures are recorded.
+Thin dividers separate new scans and operations while keeping an AI run's batch
+steps together.
 
 Notifications and ongoing AI progress share a stack just above the Activity
 log. Resizing the log moves that stack with its top edge, keeping entries and
