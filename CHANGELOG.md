@@ -126,6 +126,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Development
 
+- Automated Nexus uploads now include the published GitHub release notes in the
+  version changelog. A manual changelog-only option can add missing notes without
+  uploading the portable ZIP again; drafts and prereleases remain blocked.
 - Consolidated CI into four jobs, sharing Node dependency setup between
   documentation and frontend checks while retaining the required CI gate.
 - Added an opt-in parallel ChatGPT comparison probe and expanded native desktop

@@ -9,6 +9,10 @@ on:
         description: GitHub release tag to upload, e.g. v1.4.1.
         required: true
         type: string
+      changelog_only:
+        description: Add release notes to an existing Nexus version without uploading the ZIP. Run once per version.
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -48,6 +52,7 @@ jobs:
           GH_REPO: ${{ github.repository }}
           TAG_NAME: ${{ github.event.release.tag_name || inputs.tag_name }}
           RELEASE_HTML_URL: ${{ github.event.release.html_url }}
+          CHANGELOG_ONLY: ${{ inputs.changelog_only || false }}
         run: |
           set -euo pipefail
 
@@ -55,6 +60,12 @@ jobs:
           is_prerelease="$(gh release view "$TAG_NAME" --json isPrerelease --jq '.isPrerelease')"
           if [[ "$is_draft" == "true" || "$is_prerelease" == "true" ]]; then
             echo "::error::Nexus upload only supports published, non-prerelease GitHub releases."
+            exit 1
+          fi
+
+          changelog="$(gh release view "$TAG_NAME" --json body --jq '.body')"
+          if [[ -z "${changelog//[[:space:]]/}" ]]; then
+            echo "::error::The published GitHub release must have release notes for the Nexus changelog."
             exit 1
           fi
 
@@ -74,8 +85,10 @@ jobs:
             exit 1
           fi
 
-          mkdir -p nexus-upload
-          gh release download "$TAG_NAME" --pattern "$asset_name" --dir nexus-upload
+          if [[ "$CHANGELOG_ONLY" != "true" ]]; then
+            mkdir -p nexus-upload
+            gh release download "$TAG_NAME" --pattern "$asset_name" --dir nexus-upload
+          fi
 
           # github.event.release.html_url is only populated for release events;
           # fall back to a constructed tag URL for workflow_dispatch runs.
@@ -85,19 +98,71 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "changelog_url=$changelog_url" >> "$GITHUB_OUTPUT"
 
+          # Preserve the reviewed release notes, including line breaks. Use a
+          # delimiter absent from the body so its text cannot create outputs.
+          delimiter="changelog_$(cat /proc/sys/kernel/random/uuid)"
+          while grep -Fxq -- "$delimiter" <<< "$changelog"; do
+            delimiter="changelog_$(cat /proc/sys/kernel/random/uuid)"
+          done
+          {
+            printf '%s\n' "changelog<<$delimiter"
+            printf '%s\n' "$changelog"
+            printf '%s\n' "$delimiter"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve Nexus mod ID
+        id: nexus_mod
+        env:
+          NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          # The action needs the global API ID, not the game-scoped page ID.
+          mod_id="$(
+            curl --fail --silent --show-error \
+              --header "apikey: $NEXUSMODS_API_KEY" \
+              --header "User-Agent: stardew-i18n-translator-release" \
+              https://api.nexusmods.com/v3/games/stardewvalley/mods/47653 \
+              | jq -er '.data | select(.game_scoped_id == "47653") | .id | select(type == "string" and test("^[A-Za-z0-9_-]+$"))'
+          )"
+          echo "mod_id=$mod_id" >> "$GITHUB_OUTPUT"
+
       - name: Upload to Nexus Mods
         id: nexus
-        uses: Nexus-Mods/upload-action@f6e1e2ea683dfe8f88cccf642c6e0e69ab66825e # v1.0.0-beta.8
+        if: ${{ !inputs.changelog_only }}
+        uses: Nexus-Mods/upload-action@c96019556046053aa26044b44396cd38929daf23 # v1.0.0-beta.10
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
           # Nexus labels this value as "Group ID"; the pinned action currently
           # exposes it as file_id.
           file_id: ${{ vars.NEXUSMODS_FILE_GROUP_ID }}
+          mod_id: ${{ steps.nexus_mod.outputs.mod_id }}
           filename: ${{ steps.release.outputs.asset_path }}
           version: ${{ steps.release.outputs.version }}
+          changelog: ${{ steps.release.outputs.changelog }}
           display_name: Stardew i18n Translator ${{ steps.release.outputs.version }}
           description: |
             Stardew i18n Translator ${{ steps.release.outputs.version }}
 
             Full Changelog: ${{ steps.release.outputs.changelog_url }}
           category: main
+
+      - name: Add changelog to existing Nexus version
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.changelog_only }}
+        env:
+          NEXUSMODS_API_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          MOD_ID: ${{ steps.nexus_mod.outputs.mod_id }}
+          VERSION: ${{ steps.release.outputs.version }}
+          CHANGELOG: ${{ steps.release.outputs.changelog }}
+        run: |
+          set -euo pipefail
+
+          jq -n --arg version "$VERSION" --arg changelog "$CHANGELOG" \
+            '{version: $version, changelog: $changelog}' > nexus-changelog.json
+          curl --fail --silent --show-error \
+            --header "apikey: $NEXUSMODS_API_KEY" \
+            --header "User-Agent: stardew-i18n-translator-release" \
+            --header "Content-Type: application/json" \
+            --data-binary @nexus-changelog.json \
+            "https://api.nexusmods.com/v3/mods/$MOD_ID/changelogs" \
+            > nexus-changelog-response.json

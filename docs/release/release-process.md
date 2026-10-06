@@ -165,7 +165,9 @@ The script uploads the locally built ZIP; it does not rebuild the application.
 
 Publishing a normal, non-prerelease GitHub release starts
 `.github/workflows/publish-nexus.yml`. That workflow uploads the existing GitHub
-release asset and does not rebuild the app.
+release asset and does not rebuild the app. It also sends that release's body to
+the Nexus version changelog, preserving the reviewed notes and their line breaks.
+Empty release notes block the upload.
 
 Required GitHub configuration:
 
@@ -176,8 +178,26 @@ The upload job uses the `nexusmods` GitHub environment. Make the secret and
 variable available to that environment and account for any configured approval
 rules when checking publication status.
 
-If the Nexus upload fails after the GitHub release is live, rerun the workflow
-manually with the release tag. Drafts and prereleases are not uploaded.
+The workflow resolves the global Nexus mod ID from this app's public mod-page ID
+using the authenticated read-only v3 API. No extra mod-ID variable is required.
+The pinned upload action supports `mod_id` and `changelog`; automatic mod-version
+updates remain disabled.
+
+If the Nexus upload fails after the GitHub release is live, check its logs and the
+Nexus Files/Changelogs tabs before retrying. The action creates the file version
+before adding the changelog, and repeated changelog submissions append text
+rather than replace it. If neither was created, rerun the workflow manually with
+the release tag. If the file exists but its changelog is missing, add the notes
+using the **changelog_only** option on the current `main` workflow. This skips ZIP
+download/upload and submits only that published release's notes. Run it once;
+the Nexus endpoint appends entries. Drafts and prereleases are not uploaded and
+cannot submit changelogs.
+
+GitHub release events use the workflow at the release tag. If a draft was tagged
+before this changelog integration, its eventual
+automatic upload still uses the older workflow. After that upload succeeds, run
+the current `main` workflow with its tag and **changelog_only** enabled to add
+the notes without uploading the same ZIP again or moving the tested tag.
 
 ## Code Signing
 
