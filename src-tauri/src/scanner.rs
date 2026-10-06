@@ -690,6 +690,17 @@ pub struct StringRow {
     pub section: Option<String>,
 }
 
+impl StringRow {
+    pub fn has_translation(&self) -> bool {
+        has_translation(&self.source, &self.target, &self.status)
+    }
+}
+
+fn has_translation(source: &str, target: &str, status: &str) -> bool {
+    !target.trim().is_empty()
+        || (!source.trim().is_empty() && target == " " && status != "untranslated")
+}
+
 /// Load the paired source/target strings of one i18n file, preserving the key
 /// order of `default.json` (serde_json `preserve_order`). Saved translation
 /// state overrides the imported target and supplies the per-string status.
@@ -725,7 +736,7 @@ pub fn load_strings_checked(
                 .get(&translations::entry_key(relative_dir, key))
                 .is_some_and(|stored| {
                     matches!(
-                        stored.status.as_str(),
+                        translations::base_status(&stored.status),
                         translations::TOKEN_MISMATCH_ACCEPTED_STATUS
                             | translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS
                     ) && stored.source_hash == translations::source_hash(&source_text)
@@ -758,15 +769,16 @@ pub fn imported_baselines(
     relative_dir: &str,
 ) -> Vec<(String, translations::StoredString)> {
     rows.iter()
-        // Only imported translations: a non-empty target with no saved state.
-        .filter(|row| !row.target.trim().is_empty())
+        // Only imported translations with no saved state, including a single
+        // space that deliberately suppresses visible text.
+        .filter(|row| row.has_translation())
         .filter(|row| !state.contains_key(&translations::entry_key(relative_dir, &row.key)))
         .map(|row| {
             (
                 translations::entry_key(relative_dir, &row.key),
                 translations::StoredString {
                     target: row.target.clone(),
-                    status: "translated".to_string(),
+                    status: translations::status_for_save(&row.source, &row.target, "translated"),
                     source_hash: translations::source_hash(&row.source),
                 },
             )
@@ -888,7 +900,10 @@ fn resolve_string(
         }
         // Empty work is derived from the current source, never a permanent Done
         // exemption. A later nonempty source reopens even an old saved Done row.
-        if stored.target.trim().is_empty() {
+        let intentional_blank = !source_text.trim().is_empty()
+            && stored.target == " "
+            && translations::base_status(&stored.status) != stored.status;
+        if stored.target.trim().is_empty() && !intentional_blank {
             let status = if source_text.trim().is_empty() {
                 "translated"
             } else {
@@ -909,7 +924,9 @@ fn resolve_string(
         return (stored.target.clone(), status);
     }
     let imported_text = imported.map(value_to_text).unwrap_or_default();
-    let status = if imported_text.trim().is_empty() && !source_text.trim().is_empty() {
+    let status = if !has_translation(source_text, &imported_text, "translated")
+        && !source_text.trim().is_empty()
+    {
         "untranslated"
     } else {
         "translated"
@@ -924,7 +941,7 @@ fn resolve_string(
 /// to `translated` — kept-English is an explicit identical translation
 /// (resolve_string fills an empty legacy target with the source).
 fn normalize_status(stored: &str) -> String {
-    match stored {
+    match translations::base_status(stored) {
         "untranslated" => "untranslated",
         "review-needed" | translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS => {
             "review-needed"
@@ -1109,7 +1126,7 @@ fn inspect_keys_checked(
         let source_text = value.as_str().unwrap_or_default();
         let (working_target, status) =
             resolve_string(source_text, target.get(key), state, relative_dir, key);
-        if !working_target.trim().is_empty() {
+        if has_translation(source_text, &working_target, &status) {
             translated += 1;
         } else if source_text.trim().is_empty() {
             no_translation_needed += 1;
@@ -3014,6 +3031,90 @@ mod blank_source_tests {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.base).unwrap();
         }
+    }
+
+    #[test]
+    fn intentional_space_survives_reload_counts_and_source_changes() {
+        let f = Fixture::new("Tree", None);
+        let status = translations::status_for_save("Tree", " ", "translated");
+        f.save("Tree", " ", &status);
+        for _ in 0..2 {
+            let row = &f.rows()[0];
+            assert_eq!(
+                (row.target.as_str(), row.status.as_str()),
+                (" ", "translated")
+            );
+            assert!(row.has_translation());
+            let scan = f.scan();
+            let component = &scan.mods[0];
+            assert_eq!(
+                (
+                    component.translated_keys,
+                    component.no_translation_needed_keys
+                ),
+                (1, 0)
+            );
+            assert_eq!(component.status_counts.translated, 1);
+            assert_eq!(component.progress, 1.0);
+            assert!(
+                !f.target.exists(),
+                "Scanning must not export to the installed mod"
+            );
+        }
+
+        fs::write(
+            &f.source,
+            serde_json::to_vec(&json!({"key":"New Tree"})).unwrap(),
+        )
+        .unwrap();
+        let row = &f.rows()[0];
+        assert_eq!(row.status, "outdated");
+        assert!(row.has_translation());
+
+        f.save("New Tree", "", "untranslated");
+        assert_eq!(f.rows()[0].status, "untranslated");
+        assert!(!f.rows()[0].has_translation());
+    }
+
+    #[test]
+    fn imported_single_space_is_adopted_but_old_blank_pair_state_is_not_an_exemption() {
+        let f = Fixture::new("Tree", Some(" "));
+        assert_eq!(f.rows()[0].status, "translated");
+        let baseline = imported_baselines(&f.rows(), &Default::default(), "i18n");
+        assert_eq!(baseline.len(), 1);
+        assert_eq!(
+            translations::base_status(&baseline[0].1.status),
+            "translated"
+        );
+        assert_ne!(baseline[0].1.status, "translated");
+        f.save("Tree", " ", &baseline[0].1.status);
+        fs::write(&f.source, br#"{"key":"New Tree"}"#).unwrap();
+        assert_eq!(f.rows()[0].status, "outdated");
+
+        let old = Fixture::new("", None);
+        old.save("", " ", "translated");
+        assert_eq!(old.rows()[0].status, "translated");
+        fs::write(&old.source, br#"{"key":"Tree"}"#).unwrap();
+        assert_eq!(old.rows()[0].status, "untranslated");
+        assert!(!old.rows()[0].has_translation());
+    }
+
+    #[test]
+    fn intentional_space_keeps_review_and_source_bound_token_waivers() {
+        let source = "Tree {{Count}}";
+        let f = Fixture::new(source, None);
+        let status = translations::status_for_save(
+            source,
+            " ",
+            translations::REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS,
+        );
+        f.save(source, " ", &status);
+        let row = &f.rows()[0];
+        assert_eq!(row.status, "review-needed");
+        assert!(row.token_mismatch_accepted);
+        fs::write(&f.source, br#"{"key":"Tree {{Count}} changed"}"#).unwrap();
+        assert_eq!(f.rows()[0].status, "outdated");
+        assert!(!f.rows()[0].token_mismatch_accepted);
     }
 
     #[test]

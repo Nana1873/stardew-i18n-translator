@@ -8,6 +8,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Treat a deliberately saved single-space translation as Done, retain it across
+  restarts, and preserve it in JSON and translation ZIP exports. Fully empty
+  targets remain Open, and later English source changes still require review.
+
 ## [2.3.0] - 2026-10-06
 
 ### Added

@@ -14,7 +14,11 @@
  *                                (export-serialization safety; e.g. lone surrogate)
  *  - escape-suspicious   (warning) literal JSON-style escapes differ
  */
-import { isBlankText, noTranslationNeeded } from "./status";
+import {
+  isBlankText,
+  noTranslationNeeded,
+  isIntentionalBlankTarget,
+} from "./status";
 import {
   describeToken,
   extractProtectedTokens,
@@ -135,7 +139,12 @@ export function validate(
       });
     }
   }
-  if (targetPresent && isBlankText(target) && !isBlankText(source)) {
+  if (
+    targetPresent &&
+    isBlankText(target) &&
+    !isBlankText(source) &&
+    !isIntentionalBlankTarget(source, target)
+  ) {
     issues.push({
       ruleId: "empty-target",
       severity: "warning",

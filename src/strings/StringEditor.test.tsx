@@ -1145,3 +1145,57 @@ it.each(["translated", "outdated", "review-needed"] as const)(
     expect(screen.queryByText("Done")).not.toBeInTheDocument();
   },
 );
+
+it("saves a single space as Done and clearing it returns the entry to Open", async () => {
+  const app = renderEditor({
+    source: "Tree",
+    target: "",
+    status: "untranslated",
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: " " },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(app.onSave).toHaveBeenCalledWith(" ", "translated", false),
+  );
+  app.unmount();
+
+  const saved = renderEditor({
+    source: "Tree",
+    target: " ",
+    status: "translated",
+  });
+  expect(screen.getByText("Done")).toHaveAttribute(
+    "aria-description",
+    expect.stringContaining("intentionally blank"),
+  );
+  expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(" ");
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(saved.onSave).toHaveBeenCalledWith("", "untranslated", false),
+  );
+});
+
+it("still requires explicit token mismatch acceptance for an intentional space", async () => {
+  const app = renderEditor({
+    source: "Tree {{Count}}",
+    target: "",
+    status: "untranslated",
+  });
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: " " },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  const confirmation = await screen.findByRole("button", {
+    name: "Save anyway",
+  });
+  expect(app.onSave).not.toHaveBeenCalled();
+  fireEvent.click(confirmation);
+  await waitFor(() =>
+    expect(app.onSave).toHaveBeenCalledWith(" ", "translated", true),
+  );
+});

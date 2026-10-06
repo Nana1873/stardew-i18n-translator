@@ -44,6 +44,34 @@ pub const TOKEN_MISMATCH_ACCEPTED_STATUS: &str = "translated-token-mismatch-acce
 pub const REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS: &str =
     "review-needed-token-mismatch-accepted";
 
+/// Retain an explicit single-space save without turning old blank-pair state
+/// into a permanent exemption when its English source is later populated.
+const INTENTIONALLY_BLANK_SUFFIX: &str = "-intentionally-blank";
+
+pub fn base_status(status: &str) -> &str {
+    status
+        .strip_suffix(INTENTIONALLY_BLANK_SUFFIX)
+        .unwrap_or(status)
+}
+
+pub fn status_for_save(source: &str, target: &str, status: &str) -> String {
+    let base = base_status(status);
+    if !source.trim().is_empty()
+        && target == " "
+        && matches!(
+            base,
+            "translated"
+                | "review-needed"
+                | TOKEN_MISMATCH_ACCEPTED_STATUS
+                | REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS
+        )
+    {
+        format!("{base}{INTENTIONALLY_BLANK_SUFFIX}")
+    } else {
+        base.to_string()
+    }
+}
+
 /// Per-mod state: entry key -> stored translation.
 pub type ModState = HashMap<String, StoredString>;
 
@@ -792,6 +820,26 @@ pub(crate) fn restore_groups_if_unchanged(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn single_space_intent_is_exact_and_removed_on_clear_or_blank_source() {
+        for status in [
+            "translated",
+            "review-needed",
+            TOKEN_MISMATCH_ACCEPTED_STATUS,
+            REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS,
+        ] {
+            let saved = status_for_save("Tree", " ", status);
+            assert_ne!(saved, status);
+            assert_eq!(base_status(&saved), status);
+            assert_eq!(status_for_save("Tree", " ", &saved), saved);
+            for target in ["", "  ", "\t", "\u{a0}", "Normal text"] {
+                assert_eq!(status_for_save("Tree", target, &saved), status);
+            }
+            assert_eq!(status_for_save("", " ", &saved), status);
+        }
+        assert_eq!(status_for_save("Tree", " ", "untranslated"), "untranslated");
+    }
 
     fn entry(target: &str) -> StoredString {
         StoredString {

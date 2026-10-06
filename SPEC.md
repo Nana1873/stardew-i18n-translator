@@ -32,6 +32,13 @@ persisting an approval. Newly populated sources reopen them. Working coverage
 counts these pairs separately from nonempty translated values and reserves 100%
 for exact completion.
 
+For a nonblank source, saving exactly one ASCII space as the target explicitly
+suppresses visible text. It counts as Done and working coverage, survives
+reloads, and is exported unchanged by JSON and both translation ZIP workflows.
+Imported single-space targets behave the same way. A later source change marks
+the saved entry Changed. A fully empty target remains Open; other whitespace
+does not imply this intent. Protected-token validation still applies.
+
 ## Scanning and Source Changes
 
 - Scan recursively, associate i18n components with manifests, and group related

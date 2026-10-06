@@ -338,7 +338,7 @@ it.each(["", " ", "\t\r\n", "\u00a0"])(
     expect(validate(blank, blank, false)).toEqual([]);
     expect(
       validate("New title", blank, true).map((issue) => issue.ruleId),
-    ).toEqual(["empty-target"]);
+    ).toEqual(blank === " " ? [] : ["empty-target"]);
     expect(validate("New title", blank, false)).toEqual([]);
   },
 );
@@ -346,11 +346,17 @@ it.each(["", " ", "\t\r\n", "\u00a0"])(
 it("keeps token errors for whitespace targets when the source contains text", () => {
   expect(validate("{{name}}", " ", true).map((issue) => issue.ruleId)).toEqual([
     "token-missing",
-    "empty-target",
   ]);
   expect(validate("{{name}}", " ", false).map((issue) => issue.ruleId)).toEqual(
     ["token-missing"],
   );
+});
+
+it("accepts exactly one space without treating a fully empty target as complete", () => {
+  expect(validate("Tree", " ", true)).toEqual([]);
+  expect(validate("Tree", "", true).map((issue) => issue.ruleId)).toEqual([
+    "empty-target",
+  ]);
 });
 
 it("classifies NEL as blank and BOM as text like the native scanner", () => {

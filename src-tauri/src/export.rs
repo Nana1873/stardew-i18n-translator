@@ -556,7 +556,7 @@ fn prepare_mod(
             &file.relative_dir,
         )?;
         for row in &rows {
-            if row.target.trim().is_empty() {
+            if !row.has_translation() {
                 continue;
             }
             let differences = tokens::token_differences(&row.source, &row.target);
@@ -609,7 +609,7 @@ fn prepare_mod(
         };
 
         for row in rows {
-            if row.target.trim().is_empty() {
+            if !row.has_translation() {
                 if !row.source.trim().is_empty() {
                     file_result.untranslated += 1;
                 }

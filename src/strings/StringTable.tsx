@@ -24,6 +24,8 @@ import {
   derivedStringStatus,
   noTranslationNeeded,
   isBlankText,
+  isIntentionalBlankTarget,
+  hasTranslation,
 } from "./status";
 import { coveragePercent } from "../coverage";
 import {
@@ -322,7 +324,9 @@ function sortField(row: Row, col: SortCol): string {
 }
 
 function countTranslated(rows: Row[]): number {
-  return rows.filter((row) => !isBlankText(row.target)).length;
+  return rows.filter((row) =>
+    hasTranslation(row.source, row.target, row.status),
+  ).length;
 }
 
 function countNoTranslationNeeded(rows: Row[]): number {
@@ -765,7 +769,8 @@ export function StringTable({
     for (const row of next) {
       const current = counts.get(row.modUniqueId);
       if (!current) continue;
-      if (!isBlankText(row.target)) current.translated += 1;
+      if (hasTranslation(row.source, row.target, row.status))
+        current.translated += 1;
       current.byStatus[row.status] += 1;
       if (noTranslationNeeded(row.source, row.target)) {
         current.noTextNeeded += 1;
@@ -935,7 +940,7 @@ export function StringTable({
         (effectiveStatus === "needs-review"
           ? row.status !== "review-needed" && row.status !== "outdated"
           : effectiveStatus === "has-value"
-            ? isBlankText(row.target)
+            ? !hasTranslation(row.source, row.target, row.status)
             : effectiveStatus !== "all" && row.status !== effectiveStatus)
       ) {
         return;
@@ -1518,7 +1523,8 @@ export function StringTable({
     const index = rowIndex.get(identity);
     const row = index === undefined ? undefined : data[index];
     if (!row) return;
-    if (isBlankText(target)) nextStatus = "untranslated";
+    if (isBlankText(target) && !isIntentionalBlankTarget(row.source, target))
+      nextStatus = "untranslated";
     try {
       await saveString(
         row.modUniqueId,
@@ -1584,7 +1590,9 @@ export function StringTable({
         const target =
           write === "clear" ? "" : write === "source" ? row.source : row.target;
         const status: StringStatus =
-          nextStatus === "translated" && isBlankText(target)
+          nextStatus === "translated" &&
+          isBlankText(target) &&
+          !isIntentionalBlankTarget(row.source, target)
             ? "untranslated"
             : nextStatus;
         const tokenMismatchAccepted =
@@ -3389,7 +3397,10 @@ function RowView({
   const displayStatus = DISPLAY_STATUS[row.status];
   const statusHelp = noTranslationNeeded(row.source, row.target)
     ? "The source is empty; no translation text is needed."
-    : STATUS_HELP[row.status];
+    : isIntentionalBlankTarget(row.source, row.target) &&
+        row.status === "translated"
+      ? "A single space was saved as an intentionally blank translation and will be exported unchanged."
+      : STATUS_HELP[row.status];
   const acceptedTokenMismatch =
     row.tokenMismatchAccepted &&
     issues.some(
@@ -3628,7 +3639,10 @@ function RowView({
           className="translator-cell-clip"
           title={targetOverflow.title}
         >
-          {row.target || "—"}
+          {isIntentionalBlankTarget(row.source, row.target) &&
+          row.status !== "untranslated"
+            ? "Intentionally blank"
+            : row.target || "—"}
         </span>
       </span>
       <span

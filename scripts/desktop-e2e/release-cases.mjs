@@ -428,4 +428,165 @@ export async function releaseCases(h) {
     await screenshot("release-resumed");
     await closeNormally();
   });
+
+  const blankRoot = join(mods, "IntentionalBlankSmoke/i18n");
+  const blankSource = { Tree: "Tree", open: "Untranslated text" };
+  const blankStatePath = join(
+    data,
+    "language-state/de/translations/E2E.IntentionalBlankSmoke.json",
+  );
+  await step("intentional-space-save-scan-restart-and-json", async () => {
+    await mkdir(blankRoot, { recursive: true });
+    await writeFile(
+      join(blankRoot, "../manifest.json"),
+      JSON.stringify({
+        Name: "Intentional blank smoke",
+        UniqueID: "E2E.IntentionalBlankSmoke",
+        Author: "Synthetic release acceptance",
+        Version: "1.0.0",
+        Description: "Synthetic fixture only",
+        ContentPackFor: { UniqueID: "Pathoschild.ContentPatcher" },
+      }),
+    );
+    await writeFile(
+      join(blankRoot, "default.json"),
+      JSON.stringify(blankSource),
+    );
+    await launch();
+    await rescan();
+    await selectMod("E2E.IntentionalBlankSmoke");
+    await saveEntry("Tree", " ");
+    await waitFor(
+      "intentional space is Done",
+      async () =>
+        (await (await element(row("Tree"))).getAttribute("data-status")) ===
+        "translated",
+    );
+    const stored = (await json(blankStatePath))["i18n\0Tree"];
+    assert.equal(stored.target, " ");
+    assert.equal(stored.status, "translated-intentionally-blank");
+    assert.ok(
+      (await (await element(row("Tree"))).getText()).includes(
+        "Intentionally blank",
+      ),
+    );
+    assert.ok(
+      (await driver.findElement(css("body")).getText()).includes(
+        "1 / 2 covered",
+      ),
+    );
+    await rescan();
+    assert.ok(
+      (await driver.findElement(css("body")).getText()).includes(
+        "1 / 2 covered",
+      ),
+    );
+    assert.equal(
+      await (await element(row("open"))).getAttribute("data-status"),
+      "untranslated",
+    );
+    await closeNormally();
+    await launch();
+    await selectMod("E2E.IntentionalBlankSmoke");
+    assert.equal(
+      await (await element(row("Tree"))).getAttribute("data-status"),
+      "translated",
+    );
+    await openEntry("Tree");
+    assert.equal(
+      await (
+        await element(css("#translator-editor-translation"))
+      ).getAttribute("value"),
+      " ",
+    );
+    await screenshot("intentional-space-editor-restarted");
+    await click(css('[aria-label="Close editor"]'));
+    await click(button("Export …"));
+    await click(button("Export current mod"));
+    await click(button("Export"));
+    await waitFor("single-space JSON export", () =>
+      exists(join(blankRoot, "de.json")),
+    );
+    assert.deepEqual(await json(join(blankRoot, "de.json")), { Tree: " " });
+    assert.deepEqual(await json(join(blankRoot, "default.json")), blankSource);
+    await copyFile(
+      join(blankRoot, "de.json"),
+      join(artifacts, "intentional-space-de.json"),
+    );
+    await screenshot("intentional-space-done-and-json");
+  });
+  await step("intentional-space-current-and-combined-zip", async () => {
+    const before = await diskInventory();
+    const stateBefore = await readFile(blankStatePath);
+    const documents = {};
+    for (const [scope, name] of [
+      ["current mod", "intentional-space-current.zip"],
+      ["all mods", "intentional-space-combined.zip"],
+    ]) {
+      await click(button("Export …"));
+      await click(button(`Translation ZIP · ${scope}`));
+      await element(css('[aria-label="Export translation ZIP"]'));
+      const destination = join(runtime, name);
+      await click(button("Choose save location …"));
+      await native("save", "Save translation ZIP", destination);
+      await waitFor(name, () => exists(destination));
+      await absent(css('[aria-label="Export translation ZIP"]'));
+      const files = await archive("read", destination);
+      assert.deepEqual(
+        JSON.parse(files["IntentionalBlankSmoke/i18n/de.json"]),
+        { Tree: " " },
+      );
+      if (scope === "current mod") {
+        assert.deepEqual(Object.keys(files), [
+          "IntentionalBlankSmoke/i18n/de.json",
+        ]);
+      }
+      documents[scope] = files;
+      await copyFile(destination, join(artifacts, name));
+    }
+    assert.deepEqual(
+      await diskInventory(),
+      before,
+      "ZIP exports must preserve synthetic Mods files",
+    );
+    assert.deepEqual(
+      await readFile(blankStatePath),
+      stateBefore,
+      "ZIP exports must preserve saved intent",
+    );
+    await writeFile(
+      join(artifacts, "intentional-space-zip-members.json"),
+      JSON.stringify(documents, null, 2),
+    );
+    await screenshot("intentional-space-zip-result");
+  });
+  await step("intentional-space-clear-reopens-after-restart", async () => {
+    await selectMod("E2E.IntentionalBlankSmoke");
+    await saveEntry("Tree", "");
+    await waitFor(
+      "cleared target is Open",
+      async () =>
+        (await (await element(row("Tree"))).getAttribute("data-status")) ===
+        "untranslated",
+    );
+    assert.equal((await json(blankStatePath))["i18n\0Tree"].target, "");
+    assert.equal(
+      (await json(blankStatePath))["i18n\0Tree"].status,
+      "untranslated",
+    );
+    await closeNormally();
+    await launch();
+    await selectMod("E2E.IntentionalBlankSmoke");
+    assert.equal(
+      await (await element(row("Tree"))).getAttribute("data-status"),
+      "untranslated",
+    );
+    assert.ok(
+      (await driver.findElement(css("body")).getText()).includes(
+        "0 / 2 covered",
+      ),
+    );
+    await screenshot("intentional-space-cleared-and-restarted");
+    await closeNormally();
+  });
 }

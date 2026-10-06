@@ -72,6 +72,7 @@ import {
   derivedStringStatus,
   noTranslationNeeded,
   isBlankText,
+  isIntentionalBlankTarget,
 } from "./status";
 import {
   DEFAULT_SHORTCUTS,
@@ -427,7 +428,8 @@ export function StringEditor({
   // suggestion stays review-needed; otherwise it follows the field
   // (empty → untranslated, text → translated).
   function effectiveStatus(): StringStatus {
-    if (isBlankText(value)) return "untranslated";
+    if (isBlankText(value) && !isIntentionalBlankTarget(row.source, value))
+      return "untranslated";
     if (aiDraftPending || reviewNeeded) return "review-needed";
     if (!dirty && row.status === "outdated") return "outdated";
     return "translated";
@@ -436,7 +438,8 @@ export function StringEditor({
   /** Explicit Save approves persisted Review rows, but a fresh AI draft must
    * first be persisted to Review even when the user edited the suggestion. */
   function confirmedStatus(): StringStatus {
-    if (isBlankText(value)) return "untranslated";
+    if (isBlankText(value) && !isIntentionalBlankTarget(row.source, value))
+      return "untranslated";
     return aiDraftPending ? "review-needed" : "translated";
   }
 
@@ -831,7 +834,9 @@ export function StringEditor({
       "This imported or AI-generated suggestion still needs human approval.",
     translated: noTranslationNeeded(row.source, value)
       ? "The source is empty; no translation text is needed."
-      : `The ${targetHelpName} translation was explicitly saved or accepted for the current English source.`,
+      : isIntentionalBlankTarget(row.source, value)
+        ? "A single space was saved as an intentionally blank translation and will be exported unchanged."
+        : `The ${targetHelpName} translation was explicitly saved or accepted for the current English source.`,
   };
   const atQueueEnd = index >= total - 1;
   const textEdited = value !== row.target;
