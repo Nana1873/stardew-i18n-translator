@@ -12,43 +12,41 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Added
 
-- Run multiple ChatGPT translation batches in parallel, with configurable
-  concurrency, saved-result progress, and automatic reduction after repeated
-  temporary provider failures.
-- Follow scans, edits, imports, exports, and AI translation stages in the
-  workspace Activity log, including available model, reasoning, and token usage.
+- Parallel ChatGPT batches with adjustable concurrency. Progress counts saved
+  results; repeated temporary errors reduce concurrency automatically.
+- Activity log for scans, edits, imports, exports, and AI stages, with model,
+  reasoning, and token details when available.
 
 ### Changed
 
-- Remove the separate Overview page and open directly in the translation
-  workspace after setup.
-- Refresh the desktop workspace, settings, context menus, validation indicators,
-  and compact result notices. Ongoing AI progress stays accessible while working.
-- Show validation findings across all workflow states in a separate Issues view,
-  including explicitly accepted token differences and their export impact.
-- Improve ChatGPT browser sign-in and prefill a model for profiles without a
-  selection, while preserving saved or manually entered model identifiers that
-  are missing from the account catalog.
-- Create locale-only translation ZIPs with installation paths suited to Vortex
-  and Mod Organizer 2, without redundant FOMOD installer metadata.
+- Updated workspace, settings, menus, validation indicators, and smaller result
+  notices. AI progress remains accessible while editing.
+- Issues now lists validation findings across all statuses, including accepted
+  token differences and their effect on export.
+- More reliable ChatGPT sign-in. New profiles start with a model selected; saved
+  and manually entered models remain available even when missing from the
+  account's model list.
+- Translation ZIPs use corrected installation paths for Vortex and Mod Organizer
+  2 and omit unused FOMOD installer metadata.
 
 ### Fixed
 
-- Treat a deliberately saved single-space translation as Done with a visually
-  blank table cell, retain it across restarts, and preserve it in JSON and
-  translation ZIP exports. Fully empty targets remain Open, and later English
-  source changes still require review.
-- Keep unsaved editor text and focus during background AI refreshes, and prevent
-  stale save or approval results from changing a newer editor context.
-- Bind batch Undo to its original target-language state so switching languages
-  cannot restore translations into the wrong language.
-- Keep AI completion and Review navigation bound to the workspace that started
-  the operation, including during scans or workspace changes.
-- Preserve translations for blank sources consistently in direct exports,
-  selected-mod ZIPs, and combined ZIPs.
-- Preserve Local AI response whitespace, decode unambiguous JSON-quoted strings,
-  and repair unexpected or duplicated protected tokens.
-- Reject glossary assets linked outside the selected language-pack root.
+- Saving exactly one space marks a translation Done and leaves its cell blank.
+  The space survives restarts and JSON/ZIP exports. Empty fields stay Open;
+  changed English strings still need review.
+- Background AI updates no longer discard unsaved editor text or steal focus.
+  Late save and approval results no longer change what you are currently editing.
+- Undo can no longer restore translations into a different language.
+- AI results and Review navigation stay with the workspace that started the run.
+- Translations for blank English strings are preserved in JSON, selected-mod ZIPs,
+  and all-mod ZIPs.
+- Local AI preserves whitespace, safely decodes unambiguous JSON-quoted text, and
+  repairs extra or repeated protected tokens.
+- Glossary files linked outside the selected language-pack folder are rejected.
+
+### Removed
+
+- The Overview page. The app now opens directly in the workspace after setup.
 
 ## [2.2.0] - 2026-10-01
 
