@@ -8,6 +8,42 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-10-06
+
+### Added
+
+- Run multiple ChatGPT translation batches in parallel, with configurable
+  concurrency, saved-result progress, and automatic reduction after repeated
+  temporary provider failures.
+- Follow scans, edits, imports, exports, and AI translation stages in the
+  workspace Activity log, including available model, reasoning, and token usage.
+
+### Changed
+
+- Refresh the desktop workspace, settings, context menus, validation indicators,
+  and compact result notices. Ongoing AI progress stays accessible while working.
+- Show validation findings across all workflow states in a separate Issues view,
+  including explicitly accepted token differences and their export impact.
+- Improve ChatGPT browser sign-in and prefill a model for profiles without a
+  selection, while preserving saved or manually entered model identifiers that
+  are missing from the account catalog.
+- Create locale-only translation ZIPs with installation paths suited to Vortex
+  and Mod Organizer 2, without redundant FOMOD installer metadata.
+
+### Fixed
+
+- Keep unsaved editor text and focus during background AI refreshes, and prevent
+  stale save or approval results from changing a newer editor context.
+- Bind batch Undo to its original target-language state so switching languages
+  cannot restore translations into the wrong language.
+- Keep AI completion and Review navigation bound to the workspace that started
+  the operation, including during scans or workspace changes.
+- Preserve translations for blank sources consistently in direct exports,
+  selected-mod ZIPs, and combined ZIPs.
+- Preserve Local AI response whitespace, decode unambiguous JSON-quoted strings,
+  and repair unexpected or duplicated protected tokens.
+- Reject glossary assets linked outside the selected language-pack root.
+
 ## [2.2.0] - 2026-10-01
 
 ### Added
@@ -427,7 +463,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.0...HEAD
+[2.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.3...v2.1.0
 [2.0.3]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.2...v2.0.3
