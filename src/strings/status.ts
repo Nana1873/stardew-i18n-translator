@@ -56,11 +56,30 @@ export function noTranslationNeeded(source: string, target: string): boolean {
   return isBlankText(source) && isBlankText(target);
 }
 
+/** A single ASCII space deliberately suppresses visible SMAPI translation text. */
+export function isIntentionalBlankTarget(
+  source: string,
+  target: string,
+): boolean {
+  return !isBlankText(source) && target === " ";
+}
+
+export function hasTranslation(
+  source: string,
+  target: string,
+  status: StringStatus,
+): boolean {
+  return (
+    !isBlankText(target) ||
+    (isIntentionalBlankTarget(source, target) && status !== "untranslated")
+  );
+}
+
 export function derivedStringStatus(
   source: string,
   target: string,
   status: StringStatus,
 ): StringStatus {
-  if (!isBlankText(target)) return status;
+  if (hasTranslation(source, target, status)) return status;
   return noTranslationNeeded(source, target) ? "translated" : "untranslated";
 }

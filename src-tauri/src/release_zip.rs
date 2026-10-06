@@ -406,7 +406,7 @@ fn prepare(
             let mut outdated = 0;
             let mut review_needed = 0;
             for row in rows {
-                if row.target.trim().is_empty() {
+                if !row.has_translation() {
                     continue;
                 }
                 let differences = tokens::token_differences(&row.source, &row.target);
@@ -645,7 +645,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 if !row.source.trim().is_empty() {
                     source_count += 1;
                 }
-                if row.target.trim().is_empty() {
+                if !row.has_translation() {
                     continue;
                 }
                 let reason = if !row.token_mismatch_accepted
@@ -1104,6 +1104,57 @@ mod tests {
                     .collect(),
             })
             .collect()
+    }
+
+    #[test]
+    fn all_export_paths_preserve_intentional_single_space_and_omit_fully_empty_work() {
+        let (root, config, mods) = output_fixture("intentional-space-export-parity");
+        let component = output_component(
+            &mods,
+            "Pack",
+            "Fixture.Space",
+            r#"{"Tree":"Tree","empty":"Empty","imported":"Imported","whitespace":"Whitespace"}"#,
+        );
+        write(&component.join("i18n/de.json"), r#"{"imported":" "}"#);
+        output_state(
+            &config,
+            "Fixture.Space",
+            "i18n",
+            "Tree",
+            "Tree",
+            " ",
+            &translations::status_for_save("Tree", " ", "translated"),
+        );
+        output_state(
+            &config,
+            "Fixture.Space",
+            "i18n",
+            "whitespace",
+            "Whitespace",
+            "  ",
+            "translated",
+        );
+        let inputs = scanned_package(&config, &mods, "Pack");
+        let working = translations::language_root(&config, "de").unwrap();
+        let package = root.join("package.zip");
+        let combined = root.join("combined.zip");
+        build(
+            &working,
+            &request(&mods, "Pack", inputs.clone(), &package, false),
+        )
+        .unwrap();
+        build_output(&config, &combined, false).unwrap();
+        let expected = serde_json::json!({"Tree":" ","imported":" "});
+        assert_eq!(zip_documents(&package)["Pack/i18n/de.json"], expected);
+        assert_eq!(zip_documents(&combined)["Pack/i18n/de.json"], expected);
+        let result =
+            crate::export::export_mod(&working, "Fixture.Space", &inputs[0].files).unwrap();
+        assert_eq!(result.total_written_keys, 2);
+        let direct: Value =
+            serde_json::from_str(&std::fs::read_to_string(component.join("i18n/de.json")).unwrap())
+                .unwrap();
+        assert_eq!(direct, expected);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

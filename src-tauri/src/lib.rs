@@ -234,6 +234,7 @@ fn save_string(
     status: String,
     source: String,
 ) -> Result<(), String> {
+    let status = translations::status_for_save(&source, &target, &status);
     let entry = translations::StoredString {
         target,
         status,
@@ -272,12 +273,13 @@ fn stored_save_entries(entries: Vec<SaveStringInput>) -> Vec<(String, translatio
     entries
         .into_iter()
         .map(|input| {
+            let status = translations::status_for_save(&input.source, &input.target, &input.status);
             (
                 translations::entry_key(&input.relative_dir, &input.key),
                 translations::StoredString {
                     source_hash: translations::source_hash(&input.source),
                     target: input.target,
-                    status: input.status,
+                    status,
                 },
             )
         })

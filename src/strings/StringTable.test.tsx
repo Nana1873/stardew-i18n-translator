@@ -3437,6 +3437,79 @@ it("derives blank source status and reopens it after a source update, retaining 
   expect(rowFor("personal")).toHaveAttribute("data-status", "review-needed");
 });
 
+it("counts a saved single space as Done, retains it on reload, and reopens on clear", async () => {
+  const tree = {
+    ...ROWS["a.b"][0],
+    key: "Tree",
+    source: "Tree",
+    target: "",
+    status: "untranslated",
+  };
+  installBackendRows({ "a.b": [tree, ROWS["a.b"][1]] });
+  const onModCountsChange = vi.fn();
+  const view = render(
+    <StringTable mod={MOD} onModCountsChange={onModCountsChange} />,
+  );
+  await screen.findByRole("button", { name: "Tree" });
+  const treeRow = () =>
+    screen
+      .getByRole("button", { name: "Tree" })
+      .closest<HTMLElement>(".stringrow--data")!;
+  fireEvent.doubleClick(treeRow());
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: " " },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(treeRow()).toHaveAttribute("data-status", "translated"),
+  );
+  expect(invokeMock).toHaveBeenCalledWith(
+    "save_string",
+    expect.objectContaining({
+      source: "Tree",
+      target: " ",
+      status: "translated",
+    }),
+  );
+  expect(treeRow()).toHaveTextContent("Intentionally blank");
+  expect(screen.getByText("1 / 2 covered")).toBeInTheDocument();
+  expect(onModCountsChange).toHaveBeenLastCalledWith(
+    "a.b",
+    1,
+    expect.objectContaining({ translated: 1, untranslated: 1 }),
+    0,
+  );
+
+  installBackendRows({
+    "a.b": [{ ...tree, target: " ", status: "translated" }, ROWS["a.b"][1]],
+  });
+  view.rerender(
+    <StringTable
+      mod={MOD}
+      onModCountsChange={onModCountsChange}
+      reloadToken={1}
+    />,
+  );
+  await waitFor(() =>
+    expect(treeRow()).toHaveAttribute("data-status", "translated"),
+  );
+  fireEvent.doubleClick(treeRow());
+  expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(" ");
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: "" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(treeRow()).toHaveAttribute("data-status", "untranslated"),
+  );
+  expect(onModCountsChange).toHaveBeenLastCalledWith(
+    "a.b",
+    0,
+    expect.objectContaining({ translated: 0, untranslated: 2 }),
+    0,
+  );
+});
+
 it("reports both working counters after clearing a personal target on a blank source", async () => {
   installBackendRows({
     "a.b": [{ ...ROWS["a.b"][0], source: "", target: "My text" }],

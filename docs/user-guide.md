@@ -37,6 +37,12 @@ tokens, and matching glossary terms help retain the meaning and formatting.
 - **Clear** empties the field; save it to return a nonempty source to Open.
   A blank source with a blank target remains Done.
 
+To intentionally suppress a word such as an unwanted `Tree` suffix, enter
+exactly one normal space in **Translation** and save. It becomes Done and the
+table shows **Intentionally blank**. JSON and both ZIP exports preserve the
+value as `"Tree": " "`. A fully empty field remains Open. If the English source
+later changes, the saved entry becomes Changed for review.
+
 For Review entries, the save actions are called **Approve suggestion** and
 **Approve & next**. Changed entries use **Keep translation** or **Save update**
 depending on whether you edited the text.
@@ -164,7 +170,8 @@ shows the scope, replacement information, and strings needing attention.
 
 **Nonempty Review and Changed translations are included in export after a
 warning.** They do not become Done as a result. Empty entries are omitted so
-SMAPI can fall back to English. Unresolved blocking validation issues must be
+SMAPI can fall back to English; saved single-space targets are included unchanged.
+Unresolved blocking validation issues must be
 fixed or an intentional token mismatch explicitly accepted before export.
 
 Export writes `i18n/<language>.json` files directly inside the selected installed
