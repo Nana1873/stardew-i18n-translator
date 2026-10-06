@@ -26,11 +26,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - More reliable ChatGPT sign-in. New profiles start with a model selected; saved
   and manually entered models remain available even when missing from the
   account's model list.
-- Translation ZIPs use corrected installation paths for Vortex and Mod Organizer
-  2 and omit unused FOMOD installer metadata.
 
 ### Fixed
 
+- Fixed incorrect ZIP export paths from the previous release that could break
+  installation in Vortex and Mod Organizer 2. ZIPs no longer include unused FOMOD
+  installer metadata.
 - Saving exactly one space marks a translation Done and leaves its cell blank.
   The space survives restarts and JSON/ZIP exports. Empty fields stay Open;
   changed English strings still need review.
