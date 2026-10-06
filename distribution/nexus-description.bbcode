@@ -4,7 +4,7 @@ A portable Windows x64 app for translating Stardew Valley SMAPI mods. Find strin
 [size=4][b]Translation workflow[/b][/size]
 [list]
 [*]Scan your Mods folder, group multi-part mods, and use existing translations. Scanning is read-only.
-[*]Work directly in the translation workspace with search across mods, status and validation filters, multi-select, batch actions, keyboard shortcuts, and columns that fit the available space.
+[*]After setup, the app opens directly in the translation workspace. Search across mods, use status and validation filters, multi-select, batch actions, keyboard shortcuts, and columns that fit the available space.
 [*]Track changed English strings and review protected Stardew, SMAPI, Content Patcher, dialogue, mail, placeholder, and formatting tokens.
 [*]Use the separate Issues view to inspect warnings, export blockers, and accepted token differences across all translation states. Follow scans, edits, imports, exports, and AI progress in the Activity log.
 [*]Save manual edits, review AI suggestions, import external LLM results, and export target-language files or translation ZIPs.
@@ -12,7 +12,9 @@ A portable Windows x64 app for translating Stardew Valley SMAPI mods. Find strin
 [/list]
 The four states are [b]Open[/b], [b]Changed[/b], [b]Review[/b], and [b]Done[/b]. Validation issues are shown separately. AI and external LLM suggestions enter Review and are never marked Done automatically.
 
-Saving keeps your work in the app. [b]Export is the separate step that writes into installed mods.[/b] Nonempty Review and Changed text can be exported after a warning, so check those queues before sharing. Blocking token findings require correction or an explicit acceptance of the exact source/target mismatch. Existing target files receive .bak backups; a failed multi-file export rolls back earlier writes.
+To intentionally suppress a word such as an unwanted Tree suffix, enter [b]exactly one normal space[/b] in Translation and save. The entry becomes [b]Done[/b] and its translation cell stays visually blank. JSON and both translation ZIP exports preserve the value as "Tree": " ". A fully empty field remains Open; a later change to the English source marks the saved entry Changed for review.
+
+Saving keeps your work in the app. [b]Export JSON[/b] writes target-language files into installed mods; [b]Export ZIP[/b] creates a locale-only archive to share without modifying installed mod files. Review and Changed translations can be included after a warning, so check those queues before sharing. Blocking token findings require correction or an explicit acceptance of the exact source/target mismatch. JSON exports create .bak backups for existing target files; a failed multi-file export rolls back earlier writes.
 
 [size=4][b]Optional AI[/b][/size]
 Manual editing, scanning, glossary building, validation, and export work without AI.
@@ -40,7 +42,7 @@ Custom targets: Vietnamese, Indonesian, Ukrainian, Polish, Finnish, Dutch, Czech
 [*]Download the portable Windows ZIP from Files or GitHub Releases.
 [*]Extract the entire ZIP to a writable folder and run stardew-i18n-translator.exe. There is no installer.
 [*]Choose the Stardew Valley folder, Mods folder, and target language. Setup scans your mods automatically.
-[*]Open Workspace, double-click a string to edit it, then review and export your work.
+[*]Choose a mod in the workspace, double-click a string to edit it, then review and export your work.
 [/list]
 For updates, close the app and replace the executable and README. [b]Keep the data/ folder beside the executable[/b]: it contains your settings, translation work, and glossary caches. One running app can use a portable profile at a time. If you previously used Codex CLI translation, sign in again through Settings > Translation engines > ChatGPT.
 
