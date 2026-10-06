@@ -309,9 +309,10 @@ fn save_string_groups_with_undo(
 
 #[tauri::command]
 fn list_operation_history(
+    app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
 ) -> Result<Vec<operation_history::OperationHistoryEntry>, String> {
-    history.list()
+    history.list_for_context(translation_context_dir(&app).ok().as_deref())
 }
 
 #[tauri::command]
@@ -320,7 +321,7 @@ fn undo_batch_edit(
     history: State<'_, operation_history::OperationHistoryState>,
     operation_id: String,
 ) -> Result<operation_history::OperationHistoryEntry, String> {
-    history.undo_reversible_batch(&translation_config_dir(&app)?, &operation_id)
+    history.undo_reversible_batch(&translation_context_dir(&app)?, &operation_id)
 }
 
 fn operation_detail(label: &str, value: impl ToString) -> operation_history::OperationDetail {
@@ -1276,6 +1277,7 @@ fn build_glossary(
         match lang_pack::detect_language_pack(&mods, &target_lang).pack {
             Some(pack) => glossary::build_from_pack(
                 &unpacked,
+                &pack.root,
                 &pack.strings_dir,
                 pack.format,
                 &target_lang,
@@ -3111,6 +3113,11 @@ fn translation_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
     translations::language_root(&config_dir(app)?, &target_lang)
 }
 
+// Undo/history must identify the context without triggering legacy migration.
+fn translation_context_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    translations::language_root_path(&config_dir(app)?, &active_target_lang(app)?)
+}
+
 fn active_target_lang(app: &AppHandle) -> Result<String, String> {
     let config = config_dir(app)?;
     settings::load_checked(&config)?
@@ -3899,6 +3906,51 @@ mod ai_run_contract_tests {
             ai_operation_outcome(&failed),
             operation_history::OperationOutcome::Failed
         );
+    }
+
+    #[test]
+    fn local_response_layout_is_preserved_through_saved_review() {
+        for (source, text) in [("\nHello\n", "\nHallo\n"), (" Hello ", " Hallo ")] {
+            let root = test_support::temp_dir("local-ai-layout-review");
+            std::fs::create_dir_all(&root).unwrap();
+            let default_path = root.join("default.json");
+            std::fs::write(
+                &default_path,
+                serde_json::json!({"fragment":source}).to_string(),
+            )
+            .unwrap();
+            let item = ai::PreparedAiItem {
+                id: "item-0000".into(),
+                identity: ai::AiStringIdentity {
+                    mod_unique_id: "fixture.mod".into(),
+                    relative_dir: "i18n".into(),
+                    key: "fragment".into(),
+                },
+                source: source.into(),
+                section: None,
+                glossary_pairs: Vec::new(),
+                context: ai::AiPromptContext::isolated(0),
+                default_path,
+                target_path: root.join("de.json"),
+                expected_stored: None,
+                expected_revision: 0,
+            };
+            let response = serde_json::json!({"choices":[{"message":{"content":text},"finish_reason":"stop"}]}).to_string();
+            let parsed = llm::parse_chat_response(response.as_bytes()).unwrap();
+            let completed = ai::suggestions(
+                std::slice::from_ref(&item),
+                vec![ai::ProviderTranslation {
+                    id: item.id.clone(),
+                    text: parsed,
+                }],
+            )
+            .unwrap();
+            stage_ai_suggestions(&root, &[item], completed, &mut Vec::new()).unwrap();
+            let stored = translations::load(&root, "fixture.mod").unwrap();
+            assert_eq!(stored["i18n\0fragment"].target, text);
+            assert_eq!(stored["i18n\0fragment"].status, "review-needed");
+            std::fs::remove_dir_all(root).unwrap();
+        }
     }
 
     #[test]

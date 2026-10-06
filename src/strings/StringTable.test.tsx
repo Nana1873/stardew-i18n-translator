@@ -33,6 +33,7 @@ import type {
   AiEngine,
   AiRunResult,
   AiTranslationRequest,
+  StringRow,
   OperationHistoryEntry,
   ScannedMod,
 } from "../tauri/commands";
@@ -250,6 +251,271 @@ it.each(["mod", "reload"] as const)(
     await waitFor(() => expect(current).toHaveFocus());
   },
 );
+
+it.each(["greeting", "bye"])(
+  "preserves a dirty %s editor through AI completion and refresh",
+  async (key) => {
+    installBackendRows();
+    const run = deferred<AiRunResult>();
+    const onRunAi = vi.fn(() => run.promise);
+    const props = { mod: MOD, liveAiEngines: [LOCAL_AI_ENGINE], onRunAi };
+    const { rerender } = render(<StringTable {...props} />);
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: "Select bye" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "1 selected" }));
+    fireEvent.click(
+      screen.getByRole("menuitem", { name: /Translate selected with AI/ }),
+    );
+    await waitFor(() => expect(onRunAi).toHaveBeenCalledOnce());
+    fireEvent.doubleClick(rowFor(key));
+    const input = screen.getByRole("textbox", { name: "Translation" });
+    fireEvent.change(input, { target: { value: "My unsaved draft" } });
+    input.focus();
+    await act(async () => run.resolve(liveAiResult()));
+    expect(input).toHaveValue("My unsaved draft");
+    expect(input).toHaveFocus();
+    installBackendRows({
+      "a.b": ROWS["a.b"].map((row) =>
+        row.key === "bye"
+          ? { ...row, target: "Tschüss", status: "review-needed" }
+          : row,
+      ),
+    });
+    rerender(<StringTable {...props} reloadToken={1} />);
+    await waitFor(() =>
+      expect(
+        invokeMock.mock.calls.filter(([command]) => command === "load_strings"),
+      ).toHaveLength(2),
+    );
+    expect(screen.getByRole("textbox", { name: "Translation" })).toBe(input);
+    expect(input).toHaveValue("My unsaved draft");
+    expect(input).toHaveFocus();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(Save|Save edited suggestion|Approve suggestion)$/,
+      }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith(
+        "save_string",
+        expect.objectContaining({ key, target: "My unsaved draft" }),
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("textbox", { name: "Translation" })).toBeNull(),
+    );
+    expect(rowFor("bye")).toHaveAttribute(
+      "data-status",
+      key === "bye" ? "translated" : "review-needed",
+    );
+  },
+);
+
+it("preserves a dirty draft until the changed source is explicitly accepted", async () => {
+  const { rerender } = render(
+    <StringTable mod={MOD} targetLanguageCode="de" />,
+  );
+  fireEvent.doubleClick(await screen.findByText("bye"));
+  const input = screen.getByRole("textbox", { name: "Translation" });
+  fireEvent.change(input, { target: { value: "Manual draft" } });
+  input.focus();
+  const source = "Bye now {{name}}";
+  installBackendRows({
+    "a.b": ROWS["a.b"].map((row) =>
+      row.key === "bye" ? { ...row, source } : row,
+    ),
+  });
+  rerender(<StringTable mod={MOD} targetLanguageCode="de" reloadToken={1} />);
+  await waitFor(() =>
+    expect(screen.getByRole("dialog", { name: "bye" })).toHaveTextContent(
+      source,
+    ),
+  );
+  expect(screen.getByRole("textbox", { name: "Translation" })).toBe(input);
+  expect(input).toHaveValue("Manual draft");
+  expect(input).toHaveFocus();
+  expect(screen.getByRole("alert")).toHaveTextContent("English source changed");
+  expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+  fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
+  fireEvent.keyDown(input, { key: "ArrowRight", altKey: true });
+  expect(
+    invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+  ).toHaveLength(0);
+  fireEvent.change(input, { target: { value: "Revised manual draft" } });
+  expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "Use updated source" }));
+  expect(input).toHaveValue("Revised manual draft");
+  fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+  expect(
+    screen.getByRole("dialog", { name: "Protected token mismatch" }),
+  ).toBeVisible();
+  expect(
+    invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+  ).toHaveLength(0);
+  fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
+  await waitFor(() =>
+    expect(invokeMock).toHaveBeenCalledWith(
+      "save_string",
+      expect.objectContaining({
+        modUniqueId: "a.b",
+        relativeDir: "i18n",
+        key: "bye",
+        source,
+        target: "Revised manual draft",
+        status: "translated-token-mismatch-accepted",
+      }),
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Translation" })).toBeNull(),
+  );
+  expect(rowFor("bye")).toHaveAttribute("data-status", "translated");
+});
+
+it.each([true, false])(
+  "keeps a successful save over an older refresh snapshot (save succeeds: %s)",
+  async (succeeds) => {
+    const pending = deferred<readonly unknown[]>();
+    const freshRows: StringRow[] = ROWS["a.b"].map((row) => ({ ...row }));
+    const oldSnapshot = freshRows.map((row) => ({ ...row }));
+    oldSnapshot[0] = { ...oldSnapshot[0], target: "Background update" };
+    freshRows[0] = { ...freshRows[0], target: "Background update" };
+    let loads = 0;
+    invokeMock.mockImplementation((cmd: string, args?: unknown) => {
+      if (cmd === "load_strings") {
+        loads += 1;
+        return loads === 2 ? pending.promise : Promise.resolve(freshRows);
+      }
+      if (cmd === "save_string") {
+        if (!succeeds)
+          return Promise.reject(new Error("Synthetic save failure"));
+        const save = args as { key: string; target: string };
+        // Only the successful IPC write changes the fixture's stored target.
+        freshRows[1] = {
+          ...freshRows[1],
+          target: save.target,
+          status: "translated",
+        };
+      }
+      return Promise.resolve(undefined);
+    });
+    const { rerender } = render(<StringTable mod={MOD} reloadToken={0} />);
+    fireEvent.doubleClick(await screen.findByText("bye"));
+    const input = screen.getByRole("textbox", { name: "Translation" });
+    fireEvent.change(input, {
+      target: { value: "Manual saved during refresh" },
+    });
+    rerender(<StringTable mod={MOD} reloadToken={1} />);
+    expect(loads).toBe(2);
+    fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
+    if (succeeds) {
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("textbox", { name: "Translation" }),
+        ).toBeNull(),
+      );
+      expect(rowFor("bye")).toHaveTextContent("Manual saved during refresh");
+    } else {
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "Synthetic save failure",
+      );
+      expect(input).toHaveValue("Manual saved during refresh");
+    }
+    // No second refresh was requested between the first refresh and the save.
+    expect(loads).toBe(2);
+    await act(async () => pending.resolve(oldSnapshot));
+    await waitFor(() =>
+      expect(rowFor("greeting")).toHaveTextContent("Background update"),
+    );
+    const refreshedRow = dataRows().find((row) =>
+      within(row).queryByText("bye"),
+    )!;
+    expect(refreshedRow).toHaveAttribute(
+      "data-status",
+      succeeds ? "translated" : "untranslated",
+    );
+    if (succeeds) {
+      expect(rowFor("bye")).toHaveTextContent("Manual saved during refresh");
+      fireEvent.doubleClick(rowFor("bye"));
+      expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(
+        "Manual saved during refresh",
+      );
+    } else {
+      expect(input).toHaveValue("Manual saved during refresh");
+      expect(refreshedRow).not.toHaveTextContent("Manual saved during refresh");
+    }
+    expect(loads).toBeLessThanOrEqual(3);
+  },
+);
+
+it.each(["mod", "language"])(
+  "ignores a pending refresh after leaving its %s context",
+  async (change) => {
+    const pending = deferred<readonly unknown[]>();
+    let loads = 0;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd !== "load_strings") return Promise.resolve(undefined);
+      loads += 1;
+      if (loads === 2) return pending.promise;
+      return Promise.resolve(loads === 1 ? ROWS["a.b"] : ROWS["c.d"]);
+    });
+    const { rerender } = render(
+      <StringTable mod={MOD} targetLanguageCode="de" />,
+    );
+    fireEvent.doubleClick(await screen.findByText("bye"));
+    fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+      target: { value: "Old context draft" },
+    });
+    rerender(<StringTable mod={MOD} targetLanguageCode="de" reloadToken={1} />);
+    rerender(
+      <StringTable
+        mod={change === "mod" ? OTHER_MOD : MOD}
+        targetLanguageCode={change === "language" ? "fr" : "de"}
+        reloadToken={1}
+      />,
+    );
+    expect(await screen.findByText("tomorrow")).toBeVisible();
+    expect(screen.queryByRole("textbox", { name: "Translation" })).toBeNull();
+    await act(async () => pending.resolve(ROWS["a.b"]));
+    expect(screen.getByText("tomorrow")).toBeVisible();
+    expect(screen.queryByText("bye")).toBeNull();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
+    ).toHaveLength(0);
+  },
+);
+
+it("keeps the newest refresh when same-context responses arrive out of order", async () => {
+  const older = deferred<readonly unknown[]>();
+  const newer = deferred<readonly unknown[]>();
+  let loads = 0;
+  invokeMock.mockImplementation((cmd: string) => {
+    if (cmd !== "load_strings") return Promise.resolve(undefined);
+    loads += 1;
+    return loads === 1
+      ? Promise.resolve(ROWS["a.b"])
+      : loads === 2
+        ? older.promise
+        : newer.promise;
+  });
+  const { rerender } = render(<StringTable mod={MOD} />);
+  fireEvent.doubleClick(await screen.findByText("bye"));
+  const input = screen.getByRole("textbox", { name: "Translation" });
+  fireEvent.change(input, { target: { value: "Retained draft" } });
+  rerender(<StringTable mod={MOD} reloadToken={1} />);
+  rerender(<StringTable mod={MOD} reloadToken={2} />);
+  await act(async () =>
+    newer.resolve(
+      ROWS["a.b"].map((row) =>
+        row.key === "greeting" ? { ...row, target: "Newest target" } : row,
+      ),
+    ),
+  );
+  await act(async () => older.resolve(ROWS["a.b"]));
+  expect(rowFor("greeting")).toHaveTextContent("Newest target");
+  expect(input).toHaveValue("Retained draft");
+});
 
 it("keeps one AI run alive while another mod loads, fails, and retries", async () => {
   const run = deferred<AiRunResult>();

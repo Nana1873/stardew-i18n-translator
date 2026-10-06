@@ -27,6 +27,8 @@ const CONTENT_PATCHER_ID: &str = "Pathoschild.ContentPatcher";
 /// A detected community language pack usable as a glossary source.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LanguagePack {
+    /// Canonical boundary for every bundled asset read during extraction.
+    pub root: PathBuf,
     /// Display name (manifest `Name`, falling back to the folder name).
     pub name: String,
     /// The pack's `Strings/` folder holding glossary-relevant string assets.
@@ -102,6 +104,10 @@ pub fn detect_language_pack(mods_dir: &Path, target_lang: &str) -> Detection {
         };
         candidates.push((
             LanguagePack {
+                root: match mod_dir.canonicalize() {
+                    Ok(root) => root,
+                    Err(_) => continue,
+                },
                 name: pack_name(mod_dir),
                 strings_dir,
                 format,
@@ -220,7 +226,7 @@ fn resolved_pack_file(mod_dir: &Path, relative: &str) -> Option<PathBuf> {
     if !canonical_file.starts_with(root) {
         return None;
     }
-    Some(file)
+    Some(canonical_file)
 }
 
 /// Whether a change's `When` selects `target`. Tolerant of the two common shapes
@@ -264,28 +270,37 @@ fn token_is_strings_asset(token: &str) -> bool {
 /// Bounded fallback: the conventional pack layouts first, then a depth-limited
 /// search for a `Strings/` folder holding at least one typed asset.
 fn probe_strings_dir(mod_dir: &Path, target: &str) -> Option<PathBuf> {
+    let root = mod_dir.canonicalize().ok()?;
     for relative in [
         "assets/Content/Strings",
         "assets/Strings",
         "Content/Strings",
         "Strings",
     ] {
-        let dir = mod_dir.join(relative);
+        let dir = mod_dir.join(relative).canonicalize().ok();
+        let Some(dir) = dir.filter(|dir| dir.starts_with(&root)) else {
+            continue;
+        };
         if typed_asset_score(&dir, target).is_some() {
             return Some(dir);
         }
     }
-    find_strings_dir(mod_dir, target, 0)
+    find_strings_dir(&root, mod_dir, target, 0)
 }
 
 /// Depth-limited search for a directory named `Strings` containing a typed asset.
-fn find_strings_dir(dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {
+fn find_strings_dir(root: &Path, dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {
     if depth > 6 {
         return None;
     }
     let mut subdirs = Vec::new();
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
-        let path = entry.path();
+        let Ok(path) = entry.path().canonicalize() else {
+            continue;
+        };
+        if !path.starts_with(root) {
+            continue;
+        }
         if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
             continue;
         }
@@ -299,7 +314,7 @@ fn find_strings_dir(dir: &Path, target: &str, depth: usize) -> Option<PathBuf> {
         subdirs.push(path);
     }
     for sub in subdirs {
-        if let Some(found) = find_strings_dir(&sub, target, depth + 1) {
+        if let Some(found) = find_strings_dir(root, &sub, target, depth + 1) {
             return Some(found);
         }
     }
@@ -432,6 +447,47 @@ mod tests {
     }
 
     #[test]
+    fn external_strings_junction_is_rejected_even_after_from_file_fallback() {
+        for direct in [false, true] {
+            let root = crate::test_support::temp_dir("lp-external-fallback");
+            let mods = root.join("Mods");
+            let pack = mods.join("Pack");
+            let outside = root.join("outside");
+            write_pack(&pack, "Pack", "th", &[]);
+            write(&outside.join("Objects.json"), r#"{"24":"Outside Term"}"#);
+            let content_path = pack.join("content.json");
+            let mut content: Value =
+                scanner::parse_json_lenient(&std::fs::read_to_string(&content_path).unwrap())
+                    .unwrap();
+            if direct {
+                content["Changes"][1]["FromFile"] = Value::String("Strings/Objects.json".into());
+            } else {
+                content["Changes"].as_array_mut().unwrap().truncate(1);
+            }
+            write(&content_path, &content.to_string());
+            let link = pack.join("Strings");
+            #[cfg(windows)]
+            assert!(std::process::Command::new("powershell.exe")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!(
+                        "New-Item -ItemType Junction -Path '{}' -Target '{}' | Out-Null",
+                        link.display(),
+                        outside.display()
+                    )
+                ])
+                .status()
+                .unwrap()
+                .success());
+            #[cfg(unix)]
+            std::os::unix::fs::symlink(&outside, &link).unwrap();
+            assert!(detect_language_pack(&mods, "th").pack.is_none());
+            std::fs::remove_dir_all(root).unwrap();
+        }
+    }
+
+    #[test]
     fn registered_codes_detects_language_pack() {
         let root = crate::test_support::temp_dir("lp-codes");
         let pack = root.join("Stardew Valley - THAI");
@@ -495,7 +551,11 @@ mod tests {
         assert_eq!(found.name, "Stardew Valley - THAI");
         assert_eq!(
             found.strings_dir,
-            pack.join("assets").join("Content").join("Strings")
+            pack.join("assets")
+                .join("Content")
+                .join("Strings")
+                .canonicalize()
+                .unwrap()
         );
         assert_eq!(found.format, StringAssetFormat::Json);
         assert!(detection.warnings.is_empty());
@@ -623,10 +683,18 @@ mod tests {
             return;
         };
         let stardew = Path::new(&stardew);
+        assert!(
+            stardew.is_dir(),
+            "Configured Stardew test directory is missing."
+        );
         let lang = std::env::var("SIT_REAL_PACK_LANG").unwrap_or_else(|_| "th".to_string());
 
         let detection = detect_language_pack(&stardew.join("Mods"), &lang);
         let Some(pack) = detection.pack else {
+            assert!(
+                std::env::var("SIT_REAL_PACK_LANG").is_err(),
+                "No pack found for the explicitly configured test language."
+            );
             eprintln!("lang_pack: no community pack for '{lang}' — skipped");
             return;
         };
@@ -642,6 +710,7 @@ mod tests {
         let unpacked = crate::glossary::default_unpacked_path(stardew);
         match crate::glossary::build_from_pack(
             &unpacked,
+            &pack.root,
             &pack.strings_dir,
             pack.format,
             &lang,
@@ -659,7 +728,7 @@ mod tests {
                 );
                 assert_eq!(glossary.target_lang, lang);
             }
-            Err(error) => eprintln!("lang_pack: build skipped ({error})"),
+            Err(error) => panic!("Detected test pack must build successfully: {error}"),
         }
     }
 }

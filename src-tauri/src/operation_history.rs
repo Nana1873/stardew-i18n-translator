@@ -5,7 +5,7 @@
 //! memory so portable data never accumulates hidden history.
 
 use std::collections::VecDeque;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -86,6 +86,7 @@ pub struct CompletedOperation {
 #[derive(Clone)]
 struct UndoSnapshot {
     operation_id: String,
+    state_root: PathBuf,
     batch: translations::ReversibleBatch,
 }
 
@@ -183,6 +184,30 @@ fn push_entry(inner: &mut HistoryInner, entry: OperationHistoryEntry) {
 }
 
 impl OperationHistoryState {
+    pub fn list_for_context(
+        &self,
+        config_dir: Option<&Path>,
+    ) -> Result<Vec<OperationHistoryEntry>, String> {
+        let root = config_dir.and_then(|path| path.canonicalize().ok());
+        let inner = self
+            .inner
+            .lock()
+            .map_err(|_| "The operation result history is unavailable.".to_string())?;
+        Ok(inner
+            .entries
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                entry.can_undo &= inner
+                    .undo
+                    .as_ref()
+                    .is_some_and(|snapshot| root.as_ref() == Some(&snapshot.state_root));
+                entry
+            })
+            .collect())
+    }
+
+    #[cfg(test)]
     pub fn list(&self) -> Result<Vec<OperationHistoryEntry>, String> {
         self.inner
             .lock()
@@ -235,6 +260,9 @@ impl OperationHistoryState {
         // batch is still being written, then this older batch could publish a
         // fresh snapshot afterward.
         let batch = translations::save_groups_with_previous(config_dir, groups)?;
+        let state_root = config_dir.canonicalize().map_err(|error| {
+            format!("Could not identify the batch edit's state folder: {error}")
+        })?;
         invalidate_undo(&mut inner);
         let id = next_id(&mut inner);
         let summary = if component_count == 1 {
@@ -267,6 +295,7 @@ impl OperationHistoryState {
         };
         inner.undo = Some(UndoSnapshot {
             operation_id: id,
+            state_root,
             batch,
         });
         push_entry(&mut inner, entry.clone());
@@ -288,6 +317,10 @@ impl OperationHistoryState {
             .filter(|snapshot| snapshot.operation_id == operation_id)
             .cloned()
             .ok_or_else(|| "This batch edit is no longer available to undo.".to_string())?;
+
+        if config_dir.canonicalize().ok().as_ref() != Some(&snapshot.state_root) {
+            return Err("This batch edit belongs to a different translation context.".to_string());
+        }
 
         // Keep the history lock until the conditional restore is complete so
         // another result cannot replace this snapshot midway through undo.
@@ -427,6 +460,38 @@ mod tests {
                 .unwrap()
                 .can_undo
         );
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn undo_rejects_another_language_root_without_writing() {
+        let dir = crate::test_support::temp_dir("operation-history-language-undo");
+        let german = translations::language_root(&dir, "de").unwrap();
+        let french = translations::language_root(&dir, "fr").unwrap();
+        let history = OperationHistoryState::default();
+        let expected = stored("A", "Same", "review-needed");
+        let batch = history
+            .apply_reversible_batch_groups(
+                &german,
+                "Batch edit".into(),
+                vec![("mod".into(), vec![("key".into(), expected.clone())])],
+            )
+            .unwrap();
+        translations::save_one(&french, "mod", "key".into(), expected).unwrap();
+        let german_file = german.join("translations/mod.json");
+        let french_file = french.join("translations/mod.json");
+        let before_german = std::fs::read(&german_file).unwrap();
+        let before_french = std::fs::read(&french_file).unwrap();
+        assert!(history.list_for_context(Some(&german)).unwrap()[0].can_undo);
+        assert!(!history.list_for_context(Some(&french)).unwrap()[0].can_undo);
+        assert!(!history.list_for_context(None).unwrap()[0].can_undo);
+        assert!(history.undo_reversible_batch(&french, &batch.id).is_err());
+        assert_eq!(std::fs::read(&german_file).unwrap(), before_german);
+        assert_eq!(std::fs::read(&french_file).unwrap(), before_french);
+        // Rejection does not consume the snapshot belonging to the original context.
+        history.undo_reversible_batch(&german, &batch.id).unwrap();
+        assert!(translations::load(&german, "mod").unwrap().is_empty());
+        assert_eq!(std::fs::read(&french_file).unwrap(), before_french);
         std::fs::remove_dir_all(dir).ok();
     }
 

@@ -268,7 +268,10 @@ describe("ImportBatchDialog", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "Switch to matching mod" }),
     );
-    expect(onSwitchToMatchingMod).toHaveBeenCalledWith("Author.MatchingMod");
+    expect(onSwitchToMatchingMod).toHaveBeenCalledWith(
+      "Author.MatchingMod",
+      path,
+    );
   });
 
   it("does not offer a switch when the exact batch mod is unavailable", async () => {

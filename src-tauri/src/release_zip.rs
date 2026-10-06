@@ -642,10 +642,9 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             let mut outdated = 0;
             let mut source_count = 0;
             for row in rows {
-                if row.source.trim().is_empty() {
-                    continue;
+                if !row.source.trim().is_empty() {
+                    source_count += 1;
                 }
-                source_count += 1;
                 if row.target.trim().is_empty() {
                     continue;
                 }
@@ -1108,6 +1107,49 @@ mod tests {
     }
 
     #[test]
+    fn all_export_paths_preserve_nonempty_targets_for_blank_sources() {
+        let (root, config, mods) = output_fixture("blank-source-export-parity");
+        let component = output_component(
+            &mods,
+            "Pack",
+            "Fixture.Blank",
+            r#"{"disk":"","override":"  ","empty":"","normal":"Hello"}"#,
+        );
+        write(
+            &component.join("i18n/de.json"),
+            r#"{"disk":"Disk text","override":"Old text","empty":"  ","normal":"Hallo"}"#,
+        );
+        output_state(
+            &config,
+            "Fixture.Blank",
+            "i18n",
+            "override",
+            "  ",
+            "Saved text",
+            "translated",
+        );
+        let inputs = scanned_package(&config, &mods, "Pack");
+        let working = translations::language_root(&config, "de").unwrap();
+        let package = root.join("package.zip");
+        let combined = root.join("combined.zip");
+        build(
+            &working,
+            &request(&mods, "Pack", inputs.clone(), &package, false),
+        )
+        .unwrap();
+        build_output(&config, &combined, false).unwrap();
+        let expected =
+            serde_json::json!({"disk":"Disk text","override":"Saved text","normal":"Hallo"});
+        assert_eq!(zip_documents(&package)["Pack/i18n/de.json"], expected);
+        assert_eq!(zip_documents(&combined)["Pack/i18n/de.json"], expected);
+        crate::export::export_mod(&working, "Fixture.Blank", &inputs[0].files).unwrap();
+        let direct: Value =
+            serde_json::from_str(&std::fs::read_to_string(component.join("i18n/de.json")).unwrap())
+                .unwrap();
+        assert_eq!(direct, expected);
+    }
+
+    #[test]
     fn package_zip_requires_a_new_scan_for_added_files_and_includes_them_after_rescan() {
         let (root, config, mods) = output_fixture("package-fresh-files");
         let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
@@ -1238,7 +1280,7 @@ mod tests {
             "i18n",
             "blank",
             "",
-            "Old invalid saved value",
+            "Saved text for blank source",
             "translated",
         );
         let second = output_component(&mods, "Second", "Fixture.Second", r#"{"keep":"Same"}"#);
@@ -1261,7 +1303,7 @@ mod tests {
         );
         let destination = root.join("output.zip");
         let preview = preview_output(&config).unwrap();
-        assert_eq!(preview.total_strings, 6);
+        assert_eq!(preview.total_strings, 7);
         assert_eq!(
             preview
                 .entries
@@ -1276,7 +1318,7 @@ mod tests {
         assert_eq!(documents.len(), 3);
         assert_eq!(
             documents["[CP] First/i18n/de.json"],
-            serde_json::json!({"manual":"Hallo @","ai":"Tschüss","import":"Danke","deployed":"Keep local translation"})
+            serde_json::json!({"manual":"Hallo @","ai":"Tschüss","import":"Danke","deployed":"Keep local translation","blank":"Saved text for blank source"})
         );
         assert_eq!(
             documents["Second/i18n/de.json"],

@@ -24,6 +24,7 @@ import { installCases } from "./install-cases.mjs";
 import { profileCases } from "./profile-cases.mjs";
 import { replaceText } from "./text-input.mjs";
 import { progressCases } from "./progress-cases.mjs";
+import { editorRefreshCases } from "./editor-refresh-cases.mjs";
 
 // The supervisor assigns this process to a kill-on-close Windows Job before
 // releasing the handshake. Direct invocation must not start an unowned app.
@@ -1456,6 +1457,7 @@ try {
     browseFolder,
     exe,
   };
+  await editorRefreshCases(helpers);
   await progressCases(helpers);
   await profileCases(helpers);
   if (options.releaseCases) await releaseCases(helpers);

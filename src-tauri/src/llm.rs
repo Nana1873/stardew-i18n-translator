@@ -318,7 +318,7 @@ struct ChatChoiceMessage {
     tool_calls: Vec<serde_json::Value>,
 }
 
-fn parse_chat_response(body: &[u8]) -> Result<String, String> {
+pub(crate) fn parse_chat_response(body: &[u8]) -> Result<String, String> {
     let parsed: ChatResponse = serde_json::from_slice(body)
         .map_err(|error| format!("Could not parse the model response: {error}"))?;
     let choice = parsed
@@ -341,8 +341,8 @@ fn parse_chat_response(body: &[u8]) -> Result<String, String> {
             choice.finish_reason.as_deref().unwrap_or_default()
         ));
     }
-    let text = choice.message.content.trim().to_string();
-    if text.is_empty() {
+    let text = choice.message.content;
+    if text.trim().is_empty() {
         return Err("The model returned an empty response.".to_string());
     }
     Ok(text)
@@ -494,7 +494,7 @@ fn build_messages_inner(
     ]
 }
 
-/// POST one chat completion and return the assistant's (trimmed) content.
+/// POST one chat completion and return the assistant's content unchanged.
 async fn chat(
     base_url: &str,
     model: &str,
@@ -847,7 +847,7 @@ mod tests {
                 br#"{"choices":[{"message":{"content":" Hallo "},"finish_reason":"stop"}]}"#
             )
             .unwrap(),
-            "Hallo"
+            " Hallo "
         );
     }
 

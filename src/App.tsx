@@ -91,7 +91,6 @@ import {
 import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
-import { type DashboardLastExport } from "./dashboard/Dashboard";
 import { ModList } from "./mods/ModList";
 import { ScanDialog } from "./mods/ScanDialog";
 import {
@@ -169,10 +168,16 @@ function folderOf(path: string): string | null {
   return path.slice(0, index);
 }
 
-function completedDashboardExport(
+interface LastSuccessfulExport {
+  label: string;
+  path: string;
+  folder: string;
+}
+
+function completedExport(
   title: string,
   result: ExportResult,
-): DashboardLastExport | null {
+): LastSuccessfulExport | null {
   if (result.blocked) return null;
   const path =
     result.files.find((file) => file.written || file.removed)?.targetPath ??
@@ -186,9 +191,9 @@ function completedDashboardExport(
     : null;
 }
 
-function dashboardExportFromHistory(
+function exportFromHistory(
   entries: OperationHistoryEntry[],
-): DashboardLastExport | null {
+): LastSuccessfulExport | null {
   const entry = entries.find(
     (candidate) =>
       candidate.kind === "export" &&
@@ -316,7 +321,7 @@ export function App() {
     Record<string, ResultTrayData>
   >({});
   const [lastSuccessfulExport, setLastSuccessfulExport] =
-    useState<DashboardLastExport | null>(null);
+    useState<LastSuccessfulExport | null>(null);
   const [resultHidden, setResultHidden] = useState(false);
   const latestResultButtonRef = useRef<HTMLButtonElement>(null);
   const resultToggleButtonRef = useRef<HTMLButtonElement>(null);
@@ -468,7 +473,7 @@ export function App() {
     try {
       const entries = normalizedHistory(await listOperationHistory());
       setOperationHistory(entries);
-      const lastExport = dashboardExportFromHistory(entries);
+      const lastExport = exportFromHistory(entries);
       if (lastExport) setLastSuccessfulExport(lastExport);
       const entry = entries.find(
         (candidate) => candidate.kind === expectedKind,
@@ -489,7 +494,7 @@ export function App() {
     try {
       const entries = normalizedHistory(await listOperationHistory());
       setOperationHistory(entries);
-      const lastExport = dashboardExportFromHistory(entries);
+      const lastExport = exportFromHistory(entries);
       if (lastExport) setLastSuccessfulExport(lastExport);
       setResultDetails((current) =>
         Object.fromEntries(
@@ -837,6 +842,11 @@ export function App() {
     } catch (error) {
       logFrontendError("saveSettings", String(error));
       throw error;
+    }
+    if (settings?.targetLang !== next.targetLang) {
+      setOperationHistory((current) =>
+        current.map((entry) => ({ ...entry, canUndo: false })),
+      );
     }
     setSettings(next);
   }
@@ -1357,6 +1367,7 @@ export function App() {
   }
 
   function inspectZipProblem(problem: { modUniqueId: string; key: string }) {
+    setScanStringFilter(null);
     setZipPreview(null);
     setZipError(null);
     setZipContext(null);
@@ -1659,7 +1670,7 @@ export function App() {
       const result = await exportMod(mod.uniqueId, filesOf(mod));
       markExportedTargets(mod.uniqueId, result);
       const contextual = withExportContext(result, mod);
-      const completed = completedDashboardExport(mod.name, contextual);
+      const completed = completedExport(mod.name, contextual);
       if (completed) setLastSuccessfulExport(completed);
       await refreshCompletedResult(
         {
@@ -1724,7 +1735,7 @@ export function App() {
         merged.skipped.push(...contextual.skipped);
         markExportedTargets(mod.uniqueId, contextual);
       }
-      const completed = completedDashboardExport("All mods", merged);
+      const completed = completedExport("All mods", merged);
       if (completed) setLastSuccessfulExport(completed);
       await refreshCompletedResult(
         {
@@ -1764,6 +1775,7 @@ export function App() {
   }
 
   function inspectResultProblem(problem: ResultProblem) {
+    setScanStringFilter(null);
     if (problem.modUniqueId) openMod(problem.modUniqueId);
     setStatusFilter("all");
     setSearch(problem.key);
@@ -1995,7 +2007,7 @@ export function App() {
     if (mod) requestExport(mod);
   }
 
-  // "German (de-DE)" subtitle fragment for the dashboard.
+  // Human-readable target language for the workspace and operation results.
   const languageLine = settings?.targetLang
     ? `${languageLabel} (${settings.targetLang})`
     : "No target language yet";
@@ -2602,13 +2614,14 @@ export function App() {
               scan?.mods.some(
                 (candidate) => candidate.uniqueId !== selectedMod.uniqueId,
               )
-                ? (modUniqueId) => {
+                ? (modUniqueId, path) => {
                     if (
                       !scan?.mods.some(
                         (candidate) => candidate.uniqueId === modUniqueId,
                       )
                     )
                       return;
+                    setImportDialogPath(path);
                     openMod(modUniqueId);
                   }
                 : undefined

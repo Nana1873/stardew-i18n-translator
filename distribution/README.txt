@@ -40,9 +40,11 @@ PRIVACY AND OPTIONAL AI
 
 Manual translation, scanning, validation, glossary building, and export run
 locally. Local AI sends selected text, nearby source context, and matching
-glossary terms to your configured local AI service. Codex CLI sends that context
-through the installed CLI to its service, using the CLI's own login. The app
-does not read its authentication files or tokens. External LLM batches leave
+glossary terms to your configured loopback AI service. ChatGPT sends that context
+directly to OpenAI using browser sign-in and your ChatGPT plan; no CLI or API key
+is required. The app stores its own renewable session in data/chatgpt-session.bin,
+encrypted with Windows DPAPI and bound to your Windows user and portable profile.
+Moving it to another account or computer requires signing in again. External LLM batches leave
 your computer when you upload them yourself. AI suggestions enter Review for
 you to check.
 
