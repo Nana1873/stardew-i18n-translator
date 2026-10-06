@@ -3639,10 +3639,7 @@ function RowView({
           className="translator-cell-clip"
           title={targetOverflow.title}
         >
-          {isIntentionalBlankTarget(row.source, row.target) &&
-          row.status !== "untranslated"
-            ? "Intentionally blank"
-            : row.target || "—"}
+          {row.target || "—"}
         </span>
       </span>
       <span

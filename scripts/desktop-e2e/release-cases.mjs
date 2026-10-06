@@ -465,10 +465,13 @@ export async function releaseCases(h) {
     const stored = (await json(blankStatePath))["i18n\0Tree"];
     assert.equal(stored.target, " ");
     assert.equal(stored.status, "translated-intentionally-blank");
-    assert.ok(
-      (await (await element(row("Tree"))).getText()).includes(
-        "Intentionally blank",
-      ),
+    assert.equal(
+      await (
+        await (
+          await element(row("Tree"))
+        ).findElement(css("[data-translation-cell] .translator-cell-clip"))
+      ).getAttribute("textContent"),
+      " ",
     );
     assert.ok(
       (await driver.findElement(css("body")).getText()).includes(
@@ -491,6 +494,14 @@ export async function releaseCases(h) {
     assert.equal(
       await (await element(row("Tree"))).getAttribute("data-status"),
       "translated",
+    );
+    assert.equal(
+      await (
+        await (
+          await element(row("Tree"))
+        ).findElement(css("[data-translation-cell] .translator-cell-clip"))
+      ).getAttribute("textContent"),
+      " ",
     );
     await openEntry("Tree");
     assert.equal(

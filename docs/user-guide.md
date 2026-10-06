@@ -39,7 +39,7 @@ tokens, and matching glossary terms help retain the meaning and formatting.
 
 To intentionally suppress a word such as an unwanted `Tree` suffix, enter
 exactly one normal space in **Translation** and save. It becomes Done and the
-table shows **Intentionally blank**. JSON and both ZIP exports preserve the
+translation cell stays visually blank. JSON and both ZIP exports preserve the
 value as `"Tree": " "`. A fully empty field remains Open. If the English source
 later changes, the saved entry becomes Changed for review.
 
