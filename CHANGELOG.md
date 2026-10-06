@@ -8,12 +8,6 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
-### Fixed
-
-- Treat a deliberately saved single-space translation as Done, retain it across
-  restarts, and preserve it in JSON and translation ZIP exports. Fully empty
-  targets remain Open, and later English source changes still require review.
-
 ## [2.3.0] - 2026-10-06
 
 ### Added
@@ -38,6 +32,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- Treat a deliberately saved single-space translation as Done, retain it across
+  restarts, and preserve it in JSON and translation ZIP exports. Fully empty
+  targets remain Open, and later English source changes still require review.
 - Keep unsaved editor text and focus during background AI refreshes, and prevent
   stale save or approval results from changing a newer editor context.
 - Bind batch Undo to its original target-language state so switching languages
