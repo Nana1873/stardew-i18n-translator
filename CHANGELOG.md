@@ -20,6 +20,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Remove the separate Overview page and open directly in the translation
+  workspace after setup.
 - Refresh the desktop workspace, settings, context menus, validation indicators,
   and compact result notices. Ongoing AI progress stays accessible while working.
 - Show validation findings across all workflow states in a separate Issues view,
