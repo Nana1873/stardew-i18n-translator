@@ -39,11 +39,12 @@ installed before the game can use them.
 4. Choose a mod in the workspace and double-click a string to edit it.
    Save your translation or use **Save & next** to keep working.
 5. Check **Review**, **Changed**, and **Validation issues**, then choose an action
-   from **Export…** to write the translation files.
+   from **Files…** to export JSON files or a translation ZIP.
 
-Saving keeps your work in the app. Export is the separate step that writes into
-the selected mods' `i18n` folders. Export can include text still in Review or
-Changed after a warning, so check those queues before sharing a translation.
+Saving keeps your work in the app. JSON export writes into the selected mods'
+`i18n` folders; translation ZIPs package files for separate installation.
+Export can include text still in Review or Changed after a warning, so check
+those queues before sharing a translation.
 
 The app creates `data/` beside the executable. **Keep this folder when updating
 or moving the app**: it contains your settings and translation work. See
