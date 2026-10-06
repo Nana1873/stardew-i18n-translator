@@ -12,42 +12,125 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Added
 
-- Parallel ChatGPT batches with adjustable concurrency. Progress counts saved
-  results; repeated temporary errors reduce concurrency automatically.
-- Activity log for scans, edits, imports, exports, and AI stages, with model,
-  reasoning, and token details when available.
+- **Enter model ID…** in ChatGPT settings. Enter an exact model ID such as
+  `gpt-6.1-sol`, including models missing from the account's model list. Manual
+  entry remains available while that list loads or when discovery fails.
+- Parallel ChatGPT translation batches. **Parallel batches** offers 1, 2, 4, 6,
+  or 8 concurrent batches, with four by default. Each batch completes its selected
+  quality checks; repeated temporary errors reduce parallelism for that run.
+- A workspace **Activity log** for scans, manual saves, explicit token-mismatch
+  acceptances, batch edits, imports, exports, and AI results. Consecutive manual
+  saves in the same mod are grouped, with dividers between operations.
+- AI batch activity in the shared log: preparation, draft translation, quality
+  review, terminology checks, token repair, retries, batch splits, and saved
+  suggestions. Active-step indicators follow each batch and respect reduced
+  motion settings.
+- Activity log controls to expand, collapse, resize by mouse or keyboard, and
+  **Copy log**. Scrolling up pauses automatic following; **Latest entries**
+  returns to new entries.
+- **Details** links from the log to operation results and the latest scan report.
+  Older operation details remain accessible after leaving the five-result
+  history; expired Undo actions are not restored.
+- A bounded session log retaining up to 500 entries and protecting up to 100
+  recent warnings/errors from routine progress. An omission notice reports when
+  older entries are removed.
+- Editable **Install folder** values in selected-mod and all-mod ZIP previews.
+  Changing a component's folder updates its archive paths before export;
+  invalid folders and path collisions block ZIP creation.
+- Intentionally blank translations: saving exactly one normal space marks a
+  nonblank source as Done and leaves its translation cell visually blank. For
+  example, `"Tree": " "` suppresses an unwanted suffix. The space survives scans,
+  restarts, JSON export, and both ZIP exports. Clearing it reopens the entry;
+  later English source changes mark it Changed. Token validation still applies.
 
 ### Changed
 
-- Updated workspace, settings, menus, validation indicators, and smaller result
-  notices. AI progress remains accessible while editing.
-- Issues now lists validation findings across all statuses, including accepted
-  token differences and their effect on export.
-- More reliable ChatGPT sign-in. New profiles start with a model selected; saved
-  and manually entered models remain available even when missing from the
-  account's model list.
+- AI progress is a non-modal workspace notice, so editing can continue during a
+  run. It shows the engine, mod scope, current activity, and cancellation control.
+- **Saved to Review** and its progress bar count persisted suggestions only.
+  Receiving a draft or finishing a provider request does not count as a save.
+  Completed results expose available engine, model, reasoning, and token usage.
+- The **Export…** menu is now **Files…**, with separate actions for JSON export
+  into installed Mods folders and selected-mod/all-mod ZIPs for sharing.
+- Result notices stack above the Activity log and show counts, failure causes,
+  and actions such as **Open string**, **Open Review**, **Open folder**, and
+  **Details**. Detailed export and ZIP previews remain available.
+- **Issues** is now a separate view across Open, Changed, Review, and Done,
+  preserving the current mod scope and search. Selecting a workflow status
+  leaves Issues.
+- Validation uses yellow warning triangles and red error circles, with tooltips
+  explaining whether export is allowed. Explicitly accepted token mismatches
+  stay visible as non-blocking warnings without changing a Done entry's status.
+- Context and selection actions are grouped into compact menus; individual rows
+  use an ellipsis action menu. Editor copy tools sit beside their text fields,
+  with save/approval actions and token/glossary hints arranged consistently.
+- ChatGPT settings prefill `gpt-6.1-sol` when no model is saved.
+- Updated the Windows app icon, About panel, and browser sign-in confirmation
+  page. The browser page directs users to **Continue in the app**, where the
+  actual sign-in status is shown.
+- ChatGPT draft and quality-review requests now include each string's key as
+  additional context alongside its English source, section, and neighboring text.
+- AI instructions distinguish enclosing quotation marks from apostrophes in
+  possessives and contractions. Apostrophes can follow target-language grammar
+  while the source's enclosing quotation style is preserved.
 
 ### Fixed
 
 - Fixed incorrect ZIP export paths from the previous release that could break
-  installation in Vortex and Mod Organizer 2. ZIPs no longer include unused FOMOD
-  installer metadata.
-- Saving exactly one space marks a translation Done and leaves its cell blank.
-  The space survives restarts and JSON/ZIP exports. Empty fields stay Open;
-  changed English strings still need review.
+  installation in Vortex and Mod Organizer 2. Default installation folders now
+  use the component's manifest folder, excluding outer local staging folders.
+- Preserve valid leading spaces in default and manually edited ZIP installation
+  folders instead of silently changing the recipient's folder name.
+- Saved or manually entered ChatGPT models are no longer silently replaced when
+  missing from the account's model list, including after discovery errors/retries.
+- Trim manually entered model IDs before saving and checking a known model's
+  supported reasoning levels, so surrounding spaces cannot bypass those limits.
 - Background AI updates no longer discard unsaved editor text or steal focus.
-  Late save and approval results no longer change what you are currently editing.
-- Undo can no longer restore translations into a different language.
-- AI results and Review navigation stay with the workspace that started the run.
+  A changed saved translation preserves the current draft until the user saves it.
+- If English source text changes while editing, preserve the draft and require
+  **Use updated source** before saving or continuing. Any token-mismatch
+  acceptance must be checked again against the new source.
+- Late saves, approvals, and out-of-order refresh responses no longer change a
+  newer editor selection or overwrite its displayed state.
+- Batch Undo stays tied to its original target language. Switching languages
+  removes the invalid Undo action and cannot restore work into another language.
+- An AI run keeps its original selection, engine, language, and Mods folder while
+  other mods load or workspace settings change. Completion cannot replace a new
+  workspace's strings; **Open Review** returns only to the run's own workspace.
+- Cancelling before AI startup no longer launches a backend run. A failed
+  cancellation request can be retried, and confirmed cancellation retains saved
+  suggestions and the actual partial result.
+- Scanning refreshes translations and validation findings even when the file
+  paths are unchanged. Export/ZIP problems can open the exact affected string
+  outside the current filtered scan view.
 - Translations for blank English strings are preserved in JSON, selected-mod ZIPs,
-  and all-mod ZIPs.
-- Local AI preserves whitespace, safely decodes unambiguous JSON-quoted text, and
-  repairs extra or repeated protected tokens.
-- Glossary files linked outside the selected language-pack folder are rejected.
+  and all-mod ZIPs instead of disappearing from the combined archive.
+- Local AI keeps leading/trailing spaces and line breaks through response parsing
+  and saving to Review.
+- Safely decode one layer of unambiguous JSON-quoted Local AI text, retaining real
+  quotation marks, line breaks, backslashes, and protected tokens. Ambiguous
+  responses remain unchanged for review.
+- Local AI token repair now handles unexpected and duplicated tokens as well as
+  missing ones. A retry replaces the first draft only when token counts improve
+  without worsening another token; unresolved differences remain in Review.
+- Community glossary extraction rejects linked files and folders outside the
+  selected language-pack root, including fallback folder discovery.
+- Glossary status, results, and errors from an earlier game folder or target
+  language no longer appear after changing those settings.
+- Keyboard navigation in dialogs includes expandable **Details** headings and
+  skips their closed contents, hidden controls, and disabled controls.
 
 ### Removed
 
 - The Overview page. The app now opens directly in the workspace after setup.
+
+### Development
+
+- Consolidated CI into four jobs, sharing Node dependency setup between
+  documentation and frontend checks while retaining the required CI gate.
+- Added an opt-in parallel ChatGPT comparison probe and expanded native desktop
+  regression coverage for AI progress, editor refresh races, intentional spaces,
+  ZIP installation paths, and portable upgrades.
 
 ## [2.2.0] - 2026-10-01
 
