@@ -11,21 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  docs:
-    name: Documentation (versions, links, formatting)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check:docs
-
   changes:
-    name: Detect code changes
+    name: Change detection
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
@@ -44,11 +31,13 @@ jobs:
             | grep -vE '(\.md$|^docs/|^\.github/ISSUE_TEMPLATE/)' || true)
           [[ -n "$non_doc_files" ]] && echo "code=true" >> "$GITHUB_OUTPUT" || echo "code=false" >> "$GITHUB_OUTPUT"
 
-  frontend:
+  node:
     needs: changes
-    if: needs.changes.outputs.code == 'true'
-    name: Frontend (tsc, vitest)
+    if: always()
+    name: Node checks
     runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.frontend.outcome }}
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -57,14 +46,20 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm typecheck
-      - run: pnpm test
-      - run: pnpm test:desktop:guards # Offline evidence validation; no desktop launch.
+      - name: Documentation checks
+        run: pnpm check:docs
+      - name: Frontend checks
+        id: frontend
+        if: needs.changes.outputs.code == 'true'
+        run: |
+          pnpm typecheck
+          pnpm test
+          pnpm test:desktop:guards # Offline evidence validation; no desktop launch.
 
   rust:
     needs: changes
     if: needs.changes.outputs.code == 'true'
-    name: Rust backend (fmt, clippy, test)
+    name: Rust checks
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -82,19 +77,19 @@ jobs:
   gate:
     name: CI gate
     if: always()
-    needs: [docs, changes, frontend, rust]
+    needs: [changes, node, rust]
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         env:
-          DOCS_RESULT: ${{ needs.docs.result }}
+          NODE_RESULT: ${{ needs.node.result }}
           CHANGES_RESULT: ${{ needs.changes.result }}
           CODE_CHANGED: ${{ needs.changes.outputs.code }}
-          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          FRONTEND_RESULT: ${{ needs.node.outputs.frontend }}
           RUST_RESULT: ${{ needs.rust.result }}
         run: |
-          if [[ "$DOCS_RESULT" != "success" ]]; then
-            echo "Documentation checks did not succeed: $DOCS_RESULT"
+          if [[ "$NODE_RESULT" != "success" ]]; then
+            echo "Node checks did not succeed: $NODE_RESULT"
             exit 1
           fi
           if [[ "$CHANGES_RESULT" != "success" ]]; then
