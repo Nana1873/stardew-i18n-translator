@@ -331,9 +331,12 @@ async function saveEntry(key, value) {
   await fill(css("#translator-editor-translation"), value);
   await click(button("Save"));
   await absent(css("#translator-editor-translation"));
-  await waitFor(`${key} saved in table`, async () =>
-    (await (await element(row(key))).getText()).includes(value),
-  );
+  await waitFor(`${key} saved in table`, async () => {
+    const cell = await (
+      await element(row(key))
+    ).findElement(css("[data-translation-cell] .translator-cell-clip"));
+    return (await cell.getAttribute("textContent")) === (value || "—");
+  });
 }
 async function screenshot(name) {
   await writeFile(
