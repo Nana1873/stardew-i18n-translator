@@ -86,8 +86,6 @@ pub struct ExportResult {
     /// Total keys dropped from existing target files because `default.json`
     /// no longer (or never) contains them.
     pub total_orphan_keys: usize,
-    /// Token errors prevented every file in this mod from being written.
-    pub blocked: bool,
 }
 
 /// One mod/component included in an all-mod export. All WebView metadata is
@@ -120,8 +118,6 @@ pub struct ExportAllResult {
     pub total_outdated: usize,
     pub total_review_needed: usize,
     pub total_orphan_keys: usize,
-    /// At least one mod had an unaccepted token mismatch, so no mod was changed.
-    pub blocked: bool,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -138,7 +134,9 @@ pub struct ExportPreflightProblem {
 #[serde(rename_all = "camelCase")]
 pub struct ExportPreflight {
     pub accepted_mismatches: usize,
-    pub blocking_problem: Option<ExportPreflightProblem>,
+    /// Strings left out of the export because of game-breaking token errors;
+    /// the game shows their English source until they are fixed or accepted.
+    pub omitted: Vec<ExportPreflightProblem>,
 }
 
 struct PreparedFile {
@@ -464,9 +462,7 @@ pub fn export_mod(
     files: &[ExportFileInput],
 ) -> Result<ExportResult, String> {
     let mut prepared = prepare_mod(config_dir, unique_id, files)?;
-    if !prepared.result.blocked {
-        execute_prepared(std::slice::from_mut(&mut prepared))?;
-    }
+    execute_prepared(std::slice::from_mut(&mut prepared))?;
     Ok(prepared.result)
 }
 
@@ -488,20 +484,21 @@ pub fn preview_export(
         }
         let prepared = prepare_mod(config_dir, &request.mod_unique_id, &request.files)?;
         preview.accepted_mismatches += prepared.accepted_mismatches;
-        if preview.blocking_problem.is_none() {
-            preview.blocking_problem =
+        preview
+            .omitted
+            .extend(
                 prepared
                     .result
                     .skipped
-                    .first()
+                    .iter()
                     .map(|problem| ExportPreflightProblem {
                         mod_unique_id: request.mod_unique_id.clone(),
                         mod_name: request.mod_name.clone(),
                         relative_dir: problem.relative_dir.clone(),
                         key: problem.key.clone(),
                         reason: problem.reason.clone(),
-                    });
-        }
+                    }),
+            );
     }
     Ok(preview)
 }
@@ -526,10 +523,7 @@ pub fn export_all_mods(
         .iter()
         .map(|request| prepare_mod(config_dir, &request.mod_unique_id, &request.files))
         .collect::<Result<Vec<_>, _>>()?;
-    let blocked = prepared.iter().any(|prepared| prepared.result.blocked);
-    if !blocked {
-        execute_prepared(&mut prepared)?;
-    }
+    execute_prepared(&mut prepared)?;
 
     Ok(summarize_all(mods, prepared))
 }
@@ -546,8 +540,9 @@ fn prepare_mod(
     let mut accepted_mismatches = 0;
 
     let mut prepared_rows = Vec::new();
-    // Validate the complete mod first. A token mismatch must not leave a
-    // partially exported mod or create backups for files that were not replaced.
+    // A game-breaking token error omits only that string: SMAPI then shows its
+    // English source, while every valid translation is still exported.
+    let mut omitted = HashSet::new();
     for file in files {
         let rows = scanner::load_strings_checked(
             Path::new(&file.default_path),
@@ -559,7 +554,7 @@ fn prepare_mod(
             if !row.has_translation() {
                 continue;
             }
-            let differences = tokens::token_differences(&row.source, &row.target);
+            let differences = tokens::blocking_differences(&row.source, &row.target);
             if differences.is_empty() {
                 continue;
             }
@@ -567,31 +562,14 @@ fn prepare_mod(
                 accepted_mismatches += 1;
                 continue;
             }
-            let detail = differences
-                .iter()
-                .map(|difference| {
-                    format!(
-                        "{}: expected {}, found {}",
-                        difference.token, difference.source_count, difference.target_count
-                    )
-                })
-                .collect::<Vec<_>>()
-                .join("; ");
+            omitted.insert((file.relative_dir.clone(), row.key.clone()));
             result.skipped.push(SkippedKey {
                 relative_dir: file.relative_dir.clone(),
                 key: row.key.clone(),
-                reason: format!("token count mismatch ({detail})"),
+                reason: tokens::explain_differences(&differences),
             });
         }
         prepared_rows.push((file, rows));
-    }
-    if !result.skipped.is_empty() {
-        result.blocked = true;
-        return Ok(PreparedMod {
-            result,
-            files: Vec::new(),
-            accepted_mismatches,
-        });
     }
 
     let mut prepared = Vec::new();
@@ -613,6 +591,9 @@ fn prepare_mod(
                 if !row.source.trim().is_empty() {
                     file_result.untranslated += 1;
                 }
+                continue;
+            }
+            if omitted.contains(&(file.relative_dir.clone(), row.key.clone())) {
                 continue;
             }
             if row.status == "outdated" {
@@ -733,7 +714,6 @@ fn summarize_all(mods: &[ExportModInput], prepared: Vec<PreparedMod>) -> ExportA
         aggregate.total_outdated += result.total_outdated;
         aggregate.total_review_needed += result.total_review_needed;
         aggregate.total_orphan_keys += result.total_orphan_keys;
-        aggregate.blocked |= result.blocked;
     }
     aggregate
 }
@@ -1089,8 +1069,8 @@ mod tests {
             validate_paths(&mods, "de", &resolved[0].files).unwrap();
             assert!(preview_export(&working, &resolved)
                 .unwrap()
-                .blocking_problem
-                .is_none());
+                .omitted
+                .is_empty());
             assert!(
                 !component.join("i18n/de").exists(),
                 "preflight must not create the locale directory"
@@ -1159,8 +1139,8 @@ mod tests {
         let working = translations::language_root(&config, "de").unwrap();
         assert!(preview_export(&working, &resolved)
             .unwrap()
-            .blocking_problem
-            .is_none());
+            .omitted
+            .is_empty());
         let exported = export_all_mods(&working, &resolved).unwrap();
         assert_eq!(
             (exported.total_written_keys, exported.files_removed),
@@ -1246,8 +1226,8 @@ mod tests {
         let working = translations::language_root(&config, "de").unwrap();
         assert!(preview_export(&working, &resolved)
             .unwrap()
-            .blocking_problem
-            .is_none());
+            .omitted
+            .is_empty());
         assert_eq!(std::fs::read(&target).unwrap(), original);
         let result = export_all_mods(&working, &resolved).unwrap();
         assert_eq!(
@@ -1371,7 +1351,7 @@ mod tests {
                     original_target,
                     "preflight is read-only"
                 );
-                assert!(!prepared.result.blocked);
+                assert!(prepared.result.skipped.is_empty());
                 let result = export_mod(&root, "mod.id", &files).unwrap();
                 assert_eq!(result.total_untranslated, usize::from(!mixed));
                 assert_eq!(result.total_written_keys, usize::from(mixed));
@@ -1513,19 +1493,19 @@ mod tests {
     }
 
     #[test]
-    fn export_preview_reports_blockers_and_exact_accepted_revisions_without_writes() {
+    fn export_preview_reports_omissions_and_exact_accepted_revisions_without_writes() {
         let root = crate::test_support::temp_dir("export-preview");
         let i18n = root.join("i18n");
-        write(&i18n.join("default.json"), r#"{"k":"Hello$8"}"#);
+        write(&i18n.join("default.json"), r#"{"k":"Hello#$b#Bye"}"#);
         let state_key = translations::entry_key("i18n", "k");
         translations::save_one(
             &root,
             "mod.id",
             state_key.clone(),
             translations::StoredString {
-                target: "Hallo$7".into(),
+                target: "Hallo Tschuess".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Hello$8"),
+                source_hash: translations::source_hash("Hello#$b#Bye"),
             },
         )
         .unwrap();
@@ -1537,7 +1517,7 @@ mod tests {
 
         let blocked = preview_export(&root, &mods).unwrap();
         assert_eq!(blocked.accepted_mismatches, 0);
-        assert_eq!(blocked.blocking_problem.as_ref().unwrap().key, "k");
+        assert_eq!(blocked.omitted[0].key, "k");
         assert!(!i18n.join("de.json").exists());
         assert!(!i18n.join("de.json.bak").exists());
 
@@ -1546,20 +1526,20 @@ mod tests {
             "mod.id",
             state_key,
             translations::StoredString {
-                target: "Hallo$7".into(),
+                target: "Hallo Tschuess".into(),
                 status: translations::TOKEN_MISMATCH_ACCEPTED_STATUS.into(),
-                source_hash: translations::source_hash("Hello$8"),
+                source_hash: translations::source_hash("Hello#$b#Bye"),
             },
         )
         .unwrap();
         let accepted = preview_export(&root, &mods).unwrap();
         assert_eq!(accepted.accepted_mismatches, 1);
-        assert!(accepted.blocking_problem.is_none());
+        assert!(accepted.omitted.is_empty());
 
-        write(&i18n.join("default.json"), r#"{"k":"Updated$8"}"#);
+        write(&i18n.join("default.json"), r#"{"k":"Updated#$b#Bye"}"#);
         let changed = preview_export(&root, &mods).unwrap();
         assert_eq!(changed.accepted_mismatches, 0);
-        assert_eq!(changed.blocking_problem.as_ref().unwrap().key, "k");
+        assert_eq!(changed.omitted[0].key, "k");
         assert!(!i18n.join("de.json").exists());
         assert!(!i18n.join("de.json.bak").exists());
 
@@ -1572,7 +1552,7 @@ mod tests {
         let clean = root.join("clean/i18n");
         let blocked = root.join("blocked/i18n");
         write(&clean.join("default.json"), r#"{"ok":"Hello"}"#);
-        write(&blocked.join("default.json"), r#"{"bad":"Bye {{name}}"}"#);
+        write(&blocked.join("default.json"), r#"{"bad":"Bye#$b#now"}"#);
         translations::save_one(
             &root,
             "blocked.mod",
@@ -1580,7 +1560,7 @@ mod tests {
             translations::StoredString {
                 target: "Tschüss".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Bye {{name}}"),
+                source_hash: translations::source_hash("Bye#$b#now"),
             },
         )
         .unwrap();
@@ -1598,7 +1578,8 @@ mod tests {
         ];
 
         let preview = preview_export(&root, &mods).unwrap();
-        let problem = preview.blocking_problem.unwrap();
+        assert_eq!(preview.omitted.len(), 1);
+        let problem = &preview.omitted[0];
         assert_eq!(problem.mod_unique_id, "blocked.mod");
         assert_eq!(problem.mod_name, "Blocked Mod");
         assert_eq!(problem.relative_dir, "i18n");
@@ -1692,15 +1673,16 @@ mod tests {
     }
 
     #[test]
-    fn blocks_the_complete_mod_before_writing_on_any_token_mismatch() {
+    fn omits_only_the_string_with_a_token_error() {
         let root = crate::test_support::temp_dir("export-skip");
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye {{name}}\" }",
+            "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye #now\" }",
         );
         write(&i18n.join("de.json"), "{ \"old\": \"untouched\" }");
-        // `ok` keeps the token; `bad` drops it -> complete mod is blocked.
+        // `ok` keeps the token; `bad` drops its page break -> only `bad` is
+        // omitted, so the game shows its English source.
         translations::save_one(
             &root,
             "mod.id",
@@ -1719,26 +1701,28 @@ mod tests {
             translations::StoredString {
                 target: "Tschüss".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Bye {{name}}"),
+                source_hash: translations::source_hash("Bye #now"),
             },
         )
         .unwrap();
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
-        assert!(result.blocked);
-        assert_eq!(result.total_written_keys, 0);
+        assert_eq!(result.total_written_keys, 1);
         assert_eq!(result.skipped.len(), 1);
         assert_eq!(result.skipped[0].key, "bad");
-        assert!(result.skipped[0].reason.contains("expected 1, found 0"));
+        assert!(result.skipped[0]
+            .reason
+            .contains("English 1, translation 0"));
         let body = read(&i18n.join("de.json"));
-        assert_eq!(body, "{ \"old\": \"untouched\" }");
-        assert!(!i18n.join("de.json.bak").exists());
+        assert!(body.contains("Hallo {{name}}"));
+        assert!(!body.contains("Tschüss"));
+        assert!(i18n.join("de.json.bak").exists());
 
         std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn added_token_also_blocks_the_complete_mod() {
+    fn added_token_also_omits_the_string() {
         let root = crate::test_support::temp_dir("export-added-token");
         let i18n = root.join("i18n");
         write(&i18n.join("default.json"), "{ \"bad\": \"Hello #\" }");
@@ -1755,9 +1739,11 @@ mod tests {
         .unwrap();
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
-        assert!(result.blocked);
+        assert_eq!(result.total_written_keys, 0);
         assert_eq!(result.skipped.len(), 1);
-        assert!(result.skipped[0].reason.contains("expected 1, found 2"));
+        assert!(result.skipped[0]
+            .reason
+            .contains("English 1, translation 2"));
         assert!(!i18n.join("de.json").exists());
         assert!(!i18n.join("de.json.bak").exists());
 
@@ -1770,11 +1756,11 @@ mod tests {
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            r#"{"a":"First$8","b":"Second$9"}"#,
+            r#"{"a":"First#$b#a","b":"Second#$b#b"}"#,
         );
         for (key, source, target) in [
-            ("a", "First$8", "Erste Zeile$7"),
-            ("b", "Second$9", "Zweite Zeile$6"),
+            ("a", "First#$b#a", "Erste Zeile a"),
+            ("b", "Second#$b#b", "Zweite Zeile b"),
         ] {
             translations::save_one(
                 &root,
@@ -1790,12 +1776,11 @@ mod tests {
         }
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
-        assert!(!result.blocked);
         assert!(result.skipped.is_empty());
         assert_eq!(result.total_written_keys, 2);
         let body = read(&i18n.join("de.json"));
-        assert!(body.contains("Erste Zeile$7"));
-        assert!(body.contains("Zweite Zeile$6"));
+        assert!(body.contains("Erste Zeile a"));
+        assert!(body.contains("Zweite Zeile b"));
 
         std::fs::remove_dir_all(root).ok();
     }
@@ -1824,7 +1809,10 @@ mod tests {
         .unwrap();
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
-        assert!(!result.blocked, "a quote-only difference must not block");
+        assert!(
+            result.skipped.is_empty(),
+            "a quote-only difference must not omit"
+        );
         assert_eq!(result.total_written_keys, 1);
         assert!(read(&i18n.join("de.json")).contains("'Standard'"));
 
@@ -1852,7 +1840,7 @@ mod tests {
         .unwrap();
 
         let result = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
-        assert!(!result.blocked);
+        assert!(result.skipped.is_empty());
         assert_eq!(result.total_written_keys, 1);
         assert_eq!(result.total_untranslated, 1);
 
@@ -2091,7 +2079,6 @@ mod tests {
 
         let result = export_all_mods(&root, &mods).unwrap();
 
-        assert!(!result.blocked);
         assert_eq!(result.mods_changed, 2);
         assert_eq!(result.files_written, 2);
         assert_eq!(result.total_written_keys, 2);
@@ -2105,17 +2092,17 @@ mod tests {
     }
 
     #[test]
-    fn export_all_token_problem_blocks_every_mod_without_writes() {
-        let root = crate::test_support::temp_dir("export-all-blocked");
+    fn export_all_token_error_omits_only_that_string_and_exports_every_mod() {
+        let root = crate::test_support::temp_dir("export-all-omitted");
         let first = root.join("first/i18n");
         let second = root.join("second/i18n");
         write(&first.join("default.json"), r#"{"k":"First"}"#);
         write(&first.join("de.json"), r#"{"k":"First old"}"#);
-        write(&second.join("default.json"), r#"{"k":"Hi {{name}}"}"#);
+        write(&second.join("default.json"), r#"{"k":"Hi#$b#there"}"#);
         write(&second.join("de.json"), r#"{"k":"Second old"}"#);
         for (id, relative_dir, source, target) in [
             ("first.id", "first/i18n", "First", "Erste"),
-            ("second.id", "second/i18n", "Hi {{name}}", "Hallo"),
+            ("second.id", "second/i18n", "Hi#$b#there", "Hallo"),
         ] {
             translations::save_one(
                 &root,
@@ -2136,14 +2123,14 @@ mod tests {
 
         let result = export_all_mods(&root, &mods).unwrap();
 
-        assert!(result.blocked);
-        assert_eq!(result.mods_changed, 0);
-        assert!(!result.mods[0].result.blocked);
-        assert!(result.mods[1].result.blocked);
-        assert_eq!(read(&first.join("de.json")), r#"{"k":"First old"}"#);
-        assert_eq!(read(&second.join("de.json")), r#"{"k":"Second old"}"#);
-        assert!(!first.join("de.json.bak").exists());
-        assert!(!second.join("de.json.bak").exists());
+        assert_eq!(result.mods_changed, 2);
+        assert!(result.mods[0].result.skipped.is_empty());
+        assert_eq!(result.mods[1].result.skipped.len(), 1);
+        assert!(read(&first.join("de.json")).contains("Erste"));
+        // The only translation of `second` was omitted, so its stale target is
+        // removed (after a backup) and the game shows the English source.
+        assert!(!second.join("de.json").exists());
+        assert!(second.join("de.json.bak").exists());
 
         std::fs::remove_dir_all(root).ok();
     }

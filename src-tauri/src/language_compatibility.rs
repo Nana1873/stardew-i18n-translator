@@ -285,7 +285,7 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
             }],
         )
         .unwrap();
-        assert!(!export_result.blocked, "{} export", language.code);
+        assert!(export_result.skipped.is_empty(), "{} export", language.code);
         let exported_body = std::fs::read_to_string(&scanned_file.target_path).unwrap();
         let exported: Value = serde_json::from_str(&exported_body).unwrap();
         assert_eq!(
@@ -348,14 +348,9 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
                 section: Some("NPC dialogue".to_string()),
             }],
         );
-        let prepared = batch::apply_batch(
-            &result_value,
-            "test.language",
-            language.code,
-            &rows_by_dir,
-            false,
-        )
-        .unwrap();
+        let prepared =
+            batch::apply_batch(&result_value, "test.language", language.code, &rows_by_dir)
+                .unwrap();
         assert_eq!(
             prepared.entries[0].1.target, language.edited,
             "{} batch result Unicode",

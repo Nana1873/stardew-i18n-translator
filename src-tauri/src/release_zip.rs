@@ -63,6 +63,8 @@ pub struct ZipPreview {
     pub entries: Vec<ZipEntryPreview>,
     pub omitted_components: Vec<String>,
     pub warnings: Vec<String>,
+    /// Strings left out of the ZIP because of game-breaking token errors; the
+    /// game shows their English source until they are fixed or accepted.
     pub problems: Vec<ZipProblem>,
     pub total_strings: usize,
     pub total_source_strings: usize,
@@ -265,9 +267,6 @@ fn write_prepared(
             return Err("Duplicate translation ZIP output path.".into());
         }
     }
-    if !prepared.preview.problems.is_empty() {
-        return Err("Fix every blocking validation problem before building the ZIP.".to_string());
-    }
     if prepared.entries.is_empty() {
         return Err("This package has no translated strings to include.".to_string());
     }
@@ -409,24 +408,14 @@ fn prepare(
                 if !row.has_translation() {
                     continue;
                 }
-                let differences = tokens::token_differences(&row.source, &row.target);
+                let differences = tokens::blocking_differences(&row.source, &row.target);
                 if !differences.is_empty() && !row.token_mismatch_accepted {
-                    let detail = differences
-                        .iter()
-                        .map(|difference| {
-                            format!(
-                                "{}: expected {}, found {}",
-                                difference.token, difference.source_count, difference.target_count
-                            )
-                        })
-                        .collect::<Vec<_>>()
-                        .join("; ");
                     problems.push(ZipProblem {
                         mod_unique_id: component.unique_id.clone(),
                         mod_name: component.name.clone(),
                         relative_dir: file.relative_dir.clone(),
                         key: row.key,
-                        reason: format!("token count mismatch ({detail})"),
+                        reason: tokens::explain_differences(&differences),
                     });
                     continue;
                 }
@@ -648,16 +637,9 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 if !row.has_translation() {
                     continue;
                 }
-                let reason = if !row.token_mismatch_accepted
-                    && !tokens::token_differences(&row.source, &row.target).is_empty()
-                {
-                    Some(
-                        "Protected-token mismatch. Review the translation before exporting."
-                            .to_owned(),
-                    )
-                } else {
-                    None
-                };
+                let differences = tokens::blocking_differences(&row.source, &row.target);
+                let reason = (!row.token_mismatch_accepted && !differences.is_empty())
+                    .then(|| tokens::explain_differences(&differences));
                 if let Some(reason) = reason {
                     prepared.preview.problems.push(ZipProblem {
                         mod_unique_id: component.unique_id.clone(),
@@ -1606,20 +1588,20 @@ mod tests {
     }
 
     #[test]
-    fn output_blocks_token_errors_without_replacing_prior_artifact() {
+    fn output_omits_token_error_strings_and_builds_the_rest() {
         let (root, config, mods) = output_fixture("output-blocked");
         output_component(
             &mods,
             "Example",
             "Fixture.Example",
-            r#"{"hello":"Hello @","changed":"New"}"#,
+            r#"{"hello":"Hello #you","changed":"New"}"#,
         );
         output_state(
             &config,
             "Fixture.Example",
             "i18n",
             "hello",
-            "Hello @",
+            "Hello #you",
             "Hallo",
             "translated",
         );
@@ -1638,8 +1620,11 @@ mod tests {
         assert_eq!(preview.problems.len(), 1);
         assert_eq!(preview.problems[0].key, "hello");
         assert_eq!(preview.entries[0].outdated, 1);
-        assert!(build_output(&config, &destination, true).is_err());
-        assert_eq!(std::fs::read(&destination).unwrap(), b"prior artifact");
+        build_output(&config, &destination, true).unwrap();
+        assert_eq!(
+            zip_documents(&destination)["Example/i18n/de.json"],
+            serde_json::json!({"changed":"Alt"})
+        );
         assert!(!sibling(&destination, ".tmp").exists());
     }
 
@@ -1703,14 +1688,14 @@ mod tests {
             &mods,
             "Example",
             "Fixture.Example",
-            r#"{"hello":"Hello @"}"#,
+            r#"{"hello":"Hello #you"}"#,
         );
         output_state(
             &config,
             "Fixture.Example",
             "i18n",
             "hello",
-            "Hello @",
+            "Hello #you",
             "Hallo",
             translations::TOKEN_MISMATCH_ACCEPTED_STATUS,
         );
@@ -1720,7 +1705,7 @@ mod tests {
         let prepared = prepare_output(&config).unwrap();
         write(
             &component.join("i18n/default.json"),
-            r#"{"hello":"Changed @"}"#,
+            r#"{"hello":"Changed #you"}"#,
         );
         assert!(write_prepared(prepared, &destination, true)
             .unwrap_err()
@@ -1835,20 +1820,22 @@ mod tests {
     }
 
     #[test]
-    fn blocks_token_mismatches_and_leaves_no_partial_zip() {
+    fn token_error_strings_are_left_out_and_never_leave_a_partial_zip() {
         let root = crate::test_support::temp_dir("release-zip-blocked");
         let mods = root.join("Mods");
         let package = mods.join("Pack");
         let config = root.join("data");
         let components = vec![component(&package, "", "sample.root", "1.0")];
-        save_translation(&config, "sample.root", "Hallo");
+        // A stray `}` would turn text into a mail flag, so the only string is
+        // left out and the package has nothing to build.
+        save_translation(&config, "sample.root", "Hallo {{name}}}");
         let destination = root.join("blocked.zip");
         let error = build(
             &config,
             &request(&mods, "Pack", components, &destination, false),
         )
         .unwrap_err();
-        assert!(error.contains("blocking"));
+        assert!(error.contains("no translated strings"));
         assert!(!destination.exists());
         assert!(!sibling(&destination, ".tmp").exists());
         std::fs::remove_dir_all(root).ok();

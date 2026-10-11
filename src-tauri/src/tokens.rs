@@ -152,6 +152,57 @@ pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> 
         .collect()
 }
 
+/// A plain-language explanation of game-breaking differences for export and
+/// release results. Gender-switch damage is described as one structural
+/// problem instead of its raw `${`, `}$`, and `^` counts (mirrors the TS
+/// `describeTokenIssue`).
+pub fn explain_differences(differences: &[TokenDifference]) -> String {
+    let delta = |token: &str| {
+        differences
+            .iter()
+            .find(|difference| difference.token == token)
+            .map_or(0, |difference| {
+                difference.target_count as isize - difference.source_count as isize
+            })
+    };
+    let extra_openers = delta("${");
+    let extra_closers = delta("}$");
+    let mut messages = Vec::new();
+    let mut switch_damaged = false;
+    if extra_openers > 0 && extra_closers <= 0 {
+        messages.push("A gender switch ${…^…}$ is missing its closing }$.".to_string());
+        switch_damaged = true;
+    } else if extra_closers > 0 && extra_openers <= 0 {
+        messages.push("A gender switch ${…^…}$ is missing its opening ${.".to_string());
+        switch_damaged = true;
+    } else if extra_openers > 0 && extra_closers > 0 {
+        messages.push(
+            "A gender switch needs two or three variants separated by ^, like ${he^she}$."
+                .to_string(),
+        );
+        switch_damaged = true;
+    }
+    for difference in differences {
+        let token = difference.token.as_str();
+        if switch_damaged
+            && (matches!(token, "${" | "}$")
+                || (token == "^" && difference.target_count > difference.source_count))
+        {
+            continue;
+        }
+        let change = if difference.target_count < difference.source_count {
+            "is missing"
+        } else {
+            "was added"
+        };
+        messages.push(format!(
+            "{token} {change} (English {}, translation {}).",
+            difference.source_count, difference.target_count
+        ));
+    }
+    messages.join(" ")
+}
+
 /// Portrait/emotion commands only change the face; a missing sheet index falls
 /// back to portrait 0 (DialogueBox bounds check).
 fn is_portrait_command(token: &str) -> bool {
