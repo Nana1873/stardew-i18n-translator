@@ -317,8 +317,8 @@ export function ImportBatchDialog({
                     {preflight.protectedTokenIssues.length === 1
                       ? "string"
                       : "strings"}{" "}
-                    with token issues to Review anyway. Export skips them until
-                    they are fixed or accepted in the editor.
+                    with token issues to Review anyway. Export of this mod stays
+                    blocked until they are fixed or accepted in the editor.
                   </span>
                 </label>
               )}

@@ -168,8 +168,8 @@ are rejected without changes.
 Import skips empty values and preserves every non-empty local target, including
 Changed text. It validates all values eligible for import before the first
 state write. Accepted values enter Review; token errors block the import unless
-the user explicitly opts in to import those values to Review as well. Export
-keeps skipping them until they are fixed or accepted in the editor.
+the user explicitly opts in to import those values to Review as well. Export of
+that mod stays blocked until they are fixed or accepted in the editor.
 
 ## Optional Glossary and AI
 

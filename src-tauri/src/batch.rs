@@ -87,7 +87,7 @@ pub struct ImportSummary {
     pub unmatched: usize,
     pub identical_to_source: usize,
     /// Included in `imported` although their protected tokens differ; export
-    /// keeps blocking them until they are fixed in the editor.
+    /// of the mod stays blocked until they are fixed or accepted.
     pub imported_with_token_issues: usize,
     pub total_in_file: usize,
 }
@@ -436,7 +436,8 @@ pub fn preflight_batch(
 /// Validate a translated v2 batch against the selected mod and current source
 /// rows. No caller writes anything unless this complete function succeeds.
 /// With `include_token_issues`, strings whose protected tokens changed are
-/// imported to Review as well; export keeps blocking them until fixed. Every
+/// imported to Review as well; export of the mod stays blocked until they are
+/// fixed or accepted. Every
 /// other blocker (binding, language, snapshot) still rejects the whole batch.
 pub fn apply_batch(
     result: &Value,

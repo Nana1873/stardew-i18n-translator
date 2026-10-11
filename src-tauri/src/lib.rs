@@ -1009,7 +1009,7 @@ fn remember_llm_batch_import(
     }
     if summary.imported_with_token_issues > 0 {
         warnings.push(format!(
-            "{} values with protected-token issues were imported to Review; export skips them until fixed.",
+            "{} values with protected-token issues were imported to Review; export of this mod stays blocked until they are fixed or accepted.",
             summary.imported_with_token_issues
         ));
     }

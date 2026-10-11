@@ -361,7 +361,7 @@ function presentationFor(
           summary.importedWithTokenIssues +
           " imported " +
           plural(summary.importedWithTokenIssues, "value") +
-          " with protected-token issues. Fix or accept them in Review; export skips them until then.",
+          " with protected-token issues. Fix or accept them in Review; export of this mod stays blocked until then.",
         tone: "warning",
       });
     if (summary?.identicalToSource)

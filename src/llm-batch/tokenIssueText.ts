@@ -51,10 +51,10 @@ export function describeTokenIssue(
     for (const shape of GENDER_SWITCH_SHAPES) handled.add(shape);
     handled.add("${");
     handled.add("}$");
-    // The delimiter of a damaged switch is reported as a stray ^ or ¦.
-    if (extraOpeners > 0 || extraClosers > 0) {
+    // The delimiter of a damaged switch is reported as an extra ^. A ^ that
+    // went missing is a separate problem and is still listed below.
+    if ((extraOpeners > 0 || extraClosers > 0) && count(differences, "^") > 0) {
       handled.add("^");
-      handled.add("¦");
     }
   }
 
