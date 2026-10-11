@@ -100,7 +100,7 @@ export function ExportConfirmBody({
               </p>
               <ul>
                 {omitted.slice(0, 3).map((problem) => (
-                  <li key={problem.key}>
+                  <li key={`${problem.relativeDir}\0${problem.key}`}>
                     <code>{problem.key}</code> {problem.reason}
                   </li>
                 ))}

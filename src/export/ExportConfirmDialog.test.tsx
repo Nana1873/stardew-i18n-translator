@@ -74,6 +74,7 @@ describe("JSON export confirmation", () => {
     const props = show({
       omitted: [
         {
+          relativeDir: "i18n",
           key: "status.saved",
           reason: "# is missing (English 1, translation 0).",
         },

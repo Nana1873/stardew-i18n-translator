@@ -420,6 +420,18 @@
       "source": "Hello there.",
       "target": "Hallo^du.",
       "blocked": true
+    },
+    {
+      "name": "portraits in separate gender branches do not hide a new double portrait",
+      "source": "${Hi.$h^Hey.$s}$#Bye.",
+      "target": "${Hallo.$h^Hey.$s}$#Tschuess.$h$s",
+      "blocked": true
+    },
+    {
+      "name": "one portrait per gender branch stays a single portrait",
+      "source": "${Hi.^Hey.}$#Bye.$h",
+      "target": "${Hallo.$h^Hey.$s}$#Tschuess.",
+      "blocked": false
     }
   ]
 }

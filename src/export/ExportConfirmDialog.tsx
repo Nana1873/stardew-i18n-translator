@@ -4,6 +4,7 @@ import { useDialogAccessibility } from "../dialogAccessibility";
 
 /** A string the export leaves out because of a game-breaking token error. */
 export interface ExportOmittedString {
+  relativeDir: string;
   key: string;
   reason: string;
 }

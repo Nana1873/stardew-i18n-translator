@@ -81,9 +81,10 @@ Saving an edit updates `data/`; **Export…** writes it into the mod. See
 [export behavior](user-guide.md#export-translation-files) for what is included,
 omitted, or backed up.
 
-For a blocked export, use **Open issue** in the confirmation to inspect an
-affected string. Correct protected tokens or invalid text. Use **Save anyway**
-only for an intentional token difference after checking its effect.
+If the export confirmation says strings stay in English, use **Open string**
+to inspect an affected string. Correct its protected tokens, or use **Save
+anyway** only for an intentional token difference after checking its effect,
+then export again.
 
 ## Glossary or AI is unavailable
 

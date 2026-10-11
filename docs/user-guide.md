@@ -175,8 +175,8 @@ shows the scope, replacement information, and strings needing attention.
 **Nonempty Review and Changed translations are included in export after a
 warning.** They do not become Done as a result. Empty entries are omitted so
 SMAPI can fall back to English; saved single-space targets are included unchanged.
-Unresolved blocking validation issues must be
-fixed or an intentional token mismatch explicitly accepted before export.
+Strings with unresolved token errors are left out, so the game shows their
+English text, until they are fixed or an intentional mismatch is accepted.
 
 Export writes `i18n/<language>.json` files directly inside the selected installed
 mods. Use a translation ZIP to manage the translation as a separate mod manager

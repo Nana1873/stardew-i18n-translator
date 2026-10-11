@@ -297,11 +297,8 @@ export function ImportBatchDialog({
                         {describeTokenIssue(
                           issue.differences,
                           issue.importedText,
-                        ).map((item) => (
-                          <span
-                            key={item.message}
-                            data-severity={item.severity}
-                          >
+                        ).map((item, index) => (
+                          <span key={index} data-severity={item.severity}>
                             {item.severity === "error" ? "Error: " : "Note: "}
                             {item.message}
                           </span>

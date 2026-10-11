@@ -212,16 +212,42 @@ fn is_portrait_command(token: &str) -> bool {
             .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// The text one player sees: every well-formed gender switch is replaced by its
+/// first branch, so portraits in alternative branches are not counted twice.
+fn first_branch_text(chars: &[char]) -> String {
+    let mut text = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if starts_with(chars, index, "${") {
+            if let Some(close) = find_switch_close(chars, index) {
+                if let Some((_, delimiters)) = top_level_gender_delimiters(chars, index + 2, close)
+                {
+                    text.push_str(&first_branch_text(&chars[index + 2..delimiters[0]]));
+                    index = close + 2;
+                    continue;
+                }
+            }
+        }
+        text.push(chars[index]);
+        index += 1;
+    }
+    text
+}
+
 /// Only the first emotion token on a dialogue page is applied; any further
-/// one stays visible as raw text.
-fn has_page_with_multiple_portraits(value: &str) -> bool {
-    value.split('#').any(|page| {
-        extract(page)
-            .iter()
-            .filter(|token| is_portrait_command(token))
-            .count()
-            > 1
-    })
+/// one stays visible as raw text. Counts the pages that show such raw text.
+fn pages_with_multiple_portraits(value: &str) -> usize {
+    let chars: Vec<char> = value.chars().collect();
+    first_branch_text(&chars)
+        .split('#')
+        .filter(|page| {
+            extract(page)
+                .iter()
+                .filter(|token| is_portrait_command(token))
+                .count()
+                > 1
+        })
+        .count()
 }
 
 fn is_placeholder(token: &str) -> bool {
@@ -260,7 +286,7 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
         .keys()
         .any(|token| is_gender_switch_shape(token));
     let introduces_multiple_portraits =
-        has_page_with_multiple_portraits(target) && !has_page_with_multiple_portraits(source);
+        pages_with_multiple_portraits(target) > pages_with_multiple_portraits(source);
     let mut tokens: Vec<String> = source_counts
         .keys()
         .chain(target_counts.keys())

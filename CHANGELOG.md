@@ -20,7 +20,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - Export and translation ZIPs no longer block a whole mod. Strings with token
   errors are left out, so the game shows their English text, and every other
   translation is written. The export confirmation names the strings that stay
-  English and opens them in the editor.
+  English and opens them in the editor. An existing installed translation with
+  such an error is also left out of the rewritten file; the previous file is
+  kept as `.json.bak`.
 - **Import LLM batch** never blocks on token differences. Every value goes to
   Review, and the preflight lists errors and harmless differences per string
   with the imported text.

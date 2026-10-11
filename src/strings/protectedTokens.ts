@@ -134,14 +134,32 @@ export function isPortraitCommand(token: string): boolean {
 }
 
 /** Only the first emotion token on a dialogue page is applied; any further
- * one stays visible as raw text. */
-export function hasPageWithMultiplePortraits(value: string): boolean {
-  return value
+ * one stays visible as raw text. Counts the pages that show such raw text. */
+export function pagesWithMultiplePortraits(value: string): number {
+  return firstBranchText(value)
     .split("#")
-    .some(
+    .filter(
       (page) =>
         extractProtectedTokens(page).filter(isPortraitCommand).length > 1,
-    );
+    ).length;
+}
+
+/** The text one player sees: every well-formed gender switch is replaced by
+ * its first branch, so portraits in alternative branches are not counted twice. */
+function firstBranchText(value: string): string {
+  let text = "";
+  let offset = 0;
+  while (offset < value.length) {
+    const genderSwitch = readGenderSwitch(value, offset);
+    if (genderSwitch) {
+      text += firstBranchText(genderSwitch.branches[0]);
+      offset = genderSwitch.end;
+      continue;
+    }
+    text += value[offset];
+    offset += 1;
+  }
+  return text;
 }
 
 function isPlaceholder(token: string): boolean {

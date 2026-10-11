@@ -22,7 +22,7 @@ import {
 } from "./status";
 import {
   extractProtectedTokens,
-  hasPageWithMultiplePortraits,
+  pagesWithMultiplePortraits,
   isGenderSwitchShape,
   tokenSeverity,
 } from "./protectedTokens";
@@ -104,8 +104,7 @@ export function validate(
       isGenderSwitchShape,
     );
     const introducesMultiplePortraits =
-      hasPageWithMultiplePortraits(target) &&
-      !hasPageWithMultiplePortraits(source);
+      pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source);
     const differences: TokenDifference[] = [];
     const addDifference = (
       token: string,
