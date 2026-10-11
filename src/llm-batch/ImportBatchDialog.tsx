@@ -2,6 +2,7 @@ import { FileSearch, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import type { LlmImportPreflight } from "../tauri/commands";
+import { describeTokenIssue } from "./tokenIssueText";
 
 interface ImportBatchDialogProps {
   targetName: string;
@@ -10,7 +11,7 @@ interface ImportBatchDialogProps {
   initialError?: string | null;
   onChooseFile: () => Promise<string | null>;
   onPreflight: (path: string) => Promise<LlmImportPreflight>;
-  onImport: (path: string) => Promise<void>;
+  onImport: (path: string, includeTokenIssues: boolean) => Promise<void>;
   canSwitchToMatchingMod?: (modUniqueId: string) => boolean;
   onSwitchToMatchingMod?: (modUniqueId: string, path: string) => void;
   onClose: () => void;
@@ -40,6 +41,7 @@ export function ImportBatchDialog({
   );
   const [checking, setChecking] = useState(false);
   const [preflight, setPreflight] = useState<LlmImportPreflight | null>(null);
+  const [includeTokenIssues, setIncludeTokenIssues] = useState(false);
   const preflightRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const { onDialogKeyDown } = useDialogAccessibility({
@@ -52,6 +54,7 @@ export function ImportBatchDialog({
     const request = ++preflightRequest.current;
     setChecking(true);
     setPreflight(null);
+    setIncludeTokenIssues(false);
     setError(null);
     try {
       const result = await onPreflight(selectedPath);
@@ -104,12 +107,20 @@ export function ImportBatchDialog({
     }
   }
 
+  // Token issues are only reported once mod, language, and snapshot matched,
+  // so they are then the only blocker and can be imported to Review instead.
+  const tokenIssuesOnly =
+    preflight !== null && preflight.protectedTokenIssues.length > 0;
+  const canImport =
+    preflight !== null &&
+    (preflight.ready || (tokenIssuesOnly && includeTokenIssues));
+
   async function confirm() {
-    if (!path || pending || !preflight?.ready) return;
+    if (!path || pending || !canImport) return;
     setPending(true);
     setError(null);
     try {
-      await onImport(path);
+      await onImport(path, tokenIssuesOnly && includeTokenIssues);
       onClose();
     } catch (cause) {
       setError(String(cause));
@@ -272,23 +283,44 @@ export function ImportBatchDialog({
                         <code>
                           {issue.relativeDir} / {issue.key}
                         </code>
-                        <span>
-                          {issue.differences
-                            .map(
-                              (difference) =>
-                                `${difference.token}: source ${difference.sourceCount}, import ${difference.targetCount}`,
-                            )
-                            .join(" · ")}
+                        {describeTokenIssue(
+                          issue.differences,
+                          issue.importedText,
+                        ).map((message) => (
+                          <span key={message}>{message}</span>
+                        ))}
+                        <span className="translator-import-preflight-text">
+                          Import: {issue.importedText}
                         </span>
                       </li>
                     ))}
                   </ul>
                 </details>
               )}
-              {preflight.blockingReason && (
+              {preflight.blockingReason && !canImport && (
                 <div className="translator-flow-callout is-error" role="alert">
                   {preflight.blockingReason}
                 </div>
+              )}
+              {tokenIssuesOnly && (
+                <label className="translator-flow-callout is-warning translator-confirm-line">
+                  <input
+                    type="checkbox"
+                    checked={includeTokenIssues}
+                    disabled={pending}
+                    onChange={(event) =>
+                      setIncludeTokenIssues(event.target.checked)
+                    }
+                  />
+                  <span>
+                    Import the {preflight.protectedTokenIssues.length}{" "}
+                    {preflight.protectedTokenIssues.length === 1
+                      ? "string"
+                      : "strings"}{" "}
+                    with token issues to Review anyway. Export skips them until
+                    they are fixed or accepted in the editor.
+                  </span>
+                </label>
               )}
               {!preflight.modMatches &&
                 onSwitchToMatchingMod &&
@@ -326,11 +358,7 @@ export function ImportBatchDialog({
             className="translator-button translator-button-primary"
             type="button"
             disabled={
-              !path ||
-              invalidSelection ||
-              pending ||
-              checking ||
-              !preflight?.ready
+              !path || invalidSelection || pending || checking || !canImport
             }
             onClick={() => void confirm()}
           >

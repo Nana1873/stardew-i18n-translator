@@ -514,6 +514,7 @@ describe("ResultTray", () => {
           skippedTranslated: 2,
           unmatched: 1,
           identicalToSource: 1,
+          importedWithTokenIssues: 0,
           totalInFile: 21,
         },
         problems: [],

@@ -4075,6 +4075,7 @@ describe("App shell", () => {
       skippedTranslated: 0,
       unmatched: 0,
       identicalToSource: 0,
+      importedWithTokenIssues: 0,
       totalInFile: 1,
     };
     invokeMock.mockImplementation((cmd: string) => {
@@ -4153,6 +4154,7 @@ describe("App shell", () => {
           },
         ],
         path: "C:/results/test.llm-result.json",
+        includeTokenIssues: false,
       }),
     );
     const result = await inspectLatestResult();

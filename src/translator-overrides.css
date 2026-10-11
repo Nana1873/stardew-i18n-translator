@@ -529,6 +529,13 @@ body {
   color: var(--translator-muted);
 }
 
+#stardew-i18n-translator .translator-import-preflight-text {
+  font-family: var(--mono);
+  font-size: 0.85em;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
 #stardew-i18n-translator
   .translator-progress-row
   span[data-indeterminate="true"] {

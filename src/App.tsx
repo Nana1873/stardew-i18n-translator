@@ -1253,13 +1253,17 @@ export function App() {
     setImportDialogPath(null);
   }
 
-  async function importSelectedBatch(path: string) {
+  async function importSelectedBatch(
+    path: string,
+    includeTokenIssues: boolean,
+  ) {
     if (!selectedMod || !targetLang) return;
     try {
       const summary = await importLlmBatchPath(
         selectedMod.uniqueId,
         filesOf(selectedMod),
         path,
+        includeTokenIssues,
       );
       setImportDialogPath(undefined);
       setImportDialogInitialError(null);

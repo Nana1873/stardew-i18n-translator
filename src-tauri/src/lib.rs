@@ -1007,6 +1007,12 @@ fn remember_llm_batch_import(
             summary.unmatched
         ));
     }
+    if summary.imported_with_token_issues > 0 {
+        warnings.push(format!(
+            "{} values with protected-token issues were imported to Review; export skips them until fixed.",
+            summary.imported_with_token_issues
+        ));
+    }
     if summary.identical_to_source > 0 {
         warnings.push(format!(
             "{} imported values are identical to their source text.",
@@ -1189,6 +1195,7 @@ fn import_llm_batch_from_path(
     mod_unique_id: &str,
     files: &[export::ExportFileInput],
     source: &Path,
+    include_token_issues: bool,
 ) -> Result<batch::ImportSummary, String> {
     // Import reruns the complete read-only analysis immediately before the
     // first write, so a changed file or changed local/source state is refused.
@@ -1198,6 +1205,7 @@ fn import_llm_batch_from_path(
         mod_unique_id,
         &context.target_lang,
         &context.rows_by_dir,
+        include_token_issues,
     )?;
     if !prepared.entries.is_empty() {
         translations::save_many(&context.config, mod_unique_id, prepared.entries)?;
@@ -1214,6 +1222,7 @@ fn import_llm_batch_path(
     mod_unique_id: String,
     files: Vec<export::ExportFileInput>,
     path: String,
+    include_token_issues: Option<bool>,
 ) -> Result<batch::ImportSummary, String> {
     use operation_log::{Outcome, Summary};
     operation_log::run(
@@ -1221,7 +1230,14 @@ fn import_llm_batch_path(
         || {
             let source = Path::new(&path);
             let summary =
-        import_llm_batch_from_path(&app, &mod_unique_id, &files, source).inspect_err(|error| {
+        import_llm_batch_from_path(
+            &app,
+            &mod_unique_id,
+            &files,
+            source,
+            include_token_issues.unwrap_or(false),
+        )
+        .inspect_err(|error| {
             log::error!(target: "app", "import_llm_batch_path({mod_unique_id}) failed: {error}")
         })?;
             remember_llm_batch_import(&history, &summary, source, &mod_unique_id);

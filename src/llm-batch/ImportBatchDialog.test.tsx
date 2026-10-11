@@ -87,7 +87,7 @@ describe("ImportBatchDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Import file" }));
 
-    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path));
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path, false));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -296,5 +296,51 @@ describe("ImportBatchDialog", () => {
     expect(
       screen.queryByRole("button", { name: "Switch to matching mod" }),
     ).not.toBeInTheDocument();
+  });
+
+  it("imports token issues to Review only after an explicit opt-in", async () => {
+    const path = "C:\\Temp\\tokens.llm-result.json";
+    const onImport = vi.fn().mockResolvedValue(undefined);
+    renderDialog({
+      initialPath: path,
+      onImport,
+      onPreflight: vi.fn().mockResolvedValue(
+        preflight({
+          importable: 1,
+          protectedTokenIssues: [
+            {
+              relativeDir: "i18n",
+              key: "greeting",
+              importedText: "Hallo ${Er^Sie}",
+              differences: [
+                { token: "${", sourceCount: 0, targetCount: 1 },
+                { token: "${^}$", sourceCount: 1, targetCount: 0 },
+                { token: "^", sourceCount: 0, targetCount: 1 },
+              ],
+            },
+          ],
+          ready: false,
+          blockingReason: "Protected tokens changed in: i18n · greeting.",
+        }),
+      ),
+    });
+
+    expect(await screen.findByText("Import blocked")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Protected tokens changed",
+    );
+    const importButton = screen.getByRole("button", { name: "Import file" });
+    expect(importButton).toBeDisabled();
+    expect(screen.getByText(/missing its closing \}\$/)).toBeInTheDocument();
+    expect(screen.getByText("Import: Hallo ${Er^Sie}")).toBeInTheDocument();
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /with token issues to Review/ }),
+    );
+    expect(importButton).toBeEnabled();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    fireEvent.click(importButton);
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path, true));
   });
 });

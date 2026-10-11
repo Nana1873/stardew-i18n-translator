@@ -355,6 +355,15 @@ function presentationFor(
           " skipped.",
         tone: "warning",
       });
+    if (summary?.importedWithTokenIssues)
+      notices.push({
+        text:
+          summary.importedWithTokenIssues +
+          " imported " +
+          plural(summary.importedWithTokenIssues, "value") +
+          " with protected-token issues. Fix or accept them in Review; export skips them until then.",
+        tone: "warning",
+      });
     if (summary?.identicalToSource)
       notices.push({
         text:

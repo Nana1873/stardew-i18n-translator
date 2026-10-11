@@ -8,6 +8,18 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+## [2.3.1] - 2026-10-11
+
+### Changed
+
+- **Import LLM batch** no longer forces an all-or-nothing import when only a few
+  strings have protected-token issues. After an explicit opt-in, those strings
+  are imported to Review as well; export keeps skipping them until they are
+  fixed or accepted in the editor.
+- Protected-token issues in the import dialog are explained in plain language,
+  such as a gender switch missing its closing `}$`, and show the imported text.
+  Full-width look-alikes such as `＄｛｝＾` are pointed out.
+
 ## [2.3.0] - 2026-10-06
 
 ### Added
@@ -554,7 +566,7 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.0...HEAD
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.1...HEAD
 [2.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.3...v2.1.0

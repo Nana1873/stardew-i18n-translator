@@ -625,6 +625,8 @@ export interface LlmImportSummary {
   unmatched: number;
   /** Imported, but identical to the English source. */
   identicalToSource: number;
+  /** Included in `imported` despite protected-token issues; export blocks them. */
+  importedWithTokenIssues: number;
   totalInFile: number;
 }
 
@@ -637,6 +639,8 @@ export interface LlmImportTokenDifference {
 export interface LlmImportTokenIssue {
   relativeDir: string;
   key: string;
+  /** The supplied translation, so the user can see what changed. */
+  importedText: string;
   differences: LlmImportTokenDifference[];
 }
 
@@ -677,16 +681,21 @@ export function preflightLlmBatchPath(
   });
 }
 
-/** Import a drag-and-dropped LLM batch/result file for one selected mod. */
+/**
+ * Import a drag-and-dropped LLM batch/result file for one selected mod. With
+ * `includeTokenIssues`, values with protected-token issues also go to Review.
+ */
 export function importLlmBatchPath(
   modUniqueId: string,
   files: ExportFileInput[],
   path: string,
+  includeTokenIssues = false,
 ): Promise<LlmImportSummary> {
   return invoke<LlmImportSummary>("import_llm_batch_path", {
     modUniqueId,
     files,
     path,
+    includeTokenIssues,
   });
 }
 

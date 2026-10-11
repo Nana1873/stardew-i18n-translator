@@ -3374,7 +3374,7 @@ mod split_locale_tests {
                 });
         }
         let prepared =
-            crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir).unwrap();
+            crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir, false).unwrap();
         assert_eq!(prepared.summary.imported, 2);
         let working = translations::language_root(&config, "de").unwrap();
         translations::save_many(&working, "Example.Split", prepared.entries).unwrap();
@@ -3428,7 +3428,9 @@ mod split_locale_tests {
             )
             .unwrap(),
         );
-        assert!(crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir).is_err());
+        assert!(
+            crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir, false).is_err()
+        );
     }
 
     #[test]

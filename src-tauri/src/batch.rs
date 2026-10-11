@@ -86,6 +86,9 @@ pub struct ImportSummary {
     /// Empty translation values intentionally skipped.
     pub unmatched: usize,
     pub identical_to_source: usize,
+    /// Included in `imported` although their protected tokens differ; export
+    /// keeps blocking them until they are fixed in the editor.
+    pub imported_with_token_issues: usize,
     pub total_in_file: usize,
 }
 
@@ -102,6 +105,8 @@ pub struct ImportTokenDifference {
 pub struct ImportTokenIssue {
     pub relative_dir: String,
     pub key: String,
+    /// The supplied translation, so the user can see what changed.
+    pub imported_text: String,
     pub differences: Vec<ImportTokenDifference>,
 }
 
@@ -157,6 +162,9 @@ struct BatchEnvelope<'a> {
 struct BatchAnalysis {
     preflight: ImportPreflight,
     entries: Vec<(String, StoredString)>,
+    /// Staged values whose protected tokens differ from the source. Only an
+    /// explicit opt-in imports them.
+    token_issue_entries: Vec<(String, StoredString)>,
 }
 
 fn batch_envelope(result: &Value) -> Result<BatchEnvelope<'_>, String> {
@@ -255,6 +263,7 @@ fn analyze_batch(
         return Ok(BatchAnalysis {
             preflight,
             entries: Vec::new(),
+            token_issue_entries: Vec::new(),
         });
     }
     if !language_matches {
@@ -265,6 +274,7 @@ fn analyze_batch(
         return Ok(BatchAnalysis {
             preflight,
             entries: Vec::new(),
+            token_issue_entries: Vec::new(),
         });
     }
 
@@ -324,10 +334,12 @@ fn analyze_batch(
         return Ok(BatchAnalysis {
             preflight,
             entries: Vec::new(),
+            token_issue_entries: Vec::new(),
         });
     }
 
     let mut entries = Vec::new();
+    let mut token_issue_entries = Vec::new();
     for (relative_dir, group) in batch.files {
         let rows = rows_by_key
             .get(relative_dir.as_str())
@@ -350,11 +362,20 @@ fn analyze_batch(
                 preflight.preserved_local += 1;
                 continue;
             }
+            let entry = (
+                translations::entry_key(relative_dir, key),
+                StoredString {
+                    target: text.to_string(),
+                    status: "review-needed".to_string(),
+                    source_hash: translations::source_hash(&row.source),
+                },
+            );
             let differences = tokens::token_differences(&row.source, text);
             if !differences.is_empty() {
                 preflight.protected_token_issues.push(ImportTokenIssue {
                     relative_dir: relative_dir.clone(),
                     key: key.clone(),
+                    imported_text: text.to_string(),
                     differences: differences
                         .into_iter()
                         .map(|difference| ImportTokenDifference {
@@ -364,20 +385,14 @@ fn analyze_batch(
                         })
                         .collect(),
                 });
+                token_issue_entries.push(entry);
                 continue;
             }
             if text.trim() == row.source.trim() {
                 preflight.identical_to_source += 1;
             }
             preflight.importable += 1;
-            entries.push((
-                translations::entry_key(relative_dir, key),
-                StoredString {
-                    target: text.to_string(),
-                    status: "review-needed".to_string(),
-                    source_hash: translations::source_hash(&row.source),
-                },
-            ));
+            entries.push(entry);
         }
     }
 
@@ -391,11 +406,15 @@ fn analyze_batch(
             .collect::<Vec<_>>()
             .join(", ");
         preflight.blocking_reason = Some(format!(
-            "Protected tokens changed in: {labels}. Fix the batch and retry. No changes were made."
+            "Protected tokens changed in: {labels}. Fix the batch and retry, or import these strings to Review anyway. No changes were made."
         ));
     }
 
-    Ok(BatchAnalysis { preflight, entries })
+    Ok(BatchAnalysis {
+        preflight,
+        entries,
+        token_issue_entries,
+    })
 }
 
 /// Analyze a translated batch without writing translation state.
@@ -416,29 +435,47 @@ pub fn preflight_batch(
 
 /// Validate a translated v2 batch against the selected mod and current source
 /// rows. No caller writes anything unless this complete function succeeds.
+/// With `include_token_issues`, strings whose protected tokens changed are
+/// imported to Review as well; export keeps blocking them until fixed. Every
+/// other blocker (binding, language, snapshot) still rejects the whole batch.
 pub fn apply_batch(
     result: &Value,
     expected_mod_unique_id: &str,
     expected_target_lang: &str,
     rows_by_dir: &HashMap<String, Vec<StringRow>>,
+    include_token_issues: bool,
 ) -> Result<PreparedImport, String> {
-    let analysis = analyze_batch(
+    let mut analysis = analyze_batch(
         result,
         expected_mod_unique_id,
         expected_target_lang,
         rows_by_dir,
     )?;
     if let Some(reason) = analysis.preflight.blocking_reason {
-        return Err(reason);
+        // Token issues are only collected once the binding fully matched.
+        if !include_token_issues || analysis.token_issue_entries.is_empty() {
+            return Err(reason);
+        }
     }
+    let imported_with_token_issues = if include_token_issues {
+        analysis.token_issue_entries.len()
+    } else {
+        0
+    };
+    analysis.entries.extend(
+        analysis
+            .token_issue_entries
+            .drain(..imported_with_token_issues),
+    );
 
     Ok(PreparedImport {
         entries: analysis.entries,
         summary: ImportSummary {
-            imported: analysis.preflight.importable,
+            imported: analysis.preflight.importable + imported_with_token_issues,
             skipped_translated: analysis.preflight.preserved_local,
             unmatched: analysis.preflight.skipped_empty,
             identical_to_source: analysis.preflight.identical_to_source,
+            imported_with_token_issues,
             total_in_file: analysis.preflight.supplied_strings,
         },
     })
@@ -562,7 +599,8 @@ mod tests {
 
     #[test]
     fn v2_roundtrip_imports_review_needed_and_protects_local_work() {
-        let prepared = apply_batch(&translated_batch(), "Author.Mod", "de", &rows()).unwrap();
+        let prepared =
+            apply_batch(&translated_batch(), "Author.Mod", "de", &rows(), false).unwrap();
         assert_eq!(prepared.summary.total_in_file, 3);
         assert_eq!(prepared.summary.imported, 2);
         assert_eq!(prepared.summary.skipped_translated, 1);
@@ -708,7 +746,7 @@ mod tests {
         let mut changed = original;
         changed.get_mut("sub/i18n").unwrap()[0].source = "Changed after preflight".into();
 
-        let error = apply_batch(&batch, "Author.Mod", "de", &changed).unwrap_err();
+        let error = apply_batch(&batch, "Author.Mod", "de", &changed, false).unwrap_err();
         assert!(error.contains("English source text changed"));
     }
 
@@ -716,16 +754,16 @@ mod tests {
     fn wrong_mod_language_source_and_v1_are_rejected() {
         let current = rows();
         let batch = translated_batch();
-        assert!(apply_batch(&batch, "Other.Mod", "de", &current).is_err());
-        assert!(apply_batch(&batch, "Author.Mod", "fr", &current).is_err());
+        assert!(apply_batch(&batch, "Other.Mod", "de", &current, false).is_err());
+        assert!(apply_batch(&batch, "Author.Mod", "fr", &current, false).is_err());
 
         let mut changed = current.clone();
         changed.get_mut("i18n").unwrap()[0].source = "Changed".into();
-        assert!(apply_batch(&batch, "Author.Mod", "de", &changed).is_err());
+        assert!(apply_batch(&batch, "Author.Mod", "de", &changed, false).is_err());
 
         let mut v1 = batch;
         v1["version"] = Value::from(1);
-        assert!(apply_batch(&v1, "Author.Mod", "de", &current)
+        assert!(apply_batch(&v1, "Author.Mod", "de", &current, false)
             .unwrap_err()
             .contains("v1.4.1 or earlier"));
     }
@@ -738,15 +776,15 @@ mod tests {
             .as_object_mut()
             .unwrap()
             .remove("hello");
-        assert!(apply_batch(&missing, "Author.Mod", "de", &current).is_err());
+        assert!(apply_batch(&missing, "Author.Mod", "de", &current, false).is_err());
 
         let mut unknown = translated_batch();
         unknown["files"]["i18n"]["ghost"] = Value::String("Geist".into());
-        assert!(apply_batch(&unknown, "Author.Mod", "de", &current).is_err());
+        assert!(apply_batch(&unknown, "Author.Mod", "de", &current, false).is_err());
 
         let mut non_string = translated_batch();
         non_string["files"]["i18n"]["hello"] = Value::from(42);
-        assert!(apply_batch(&non_string, "Author.Mod", "de", &current).is_err());
+        assert!(apply_batch(&non_string, "Author.Mod", "de", &current, false).is_err());
     }
 
     #[test]
@@ -754,15 +792,43 @@ mod tests {
         let current = rows();
         let mut empty = translated_batch();
         empty["files"]["sub/i18n"]["bye"] = Value::String(" ".into());
-        let prepared = apply_batch(&empty, "Author.Mod", "de", &current).unwrap();
+        let prepared = apply_batch(&empty, "Author.Mod", "de", &current, false).unwrap();
         assert_eq!(prepared.summary.unmatched, 1);
         assert_eq!(prepared.summary.imported, 1);
 
         let mut broken = translated_batch();
         broken["files"]["i18n"]["hello"] = Value::String("Hallo".into());
-        assert!(apply_batch(&broken, "Author.Mod", "de", &current)
+        assert!(apply_batch(&broken, "Author.Mod", "de", &current, false)
             .unwrap_err()
             .contains("Protected tokens changed"));
+    }
+
+    #[test]
+    fn including_token_issues_imports_them_to_review() {
+        let current = rows();
+        let mut broken = translated_batch();
+        broken["files"]["i18n"]["hello"] = Value::String("Hallo".into());
+
+        let prepared = apply_batch(&broken, "Author.Mod", "de", &current, true).unwrap();
+        assert_eq!(prepared.summary.imported, 2);
+        assert_eq!(prepared.summary.imported_with_token_issues, 1);
+        let targets = prepared
+            .entries
+            .iter()
+            .map(|(_, entry)| entry.target.as_str())
+            .collect::<HashSet<_>>();
+        assert_eq!(targets, HashSet::from(["Hallo", "Tschüss"]));
+        assert!(prepared
+            .entries
+            .iter()
+            .all(|(_, entry)| entry.status == "review-needed"));
+
+        // Including token issues never bypasses a binding mismatch.
+        let mut changed = current;
+        changed.get_mut("sub/i18n").unwrap()[0].source = "Changed".into();
+        assert!(apply_batch(&broken, "Author.Mod", "de", &changed, true)
+            .unwrap_err()
+            .contains("English source text changed"));
     }
 
     #[test]
@@ -796,7 +862,7 @@ mod tests {
         assert_eq!(report.importable, 1);
         assert!(report.protected_token_issues.is_empty());
 
-        let prepared = apply_batch(&batch, "Author.Mod", "de", &current).unwrap();
+        let prepared = apply_batch(&batch, "Author.Mod", "de", &current, false).unwrap();
         assert_eq!(prepared.summary.skipped_translated, 1);
         assert_eq!(prepared.summary.imported, 1);
         assert_eq!(prepared.entries.len(), 1);

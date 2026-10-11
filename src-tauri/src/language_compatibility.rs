@@ -348,9 +348,14 @@ fn every_advertised_language_passes_the_complete_technical_workflow() {
                 section: Some("NPC dialogue".to_string()),
             }],
         );
-        let prepared =
-            batch::apply_batch(&result_value, "test.language", language.code, &rows_by_dir)
-                .unwrap();
+        let prepared = batch::apply_batch(
+            &result_value,
+            "test.language",
+            language.code,
+            &rows_by_dir,
+            false,
+        )
+        .unwrap();
         assert_eq!(
             prepared.entries[0].1.target, language.edited,
             "{} batch result Unicode",
