@@ -33,8 +33,9 @@ without an AI service._
   reads your files.
 - **Search across all mods** by key, English text, or translation, combined
   with the status filters Open, Changed, Review, and Done.
-- **Spot mod updates**: after a rescan, English strings that were added,
-  changed, or removed are reported, and changed strings show up as Changed.
+- **Spot mod updates**: from the second complete scan on, the app reports
+  English strings that were added, changed, or removed. Translated strings
+  whose English text changed move to Changed.
 - **Token-safe editing**: Stardew, SMAPI, Content Patcher, dialogue, mail,
   placeholder, and formatting tokens are listed for every string and checked as
   you type. Click a missing token to insert it. Broken tokens block export until
@@ -46,12 +47,12 @@ without an AI service._
   Optional: translation and export work without a glossary.
 - **Batch work**: select rows with checkboxes, Ctrl+click, or Shift+click, then
   translate with AI, export an LLM batch, keep the original, clear, or mark Done.
-  One completed batch edit can be undone.
+  The most recent batch edit can be undone during the session.
 - **Keyboard friendly**: Ctrl+F to search, Ctrl+Enter to save, and
   Ctrl+Shift+Enter for Save & next. All shortcuts can be changed in
   **Settings > Shortcuts**.
-- **Activity log** for scans, saves, imports, exports, and AI runs, with details
-  for each result.
+- **Activity log** for scans, saves, imports, exports, and AI runs during the
+  session, with details for each result.
 - **Safe export**: existing target files receive a `.bak` backup, and an
   ordinary failure during a multi-file export rolls back the affected files.
 - **Translation ZIPs** for one mod or all scanned mods. They contain only the
@@ -88,18 +89,20 @@ moving the app.** See [updates and backups](docs/troubleshooting.md#updating-and
 ## Optional AI
 
 AI is never required. Every AI result enters **Review** and is never marked
-Done automatically.
+Done automatically. Review does not block export, so check it before sharing.
 
 - **Local AI**: LM Studio or Ollama on your own computer (loopback endpoints
   only).
 - **ChatGPT**: browser sign-in with your ChatGPT plan. No API key or CLI needed.
-  Up to eight batches run in parallel, with optional quality checks.
-- **External LLM batch**: export a self-contained file for any file-capable LLM
-  and import the result. Returned files are checked for stale sources, wrong
-  keys, protected tokens, and existing translations before import.
+  Four batches run in parallel by default (up to eight), with optional
+  quality checks.
+- **External LLM batch**: export the Open or Changed strings of one mod as a
+  JSON file, copy the handoff prompt, and give both to any LLM that can read and
+  return files. Imports are checked for stale sources, wrong keys, and
+  protected tokens, and never overwrite existing translations.
 
-AI instructions ask the model to keep each line's tone, humor, emotional
-intent, and character voice. Review the results before marking them Done. The
+For Local AI and ChatGPT, the instructions ask the model to keep each line's
+tone, humor, emotional intent, and character voice. Review the results before marking them Done. The
 [AI guide](docs/ai.md) covers setup, quality options, and exactly what is sent.
 
 ## Languages and files
