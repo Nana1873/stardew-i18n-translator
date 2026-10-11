@@ -38,10 +38,12 @@ without an AI service._
   whose English text changed move to Changed.
 - **Token-safe editing**: Stardew, SMAPI, Content Patcher, dialogue, mail,
   placeholder, and formatting tokens are listed for every string and checked as
-  you type. Click a missing token to insert it. Broken tokens block export until
-  you fix them or explicitly accept that exact difference.
-- **Issues view**: all warnings and export blockers in the current mod scope in
-  one list.
+  you type. Click a missing token to insert it. Harmless differences are only
+  notes; a token error that would break the game keeps just that string out of
+  the export, so it stays English until you fix it or accept that exact
+  difference.
+- **Issues view**: all token errors and warnings in the current mod scope in
+  one list, explained in plain language.
 - **Glossary hints** from your local Stardew game strings or a supported
   community language pack, so item, place, and character names match the game.
   Optional: translation and export work without a glossary.
