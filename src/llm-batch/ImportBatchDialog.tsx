@@ -186,8 +186,7 @@ export function ImportBatchDialog({
             </button>
           </div>
           <div className="translator-flow-callout">
-            Existing translations stay unchanged. Valid imported values go to
-            Review.
+            Existing translations stay unchanged. Imported values go to Review.
           </div>
           {checking && (
             <div className="translator-flow-callout" role="status">
