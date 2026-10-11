@@ -487,7 +487,7 @@ describe("StringEditor", () => {
     rerender(
       <StringEditor
         {...props}
-        row={row({ source: "Hello {{first}}", tokenMismatchAccepted: true })}
+        row={row({ source: "Hello [First.Token]", tokenMismatchAccepted: true })}
       />,
     );
     fireEvent.change(input, { target: { value: "Hallo" } });
@@ -501,7 +501,7 @@ describe("StringEditor", () => {
     rerender(
       <StringEditor
         {...props}
-        row={row({ source: "Hello {{second}}", tokenMismatchAccepted: true })}
+        row={row({ source: "Hello [Second.Token]", tokenMismatchAccepted: true })}
       />,
     );
     expect(
@@ -513,7 +513,7 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(
       screen.getByRole("dialog", { name: "Protected token mismatch" }),
-    ).toHaveTextContent("{{second}}");
+    ).toHaveTextContent("[Second.Token]");
     expect(onSave).not.toHaveBeenCalled();
   });
 
@@ -562,8 +562,8 @@ describe("StringEditor", () => {
 
   it("requires an explicit confirmation before accepting token errors", async () => {
     const { onSave, onNavigate } = renderEditor({
-      source: "What happened?$8",
-      target: "Was ist passiert?$7",
+      source: "What happened?#$b#Oh.$8",
+      target: "Was ist passiert? Oh.$8",
     });
 
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
@@ -599,7 +599,7 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save anyway" }));
 
     expect(onSave).toHaveBeenCalledWith(
-      "Was ist passiert?$7",
+      "Was ist passiert? Oh.$8",
       "translated",
       true,
     );
@@ -608,15 +608,15 @@ describe("StringEditor", () => {
 
   it("reuses an accepted mismatch until the translation is edited", async () => {
     const { onSave } = renderEditor({
-      source: "What happened?$8",
-      target: "Was ist passiert?$7",
+      source: "What happened?#$b#Oh.$8",
+      target: "Was ist passiert? Oh.$8",
       tokenMismatchAccepted: true,
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSave).toHaveBeenCalledWith(
-      "Was ist passiert?$7",
+      "Was ist passiert? Oh.$8",
       "translated",
       true,
     );
@@ -648,7 +648,7 @@ describe("StringEditor", () => {
 
   it("shows an accepted token mismatch as a non-blocking warning", () => {
     renderEditor({
-      source: "Saved {{saveName}}",
+      source: "Saved [FarmName]",
       target: "Gespeichert",
       tokenMismatchAccepted: true,
     });
@@ -660,7 +660,7 @@ describe("StringEditor", () => {
     expect(warning.closest(".translator-validation")).not.toHaveClass(
       "is-error",
     );
-    expect(screen.getByRole("button", { name: /saveName/i })).toHaveClass(
+    expect(screen.getByRole("button", { name: /FarmName/i })).toHaveClass(
       "is-accepted",
     );
   });
@@ -1182,7 +1182,7 @@ it("saves a single space as Done and clearing it returns the entry to Open", asy
 
 it("still requires explicit token mismatch acceptance for an intentional space", async () => {
   const app = renderEditor({
-    source: "Tree {{Count}}",
+    source: "Tree [Count.Token]",
     target: "",
     status: "untranslated",
   });

@@ -7,8 +7,9 @@
  * and recognized bracket forms like `[FarmName]`) — see protectedTokens.ts.
  * Tokens are compared as multisets, so
  * a dropped second `$b` is caught too.
- *  - token-missing    (error)   a source token is absent (or under-represented)
- *  - token-added      (error)   the target has more of a token than the source
+ *  - token-missing    (error or warning, see tokenSeverity) a source token is
+ *                                absent (or under-represented)
+ *  - token-added      (error or warning) the target has more of a token
  *  - empty-target     (warning) the target key is blank while the source has text
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
@@ -22,7 +23,9 @@ import {
 import {
   describeToken,
   extractProtectedTokens,
+  hasPageWithMultiplePortraits,
   isGenderSwitchShape,
+  tokenSeverity,
 } from "./protectedTokens";
 
 export type Severity = "error" | "warning";
@@ -100,12 +103,20 @@ export function validate(
     const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
       isGenderSwitchShape,
     );
+    const introducesMultiplePortraits =
+      hasPageWithMultiplePortraits(target) &&
+      !hasPageWithMultiplePortraits(source);
     for (const [token, count] of sourceTokens) {
       if ((targetTokens.get(token) ?? 0) < count) {
         const found = targetTokens.get(token) ?? 0;
         issues.push({
           ruleId: "token-missing",
-          severity: "error",
+          severity: tokenSeverity(
+            token,
+            count,
+            found,
+            introducesMultiplePortraits,
+          ),
           message: `Token count mismatch for ${describeToken(token)} (expected ${count}, found ${found})`,
         });
       }
@@ -119,7 +130,12 @@ export function validate(
         const expected = sourceTokens.get(token) ?? 0;
         issues.push({
           ruleId: "token-added",
-          severity: "error",
+          severity: tokenSeverity(
+            token,
+            expected,
+            count,
+            introducesMultiplePortraits,
+          ),
           message: `Token count mismatch for ${describeToken(token)} (expected ${expected}, found ${count})`,
         });
       }

@@ -91,6 +91,7 @@ export function extractProtectedTokens(value: string): string[] {
       readPositionalPlaceholder(value, offset) ??
       readGenderSwitchFragment(value, offset) ??
       readSimpleDialogueCommand(value, offset) ??
+      readEventCommand(value, offset) ??
       readSingleCharacterToken(value, offset);
 
     if (token) {
@@ -119,6 +120,57 @@ export function describeToken(token: string): string {
   if (token === "'") return "' (quote delimiter)";
   if (token === "\n") return "newline";
   return token;
+}
+
+export type TokenSeverity = "error" | "warning";
+
+/** Portrait/emotion commands only change the face; a missing sheet index
+ * falls back to portrait 0 (DialogueBox bounds check). */
+export function isPortraitCommand(token: string): boolean {
+  return (
+    ["$h", "$s", "$u", "$l", "$a", "$neutral"].includes(token) ||
+    /^\$\d+$/.test(token)
+  );
+}
+
+/** Only the first emotion token on a dialogue page is applied; any further
+ * one stays visible as raw text. */
+export function hasPageWithMultiplePortraits(value: string): boolean {
+  return value
+    .split("#")
+    .some(
+      (page) =>
+        extractProtectedTokens(page).filter(isPortraitCommand).length > 1,
+    );
+}
+
+function isPlaceholder(token: string): boolean {
+  return (
+    (token.startsWith("{{") && token.endsWith("}}")) || /^\{\d+\}$/.test(token)
+  );
+}
+
+/**
+ * Severity of one token-count difference, verified against the Stardew 1.6
+ * parsers (mirrors Rust `tokens::token_severity`). Errors break the game;
+ * warnings are cosmetic or legitimate translation choices and never block.
+ */
+export function tokenSeverity(
+  token: string,
+  sourceCount: number,
+  targetCount: number,
+  introducesMultiplePortraits: boolean,
+): TokenSeverity {
+  const dropped = targetCount < sourceCount;
+  const harmless =
+    isGenderSwitchShape(token) ||
+    token === "@" ||
+    (isPortraitCommand(token) && !introducesMultiplePortraits) ||
+    // A missing placeholder only drops its value; a renamed or extra one
+    // stays visible as literal `{{...}}` or breaks string.Format.
+    (dropped && isPlaceholder(token)) ||
+    (dropped && token.toLowerCase().startsWith("[articlefor"));
+  return harmless ? "warning" : "error";
 }
 
 /** Shape identities compare each well-formed switch as one block. They aren't
@@ -533,10 +585,27 @@ function readSimpleDialogueCommand(
   value: string,
   offset: number,
 ): Token | null {
-  if (value.startsWith("$h", offset) && /[A-Z]/.test(value[offset + 2] ?? ""))
+  // The game strips these emotion tokens by substring (Dialogue.checkEmotions),
+  // so `$sHallo` is portrait `$s` followed by prose.
+  if (
+    value[offset] === "$" &&
+    /[hsula]/.test(value[offset + 1] ?? "") &&
+    /[A-Z]/.test(value[offset + 2] ?? "")
+  )
     return token(value, offset, offset + 2);
   const match = simpleDialogueCommandPattern.exec(value.slice(offset));
   return match ? token(value, offset, offset + match[0].length) : null;
+}
+
+/** Dialogue event/gift commands: `%fork` sets an event branch and
+ * `%revealtaste:NPC:item` reveals a gift taste (Utility.ParseGiftReveals). */
+function readEventCommand(value: string, offset: number): Token | null {
+  if (value.startsWith("%fork", offset))
+    return token(value, offset, offset + 5);
+  if (!value.startsWith("%revealtaste", offset)) return null;
+  let end = offset + "%revealtaste".length;
+  while (end < value.length && !/[\s#%$^*{]/u.test(value[end])) end += 1;
+  return token(value, offset, end);
 }
 
 function readSingleCharacterToken(value: string, offset: number): Token | null {
@@ -546,6 +615,10 @@ function readSingleCharacterToken(value: string, offset: number): Token | null {
     char === "^" ||
     char === "#" ||
     char === "\n" ||
+    // A stray `{` marks "continues on next screen" and a `}` turns the text
+    // before it into a mail flag (Dialogue.cs); both hide dialogue text.
+    char === "{" ||
+    char === "}" ||
     (char === "'" && isPairedQuoteDelimiter(value, offset))
   ) {
     return token(value, offset, offset + 1);

@@ -25,7 +25,8 @@ for (const testCase of fixture.comparisons) {
   it(testCase.name, () => {
     const blocked = validate(testCase.source, testCase.target, true).some(
       (issue) =>
-        issue.ruleId === "token-missing" || issue.ruleId === "token-added",
+        (issue.ruleId === "token-missing" || issue.ruleId === "token-added") &&
+        issue.severity === "error",
     );
     expect(blocked).toBe(testCase.blocked);
   });

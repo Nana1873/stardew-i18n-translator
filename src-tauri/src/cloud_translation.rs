@@ -375,11 +375,11 @@ fn introduces_token_mismatch(source: &str, previous: &str, candidate: &str) -> b
     let distance = |difference: &crate::tokens::TokenDifference| {
         difference.source_count.abs_diff(difference.target_count)
     };
-    let previous_distances = crate::tokens::token_differences(source, previous)
+    let previous_distances = crate::tokens::blocking_differences(source, previous)
         .iter()
         .map(|difference| (difference.token.clone(), distance(difference)))
         .collect::<HashMap<_, _>>();
-    crate::tokens::token_differences(source, candidate)
+    crate::tokens::blocking_differences(source, candidate)
         .iter()
         .any(|difference| {
             distance(difference)
@@ -875,7 +875,8 @@ fn build_token_repair_plans(
     let mut current_prompt_items = Vec::new();
 
     for (item, translation) in items.iter().zip(ordered) {
-        let differences = crate::tokens::token_differences(&item.source, &translation.text);
+        // Warnings (portraits, removed gender switches, ...) never cost a repair.
+        let differences = crate::tokens::blocking_differences(&item.source, &translation.text);
         if differences.is_empty() {
             continue;
         }
@@ -934,7 +935,7 @@ fn merge_valid_token_repairs(
 ) -> Vec<ProviderTranslation> {
     let mut merged = originals.to_vec();
     for (repair_item, repair) in repair_items.iter().zip(repairs) {
-        if !crate::tokens::token_differences(&repair_item.source, &repair.text).is_empty() {
+        if !crate::tokens::blocking_differences(&repair_item.source, &repair.text).is_empty() {
             continue;
         }
         if let Some(index) = items.iter().position(|item| item.id == repair.id) {

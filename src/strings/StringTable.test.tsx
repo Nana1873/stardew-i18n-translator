@@ -105,7 +105,7 @@ const ROWS = {
     },
     {
       key: "token",
-      source: "Hi {{name}}",
+      source: "Hi [FarmName]",
       target: "Hallo",
       targetPresent: true,
       status: "outdated",
@@ -320,7 +320,7 @@ it("preserves a dirty draft until the changed source is explicitly accepted", as
   const input = screen.getByRole("textbox", { name: "Translation" });
   fireEvent.change(input, { target: { value: "Manual draft" } });
   input.focus();
-  const source = "Bye now {{name}}";
+  const source = "Bye now [FarmName]";
   installBackendRows({
     "a.b": ROWS["a.b"].map((row) =>
       row.key === "bye" ? { ...row, source } : row,
@@ -1341,7 +1341,7 @@ describe("StringTable workbench", () => {
     await screen.findByText("token");
 
     const validation = screen.getByRole("button", {
-      name: /Token count mismatch for.*\{\{name\}\}/i,
+      name: /Token count mismatch for.*\[FarmName\]/i,
     });
     expect(validation).toHaveClass("translator-inline-validation");
     fireEvent.click(validation);
@@ -1390,12 +1390,12 @@ describe("StringTable workbench", () => {
         {
           ...ROWS["a.b"][2],
           key: "mixed",
-          source: "Hello {{name}}\\n",
+          source: "Hello [FarmName]\\n",
         },
         {
           ...ROWS["a.b"][2],
           key: "accepted",
-          source: "Hello {{name}}\\n",
+          source: "Hello [FarmName]\\n",
           status: "translated",
           tokenMismatchAccepted: true,
         },
@@ -1538,9 +1538,9 @@ describe("StringTable workbench", () => {
             {
               relativeDir: "i18n",
               key: "token",
-              target: "Hi {{name}}",
+              target: "Hi [FarmName]",
               status: "translated",
-              source: "Hi {{name}}",
+              source: "Hi [FarmName]",
             },
           ],
         },
@@ -1994,7 +1994,7 @@ describe("StringTable workbench", () => {
             expect.objectContaining({
               relativeDir: "i18n",
               key: "token",
-              target: "Hi {{name}}",
+              target: "Hi [FarmName]",
               status: "translated",
             }),
           ]),
@@ -2693,7 +2693,7 @@ describe("StringTable workbench", () => {
                 relativeDir: "i18n",
                 key: "token",
               },
-              text: "Hallo {{name}}",
+              text: "Hallo [FarmName]",
               status: "review-needed",
               tokenDifferences: [],
               glossaryMisses: [],
@@ -2730,7 +2730,7 @@ describe("StringTable workbench", () => {
       2,
       expect.objectContaining({
         key: "token",
-        target: "Hallo {{name}}",
+        target: "Hallo [FarmName]",
         targetPresent: true,
       }),
     );
@@ -2740,7 +2740,7 @@ describe("StringTable workbench", () => {
     expect(rowFor("bye")).toHaveAttribute("data-status", "review-needed");
     expect(rowFor("bye")).toHaveTextContent("Tschüss");
     expect(rowFor("token")).toHaveAttribute("data-status", "review-needed");
-    expect(rowFor("token")).toHaveTextContent("Hallo {{name}}");
+    expect(rowFor("token")).toHaveTextContent("Hallo [FarmName]");
 
     const translatedCell = rowFor("bye").querySelector<HTMLElement>(
       ".translator-translation-col",
@@ -2980,7 +2980,7 @@ describe("StringTable workbench", () => {
         {
           relativeDir: "i18n",
           key: "token",
-          source: "Hi {{name}}",
+          source: "Hi [FarmName]",
         },
       ],
       3,
@@ -3252,7 +3252,7 @@ describe("StringTable workbench", () => {
     expect(actionHeader).toHaveStyle({ gridColumn: "-2 / -1" });
 
     const issueControl = screen.getAllByRole("button", {
-      name: /Token count mismatch for.*\{\{name\}\}/i,
+      name: /Token count mismatch for.*\[FarmName\]/i,
     })[0];
     const tokenRow = issueControl.closest<HTMLElement>(".stringrow--data");
     if (!tokenRow) throw new Error("Missing row for validation control");
