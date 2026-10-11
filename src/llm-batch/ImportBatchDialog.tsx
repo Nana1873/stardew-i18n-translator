@@ -2,7 +2,7 @@ import { FileSearch, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import type { LlmImportPreflight } from "../tauri/commands";
-import { describeTokenIssue } from "./tokenIssueText";
+import { describeTokenIssue, hasTokenError } from "../strings/tokenIssueText";
 
 interface ImportBatchDialogProps {
   targetName: string;
@@ -11,7 +11,7 @@ interface ImportBatchDialogProps {
   initialError?: string | null;
   onChooseFile: () => Promise<string | null>;
   onPreflight: (path: string) => Promise<LlmImportPreflight>;
-  onImport: (path: string, includeTokenIssues: boolean) => Promise<void>;
+  onImport: (path: string) => Promise<void>;
   canSwitchToMatchingMod?: (modUniqueId: string) => boolean;
   onSwitchToMatchingMod?: (modUniqueId: string, path: string) => void;
   onClose: () => void;
@@ -41,7 +41,6 @@ export function ImportBatchDialog({
   );
   const [checking, setChecking] = useState(false);
   const [preflight, setPreflight] = useState<LlmImportPreflight | null>(null);
-  const [includeTokenIssues, setIncludeTokenIssues] = useState(false);
   const preflightRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const { onDialogKeyDown } = useDialogAccessibility({
@@ -54,7 +53,6 @@ export function ImportBatchDialog({
     const request = ++preflightRequest.current;
     setChecking(true);
     setPreflight(null);
-    setIncludeTokenIssues(false);
     setError(null);
     try {
       const result = await onPreflight(selectedPath);
@@ -107,20 +105,21 @@ export function ImportBatchDialog({
     }
   }
 
-  // Token issues are only reported once mod, language, and snapshot matched,
-  // so they are then the only blocker and can be imported to Review instead.
-  const tokenIssuesOnly =
-    preflight !== null && preflight.protectedTokenIssues.length > 0;
-  const canImport =
-    preflight !== null &&
-    (preflight.ready || (tokenIssuesOnly && includeTokenIssues));
+  // Token issues never block an import; they are listed so the user knows
+  // which values need attention in Review.
+  const canImport = preflight?.ready ?? false;
+  const tokenIssues = preflight?.protectedTokenIssues ?? [];
+  const errorIssues = tokenIssues.filter((issue) =>
+    hasTokenError(issue.differences),
+  );
+  const warningIssues = tokenIssues.length - errorIssues.length;
 
   async function confirm() {
     if (!path || pending || !canImport) return;
     setPending(true);
     setError(null);
     try {
-      await onImport(path, tokenIssuesOnly && includeTokenIssues);
+      await onImport(path);
       onClose();
     } catch (cause) {
       setError(String(cause));
@@ -269,16 +268,28 @@ export function ImportBatchDialog({
                   </div>
                 </dl>
               </details>
-              {preflight.protectedTokenIssues.length > 0 && (
+              {errorIssues.length > 0 && (
+                <div className="translator-flow-callout is-warning">
+                  {errorIssues.length}{" "}
+                  {errorIssues.length === 1 ? "string has" : "strings have"} a
+                  token error that would break the game.{" "}
+                  {errorIssues.length === 1 ? "It is" : "They are"} imported to
+                  Review; export leaves{" "}
+                  {errorIssues.length === 1 ? "it" : "them"} out (English in
+                  game) until fixed or accepted.
+                </div>
+              )}
+              {tokenIssues.length > 0 && (
                 <details className="translator-result-help">
                   <summary>
-                    {preflight.protectedTokenIssues.length} protected-token{" "}
-                    {preflight.protectedTokenIssues.length === 1
-                      ? "issue"
-                      : "issues"}
+                    {errorIssues.length > 0 &&
+                      `${errorIssues.length} with errors`}
+                    {errorIssues.length > 0 && warningIssues > 0 && " · "}
+                    {warningIssues > 0 &&
+                      `${warningIssues} with harmless differences`}
                   </summary>
                   <ul className="translator-import-preflight-issues">
-                    {preflight.protectedTokenIssues.map((issue) => (
+                    {tokenIssues.map((issue) => (
                       <li key={`${issue.relativeDir}\0${issue.key}`}>
                         <code>
                           {issue.relativeDir} / {issue.key}
@@ -286,8 +297,14 @@ export function ImportBatchDialog({
                         {describeTokenIssue(
                           issue.differences,
                           issue.importedText,
-                        ).map((message) => (
-                          <span key={message}>{message}</span>
+                        ).map((item) => (
+                          <span
+                            key={item.message}
+                            data-severity={item.severity}
+                          >
+                            {item.severity === "error" ? "Error: " : "Note: "}
+                            {item.message}
+                          </span>
                         ))}
                         <span className="translator-import-preflight-text">
                           Import: {issue.importedText}
@@ -297,30 +314,10 @@ export function ImportBatchDialog({
                   </ul>
                 </details>
               )}
-              {preflight.blockingReason && !canImport && (
+              {preflight.blockingReason && (
                 <div className="translator-flow-callout is-error" role="alert">
                   {preflight.blockingReason}
                 </div>
-              )}
-              {tokenIssuesOnly && (
-                <label className="translator-flow-callout is-warning translator-confirm-line">
-                  <input
-                    type="checkbox"
-                    checked={includeTokenIssues}
-                    disabled={pending}
-                    onChange={(event) =>
-                      setIncludeTokenIssues(event.target.checked)
-                    }
-                  />
-                  <span>
-                    Import the {preflight.protectedTokenIssues.length}{" "}
-                    {preflight.protectedTokenIssues.length === 1
-                      ? "string"
-                      : "strings"}{" "}
-                    with token issues to Review anyway. Export of this mod stays
-                    blocked until they are fixed or accepted in the editor.
-                  </span>
-                </label>
               )}
               {!preflight.modMatches &&
                 onSwitchToMatchingMod &&

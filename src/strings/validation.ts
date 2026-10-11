@@ -21,12 +21,12 @@ import {
   isIntentionalBlankTarget,
 } from "./status";
 import {
-  describeToken,
   extractProtectedTokens,
   hasPageWithMultiplePortraits,
   isGenderSwitchShape,
   tokenSeverity,
 } from "./protectedTokens";
+import { describeTokenIssue, type TokenDifference } from "./tokenIssueText";
 
 export type Severity = "error" | "warning";
 
@@ -106,39 +106,41 @@ export function validate(
     const introducesMultiplePortraits =
       hasPageWithMultiplePortraits(target) &&
       !hasPageWithMultiplePortraits(source);
+    const differences: TokenDifference[] = [];
+    const addDifference = (
+      token: string,
+      sourceCount: number,
+      targetCount: number,
+    ) =>
+      differences.push({
+        token,
+        sourceCount,
+        targetCount,
+        severity: tokenSeverity(
+          token,
+          sourceCount,
+          targetCount,
+          introducesMultiplePortraits,
+        ),
+      });
     for (const [token, count] of sourceTokens) {
-      if ((targetTokens.get(token) ?? 0) < count) {
-        const found = targetTokens.get(token) ?? 0;
-        issues.push({
-          ruleId: "token-missing",
-          severity: tokenSeverity(
-            token,
-            count,
-            found,
-            introducesMultiplePortraits,
-          ),
-          message: `Token count mismatch for ${describeToken(token)} (expected ${count}, found ${found})`,
-        });
-      }
+      const found = targetTokens.get(token) ?? 0;
+      if (found < count) addDifference(token, count, found);
     }
     for (const [token, count] of targetTokens) {
       // A translation may introduce gender grammar when the source has no
       // switch at all. Once source switches exist, keep exact shape counts so
       // a changed source block cannot be masked by an extra target block.
       if (!sourceHasGenderSwitch && isGenderSwitchShape(token)) continue;
-      if ((sourceTokens.get(token) ?? 0) < count) {
-        const expected = sourceTokens.get(token) ?? 0;
-        issues.push({
-          ruleId: "token-added",
-          severity: tokenSeverity(
-            token,
-            expected,
-            count,
-            introducesMultiplePortraits,
-          ),
-          message: `Token count mismatch for ${describeToken(token)} (expected ${expected}, found ${count})`,
-        });
-      }
+      const expected = sourceTokens.get(token) ?? 0;
+      if (expected < count) addDifference(token, expected, count);
+    }
+    for (const item of describeTokenIssue(differences, target)) {
+      issues.push({
+        ruleId: item.kind === "missing" ? "token-missing" : "token-added",
+        severity: item.severity,
+        message: item.message,
+      });
     }
     if (hasLoneSurrogate(target)) {
       issues.push({

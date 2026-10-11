@@ -170,14 +170,14 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
     let mut messages = Vec::new();
     let mut switch_damaged = false;
     if extra_openers > 0 && extra_closers <= 0 {
-        messages.push("A gender switch ${…^…}$ is missing its closing }$.".to_string());
+        messages.push("A he/she switch ${…^…}$ is missing its closing }$, so the game would show broken text.".to_string());
         switch_damaged = true;
     } else if extra_closers > 0 && extra_openers <= 0 {
-        messages.push("A gender switch ${…^…}$ is missing its opening ${.".to_string());
+        messages.push("A he/she switch ${…^…}$ is missing its opening ${, so the game would show broken text.".to_string());
         switch_damaged = true;
     } else if extra_openers > 0 && extra_closers > 0 {
         messages.push(
-            "A gender switch needs two or three variants separated by ^, like ${he^she}$."
+            "A he/she switch needs two or three variants separated by ^, like ${he^she}$."
                 .to_string(),
         );
         switch_damaged = true;

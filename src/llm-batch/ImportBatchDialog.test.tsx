@@ -87,7 +87,7 @@ describe("ImportBatchDialog", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Import file" }));
 
-    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path, false));
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path));
     expect(onClose).toHaveBeenCalledOnce();
   });
 
@@ -298,7 +298,7 @@ describe("ImportBatchDialog", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("imports token issues to Review only after an explicit opt-in", async () => {
+  it("never blocks on token issues and explains errors and harmless notes", async () => {
     const path = "C:\\Temp\\tokens.llm-result.json";
     const onImport = vi.fn().mockResolvedValue(undefined);
     renderDialog({
@@ -306,41 +306,70 @@ describe("ImportBatchDialog", () => {
       onImport,
       onPreflight: vi.fn().mockResolvedValue(
         preflight({
-          importable: 1,
+          importable: 2,
           protectedTokenIssues: [
             {
               relativeDir: "i18n",
               key: "greeting",
               importedText: "Hallo ${Er^Sie}",
               differences: [
-                { token: "${", sourceCount: 0, targetCount: 1 },
-                { token: "${^}$", sourceCount: 1, targetCount: 0 },
-                { token: "^", sourceCount: 0, targetCount: 1 },
+                {
+                  token: "${",
+                  sourceCount: 0,
+                  targetCount: 1,
+                  severity: "error",
+                },
+                {
+                  token: "${^}$",
+                  sourceCount: 1,
+                  targetCount: 0,
+                  severity: "warning",
+                },
+                {
+                  token: "^",
+                  sourceCount: 0,
+                  targetCount: 1,
+                  severity: "error",
+                },
+              ],
+            },
+            {
+              relativeDir: "i18n",
+              key: "portrait",
+              importedText: "Hallo$7",
+              differences: [
+                {
+                  token: "$7",
+                  sourceCount: 0,
+                  targetCount: 1,
+                  severity: "warning",
+                },
+                {
+                  token: "$8",
+                  sourceCount: 1,
+                  targetCount: 0,
+                  severity: "warning",
+                },
               ],
             },
           ],
-          ready: false,
-          blockingReason: "Protected tokens changed in: i18n · greeting.",
         }),
       ),
     });
 
-    expect(await screen.findByText("Import blocked")).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Protected tokens changed",
-    );
-    const importButton = screen.getByRole("button", { name: "Import file" });
-    expect(importButton).toBeDisabled();
+    expect(await screen.findByText("Ready to import")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 string has a token error/)).toBeVisible();
+    expect(
+      screen.getByText("1 with errors · 1 with harmless differences"),
+    ).toBeInTheDocument();
     expect(screen.getByText(/missing its closing \}\$/)).toBeInTheDocument();
     expect(screen.getByText("Import: Hallo ${Er^Sie}")).toBeInTheDocument();
+    expect(screen.getAllByText(/different face/)).toHaveLength(2);
 
-    fireEvent.click(
-      screen.getByRole("checkbox", { name: /with token issues to Review/ }),
-    );
+    const importButton = screen.getByRole("button", { name: "Import file" });
     expect(importButton).toBeEnabled();
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-
     fireEvent.click(importButton);
-    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path, true));
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path));
   });
 });

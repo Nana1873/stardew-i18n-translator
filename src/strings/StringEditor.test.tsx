@@ -487,7 +487,10 @@ describe("StringEditor", () => {
     rerender(
       <StringEditor
         {...props}
-        row={row({ source: "Hello [First.Token]", tokenMismatchAccepted: true })}
+        row={row({
+          source: "Hello [First.Token]",
+          tokenMismatchAccepted: true,
+        })}
       />,
     );
     fireEvent.change(input, { target: { value: "Hallo" } });
@@ -501,7 +504,10 @@ describe("StringEditor", () => {
     rerender(
       <StringEditor
         {...props}
-        row={row({ source: "Hello [Second.Token]", tokenMismatchAccepted: true })}
+        row={row({
+          source: "Hello [Second.Token]",
+          tokenMismatchAccepted: true,
+        })}
       />,
     );
     expect(
@@ -570,7 +576,7 @@ describe("StringEditor", () => {
 
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
-    expect(screen.getByText(/broken in game/)).toBeInTheDocument();
+    expect(screen.getByText(/would break the game/)).toBeInTheDocument();
     const saveAnyway = screen.getByRole("button", { name: "Save anyway" });
     const editor = saveAnyway.closest(".translator-editor")!;
     const nestedDialog = saveAnyway.closest(".translator-flow-dialog")!;
@@ -643,7 +649,7 @@ describe("StringEditor", () => {
 
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
-    expect(screen.getAllByText(/expected 0, found 1/)).not.toHaveLength(0);
+    expect(screen.getAllByText(/English 0, translation 1/)).not.toHaveLength(0);
   });
 
   it("shows an accepted token mismatch as a non-blocking warning", () => {

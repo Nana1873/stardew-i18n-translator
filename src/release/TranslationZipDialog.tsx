@@ -87,7 +87,9 @@ export function TranslationZipDialog({
         : "",
     [preview, version, combined],
   );
-  const blocked = Boolean(preview?.problems.length) || Boolean(folderError);
+  // Strings with token errors are left out of the ZIP (English in game); they
+  // never block building the rest.
+  const blocked = Boolean(folderError);
   const empty = preview?.entries.length === 0;
   const hasVersionConflicts =
     !combined && Boolean(preview?.versionConflicts.length);
@@ -202,20 +204,23 @@ export function TranslationZipDialog({
 
               {preview.problems.length > 0 && (
                 <>
-                  <div
-                    className="translator-flow-callout is-error"
-                    role="alert"
-                  >
-                    <strong>ZIP blocked:</strong> {preview.problems.length}{" "}
-                    {preview.problems.length === 1
-                      ? "problem must"
-                      : "problems must"}{" "}
-                    be fixed or explicitly accepted. No partial archive will be
-                    written.
+                  <div className="translator-flow-callout is-warning">
+                    <strong>
+                      {preview.problems.length}{" "}
+                      {preview.problems.length === 1
+                        ? "string stays"
+                        : "strings stay"}{" "}
+                      in English:
+                    </strong>{" "}
+                    {preview.problems.length === 1 ? "it has" : "they have"} a
+                    token error that would break the game, so the ZIP leaves{" "}
+                    {preview.problems.length === 1 ? "it" : "them"} out. Fix{" "}
+                    {preview.problems.length === 1 ? "it" : "them"} in the
+                    editor, or use Save anyway if the change is intended.
                   </div>
                   <ul
                     className="translator-flow-list"
-                    aria-label="Blocking ZIP problems"
+                    aria-label="Strings left out of the ZIP"
                   >
                     {preview.problems.map((problem) => (
                       <li

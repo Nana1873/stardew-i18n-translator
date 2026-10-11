@@ -71,7 +71,6 @@ const exportData: ResultTrayData = {
     totalOutdated: 0,
     totalReviewNeeded: 0,
     totalOrphanKeys: 0,
-    blocked: true,
   },
   problems: [problem],
 };
@@ -128,7 +127,7 @@ describe("ResultTray", () => {
     expect(container.querySelector(".translator-result-head")).not.toBeNull();
     expect(container.querySelector(".translator-result-body")).not.toBeNull();
     expect(container.querySelector(".translator-result-status")).toHaveClass(
-      "is-error",
+      "is-warning",
     );
 
     fireEvent.click(screen.getByRole("button", { name: /i18n \/ greeting/ }));
@@ -188,7 +187,7 @@ describe("ResultTray", () => {
     expect(screen.getByRole("button", { name: "Retry export" })).toBeVisible();
   });
 
-  it("shows retry only for a failed or blocked operation", () => {
+  it("offers to export again while strings were left out", () => {
     const retry = vi.fn();
     const { rerender } = renderTray(exportData, { onRetry: retry });
     fireEvent.click(
@@ -294,7 +293,6 @@ describe("ResultTray", () => {
           totalOutdated: count,
           totalReviewNeeded: count,
           totalOrphanKeys: count,
-          blocked: false,
         },
         problems: [],
       });
@@ -514,7 +512,7 @@ describe("ResultTray", () => {
           skippedTranslated: 2,
           unmatched: 1,
           identicalToSource: 1,
-          importedWithTokenIssues: 0,
+          importedWithTokenErrors: 0,
           totalInFile: 21,
         },
         problems: [],

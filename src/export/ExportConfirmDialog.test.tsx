@@ -70,20 +70,25 @@ describe("JSON export confirmation", () => {
     ).toBeVisible();
     expect(screen.queryByText(/Ready to export/)).toBeNull();
   });
-  it("blocks writing and exposes the actual blocking string", () => {
+  it("exports everything else and names the strings that stay English", () => {
     const props = show({
-      blockingProblem: {
-        key: "status.saved",
-        reason: "is missing {{saveName}}",
-      },
+      omitted: [
+        {
+          key: "status.saved",
+          reason: "# is missing (English 1, translation 0).",
+        },
+      ],
       acceptedMismatches: 1,
       onInspectProblem: vi.fn(),
     });
-    expect(screen.getByRole("button", { name: "Export JSON" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("status.saved");
+    expect(screen.queryByRole("alert")).toBeNull();
+    const omitted = screen.getByLabelText("Strings left out of the export");
+    expect(omitted).toHaveTextContent("1 string stays in English");
+    expect(omitted).toHaveTextContent("status.saved");
     fireEvent.click(screen.getByRole("button", { name: "Open string" }));
     expect(props.onInspectProblem).toHaveBeenCalledOnce();
-    expect(props.onConfirm).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    expect(props.onConfirm).toHaveBeenCalledOnce();
   });
   it("calls only the selected action", () => {
     const props = show();

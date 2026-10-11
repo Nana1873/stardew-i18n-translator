@@ -1341,7 +1341,7 @@ describe("StringTable workbench", () => {
     await screen.findByText("token");
 
     const validation = screen.getByRole("button", {
-      name: /Token count mismatch for.*\[FarmName\]/i,
+      name: /\[FarmName\] is missing/i,
     });
     expect(validation).toHaveClass("translator-inline-validation");
     fireEvent.click(validation);
@@ -1412,45 +1412,45 @@ describe("StringTable workbench", () => {
     await screen.findByText("warning");
 
     const warning = within(rowFor("warning")).getByRole("button", {
-      name: /^Warning: does not block export\./,
+      name: /^Note: harmless difference, exported normally\./,
     });
     const error = within(rowFor("error")).getByRole("button", {
-      name: /^Error: blocks export\./,
+      name: /^Error: export leaves this string out/,
     });
     expect(warning).toHaveAttribute("data-severity", "warning");
     expect(error).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("mixed")).getByRole("button", {
-        name: /^Error: blocks export\./,
+        name: /^Error: export leaves this string out/,
       }),
     ).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("accepted")).getByRole("button", {
-        name: /^Accepted token mismatch: export allowed\./,
+        name: /^Accepted token mismatch: exported as written\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
     expect(
       within(rowFor("accepted-with-invalid-text")).getByRole("button", {
-        name: /^Error: blocks export\. Token mismatch explicitly accepted; other errors remain\./,
+        name: /^Error: export leaves this string out \(English in game\) until it is fixed\. Token mismatch explicitly accepted; other errors remain\./,
       }),
     ).toHaveAttribute("data-severity", "error");
 
     fireEvent.focus(warning);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Warning: does not block export. Literal escape sequences differ from the original",
+      "Note: harmless difference, exported normally. Literal escape sequences differ from the original",
     );
     fireEvent.blur(warning);
     fireEvent.focus(error);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Error: blocks export. Token count mismatch",
+      "Error: export leaves this string out (English in game) until it is fixed. [FarmName] is missing",
     );
     fireEvent.blur(error);
     const accepted = within(rowFor("accepted")).getByRole("button", {
-      name: /^Accepted token mismatch: export allowed\./,
+      name: /^Accepted token mismatch: exported as written\./,
     });
     fireEvent.focus(accepted);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Accepted token mismatch: export allowed. Token count mismatch",
+      "Accepted token mismatch: exported as written. [FarmName] is missing",
     );
     expect(screen.getByRole("tooltip")).toHaveTextContent(
       "Literal escape sequences differ from the original",
@@ -1508,7 +1508,7 @@ describe("StringTable workbench", () => {
     expect(issues).toBeEnabled();
     expect(
       within(rowFor("token")).getByRole("button", {
-        name: /^Accepted token mismatch: export allowed\./,
+        name: /^Accepted token mismatch: exported as written\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
     fireEvent.click(issues);
@@ -3252,7 +3252,7 @@ describe("StringTable workbench", () => {
     expect(actionHeader).toHaveStyle({ gridColumn: "-2 / -1" });
 
     const issueControl = screen.getAllByRole("button", {
-      name: /Token count mismatch for.*\[FarmName\]/i,
+      name: /\[FarmName\] is missing/i,
     })[0];
     const tokenRow = issueControl.closest<HTMLElement>(".stringrow--data");
     if (!tokenRow) throw new Error("Missing row for validation control");

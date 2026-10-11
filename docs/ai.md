@@ -191,7 +191,8 @@ and [llm.rs](../src-tauri/src/llm.rs).
   HTTP-status, client-setup, cancellation, stale-state, and save failures stop
   remaining work. An error after a save is reported as completed with issues;
   before any save it is a failure. Missing, unexpected, or duplicated protected
-  tokens trigger one targeted retry with the source's exact token counts. The
+  tokens that would break the game trigger one targeted retry with the source's
+  exact token counts; harmless differences such as portrait changes do not. The
   retry replaces the first draft only when it reduces count errors without
   worsening another token. Unresolved mismatches remain visible in Review.
 - If a Local AI response is a valid JSON-encoded string, the client decodes one
@@ -220,8 +221,8 @@ and [llm.rs](../src-tauri/src/llm.rs).
   Correct inflections and compounds may stay unchanged.
 - A failed full review preserves structurally valid drafts after bounded recovery;
   oversized review leaves its chunk incomplete. Failed focused
-  terminology repair retains the fully reviewed text. Remaining protected-token
-  mismatches receive one targeted ChatGPT repair when the prompt fits; oversized
+  terminology repair retains the fully reviewed text. Remaining game-breaking
+  protected-token errors receive one targeted ChatGPT repair when the prompt fits; oversized
   repair inputs skip the extra call. Unresolved mismatches remain visible in
   Review with blocking validation. Disabling quality skips these extra ChatGPT
   review/repair calls, never validation or Review status.

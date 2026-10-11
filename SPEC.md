@@ -91,14 +91,27 @@ can be exported, with their counts shown in the export confirmation.
 ## Validation and Export
 
 Validation protects runtime-sensitive SMAPI, Content Patcher, dialogue, mail,
-placeholder, and formatting tokens. Missing or added protected values block
-export by default. **Save anyway** accepts a particular source/target mismatch
-for direct export and ZIP creation; editing the target or changing the source
-invalidates that acceptance.
+placeholder, and formatting tokens. Each count difference is an **error** or a
+**warning**, verified against the Stardew 1.6 dialogue, mail, and token parsers:
+
+- Errors break the game: a damaged gender switch (`${` or `}$` missing), a
+  changed `^`, `#`, or `#$b#` page structure, dialogue commands such as `$q`,
+  `$r`, `$y`, `$p`, `$d`, `$c`, `$k`, `$action`, event commands `%fork` and
+  `%revealtaste`, single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
+  item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
+  a second portrait command on one dialogue page.
+- Warnings are cosmetic or legitimate translation choices: portrait changes
+  (a missing index falls back to portrait 0), a cleanly removed or reshaped
+  gender switch, `@`, and a dropped placeholder or `[ArticleFor]`.
+
+Warnings never block. An unaccepted error leaves only that string out of direct
+export and ZIP creation, so SMAPI shows its English source; every other value is
+still written. **Save anyway** accepts a particular source/target mismatch;
+editing the target or changing the source invalidates that acceptance.
 Accepted token mismatches remain visible in Issues with a yellow warning icon
-and a tooltip identifying the acceptance and export permission. Ordinary
-non-blocking warnings also use yellow; unresolved export blockers use red.
-Acceptance does not change a Done row's workflow status or waive other errors.
+and a tooltip identifying the acceptance. Ordinary warnings also use yellow;
+unresolved errors use red. Acceptance does not change a Done row's workflow
+status or waive other errors.
 
 Literal-escape differences are non-blocking warnings. Ordinary quote punctuation
 and physical newline-count differences are ignored. Identical non-empty source
@@ -110,12 +123,13 @@ exercise the same extraction rules in TypeScript and Rust.
 
 Export is explicit and applies to the current mod or all scanned mods:
 
-- Omit empty targets so SMAPI falls back to `default.json`. Non-empty Done,
-  Review, and Changed values are included when validation permits them. A
-  target file left with no non-empty values is backed up and removed.
+- Omit empty targets and strings with unaccepted token errors so SMAPI falls
+  back to `default.json`. Non-empty Done, Review, and Changed values are
+  included otherwise. A target file left with no non-empty values is backed up
+  and removed.
 - Before direct-export confirmation, run a read-only preflight across the
-  complete selected scope. Report blocking keys and accepted mismatches without
-  creating files, backups, or operation-history entries.
+  complete selected scope. Report strings that will stay English and accepted
+  mismatches without creating files, backups, or operation-history entries.
 - Resolve current components and file paths again, authorize paths, and validate
   the complete scope before writing. UI paths and preflight results are not
   authorization tokens.
@@ -167,9 +181,10 @@ are rejected without changes.
 
 Import skips empty values and preserves every non-empty local target, including
 Changed text. It validates all values eligible for import before the first
-state write. Accepted values enter Review; token errors block the import unless
-the user explicitly opts in to import those values to Review as well. Export of
-that mod stays blocked until they are fixed or accepted in the editor.
+state write. Accepted values enter Review. Token differences never block an
+import: the preflight lists each affected string with plain-language errors and
+warnings and the imported text, and export leaves out strings with errors until
+they are fixed or accepted.
 
 ## Optional Glossary and AI
 

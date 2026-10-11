@@ -8,17 +8,34 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
-## [2.3.1] - 2026-10-11
+## [2.4.0] - 2026-10-11
 
 ### Changed
 
-- **Import LLM batch** no longer forces an all-or-nothing import when only a few
-  strings have protected-token issues. After an explicit opt-in, those strings
-  are imported to Review as well; export of that mod stays blocked until they
-  are fixed or accepted in the editor.
-- Protected-token issues in the import dialog are explained in plain language,
-  such as a gender switch missing its closing `}$`, and show the imported text.
+- Protected-token checks now separate **errors** that would break the game from
+  harmless **warnings**, verified against the Stardew 1.6 dialogue, mail, and
+  token parsers. Changed portraits such as `$8` to `$7`, a cleanly removed
+  he/she variant `${...^...}$`, `@`, and a dropped placeholder are warnings and
+  never block.
+- Export and translation ZIPs no longer block a whole mod. Strings with token
+  errors are left out, so the game shows their English text, and every other
+  translation is written. The export confirmation names the strings that stay
+  English and opens them in the editor.
+- **Import LLM batch** never blocks on token differences. Every value goes to
+  Review, and the preflight lists errors and harmless differences per string
+  with the imported text.
+- Token findings are explained in plain language in the editor, Issues, import,
+  export, and ZIP results, for example a he/she switch missing its closing `}$`.
   Full-width look-alikes such as `＄｛｝＾` are pointed out.
+- Local AI and ChatGPT retry or repair only token errors, so harmless
+  differences no longer cost an extra request.
+
+### Fixed
+
+- Single `{` or `}`, `%fork`, and `%revealtaste` are now protected; the game
+  treats them as commands and would hide text or lose event logic.
+- `$s`, `$u`, `$l`, and `$a` directly before capitalized text are recognized as
+  portraits, like `$h`.
 
 ## [2.3.0] - 2026-10-06
 
@@ -566,8 +583,8 @@ Initial portable Windows release: mod scanning, the string table/editor with
 validation, protected-token handling, local-AI translation, external LLM batch
 export/import, optional glossary, and clean UTF-8 `i18n` export with backups.
 
-[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.1...HEAD
-[2.3.1]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.0...v2.3.1
+[Unreleased]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.4.0...HEAD
+[2.4.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.3.0...v2.4.0
 [2.3.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.2.0...v2.3.0
 [2.2.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.1.0...v2.2.0
 [2.1.0]: https://github.com/Nana1873/stardew-i18n-translator/compare/v2.0.3...v2.1.0

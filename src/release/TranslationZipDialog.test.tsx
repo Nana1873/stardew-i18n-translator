@@ -190,7 +190,7 @@ describe("TranslationZipDialog", () => {
     expect(build).toBeEnabled();
   });
 
-  it("blocks creation and links validation problems", () => {
+  it("builds without the strings that stay English and links them", () => {
     const inspect = vi.fn();
     const problem = {
       modUniqueId: "sample.cp",
@@ -201,7 +201,7 @@ describe("TranslationZipDialog", () => {
     };
     render(
       <TranslationZipDialog
-        preview={{ ...PREVIEW, problems: [problem] }}
+        preview={{ ...PREVIEW, versionConflicts: [], problems: [problem] }}
         componentCount={2}
         error={null}
         building={false}
@@ -210,7 +210,8 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeDisabled();
+    expect(screen.getByText(/1 string stays in English/)).toBeVisible();
+    expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
     expect(inspect).toHaveBeenCalledWith(problem);
   });
