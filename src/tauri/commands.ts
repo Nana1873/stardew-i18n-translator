@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { ShortcutSettings } from "../shortcuts";
+import type { TokenSeverity } from "../strings/protectedTokens";
 
 export const CLOUD_ENGINE_ID = "chatgpt";
 export const CLOUD_ENGINE_LABEL = "ChatGPT";
@@ -291,8 +292,7 @@ export type OperationKind =
   | "batch-undo"
   | "ai";
 
-export type OperationOutcome =
-  "success" | "warning" | "cancelled" | "blocked" | "failed";
+export type OperationOutcome = "success" | "warning" | "cancelled" | "failed";
 
 export interface OperationDetail {
   label: string;
@@ -376,6 +376,8 @@ export interface ExportFileResult {
 
 export interface ExportResult {
   files: ExportFileResult[];
+  /** Strings left out because of game-breaking token errors; the game shows
+   * their English source until they are fixed or accepted. */
   skipped: SkippedKey[];
   filesWritten: number;
   /** Target files removed because every translation was cleared. */
@@ -385,8 +387,6 @@ export interface ExportResult {
   totalOutdated: number;
   totalReviewNeeded: number;
   totalOrphanKeys: number;
-  /** Token errors prevented every file in this mod from being written. */
-  blocked: boolean;
 }
 
 export function exportMod(
@@ -413,7 +413,8 @@ export interface ExportPreflightProblem {
 
 export interface ExportPreflight {
   acceptedMismatches: number;
-  blockingProblem: ExportPreflightProblem | null;
+  /** Strings the export will leave out because of game-breaking token errors. */
+  omitted: ExportPreflightProblem[];
 }
 
 /** Validate the exact selected export scope without changing any files. */
@@ -439,8 +440,6 @@ export interface ExportAllResult {
   totalOutdated: number;
   totalReviewNeeded: number;
   totalOrphanKeys: number;
-  /** At least one mod blocked the complete transaction before any write. */
-  blocked: boolean;
 }
 
 export function exportAllMods(
@@ -625,6 +624,9 @@ export interface LlmImportSummary {
   unmatched: number;
   /** Imported, but identical to the English source. */
   identicalToSource: number;
+  /** Included in `imported` despite game-breaking token errors; export
+   * leaves them out until they are fixed or accepted. */
+  importedWithTokenErrors: number;
   totalInFile: number;
 }
 
@@ -632,11 +634,14 @@ export interface LlmImportTokenDifference {
   token: string;
   sourceCount: number;
   targetCount: number;
+  severity: TokenSeverity;
 }
 
 export interface LlmImportTokenIssue {
   relativeDir: string;
   key: string;
+  /** The supplied translation, so the user can see what changed. */
+  importedText: string;
   differences: LlmImportTokenDifference[];
 }
 
@@ -820,6 +825,7 @@ export interface AiTokenDifference {
   token: string;
   sourceCount: number;
   targetCount: number;
+  severity: TokenSeverity;
 }
 
 export interface AiSuggestion {

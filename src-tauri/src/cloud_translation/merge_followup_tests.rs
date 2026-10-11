@@ -40,17 +40,17 @@ fn merged_text(source: &str, previous: &str, candidate: &str) -> String {
         .text
 }
 
-const TWO_ZEROS: &str = "{0} gave {0} coins.";
+const TWO_ZEROS: &str = "[128] gave [128] coins.";
 
 #[test]
 fn clean_followup_is_accepted_and_new_damage_is_rejected() {
     let items = vec![
-        item("item-0000", "Hello, {{name}}."),
-        item("item-0001", "You have {0} coins."),
+        item("item-0000", "Hello, [FarmName]."),
+        item("item-0001", "You have [128] coins."),
     ];
     let previous = vec![
-        translation("item-0000", "Hallo, {{name}}."),
-        translation("item-0001", "Du hast {0} Münzen."),
+        translation("item-0000", "Hallo, [FarmName]."),
+        translation("item-0001", "Du hast [128] Münzen."),
     ];
 
     let merged = merge_followup(
@@ -58,55 +58,63 @@ fn clean_followup_is_accepted_and_new_damage_is_rejected() {
         &previous,
         vec![
             translation("item-0000", "Hallo, Bauer."),
-            translation("item-0001", "Du besitzt {0} Münzen."),
+            translation("item-0001", "Du besitzt [128] Münzen."),
         ],
     );
 
     assert_eq!(merged[0], previous[0]);
-    assert_eq!(merged[1].text, "Du besitzt {0} Münzen.");
+    assert_eq!(merged[1].text, "Du besitzt [128] Münzen.");
 }
 
 #[test]
 fn multi_occurrence_token_losing_its_last_occurrence_is_rejected() {
-    // Source 2x {0}, previous 1x, candidate 0x: the count gets worse.
+    // Source 2x [128], previous 1x, candidate 0x: the count gets worse.
     assert_eq!(
-        merged_text(TWO_ZEROS, "{0} gab Münzen.", "Er gab Münzen."),
-        "{0} gab Münzen."
+        merged_text(TWO_ZEROS, "[128] gab Münzen.", "Er gab Münzen."),
+        "[128] gab Münzen."
     );
 }
 
 #[test]
 fn multi_occurrence_token_overshooting_further_is_rejected() {
-    // Source 2x {0}. Previous 1x (distance 1), candidate 4x (distance 2).
+    // Source 2x [128]. Previous 1x (distance 1), candidate 4x (distance 2).
     assert_eq!(
-        merged_text(TWO_ZEROS, "{0} gab Münzen.", "{0} gab {0} {0} {0} Münzen."),
-        "{0} gab Münzen."
+        merged_text(
+            TWO_ZEROS,
+            "[128] gab Münzen.",
+            "[128] gab [128] [128] [128] Münzen."
+        ),
+        "[128] gab Münzen."
     );
     // Previous 3x (distance 1), candidate 4x (distance 2).
     assert_eq!(
         merged_text(
             TWO_ZEROS,
-            "{0} gab {0} {0} Münzen.",
-            "{0} {0} gab {0} {0} Münzen."
+            "[128] gab [128] [128] Münzen.",
+            "[128] [128] gab [128] [128] Münzen."
         ),
-        "{0} gab {0} {0} Münzen."
+        "[128] gab [128] [128] Münzen."
     );
     // Previous 1x and candidate 3x are equally far from 2x: not worse.
     assert_eq!(
-        merged_text(TWO_ZEROS, "{0} gab Münzen.", "{0} gab {0} {0} Münzen."),
-        "{0} gab {0} {0} Münzen."
+        merged_text(
+            TWO_ZEROS,
+            "[128] gab Münzen.",
+            "[128] gab [128] [128] Münzen."
+        ),
+        "[128] gab [128] [128] Münzen."
     );
 }
 
 #[test]
 fn new_foreign_token_is_rejected_unless_previous_had_as_many() {
     assert_eq!(
-        merged_text("Hello.", "Hallo.", "Hallo, {{name}}."),
+        merged_text("Hello.", "Hallo.", "Hallo, [FarmName]."),
         "Hallo."
     );
     assert_eq!(
-        merged_text("Hello.", "Hallo, {{name}}.", "Hallo du, {{name}}."),
-        "Hallo du, {{name}}."
+        merged_text("Hello.", "Hallo, [FarmName].", "Hallo du, [FarmName]."),
+        "Hallo du, [FarmName]."
     );
 }
 
@@ -114,17 +122,17 @@ fn new_foreign_token_is_rejected_unless_previous_had_as_many() {
 fn followup_that_improves_or_keeps_a_miscount_is_accepted() {
     // Improves: 1x -> 2x matches the source.
     assert_eq!(
-        merged_text(TWO_ZEROS, "{0} gab Münzen.", "{0} gab {0} Münzen."),
-        "{0} gab {0} Münzen."
+        merged_text(TWO_ZEROS, "[128] gab Münzen.", "[128] gab [128] Münzen."),
+        "[128] gab [128] Münzen."
     );
     // Keeps: still 1x, other wording.
     assert_eq!(
-        merged_text(TWO_ZEROS, "{0} gab Münzen.", "{0} schenkte Münzen."),
-        "{0} schenkte Münzen."
+        merged_text(TWO_ZEROS, "[128] gab Münzen.", "[128] schenkte Münzen."),
+        "[128] schenkte Münzen."
     );
     // Keeps an existing missing token.
     assert_eq!(
-        merged_text("Hello, {{name}}.", "Hallo.", "Hallo zusammen."),
+        merged_text("Hello, [FarmName].", "Hallo.", "Hallo zusammen."),
         "Hallo zusammen."
     );
 }

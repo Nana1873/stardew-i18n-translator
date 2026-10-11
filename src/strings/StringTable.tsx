@@ -3409,10 +3409,10 @@ function RowView({
     );
   const issueSummary =
     severity === "error"
-      ? `Error: blocks export.${acceptedTokenMismatch ? " Token mismatch explicitly accepted; other errors remain." : ""}`
+      ? `Error: export leaves this string out (English in game) until it is fixed.${acceptedTokenMismatch ? " Token mismatch explicitly accepted; other errors remain." : ""}`
       : acceptedTokenMismatch
-        ? "Accepted token mismatch: export allowed."
-        : "Warning: does not block export.";
+        ? "Accepted token mismatch: exported as written."
+        : "Note: harmless difference, exported normally.";
   const issueHelp = severity
     ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";

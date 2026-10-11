@@ -297,4 +297,79 @@ describe("ImportBatchDialog", () => {
       screen.queryByRole("button", { name: "Switch to matching mod" }),
     ).not.toBeInTheDocument();
   });
+
+  it("never blocks on token issues and explains errors and harmless notes", async () => {
+    const path = "C:\\Temp\\tokens.llm-result.json";
+    const onImport = vi.fn().mockResolvedValue(undefined);
+    renderDialog({
+      initialPath: path,
+      onImport,
+      onPreflight: vi.fn().mockResolvedValue(
+        preflight({
+          importable: 2,
+          protectedTokenIssues: [
+            {
+              relativeDir: "i18n",
+              key: "greeting",
+              importedText: "Hallo ${Er^Sie}",
+              differences: [
+                {
+                  token: "${",
+                  sourceCount: 0,
+                  targetCount: 1,
+                  severity: "error",
+                },
+                {
+                  token: "${^}$",
+                  sourceCount: 1,
+                  targetCount: 0,
+                  severity: "warning",
+                },
+                {
+                  token: "^",
+                  sourceCount: 0,
+                  targetCount: 1,
+                  severity: "error",
+                },
+              ],
+            },
+            {
+              relativeDir: "i18n",
+              key: "portrait",
+              importedText: "Hallo$7",
+              differences: [
+                {
+                  token: "$7",
+                  sourceCount: 0,
+                  targetCount: 1,
+                  severity: "warning",
+                },
+                {
+                  token: "$8",
+                  sourceCount: 1,
+                  targetCount: 0,
+                  severity: "warning",
+                },
+              ],
+            },
+          ],
+        }),
+      ),
+    });
+
+    expect(await screen.findByText("Ready to import")).toBeVisible();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText(/1 string has a token error/)).toBeVisible();
+    expect(
+      screen.getByText("1 with errors · 1 with harmless differences"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/missing its closing \}\$/)).toBeInTheDocument();
+    expect(screen.getByText("Import: Hallo ${Er^Sie}")).toBeInTheDocument();
+    expect(screen.getAllByText(/different face/)).toHaveLength(2);
+
+    const importButton = screen.getByRole("button", { name: "Import file" });
+    expect(importButton).toBeEnabled();
+    fireEvent.click(importButton);
+    await waitFor(() => expect(onImport).toHaveBeenCalledWith(path));
+  });
 });

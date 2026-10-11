@@ -1250,7 +1250,8 @@ export function StringEditor({
                     className="translator-kicker"
                     id="translator-save-anyway-description"
                   >
-                    This translation may appear incomplete or broken in game.
+                    This would break the game. Without Save anyway, export
+                    leaves this string out and the game shows the English text.
                   </div>
                 </div>
                 <button

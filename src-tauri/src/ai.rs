@@ -246,6 +246,7 @@ pub struct AiTokenDifference {
     pub token: String,
     pub source_count: usize,
     pub target_count: usize,
+    pub severity: tokens::Severity,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -955,6 +956,7 @@ pub(crate) fn suggestions(
                     token: difference.token,
                     source_count: difference.source_count,
                     target_count: difference.target_count,
+                    severity: difference.severity,
                 })
                 .collect(),
             glossary_misses: llm::glossary_misses(&translation.text, &item.glossary_pairs),

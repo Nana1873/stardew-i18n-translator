@@ -2,7 +2,9 @@ import { ExportConfirmBody } from "./ExportConfirmBody";
 import { useRef } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 
-export interface ExportBlockingProblem {
+/** A string the export leaves out because of a game-breaking token error. */
+export interface ExportOmittedString {
+  relativeDir: string;
   key: string;
   reason: string;
 }
@@ -26,9 +28,11 @@ interface ExportConfirmDialogProps {
   existingTargetPaths?: string[];
   /** Real new target paths from the selected scanned i18n components. */
   newTargetPaths?: string[];
-  blockingProblem?: ExportBlockingProblem | null;
+  /** Strings left out of the export; the game shows their English source. */
+  omitted?: ExportOmittedString[];
   /** True only when the caller has validated the complete selected scope. */
   blockingValidationAvailable?: boolean;
+  /** Opens the first omitted string in the editor. */
   onInspectProblem?: () => void;
   /** Current-session value only; no history is invented. */
   lastExportLabel?: string | null;
@@ -50,7 +54,7 @@ export function ExportConfirmDialog({
   acceptedMismatches = null,
   existingTargetPaths = [],
   newTargetPaths = [],
-  blockingProblem = null,
+  omitted = [],
   blockingValidationAvailable = false,
   onInspectProblem,
   lastExportLabel = null,
@@ -77,7 +81,7 @@ export function ExportConfirmDialog({
       acceptedMismatches={acceptedMismatches}
       existingTargetPaths={existingTargetPaths}
       newTargetPaths={newTargetPaths}
-      blockingProblem={blockingProblem}
+      omitted={omitted}
       blockingValidationAvailable={blockingValidationAvailable}
       onInspectProblem={onInspectProblem}
       lastExportLabel={lastExportLabel}

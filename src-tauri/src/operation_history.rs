@@ -40,7 +40,6 @@ pub enum OperationOutcome {
     Success,
     Warning,
     Cancelled,
-    Blocked,
     Failed,
 }
 

@@ -43,7 +43,7 @@ vi.mock("@tauri-apps/api/core", () => ({
         (value) =>
           value ?? {
             acceptedMismatches: 0,
-            blockingProblem: null,
+            omitted: [],
           },
       );
     }
@@ -323,7 +323,6 @@ const EXPORT_RESULT = {
   totalOutdated: 0,
   totalReviewNeeded: 0,
   totalOrphanKeys: 0,
-  blocked: false,
 };
 
 function exportScan(targetExists: boolean): ScanResult {
@@ -392,7 +391,7 @@ function mockExportConfigured(
   targetExists: boolean,
   preflight: ExportPreflight = {
     acceptedMismatches: 0,
-    blockingProblem: null,
+    omitted: [],
   },
 ) {
   invokeMock.mockImplementation((cmd: string) => {
@@ -1035,7 +1034,7 @@ describe("App shell", () => {
     ).toHaveLength(1);
 
     act(() => {
-      preflight.resolve({ acceptedMismatches: 0, blockingProblem: null });
+      preflight.resolve({ acceptedMismatches: 0, omitted: [] });
     });
     expect(
       await screen.findByRole("dialog", { name: "Confirm export overwrite" }),
@@ -1053,7 +1052,7 @@ describe("App shell", () => {
       if (cmd === "preview_export")
         return Promise.resolve({
           acceptedMismatches: 0,
-          blockingProblem: null,
+          omitted: [],
         });
       if (cmd === "export_mod") return exported.promise;
       return Promise.resolve(null);
@@ -1163,7 +1162,7 @@ describe("App shell", () => {
   it("shows the complete preflight for a new target and reopens the latest result", async () => {
     mockExportConfigured(false, {
       acceptedMismatches: 2,
-      blockingProblem: null,
+      omitted: [],
     });
     render(<App />);
     openWorkspace();
@@ -1309,13 +1308,15 @@ describe("App shell", () => {
       if (cmd === "preview_export")
         return Promise.resolve({
           acceptedMismatches: 0,
-          blockingProblem: {
-            modUniqueId: "a.b",
-            modName: "Test Mod",
-            relativeDir: "i18n",
-            key: "greeting",
-            reason: "Missing protected token: {{name}}",
-          },
+          omitted: [
+            {
+              modUniqueId: "a.b",
+              modName: "Test Mod",
+              relativeDir: "i18n",
+              key: "greeting",
+              reason: "#$b# is missing (English 1, translation 0).",
+            },
+          ],
         });
       return Promise.resolve(null);
     });
@@ -1338,12 +1339,14 @@ describe("App shell", () => {
       name: "Confirm export overwrite",
     });
 
-    expect(preflight).toHaveTextContent("Export blocked");
+    expect(preflight).toHaveTextContent("1 string stays in English");
     expect(preflight).toHaveTextContent("greeting");
-    expect(preflight).toHaveTextContent("Missing protected token: {{name}}");
+    expect(preflight).toHaveTextContent(
+      "#$b# is missing (English 1, translation 0).",
+    );
     expect(
       within(preflight).getByRole("button", { name: "Export JSON" }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     fireEvent.click(
       within(preflight).getByRole("button", { name: "Open string" }),
     );
@@ -1536,7 +1539,6 @@ describe("App shell", () => {
           totalOutdated: 0,
           totalReviewNeeded: 0,
           totalOrphanKeys: 0,
-          blocked: false,
         });
       }
       return Promise.resolve(null);
@@ -2747,12 +2749,11 @@ describe("App shell", () => {
         {
           relativeDir: "i18n",
           key: "greeting",
-          reason: "Missing protected token: {{name}}",
+          reason: "#$b# is missing (English 1, translation 0).",
         },
       ],
       filesWritten: 0,
       totalWrittenKeys: 0,
-      blocked: true,
     };
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
@@ -2762,7 +2763,7 @@ describe("App shell", () => {
         return Promise.resolve([
           {
             key: "greeting",
-            source: "Hello {{name}}",
+            source: "Hello#$b#there",
             target: "Hallo",
             targetPresent: true,
             status: "translated",
@@ -2780,7 +2781,7 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
 
     const tray = await inspectLatestResult();
-    expect(tray).toHaveTextContent("Export blocked");
+    expect(tray).toHaveTextContent("left out because of token errors");
     expect(tray).toHaveTextContent("greeting");
     fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
     expect(
@@ -3468,7 +3469,7 @@ describe("App shell", () => {
     expect(screen.queryByText("broken.key")).toBeNull();
     chooseToolbarAction("File actions", "Translation ZIP · current mod");
     const problems = await screen.findByRole("list", {
-      name: "Blocking ZIP problems",
+      name: "Strings left out of the ZIP",
     });
     expect(problems).toHaveTextContent("broken.key");
     fireEvent.click(
@@ -4075,6 +4076,7 @@ describe("App shell", () => {
       skippedTranslated: 0,
       unmatched: 0,
       identicalToSource: 0,
+      importedWithTokenErrors: 0,
       totalInFile: 1,
     };
     invokeMock.mockImplementation((cmd: string) => {

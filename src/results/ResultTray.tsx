@@ -169,9 +169,7 @@ function presentationFor(
           ? `${entry.title} · warnings`
           : entry.outcome === "cancelled"
             ? `${entry.title} · cancelled`
-            : entry.outcome === "blocked"
-              ? `${entry.title} · blocked`
-              : `${entry.title} · failed`;
+            : `${entry.title} · failed`;
     const pathDetails: ResultPath[] = [
       ...(entry.fileName ? [{ label: "File name", path: entry.fileName }] : []),
       ...(entry.path ? [{ label: "Path", path: entry.path }] : []),
@@ -209,11 +207,9 @@ function presentationFor(
     const changedFiles = exportResult
       ? exportResult.filesWritten + exportResult.filesRemoved
       : 0;
-    const blocked = Boolean(exportResult?.blocked || unresolved.length > 0);
-    const ready =
-      Boolean(exportResult?.blocked) &&
-      data.problems.length > 0 &&
-      unresolved.length === 0;
+    // Strings with token errors were left out (English in game). Once every
+    // one is fixed or accepted, exporting again includes them.
+    const ready = data.problems.length > 0 && unresolved.length === 0;
     const notices: ResultNotice[] = [];
     if (exportResult) {
       if (exportResult.totalUntranslated > 0)
@@ -257,11 +253,22 @@ function presentationFor(
             " removed from output and retained in backups.",
           tone: "warning",
         });
+      if (exportResult.skipped.length > 0)
+        notices.push({
+          text:
+            exportResult.skipped.length +
+            " " +
+            plural(exportResult.skipped.length, "string") +
+            " left out because of token errors; the game shows the English text until " +
+            (exportResult.skipped.length === 1 ? "it is" : "they are") +
+            " fixed or accepted.",
+          tone: "warning",
+        });
       for (const skipped of exportResult.skipped)
         notices.push({
           text:
             skipped.relativeDir + " / " + skipped.key + ": " + skipped.reason,
-          tone: "error",
+          tone: "warning",
         });
     }
     const paths =
@@ -280,7 +287,7 @@ function presentationFor(
           path: file.targetPath,
         })) ?? [];
     const copy = exportResult
-      ? blocked && changedFiles === 0
+      ? changedFiles === 0
         ? "No translation file was changed."
         : changedFiles +
           " target " +
@@ -294,16 +301,13 @@ function presentationFor(
     result = {
       label: ready
         ? "Ready to export again"
-        : blocked
-          ? "Export blocked"
-          : data.modsChanged !== null
-            ? "All mods exported"
-            : "Export completed",
+        : data.modsChanged !== null
+          ? "All mods exported"
+          : "Export completed",
       kicker: "Operation result",
       copy,
-      tone: blocked
-        ? "error"
-        : notices.some((item) => item.tone === "warning")
+      tone:
+        unresolved.length > 0 || notices.some((item) => item.tone === "warning")
           ? "warning"
           : "success",
       notices,
@@ -355,6 +359,15 @@ function presentationFor(
           " skipped.",
         tone: "warning",
       });
+    if (summary?.importedWithTokenErrors)
+      notices.push({
+        text:
+          summary.importedWithTokenErrors +
+          " imported " +
+          plural(summary.importedWithTokenErrors, "value") +
+          " with token errors. Fix or accept them in Review; until then export leaves them out and the game shows English.",
+        tone: "warning",
+      });
     if (summary?.identicalToSource)
       notices.push({
         text:
@@ -380,9 +393,10 @@ function presentationFor(
           plural(summary.totalInFile, "value") +
           " saved to the review queue."
         : "Import result data is unavailable.",
-      tone: notices.some((item) => item.tone === "warning")
-        ? "warning"
-        : "success",
+      tone:
+        unresolved.length > 0 || notices.some((item) => item.tone === "warning")
+          ? "warning"
+          : "success",
       notices,
       paths,
       workflow: [],
@@ -597,7 +611,7 @@ function resultKey(data: ResultTrayData): string {
     "|" +
     (data.result?.totalWrittenKeys ?? "") +
     "|" +
-    Boolean(data.result?.blocked)
+    (data.result?.skipped.length ?? "")
   );
 }
 
@@ -741,10 +755,12 @@ export function ResultTray({
     }
   }
 
+  // Strings left out of an export can be included by exporting again once
+  // they are fixed or accepted.
   const showRetry = Boolean(
     onRetry &&
     !data.pending &&
-    (data.error || (data.kind === "export" && data.result?.blocked)),
+    (data.error || (data.kind === "export" && data.problems.length > 0)),
   );
   const retryLabel =
     data.kind === "import" && data.error

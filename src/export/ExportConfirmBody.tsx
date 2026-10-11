@@ -21,7 +21,7 @@ export function ExportConfirmBody({
   acceptedMismatches = null,
   existingTargetPaths = [],
   newTargetPaths = [],
-  blockingProblem = null,
+  omitted = [],
   blockingValidationAvailable = false,
   onInspectProblem,
   lastExportLabel,
@@ -51,11 +51,7 @@ export function ExportConfirmBody({
         role="dialog"
         aria-modal="true"
         aria-label="Confirm export overwrite"
-        aria-describedby={
-          blockingProblem
-            ? "translator-export-blocker"
-            : "translator-export-summary"
-        }
+        aria-describedby="translator-export-summary"
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
@@ -81,94 +77,106 @@ export function ExportConfirmBody({
         </div>
 
         <div className="translator-flow-body">
-          {blockingProblem ? (
+          {omitted.length > 0 && (
             <div
-              className="desktop-export-blocker"
-              id="translator-export-blocker"
-              role="alert"
+              className="translator-flow-callout is-warning"
+              aria-label="Strings left out of the export"
             >
               <p>
-                <AlertTriangle aria-hidden="true" />
-                <strong>Export blocked</strong>
+                <AlertTriangle aria-hidden="true" />{" "}
+                <strong>
+                  {omitted.length}{" "}
+                  {omitted.length === 1 ? "string stays" : "strings stay"} in
+                  English
+                </strong>
               </p>
-              <code>{blockingProblem.key}</code>
-              <p>{blockingProblem.reason}</p>
-              <p className="desktop-export-muted">No files will be changed.</p>
+              <p>
+                {omitted.length === 1 ? "It has" : "They have"} a token error
+                that would break the game, so the export leaves{" "}
+                {omitted.length === 1 ? "it" : "them"} out. Everything else is
+                exported. Fix {omitted.length === 1 ? "it" : "them"} in the
+                editor, or use <strong>Save anyway</strong> if the change is
+                intended.
+              </p>
+              <ul>
+                {omitted.slice(0, 3).map((problem) => (
+                  <li key={`${problem.relativeDir}\0${problem.key}`}>
+                    <code>{problem.key}</code> {problem.reason}
+                  </li>
+                ))}
+                {omitted.length > 3 && <li>and {omitted.length - 3} more</li>}
+              </ul>
             </div>
-          ) : (
-            <>
-              <div
-                className="desktop-export-summary"
-                aria-label="Export contents"
-              >
-                <p>
-                  {willWrite == null ? (
-                    "Translation count unavailable"
-                  ) : (
-                    <>
-                      <strong>{willWrite}</strong>{" "}
-                      {willWrite === 1 ? "translation" : "translations"}{" "}
-                      included
-                    </>
-                  )}
-                  {openOmitted != null && openOmitted > 0 && (
-                    <span>{openOmitted} untranslated omitted</span>
-                  )}
-                </p>
-                {attention != null && attention > 0 && (
-                  <p className="desktop-export-review">
-                    <AlertTriangle aria-hidden="true" />
-                    Includes {attention}{" "}
-                    {attention === 1
-                      ? "translation that still needs"
-                      : "translations that still need"}{" "}
-                    review.
-                  </p>
-                )}
-                {attention == null && (
-                  <p className="desktop-export-muted">
-                    Review and Changed counts unavailable.
-                  </p>
-                )}
-              </div>
-
-              <div className="desktop-export-write">
-                <p id="translator-export-summary">
-                  {existingFiles > 0 && (
-                    <>
-                      Replaces <strong>{existingFiles}</strong> existing{" "}
-                      {existingFiles === 1
-                        ? "translation file"
-                        : "translation files"}
-                    </>
-                  )}
-                  {existingFiles > 0 && newFiles > 0 && " and creates "}
-                  {existingFiles === 0 && newFiles > 0 && "Creates "}
-                  {newFiles > 0 && (
-                    <>
-                      <strong>{newFiles}</strong> new{" "}
-                      {newFiles === 1
-                        ? "translation file"
-                        : "translation files"}
-                    </>
-                  )}
-                  {targetCount === 0 && "No translation files to write"}.
-                </p>
-                <p className="desktop-export-muted">
-                  Writes directly to the installed Mods folders.
-                  {existingFiles > 0 &&
-                    " Existing files are backed up as .json.bak."}
-                </p>
-              </div>
-
-              {modsRoot && (
-                <div className="desktop-export-location">
-                  <span>Mods folder</span>
-                  <code>{modsRoot}</code>
-                </div>
-              )}
-            </>
           )}
+          <>
+            <div
+              className="desktop-export-summary"
+              aria-label="Export contents"
+            >
+              <p>
+                {willWrite == null ? (
+                  "Translation count unavailable"
+                ) : (
+                  <>
+                    <strong>{willWrite}</strong>{" "}
+                    {willWrite === 1 ? "translation" : "translations"} included
+                  </>
+                )}
+                {openOmitted != null && openOmitted > 0 && (
+                  <span>{openOmitted} untranslated omitted</span>
+                )}
+              </p>
+              {attention != null && attention > 0 && (
+                <p className="desktop-export-review">
+                  <AlertTriangle aria-hidden="true" />
+                  Includes {attention}{" "}
+                  {attention === 1
+                    ? "translation that still needs"
+                    : "translations that still need"}{" "}
+                  review.
+                </p>
+              )}
+              {attention == null && (
+                <p className="desktop-export-muted">
+                  Review and Changed counts unavailable.
+                </p>
+              )}
+            </div>
+
+            <div className="desktop-export-write">
+              <p id="translator-export-summary">
+                {existingFiles > 0 && (
+                  <>
+                    Replaces <strong>{existingFiles}</strong> existing{" "}
+                    {existingFiles === 1
+                      ? "translation file"
+                      : "translation files"}
+                  </>
+                )}
+                {existingFiles > 0 && newFiles > 0 && " and creates "}
+                {existingFiles === 0 && newFiles > 0 && "Creates "}
+                {newFiles > 0 && (
+                  <>
+                    <strong>{newFiles}</strong> new{" "}
+                    {newFiles === 1 ? "translation file" : "translation files"}
+                  </>
+                )}
+                {targetCount === 0 && "No translation files to write"}.
+              </p>
+              <p className="desktop-export-muted">
+                Writes directly to the installed Mods folders.
+                {existingFiles > 0 &&
+                  " Existing files are backed up as .json.bak."}
+              </p>
+            </div>
+
+            {modsRoot && (
+              <div className="desktop-export-location">
+                <span>Mods folder</span>
+                <code>{modsRoot}</code>
+              </div>
+            )}
+          </>
 
           {acceptedMismatches != null && acceptedMismatches > 0 && (
             <p className="desktop-export-muted">
@@ -180,7 +188,7 @@ export function ExportConfirmBody({
           <details className="desktop-export-details">
             <summary>
               Details
-              {!blockingProblem && targetCount > 0 && (
+              {targetCount > 0 && (
                 <span>
                   {targetCount} {targetCount === 1 ? "file" : "files"}
                 </span>
@@ -220,7 +228,7 @@ export function ExportConfirmBody({
                 newTargetPaths.length === 0 && (
                   <p>Target paths unavailable before export.</p>
                 )}
-              {!blockingProblem && (
+              {
                 <>
                   {attention != null && attention > 0 && (
                     <p>
@@ -238,12 +246,13 @@ export function ExportConfirmBody({
                     Counts reflect the current scan. Files are checked again
                     before writing.
                     {blockingValidationAvailable &&
+                      omitted.length === 0 &&
                       " Protected-token checks passed."}
                     {existingFiles > 0 &&
                       " A failed write rolls back the affected files and backups."}
                   </p>
                 </>
-              )}
+              }
               {lastExportLabel && <p>{lastExportLabel}</p>}
             </div>
           </details>
@@ -257,7 +266,7 @@ export function ExportConfirmBody({
           >
             Cancel
           </button>
-          {blockingProblem && (
+          {omitted.length > 0 && (
             <button
               className="translator-button translator-button-quiet"
               type="button"
@@ -271,11 +280,8 @@ export function ExportConfirmBody({
             className="translator-button translator-button-primary"
             type="button"
             onClick={onConfirm}
-            disabled={blockingProblem != null}
           >
-            {existingFiles > 0 && !blockingProblem
-              ? "Export and replace"
-              : "Export JSON"}
+            {existingFiles > 0 ? "Export and replace" : "Export JSON"}
           </button>
         </div>
       </section>

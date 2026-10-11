@@ -131,7 +131,7 @@
     },
     {
       "value": "An unclosed {{token never matches",
-      "tokens": []
+      "tokens": ["{", "{"]
     },
     {
       "value": "Price tag 100% plain",
@@ -182,6 +182,14 @@
       "tokens": [
         "#$action Spiderbuttons.BETAS_DialogueBox Haley \\\"Characters/Dialogue/Haley:Resort_Leaving\\\""
       ]
+    },
+    {
+      "value": "A%fork b %revealtaste:Haley:(O)221#$b#c } {",
+      "tokens": ["%fork", "%revealtaste:Haley:(O)221", "#$b#", "}", "{"]
+    },
+    {
+      "value": "$sHallo $uDa $lLiebe $aWut",
+      "tokens": ["$s", "$u", "$l", "$a"]
     }
   ],
   "comparisons": [
@@ -228,16 +236,16 @@
       "blocked": false
     },
     {
-      "name": "portrait change remains blocked",
+      "name": "portrait change is only a warning",
       "source": "$hHello",
       "target": "$sHallo",
-      "blocked": true
+      "blocked": false
     },
     {
-      "name": "numeric portrait change remains blocked",
+      "name": "numeric portrait change is only a warning",
       "source": "$27Hello",
       "target": "$28Hallo",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "query else prose",
@@ -294,16 +302,16 @@
       "blocked": true
     },
     {
-      "name": "embedded portrait",
+      "name": "embedded portrait change is only a warning",
       "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
       "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $5 {{name}} [74]\" Portraits/Test 1 true#",
-      "blocked": true
+      "blocked": false
     },
     {
-      "name": "embedded name",
+      "name": "embedded dropped player name is only a warning",
       "source": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello @ $3 {{name}} [74]\" Portraits/Test 1 true#",
       "target": "#$action Spiderbuttons.BETAS_DialogueBox Nova.Test \"Hello  $3 {{name}} [74]\" Portraits/Test 1 true#",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "embedded CP",
@@ -336,16 +344,16 @@
       "blocked": true
     },
     {
-      "name": "required placeholder",
+      "name": "dropped placeholder is only a warning",
       "source": "Hello {0}",
       "target": "Hallo",
-      "blocked": true
+      "blocked": false
     },
     {
-      "name": "player substitution",
+      "name": "added player name is only a warning",
       "source": "Hello farmer",
       "target": "Hallo @",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "opaque complex message $action AddMoney 500",
@@ -376,6 +384,54 @@
       "source": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"Hello \\\"word#tail\" Portraits/Test#",
       "target": "#$action Spiderbuttons.BETAS_DialogueBox NPC \"Hallo \\\"word#tail\" Portraits/Test#",
       "blocked": true
+    },
+    {
+      "name": "cleanly removed gender switch is only a warning",
+      "source": "My ${handsome^beautiful}$ wizard.$1",
+      "target": "Mein Zauberer.$1",
+      "blocked": false
+    },
+    {
+      "name": "unclosed gender switch is blocked",
+      "source": "My brave ${husband^wife}$?$4",
+      "target": "Mein ${Ehemann^Ehefrau}?$4",
+      "blocked": true
+    },
+    {
+      "name": "second portrait on one page is blocked",
+      "source": "Hi.$h",
+      "target": "Hallo.$h nett$s",
+      "blocked": true
+    },
+    {
+      "name": "stray closing brace is blocked",
+      "source": "Hi.",
+      "target": "Hallo}.",
+      "blocked": true
+    },
+    {
+      "name": "renamed placeholder is blocked",
+      "source": "Hi {{name}}",
+      "target": "Hallo {{Name2}}",
+      "blocked": true
+    },
+    {
+      "name": "extra caret is blocked",
+      "source": "Hello there.",
+      "target": "Hallo^du.",
+      "blocked": true
+    },
+    {
+      "name": "portraits in separate gender branches do not hide a new double portrait",
+      "source": "${Hi.$h^Hey.$s}$#Bye.",
+      "target": "${Hallo.$h^Hey.$s}$#Tschuess.$h$s",
+      "blocked": true
+    },
+    {
+      "name": "one portrait per gender branch stays a single portrait",
+      "source": "${Hi.^Hey.}$#Bye.$h",
+      "target": "${Hallo.$h^Hey.$s}$#Tschuess.",
+      "blocked": false
     }
   ]
 }

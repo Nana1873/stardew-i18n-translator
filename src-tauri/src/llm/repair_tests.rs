@@ -80,7 +80,7 @@ fn translate(source: &str, replies: &[&str]) -> (TranslationResult, Vec<serde_js
         "German",
         None,
         &[],
-        &["Neighbor {{Other}}".to_string()],
+        &["Neighbor [Other.Token]".to_string()],
         &[],
         None,
     ));
@@ -91,26 +91,26 @@ fn translate(source: &str, replies: &[&str]) -> (TranslationResult, Vec<serde_js
 #[test]
 fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
     for (source, first, repaired) in [
-        ("Hello {{name}}!", "Hallo!", "Hallo {{name}}!"),
+        ("Hello [FarmName]!", "Hallo!", "Hallo [FarmName]!"),
         (
-            "Hello {{name}}!",
-            "Hallo {{name}} {{Other}}!",
-            "Hallo {{name}}!",
+            "Hello [FarmName]!",
+            "Hallo [FarmName] [Other.Token]!",
+            "Hallo [FarmName]!",
         ),
         (
-            "Hello {{name}}!",
-            "Hallo {{name}} {{name}}!",
-            "Hallo {{name}}!",
+            "Hello [FarmName]!",
+            "Hallo [FarmName] [FarmName]!",
+            "Hallo [FarmName]!",
         ),
         (
-            "{{Count}} now, {{Count}} later.",
-            "{{Count}} jetzt.",
-            "{{Count}} jetzt, {{Count}} später.",
+            "[Count.Token] now, [Count.Token] later.",
+            "[Count.Token] jetzt.",
+            "[Count.Token] jetzt, [Count.Token] später.",
         ),
         (
-            "${He^She}$ has {{Item}}.",
-            "${Er^Sie}$ ${Er^Sie}$ hat {{Item}}.",
-            "${Er^Sie}$ hat {{Item}}.",
+            "${He^She}$ has [Item.Token].",
+            "${Er^Sie hat [Item.Token].",
+            "${Er^Sie}$ hat [Item.Token].",
         ),
     ] {
         let (result, requests) = translate(source, &[first, repaired]);
@@ -120,7 +120,7 @@ fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[0]["messages"][1], requests[1]["messages"][1]);
         let reminder = requests[1]["messages"][0]["content"].as_str().unwrap();
-        for difference in tokens::token_differences(source, first) {
+        for difference in tokens::blocking_differences(source, first) {
             let token = serde_json::to_string(&difference.token).unwrap();
             assert!(reminder.contains(&format!(
                 "{token}: expected {}, previous response {}",
@@ -135,17 +135,21 @@ fn repairs_missing_unexpected_duplicate_and_underrepresented_runtime_tokens() {
 #[test]
 fn retains_first_draft_when_retry_is_equal_worse_or_damages_another_token() {
     for (source, first, retry) in [
-        ("Hello {{name}}!", "Hallo!", "Guten Tag!"),
-        ("Hello {{name}}!", "Hallo!", "Hallo {{name}} {{name}}!"),
+        ("Hello [FarmName]!", "Hallo!", "Guten Tag!"),
         (
-            "{{name}} gets {{Item}}.",
+            "Hello [FarmName]!",
             "Hallo!",
-            "{{name}} bekommt {{Item}} {{Other}}.",
+            "Hallo [FarmName] [FarmName]!",
         ),
         (
-            "Hello {{name}}!",
-            "Hallo {{name}} {{Other}}!",
-            "Hallo {{name}} {{Other}} {{Other}}!",
+            "[FarmName] gets [Item.Token].",
+            "Hallo!",
+            "[FarmName] bekommt [Item.Token] [Other.Token].",
+        ),
+        (
+            "Hello [FarmName]!",
+            "Hallo [FarmName] [Other.Token]!",
+            "Hallo [FarmName] [Other.Token] [Other.Token]!",
         ),
     ] {
         let (result, requests) = translate(source, &[first, retry]);
@@ -157,13 +161,13 @@ fn retains_first_draft_when_retry_is_equal_worse_or_damages_another_token() {
 
 #[test]
 fn partially_improved_retry_remains_invalid_without_a_third_request() {
-    let source = "{{Count}} now, {{Count}} later.";
+    let source = "[Count.Token] now, [Count.Token] later.";
     let (result, requests) = translate(
         source,
-        &["Jetzt und später.", "{{Count}} jetzt und später."],
+        &["Jetzt und später.", "[Count.Token] jetzt und später."],
     );
-    assert_eq!(result.text, "{{Count}} jetzt und später.");
-    assert_eq!(result.missing_tokens, vec!["{{Count}}"]);
+    assert_eq!(result.text, "[Count.Token] jetzt und später.");
+    assert_eq!(result.missing_tokens, vec!["[Count.Token]"]);
     assert_eq!(requests.len(), 2);
     assert!(!tokens::token_differences(source, &result.text).is_empty());
 }
@@ -171,9 +175,9 @@ fn partially_improved_retry_remains_invalid_without_a_third_request() {
 #[test]
 fn preserves_legitimate_quotes_and_does_not_retry_soft_layout_differences() {
     for (source, translated) in [
-        ("\"Hello {{name}}!\"", "\"Hallo {{name}}!\""),
-        ("'Hello {{name}}!'", "'Hallo {{name}}!'"),
-        ("Hello {{name}}!", "Hallo\n{{name}}!"),
+        ("\"Hello [FarmName]!\"", "\"Hallo [FarmName]!\""),
+        ("'Hello [FarmName]!'", "'Hallo [FarmName]!'"),
+        ("Hello [FarmName]!", "Hallo\n[FarmName]!"),
     ] {
         let (result, requests) = translate(source, &[translated]);
         assert_eq!(result.text, translated);
@@ -185,21 +189,21 @@ fn preserves_legitimate_quotes_and_does_not_retry_soft_layout_differences() {
 #[test]
 fn encoded_translation_is_decoded_before_saving_or_retrying_tokens() {
     for (source, translated) in [
-        ("Hello {{name}}!", "Hallo {{name}}!"),
-        ("\"Hello {{name}}!\"", "\"Hallo {{name}}!\""),
+        ("Hello [FarmName]!", "Hallo [FarmName]!"),
+        ("\"Hello [FarmName]!\"", "\"Hallo [FarmName]!\""),
     ] {
         let encoded = serde_json::to_string(translated).unwrap();
         let (result, requests) = translate(source, &[&encoded]);
         assert_eq!(result.text, translated);
         assert_eq!(requests.len(), 1);
     }
-    let first = serde_json::to_string("Hallo {{name}} {{Other}}!").unwrap();
-    let repaired = serde_json::to_string("Hallo {{name}}!").unwrap();
-    let (result, requests) = translate("Hello {{name}}!", &[&first, &repaired]);
-    assert_eq!(result.text, "Hallo {{name}}!");
+    let first = serde_json::to_string("Hallo [FarmName] [Other.Token]!").unwrap();
+    let repaired = serde_json::to_string("Hallo [FarmName]!").unwrap();
+    let (result, requests) = translate("Hello [FarmName]!", &[&first, &repaired]);
+    assert_eq!(result.text, "Hallo [FarmName]!");
     assert_eq!(requests.len(), 2);
     assert!(requests[1]["messages"][0]["content"]
         .as_str()
         .unwrap()
-        .contains("\"{{Other}}\": expected 0, previous response 1"));
+        .contains("\"[Other.Token]\": expected 0, previous response 1"));
 }

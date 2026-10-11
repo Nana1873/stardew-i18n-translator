@@ -8,12 +8,17 @@
 //! positional `{0}`, dialogue commands `$b`, structural `#` / paired `'`
 //! quote delimiters, and single-char `@`/`^`.
 //!
-//! Export and batch import use [`token_differences`] for their blocking
-//! `token-missing` rule. Tokens are compared as multisets, so a dropped second
-//! `$b` is caught too. Keeping this in sync with the TS reader is covered by
-//! shared-case tests in both languages.
+//! Every difference carries a [`Severity`]. Only `Error` differences are
+//! verified to break the game (raw syntax shown, dialogue split wrongly, lost
+//! rewards or logic); `Warning` differences are cosmetic or legitimate
+//! translation choices. Export omits a string only for an unaccepted `Error`.
+//! Tokens are compared as multisets, so a dropped second `$b` is caught too.
+//! Keeping this in sync with the TS reader is covered by shared-case tests in
+//! both languages.
 
 use std::collections::HashMap;
+
+use serde::Serialize;
 
 /// Extract every protected token or switch-shape identity from `value`.
 pub fn extract(value: &str) -> Vec<String> {
@@ -58,6 +63,7 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             .or_else(|| read_bracket(chars, offset))
             .or_else(|| read_positional(chars, offset))
             .or_else(|| read_simple_dialogue(chars, offset))
+            .or_else(|| read_event_command(chars, offset))
             .or_else(|| read_single_char(chars, offset));
 
         match end {
@@ -111,11 +117,164 @@ pub fn missing_tokens(source: &str, target: &str) -> bool {
         .any(|difference| difference.target_count < difference.source_count)
 }
 
+/// How serious a protected-token difference is, verified against the
+/// Stardew 1.6 dialogue, mail, and token parsers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    /// Breaks the game: raw syntax, a wrongly split dialogue, lost rewards or
+    /// logic. Export omits the string unless the mismatch was accepted.
+    Error,
+    /// Cosmetic or a legitimate translation choice; never blocks.
+    Warning,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TokenDifference {
     pub token: String,
     pub source_count: usize,
     pub target_count: usize,
+    pub severity: Severity,
+}
+
+impl TokenDifference {
+    pub fn is_error(&self) -> bool {
+        self.severity == Severity::Error
+    }
+}
+
+/// Only the differences that break the game. Empty means the translation is
+/// safe to export, although warnings may still exist.
+pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> {
+    token_differences(source, target)
+        .into_iter()
+        .filter(TokenDifference::is_error)
+        .collect()
+}
+
+/// A plain-language explanation of game-breaking differences for export and
+/// release results. Gender-switch damage is described as one structural
+/// problem instead of its raw `${`, `}$`, and `^` counts (mirrors the TS
+/// `describeTokenIssue`).
+pub fn explain_differences(differences: &[TokenDifference]) -> String {
+    let delta = |token: &str| {
+        differences
+            .iter()
+            .find(|difference| difference.token == token)
+            .map_or(0, |difference| {
+                difference.target_count as isize - difference.source_count as isize
+            })
+    };
+    let extra_openers = delta("${");
+    let extra_closers = delta("}$");
+    let mut messages = Vec::new();
+    let mut switch_damaged = false;
+    if extra_openers > 0 && extra_closers <= 0 {
+        messages.push("A he/she switch ${…^…}$ is missing its closing }$, so the game would show broken text.".to_string());
+        switch_damaged = true;
+    } else if extra_closers > 0 && extra_openers <= 0 {
+        messages.push("A he/she switch ${…^…}$ is missing its opening ${, so the game would show broken text.".to_string());
+        switch_damaged = true;
+    } else if extra_openers > 0 && extra_closers > 0 {
+        messages.push(
+            "A he/she switch needs two or three variants separated by ^, like ${he^she}$."
+                .to_string(),
+        );
+        switch_damaged = true;
+    }
+    for difference in differences {
+        let token = difference.token.as_str();
+        if switch_damaged
+            && (matches!(token, "${" | "}$")
+                || (token == "^" && difference.target_count > difference.source_count))
+        {
+            continue;
+        }
+        let change = if difference.target_count < difference.source_count {
+            "is missing"
+        } else {
+            "was added"
+        };
+        messages.push(format!(
+            "{token} {change} (English {}, translation {}).",
+            difference.source_count, difference.target_count
+        ));
+    }
+    messages.join(" ")
+}
+
+/// Portrait/emotion commands only change the face; a missing sheet index falls
+/// back to portrait 0 (DialogueBox bounds check).
+fn is_portrait_command(token: &str) -> bool {
+    matches!(token, "$h" | "$s" | "$u" | "$l" | "$a" | "$neutral")
+        || token
+            .strip_prefix('$')
+            .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
+}
+
+/// The text one player sees: every well-formed gender switch is replaced by its
+/// first branch, so portraits in alternative branches are not counted twice.
+fn first_branch_text(chars: &[char]) -> String {
+    let mut text = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if starts_with(chars, index, "${") {
+            if let Some(close) = find_switch_close(chars, index) {
+                if let Some((_, delimiters)) = top_level_gender_delimiters(chars, index + 2, close)
+                {
+                    text.push_str(&first_branch_text(&chars[index + 2..delimiters[0]]));
+                    index = close + 2;
+                    continue;
+                }
+            }
+        }
+        text.push(chars[index]);
+        index += 1;
+    }
+    text
+}
+
+/// Only the first emotion token on a dialogue page is applied; any further
+/// one stays visible as raw text. Counts the pages that show such raw text.
+fn pages_with_multiple_portraits(value: &str) -> usize {
+    let chars: Vec<char> = value.chars().collect();
+    first_branch_text(&chars)
+        .split('#')
+        .filter(|page| {
+            extract(page)
+                .iter()
+                .filter(|token| is_portrait_command(token))
+                .count()
+                > 1
+        })
+        .count()
+}
+
+fn is_placeholder(token: &str) -> bool {
+    let chars: Vec<char> = token.chars().collect();
+    (token.starts_with("{{") && token.ends_with("}}"))
+        || match_positional(&chars, 0) == Some(chars.len())
+}
+
+fn token_severity(
+    token: &str,
+    source_count: usize,
+    target_count: usize,
+    introduces_multiple_portraits: bool,
+) -> Severity {
+    let dropped = target_count < source_count;
+    let harmless = is_gender_switch_shape(token)
+        || token == "@"
+        || (is_portrait_command(token) && !introduces_multiple_portraits)
+        // A missing placeholder only drops its value; a renamed or extra one
+        // stays visible as literal `{{...}}` or breaks string.Format.
+        || (dropped && is_placeholder(token))
+        || (dropped && token.to_ascii_lowercase().starts_with("[articlefor"));
+    if harmless {
+        Severity::Warning
+    } else {
+        Severity::Error
+    }
 }
 
 /// Every protected-token count that differs between source and target.
@@ -126,6 +285,8 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     let source_has_gender_switch = source_counts
         .keys()
         .any(|token| is_gender_switch_shape(token));
+    let introduces_multiple_portraits =
+        pages_with_multiple_portraits(target) > pages_with_multiple_portraits(source);
     let mut tokens: Vec<String> = source_counts
         .keys()
         .chain(target_counts.keys())
@@ -148,7 +309,13 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
             {
                 return None;
             }
-            (source_count != target_count).then_some(TokenDifference {
+            (source_count != target_count).then(|| TokenDifference {
+                severity: token_severity(
+                    &token,
+                    source_count,
+                    target_count,
+                    introduces_multiple_portraits,
+                ),
                 token,
                 source_count,
                 target_count,
@@ -158,20 +325,15 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
 }
 
 /// The protected tokens that `target` is missing (or under-represents) relative
-/// to `source`, each listed once. Empty when nothing is missing. Used by the
-/// local-LLM translator to flag/retry a result that dropped a token.
-/// Soft tokens (newlines, quote delimiters) are exempt, like in [`missing_tokens`].
+/// to `source` in a way that breaks the game, each listed once. Empty when
+/// nothing blocking is missing. Used by the local-LLM translator to flag/retry
+/// a result that dropped a token.
 pub fn missing_token_list(source: &str, target: &str) -> Vec<String> {
-    let source_counts = counts(source);
-    let target_counts = counts(target);
-    let mut missing: Vec<String> = source_counts
-        .iter()
-        .filter(|(token, _)| !is_soft_token(token))
-        .filter(|(token, count)| target_counts.get(*token).copied().unwrap_or(0) < **count)
-        .map(|(token, _)| token.clone())
-        .collect();
-    missing.sort();
-    missing
+    blocking_differences(source, target)
+        .into_iter()
+        .filter(|difference| difference.target_count < difference.source_count)
+        .map(|difference| difference.token)
+        .collect()
 }
 
 fn counts(value: &str) -> HashMap<String, usize> {
@@ -664,7 +826,11 @@ fn read_simple_dialogue(chars: &[char], offset: usize) -> Option<usize> {
     if chars.get(offset) != Some(&'$') {
         return None;
     }
-    if starts_with(chars, offset, "$h")
+    // The game strips these emotion tokens by substring (Dialogue.checkEmotions),
+    // so `$sHallo` is portrait `$s` followed by prose.
+    if chars
+        .get(offset + 1)
+        .is_some_and(|c| matches!(c, 'h' | 's' | 'u' | 'l' | 'a'))
         && chars.get(offset + 2).is_some_and(char::is_ascii_uppercase)
     {
         return Some(offset + 2);
@@ -685,9 +851,30 @@ fn read_simple_dialogue(chars: &[char], offset: usize) -> Option<usize> {
     }
 }
 
+/// Dialogue event/gift commands: `%fork` sets an event branch and
+/// `%revealtaste:NPC:item` reveals a gift taste (Utility.ParseGiftReveals).
+fn read_event_command(chars: &[char], offset: usize) -> Option<usize> {
+    if starts_with(chars, offset, "%fork") {
+        return Some(offset + 5);
+    }
+    if !starts_with(chars, offset, "%revealtaste") {
+        return None;
+    }
+    let mut end = offset + "%revealtaste".len();
+    while chars
+        .get(end)
+        .is_some_and(|c| !c.is_whitespace() && !matches!(c, '#' | '%' | '$' | '{' | '^' | '*'))
+    {
+        end += 1;
+    }
+    Some(end)
+}
+
 fn read_single_char(chars: &[char], offset: usize) -> Option<usize> {
     match chars.get(offset) {
-        Some('@') | Some('^') | Some('#') | Some('\n') => Some(offset + 1),
+        // A stray `{` marks "continues on next screen" and a `}` turns the text
+        // before it into a mail flag (Dialogue.cs); both hide dialogue text.
+        Some('@') | Some('^') | Some('#') | Some('\n') | Some('{') | Some('}') => Some(offset + 1),
         Some('\'') if is_paired_quote_delimiter(chars, offset) => Some(offset + 1),
         _ => None,
     }
@@ -849,8 +1036,8 @@ mod tests {
 
     #[test]
     fn malformed_gender_switch_fragments_remain_protected() {
-        assert_eq!(extract("${he^she}"), vec!["${", "^"]);
-        assert_eq!(extract("{he^she}$"), vec!["^", "}$"]);
+        assert_eq!(extract("${he^she}"), vec!["${", "^", "}"]);
+        assert_eq!(extract("{he^she}$"), vec!["{", "^", "}$"]);
         assert_eq!(extract("${only}$"), vec!["${", "}$"]);
         assert!(!token_differences("${he^she}$", "${he^she}").is_empty());
     }
@@ -916,15 +1103,77 @@ mod tests {
                     token: "#".into(),
                     source_count: 1,
                     target_count: 0,
+                    severity: Severity::Error,
                 },
                 TokenDifference {
                     token: "{{name}}".into(),
                     source_count: 1,
                     target_count: 2,
+                    severity: Severity::Error,
                 },
             ]
         );
         assert!(token_differences("a\nb", "ab").is_empty());
+    }
+
+    fn severities(source: &str, target: &str) -> Vec<(String, Severity)> {
+        token_differences(source, target)
+            .into_iter()
+            .map(|difference| (difference.token, difference.severity))
+            .collect()
+    }
+
+    #[test]
+    fn harmless_differences_are_warnings() {
+        // A missing portrait index falls back to portrait 0.
+        assert_eq!(
+            severities("Hi.$8#$b#Bye.$1", "Привет.$7#$b#Пока.$1"),
+            vec![
+                ("$7".to_string(), Severity::Warning),
+                ("$8".to_string(), Severity::Warning)
+            ]
+        );
+        // A cleanly removed gender switch shows the same text to everyone.
+        assert_eq!(
+            severities("My ${handsome^beautiful}$ wizard.$1", "Mein Zauberer.$1"),
+            vec![("${^}$".to_string(), Severity::Warning)]
+        );
+        assert!(blocking_differences("Hi @!", "Hallo!").is_empty());
+        assert!(blocking_differences("You have {{count}} items", "Du hast Items").is_empty());
+        assert!(blocking_differences("{0} gold", "Gold").is_empty());
+    }
+
+    #[test]
+    fn game_breaking_differences_are_errors() {
+        // Unclosed switch: raw `${` and the plain `^` split cut the page.
+        assert!(!blocking_differences(
+            "My brave ${husband^wife}$?$4",
+            "Mein ${Ehemann^Ehefrau}?$4"
+        )
+        .is_empty());
+        // An extra `^` splits dialogue by gender.
+        assert!(!blocking_differences("Hello there.", "Hallo^du.").is_empty());
+        // Renamed or added placeholders stay literal.
+        assert!(!blocking_differences("Hi {{name}}", "Hallo {{Name2}}").is_empty());
+        assert!(!blocking_differences("Hi", "Hallo {{name}}").is_empty());
+        // A second portrait on one page shows as raw text.
+        assert!(!blocking_differences("Hi.$h", "Hallo.$h nett$s").is_empty());
+        // Stray braces hide text or set mail flags.
+        assert!(!blocking_differences("Hi.", "Hallo}.").is_empty());
+        // Event and gift-taste commands carry logic.
+        assert!(!blocking_differences("Yes%fork", "Ja").is_empty());
+        assert!(
+            !blocking_differences("Try it %revealtaste:Haley:(O)221 now", "Probier es jetzt")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn event_commands_and_stray_braces_are_extracted() {
+        assert_eq!(
+            extract("A%fork b %revealtaste:Haley:(O)221#$b#c } {"),
+            vec!["%fork", "%revealtaste:Haley:(O)221", "#$b#", "}", "{"]
+        );
     }
 
     #[test]
@@ -954,11 +1203,8 @@ mod tests {
         ));
         assert!(missing_token_list("a\nb\nc", "abc").is_empty());
         // Real tokens are still enforced even when newlines also differ.
-        assert!(missing_tokens("Hi {{name}}\nmore", "Hallo"));
-        assert_eq!(
-            missing_token_list("Hi {{name}}\nmore", "Hallo"),
-            vec!["{{name}}"]
-        );
+        assert!(missing_tokens("Hi$b\nmore", "Hallo"));
+        assert_eq!(missing_token_list("Hi$b\nmore", "Hallo"), vec!["$b"]);
     }
 
     #[test]
@@ -977,11 +1223,8 @@ mod tests {
         assert!(missing_token_list("'test'", "test").is_empty());
 
         // Real tokens are still enforced when a quote difference also exists.
-        assert!(missing_tokens("Hi {{name}} 'q'", "Hallo"));
-        assert_eq!(
-            missing_token_list("Hi {{name}} 'q'", "Hallo"),
-            vec!["{{name}}"]
-        );
+        assert!(missing_tokens("Hi$b 'q'", "Hallo"));
+        assert_eq!(missing_token_list("Hi$b 'q'", "Hallo"), vec!["$b"]);
     }
 
     /// Drift guard against the TS extractor: both suites run the same fixture
@@ -993,7 +1236,7 @@ mod tests {
         let body = include_str!("../../tests/fixtures/token-cases.json");
         let parsed: serde_json::Value = serde_json::from_str(body).unwrap();
         for case in parsed["comparisons"].as_array().unwrap() {
-            let blocked = !token_differences(
+            let blocked = !blocking_differences(
                 case["source"].as_str().unwrap(),
                 case["target"].as_str().unwrap(),
             )

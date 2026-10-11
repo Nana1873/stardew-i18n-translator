@@ -87,8 +87,8 @@ fn two_plans() -> (
 
 #[test]
 fn persistent_transient_review_failure_keeps_drafts_and_reports_a_warning() {
-    let items = vec![item("item-0000", "Hello, {{name}}.", 0)];
-    let drafts = vec![translation("item-0000", "Hallo, {{name}}.")];
+    let items = vec![item("item-0000", "Hello, [FarmName].", 0)];
+    let drafts = vec![translation("item-0000", "Hallo, [FarmName].")];
     let plans = vec![ReviewPlan {
         items: items.clone(),
         drafts: drafts.clone(),
@@ -263,10 +263,10 @@ fn invalid_review_response_splits_the_plan_and_skips_only_the_bad_item() {
 
 #[test]
 fn terminology_followup_that_newly_damages_a_token_is_rejected() {
-    let mut parsnip = item("item-0000", "Parsnip for {{name}}", 0);
+    let mut parsnip = item("item-0000", "Parsnip for [FarmName]", 0);
     parsnip.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
     let items = vec![parsnip];
-    let reviewed = vec![translation("item-0000", "Rübe für {{name}}")];
+    let reviewed = vec![translation("item-0000", "Rübe für [FarmName]")];
     let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
     assert_eq!(plans.len(), 1);
     let mut calls = 0usize;

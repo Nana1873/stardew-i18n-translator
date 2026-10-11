@@ -2,16 +2,28 @@ import { extractProtectedTokens } from "./protectedTokens";
 import { validate, worstSeverity } from "./validation";
 
 describe("validate", () => {
-  it("flags a missing source token as an error", () => {
-    const issues = validate("Hello {{name}}", "Hallo", false);
+  it("flags a missing game-breaking token as an error", () => {
+    const issues = validate("Hello#$b#Bye", "Hallo Tschuess", false);
     expect(issues).toEqual([
       {
         ruleId: "token-missing",
         severity: "error",
-        message: "Token count mismatch for {{name}} (expected 1, found 0)",
+        message: "#$b# is missing (English 1, translation 0).",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
+  });
+
+  it("treats a dropped placeholder value as a warning", () => {
+    const issues = validate("Hello {{name}}", "Hallo", false);
+    expect(issues).toEqual([
+      {
+        ruleId: "token-missing",
+        severity: "warning",
+        message: "{{name}} is missing (English 1, translation 0).",
+      },
+    ]);
+    expect(worstSeverity(issues)).toBe("warning");
   });
 
   it("flags an extra target token as an error", () => {
@@ -47,19 +59,26 @@ describe("validate", () => {
     expect(validate(source, target, false)).toEqual([]);
   });
 
-  it("still blocks a translation that drops gender-switch structure", () => {
+  it("warns but does not block a cleanly removed gender switch", () => {
     const source = "${Hello @.$7^Welcome @.$7^Goodbye @.}$";
     const target = "Hallo @.$7 Willkommen @.$7 Auf Wiedersehen @.";
     const issues = validate(source, target, false);
 
-    expect(issues.filter((issue) => issue.severity === "error")).toEqual([
-      {
-        ruleId: "token-missing",
-        severity: "error",
-        message:
-          "Token count mismatch for gender switch (3 branches, ^ separator) (expected 1, found 0)",
-      },
-    ]);
+    expect(issues).toContainEqual({
+      ruleId: "token-missing",
+      severity: "warning",
+      message:
+        "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended.",
+    });
+  });
+
+  it("blocks a gender switch whose closer is missing", () => {
+    const issues = validate(
+      "My brave ${husband^wife}$?$4",
+      "Mein ${Ehemann^Ehefrau}?$4",
+      false,
+    );
+    expect(worstSeverity(issues)).toBe("error");
   });
 
   it("allows a well-formed gender switch added for the target language", () => {
@@ -74,17 +93,15 @@ describe("validate", () => {
     const issues = validate("${a^b}$", "${x^y^z}$ ${neu^neu}$", false);
 
     expect(issues.map((issue) => issue.ruleId)).toEqual(["token-added"]);
-    expect(issues[0].message).toContain("gender switch (3 branches");
+    expect(issues[0].message).toContain("he/she variants changed");
   });
 
   it("still blocks a malformed target-only gender switch", () => {
     const issues = validate("Dear @.", "${Lieber}$ @.", false);
 
     expect(issues.every((issue) => issue.severity === "error")).toBe(true);
-    expect(issues.map((issue) => issue.ruleId)).toEqual([
-      "token-added",
-      "token-added",
-    ]);
+    // The orphan opener and closer are explained as one switch problem.
+    expect(issues.map((issue) => issue.ruleId)).toEqual(["token-added"]);
   });
 
   it("does not let switch separators cancel out across separate blocks", () => {
@@ -92,7 +109,7 @@ describe("validate", () => {
 
     expect(issues.some((issue) => issue.severity === "error")).toBe(true);
     expect(issues.map((issue) => issue.message)).toContain(
-      "Token count mismatch for gender switch (2 branches, ^ separator) (expected 2, found 0)",
+      "A he/she switch needs two or three variants separated by ^, like ${he^she}$.",
     );
   });
 
@@ -138,7 +155,7 @@ describe("validate", () => {
     expect(issues.some((i) => i.ruleId === "json-invalid")).toBe(true);
   });
 
-  it("flags a dropped @ player-name token (Stardew dialogue)", () => {
+  it("warns about a dropped @ player-name token (Stardew dialogue)", () => {
     const issues = validate(
       "Thank you, @. Really!",
       "Thank you, . Really!",
@@ -147,9 +164,8 @@ describe("validate", () => {
     expect(issues).toEqual([
       {
         ruleId: "token-missing",
-        severity: "error",
-        message:
-          "Token count mismatch for @ (player name) (expected 1, found 0)",
+        severity: "warning",
+        message: "The player name @ is missing (English 1, translation 0).",
       },
     ]);
   });
@@ -157,9 +173,7 @@ describe("validate", () => {
   it("catches a dropped second $b via multiset comparison", () => {
     const issues = validate("a$b b$b c", "a$b b c", false);
     expect(issues.map((i) => i.ruleId)).toEqual(["token-missing"]);
-    expect(issues[0].message).toBe(
-      "Token count mismatch for $b (expected 2, found 1)",
-    );
+    expect(issues[0].message).toBe("$b is missing (English 2, translation 1).");
   });
 
   it("treats a #$b# dialogue break and $s command as protected tokens", () => {
@@ -173,8 +187,8 @@ describe("validate", () => {
       "token-missing",
     ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
-      "Token count mismatch for #$b# (expected 1, found 0)",
-      "Token count mismatch for $s (expected 2, found 0)",
+      "#$b# is missing (English 1, translation 0).",
+      "The portrait $s is missing (English 2, translation 0): the character shows a different face. Fine if intended.",
     ]);
   });
 
@@ -261,8 +275,8 @@ describe("validate", () => {
       .map((issue) => issue.message)
       .sort();
     expect(errors).toEqual([
-      "Token count mismatch for # (dialogue/mail separator) (expected 1, found 0)",
-      "Token count mismatch for ^ (switch separator / line break) (expected 2, found 1)",
+      "# is missing (English 1, translation 0). # separates dialogue boxes.",
+      "^ is missing (English 2, translation 1). In dialogue, ^ splits the text into male and female versions.",
     ]);
     expect(issues.every((issue) => issue.severity === "error")).toBe(true);
     expect(

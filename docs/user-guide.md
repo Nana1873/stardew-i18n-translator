@@ -75,16 +75,20 @@ Done does not guarantee that the wording is correct or that validation passes.
 
 **Issues** shows validation findings, including accepted token mismatches, across
 all statuses in the selected mod scope, keeping your search. Selecting Open,
-Changed, Review, Done, or All leaves the Issues view. Missing or changed protected
-tokens and invalid text can block export. Suspicious literal escape changes
-can produce warnings without blocking. Open an affected string to inspect the
-source and target. Yellow triangles mark warnings and accepted token mismatches;
-red circles mark errors that block export. Hover or focus an icon to see the
-finding and its effect on export.
-If a token difference is intentional, **Save anyway** accepts
-that exact source/target mismatch. It stays visible in Issues with a tooltip
-confirming that export is allowed, and a Done row stays Done. Editing the target
-or changing the source requires confirmation again if the mismatch remains.
+Changed, Review, Done, or All leaves the Issues view. Open an affected string to
+inspect the source and target. Hover or focus an icon to see the finding in
+plain language and its effect on export.
+
+- Red circles mark token **errors** that would break the game, such as a
+  he/she switch missing its closing `}$`. Export leaves only that string out, so
+  the game shows its English text; everything else is exported.
+- Yellow triangles mark harmless differences, such as a changed portrait or a
+  removed he/she variant, and accepted token mismatches. They never block.
+
+If an error is intentional, **Save anyway** accepts that exact source/target
+mismatch, and export includes the string as written. It stays visible in Issues,
+and a Done row stays Done. Editing the target or changing the source requires
+confirmation again if the mismatch remains.
 
 ## Search, select, and work in batches
 
@@ -171,8 +175,8 @@ shows the scope, replacement information, and strings needing attention.
 **Nonempty Review and Changed translations are included in export after a
 warning.** They do not become Done as a result. Empty entries are omitted so
 SMAPI can fall back to English; saved single-space targets are included unchanged.
-Unresolved blocking validation issues must be
-fixed or an intentional token mismatch explicitly accepted before export.
+Strings with unresolved token errors are left out, so the game shows their
+English text, until they are fixed or an intentional mismatch is accepted.
 
 Export writes `i18n/<language>.json` files directly inside the selected installed
 mods. Use a translation ZIP to manage the translation as a separate mod manager

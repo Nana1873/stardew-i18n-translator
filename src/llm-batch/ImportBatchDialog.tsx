@@ -2,6 +2,7 @@ import { FileSearch, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import type { LlmImportPreflight } from "../tauri/commands";
+import { describeTokenIssue, hasTokenError } from "../strings/tokenIssueText";
 
 interface ImportBatchDialogProps {
   targetName: string;
@@ -104,8 +105,17 @@ export function ImportBatchDialog({
     }
   }
 
+  // Token issues never block an import; they are listed so the user knows
+  // which values need attention in Review.
+  const canImport = preflight?.ready ?? false;
+  const tokenIssues = preflight?.protectedTokenIssues ?? [];
+  const errorIssues = tokenIssues.filter((issue) =>
+    hasTokenError(issue.differences),
+  );
+  const warningIssues = tokenIssues.length - errorIssues.length;
+
   async function confirm() {
-    if (!path || pending || !preflight?.ready) return;
+    if (!path || pending || !canImport) return;
     setPending(true);
     setError(null);
     try {
@@ -176,8 +186,7 @@ export function ImportBatchDialog({
             </button>
           </div>
           <div className="translator-flow-callout">
-            Existing translations stay unchanged. Valid imported values go to
-            Review.
+            Existing translations stay unchanged. Imported values go to Review.
           </div>
           {checking && (
             <div className="translator-flow-callout" role="status">
@@ -258,27 +267,43 @@ export function ImportBatchDialog({
                   </div>
                 </dl>
               </details>
-              {preflight.protectedTokenIssues.length > 0 && (
+              {errorIssues.length > 0 && (
+                <div className="translator-flow-callout is-warning">
+                  {errorIssues.length}{" "}
+                  {errorIssues.length === 1 ? "string has" : "strings have"} a
+                  token error that would break the game.{" "}
+                  {errorIssues.length === 1 ? "It is" : "They are"} imported to
+                  Review; export leaves{" "}
+                  {errorIssues.length === 1 ? "it" : "them"} out (English in
+                  game) until fixed or accepted.
+                </div>
+              )}
+              {tokenIssues.length > 0 && (
                 <details className="translator-result-help">
                   <summary>
-                    {preflight.protectedTokenIssues.length} protected-token{" "}
-                    {preflight.protectedTokenIssues.length === 1
-                      ? "issue"
-                      : "issues"}
+                    {errorIssues.length > 0 &&
+                      `${errorIssues.length} with errors`}
+                    {errorIssues.length > 0 && warningIssues > 0 && " · "}
+                    {warningIssues > 0 &&
+                      `${warningIssues} with harmless differences`}
                   </summary>
                   <ul className="translator-import-preflight-issues">
-                    {preflight.protectedTokenIssues.map((issue) => (
+                    {tokenIssues.map((issue) => (
                       <li key={`${issue.relativeDir}\0${issue.key}`}>
                         <code>
                           {issue.relativeDir} / {issue.key}
                         </code>
-                        <span>
-                          {issue.differences
-                            .map(
-                              (difference) =>
-                                `${difference.token}: source ${difference.sourceCount}, import ${difference.targetCount}`,
-                            )
-                            .join(" · ")}
+                        {describeTokenIssue(
+                          issue.differences,
+                          issue.importedText,
+                        ).map((item, index) => (
+                          <span key={index} data-severity={item.severity}>
+                            {item.severity === "error" ? "Error: " : "Note: "}
+                            {item.message}
+                          </span>
+                        ))}
+                        <span className="translator-import-preflight-text">
+                          Import: {issue.importedText}
                         </span>
                       </li>
                     ))}
@@ -326,11 +351,7 @@ export function ImportBatchDialog({
             className="translator-button translator-button-primary"
             type="button"
             disabled={
-              !path ||
-              invalidSelection ||
-              pending ||
-              checking ||
-              !preflight?.ready
+              !path || invalidSelection || pending || checking || !canImport
             }
             onClick={() => void confirm()}
           >

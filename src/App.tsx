@@ -178,7 +178,6 @@ function completedExport(
   title: string,
   result: ExportResult,
 ): LastSuccessfulExport | null {
-  if (result.blocked) return null;
   const path =
     result.files.find((file) => file.written || file.removed)?.targetPath ??
     result.files[0]?.targetPath;
@@ -348,7 +347,7 @@ export function App() {
     changedIncluded: number | null;
     reviewIncluded: number | null;
     acceptedMismatches: number;
-    blockingProblem: ExportPreflightProblem | null;
+    omitted: ExportPreflightProblem[];
     existingTargetPaths: string[];
     newTargetPaths: string[];
   } | null>(null);
@@ -1549,12 +1548,12 @@ export function App() {
         existingFiles: existingFiles.length,
         newFiles: newFiles.length,
         mods: null,
-        willWrite: mod.translatedKeys,
+        willWrite: Math.max(0, mod.translatedKeys - preflight.omitted.length),
         openOmitted: Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
         changedIncluded: mod.statusCounts?.outdated ?? null,
         reviewIncluded: mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded,
         acceptedMismatches: preflight.acceptedMismatches,
-        blockingProblem: preflight.blockingProblem,
+        omitted: preflight.omitted,
         existingTargetPaths: existingFiles.map((file) => file.targetPath),
         newTargetPaths: newFiles.map((file) => file.targetPath),
       });
@@ -1598,7 +1597,11 @@ export function App() {
         existingFiles: existingFiles.length,
         newFiles: newFiles.length,
         mods: affected.length,
-        willWrite: affected.reduce((sum, mod) => sum + mod.translatedKeys, 0),
+        willWrite: Math.max(
+          0,
+          affected.reduce((sum, mod) => sum + mod.translatedKeys, 0) -
+            preflight.omitted.length,
+        ),
         openOmitted: affected.reduce(
           (sum, mod) =>
             sum + Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
@@ -1615,7 +1618,7 @@ export function App() {
           0,
         ),
         acceptedMismatches: preflight.acceptedMismatches,
-        blockingProblem: preflight.blockingProblem,
+        omitted: preflight.omitted,
         existingTargetPaths: existingFiles.map((file) => file.targetPath),
         newTargetPaths: newFiles.map((file) => file.targetPath),
       });
@@ -1723,7 +1726,6 @@ export function App() {
         totalOutdated: outcome.totalOutdated,
         totalReviewNeeded: outcome.totalReviewNeeded,
         totalOrphanKeys: outcome.totalOrphanKeys,
-        blocked: outcome.blocked,
       };
       for (const exported of outcome.mods) {
         const mod = scan.mods.find(
@@ -2512,11 +2514,11 @@ export function App() {
             reviewIncluded={exportConfirm.reviewIncluded}
             acceptedMismatches={exportConfirm.acceptedMismatches}
             blockingValidationAvailable
-            blockingProblem={exportConfirm.blockingProblem}
+            omitted={exportConfirm.omitted}
             onInspectProblem={
-              exportConfirm.blockingProblem
+              exportConfirm.omitted.length > 0
                 ? () => {
-                    const problem = exportConfirm.blockingProblem;
+                    const problem = exportConfirm.omitted[0];
                     if (!problem) return;
                     setExportConfirm(null);
                     inspectResultProblem({

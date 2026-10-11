@@ -102,8 +102,9 @@ and evidence-matrix regressions run through `pnpm test:desktop:guards`.
    the destination does not write yet; **Save JSON batch** does. Verify format 2,
    mod/language/source binding and exclusion of Done entries. Prepare synthetic
    returned files locally; no LLM is contacted. Real file-picker imports with a
-   wrong language, changed snapshot hash, or missing token are blocked without
-   state writes. A valid return goes to Review; **Approve suggestion** persists
+   wrong language or changed snapshot hash are blocked without state writes; a
+   token error is explained without blocking. A valid return goes to Review;
+   **Approve suggestion** persists
    Done. No batch action implicitly writes the installed locale.
 10. Build a German glossary in Settings from two generated, uncompressed XNB
     dictionaries. Verify the typed cache, filtering of unchanged English values,

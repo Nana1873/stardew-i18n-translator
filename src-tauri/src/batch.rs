@@ -86,6 +86,9 @@ pub struct ImportSummary {
     /// Empty translation values intentionally skipped.
     pub unmatched: usize,
     pub identical_to_source: usize,
+    /// Included in `imported` although they contain game-breaking token
+    /// errors; export leaves them out until they are fixed or accepted.
+    pub imported_with_token_errors: usize,
     pub total_in_file: usize,
 }
 
@@ -95,6 +98,7 @@ pub struct ImportTokenDifference {
     pub token: String,
     pub source_count: usize,
     pub target_count: usize,
+    pub severity: tokens::Severity,
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq, Eq)]
@@ -102,6 +106,8 @@ pub struct ImportTokenDifference {
 pub struct ImportTokenIssue {
     pub relative_dir: String,
     pub key: String,
+    /// The supplied translation, so the user can see what changed.
+    pub imported_text: String,
     pub differences: Vec<ImportTokenDifference>,
 }
 
@@ -350,21 +356,24 @@ fn analyze_batch(
                 preflight.preserved_local += 1;
                 continue;
             }
+            // Token issues never block an import: the value goes to Review with
+            // its issues listed, and export leaves out only game-breaking ones.
             let differences = tokens::token_differences(&row.source, text);
             if !differences.is_empty() {
                 preflight.protected_token_issues.push(ImportTokenIssue {
                     relative_dir: relative_dir.clone(),
                     key: key.clone(),
+                    imported_text: text.to_string(),
                     differences: differences
                         .into_iter()
                         .map(|difference| ImportTokenDifference {
                             token: difference.token,
                             source_count: difference.source_count,
                             target_count: difference.target_count,
+                            severity: difference.severity,
                         })
                         .collect(),
                 });
-                continue;
             }
             if text.trim() == row.source.trim() {
                 preflight.identical_to_source += 1;
@@ -381,19 +390,7 @@ fn analyze_batch(
         }
     }
 
-    if preflight.protected_token_issues.is_empty() {
-        preflight.ready = true;
-    } else {
-        let labels = preflight
-            .protected_token_issues
-            .iter()
-            .map(|issue| format!("{} · {}", issue.relative_dir, issue.key))
-            .collect::<Vec<_>>()
-            .join(", ");
-        preflight.blocking_reason = Some(format!(
-            "Protected tokens changed in: {labels}. Fix the batch and retry. No changes were made."
-        ));
-    }
+    preflight.ready = true;
 
     Ok(BatchAnalysis { preflight, entries })
 }
@@ -432,6 +429,17 @@ pub fn apply_batch(
         return Err(reason);
     }
 
+    let imported_with_token_errors = analysis
+        .preflight
+        .protected_token_issues
+        .iter()
+        .filter(|issue| {
+            issue
+                .differences
+                .iter()
+                .any(|difference| difference.severity == tokens::Severity::Error)
+        })
+        .count();
     Ok(PreparedImport {
         entries: analysis.entries,
         summary: ImportSummary {
@@ -439,6 +447,7 @@ pub fn apply_batch(
             skipped_translated: analysis.preflight.preserved_local,
             unmatched: analysis.preflight.skipped_empty,
             identical_to_source: analysis.preflight.identical_to_source,
+            imported_with_token_errors,
             total_in_file: analysis.preflight.supplied_strings,
         },
     })
@@ -676,9 +685,16 @@ mod tests {
         assert_eq!(report.snapshot_result, SnapshotResult::Matched);
         assert_eq!(report.skipped_empty, 1);
         assert_eq!(report.preserved_local, 1);
-        assert_eq!(report.importable, 0);
-        assert!(!report.ready);
+        // Token issues never block: the value is still importable to Review.
+        assert_eq!(report.importable, 1);
+        assert!(report.ready);
+        assert_eq!(report.blocking_reason, None);
         assert_eq!(report.protected_token_issues.len(), 1);
+        assert_eq!(report.protected_token_issues[0].imported_text, "Hallo");
+        assert_eq!(
+            report.protected_token_issues[0].differences[0].severity,
+            tokens::Severity::Warning
+        );
         assert_eq!(report.protected_token_issues[0].relative_dir, "i18n");
         assert_eq!(report.protected_token_issues[0].key, "hello");
         assert_eq!(
@@ -750,7 +766,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_values_are_skipped_but_token_changes_reject_everything() {
+    fn empty_values_are_skipped_and_token_errors_are_imported_and_counted() {
         let current = rows();
         let mut empty = translated_batch();
         empty["files"]["sub/i18n"]["bye"] = Value::String(" ".into());
@@ -758,11 +774,16 @@ mod tests {
         assert_eq!(prepared.summary.unmatched, 1);
         assert_eq!(prepared.summary.imported, 1);
 
+        // A stray `}` is a game-breaking error, yet it never blocks the import.
         let mut broken = translated_batch();
-        broken["files"]["i18n"]["hello"] = Value::String("Hallo".into());
-        assert!(apply_batch(&broken, "Author.Mod", "de", &current)
-            .unwrap_err()
-            .contains("Protected tokens changed"));
+        broken["files"]["i18n"]["hello"] = Value::String("Hallo {{name}}}".into());
+        let prepared = apply_batch(&broken, "Author.Mod", "de", &current).unwrap();
+        assert_eq!(prepared.summary.imported, 2);
+        assert_eq!(prepared.summary.imported_with_token_errors, 1);
+        assert!(prepared
+            .entries
+            .iter()
+            .all(|(_, entry)| entry.status == "review-needed"));
     }
 
     #[test]
