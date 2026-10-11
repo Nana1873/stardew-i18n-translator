@@ -805,7 +805,7 @@ try {
     assert.equal(await acceptedMarker.getAttribute("data-severity"), "warning");
     assert.match(
       await acceptedMarker.getAttribute("aria-label"),
-      /^Accepted token mismatch: export allowed\./,
+      /^Accepted token mismatch: exported as written\./,
     );
     await openEntry("greeting");
     assert.match(
@@ -1294,13 +1294,11 @@ try {
   }
   await step("llm-batch-preflight-rejections", async () => {
     const before = await readFile(statePath);
-    for (const fault of ["wrong-language", "stale-source", "missing-token"]) {
+    for (const fault of ["wrong-language", "stale-source"]) {
       const invalid = await json(returnedBatch);
       if (fault === "wrong-language") invalid.metadata.targetLang = "fr";
       if (fault === "stale-source")
         invalid.metadata.sourceSnapshot = "0".repeat(64);
-      if (fault === "missing-token")
-        invalid.files.i18n.farewell = "Missing player token";
       const file = join(runtime, `imports/${fault}.llm-result.json`);
       await writeFile(file, JSON.stringify(invalid));
       await chooseBatch(file);
@@ -1324,6 +1322,35 @@ try {
       await click(css('[aria-label="Cancel import"]'));
       await absent(css('[aria-label="LLM import preflight"]'));
     }
+  });
+  await step("llm-batch-token-error-is-explained-not-blocked", async () => {
+    const before = await readFile(statePath);
+    const broken = await json(returnedBatch);
+    // A stray `}` would turn dialogue text into a mail flag in game.
+    broken.files.i18n.farewell = "Auf Wiedersehen {{PlayerName}}}!";
+    const file = join(runtime, "imports/token-error.llm-result.json");
+    await writeFile(file, JSON.stringify(broken));
+    await chooseBatch(file);
+    const preflight = await element(css('[aria-label="LLM import preflight"]'));
+    await waitFor("token error listed without blocking", async () => {
+      const text = await preflight.getText();
+      return (
+        text.includes("Ready to import") &&
+        text.includes("1 string has a token error")
+      );
+    });
+    assert.equal(
+      await (await element(button("Import file"))).isEnabled(),
+      true,
+    );
+    assert.deepEqual(
+      await readFile(statePath),
+      before,
+      "Preflight must make no state writes.",
+    );
+    await screenshot("llm-token-error-explained");
+    await click(css('[aria-label="Cancel import"]'));
+    await absent(css('[aria-label="LLM import preflight"]'));
   });
   await step("llm-batch-review-and-approval", async () => {
     await chooseBatch(returnedBatch);
