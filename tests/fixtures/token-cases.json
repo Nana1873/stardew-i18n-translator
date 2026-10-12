@@ -588,6 +588,18 @@
       "source": "Hello.$h",
       "target": "Hallo.$h Schön.$s",
       "blocked": true
+    },
+    {
+      "name": "a second portrait only in the female branch is an error",
+      "source": "${Hi^Hey}$ friend.$h",
+      "target": "${Hallo^Hey $s}$ Freund.$h",
+      "blocked": true
+    },
+    {
+      "name": "$neutral is not a portrait and stays visible in the game",
+      "source": "Hello.",
+      "target": "Hallo.$neutral",
+      "blocked": true
     }
   ],
   "explanations": [

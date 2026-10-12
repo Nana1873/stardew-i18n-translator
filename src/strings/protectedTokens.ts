@@ -146,29 +146,29 @@ export type TokenSeverity = "error" | "warning";
  * falls back to portrait 0 (DialogueBox bounds check). */
 export function isPortraitCommand(token: string): boolean {
   return (
-    ["$h", "$s", "$u", "$l", "$a", "$neutral"].includes(token) ||
-    /^\$\d+$/.test(token)
+    ["$h", "$s", "$u", "$l", "$a"].includes(token) || /^\$\d+$/.test(token)
   );
 }
 
 /** The game applies one emotion per dialogue page and removes every copy of
  * it (`Dialogue.checkEmotions` uses `Replace`), so a repeated portrait is
  * harmless; a second, different one stays visible as raw text. Counts the
- * pages that show such raw text. Mirrors Rust `pages_with_multiple_portraits`. */
+ * pages that show such raw text, for the player gender where most pages do
+ * (each switch branch is what one player sees). Mirrors Rust
+ * `pages_with_multiple_portraits`. */
 export function pagesWithMultiplePortraits(value: string): number {
-  return firstBranchText(value)
-    .split("#")
-    .filter(
-      (page) =>
-        new Set(extractProtectedTokens(page).filter(isPortraitCommand)).size >
-        1,
-    ).length;
-}
-
-/** The text one player sees: every well-formed gender switch is replaced by
- * its first branch, so portraits in alternative branches are not counted twice. */
-function firstBranchText(value: string): string {
-  return branchText(value, 0);
+  return Math.max(
+    ...[0, 1, 2].map(
+      (branch) =>
+        branchText(value, branch)
+          .split("#")
+          .filter(
+            (page) =>
+              new Set(extractProtectedTokens(page).filter(isPortraitCommand))
+                .size > 1,
+          ).length,
+    ),
+  );
 }
 
 /** The text a player sees for one gender: every well-formed switch is

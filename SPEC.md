@@ -112,8 +112,9 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), the `_` separators
   and single `*` page breaks inside a `$y '…'` quick response, single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
   item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
-  a second, different portrait command on one dialogue page (the game removes
-  every copy of the one it applies, so a repeated portrait is harmless).
+  a second, different portrait command on one dialogue page for either player
+  gender (the game removes every copy of the one it applies, so a repeated
+  portrait is harmless). `$neutral` is not a portrait command in dialogue text.
 - Warnings are cosmetic or legitimate translation choices: portrait changes
   (a missing index falls back to portrait 0), a cleanly removed or reshaped
   gender switch, `@`, and a dropped placeholder or `[ArticleFor]`.
