@@ -1233,6 +1233,12 @@ mod tests {
         write(&component.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
         let displayed = scanned_package(&config, &mods, "Pack");
         assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_ok());
+        // A new component with its own manifest (SMAPI only loads an i18n
+        // folder beside a manifest).
+        write(
+            &component.join("extra/manifest.json"),
+            r#"{"Name":"Extra","UniqueID":"Fixture.Extra","Version":"1.0.0"}"#,
+        );
         write(
             &component.join("extra/i18n/default.json"),
             r#"{"bye":"Goodbye"}"#,
@@ -1246,7 +1252,13 @@ mod tests {
             .contains("Run Scan"));
         let current = scanned_package(&config, &mods, "Pack");
         let resolved = resolve_components(&config, &mods, "Pack", "de", &current).unwrap();
-        assert_eq!(resolved[0].files.len(), 2);
+        assert_eq!(
+            resolved
+                .iter()
+                .map(|component| component.files.len())
+                .sum::<usize>(),
+            2
+        );
         let destination = root.join("package.zip");
         build(
             &translations::language_root(&config, "de").unwrap(),

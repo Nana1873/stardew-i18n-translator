@@ -38,6 +38,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- An `i18n` folder deeper inside a mod without its own `manifest.json` is no
+  longer offered for translation, because SMAPI never loads it; Scan lists it
+  as information. Mods whose components each have a manifest, such as
+  Stardew Valley Expanded, are unaffected.
 - A second portrait that only the other player gender sees, inside a he/she
   switch, is now a token error like any other second portrait on a page.
 - `$neutral` is no longer treated as a portrait. The game does not read it

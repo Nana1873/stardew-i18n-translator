@@ -424,6 +424,22 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
         if is_content_patcher_assets_i18n(&owner, i18n_dir) {
             continue;
         }
+        // SMAPI reads only `<mod folder>/i18n` (SCore.ReadTranslationFiles), so
+        // an `i18n` folder deeper inside a mod without its own manifest is never
+        // loaded. Components with their own manifest (SVE, Ridgeside) are owners
+        // themselves and are unaffected.
+        if i18n_dir.parent() != Some(owner.as_path()) {
+            skipped_components.push(SkippedComponent {
+                package_id: None,
+                component_unique_id: None,
+                component_name: None,
+                relative_location: safe_relative_location(i18n_dir, mods_path),
+                reason: "SMAPI only loads the i18n folder next to a manifest.json, so these translations are not used.".to_string(),
+                requires_attention: false,
+                rest_of_package_loaded: false,
+            });
+            continue;
+        }
         if let Some(scanned) = mods.get_mut(&owner) {
             let unique_id = scanned.unique_id.clone();
             if blocked_state_ids.contains(&unique_id.to_lowercase()) {
@@ -2423,6 +2439,10 @@ mod tests {
             r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
         );
         write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(
+            &mod_dir.join("optional/manifest.json"),
+            r#"{"Name":"Optional","UniqueID":"Author.Optional"}"#,
+        );
         write(&mod_dir.join("optional/i18n/default.json"), "{ broken");
 
         let result = scan_mods(&root, "de", &root);
@@ -2432,15 +2452,18 @@ mod tests {
         assert_eq!(result.skipped_components.len(), 1);
         let skipped = &result.skipped_components[0];
         assert_eq!(skipped.package_id.as_deref(), Some("Mod"));
-        assert_eq!(skipped.component_unique_id.as_deref(), Some("Author.Mod"));
-        assert_eq!(skipped.component_name.as_deref(), Some("Mod"));
+        assert_eq!(
+            skipped.component_unique_id.as_deref(),
+            Some("Author.Optional")
+        );
+        assert_eq!(skipped.component_name.as_deref(), Some("Optional"));
         assert_eq!(skipped.relative_location, "Mod/optional/i18n/default.json");
         assert!(skipped.rest_of_package_loaded);
         std::fs::remove_dir_all(root).ok();
     }
 
     #[test]
-    fn ignores_content_patcher_assets_i18n_but_keeps_other_nested_i18n() {
+    fn ignores_content_patcher_assets_i18n_and_notes_unloaded_nested_i18n() {
         let root = crate::test_support::temp_dir("scanner-ignore-cp-assets-i18n");
         let mod_dir = root.join("Mod");
         write(
@@ -2468,16 +2491,22 @@ mod tests {
         let result = scan_mods(&root, "de", &root);
         assert!(result.traversal_complete);
         assert_eq!(result.mod_count, 1);
-        assert_eq!(result.file_count, 2);
+        assert_eq!(result.file_count, 1);
         assert!(result.warnings.is_empty(), "{:?}", result.warnings);
-        assert!(result.skipped_components.is_empty());
+        // SMAPI never loads `optional/i18n` (no manifest beside it): a note.
+        assert_eq!(result.skipped_components.len(), 1);
+        assert!(!result.skipped_components[0].requires_attention);
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Mod/optional/i18n"
+        );
         assert_eq!(
             result.mods[0]
                 .i18n_files
                 .iter()
                 .map(|file| file.relative_dir.as_str())
                 .collect::<Vec<_>>(),
-            vec!["i18n", "optional/i18n"]
+            vec!["i18n"]
         );
         std::fs::remove_dir_all(root).ok();
     }

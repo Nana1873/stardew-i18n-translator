@@ -535,7 +535,7 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
       ? `${packs} community language ${packs === 1 ? "pack" : "packs"}`
       : "",
     folders > 0
-      ? `${folders} ${folders === 1 ? "folder" : "folders"} without a manifest.json`
+      ? `${folders} i18n ${folders === 1 ? "folder" : "folders"} that SMAPI does not load`
       : "",
   ].filter(Boolean);
   return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
