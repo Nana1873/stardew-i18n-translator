@@ -621,4 +621,26 @@ describe("ResultTray", () => {
       "translator-button-quiet",
     );
   });
+
+  it("names packages the ZIP for all mods left out at build time", () => {
+    renderTray({
+      kind: "zip",
+      title: "All.zip",
+      collapsed: false,
+      pending: false,
+      error: null,
+      outcome: {
+        path: "C:/release/All.zip",
+        folder: "C:/release",
+        fileName: "All.zip",
+        entries: 1,
+        strings: 2,
+        leftOut: ["Broken Pack"],
+      },
+      problems: [],
+    });
+    expect(
+      screen.getAllByText(/Left out because the scan skipped.*Broken Pack/)[0],
+    ).toBeInTheDocument();
+  });
 });

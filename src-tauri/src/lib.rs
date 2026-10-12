@@ -736,7 +736,14 @@ fn build_stardew_translator_output(
                 install_folders.as_deref().unwrap_or_default(),
             )
         },
-        |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
+        |r| {
+            let outcome = if r.left_out.is_empty() {
+                Outcome::Success
+            } else {
+                Outcome::Partial
+            };
+            Summary::new(outcome, r.strings, r.entries, r.left_out.len())
+        },
     )
 }
 
@@ -762,7 +769,11 @@ fn remember_zip_operation(
         history,
         operation_history::CompletedOperation {
             kind: operation_history::OperationKind::Zip,
-            outcome: operation_history::OperationOutcome::Success,
+            outcome: if result.left_out.is_empty() {
+                operation_history::OperationOutcome::Success
+            } else {
+                operation_history::OperationOutcome::Warning
+            },
             title: title.to_string(),
             summary: format!(
                 "{} strings packaged in {} translation files.",
@@ -771,7 +782,14 @@ fn remember_zip_operation(
             item_count: result.strings,
             path: Some(result.path.clone()),
             file_name: Some(result.file_name.clone()),
-            warnings: Vec::new(),
+            warnings: if result.left_out.is_empty() {
+                Vec::new()
+            } else {
+                vec![format!(
+                    "Left out because the scan skipped all or part of them: {}. Open Scan for details.",
+                    result.left_out.join(", ")
+                )]
+            },
             details: vec![
                 operation_detail("Destination folder", &result.folder),
                 operation_detail("Translation files", result.entries),
@@ -3359,6 +3377,7 @@ mod output_history_tests {
             file_name: "previous.zip".into(),
             entries: 2,
             strings: 10,
+            left_out: Vec::new(),
         };
         remember_zip_operation(&history, &previous, "Translation ZIP created");
         let prior_entry = history.list().unwrap()[0].clone();
