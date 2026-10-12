@@ -65,16 +65,18 @@ describe("ScanDialog", () => {
       />,
     );
     expect(screen.getByText("Scan results")).toBeInTheDocument();
+    expect(screen.getByText("2 items need a look")).toBeInTheDocument();
     expect(
       screen.getByText(
-        /Read 12 mods with 18 translation files\. 2 items need a look; your saved work is safe\./,
+        "Read 12 mods with 18 translation files. Your saved work is safe.",
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "English text since the last scan: 2 changed, 3 new, 1 removed.",
-      ),
-    ).toBeInTheDocument();
+      screen.getByRole("list", {
+        name: "English source changes since last scan:",
+      }),
+    ).toHaveTextContent("2 changed3 new1 removed");
+    expect(screen.getByText("Change comparison")).toBeInTheDocument();
     expect(screen.getByText("Broken Component")).toBeInTheDocument();
     expect(
       screen.getByText(
@@ -122,14 +124,15 @@ describe("ScanDialog", () => {
       />,
     );
 
+    expect(screen.getByText("Everything is ready")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /Read 1 mod with 1 translation file\. Everything is ready\./,
-      ),
+      screen.getByText("Read 1 mod with 1 translation file."),
     ).toBeInTheDocument();
     expect(
-      screen.getByText("English text since the last scan: 1 changed, 1 new."),
-    ).toBeInTheDocument();
+      screen.getByRole("list", {
+        name: "English source changes since last scan:",
+      }),
+    ).toHaveTextContent("1 changed1 new");
     expect(
       screen.getByRole("button", { name: "Show new strings (1)" }),
     ).toBeEnabled();
@@ -162,9 +165,7 @@ describe("ScanDialog", () => {
     );
     expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
     expect(
-      screen.getByText(
-        "Changes since the last scan could not be compared this time.",
-      ),
+      screen.getByText("Could not be checked this time"),
     ).toBeInTheDocument();
   });
 
@@ -405,7 +406,7 @@ describe("ScanDialog", () => {
     expect(
       screen.getByText(/1 community language pack was ignored/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/Everything is ready\./)).toBeInTheDocument();
+    expect(screen.getByText("Everything is ready")).toBeInTheDocument();
     const line = screen
       .getByText(/1 community language pack was ignored/)
       .closest("details");
@@ -466,10 +467,8 @@ describe("ScanDialog", () => {
       />,
     );
 
-    expect(screen.getByText(/Everything is ready\./)).toBeInTheDocument();
-    expect(
-      screen.getByText("No English text changed since the last scan."),
-    ).toBeInTheDocument();
+    expect(screen.getByText("Everything is ready")).toBeInTheDocument();
+    expect(screen.getByText("None")).toBeInTheDocument();
     expect(document.querySelector("[data-scan-diagnostics]")).toBeNull();
   });
 

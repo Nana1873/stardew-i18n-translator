@@ -236,91 +236,113 @@ function ScanResultContent({ result }: { result: ScanResult }) {
 
   return (
     <>
-      <p
-        className={`translator-scan-summary${problemCount > 0 ? " is-warning" : " is-success"}`}
+      <div
+        className={`translator-scan-status ${problemCount > 0 ? "is-attention" : "is-ready"}`}
       >
-        {problemCount > 0 ? (
-          <AlertTriangle aria-hidden="true" />
-        ) : (
-          <CheckCircle2 aria-hidden="true" />
-        )}{" "}
-        {problemCount > 0
-          ? `Read ${mods} with ${files}. ${problemCount} ${problemCount === 1 ? "item needs" : "items need"} a look; your saved work is safe.`
-          : `Read ${mods} with ${files}. Everything is ready.`}
-      </p>
-      <p
-        className="translator-scan-changes"
-        aria-label="Changes since the last scan"
-      >
-        {describeSourceChanges(result.sourceDeltas)}
-      </p>
+        <span className="translator-scan-status-icon" aria-hidden="true">
+          {problemCount > 0 ? <AlertTriangle /> : <CheckCircle2 />}
+        </span>
+        <div>
+          <strong>
+            {problemCount > 0
+              ? `${problemCount} ${problemCount === 1 ? "item needs" : "items need"} a look`
+              : "Everything is ready"}
+          </strong>
+          <span>
+            {`Read ${mods} with ${files}.`}
+            {problemCount > 0 && " Your saved work is safe."}
+          </span>
+        </div>
+      </div>
+
+      <div className="translator-scan-changes">
+        <span id="scan-changes-label">
+          English source changes since last scan:
+        </span>
+        <ul
+          className="translator-scan-chips"
+          aria-labelledby="scan-changes-label"
+        >
+          {sourceChangeChips(result.sourceDeltas).map((chip) => (
+            <li
+              key={chip.text}
+              className={`translator-scan-chip${chip.muted ? " is-muted" : ""}`}
+            >
+              {chip.text}
+            </li>
+          ))}
+        </ul>
+      </div>
 
       {problemCount > 0 && (
         <section
-          className="translator-flow-callout translator-scan-diagnostics is-warning"
+          className="translator-scan-attention is-warning"
           tabIndex={-1}
           data-scan-diagnostics
+          aria-label="Needs attention"
         >
-          <ul className="translator-flow-list" aria-label="Skipped components">
+          <h3 className="translator-scan-section-title">
+            Needs attention <span>{problemCount}</span>
+          </h3>
+          <ul className="translator-scan-cards" aria-label="Skipped components">
             {skippedForAttention.map((component, index) => (
               <li
+                className="translator-scan-card"
                 key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
               >
-                <span>
+                <AlertTriangle aria-hidden="true" />
+                <div>
                   <strong>
                     {component.componentName ??
                       component.componentUniqueId ??
                       component.packageId ??
                       "Unnamed component"}
-                  </strong>{" "}
-                  {plainSkipReason(component.reason)}
-                  {component.restOfPackageLoaded &&
-                    " The rest of this mod was loaded."}
+                  </strong>
+                  <p>
+                    {plainSkipReason(component.reason)}
+                    {component.restOfPackageLoaded &&
+                      " The rest of this mod was loaded."}
+                  </p>
                   <details className="translator-scan-details">
                     <summary>Details</summary>
                     <code>{component.relativeLocation}</code>
                     <span>{component.reason}</span>
                   </details>
-                </span>
+                </div>
+              </li>
+            ))}
+            {warnings.map((warning, index) => (
+              <li className="translator-scan-card" key={`${warning}:${index}`}>
+                <AlertTriangle aria-hidden="true" />
+                <div>
+                  <strong>{warningTitle(warning)}</strong>
+                  <p>{warning}</p>
+                </div>
               </li>
             ))}
           </ul>
-          {warnings.length > 0 && (
-            <ul className="translator-flow-list" aria-label="Scan warnings">
-              {warnings.map((warning, index) => (
-                <li key={`${warning}:${index}`}>
-                  <span>{warning}</span>
-                </li>
-              ))}
-            </ul>
-          )}
         </section>
       )}
 
       {expectedExclusions.length > 0 && (
-        <details className="translator-scan-extra-info translator-scan-info-section">
+        <details className="translator-scan-footnote">
           <summary>
             <Info aria-hidden="true" />{" "}
             {describeExpectedExclusions(expectedExclusions)} (expected, no
             action needed)
           </summary>
-          <ul
-            className="translator-flow-list"
-            aria-label="Expected scan exclusions"
-          >
+          <ul aria-label="Expected scan exclusions">
             {expectedExclusions.map((component, index) => (
               <li
                 key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
               >
-                <span>
-                  <strong>
-                    {component.componentName ??
-                      component.componentUniqueId ??
-                      component.packageId ??
-                      component.relativeLocation}
-                  </strong>{" "}
-                  {component.reason}
-                </span>
+                <strong>
+                  {component.componentName ??
+                    component.componentUniqueId ??
+                    component.packageId ??
+                    component.relativeLocation}
+                </strong>{" "}
+                {component.reason}
               </li>
             ))}
           </ul>
@@ -424,18 +446,31 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
   return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
 }
 
-/** One sentence about English source changes since the previous scan. */
-function describeSourceChanges(deltas: ScanResult["sourceDeltas"]): string {
-  if (!deltas)
-    return "Changes since the last scan could not be compared this time.";
-  const parts = [
-    deltas.sourcesChanged > 0 ? `${deltas.sourcesChanged} changed` : "",
-    deltas.stringsAdded > 0 ? `${deltas.stringsAdded} new` : "",
-    deltas.stringsRemoved > 0 ? `${deltas.stringsRemoved} removed` : "",
-  ].filter(Boolean);
-  return parts.length === 0
-    ? "No English text changed since the last scan."
-    : `English text since the last scan: ${parts.join(", ")}.`;
+/** Short chips for English source changes since the previous scan. */
+function sourceChangeChips(
+  deltas: ScanResult["sourceDeltas"],
+): Array<{ text: string; muted?: boolean }> {
+  if (!deltas) return [{ text: "Could not be checked this time", muted: true }];
+  const chips = [
+    deltas.sourcesChanged > 0
+      ? { text: `${deltas.sourcesChanged} changed` }
+      : null,
+    deltas.stringsAdded > 0 ? { text: `${deltas.stringsAdded} new` } : null,
+    deltas.stringsRemoved > 0
+      ? { text: `${deltas.stringsRemoved} removed` }
+      : null,
+  ].filter((chip): chip is { text: string } => chip !== null);
+  return chips.length > 0 ? chips : [{ text: "None", muted: true }];
+}
+
+/** A short title for a free-text scanner warning. */
+function warningTitle(warning: string): string {
+  if (/same uniqueid/i.test(warning)) return "Duplicate mod ID";
+  if (/cannot be read|unreadable/i.test(warning)) return "Unreadable file";
+  if (/translation state|saved translations/i.test(warning))
+    return "Saved translations";
+  if (/baseline|comparison/i.test(warning)) return "Change comparison";
+  return "Scan note";
 }
 
 /** A short, plain explanation of a skip; the technical reason stays under
