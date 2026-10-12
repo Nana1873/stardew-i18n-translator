@@ -449,19 +449,56 @@ function mockConfigured(
   });
 }
 
-function chooseToolbarAction(_menuName: "File actions", actionName: string) {
-  const titles: Record<string, string> = {
-    "Export current mod": "Export JSON for selected mod…",
-    "Export all mods …": "Export JSON for all mods…",
-    "Translation ZIP · current mod": "Export ZIP for selected mod…",
-    "Translation ZIP · all mods": "Export ZIP for all mods…",
-  };
+/** Export flows go through the single Export… entry and its two choices. */
+const EXPORT_CHOICES: Record<string, [scope: string, output: string]> = {
+  "Export current mod": ["This mod", "JSON"],
+  "Export all mods …": ["All mods", "JSON"],
+  "Translation ZIP · current mod": ["This mod", "ZIP"],
+  "Translation ZIP · all mods": ["All mods", "ZIP"],
+};
+
+function chooseExportOption(name: string) {
+  const option = screen.getByRole("radio", { name });
+  if (option.getAttribute("aria-checked") !== "true") fireEvent.click(option);
+}
+
+/** Chooses an action and, for a JSON export, waits until its preview has
+ * replaced the ZIP preview the Export… dialog opens with. */
+async function chooseToolbarAction(
+  menuName: "File actions",
+  actionName: string,
+) {
+  const choice = EXPORT_CHOICES[actionName];
+  openMenuEntry(menuName, choice ? "Export…" : actionName);
+  if (!choice) return;
+  // A remembered JSON choice shows the dialog once its preflight is ready.
+  await screen.findByRole("radio", { name: choice[0] });
+  chooseExportOptions(choice);
+  if (choice[1] !== "JSON") return;
+  await waitFor(() =>
+    expect(document.getElementById("translator-zip-title")).toBeNull(),
+  );
+}
+
+function openMenuEntry(_menuName: "File actions", entry: string) {
   fireEvent.click(screen.getByRole("button", { name: "File actions" }));
   fireEvent.click(
-    screen.getByRole("menuitem", {
-      name: new RegExp("^" + (titles[actionName] ?? actionName)),
-    }),
+    screen.getByRole("menuitem", { name: new RegExp("^" + entry) }),
   );
+}
+
+/** Scope first: switching to JSON starts a preflight that pauses the
+ * choices until it is ready. */
+function chooseExportOptions([scope, output]: [string, string]) {
+  chooseExportOption(scope);
+  chooseExportOption(output);
+}
+
+/** Opens Export… on a fresh session, where it starts with the ZIP preview,
+ * and picks the choices without waiting for the JSON preflight. */
+function startToolbarAction(menuName: "File actions", actionName: string) {
+  openMenuEntry(menuName, "Export…");
+  chooseExportOptions(EXPORT_CHOICES[actionName]);
 }
 
 async function inspectLatestResult() {
@@ -1059,10 +1096,10 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
 
     expect(
-      await screen.findByRole("dialog", { name: "Export translation JSON" }),
+      await screen.findByRole("dialog", { name: "Export translations" }),
     ).toHaveTextContent("1 existing translation file");
     expect(invokeMock).toHaveBeenCalledWith("preview_export", {
       mods: [
@@ -1085,9 +1122,61 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(
-      screen.queryByRole("dialog", { name: "Export translation JSON" }),
+      screen.queryByRole("dialog", { name: "Export translations" }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: "File actions" })).toHaveFocus();
+  });
+
+  it("opens Export… on this mod as ZIP and remembers the choice for the session", async () => {
+    mockExportConfigured(true);
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    openMenuEntry("File actions", "Export…");
+    const zip = await screen.findByRole("dialog", {
+      name: "Export translations",
+    });
+    expect(screen.getByRole("radio", { name: "This mod" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "ZIP" })).toBeChecked();
+    expect(zip).toHaveTextContent("Test Mod · German (de)");
+    expect(zip).toHaveTextContent("Saves one installable ZIP for this mod");
+    expect(invokeMock).toHaveBeenCalledWith(
+      "preview_translation_zip",
+      expect.anything(),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: "This mod" })).toHaveFocus(),
+    );
+
+    fireEvent.keyDown(screen.getByRole("radio", { name: "ZIP" }), {
+      key: "ArrowRight",
+    });
+    await waitFor(() =>
+      expect(document.getElementById("translator-zip-title")).toBeNull(),
+    );
+    const json = screen.getByRole("dialog", { name: "Export translations" });
+    expect(json).toHaveTextContent("Writes directly into your Mods folder");
+    expect(
+      within(json).getByRole("button", { name: "Replace in Mods folder" }),
+    ).toBeEnabled();
+    expect(screen.getByRole("radio", { name: "JSON" })).toBeChecked();
+    await waitFor(() =>
+      expect(screen.getByRole("radio", { name: "JSON" })).toHaveFocus(),
+    );
+
+    fireEvent.keyDown(json, { key: "Escape" });
+    expect(
+      screen.queryByRole("dialog", { name: "Export translations" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "File actions" })).toHaveFocus();
+
+    openMenuEntry("File actions", "Export…");
+    expect(await screen.findByRole("radio", { name: "JSON" })).toBeChecked();
+    expect(screen.getByRole("radio", { name: "This mod" })).toBeChecked();
+    expect(
+      invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
+    ).toHaveLength(2);
   });
 
   it("keeps toolbar dialogs disabled while export preflight is pending", async () => {
@@ -1104,7 +1193,9 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    // The Export… dialog opens on the ZIP preview; it stays until the JSON
+    // preflight is ready.
+    startToolbarAction("File actions", "Export current mod");
     await waitFor(() =>
       expect(
         invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
@@ -1113,18 +1204,26 @@ describe("App shell", () => {
 
     const exportActions = screen.getByRole("button", {
       name: "File actions",
+      hidden: true,
     });
     expect(exportActions).toBeDisabled();
     expect(exportActions).toHaveTextContent("Checking…");
     expect(exportActions).not.toHaveTextContent("Exporting…");
-    expect(screen.getByRole("button", { name: "Scan mods" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "File actions" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
-
     expect(
-      screen.getByRole("region", { name: "Translation workspace" }),
-    ).toBeVisible();
+      screen.getByRole("button", { name: "Scan mods", hidden: true }),
+    ).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: "Settings", hidden: true }),
+    ).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "JSON" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    for (const group of screen.getAllByRole("radiogroup"))
+      expect(group).toHaveAttribute("aria-busy", "true");
 
+    // Further choices wait for the running preflight.
+    fireEvent.click(screen.getByRole("radio", { name: "All mods" }));
     fireEvent.click(exportActions);
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
@@ -1133,9 +1232,12 @@ describe("App shell", () => {
     act(() => {
       preflight.resolve({ acceptedMismatches: 0, omitted: [] });
     });
+    await waitFor(() =>
+      expect(document.getElementById("translator-zip-title")).toBeNull(),
+    );
     expect(
-      await screen.findByRole("dialog", { name: "Export translation JSON" }),
-    ).toBeVisible();
+      screen.getByRole("dialog", { name: "Export translations" }),
+    ).toHaveTextContent("Writes directly into your Mods folder");
     expect(exportActions).toHaveTextContent("Files…");
   });
 
@@ -1156,12 +1258,12 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
     const preflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Export JSON" }),
+      within(preflight).getByRole("button", { name: "Export to Mods folder" }),
     );
     // Another result replaces the pending export card.
     fireEvent.click(
@@ -1197,12 +1299,12 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
     const preflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Export JSON" }),
+      within(preflight).getByRole("button", { name: "Export to Mods folder" }),
     );
 
     const exportActions = screen.getByRole("button", {
@@ -1244,10 +1346,10 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
 
     const preflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     expect(preflight).toHaveTextContent(
       "Replaces 1 existing translation file and creates 1 new translation file",
@@ -1256,7 +1358,7 @@ describe("App shell", () => {
     expect(within(preflight).getByText("New files")).toBeInTheDocument();
 
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Export and replace" }),
+      within(preflight).getByRole("button", { name: "Replace in Mods folder" }),
     );
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("export_mod", {
@@ -1276,9 +1378,11 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Export translation JSON" });
-    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    await chooseToolbarAction("File actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Export translations" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace in Mods folder" }),
+    );
 
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("export_mod", {
@@ -1304,10 +1408,10 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
 
     const preflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     expect(preflight).toHaveTextContent("Creates 1 new translation file");
     expect(
@@ -1316,7 +1420,7 @@ describe("App shell", () => {
     expect(preflight).not.toHaveTextContent("open strings omitted");
     expect(preflight).toHaveTextContent("2 token differences kept on purpose.");
     expect(
-      within(preflight).getByRole("button", { name: "Export JSON" }),
+      within(preflight).getByRole("button", { name: "Export to Mods folder" }),
     ).toBeEnabled();
     expect(preflight).toHaveTextContent("2 token differences kept on purpose.");
     expect(preflight).toHaveTextContent("x/i18n/de.json");
@@ -1326,7 +1430,7 @@ describe("App shell", () => {
     );
 
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Export JSON" }),
+      within(preflight).getByRole("button", { name: "Export to Mods folder" }),
     );
     expect(await inspectLatestResult()).toHaveTextContent("x/i18n/de.json");
 
@@ -1376,12 +1480,12 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
     const confirm = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     fireEvent.click(
-      within(confirm).getByRole("button", { name: "Export JSON" }),
+      within(confirm).getByRole("button", { name: "Export to Mods folder" }),
     );
 
     await inspectLatestResult();
@@ -1464,9 +1568,9 @@ describe("App shell", () => {
     );
     expect(await screen.findByText("new.key")).toBeVisible();
     expect(screen.queryByText("greeting")).toBeNull();
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
     const preflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
 
     expect(preflight).toHaveTextContent("1 string stays in English");
@@ -1475,14 +1579,14 @@ describe("App shell", () => {
       "#$b# is missing from the translation.",
     );
     expect(
-      within(preflight).getByRole("button", { name: "Export JSON" }),
+      within(preflight).getByRole("button", { name: "Export to Mods folder" }),
     ).toBeEnabled();
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Open issue" }),
+      within(preflight).getByRole("button", { name: "Open greeting" }),
     );
 
     expect(
-      screen.queryByRole("dialog", { name: "Export translation JSON" }),
+      screen.queryByRole("dialog", { name: "Export translations" }),
     ).toBeNull();
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
@@ -1510,13 +1614,13 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Could not check export readiness: Error: Preview unavailable",
     );
     expect(
-      screen.queryByRole("dialog", { name: "Export translation JSON" }),
+      screen.queryByRole("dialog", { name: "Export translations" }),
     ).toBeNull();
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
@@ -1529,9 +1633,11 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Export translation JSON" });
-    fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+    await chooseToolbarAction("File actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Export translations" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Export to Mods folder" }),
+    );
     await inspectLatestResult();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     const settingsDialog = await screen.findByRole("dialog", {
@@ -1578,9 +1684,11 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Export translation JSON" });
-    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    await chooseToolbarAction("File actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Export translations" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace in Mods folder" }),
+    );
     await waitFor(() => expect(exports).toBe(1));
     expect(screen.getByLabelText("Operation result")).toHaveTextContent(
       "1 file removed.",
@@ -1590,13 +1698,15 @@ describe("App shell", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
 
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
     const secondPreflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     expect(secondPreflight).toHaveTextContent("Creates 1 new translation file");
     fireEvent.click(
-      within(secondPreflight).getByRole("button", { name: "Export JSON" }),
+      within(secondPreflight).getByRole("button", {
+        name: "Export to Mods folder",
+      }),
     );
     await waitFor(() => expect(exports).toBe(2));
   });
@@ -1680,11 +1790,11 @@ describe("App shell", () => {
         screen.getByRole("button", { name: "File actions" }),
       ).toBeEnabled(),
     );
-    chooseToolbarAction("File actions", "Export all mods …");
+    await chooseToolbarAction("File actions", "Export all mods …");
     const preflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
-    expect(preflight).toHaveTextContent("Export translation JSON");
+    expect(preflight).toHaveTextContent("Export translations");
     expect(preflight).toHaveTextContent(
       "Replaces 1 existing translation file and creates 2 new translation files",
     );
@@ -1703,7 +1813,7 @@ describe("App shell", () => {
       })),
     });
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Export and replace" }),
+      within(preflight).getByRole("button", { name: "Replace in Mods folder" }),
     );
 
     const tray = await inspectLatestResult();
@@ -1744,13 +1854,13 @@ describe("App shell", () => {
         screen.getByRole("button", { name: "File actions" }),
       ).toBeEnabled(),
     );
-    chooseToolbarAction("File actions", "Export all mods …");
+    await chooseToolbarAction("File actions", "Export all mods …");
     const firstPreflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     fireEvent.click(
       within(firstPreflight).getByRole("button", {
-        name: "Export and replace",
+        name: "Replace in Mods folder",
       }),
     );
 
@@ -1766,9 +1876,9 @@ describe("App shell", () => {
     fireEvent.click(within(tray).getByRole("button", { name: "Export again" }));
 
     const retryPreflight = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
-    expect(retryPreflight).toHaveTextContent("Export translation JSON");
+    expect(retryPreflight).toHaveTextContent("Export translations");
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "preview_export"),
     ).toHaveLength(previewCallsBeforeRetry + 1);
@@ -1780,7 +1890,7 @@ describe("App shell", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Export translation JSON" }),
+        screen.queryByRole("dialog", { name: "Export translations" }),
       ).toBeNull(),
     );
     expect(exportAttempts).toBe(1);
@@ -1790,11 +1900,11 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: "Retry export" }),
     );
     const confirmedRetry = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     fireEvent.click(
       within(confirmedRetry).getByRole("button", {
-        name: "Export and replace",
+        name: "Replace in Mods folder",
       }),
     );
     await waitFor(() => expect(exportAttempts).toBe(2));
@@ -2136,12 +2246,12 @@ describe("App shell", () => {
     openWorkspace();
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Export current mod");
+    await chooseToolbarAction("File actions", "Export current mod");
     const confirm = await screen.findByRole("dialog", {
-      name: "Export translation JSON",
+      name: "Export translations",
     });
     fireEvent.click(
-      within(confirm).getByRole("button", { name: "Export JSON" }),
+      within(confirm).getByRole("button", { name: "Export to Mods folder" }),
     );
     const olderResult = await inspectLatestResult();
     fireEvent.click(
@@ -2901,9 +3011,11 @@ describe("App shell", () => {
     openWorkspace();
 
     await screen.findByText("greeting");
-    chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Export translation JSON" });
-    fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
+    await chooseToolbarAction("File actions", "Export current mod");
+    await screen.findByRole("dialog", { name: "Export translations" });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Export to Mods folder" }),
+    );
 
     const tray = await inspectLatestResult();
     expect(tray).toHaveTextContent("left out because of token errors");
@@ -3024,11 +3136,11 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Translation ZIP · current mod");
+    await chooseToolbarAction("File actions", "Translation ZIP · current mod");
 
     await screen.findByText("Test Mod/i18n/de.json");
     expect(
-      screen.getByRole("dialog", { name: "Export translation ZIP" }),
+      screen.getByRole("dialog", { name: "Export translations" }),
     ).toHaveTextContent("Test Mod/i18n/de.json");
     const chooseLocation = screen.getByRole("button", {
       name: "Save ZIP…",
@@ -3092,10 +3204,10 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findAllByText("Test Mod");
-    chooseToolbarAction("File actions", "Translation ZIP · all mods");
+    await chooseToolbarAction("File actions", "Translation ZIP · all mods");
     await screen.findByText("AI mod/i18n/de.json");
     const dialog = screen.getByRole("dialog", {
-      name: "Export translation ZIP",
+      name: "Export translations",
     });
     expect(within(dialog).queryByLabelText("Package version")).toBeNull();
     fireEvent.change(within(dialog).getByLabelText("Manual mod"), {
@@ -3171,7 +3283,7 @@ describe("App shell", () => {
     fireEvent.change(screen.getByRole("searchbox", { name: "Filter mods" }), {
       target: { value: "Test" },
     });
-    chooseToolbarAction("File actions", "Translation ZIP · all mods");
+    await chooseToolbarAction("File actions", "Translation ZIP · all mods");
     await screen.findByText("AI mod/i18n/de.json");
     fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     await waitFor(() => expect(exporting).toBe(true));
@@ -3299,11 +3411,14 @@ describe("App shell", () => {
       render(<App />);
       openWorkspace();
       await screen.findAllByText("Test Mod");
-      chooseToolbarAction("File actions", "Translation ZIP · current mod");
+      await chooseToolbarAction(
+        "File actions",
+        "Translation ZIP · current mod",
+      );
       fireEvent.click(
         screen.getByRole("button", { name: "Close ZIP preview" }),
       );
-      chooseToolbarAction("File actions", "Translation ZIP · all mods");
+      await chooseToolbarAction("File actions", "Translation ZIP · all mods");
       await screen.findByText("AI mod/i18n/de.json");
       await act(async () => {
         if (outcome === "success") {
@@ -3323,7 +3438,7 @@ describe("App shell", () => {
         await pending.promise.catch(() => undefined);
       });
       const dialog = screen.getByRole("dialog", {
-        name: "Export translation ZIP",
+        name: "Export translations",
       });
       expect(
         within(dialog).getByRole("status", { name: "ZIP file" }),
@@ -3331,7 +3446,7 @@ describe("App shell", () => {
       fireEvent.click(
         within(dialog).getByText("Details", {
           exact: false,
-          selector: "summary",
+          selector: ".desktop-xd-section-title",
         }),
       );
       expect(within(dialog).getByText("AI mod/i18n/de.json")).toBeVisible();
@@ -3353,7 +3468,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findAllByText("Test Mod");
-    chooseToolbarAction("File actions", "Translation ZIP · all mods");
+    await chooseToolbarAction("File actions", "Translation ZIP · all mods");
     fireEvent.click(screen.getByRole("button", { name: "Close ZIP preview" }));
     await act(async () => {
       pending.resolve({ packageName: "Late output" });
@@ -3361,7 +3476,7 @@ describe("App shell", () => {
     });
     expect(
       screen.queryByRole("dialog", {
-        name: "Export translation ZIP",
+        name: "Export translations",
       }),
     ).toBeNull();
     expect(
@@ -3588,16 +3703,16 @@ describe("App shell", () => {
     );
     expect(await screen.findByText("new.key")).toBeVisible();
     expect(screen.queryByText("broken.key")).toBeNull();
-    chooseToolbarAction("File actions", "Translation ZIP · current mod");
+    await chooseToolbarAction("File actions", "Translation ZIP · current mod");
     const problems = await screen.findByRole("list", {
       name: "Strings left out of the ZIP",
     });
     expect(problems).toHaveTextContent("broken.key");
     fireEvent.click(
-      within(problems).getByRole("button", { name: "Open issue" }),
+      within(problems).getByRole("button", { name: "Open broken.key" }),
     );
     expect(
-      screen.queryByRole("dialog", { name: "Export translation ZIP" }),
+      screen.queryByRole("dialog", { name: "Export translations" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
@@ -3665,7 +3780,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
-    chooseToolbarAction("File actions", "Translation ZIP · current mod");
+    await chooseToolbarAction("File actions", "Translation ZIP · current mod");
     await screen.findByLabelText("Version");
     const chooseLocation = await screen.findByRole("button", {
       name: "Save ZIP…",
@@ -3725,40 +3840,36 @@ describe("App shell", () => {
       screen.getByRole("button", { name: "Settings" }),
     );
     fireEvent.keyDown(exportButton, { key: "ArrowDown" });
-    const currentExport = screen.getByRole("menuitem", {
-      name: /^Export JSON for selected mod…/,
+    const exportEntry = screen.getByRole("menuitem", {
+      name: /^Export…/,
     });
     await waitFor(() =>
       expect(
         screen.getByRole("menuitem", { name: /^Import LLM batch…/ }),
       ).toHaveFocus(),
     );
-    expect(currentExport).toBeEnabled();
+    expect(exportEntry).toBeEnabled();
+    expect(exportEntry).toHaveTextContent("JSON or ZIP, this mod or all mods.");
+    // One Export… entry replaces the four JSON and ZIP entries.
     expect(
-      screen.getByRole("menuitem", { name: /^Export JSON for all mods…/ }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("menuitem", {
-        name: /^Export ZIP for selected mod…/,
-      }),
-    ).toBeEnabled();
-    expect(
-      screen.getByRole("menuitem", { name: /^Export ZIP for all mods…/ }),
-    ).toBeEnabled();
-    expect(screen.getByRole("menu", { name: "Files" })).toHaveTextContent(
-      "Write JSON to Mods folders",
+      screen
+        .getAllByRole("menuitem")
+        .map((item) => item.textContent?.replace(/….*$/, "…")),
+    ).toEqual(["Import LLM batch…", "Export LLM batch…", "Export…"]);
+    expect(screen.getByRole("menu", { name: "Files" })).not.toHaveTextContent(
+      "Export JSON for",
     );
     expect(screen.getByRole("menu", { name: "Files" })).not.toHaveTextContent(
       "Advanced",
     );
 
-    fireEvent.keyDown(currentExport, { key: "End" });
-    expect(
-      screen.getByRole("menuitem", { name: /^Export ZIP for all mods…/ }),
-    ).toHaveFocus();
-    const allExport = screen.getByRole("menuitem", {
-      name: /^Export JSON for all mods…/,
-    });
+    fireEvent.keyDown(exportEntry, { key: "Home" });
+    fireEvent.keyDown(
+      screen.getByRole("menuitem", { name: /^Import LLM batch…/ }),
+      { key: "End" },
+    );
+    expect(exportEntry).toHaveFocus();
+    const allExport = exportEntry;
     const settingsButton = screen.getByRole("button", { name: "Settings" });
     fireEvent.blur(allExport, { relatedTarget: settingsButton });
     await waitFor(() =>
@@ -3776,7 +3887,7 @@ describe("App shell", () => {
     expect(screen.queryByRole("menu", { name: "Files" })).toBeNull();
     expect(exportButton).toHaveFocus();
 
-    chooseToolbarAction("File actions", "Import LLM batch…");
+    await chooseToolbarAction("File actions", "Import LLM batch…");
     const importDialog = screen.getByRole("dialog", {
       name: "Import LLM batch",
     });
@@ -4432,7 +4543,7 @@ describe("App shell", () => {
     render(<App />);
     openWorkspace();
     await screen.findByRole("treeitem", { name: /Test Mod/ });
-    chooseToolbarAction("File actions", "Import LLM batch…");
+    await chooseToolbarAction("File actions", "Import LLM batch…");
     const dialog = await screen.findByRole("dialog", {
       name: "Import LLM batch",
     });
@@ -5388,9 +5499,9 @@ it("keeps App work progress and export eligibility coherent after clearing a per
     ),
   );
   expect(screen.getByText("1 / 1 covered")).toBeInTheDocument();
-  chooseToolbarAction("File actions", "Export current mod");
+  await chooseToolbarAction("File actions", "Export current mod");
   const confirmation = await screen.findByRole("dialog", {
-    name: "Export translation JSON",
+    name: "Export translations",
   });
   const eligible = within(confirmation).getByLabelText("Export contents");
   const open = within(confirmation).queryByText("open strings omitted");

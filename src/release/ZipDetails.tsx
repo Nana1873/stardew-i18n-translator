@@ -21,7 +21,7 @@ export function ZipSourcePath({
       ? originalPath.slice(modsRoot.length + 1)
       : installFolder;
   return (
-    <p className="desktop-zip-hint" id={descriptionId}>
+    <p className="desktop-xd-hint" id={descriptionId}>
       Original mod: <code>Mods/{relativeFolder}</code>
     </p>
   );
@@ -50,9 +50,11 @@ export function remainingZipWarnings(preview: ZipPreview | null): string[] {
 export function ZipSummary({
   preview,
   untranslated,
+  leftOut = 0,
 }: {
   preview: ZipPreview;
   untranslated: number | null;
+  leftOut?: number;
 }) {
   const needsReview = preview.entries.reduce(
     (sum, entry) => sum + entry.reviewNeeded + entry.outdated,
@@ -64,10 +66,11 @@ export function ZipSummary({
         label="ZIP contents"
         included={preview.totalStrings}
         untranslated={untranslated}
+        leftOut={leftOut}
         needsReview={needsReview}
       />
       {preview.entries.length === 0 && (
-        <p className="desktop-zip-empty">
+        <p className="desktop-xd-note">
           No translated files are ready to export.
         </p>
       )}

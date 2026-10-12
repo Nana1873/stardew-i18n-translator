@@ -76,13 +76,11 @@ import {
 } from "./tauri/commands";
 import {
   AlertTriangle,
-  Archive,
   CheckCircle2,
   CircleX,
   Download,
   FileCheck2,
-  FolderUp,
-  Folders,
+  FileOutput,
   Info,
   PanelLeftClose,
   PanelLeftOpen,
@@ -110,6 +108,11 @@ import { derivedStringStatus } from "./strings/status";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { TranslationZipDialog } from "./release/TranslationZipDialog";
+import {
+  ExportChooser,
+  resetExportDialogSession,
+  type ExportChoice,
+} from "./export/ExportChooser";
 import {
   type ResultProblem,
   type ResultTrayData,
@@ -358,6 +361,10 @@ export function App() {
     existingTargetPaths: string[];
     newTargetPaths: string[];
   } | null>(null);
+  // The Export… dialog. Non-null while it is open; the last choice is
+  // remembered for the session.
+  const [exportChoice, setExportChoice] = useState<ExportChoice | null>(null);
+  const lastExportChoice = useRef<ExportChoice | null>(null);
 
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StringTableFilter>("all");
@@ -1452,6 +1459,13 @@ export function App() {
     }
   }
 
+  function closeZipDialog() {
+    zipPreviewRequest.current++;
+    setZipPreview(null);
+    setZipError(null);
+    setZipContext(null);
+  }
+
   function inspectZipProblem(problem: { modUniqueId: string; key: string }) {
     setScanStringFilter(null);
     setZipPreview(null);
@@ -1655,6 +1669,9 @@ export function App() {
       if (exportPreflightRef.current.activeRequestId !== requestId) return;
       logFrontendError("previewExport", String(error));
       notify(`Could not check export readiness: ${String(error)}`, "error");
+      // From the Export… dialog a ZIP preview may still be open; close it so
+      // the error is visible and nothing looks ready to export.
+      closeZipDialog();
     } finally {
       if (exportPreflightRef.current.activeRequestId === requestId) {
         exportPreflightRef.current.activeRequestId = null;
@@ -1720,6 +1737,7 @@ export function App() {
       if (exportPreflightRef.current.activeRequestId !== requestId) return;
       logFrontendError("previewExport", String(error));
       notify(`Could not check export readiness: ${String(error)}`, "error");
+      closeZipDialog();
     } finally {
       if (exportPreflightRef.current.activeRequestId === requestId) {
         exportPreflightRef.current.activeRequestId = null;
@@ -1870,6 +1888,33 @@ export function App() {
     } finally {
       setExporting(false);
     }
+  }
+
+  // The Export… dialog runs one of four flows: JSON or ZIP, for the selected
+  // mod or all mods. A JSON preview replaces the ZIP dialog only once its
+  // preflight is ready (see the effect below), so the dialog never blinks.
+  function showExportChoice(choice: ExportChoice) {
+    const effective: ExportChoice =
+      choice.scope === "mod" && !selectedMod
+        ? { ...choice, scope: "all" }
+        : choice;
+    lastExportChoice.current = effective;
+    setExportChoice(effective);
+    if (effective.output === "zip") {
+      setExportConfirm(null);
+      if (effective.scope === "mod") void requestTranslationZip();
+      else void requestTranslatorOutput();
+    } else if (effective.scope === "mod") void requestExport();
+    else void requestExportAll();
+  }
+
+  function openExportChooser() {
+    const last = lastExportChoice.current;
+    resetExportDialogSession();
+    showExportChoice({
+      scope: selectedMod ? (last?.scope ?? "mod") : "all",
+      output: last?.output ?? "zip",
+    });
   }
 
   function inspectResultProblem(problem: ResultProblem) {
@@ -2134,6 +2179,39 @@ export function App() {
     importDialogPath !== undefined ||
     llmExportDialog,
   );
+  // Keep exactly one export dialog open while the Export… choice is active,
+  // and forget the choice once every export dialog closed.
+  useEffect(() => {
+    if (!exportChoice || !exportConfirm) return;
+    if (zipPreview || zipError || zipContext) closeZipDialog();
+    // Only react to a new JSON preview, not to ZIP state changes.
+  }, [exportConfirm]);
+  useEffect(() => {
+    if (
+      exportChoice &&
+      !exportConfirm &&
+      !zipPreview &&
+      !zipError &&
+      !zipContext &&
+      !checkingExportReadiness
+    )
+      setExportChoice(null);
+  }, [
+    exportChoice,
+    exportConfirm,
+    zipPreview,
+    zipError,
+    zipContext,
+    checkingExportReadiness,
+  ]);
+  const exportChooser = exportChoice ? (
+    <ExportChooser
+      choice={exportChoice}
+      modAvailable={Boolean(selectedMod)}
+      busy={checkingExportReadiness || zipBuilding}
+      onChange={showExportChoice}
+    />
+  ) : undefined;
   useEffect(() => {
     if (!focusedDialogOpen || !resultTray || resultTray.collapsed) return;
     setResultTray({ ...resultTray, collapsed: true });
@@ -2151,18 +2229,12 @@ export function App() {
       onScan={handleScan}
       scanEnabled={configured && !scanning && !exporting}
       scanning={scanning}
-      onExport={requestExport}
-      exportEnabled={Boolean(selectedMod) && !exporting}
-      onExportAll={requestExportAll}
-      exportAllEnabled={Boolean(scan?.mods.length) && !exporting}
-      exporting={exporting}
-      checkingExportReadiness={checkingExportReadiness}
-      onBuildZip={() => void requestTranslationZip()}
-      buildZipEnabled={Boolean(selectedMod) && !zipBuilding && !exporting}
-      onBuildOutput={() => void requestTranslatorOutput()}
-      outputEnabled={
+      onExport={openExportChooser}
+      exportEnabled={
         Boolean(scan?.mods.length) && !zipBuilding && !exporting && !scanning
       }
+      exporting={exporting}
+      checkingExportReadiness={checkingExportReadiness}
       onImportBatch={() => void handleImportBatch()}
       importBatchEnabled={Boolean(selectedMod) && !exporting}
       onExportLlmBatch={() => void exportLlmBatchForSelectedMod()}
@@ -2672,6 +2744,7 @@ export function App() {
                   )
                 : null
             }
+            chooser={exportChooser}
             onCancel={() => setExportConfirm(null)}
             onConfirm={() => {
               const kind = exportConfirm.kind;
@@ -2693,6 +2766,8 @@ export function App() {
             modFolders={scan?.mods}
             modsPath={settings?.modsPath ?? undefined}
             combined={zipContext?.combined}
+            targetLanguage={languageLine}
+            subject={zipContext?.combined ? "All mods" : selectedMod?.name}
             componentCount={zipContext?.components.length ?? null}
             untranslated={
               scan
@@ -2715,15 +2790,11 @@ export function App() {
             error={zipError}
             building={zipBuilding}
             onInspect={inspectZipProblem}
+            chooser={exportChooser}
             onBuild={(fileName, installFolders) =>
               void chooseZipDestination(fileName, installFolders)
             }
-            onClose={() => {
-              zipPreviewRequest.current++;
-              setZipPreview(null);
-              setZipError(null);
-              setZipContext(null);
-            }}
+            onClose={closeZipDialog}
           />
         )}
         {dropPaths && (
@@ -2841,14 +2912,8 @@ function AppToolbar({
   scanning,
   onExport,
   exportEnabled,
-  onExportAll,
-  exportAllEnabled,
   exporting,
   checkingExportReadiness,
-  onBuildZip,
-  buildZipEnabled,
-  onBuildOutput,
-  outputEnabled,
   onImportBatch,
   importBatchEnabled,
   onExportLlmBatch,
@@ -2862,16 +2927,11 @@ function AppToolbar({
   onScan: () => void;
   scanEnabled: boolean;
   scanning: boolean;
+  /** Opens the Export… dialog (JSON or ZIP, this mod or all mods). */
   onExport: () => void;
   exportEnabled: boolean;
-  onExportAll: () => void;
-  exportAllEnabled: boolean;
   exporting: boolean;
   checkingExportReadiness: boolean;
-  onBuildZip: () => void;
-  buildZipEnabled: boolean;
-  onBuildOutput: () => void;
-  outputEnabled: boolean;
   onImportBatch: () => void;
   importBatchEnabled: boolean;
   onExportLlmBatch: () => void;
@@ -2990,14 +3050,8 @@ function AppToolbar({
               }
             }}
             disabled={
-              !(
-                exportEnabled ||
-                exportAllEnabled ||
-                buildZipEnabled ||
-                outputEnabled ||
-                importBatchEnabled ||
-                exportLlmBatchEnabled
-              ) || exporting
+              !(exportEnabled || importBatchEnabled || exportLlmBatchEnabled) ||
+              exporting
             }
           >
             {<FileIcon aria-hidden />}
@@ -3060,59 +3114,16 @@ function AppToolbar({
                   />
                 </>
               }
-              <span className="translator-popover-note" role="presentation">
-                <FileActionLabel title="Write JSON to Mods folders" />
-              </span>
               <button
                 type="button"
                 role="menuitem"
                 onClick={() => run(onExport)}
                 disabled={!exportEnabled}
               >
-                <FolderUp aria-hidden />
+                <FileOutput aria-hidden />
                 <FileActionLabel
-                  title="Export JSON for selected mod…"
-                  description="Write translation files into the selected mod’s folder."
-                />
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => run(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                <Folders aria-hidden />
-                <FileActionLabel
-                  title="Export JSON for all mods…"
-                  description="Write translation files into the installed mod folders."
-                />
-              </button>
-              <div className="translator-popover-divider" role="separator" />
-              <span className="translator-popover-note" role="presentation">
-                <FileActionLabel title="Save ZIP for MO2 or Vortex" />
-              </span>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => run(onBuildZip)}
-                disabled={!buildZipEnabled}
-              >
-                <Archive aria-hidden />
-                <FileActionLabel
-                  title="Export ZIP for selected mod…"
-                  description="One installable translation package for the selected mod."
-                />
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => run(onBuildOutput)}
-                disabled={!outputEnabled}
-              >
-                <Archive aria-hidden />
-                <FileActionLabel
-                  title="Export ZIP for all mods…"
-                  description="One combined package for all scanned translations."
+                  title="Export…"
+                  description="JSON or ZIP, this mod or all mods."
                 />
               </button>
             </div>

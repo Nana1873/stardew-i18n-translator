@@ -46,7 +46,7 @@ describe("TranslationZipDialog", () => {
     );
     expect(screen.getByText("[CP] Sample/i18n/de.json")).toBeInTheDocument();
     const dialog = screen.getByRole("dialog", {
-      name: "Export translation ZIP",
+      name: "Export translations",
     });
     expect(dialog).toHaveTextContent(PREVIEW.packageName);
     // Named by its visible heading; focusable itself as the focus fallback.
@@ -102,7 +102,9 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.click(
+      screen.getByText("Details", { selector: ".desktop-xd-section-title" }),
+    );
     fireEvent.change(screen.getByLabelText("Install folder"), {
       target: { value: "Original Package/[CP] Sample" },
     });
@@ -138,9 +140,11 @@ describe("TranslationZipDialog", () => {
         onClose={vi.fn()}
       />,
     );
-    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.click(
+      screen.getByText("Details", { selector: ".desktop-xd-section-title" }),
+    );
     expect(
-      container.querySelector(".desktop-zip-files code")?.textContent,
+      container.querySelector(".desktop-xd-details code")?.textContent,
     ).toBe(" [CP] Sample/i18n/de.json");
     fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, []);
@@ -148,7 +152,7 @@ describe("TranslationZipDialog", () => {
       target: { value: " Original Package\\[CP] Sample" },
     });
     expect(
-      container.querySelector(".desktop-zip-files code")?.textContent,
+      container.querySelector(".desktop-xd-details code")?.textContent,
     ).toBe(" Original Package/[CP] Sample/i18n/de.json");
     fireEvent.click(screen.getByRole("button", { name: "Save ZIP…" }));
     expect(build).toHaveBeenLastCalledWith(PREVIEW.defaultFileName, [
@@ -219,7 +223,7 @@ describe("TranslationZipDialog", () => {
     );
     expect(screen.getByText(/1 string stays in English/)).toBeVisible();
     expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open hello" }));
     expect(inspect).toHaveBeenCalledWith(problem);
   });
 
@@ -265,7 +269,7 @@ describe("TranslationZipDialog", () => {
     );
 
     const dialog = screen.getByRole("dialog", {
-      name: "Export translation ZIP",
+      name: "Export translations",
     });
     expect(dialog).toHaveAttribute("aria-busy", "true");
     expect(

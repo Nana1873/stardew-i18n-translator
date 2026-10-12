@@ -32,7 +32,9 @@ describe("JSON export confirmation", () => {
         "Mods/Other/i18n/de.json",
       ],
     });
-    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.click(
+      screen.getByText("Details", { selector: ".desktop-xd-section-title" }),
+    );
     expect(screen.getByText("3 mods included.")).toBeVisible();
     expect(
       screen.getByText("Files to replace").parentElement,
@@ -56,7 +58,9 @@ describe("JSON export confirmation", () => {
       "2 not translated yet",
     );
     expect(screen.getByText(/Includes 3 translations/)).toBeVisible();
-    fireEvent.click(screen.getByText("Details", { selector: "summary" }));
+    fireEvent.click(
+      screen.getByText("Details", { selector: ".desktop-xd-section-title" }),
+    );
     expect(screen.getByText(/2 in Review, 1 Changed/)).toBeVisible();
     expect(
       screen.getByText(/Counts reflect the current scan/),
@@ -87,20 +91,94 @@ describe("JSON export confirmation", () => {
       name: "Strings left out of the export",
     });
     expect(omitted).toHaveTextContent("status.saved");
-    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
+    fireEvent.click(screen.getByRole("button", { name: "Open status.saved" }));
     expect(props.onInspectProblem).toHaveBeenCalledWith(
       expect.objectContaining({ key: "status.saved" }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace in Mods folder" }),
+    );
     expect(props.onConfirm).toHaveBeenCalledOnce();
   });
   it("calls only the selected action", () => {
     const props = show();
-    fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Replace in Mods folder" }),
+    );
     expect(props.onConfirm).toHaveBeenCalledOnce();
     expect(props.onCancel).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(props.onCancel).toHaveBeenCalledOnce();
+  });
+  it("says the files go straight into the Mods folder", () => {
+    show({
+      modsRoot: "E:/SDV/Mods",
+      existingTargetPaths: ["E:/SDV/Mods/Test/i18n/de.json"],
+    });
+    const dialog = screen.getByRole("dialog", { name: "Export translations" });
+    expect(dialog).toHaveTextContent("Writes directly into your Mods folder");
+    expect(screen.getByText("Mods/Test/i18n/de.json")).toBeVisible();
+    expect(dialog).toHaveTextContent(
+      "The game uses it on the next start. The existing de.json is backed up first (.json.bak).",
+    );
+    expect(
+      screen.getByRole("button", { name: "Replace in Mods folder" }),
+    ).toBeEnabled();
+  });
+  it("labels a write without replaced files and makes no backup claim", () => {
+    show({
+      existingFiles: 0,
+      newFiles: 1,
+      newTargetPaths: ["Mods/Test/i18n/de.json"],
+    });
+    expect(screen.getByRole("dialog")).not.toHaveTextContent("backed up");
+    expect(
+      screen.getByRole("button", { name: "Export to Mods folder" }),
+    ).toBeEnabled();
+  });
+  it("shows the first target of several and expands the rest", () => {
+    show({
+      mods: 3,
+      existingFiles: 1,
+      newFiles: 2,
+      modsRoot: "E:/SDV/Mods",
+      existingTargetPaths: ["E:/SDV/Mods/A/i18n/de.json"],
+      newTargetPaths: [
+        "E:/SDV/Mods/B/i18n/de.json",
+        "E:/SDV/Mods/C/i18n/de.json",
+      ],
+    });
+    expect(screen.getByRole("dialog")).toHaveTextContent("into 3 mod folders");
+    expect(screen.getByText("Mods/A/i18n/de.json")).toBeVisible();
+    expect(screen.queryByText("Mods/C/i18n/de.json")).toBeNull();
+    const more = screen.getByRole("button", { name: "+2 more" });
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    expect(screen.getByText("Mods/C/i18n/de.json")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Show fewer" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+  });
+  it("marks left-out strings as errors and hides empty counts", () => {
+    show({
+      willWrite: 4,
+      openOmitted: 0,
+      omitted: [
+        {
+          modUniqueId: "test.mod",
+          modName: "Test Mod",
+          relativeDir: "i18n",
+          key: "status.saved",
+          reason: "# is missing from the translation.",
+        },
+      ],
+    });
+    const counts = screen.getByLabelText("Export contents");
+    expect(counts).toHaveTextContent("4 translations included");
+    expect(counts).toHaveTextContent("1 left out");
+    expect(counts).not.toHaveTextContent("not translated yet");
+    expect(screen.getByText("left out").parentElement).toHaveClass("is-danger");
   });
   it("treats Escape as cancellation and leaves backdrop clicks inert", () => {
     const props = show();
