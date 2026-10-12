@@ -187,6 +187,38 @@ describe("ResultTray", () => {
     expect(screen.getByRole("button", { name: "Retry export" })).toBeVisible();
   });
 
+  it("does not count files that already held the exported content as written", () => {
+    const file = {
+      relativeDir: "i18n",
+      targetPath: "C:/fixture/i18n/de.json",
+      written: true,
+      removed: false,
+      backedUp: false,
+      writtenKeys: 3,
+      untranslated: 0,
+      outdated: 0,
+      reviewNeeded: 0,
+      orphanKeys: [],
+      unchanged: true,
+    };
+    renderTray({
+      ...exportData,
+      problems: [],
+      result: {
+        ...exportData.result!,
+        files: [file],
+        filesWritten: 1,
+        totalWrittenKeys: 3,
+        totalUntranslated: 0,
+      },
+    });
+
+    expect(
+      screen.getAllByText("No translation file was changed.")[0],
+    ).toBeVisible();
+    expect(screen.getByText(/de\.json · Unchanged/)).toBeInTheDocument();
+  });
+
   it("offers to export again while strings were left out", () => {
     const retry = vi.fn();
     const { rerender } = renderTray(exportData, { onRetry: retry });
