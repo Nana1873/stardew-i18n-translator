@@ -38,6 +38,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- An LLM batch is written only to a `.json` file picked in the Save dialog,
+  never into the app's data folder or the game and Mods folders, and through a
+  temporary file so a failed write leaves no half-written batch.
 - The string selection, scroll position, and visible rows stay in place when
   the same strings reload after an AI run, rescan, import, or undo. Selected
   strings that no longer exist drop out. An AI run reloads the table once

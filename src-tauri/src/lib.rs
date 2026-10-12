@@ -842,19 +842,80 @@ struct LlmExportOutcome {
     string_count: usize,
 }
 
+/// Destinations the save dialog returned in this session. A batch is only
+/// written to one of them, so a frontend call cannot target arbitrary paths.
+#[derive(Default)]
+struct PickedBatchDestinations(Mutex<HashSet<PathBuf>>);
+
+/// Folders a batch must never be written into: the portable data folder and
+/// the game and Mods folders, where a `.json` could replace mod data.
+fn protected_batch_folders(config: &Path) -> Vec<PathBuf> {
+    let mut folders = vec![config.to_path_buf()];
+    if let Ok(settings) = settings::load_checked(config) {
+        folders.extend(settings.mods_path.map(PathBuf::from));
+        folders.extend(settings.stardew_path.map(PathBuf::from));
+    }
+    folders
+}
+
+fn validate_llm_batch_destination(destination: &Path, protected: &[PathBuf]) -> Result<(), String> {
+    if !destination
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+    {
+        return Err("Save the LLM batch as a .json file.".into());
+    }
+    if std::fs::symlink_metadata(destination)
+        .is_ok_and(|metadata| !metadata.is_file() || metadata.file_type().is_symlink())
+    {
+        return Err("The LLM batch destination must be a regular file.".into());
+    }
+    let mut existing = destination
+        .parent()
+        .ok_or("Choose a folder for the LLM batch.")?;
+    while !existing.exists() {
+        existing = existing
+            .parent()
+            .ok_or("Choose an existing folder for the LLM batch.")?;
+    }
+    let parent = std::fs::canonicalize(existing)
+        .map_err(|error| format!("Could not inspect the batch folder: {error}"))?;
+    for folder in protected {
+        if std::fs::canonicalize(folder).is_ok_and(|folder| parent.starts_with(folder)) {
+            return Err(
+                "Save the LLM batch outside the app's data folder and the game and Mods folders."
+                    .into(),
+            );
+        }
+    }
+    Ok(())
+}
+
 fn write_llm_batch(
     destination: &Path,
+    protected: &[PathBuf],
     mod_unique_id: &str,
     target_lang: &str,
     items: &[batch::BatchExportItem],
 ) -> Result<LlmExportOutcome, String> {
+    validate_llm_batch_destination(destination, protected)?;
     let batch_json = batch::build_batch(mod_unique_id, target_lang, items);
     let mut body = serde_json::to_string_pretty(&batch_json)
         .map_err(|error| format!("Could not serialize the batch: {error}"))?;
     body.push('\n');
     ensure_llm_batch_json_size(body.len() as u64)?;
-    std::fs::write(destination, body.as_bytes())
-        .map_err(|error| format!("Could not write {}: {error}", destination.display()))?;
+    // Write a sibling first so a failed write never leaves half a batch.
+    let file_name = destination
+        .file_name()
+        .ok_or("Choose a file name for the LLM batch.")?
+        .to_string_lossy();
+    let temporary = destination.with_file_name(format!(".{file_name}.tmp"));
+    std::fs::write(&temporary, body.as_bytes())
+        .and_then(|()| std::fs::rename(&temporary, destination))
+        .map_err(|error| {
+            std::fs::remove_file(&temporary).ok();
+            format!("Could not write {}: {error}", destination.display())
+        })?;
 
     Ok(LlmExportOutcome {
         path: destination.display().to_string(),
@@ -912,7 +973,8 @@ fn export_llm_batch(
         .into_path()
         .map_err(|error| format!("Could not read the selected path: {error}"))?;
 
-    let outcome = write_llm_batch(&dest, &mod_unique_id, &target_lang, &items)?;
+    let protected = protected_batch_folders(&config_dir(&app)?);
+    let outcome = write_llm_batch(&dest, &protected, &mod_unique_id, &target_lang, &items)?;
     remember_llm_batch_export(&history, &outcome, &mod_unique_id);
     Ok(Some(outcome))
 }
@@ -923,6 +985,7 @@ fn export_llm_batch(
 #[tauri::command]
 fn pick_llm_batch_destination(
     app: AppHandle,
+    picked_destinations: State<'_, PickedBatchDestinations>,
     suggested_file_name: String,
 ) -> Result<Option<String>, String> {
     let picked = app
@@ -932,13 +995,18 @@ fn pick_llm_batch_destination(
         .set_file_name(suggested_file_name)
         .add_filter("JSON", &["json"])
         .blocking_save_file();
-    match picked {
-        Some(file) => file
-            .into_path()
-            .map(|path| Some(path.display().to_string()))
-            .map_err(|error| format!("Could not read the selected path: {error}")),
-        None => Ok(None),
-    }
+    let Some(file) = picked else {
+        return Ok(None);
+    };
+    let path = file
+        .into_path()
+        .map_err(|error| format!("Could not read the selected path: {error}"))?;
+    picked_destinations
+        .0
+        .lock()
+        .map_err(|_| "The batch destination list is unavailable.".to_string())?
+        .insert(path.clone());
+    Ok(Some(path.display().to_string()))
 }
 
 /// Write the minimal format-2 LLM batch to a destination the user already
@@ -948,11 +1016,28 @@ fn export_llm_batch_to_path(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
+    picked_destinations: State<'_, PickedBatchDestinations>,
     items: Vec<batch::BatchExportItem>,
     path: String,
 ) -> Result<LlmExportOutcome, String> {
+    let destination = PathBuf::from(&path);
+    let picked = picked_destinations
+        .0
+        .lock()
+        .map_err(|_| "The batch destination list is unavailable.".to_string())?
+        .contains(&destination);
+    if !picked {
+        return Err("Choose the LLM batch destination again with Save as.".into());
+    }
     let target_lang = active_target_lang(&app)?;
-    let outcome = write_llm_batch(Path::new(&path), &mod_unique_id, &target_lang, &items)?;
+    let protected = protected_batch_folders(&config_dir(&app)?);
+    let outcome = write_llm_batch(
+        &destination,
+        &protected,
+        &mod_unique_id,
+        &target_lang,
+        &items,
+    )?;
     remember_llm_batch_export(&history, &outcome, &mod_unique_id);
     Ok(outcome)
 }
@@ -3149,6 +3234,7 @@ pub fn run() {
         .manage(owner)
         .manage(ai::AiRuntimeState::default())
         .manage(operation_history::OperationHistoryState::default())
+        .manage(PickedBatchDestinations::default())
         .plugin(log_plugin())
         .setup(move |app| {
             apply_diagnostic_logging(settings::load(&data_dir).diagnostic_logging);
@@ -3574,7 +3660,7 @@ mod json_output_limit_tests {
             source: "Hello {{name}}".to_string(),
         }];
 
-        let outcome = write_llm_batch(&destination, "Author.Mod", "de", &items).unwrap();
+        let outcome = write_llm_batch(&destination, &[], "Author.Mod", "de", &items).unwrap();
 
         assert_eq!(outcome.path, destination.display().to_string());
         assert_eq!(outcome.string_count, 1);
@@ -3582,7 +3668,42 @@ mod json_output_limit_tests {
         assert!(body.ends_with('\n'));
         let written: serde_json::Value = serde_json::from_str(&body).unwrap();
         assert_eq!(written, batch::build_batch("Author.Mod", "de", &items));
+        assert!(!root.join(".selected.json.tmp").exists());
 
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn llm_batch_destination_refuses_non_json_and_protected_folders() {
+        let root = test_support::temp_dir("llm-batch-destination");
+        let mods = root.join("Mods");
+        let data = root.join("data");
+        std::fs::create_dir_all(mods.join("Some.Mod/i18n")).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+        let protected = vec![data.clone(), mods.clone()];
+
+        assert!(
+            validate_llm_batch_destination(&root.join("batch.txt"), &protected)
+                .unwrap_err()
+                .contains(".json")
+        );
+        assert!(
+            validate_llm_batch_destination(&mods.join("Some.Mod/i18n/de.json"), &protected)
+                .unwrap_err()
+                .contains("outside")
+        );
+        assert!(
+            validate_llm_batch_destination(&data.join("new/batch.json"), &protected)
+                .unwrap_err()
+                .contains("outside")
+        );
+        std::fs::create_dir_all(root.join("folder.json")).unwrap();
+        assert!(
+            validate_llm_batch_destination(&root.join("folder.json"), &protected)
+                .unwrap_err()
+                .contains("regular file")
+        );
+        validate_llm_batch_destination(&root.join("exports/Batch.JSON"), &protected).unwrap();
         std::fs::remove_dir_all(root).ok();
     }
 }
