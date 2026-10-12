@@ -38,6 +38,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A ChatGPT connection that stalls early is reported as an interrupted
+  connection and retried, instead of as a batch that exceeded the five-minute
+  limit and was split.
 - An LLM batch is written only to a `.json` file picked in the Save dialog,
   never into the app's data folder or the game and Mods folders, and through a
   temporary file so a failed write leaves no half-written batch.
