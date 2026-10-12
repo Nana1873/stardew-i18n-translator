@@ -16,6 +16,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   same game files. When a game file is missing or cannot be read, the message
   names that file and says this language may not be available in this game
   version.
+- Community language packs that split their `content.json` into other files
+  with Content Patcher's `Include` are now recognized: they are left out of
+  the mods to translate and can supply a glossary.
 - The automatic scan at start no longer opens the scan report when it only
   skips a component; the header's "Needs attention" button shows it. Repeated
   scans without changes share one Activity log line.
