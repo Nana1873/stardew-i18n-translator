@@ -38,6 +38,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A he/she switch inside another one is a token error. The game closes a
+  switch at the first `}$`, so the nested version showed broken text while the
+  app accepted it.
+- The same portrait twice on one dialogue page, such as `$h` at the start and
+  end, is no longer an error. The game removes every copy of the portrait it
+  shows; only a second, different portrait stays visible as raw text.
 - An LLM batch is written only to a `.json` file picked in the Save dialog,
   never into the app's data folder or the game and Mods folders, and through a
   temporary file so a failed write leaves no half-written batch.
