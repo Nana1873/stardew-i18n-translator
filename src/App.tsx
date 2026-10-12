@@ -1145,7 +1145,9 @@ export function App() {
   const llm = settings?.llm;
   const aiSettings = settings?.ai ?? DEFAULT_AI_SETTINGS;
   const localAiReady = Boolean(llm?.baseUrl.trim() && llm.model.trim());
-  const cloudAiReady = Boolean(cloudStatus?.authenticated);
+  // A ChatGPT run needs a saved model; signed in alone is not enough.
+  const cloudModelSaved = Boolean(aiSettings.cloudModel?.trim());
+  const cloudAiReady = Boolean(cloudStatus?.authenticated) && cloudModelSaved;
   const liveAiEngines: LiveAiEngineOption[] = [
     {
       id: "local",
@@ -1169,7 +1171,10 @@ export function App() {
       reasoning: aiSettings.cloudReasoning,
       unavailableReason: cloudAiReady
         ? undefined
-        : cloudStatus?.error || "Sign in with ChatGPT in Settings.",
+        : cloudStatus?.error ||
+          (cloudStatus?.authenticated
+            ? "Choose a ChatGPT model in Settings."
+            : "Sign in with ChatGPT in Settings."),
       note: "Uses your ChatGPT plan",
     },
   ];

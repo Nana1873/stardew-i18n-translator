@@ -853,6 +853,26 @@ async fn accept_callback(listener: TcpListener, attempt: Attempt) -> Result<Sess
         return result;
     }
 }
+enum TokenStep<'a> {
+    /// The saved access token is valid for at least another minute.
+    Current,
+    /// The access token is (nearly) expired; refresh it with this token.
+    Refresh(&'a str),
+}
+/// Decide whether a saved session can be used as is or must be refreshed.
+fn token_step(session: &Session, now: u64) -> Result<TokenStep<'_>, crate::ai::ProviderFailure> {
+    if !session.scope.split_whitespace().any(|s| s == PLAN_SCOPE) {
+        return Err("Sign in again and allow this app to use your ChatGPT plan.".into());
+    }
+    if session.expires_at > now + 60 {
+        return Ok(TokenStep::Current);
+    }
+    session
+        .refresh_token
+        .as_deref()
+        .map(TokenStep::Refresh)
+        .ok_or_else(|| "The ChatGPT session expired. Sign in again.".into())
+}
 pub async fn access_token() -> Result<String, crate::ai::ProviderFailure> {
     let epoch = generation();
     let mut state = state()?.lock().await;
@@ -862,16 +882,10 @@ pub async fn access_token() -> Result<String, crate::ai::ProviderFailure> {
             .clone()
             .unwrap_or_else(|| "Sign in with ChatGPT in Settings.".into())
     })?;
-    if !session.scope.split_whitespace().any(|s| s == PLAN_SCOPE) {
-        return Err("Sign in again and allow this app to use your ChatGPT plan.".into());
-    }
-    if session.expires_at > now() + 60 {
-        return Ok(session.access_token);
-    }
-    let refresh = session
-        .refresh_token
-        .as_deref()
-        .ok_or("The ChatGPT session expired. Sign in again.")?;
+    let refresh = match token_step(&session, now())? {
+        TokenStep::Current => return Ok(session.access_token),
+        TokenStep::Refresh(refresh) => refresh,
+    };
     let data = json(
         client()?
             .post(format!("{AUTH}/api/accounts/oauth/token"))
@@ -1241,6 +1255,141 @@ mod tests {
             api_failure(503, &body),
             crate::ai::ProviderFailure::Transient(..)
         ));
+    }
+    fn session(scope: &str, expires_at: u64, refresh: Option<&str>) -> Session {
+        Session {
+            client_id: "synthetic-client".into(),
+            subject: "synthetic-subject".into(),
+            email: None,
+            access_token: "synthetic-access".into(),
+            refresh_token: refresh.map(Into::into),
+            id_token: None,
+            scope: scope.into(),
+            expires_at,
+        }
+    }
+    #[test]
+    fn access_token_is_reused_until_a_minute_before_expiry_then_refreshed() {
+        let now = 1_000;
+        let fresh = session(PLAN_SCOPE, now + 61, Some("synthetic-refresh"));
+        assert!(matches!(token_step(&fresh, now), Ok(TokenStep::Current)));
+        for expires_at in [now + 60, now, 0] {
+            let expiring = session(PLAN_SCOPE, expires_at, Some("synthetic-refresh"));
+            assert!(matches!(
+                token_step(&expiring, now),
+                Ok(TokenStep::Refresh("synthetic-refresh"))
+            ));
+        }
+        let expired = session(PLAN_SCOPE, 0, None);
+        assert_eq!(
+            message(token_step(&expired, now).err().unwrap()),
+            "The ChatGPT session expired. Sign in again."
+        );
+        // Without plan permission the token is never used or refreshed.
+        let other_scope = session("openid profile", now + 3_600, Some("synthetic-refresh"));
+        assert_eq!(
+            message(token_step(&other_scope, now).err().unwrap()),
+            "Sign in again and allow this app to use your ChatGPT plan."
+        );
+    }
+    #[test]
+    fn http_401_403_and_429_stop_with_plain_guidance_and_5xx_is_temporary() {
+        use crate::ai::ProviderFailure;
+        let empty = serde_json::json!({});
+        for (status, expected) in [
+            (401, "OpenAI did not accept this session. Sign in again. HTTP 401."),
+            (
+                403,
+                "OpenAI refused this request under the current account or workspace policy. HTTP 403.",
+            ),
+            (
+                429,
+                "OpenAI's usage limit was reached. Check ChatGPT usage settings. HTTP 429.",
+            ),
+        ] {
+            let ProviderFailure::Message(message) = api_failure(status, &empty) else {
+                panic!("HTTP {status} must not be retried");
+            };
+            assert_eq!(message, expected);
+        }
+        // A known error code wins over the generic status text.
+        let expired = serde_json::json!({"error": {"code": "invalid_grant"}});
+        assert_eq!(
+            message(api_failure(401, &expired)),
+            "The ChatGPT session expired. Sign in again. HTTP 401."
+        );
+        assert!(matches!(
+            api_failure(500, &empty),
+            ProviderFailure::Transient(_, None)
+        ));
+    }
+    #[tokio::test]
+    async fn sign_in_callback_rejects_malformed_foreign_and_oversized_requests() {
+        use tokio::{
+            io::{AsyncReadExt, AsyncWriteExt},
+            net::TcpStream,
+        };
+        let listener = TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let attempt = Attempt {
+            state: "expected".into(),
+            nonce: "n".into(),
+            verifier: "v".into(),
+            redirect: format!("http://{address}/auth/callback"),
+            registration: Registration {
+                host_id: "h".into(),
+                client_id: Some("oaiapp_saved".into()),
+                subject: None,
+            },
+        };
+        let callback = tokio::spawn(accept_callback(listener, attempt));
+        let send = |request: Vec<u8>| async move {
+            let mut stream = TcpStream::connect(address).await.unwrap();
+            let _ = stream.write_all(&request).await;
+            let mut response = Vec::new();
+            let _ = stream.read_to_end(&mut response).await;
+            String::from_utf8_lossy(&response).into_owned()
+        };
+        let host = format!("Host: {address}\r\n");
+        for request in [
+            // Wrong method, path, and protocol version.
+            format!("POST /auth/callback?state=expected&code=c HTTP/1.1\r\n{host}\r\n"),
+            format!("GET /other?state=expected&code=c HTTP/1.1\r\n{host}\r\n"),
+            format!("GET /auth/callback?state=expected&code=c HTTP/1.0\r\n{host}\r\n"),
+            // Missing, foreign, or duplicated Host header.
+            "GET /auth/callback?state=expected&code=c HTTP/1.1\r\n\r\n".to_string(),
+            "GET /auth/callback?state=expected&code=c HTTP/1.1\r\nHost: evil.example\r\n\r\n"
+                .to_string(),
+            format!("GET /auth/callback?state=expected&code=c HTTP/1.1\r\n{host}{host}\r\n"),
+            // Correct shape, wrong state.
+            format!("GET /auth/callback?state=wrong&code=c HTTP/1.1\r\n{host}\r\n"),
+        ] {
+            let response = send(request.clone().into_bytes()).await;
+            assert!(
+                response.starts_with("HTTP/1.1 400 Bad Request"),
+                "{request:?} -> {response:?}"
+            );
+        }
+        // Over 8 KiB of headers is refused without a sign-in page. The server
+        // may reset the connection before the client reads the 400 reply.
+        let oversized = format!(
+            "GET /auth/callback?state=expected&code=c HTTP/1.1\r\n{host}X-Fill: {}\r\n\r\n",
+            "a".repeat(9 * 1024)
+        );
+        let response = send(oversized.into_bytes()).await;
+        assert!(
+            response.is_empty() || response.starts_with("HTTP/1.1 400 Bad Request"),
+            "{response:?}"
+        );
+        // The listener keeps waiting for the real callback after every rejection.
+        let response =
+            send(format!("GET /auth/callback?state=wrong HTTP/1.1\r\n{host}\r\n").into_bytes())
+                .await;
+        assert!(response.starts_with("HTTP/1.1 400 Bad Request"));
+        assert!(!callback.is_finished());
+        callback.abort();
     }
     #[cfg(windows)]
     #[test]

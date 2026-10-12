@@ -1480,18 +1480,36 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
     }
 }
 
+type PreparedAiRequest = (
+    settings::AppSettings,
+    String,
+    PathBuf,
+    Vec<ai::PreparedAiItem>,
+);
+
+/// Run blocking file work (a Mods scan, state loads) off the async runtime so
+/// an AI command does not stall other async commands while it prepares.
+async fn run_blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|_| "Could not prepare the AI run. Try again.".to_string())?
+}
+
+async fn prepare_ai_request_blocking(
+    app: &AppHandle,
+    request: &ai::AiTranslationRequest,
+) -> Result<PreparedAiRequest, String> {
+    let app = app.clone();
+    let request = request.clone();
+    run_blocking(move || prepare_ai_request(&app, &request)).await
+}
+
 fn prepare_ai_request(
     app: &AppHandle,
     request: &ai::AiTranslationRequest,
-) -> Result<
-    (
-        settings::AppSettings,
-        String,
-        PathBuf,
-        Vec<ai::PreparedAiItem>,
-    ),
-    String,
-> {
+) -> Result<PreparedAiRequest, String> {
     ai::validate_request_shape(request)?;
     let config = config_dir(app)?;
     let settings = settings::load_checked(&config)?;
@@ -1744,12 +1762,46 @@ fn local_ai_error_is_systemic(error_category: &str) -> bool {
     )
 }
 
+/// A single timeout can be one slow string; several in a row mean the local
+/// server is not answering, so the run stops instead of waiting on every item.
+const LOCAL_AI_TIMEOUT_STOP_LIMIT: usize = 3;
+const LOCAL_AI_TIMEOUT_STOP_MESSAGE: &str = "Local AI did not answer in time three times in a row. Check that LM Studio or Ollama is running and the model is loaded, then try again. Very long texts may need a faster model.";
+
+/// Counts consecutive Local AI timeouts. Any other result resets the count.
+#[derive(Debug, Default)]
+struct LocalAiTimeoutStreak(usize);
+
+impl LocalAiTimeoutStreak {
+    /// Record one item's error category (`None` for a success). Returns true
+    /// when the run should stop.
+    fn record(&mut self, error_category: Option<&str>) -> bool {
+        if error_category == Some("timeout") {
+            self.0 += 1;
+        } else {
+            self.0 = 0;
+        }
+        self.0 >= LOCAL_AI_TIMEOUT_STOP_LIMIT
+    }
+}
+
 fn local_ai_model_probe_diagnostic(error_category: &'static str) -> serde_json::Value {
     serde_json::json!({
         "event": "model_probe_failed",
         "engine": "local",
         "errorCategory": error_category,
     })
+}
+
+/// Run one Local AI request until it finishes or the run is cancelled; a
+/// cancel does not wait for the local server to answer.
+async fn cancellable_local_ai<T>(
+    request: impl std::future::Future<Output = Result<T, String>>,
+    cancelled: Arc<AtomicBool>,
+) -> Result<T, ai::ProviderFailure> {
+    tokio::select! {
+        result = request => result.map_err(ai::ProviderFailure::Message),
+        () = ai::wait_for_cancel(cancelled) => Err(ai::ProviderFailure::Cancelled),
+    }
 }
 
 #[derive(Debug)]
@@ -2194,7 +2246,6 @@ fn remember_ai_run(
     let engine_label = match result.engine.as_str() {
         "local" => "Local AI",
         "chatgpt" => "ChatGPT",
-        "codex" => "Codex CLI",
         _ => "AI",
     };
     let scope = match result.scope {
@@ -2261,7 +2312,7 @@ async fn translate_with_local_ai(
     ai::validate_request_shape(&request)?;
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
-        prepare_ai_request(&app, &request)?;
+        prepare_ai_request_blocking(&app, &request).await?;
     let local = settings
         .llm
         .ok_or_else(|| "Configure and test Local AI in Settings first.".to_string())?;
@@ -2286,6 +2337,7 @@ async fn translate_with_local_ai(
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut terminal_error = None;
     let mut item_failures = Vec::new();
+    let mut timeout_streak = LocalAiTimeoutStreak::default();
     let mut progress = AiRunProgress {
         run_id: request.run_id.clone(),
         phase: "preparing",
@@ -2342,8 +2394,8 @@ async fn translate_with_local_ai(
             .iter()
             .map(|entry| entry.source.clone())
             .collect::<Vec<_>>();
-        let translation = tokio::select! {
-            result = llm::translate_with_context(
+        let translation = cancellable_local_ai(
+            llm::translate_with_context(
                 &local.base_url,
                 &local.model,
                 &item.source,
@@ -2353,9 +2405,19 @@ async fn translate_with_local_ai(
                 &before_context,
                 &after_context,
                 local.temperature,
-            ) => result.map_err(ai::ProviderFailure::Message),
-            () = ai::wait_for_cancel(lease.cancelled.clone()) => Err(ai::ProviderFailure::Cancelled),
+            ),
+            lease.cancelled.clone(),
+        )
+        .await;
+        let failure_category = match &translation {
+            Err(
+                ai::ProviderFailure::Message(cause)
+                | ai::ProviderFailure::Transient(cause, _)
+                | ai::ProviderFailure::InvalidResponse(cause),
+            ) => Some(local_ai_error_category(cause)),
+            _ => None,
         };
+        let timed_out_repeatedly = timeout_streak.record(failure_category);
         match translation {
             Ok(result) => match ai::suggestions(
                 std::slice::from_ref(item),
@@ -2460,6 +2522,11 @@ async fn translate_with_local_ai(
                     outcome = ai::AiRunOutcome::Error;
                     break;
                 }
+                if timed_out_repeatedly {
+                    outcome = ai::AiRunOutcome::Error;
+                    terminal_error = Some(LOCAL_AI_TIMEOUT_STOP_MESSAGE.to_string());
+                    break;
+                }
             }
         }
     }
@@ -2521,6 +2588,36 @@ async fn chatgpt_sign_in(
 async fn chatgpt_sign_out(state: State<'_, ai::AiRuntimeState>) -> Result<(), String> {
     state.ensure_idle_for_sign_in()?;
     chatgpt_auth::logout().await
+}
+
+/// The `run_started` event logs the model with the same cleaning policy as
+/// each ChatGPT `attempt_started` event.
+fn cloud_run_started_diagnostic(
+    log_run_id: &str,
+    model: &str,
+    reasoning: &str,
+    total: usize,
+    batches: usize,
+) -> serde_json::Value {
+    serde_json::json!({
+        "event": "run_started",
+        "runId": log_run_id,
+        "engine": "chatgpt",
+        "transport": "responses",
+        "model": chatgpt::safe_model_for_log(Some(model)),
+        "reasoning": reasoning,
+        "total": total,
+        "batches": batches,
+    })
+}
+
+/// A ChatGPT run needs a saved model; the provider has no implicit default.
+fn required_cloud_model(model: Option<&str>) -> Result<String, String> {
+    model
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "Select a ChatGPT model in Settings before translating.".to_string())
 }
 
 /// Signal native provider workers even if the command future is dropped.
@@ -2612,8 +2709,8 @@ async fn translate_with_cloud_ai(
     ai::validate_request_shape(&request)?;
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
-        prepare_ai_request(&app, &request)?;
-    let cloud_model = settings.ai.cloud_model.clone();
+        prepare_ai_request_blocking(&app, &request).await?;
+    let cloud_model = required_cloud_model(settings.ai.cloud_model.as_deref())?;
     let reasoning = ai::normalize_reasoning(&settings.ai.cloud_reasoning)?;
     let cloud_quality_review = settings.ai.cloud_quality_review;
     let mut suggestions = Vec::with_capacity(prepared.len());
@@ -2643,16 +2740,13 @@ async fn translate_with_cloud_ai(
     log::info!(
         target: "ai_run",
         "{}",
-        serde_json::json!({
-            "event": "run_started",
-            "runId": log_run_id,
-            "engine": log_engine,
-            "transport": log_transport,
-            "model": if cloud_model.is_some() { "configured" } else { "default" },
-            "reasoning": reasoning,
-            "total": prepared.len(),
-            "batches": batch_total,
-        })
+        cloud_run_started_diagnostic(
+            &log_run_id,
+            &cloud_model,
+            &reasoning,
+            prepared.len(),
+            batch_total
+        )
     );
     let progress_state = Arc::new(Mutex::new(AiRunProgress {
         run_id: request.run_id.clone(),
@@ -2933,7 +3027,7 @@ async fn translate_with_cloud_ai(
             let attempt = batch_attempt;
             in_flight.push(async move {
                 let result = complete_cloud_batch(
-                    model.as_deref(),
+                    Some(model.as_str()),
                     &reasoning,
                     &language,
                     cloud_quality_review,
@@ -3175,11 +3269,7 @@ async fn translate_with_cloud_ai(
     let result = ai_run_result(
         &request,
         prepared.len(),
-        (
-            "chatgpt",
-            cloud_model.unwrap_or_else(|| "ChatGPT default".to_string()),
-            reasoning,
-        ),
+        ("chatgpt", cloud_model, reasoning),
         suggestions,
         outcome,
         error,
@@ -4000,6 +4090,129 @@ mod ai_run_contract_tests {
     }
 
     #[test]
+    fn content_security_policy_does_not_allow_the_unused_asset_protocol() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = config["app"]["security"]["csp"].as_str().unwrap();
+        assert!(csp.contains("img-src 'self' data:;"), "{csp}");
+        assert!(!csp.contains("asset:"), "{csp}");
+        assert!(csp.contains("script-src 'self';"), "{csp}");
+    }
+
+    #[test]
+    fn ai_request_preparation_runs_off_the_async_thread() {
+        let caller = std::thread::current().id();
+        let worker = tauri::async_runtime::block_on(run_blocking(|| {
+            Ok::<_, String>(std::thread::current().id())
+        }))
+        .unwrap();
+        assert_ne!(worker, caller);
+        let error = tauri::async_runtime::block_on(run_blocking(|| {
+            Err::<(), _>("Choose a Mods folder before using AI translation.".to_string())
+        }))
+        .unwrap_err();
+        assert_eq!(error, "Choose a Mods folder before using AI translation.");
+    }
+
+    #[tokio::test]
+    async fn local_ai_cancel_stops_a_request_the_server_never_answers() {
+        // A loopback server that accepts the request and then stays silent.
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            drop(stream);
+        });
+        let base_url = format!("http://{address}/v1");
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::clone(&cancelled);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            cancel.store(true, Ordering::Release);
+        });
+
+        let started = Instant::now();
+        let result = cancellable_local_ai(
+            llm::translate_with_context(
+                &base_url,
+                "synthetic-instruct",
+                "Hello",
+                "German",
+                None,
+                &[],
+                &[],
+                &[],
+                None,
+            ),
+            cancelled,
+        )
+        .await;
+
+        assert!(matches!(result, Err(ai::ProviderFailure::Cancelled)));
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        server.abort();
+    }
+
+    #[test]
+    fn local_ai_stops_after_three_consecutive_timeouts() {
+        let mut streak = LocalAiTimeoutStreak::default();
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(streak.record(Some("timeout")));
+
+        // A success or any other failure resets the streak.
+        let mut streak = LocalAiTimeoutStreak::default();
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(None));
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("provider")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(streak.record(Some("timeout")));
+
+        // The real Local AI timeout text is classified as a timeout.
+        assert_eq!(
+            local_ai_error_category(
+                "The model timed out — it may be too slow or stuck. Try a smaller/faster instruct model, or a shorter string. (http://127.0.0.1:1234/v1/chat/completions)"
+            ),
+            "timeout"
+        );
+        assert!(LOCAL_AI_TIMEOUT_STOP_MESSAGE.contains("three times in a row"));
+    }
+
+    #[test]
+    fn chatgpt_run_started_logs_the_cleaned_model_name() {
+        let event = cloud_run_started_diagnostic("run-1", "gpt-5.6-sol", "medium", 3, 1);
+        assert_eq!(event["event"], "run_started");
+        assert_eq!(event["model"], "gpt-5.6-sol");
+        assert_eq!(
+            event["model"],
+            chatgpt::safe_model_for_log(Some("gpt-5.6-sol"))
+        );
+        let private = cloud_run_started_diagnostic("run-1", "C:/Users/me/model", "low", 1, 1);
+        assert_eq!(private["model"], "redacted");
+        assert!(!private.to_string().contains("Users"));
+    }
+
+    #[test]
+    fn chatgpt_runs_require_a_saved_model_instead_of_a_default_label() {
+        assert_eq!(
+            required_cloud_model(Some(" gpt-5.6-sol ")).as_deref(),
+            Ok("gpt-5.6-sol")
+        );
+        for missing in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                required_cloud_model(missing),
+                Err("Select a ChatGPT model in Settings before translating.".to_string())
+            );
+        }
+    }
+
+    #[test]
     fn isolated_cloud_failures_name_up_to_three_keys() {
         let identity = |key: &str| ai::AiStringIdentity {
             mod_unique_id: "Example.Mod".to_string(),
@@ -4198,11 +4411,7 @@ mod ai_run_contract_tests {
         let result = ai_run_result(
             &request,
             3,
-            (
-                "chatgpt",
-                "ChatGPT default".to_string(),
-                "medium".to_string(),
-            ),
+            ("chatgpt", "gpt-5.6-sol".to_string(), "medium".to_string()),
             vec![suggestion],
             ai::AiRunOutcome::Error,
             Some("provider stopped after one chunk".to_string()),
@@ -4222,11 +4431,7 @@ mod ai_run_contract_tests {
         let failed = ai_run_result(
             &request,
             3,
-            (
-                "chatgpt",
-                "ChatGPT default".to_string(),
-                "medium".to_string(),
-            ),
+            ("chatgpt", "gpt-5.6-sol".to_string(), "medium".to_string()),
             Vec::new(),
             ai::AiRunOutcome::Error,
             Some("provider stopped before saving".to_string()),

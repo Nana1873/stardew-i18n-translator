@@ -151,8 +151,9 @@ translations trustworthy.
 
 ## Data and privacy
 
-Live requests send selected English source text and its key, section context, and matching
-glossary terms. They may include up to two preceding and two following English
+Live requests send the selected English source text, its section context, and
+matching glossary terms. ChatGPT requests also send each string's key; Local AI
+requests do not. They may include up to two preceding and two following English
 strings from the same component, i18n file, section, and related key group.
 These neighbors provide read-only context; only selected strings can be saved.
 Every batch receives the same saved language settings and matching glossary
@@ -191,12 +192,18 @@ and [llm.rs](../src-tauri/src/llm.rs).
 - Local AI processes one selected string at a time, saves each successful
   suggestion to Review, and continues past item-specific failures. Connection,
   HTTP-status, client-setup, cancellation, stale-state, and save failures stop
-  remaining work. An error after a save is reported as completed with issues;
+  remaining work, as do three timeouts in a row. An error after a save is reported as completed with issues;
   before any save it is a failure. Missing, unexpected, or duplicated protected
   tokens that would break the game trigger one targeted retry with the source's
   exact token counts; harmless differences such as portrait changes do not. The
   retry replaces the first draft only when it reduces count errors without
   worsening another token. Unresolved mismatches remain visible in Review.
+- A Local AI answer may use about twice the source's character count in output
+  tokens, at most 8,192. That covers sources of roughly 4,000 characters in
+  full, as long as the model answers within the 120-second limit per text; a
+  slow model may need longer for very long texts. A longer answer that does
+  not fit is reported as stopped before finishing; the string stays
+  untranslated instead of being saved cut off.
 - If a Local AI response is a valid JSON-encoded string, the client decodes one
   layer only when it preserves the source's quotation layout, double-quote,
   line-break, and backslash counts without worsening protected-token validation.

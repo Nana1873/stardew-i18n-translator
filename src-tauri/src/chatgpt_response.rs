@@ -283,6 +283,32 @@ mod tests {
             .is_err());
     }
     #[test]
+    fn incomplete_responses_discard_finished_items_and_deltas() {
+        let mut state = ResponseState::default();
+        state
+            .event(
+                json!({"type":"response.output_item.done","output_index":0,"item":message()}),
+                &progress(),
+            )
+            .unwrap();
+        state
+            .event(
+                json!({"type":"response.output_text.delta","delta":"partial"}),
+                &progress(),
+            )
+            .unwrap();
+        let failure = state
+            .event(
+                json!({"type":"response.incomplete","response":{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"}}}),
+                &progress(),
+            )
+            .unwrap_err();
+        let ProviderFailure::InvalidResponse(message) = failure else {
+            panic!("an incomplete response is invalid output, not a transient failure");
+        };
+        assert!(message.contains("Partial output was discarded"));
+    }
+    #[test]
     fn refusal_events_are_splittable_batch_failures() {
         for kind in ["response.refusal.delta", "response.refusal.done"] {
             let mut state = ResponseState::default();

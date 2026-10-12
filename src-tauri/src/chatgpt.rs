@@ -42,6 +42,10 @@ pub async fn models() -> Result<Vec<CloudAiModel>, String> {
     }
     visible_models(&body)
 }
+/// The catalog does not name a per-model default reasoning effort. Settings
+/// falls back to this one when the saved effort is not supported by a model.
+const CATALOG_DEFAULT_REASONING: &str = "medium";
+
 fn visible_models(body: &Value) -> Result<Vec<CloudAiModel>, String> {
     let models = body["models"]
         .as_array()
@@ -82,7 +86,7 @@ fn visible_models(body: &Value) -> Result<Vec<CloudAiModel>, String> {
                     .take(200)
                     .collect(),
                 is_default: false,
-                default_reasoning_effort: Some("medium".into()),
+                default_reasoning_effort: Some(CATALOG_DEFAULT_REASONING.into()),
                 supported_reasoning_efforts: efforts,
             })
         })
@@ -193,7 +197,9 @@ pub(crate) fn timeout_failure() -> ProviderFailure {
 
 #[path = "cloud_translation.rs"]
 mod cloud_translation;
-pub(crate) use cloud_translation::{repair_token_mismatches_once, translate_chunk};
+pub(crate) use cloud_translation::{
+    repair_token_mismatches_once, safe_model_for_log, translate_chunk,
+};
 
 #[cfg(test)]
 mod time_limit_tests {
