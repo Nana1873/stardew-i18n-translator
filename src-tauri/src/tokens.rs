@@ -208,7 +208,7 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
         switch_damaged = true;
     } else if extra_openers > 0 && extra_closers > 0 {
         messages.push(
-            "A he/she switch needs two or three variants separated by ^, like ${he^she}$."
+            "A he/she switch needs two or three variants separated by ^, like ${he^she}$, and cannot contain another switch."
                 .to_string(),
         );
         switch_damaged = true;
@@ -397,17 +397,20 @@ fn branch_text(chars: &[char], branch: usize) -> String {
     text
 }
 
-/// Only the first emotion token on a dialogue page is applied; any further
-/// one stays visible as raw text. Counts the pages that show such raw text.
+/// The game applies one emotion per dialogue page and removes every copy of
+/// it (`Dialogue.checkEmotions` uses `Replace`), so a repeated portrait is
+/// harmless; a second, different one stays visible as raw text. Mirrors TS
+/// `pagesWithMultiplePortraits`.
 fn pages_with_multiple_portraits(value: &str) -> usize {
     let chars: Vec<char> = value.chars().collect();
     first_branch_text(&chars)
         .split('#')
         .filter(|page| {
             extract(page)
-                .iter()
+                .into_iter()
                 .filter(|token| is_portrait_command(token))
-                .count()
+                .collect::<std::collections::HashSet<_>>()
+                .len()
                 > 1
         })
         .count()
@@ -633,10 +636,12 @@ pub fn is_gender_switch_shape(token: &str) -> bool {
     matches!(token, "${^}$" | "${^^}$" | "${¦}$" | "${¦¦}$")
 }
 
-/// Find the closer paired with the switch at `offset`, ignoring switch-like
-/// text inside a balanced Content Patcher token and respecting nested blocks.
+/// Find the closer of the switch at `offset`, ignoring switch-like text inside
+/// a balanced Content Patcher token. The game closes a switch at the first
+/// `}$` and does not nest (Stardew 1.6 `Dialogue.applyGenderSwitchBlocks`), so
+/// a switch inside a switch is not read as one block; its markers stay visible
+/// to validation. Mirrors TS `findGenderSwitchClose`.
 fn find_switch_close(chars: &[char], offset: usize) -> Option<usize> {
-    let mut depth = 1usize;
     let mut index = offset + 2;
 
     while index < chars.len() {
@@ -647,17 +652,10 @@ fn find_switch_close(chars: &[char], offset: usize) -> Option<usize> {
             }
         }
         if starts_with(chars, index, "${") {
-            depth += 1;
-            index += 2;
-            continue;
+            return None;
         }
         if starts_with(chars, index, "}$") {
-            depth -= 1;
-            if depth == 0 {
-                return Some(index);
-            }
-            index += 2;
-            continue;
+            return Some(index);
         }
         index += 1;
     }
@@ -1270,11 +1268,14 @@ mod tests {
     }
 
     #[test]
-    fn gender_switch_matching_is_depth_aware_and_lexical() {
+    fn a_switch_inside_a_switch_is_not_one_block_like_in_the_game() {
+        // Dialogue.applyGenderSwitchBlocks closes at the first `}$`, so the
+        // outer markers are left over as broken text.
         assert_eq!(
             extract("${Hello ${lad^lass}$ @¦Goodbye #$b# $7}$"),
-            vec!["${¦}$", "${^}$", "@", "#$b#", "$7"]
+            vec!["${", "${^}$", "@", "#$b#", "$7", "}$"]
         );
+        assert!(!token_differences("${he^she}$ is here", "${er ${x^y}$^sie}$ ist da").is_empty());
     }
 
     #[test]

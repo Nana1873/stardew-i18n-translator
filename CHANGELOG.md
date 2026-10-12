@@ -41,6 +41,21 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - A ChatGPT connection that stalls early is reported as an interrupted
   connection and retried, instead of as a batch that exceeded the five-minute
   limit and was split.
+- If a package breaks between the preview and the build of the ZIP for all
+  mods, the result and the Activity log name it as left out instead of leaving
+  it out without a word.
+- A he/she switch inside another one is a token error. The game closes a
+  switch at the first `}$`, so the nested version showed broken text while the
+  app accepted it.
+- The same portrait twice on one dialogue page, such as `$h` at the start and
+  end, is no longer an error. The game removes every copy of the portrait it
+  shows; only a second, different portrait stays visible as raw text.
+- An `i18n` folder without a `manifest.json` above it appears in the scan
+  result as information instead of disappearing silently; SMAPI does not load
+  it either.
+- When several strings fail in Local AI for the same reason, such as an
+  unreachable server, the message names that reason once and lists the
+  affected strings after it.
 - An LLM batch is written only to a `.json` file picked in the Save dialog,
   never into the app's data folder or the game and Mods folders, and through a
   temporary file so a failed write leaves no half-written batch.

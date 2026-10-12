@@ -501,6 +501,9 @@ export interface ZipBuildOutcome {
   fileName: string;
   entries: number;
   strings: number;
+  /** Packages the ZIP for all mods left out because the scan at build time
+   * skipped all or part of them. */
+  leftOut?: string[];
 }
 
 export interface ZipInstallFolder {

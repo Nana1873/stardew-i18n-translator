@@ -111,7 +111,7 @@ describe("validate", () => {
 
     expect(issues.some((issue) => issue.severity === "error")).toBe(true);
     expect(issues.map((issue) => issue.message)).toContain(
-      "A he/she switch needs two or three variants separated by ^, like ${he^she}$.",
+      "A he/she switch needs two or three variants separated by ^, like ${he^she}$, and cannot contain another switch.",
     );
   });
 

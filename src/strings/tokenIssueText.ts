@@ -143,7 +143,7 @@ export function describeTokenIssue(
       severity: "error",
       kind: "added",
       message:
-        "A he/she switch needs two or three variants separated by ^, like ${he^she}$.",
+        "A he/she switch needs two or three variants separated by ^, like ${he^she}$, and cannot contain another switch.",
     });
   }
 

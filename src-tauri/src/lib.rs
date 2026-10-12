@@ -736,7 +736,14 @@ fn build_stardew_translator_output(
                 install_folders.as_deref().unwrap_or_default(),
             )
         },
-        |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
+        |r| {
+            let outcome = if r.left_out.is_empty() {
+                Outcome::Success
+            } else {
+                Outcome::Partial
+            };
+            Summary::new(outcome, r.strings, r.entries, r.left_out.len())
+        },
     )
 }
 
@@ -762,7 +769,11 @@ fn remember_zip_operation(
         history,
         operation_history::CompletedOperation {
             kind: operation_history::OperationKind::Zip,
-            outcome: operation_history::OperationOutcome::Success,
+            outcome: if result.left_out.is_empty() {
+                operation_history::OperationOutcome::Success
+            } else {
+                operation_history::OperationOutcome::Warning
+            },
             title: title.to_string(),
             summary: format!(
                 "{} strings packaged in {} translation files.",
@@ -771,7 +782,14 @@ fn remember_zip_operation(
             item_count: result.strings,
             path: Some(result.path.clone()),
             file_name: Some(result.file_name.clone()),
-            warnings: Vec::new(),
+            warnings: if result.left_out.is_empty() {
+                Vec::new()
+            } else {
+                vec![format!(
+                    "Left out because the scan skipped all or part of them: {}. Open Scan for details.",
+                    result.left_out.join(", ")
+                )]
+            },
             details: vec![
                 operation_detail("Destination folder", &result.folder),
                 operation_detail("Translation files", result.entries),
@@ -1746,18 +1764,25 @@ fn local_ai_failure_summary(failures: &[LocalAiItemFailure]) -> Option<String> {
         return None;
     }
     let detail_count = failures.len().min(MAX_DETAILS);
-    let details = failures
+    // Strings that failed for the same reason (an unreachable server, for
+    // example) share one cause instead of repeating it for every string.
+    let mut groups: Vec<(String, Vec<String>)> = Vec::new();
+    for failure in failures.iter().take(detail_count) {
+        let identity = format!(
+            "{} / {} / {}",
+            bounded_single_line(&failure.identity.mod_unique_id, 80),
+            bounded_single_line(&failure.identity.relative_dir, 80),
+            bounded_single_line(&failure.identity.key, 120)
+        );
+        let cause = bounded_single_line(&failure.cause, 320);
+        match groups.iter_mut().find(|(known, _)| *known == cause) {
+            Some((_, identities)) => identities.push(identity),
+            None => groups.push((cause, vec![identity])),
+        }
+    }
+    let details = groups
         .iter()
-        .take(detail_count)
-        .map(|failure| {
-            let identity = format!(
-                "{} / {} / {}",
-                bounded_single_line(&failure.identity.mod_unique_id, 80),
-                bounded_single_line(&failure.identity.relative_dir, 80),
-                bounded_single_line(&failure.identity.key, 120)
-            );
-            format!("{}: {}", identity, bounded_single_line(&failure.cause, 320))
-        })
+        .map(|(cause, identities)| format!("{} ({})", cause, identities.join(", ")))
         .collect::<Vec<_>>()
         .join("; ");
     let omitted = failures.len().saturating_sub(detail_count);
@@ -3352,6 +3377,7 @@ mod output_history_tests {
             file_name: "previous.zip".into(),
             entries: 2,
             strings: 10,
+            left_out: Vec::new(),
         };
         remember_zip_operation(&history, &previous, "Translation ZIP created");
         let prior_entry = history.list().unwrap()[0].clone();
@@ -3841,6 +3867,7 @@ mod ai_run_contract_tests {
             })
             .collect::<Vec<_>>();
         let bounded = local_ai_failure_summary(&many_failures).unwrap();
+        assert_eq!(bounded.matches(&"failed".repeat(50)).count(), 1);
         assert!(bounded.contains("10 selected strings failed"));
         assert!(bounded.contains("2 additional failure(s) omitted"));
         assert!(bounded.len() < 4_000);
