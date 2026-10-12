@@ -408,6 +408,17 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     let mut extra_keys = Vec::new();
     for i18n_dir in &i18n_dirs {
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
+            // SMAPI only loads i18n folders of a mod with a manifest. Report the
+            // folder as information so it does not vanish without a trace.
+            skipped_components.push(SkippedComponent {
+                package_id: None,
+                component_unique_id: None,
+                component_name: None,
+                relative_location: safe_relative_location(i18n_dir, mods_path),
+                reason: "No manifest.json in this folder or a parent folder, so SMAPI does not load these translations.".to_string(),
+                requires_attention: false,
+                rest_of_package_loaded: false,
+            });
             continue;
         };
         if is_content_patcher_assets_i18n(&owner, i18n_dir) {
@@ -3567,6 +3578,24 @@ mod split_locale_tests {
             .unwrap(),
         );
         assert!(crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir).is_err());
+    }
+
+    #[test]
+    fn an_i18n_folder_without_a_manifest_is_reported_as_information() {
+        let root = crate::test_support::temp_dir("i18n-without-manifest");
+        let stray = root.join("Mods/Loose/i18n");
+        std::fs::create_dir_all(&stray).unwrap();
+        std::fs::write(stray.join("default.json"), r#"{"a":"A"}"#).unwrap();
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert!(scan.mods.is_empty());
+        assert_eq!(scan.skipped_components.len(), 1);
+        let skipped = &scan.skipped_components[0];
+        assert!(!skipped.requires_attention);
+        assert!(skipped.reason.contains("manifest.json"));
+        assert!(!skipped
+            .relative_location
+            .contains(&root.display().to_string()));
+        std::fs::remove_dir_all(root).ok();
     }
 
     fn split_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {

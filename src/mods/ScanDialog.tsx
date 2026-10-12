@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { type CSSProperties, useRef } from "react";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw, X } from "lucide-react";
-import type { ExtraKeyDiagnostic, ScanResult } from "../tauri/commands";
+import type {
+  ExtraKeyDiagnostic,
+  ScanResult,
+  SkippedComponent,
+} from "../tauri/commands";
 import { useDialogAccessibility } from "../dialogAccessibility";
 
 interface ScanDialogProps {
@@ -51,9 +55,11 @@ export function ScanDialog({
   const skippedCount = result?.skippedComponents?.filter(
     (component) => component.requiresAttention,
   ).length;
-  const expectedExclusionCount = result?.skippedComponents?.filter(
-    (component) => !component.requiresAttention,
-  ).length;
+  const expectedExclusionText = describeExpectedExclusions(
+    result?.skippedComponents?.filter(
+      (component) => !component.requiresAttention,
+    ) ?? [],
+  );
   const sourceDeltas = result?.sourceDeltas;
   const title = scanning
     ? "Scanning mods …"
@@ -214,7 +220,7 @@ export function ScanDialog({
             : error
               ? `Scan failed: ${error}`
               : result
-                ? `Scan complete. ${result.modCount} ${result.modCount === 1 ? "mod" : "mods"} and ${result.fileCount} ${result.fileCount === 1 ? "i18n file" : "i18n files"} found. ${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}; ${skippedCount == null ? "skipped-component count unavailable" : `${skippedCount} ${skippedCount === 1 ? "component" : "components"} skipped`}; ${expectedExclusionCount ?? 0} community language ${expectedExclusionCount === 1 ? "pack" : "packs"} ignored.`
+                ? `Scan complete. ${result.modCount} ${result.modCount === 1 ? "mod" : "mods"} and ${result.fileCount} ${result.fileCount === 1 ? "i18n file" : "i18n files"} found. ${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}; ${skippedCount == null ? "skipped-component count unavailable" : `${skippedCount} ${skippedCount === 1 ? "component" : "components"} skipped`}; ${expectedExclusionText.replace(/ (was|were) ignored$/, " ignored") || "nothing ignored"}.`
                 : "Scan result unavailable"}
         </span>
       </section>
@@ -379,13 +385,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
           <section className="translator-scan-info-section">
             <p className="translator-scan-info-summary">
               <Info aria-hidden="true" />{" "}
-              <strong>
-                {expectedExclusions.length}{" "}
-                {expectedExclusions.length === 1
-                  ? "community language pack was"
-                  : "community language packs were"}{" "}
-                ignored.
-              </strong>{" "}
+              <strong>{describeExpectedExclusions(expectedExclusions)}.</strong>{" "}
               This is expected and needs no action.
             </p>
             <ul
@@ -397,7 +397,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
                   component.componentName ??
                   component.componentUniqueId ??
                   component.packageId ??
-                  "Community language pack";
+                  component.relativeLocation;
                 const showPackage =
                   Boolean(component.packageId) &&
                   component.packageId !== displayName;
@@ -520,4 +520,23 @@ function Metric({ value, label }: { value: number | string; label: string }) {
       </span>
     </div>
   );
+}
+
+/** Expected exclusions are community language packs (they belong to a
+ * package) or `i18n` folders without a manifest, which SMAPI ignores too. */
+function describeExpectedExclusions(components: SkippedComponent[]): string {
+  if (components.length === 0) return "";
+  const folders = components.filter(
+    (component) => !component.packageId && !component.componentUniqueId,
+  ).length;
+  const packs = components.length - folders;
+  const parts = [
+    packs > 0
+      ? `${packs} community language ${packs === 1 ? "pack" : "packs"}`
+      : "",
+    folders > 0
+      ? `${folders} ${folders === 1 ? "folder" : "folders"} without a manifest.json`
+      : "",
+  ].filter(Boolean);
+  return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
 }

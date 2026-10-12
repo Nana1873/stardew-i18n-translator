@@ -710,7 +710,17 @@ pub fn save(config_dir: &Path, glossary: &Glossary) -> Result<(), String> {
     crate::input_limits::ensure_json_output_size(body.len() as u64, "Glossary JSON")?;
     std::fs::create_dir_all(glossary_dir(config_dir))
         .map_err(|e| format!("Could not create glossary dir: {e}"))?;
-    std::fs::write(path, body).map_err(|e| format!("write glossary: {e}"))
+    // Write beside the target and rename, so an interrupted save keeps the
+    // previous glossary instead of leaving a truncated file.
+    let mut temp_name = path.as_os_str().to_owned();
+    temp_name.push(".tmp");
+    let temp = std::path::PathBuf::from(temp_name);
+    crate::input_limits::write_synced(&temp, body.as_bytes())
+        .and_then(|()| std::fs::rename(&temp, &path))
+        .map_err(|e| {
+            std::fs::remove_file(&temp).ok();
+            format!("write glossary: {e}")
+        })
 }
 
 /// Load the cached glossary for `lang`, or `None` when its file is missing,
