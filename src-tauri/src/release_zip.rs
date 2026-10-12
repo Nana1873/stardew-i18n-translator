@@ -578,14 +578,27 @@ fn output_context(settings: &crate::settings::AppSettings) -> Result<(PathBuf, S
 fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
     let (mods, language) = output_context(&crate::settings::load_checked(config)?)?;
     let scan = scanner::scan_mods(&mods, &language, config);
-    if !scan.traversal_complete
-        || scan
-            .skipped_components
-            .iter()
-            .any(|item| item.requires_attention)
-    {
-        return Err("Resolve scan errors before exporting Stardew Translator Output.".into());
+    if !scan.traversal_complete {
+        return Err(
+            "The Mods folder could not be read completely. Run Scan and resolve the problem it reports before building the ZIP for all mods."
+                .into(),
+        );
     }
+    // Like the selected-mod ZIP and JSON export, a component the scan had to
+    // skip is left out instead of blocking every other translation.
+    let mut skipped: Vec<String> = scan
+        .skipped_components
+        .iter()
+        .filter(|item| item.requires_attention)
+        .map(|item| {
+            item.component_name
+                .clone()
+                .or_else(|| item.package_id.clone())
+                .unwrap_or_else(|| item.relative_location.clone())
+        })
+        .collect();
+    skipped.sort();
+    skipped.dedup();
     let working = translations::language_root(config, &language)?;
     let mut prepared = PreparedPackage {
         preview: ZipPreview {
@@ -599,6 +612,12 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
         },
         entries: Vec::new(), source_checks: Vec::new(),
     };
+    if !skipped.is_empty() {
+        prepared.preview.warnings.push(format!(
+            "Left out because the scan could not read them: {}. Open Scan for details.",
+            skipped.join(", ")
+        ));
+    }
     let mut identities = std::collections::HashSet::new();
     for component in scan.mods {
         if !identities.insert(component.unique_id.to_lowercase()) {
@@ -1593,6 +1612,34 @@ mod tests {
         write(&destination, "prior artifact");
         assert!(write_prepared(prepared, &destination, true).is_err());
         assert_eq!(std::fs::read(destination).unwrap(), b"prior artifact");
+    }
+
+    #[test]
+    fn output_leaves_out_skipped_components_and_names_them() {
+        let (_root, config, mods) = output_fixture("output-skipped");
+        let good = output_component(&mods, "Good", "Fixture.Good", r#"{"hello":"Hello"}"#);
+        write(&good.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        let broken = output_component(&mods, "Broken", "Fixture.Broken", r#"{"hello":"Hello"}"#);
+        write(
+            &broken.join("i18n/default.json"),
+            r#"{ "hello": "Hello" "x": }"#,
+        );
+
+        let prepared = prepare_output(&config).expect("a skipped mod does not block");
+        assert_eq!(prepared.entries.len(), 1);
+        assert!(prepared.entries[0]
+            .preview
+            .archive_path
+            .starts_with("Good/"));
+        assert!(
+            prepared
+                .preview
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("Left out") && warning.contains("Fixture.Broken")),
+            "{:?}",
+            prepared.preview.warnings
+        );
     }
 
     #[test]

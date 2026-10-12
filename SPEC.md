@@ -160,7 +160,8 @@ second app confirmation. Canceling the picker leaves the existing archive
 unchanged; a confirmed build replaces it only after the new archive is complete.
 **Translation ZIP · all mods** previews and writes one translation ZIP for
 all scanned components with effective target-language values in the configured
-Mods folder. Each included locale combines existing target values for current
+Mods folder. Components the scan had to skip are left out
+and named in the preview; only an incomplete folder traversal blocks the build. Each included locale combines existing target values for current
 source keys with saved overrides. It uses the same installation-folder mapping
 as package ZIPs. Like package ZIPs, it includes token-valid Changed and Review
 values with warnings without approving them. It reuses export

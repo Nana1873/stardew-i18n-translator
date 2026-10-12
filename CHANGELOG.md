@@ -25,6 +25,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- **Export ZIP for all mods** no longer fails completely when the scan had to
+  skip a component, such as another mod with a broken `default.json`. The
+  skipped components are left out and named in the preview; every other
+  translation is packaged.
+
 - The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
 - Folders whose name starts with a dot (for example `.disabled`) are skipped
   like SMAPI does, so a parked copy of a mod no longer counts as a duplicate
