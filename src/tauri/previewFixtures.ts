@@ -159,6 +159,14 @@ export const FIXTURE_MODS: FixtureMod[] = [
         target: "",
         status: "translated",
       },
+      {
+        // A single space saved on purpose: the game shows nothing here.
+        key: "item.silent",
+        section: "Items",
+        source: "(sound of silence)",
+        target: " ",
+        status: "translated",
+      },
     ],
   },
   {
