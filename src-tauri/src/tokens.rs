@@ -81,7 +81,9 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             continue;
         }
 
-        if let Some((end, action_tokens)) = read_betas_message(chars, offset) {
+        if let Some((end, action_tokens)) =
+            read_betas_message(chars, offset).or_else(|| read_quick_response(chars, offset))
+        {
             tokens.extend(action_tokens);
             offset = end;
             continue;
@@ -296,6 +298,12 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         } else {
             "It adds an item or reward the English mail does not give."
         };
+    }
+    if token == "*" {
+        return "In a $y reply it starts a new dialogue box, so the page structure changes.";
+    }
+    if token == "_" {
+        return "It separates the question, answers, and replies of a $y quick response.";
     }
     if token == "[#]" {
         return if missing {
@@ -719,6 +727,41 @@ fn read_mail_command(chars: &[char], offset: usize) -> Option<usize> {
 
 /// BETAS DialogueBox argument 2 accepts prose or a runtime translation key.
 /// NPC and remaining arguments stay literal; complex messages stay opaque.
+/// `$y 'question_answer_reply_answer_reply'`: the game splits the quoted text
+/// at `_` into a question and answer/reply pairs, so every separator is
+/// protected. Underscores inside `{{tokens}}` or `[tokens]` are not
+/// separators. A single `*` becomes a `#$b#` page break in the game (`**` is a
+/// literal asterisk), so it is protected too. Mirrors TS `readQuickResponse`.
+fn read_quick_response(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
+    if !starts_with(chars, offset, "$y '") {
+        return None;
+    }
+    let start = offset + 4;
+    // The last quote before the next page break closes it, so an apostrophe
+    // such as "Don't" stays part of the text.
+    let page = find_char(chars, start, '#').unwrap_or(chars.len());
+    let close = (start..page).rev().find(|&i| chars[i] == '\'')?;
+    let body = &chars[start..close];
+    let mut tokens = vec!["$y".to_string(), "'".to_string(), "'".to_string()];
+    let mut index = 0;
+    while index < body.len() {
+        if let Some(end) = read_content_patcher(body, index).or_else(|| read_bracket(body, index)) {
+            index = end;
+            continue;
+        }
+        if starts_with(body, index, "**") {
+            index += 2;
+            continue;
+        }
+        if matches!(body[index], '_' | '*') {
+            tokens.push(body[index].to_string());
+        }
+        index += 1;
+    }
+    tokens.extend(extract_chars(body));
+    Some((close + 1, tokens))
+}
+
 fn read_betas_message(chars: &[char], offset: usize) -> Option<(usize, Vec<String>)> {
     let prefix = "#$action Spiderbuttons.BETAS_DialogueBox ";
     if !starts_with(chars, offset, prefix) {

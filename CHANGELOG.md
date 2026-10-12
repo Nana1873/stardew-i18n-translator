@@ -38,6 +38,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- The `_` separators of a `$y 'question_answer_reply'` quick response are
+  protected. A dropped or added separator used to pass silently and mixed up
+  which reply belongs to which answer in the game, or stopped the dialogue
+  with an error. A single `*` in a reply, which the game turns into a new
+  dialogue box, is protected as well.
 - Exporting a mod again without changes leaves target files that already hold
   the exported content untouched, so their earlier `.bak` backup and file
   date are kept. A failed export no longer reports an incomplete rollback for

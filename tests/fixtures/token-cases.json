@@ -222,6 +222,22 @@
     {
       "value": "$p 305#Yes#No",
       "tokens": ["$p 305#", "#"]
+    },
+    {
+      "value": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
+      "tokens": ["$y", "'", "'", "_", "_", "_", "_"]
+    },
+    {
+      "value": "$y 'Hi @_Yes_{{i18n:a_b}}'",
+      "tokens": ["$y", "'", "'", "_", "_", "@", "{{i18n:a_b}}"]
+    },
+    {
+      "value": "$y 'Don't you?_Yes_Fine'#Next",
+      "tokens": ["$y", "'", "'", "_", "_", "#"]
+    },
+    {
+      "value": "$y 'Hungry?_Yes_Here.*Enjoy! **5** stars'",
+      "tokens": ["$y", "'", "'", "_", "_", "*"]
     }
   ],
   "comparisons": [
@@ -530,6 +546,18 @@
       "source": "$c 0.5#Yes#No",
       "target": "$c 0.6#Ja#Nein",
       "blocked": true
+    },
+    {
+      "name": "a dropped quick-response separator breaks the answer pairs",
+      "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
+      "target": "$y 'Magst du Fisch?_Ja_Toll!_Nein Schade.'",
+      "blocked": true
+    },
+    {
+      "name": "translated quick-response answers keep their separators",
+      "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
+      "target": "$y 'Magst du Fisch?_Ja_Toll!_Nein_Schade.'",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -692,6 +720,16 @@
       "source": "Hi.",
       "target": "Hallo { Du.",
       "text": "A single { was added (English 0, translation 1). The game treats single braces as commands and hides text."
+    },
+    {
+      "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
+      "target": "$y 'Magst du Fisch?_Ja_Toll!_Nein Schade.'",
+      "text": "_ is missing (English 4, translation 3). It separates the question, answers, and replies of a $y quick response."
+    },
+    {
+      "source": "$y 'Hungry?_Yes_Here.*Enjoy!'",
+      "target": "$y 'Hunger?_Ja_Hier. Guten Appetit!'",
+      "text": "* is missing (English 1, translation 0). In a $y reply it starts a new dialogue box, so the page structure changes."
     }
   ]
 }

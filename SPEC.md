@@ -100,7 +100,8 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   changed `^`, `#`, or `#$b#` page structure, dialogue commands such as `$q`,
   `$r`, `$y`, `$p`, `$d`, `$c`, `$k`, `$action`, event commands `%fork` and
   `%revealtaste`, the arguments of a command that opens the string (such as
-  `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
+  `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), the `_` separators
+  and single `*` page breaks inside a `$y '…'` quick response, single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
   item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
   a second portrait command on one dialogue page.
 - Warnings are cosmetic or legitimate translation choices: portrait changes

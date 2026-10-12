@@ -92,7 +92,8 @@ function extractTokens(value: string): string[] {
       continue;
     }
 
-    const action = readBetasMessage(value, offset);
+    const action =
+      readBetasMessage(value, offset) ?? readQuickResponse(value, offset);
     if (action) {
       tokens.push(...action.tokens);
       offset = action.end;
@@ -133,6 +134,8 @@ export function describeToken(token: string): string {
   if (token === "}$") return "}$ (switch end)";
   if (token === "#") return "# (dialogue/mail separator)";
   if (token === "'") return "' (quote delimiter)";
+  if (token === "_") return "_ (quick-response separator)";
+  if (token === "*") return "* (quick-response page break)";
   if (token === "\n") return "newline";
   return token;
 }
@@ -424,6 +427,46 @@ function readBetasMessage(
       value.slice(offset, start) + value.slice(close, end),
       ...extractTokens(body),
     ],
+  };
+}
+
+/** `$y 'question_answer_reply_answer_reply'`: the game splits the quoted text
+ * at `_` into a question and answer/reply pairs, so every separator is
+ * protected. Underscores inside `{{tokens}}` or `[tokens]` are not separators.
+ * A single `*` becomes a `#$b#` page break in the game (`**` is a literal
+ * asterisk), so it is protected too. Mirrors Rust `read_quick_response`. */
+function readQuickResponse(
+  value: string,
+  offset: number,
+): { end: number; tokens: string[] } | null {
+  if (!value.startsWith("$y '", offset)) return null;
+  const start = offset + 4;
+  // The last quote before the next page break closes it, so an apostrophe
+  // such as "Don't" stays part of the text.
+  const page = value.indexOf("#", start);
+  const close = value.lastIndexOf("'", (page < 0 ? value.length : page) - 1);
+  if (close < start) return null;
+  const body = value.slice(start, close);
+  const separators: string[] = [];
+  let index = 0;
+  while (index < body.length) {
+    const nested =
+      readContentPatcherToken(body, index) ?? readBracketToken(body, index);
+    if (nested) {
+      index = nested.end;
+      continue;
+    }
+    if (body.startsWith("**", index)) {
+      index += 2;
+      continue;
+    }
+    if (body[index] === "_" || body[index] === "*")
+      separators.push(body[index]);
+    index += 1;
+  }
+  return {
+    end: close + 1,
+    tokens: ["$y", "'", "'", ...separators, ...extractTokens(body)],
   };
 }
 
