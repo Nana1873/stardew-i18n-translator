@@ -1345,35 +1345,14 @@
 }
 
 #stardew-i18n-translator .translator-scan-changes {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
+  margin: 12px 0 0 46px;
   color: var(--translator-muted);
   font-size: 12px;
 }
 
-#stardew-i18n-translator .translator-scan-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-#stardew-i18n-translator .translator-scan-chip {
-  padding: 2px 9px;
-  font-size: 12px;
+#stardew-i18n-translator .translator-scan-changes.has-changes {
   color: var(--translator-blue);
-  background: var(--translator-blue-soft);
-  border-radius: 999px;
-}
-
-#stardew-i18n-translator .translator-scan-chip.is-muted {
-  color: var(--translator-faint);
-  background: var(--translator-surface-raised);
+  font-weight: 600;
 }
 
 #stardew-i18n-translator .translator-scan-attention {

@@ -233,6 +233,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
   const extraKeySummary = `${extraKeys.length} ${extraKeys.length === 1 ? "translation entry" : "translation entries"} without matching English source`;
   const mods = `${result.modCount} ${result.modCount === 1 ? "mod" : "mods"}`;
   const files = `${result.fileCount} ${result.fileCount === 1 ? "translation file" : "translation files"}`;
+  const changeLine = describeSourceChanges(result.sourceDeltas);
 
   return (
     <>
@@ -255,24 +256,13 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         </div>
       </div>
 
-      <div className="translator-scan-changes">
-        <span id="scan-changes-label">
-          English source changes since last scan:
-        </span>
-        <ul
-          className="translator-scan-chips"
-          aria-labelledby="scan-changes-label"
+      {changeLine && (
+        <p
+          className={`translator-scan-changes${changeLine.highlight ? " has-changes" : ""}`}
         >
-          {sourceChangeChips(result.sourceDeltas).map((chip) => (
-            <li
-              key={chip.text}
-              className={`translator-scan-chip${chip.muted ? " is-muted" : ""}`}
-            >
-              {chip.text}
-            </li>
-          ))}
-        </ul>
-      </div>
+          {changeLine.text}
+        </p>
+      )}
 
       {problemCount > 0 && (
         <section
@@ -446,21 +436,27 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
   return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
 }
 
-/** Short chips for English source changes since the previous scan. */
-function sourceChangeChips(
+/** What a translator needs to know about English source changes since the
+ * previous scan. Nothing is shown when the comparison was not possible; the
+ * reason is already listed under Needs attention. */
+function describeSourceChanges(
   deltas: ScanResult["sourceDeltas"],
-): Array<{ text: string; muted?: boolean }> {
-  if (!deltas) return [{ text: "Could not be checked this time", muted: true }];
-  const chips = [
-    deltas.sourcesChanged > 0
-      ? { text: `${deltas.sourcesChanged} changed` }
-      : null,
-    deltas.stringsAdded > 0 ? { text: `${deltas.stringsAdded} new` } : null,
-    deltas.stringsRemoved > 0
-      ? { text: `${deltas.stringsRemoved} removed` }
-      : null,
-  ].filter((chip): chip is { text: string } => chip !== null);
-  return chips.length > 0 ? chips : [{ text: "None", muted: true }];
+): { text: string; highlight: boolean } | null {
+  if (!deltas) return null;
+  const parts = [
+    deltas.stringsAdded > 0 ? `${deltas.stringsAdded} new` : "",
+    deltas.sourcesChanged > 0 ? `${deltas.sourcesChanged} changed` : "",
+  ].filter(Boolean);
+  if (parts.length === 0)
+    return {
+      text: "No new or changed English text since your last scan.",
+      highlight: false,
+    };
+  const total = deltas.stringsAdded + deltas.sourcesChanged;
+  return {
+    text: `Since your last scan: ${parts.join(" and ")} ${total === 1 ? "text" : "texts"} to translate.`,
+    highlight: true,
+  };
 }
 
 /** A short title for a free-text scanner warning. */

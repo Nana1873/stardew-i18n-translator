@@ -72,10 +72,10 @@ describe("ScanDialog", () => {
       ),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("list", {
-        name: "English source changes since last scan:",
-      }),
-    ).toHaveTextContent("2 changed3 new1 removed");
+      screen.getByText(
+        "Since your last scan: 3 new and 2 changed texts to translate.",
+      ),
+    ).toBeInTheDocument();
     expect(screen.getByText("Change comparison")).toBeInTheDocument();
     expect(screen.getByText("Broken Component")).toBeInTheDocument();
     expect(
@@ -129,10 +129,10 @@ describe("ScanDialog", () => {
       screen.getByText("Read 1 mod with 1 translation file."),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("list", {
-        name: "English source changes since last scan:",
-      }),
-    ).toHaveTextContent("1 changed1 new");
+      screen.getByText(
+        "Since your last scan: 1 new and 1 changed texts to translate.",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Show new strings (1)" }),
     ).toBeEnabled();
@@ -164,9 +164,9 @@ describe("ScanDialog", () => {
       />,
     );
     expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
-    expect(
-      screen.getByText("Could not be checked this time"),
-    ).toBeInTheDocument();
+    // Without a comparison there is no change line; the reason is listed
+    // under Needs attention.
+    expect(screen.queryByText(/since your last scan/i)).toBeNull();
   });
 
   it("focuses the real diagnostic block when opened from the skipped control", async () => {
@@ -468,7 +468,9 @@ describe("ScanDialog", () => {
     );
 
     expect(screen.getByText("Everything is ready")).toBeInTheDocument();
-    expect(screen.getByText("None")).toBeInTheDocument();
+    expect(
+      screen.getByText("No new or changed English text since your last scan."),
+    ).toBeInTheDocument();
     expect(document.querySelector("[data-scan-diagnostics]")).toBeNull();
   });
 
