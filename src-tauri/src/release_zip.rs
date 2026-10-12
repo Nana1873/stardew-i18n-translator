@@ -1229,24 +1229,18 @@ mod tests {
     #[test]
     fn package_zip_requires_a_new_scan_for_added_files_and_includes_them_after_rescan() {
         let (root, config, mods) = output_fixture("package-fresh-files");
-        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        let component = output_component(
+            &mods,
+            "Pack/Main",
+            "Fixture.Package",
+            r#"{"hello":"Hello"}"#,
+        );
         write(&component.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
         let displayed = scanned_package(&config, &mods, "Pack");
         assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_ok());
-        // A new component with its own manifest (SMAPI only loads an i18n
-        // folder beside a manifest).
-        write(
-            &component.join("extra/manifest.json"),
-            r#"{"Name":"Extra","UniqueID":"Fixture.Extra","Version":"1.0.0"}"#,
-        );
-        write(
-            &component.join("extra/i18n/default.json"),
-            r#"{"bye":"Goodbye"}"#,
-        );
-        write(
-            &component.join("extra/i18n/de.json"),
-            r#"{"bye":"Tschüss"}"#,
-        );
+        // A new component folder beside the first one, as in SVE or Ridgeside.
+        let extra = output_component(&mods, "Pack/Extra", "Fixture.Extra", r#"{"bye":"Goodbye"}"#);
+        write(&extra.join("i18n/de.json"), r#"{"bye":"Tschüss"}"#);
         assert!(resolve_components(&config, &mods, "Pack", "de", &displayed)
             .unwrap_err()
             .contains("Run Scan"));

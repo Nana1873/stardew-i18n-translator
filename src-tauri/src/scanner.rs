@@ -2433,12 +2433,14 @@ mod tests {
     #[test]
     fn scanner_skips_only_the_malformed_i18n_component() {
         let root = crate::test_support::temp_dir("scanner-component-error");
+        // A package folder with one component folder per manifest, as SMAPI
+        // loads them (it never looks inside a folder that has a manifest).
         let mod_dir = root.join("Mod");
         write(
-            &mod_dir.join("manifest.json"),
+            &mod_dir.join("Main/manifest.json"),
             r#"{"Name":"Mod","UniqueID":"Author.Mod"}"#,
         );
-        write(&mod_dir.join("i18n/default.json"), r#"{"ok":"Hello"}"#);
+        write(&mod_dir.join("Main/i18n/default.json"), r#"{"ok":"Hello"}"#);
         write(
             &mod_dir.join("optional/manifest.json"),
             r#"{"Name":"Optional","UniqueID":"Author.Optional"}"#,

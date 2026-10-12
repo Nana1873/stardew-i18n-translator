@@ -523,7 +523,8 @@ function Metric({ value, label }: { value: number | string; label: string }) {
 }
 
 /** Expected exclusions are community language packs (they belong to a
- * package) or `i18n` folders without a manifest, which SMAPI ignores too. */
+ * package) or `i18n` folders SMAPI does not load: without a manifest, or
+ * deeper inside a mod than the folder beside its manifest. */
 function describeExpectedExclusions(components: SkippedComponent[]): string {
   if (components.length === 0) return "";
   const folders = components.filter(
