@@ -1751,3 +1751,20 @@
 #stardew-i18n-translator [data-no-nexus] .translator-mod-nexus {
   display: none;
 }
+
+/* ZIP warnings: the icon sits beside the text, not on its own line. */
+#stardew-i18n-translator .translator-zip-warnings {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+#stardew-i18n-translator .translator-zip-warnings > svg {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+#stardew-i18n-translator .translator-zip-warnings > ul {
+  margin: 0;
+  padding-left: 16px;
+}

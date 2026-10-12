@@ -222,25 +222,34 @@ export function TranslationZipDialog({
                     className="translator-flow-list"
                     aria-label="Strings left out of the ZIP"
                   >
-                    {preview.problems.map((problem) => (
-                      <li
-                        key={`${problem.modUniqueId}:${problem.relativeDir}:${problem.key}`}
-                      >
-                        <span>
-                          <strong>{problem.modName}</strong>
-                          <br />
-                          <code>{problem.key}</code> · {problem.reason}
-                        </span>
-                        <button
-                          className="translator-button translator-button-quiet"
-                          type="button"
-                          onClick={() => onInspect(problem)}
-                          disabled={building}
+                    {/* Grouped by mod: the name shows once above its strings. */}
+                    {[...preview.problems]
+                      .sort((a, b) => a.modName.localeCompare(b.modName))
+                      .map((problem, index, sorted) => (
+                        <li
+                          key={`${problem.modUniqueId}:${problem.relativeDir}:${problem.key}`}
                         >
-                          Open issue
-                        </button>
-                      </li>
-                    ))}
+                          <span>
+                            {(index === 0 ||
+                              sorted[index - 1].modUniqueId !==
+                                problem.modUniqueId) && (
+                              <>
+                                <strong>{problem.modName}</strong>
+                                <br />
+                              </>
+                            )}
+                            <code>{problem.key}</code> · {problem.reason}
+                          </span>
+                          <button
+                            className="translator-button translator-button-quiet"
+                            type="button"
+                            onClick={() => onInspect(problem)}
+                            disabled={building}
+                          >
+                            Open issue
+                          </button>
+                        </li>
+                      ))}
                   </ul>
                 </>
               )}
@@ -356,13 +365,17 @@ export function TranslationZipDialog({
               )}
 
               {displayedZipWarnings.length > 0 && (
-                <div className="translator-flow-callout is-warning">
+                <div className="translator-flow-callout is-warning translator-zip-warnings">
                   <AlertTriangle aria-hidden="true" />
-                  <ul>
-                    {displayedZipWarnings.map((warning, index) => (
-                      <li key={`${warning}:${index}`}>{warning}</li>
-                    ))}
-                  </ul>
+                  {displayedZipWarnings.length === 1 ? (
+                    <p>{displayedZipWarnings[0]}</p>
+                  ) : (
+                    <ul>
+                      {displayedZipWarnings.map((warning, index) => (
+                        <li key={`${warning}:${index}`}>{warning}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </>
