@@ -576,7 +576,7 @@ fn prepare_mod(
     for (file, rows) in prepared_rows {
         let default_path = Path::new(&file.default_path);
         let target_path = Path::new(&file.target_path);
-        validate_portuguese_variants(target_path)?;
+        validate_locale_variants(target_path)?;
 
         let mut out: Map<String, Value> = Map::new();
         let mut file_result = ExportFileResult {
@@ -663,8 +663,9 @@ fn execute_prepared(mods: &mut [PreparedMod]) -> Result<(), String> {
                     }
                     if !file.removals.is_empty() {
                         // With every translation cleared, removing the stale target
-                        // makes SMAPI fall back to default.json. Portuguese may have
-                        // been imported from pt-BR.json, so remove the read variant.
+                        // makes SMAPI fall back to default.json. The value may have
+                        // been imported from pt-BR.json or zh-CN.json, so remove the
+                        // read variant too.
                         file.result.removed = true;
                         prepared.result.files_removed += 1;
                     }
@@ -785,18 +786,13 @@ fn write_target(target_path: &Path, body: &str) -> Result<bool, String> {
 }
 
 fn target_variants(target_path: &Path) -> Vec<PathBuf> {
-    if scanner::is_flat_portuguese_target(target_path) {
-        vec![
-            target_path.to_path_buf(),
-            target_path.with_file_name("pt-BR.json"),
-        ]
-    } else {
-        vec![target_path.to_path_buf()]
-    }
+    let mut variants = vec![target_path.to_path_buf()];
+    variants.extend(scanner::regional_target_variant(target_path));
+    variants
 }
 
-fn validate_portuguese_variants(target_path: &Path) -> Result<(), String> {
-    if scanner::is_flat_portuguese_target(target_path) {
+fn validate_locale_variants(target_path: &Path) -> Result<(), String> {
+    if scanner::regional_target_variant(target_path).is_some() {
         for path in target_variants(target_path)
             .into_iter()
             .filter(|path| path.is_file())
@@ -2298,6 +2294,46 @@ mod tests {
         assert!(read(&i18n.join("pt.json.bak")).contains("Canonical old"));
         assert!(read(&i18n.join("pt-BR.json.bak")).contains("Brazil first"));
         assert!(!i18n.join("pt-BR.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn chinese_prefers_zh_cn_then_canonicalizes_and_backs_it_up() {
+        let root = crate::test_support::temp_dir("export-zh-cn");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("zh-CN.json"), r#"{"k":"Regional value"}"#);
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("zh.json").display().to_string(),
+        }];
+
+        export_mod(&root, "mod.id", &files).unwrap();
+        assert!(read(&i18n.join("zh.json")).contains("Regional value"));
+        assert!(read(&i18n.join("zh-CN.json.bak")).contains("Regional value"));
+        assert!(!i18n.join("zh-CN.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn chinese_with_both_variants_prefers_zh_cn_and_backs_up_both() {
+        let root = crate::test_support::temp_dir("export-zh-both");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("zh.json"), r#"{"k":"Short old"}"#);
+        write(&i18n.join("zh-CN.json"), r#"{"k":"Regional first"}"#);
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("zh.json").display().to_string(),
+        }];
+
+        export_mod(&root, "mod.id", &files).unwrap();
+        assert!(read(&i18n.join("zh.json")).contains("Regional first"));
+        assert!(read(&i18n.join("zh.json.bak")).contains("Short old"));
+        assert!(read(&i18n.join("zh-CN.json.bak")).contains("Regional first"));
+        assert!(!i18n.join("zh-CN.json").exists());
         std::fs::remove_dir_all(root).ok();
     }
 }

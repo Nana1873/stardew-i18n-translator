@@ -188,9 +188,9 @@ backup. Ordinary failures partway through a multi-file export roll back the
 affected targets and backups. See [backup recovery](troubleshooting.md#recovering-a-backup)
 if you need to restore an earlier file.
 
-For flat locale files, Portuguese export uses `i18n/pt.json`; an existing
-`i18n/pt-BR.json` is accepted on import and backed up when normalized during
-export. Split document names such as `i18n/de/pt.json` are kept literally.
+For flat locale files, Portuguese export uses `i18n/pt.json` and Chinese
+export uses `i18n/zh.json`; an existing `i18n/pt-BR.json` or `i18n/zh-CN.json`
+is accepted on import and backed up when normalized during export. Split document names such as `i18n/de/pt.json` are kept literally.
 
 For a combined translation archive, choose **Files… > Export ZIP for all
 mods…**. Its preview includes all scanned components with effective
