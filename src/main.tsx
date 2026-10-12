@@ -27,8 +27,26 @@ if (!container) {
   throw new Error("Root element #root not found");
 }
 
-createRoot(container).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-);
+function render(): void {
+  createRoot(container!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  );
+}
+
+// `corepack pnpm dev:preview` runs the UI in a plain browser tab on synthetic
+// fixtures (see src/tauri/previewBridge.ts). The gate is compile-time dead in
+// production builds, so released screens never show demo data.
+if (
+  import.meta.env.DEV &&
+  import.meta.env.MODE === "preview" &&
+  !("__TAURI_INTERNALS__" in window)
+) {
+  void import("./tauri/previewBridge").then(({ installPreviewBridge }) => {
+    installPreviewBridge();
+    render();
+  });
+} else {
+  render();
+}
