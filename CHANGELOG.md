@@ -10,9 +10,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
-- Removing a he/she switch (for languages without grammatical gender) or
-  adding one no longer reports tokens repeated in every branch as missing or
-  added. A collapsed switch with `#$b#` in each branch, for example, is no
+- Removing every he/she switch (for languages without grammatical gender) or
+  adding one where the English text has none no longer reports tokens repeated
+  in every branch as missing or added; the editor's token chips count the
+  same way. A collapsed switch with `#$b#` in each branch, for example, is no
   longer a token error, so the string is exported.
 - The arguments of a dialogue command that opens a string are protected:
   changed question ids such as `$q 305/306 null#` or a renamed one-time flag

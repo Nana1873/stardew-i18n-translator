@@ -691,9 +691,13 @@ fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
         }
         // `#$hSo happy!` starts a new page with a portrait followed by prose;
         // only `#` is the separator (mirrors TS `readDialogueBreak`).
+        // An uppercase ASCII letter or any character that is not an ASCII
+        // letter, digit, or `#` (CJK, `¡`, `«`, `Ä`, a space) starts the prose.
         if command_end == offset + 3
             && matches!(chars[offset + 2], 'h' | 's' | 'u' | 'l' | 'a')
-            && chars.get(command_end).is_some_and(char::is_ascii_uppercase)
+            && chars.get(command_end).is_some_and(|next| {
+                *next != '#' && (next.is_ascii_uppercase() || !next.is_ascii_alphanumeric())
+            })
         {
             return None;
         }

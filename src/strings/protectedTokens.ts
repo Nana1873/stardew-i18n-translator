@@ -427,6 +427,14 @@ function readBetasMessage(
   };
 }
 
+/** After `#$h|s|u|l|a`, an uppercase ASCII letter or any character that is
+ * not an ASCII letter, digit, or `#` (CJK, `¡`, `«`, `Ä`, a space) starts the
+ * page's prose. Lowercase ASCII would be a longer command such as `#$action`. */
+function startsPagePortrait(next: string | undefined): boolean {
+  if (next === undefined || next === "#") return false;
+  return /[A-Z]/.test(next) || !/[A-Za-z0-9]/.test(next);
+}
+
 function readDialogueBreak(value: string, offset: number): Token | null {
   if (!value.startsWith("#$", offset)) return null;
 
@@ -448,7 +456,7 @@ function readDialogueBreak(value: string, offset: number): Token | null {
   if (
     command &&
     /^\$[hsula]$/.test(command.raw) &&
-    /[A-Z]/.test(value[command.end] ?? "")
+    startsPagePortrait(value[command.end])
   )
     return null;
 

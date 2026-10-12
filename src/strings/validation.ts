@@ -91,11 +91,6 @@ function hasLoneSurrogate(text: string): boolean {
   return false;
 }
 
-/**
- * Every protected-token count difference between a source and its
- * translation, with the severity the export uses. The editor reads this to
- * colour its token chips; `validate` turns the same list into messages.
- */
 /** Token counts as one player sees them: switch-shape identities keep their
  * full count, every other token takes its highest count over the gender
  * branches instead of the sum of all branches. */
@@ -114,10 +109,15 @@ function playerViewCounts(
   return view;
 }
 
-export function tokenDifferences(
+/**
+ * Source and target token counts as the comparison uses them. The editor's
+ * token chips read these too, so a chip never asks for a token the export
+ * would not require.
+ */
+export function comparableTokenCounts(
   source: string,
   target: string,
-): TokenDifference[] {
+): { source: Map<string, number>; target: Map<string, number> } {
   let sourceTokens = tokenCounts(source);
   let targetTokens = tokenCounts(target);
   // A switch removed (languages without grammatical gender) or added (the
@@ -130,6 +130,22 @@ export function tokenDifferences(
     sourceTokens = playerViewCounts(source, sourceTokens);
   if (targetSwitches && !sourceSwitches)
     targetTokens = playerViewCounts(target, targetTokens);
+  return { source: sourceTokens, target: targetTokens };
+}
+
+/**
+ * Every protected-token count difference between a source and its
+ * translation, with the severity the export uses. The editor reads this to
+ * colour its token chips; `validate` turns the same list into messages.
+ */
+export function tokenDifferences(
+  source: string,
+  target: string,
+): TokenDifference[] {
+  const { source: sourceTokens, target: targetTokens } = comparableTokenCounts(
+    source,
+    target,
+  );
   const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
     isGenderSwitchShape,
   );

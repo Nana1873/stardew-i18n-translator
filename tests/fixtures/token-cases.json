@@ -210,6 +210,18 @@
     {
       "value": "$query FLAG#Yes",
       "tokens": ["$query", "#"]
+    },
+    {
+      "value": "Hello.#$h太好了！#$e#",
+      "tokens": ["#", "$h", "#$e#"]
+    },
+    {
+      "value": "Hello.#$h#More.",
+      "tokens": ["#$h#"]
+    },
+    {
+      "value": "$p 305#Yes#No",
+      "tokens": ["$p 305#", "#"]
     }
   ],
   "comparisons": [
@@ -494,6 +506,30 @@
       "source": "$q  305/306 null#Go?",
       "target": "$q 305/306 null#Gehen?",
       "blocked": false
+    },
+    {
+      "name": "a page starting with a portrait and CJK prose is translatable",
+      "source": "#$hSo happy!#$b#Bye",
+      "target": "#$h太好了！#$b#再见",
+      "blocked": false
+    },
+    {
+      "name": "a collapsed three-branch switch with the alternate separator counts once",
+      "source": "${He#$b#is.¦She#$b#is.¦They#$b#are.}$",
+      "target": "他#$b#在。",
+      "blocked": false
+    },
+    {
+      "name": "a partially collapsed switch still compares sums",
+      "source": "${Mr.^Ms.}$ X ${Hi#$b#^Hello#$b#}$ Y",
+      "target": "${Herr^Frau}$ X Hallo#$b# Y",
+      "blocked": true
+    },
+    {
+      "name": "a changed probability at string start blocks",
+      "source": "$c 0.5#Yes#No",
+      "target": "$c 0.6#Ja#Nein",
+      "blocked": true
     }
   ]
 }

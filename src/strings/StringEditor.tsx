@@ -59,7 +59,11 @@ export interface EditorSuggestionProvenance {
   /** Exact target value this metadata describes. */
   value: string;
 }
-import { tokenDifferences, validate } from "./validation";
+import {
+  comparableTokenCounts,
+  tokenDifferences,
+  validate,
+} from "./validation";
 import {
   describeToken,
   extractProtectedTokens,
@@ -207,15 +211,6 @@ function Kbd({ children }: { children: string }) {
       {children}
     </kbd>
   );
-}
-
-function countTokens(text: string): Map<string, number> {
-  const counts = new Map<string, number>();
-  for (const token of extractProtectedTokens(text)) {
-    if (token === "\n" || token === "'") continue;
-    counts.set(token, (counts.get(token) ?? 0) + 1);
-  }
-  return counts;
 }
 
 function translationFieldLabel(label: string): string {
@@ -794,8 +789,8 @@ export function StringEditor({
       ?.focus();
   }, [discardOpen, pendingSave, pendingMove]);
 
-  const sourceTokenCounts = countTokens(row.source);
-  const valueTokenCounts = countTokens(value);
+  const { source: sourceTokenCounts, target: valueTokenCounts } =
+    comparableTokenCounts(row.source, value);
   const sourceHasGenderSwitch = [...sourceTokenCounts.keys()].some(
     isGenderSwitchShape,
   );
