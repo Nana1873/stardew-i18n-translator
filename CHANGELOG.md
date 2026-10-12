@@ -38,6 +38,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- Saved translations, settings, and exported translation files are flushed to
+  disk before they replace the previous file, so a power loss right after a
+  save cannot leave an empty file behind.
 - An LLM batch is written only to a `.json` file picked in the Save dialog,
   never into the app's data folder or the game and Mods folders, and through a
   temporary file so a failed write leaves no half-written batch.

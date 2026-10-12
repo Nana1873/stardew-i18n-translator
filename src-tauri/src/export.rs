@@ -791,7 +791,11 @@ fn write_target(target_path: &Path, body: &str) -> Result<bool, String> {
     }
 
     let (temp, mut temp_file) = create_unique_sibling(target_path, ".tmp")?;
-    if let Err(error) = temp_file.write_all(body.as_bytes()) {
+    // Flush before the rename so a power loss cannot leave a partial target.
+    if let Err(error) = temp_file
+        .write_all(body.as_bytes())
+        .and_then(|()| temp_file.sync_all())
+    {
         drop(temp_file);
         std::fs::remove_file(&temp).ok();
         return Err(format!("Could not write temp file: {error}"));
