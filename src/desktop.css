@@ -1716,3 +1716,8 @@
 #stardew-i18n-translator .editor__status.translator-state::before {
   content: none;
 }
+
+/* Spare editor height goes to the text fields, not to the issue box. */
+#stardew-i18n-translator .translator-editor-body {
+  grid-template-rows: auto minmax(0, 1fr);
+}

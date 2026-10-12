@@ -1240,42 +1240,44 @@ export function StringEditor({
             ) : (
               <>
                 <ShieldAlert aria-hidden />
-                {acceptedTokenMismatch && (
-                  <span className="editor__issue editor__issue--warning">
-                    Protected-token mismatch explicitly accepted for this exact
-                    translation. Export is allowed; editing requires
-                    confirmation again.
-                  </span>
-                )}
-                {(["error", "warning"] as const).map((severity) => {
-                  const group = visibleIssues.filter(
-                    (issue) => issue.severity === severity,
-                  );
-                  if (group.length === 0) return null;
-                  return (
-                    <span
-                      key={severity}
-                      className="editor__issue-group"
-                      data-severity={severity}
-                    >
-                      <span
-                        className={`editor__issue-title editor__issue-title--${severity}`}
-                      >
-                        {severity === "error"
-                          ? `${group.length === 1 ? "1 error" : `${group.length} errors`}${group.some((issue) => issue.ruleId === "token-missing" || issue.ruleId === "token-added") ? " · this string stays English on export until fixed" : ""}`
-                          : `${group.length === 1 ? "1 note" : `${group.length} notes`} · does not affect export`}
-                      </span>
-                      {group.map((issue, i) => (
-                        <span
-                          key={i}
-                          className={`editor__issue editor__issue--${issue.severity}`}
-                        >
-                          {issue.message}
-                        </span>
-                      ))}
+                <span className="editor__issue-list">
+                  {acceptedTokenMismatch && (
+                    <span className="editor__issue editor__issue--warning">
+                      Protected-token mismatch explicitly accepted for this
+                      exact translation. Export is allowed; editing requires
+                      confirmation again.
                     </span>
-                  );
-                })}
+                  )}
+                  {(["error", "warning"] as const).map((severity) => {
+                    const group = visibleIssues.filter(
+                      (issue) => issue.severity === severity,
+                    );
+                    if (group.length === 0) return null;
+                    return (
+                      <span
+                        key={severity}
+                        className="editor__issue-group"
+                        data-severity={severity}
+                      >
+                        <span
+                          className={`editor__issue-title editor__issue-title--${severity}`}
+                        >
+                          {severity === "error"
+                            ? `Must fix${group.some((issue) => issue.ruleId === "token-missing" || issue.ruleId === "token-added") ? " – until then this string stays English in the game" : ""}`
+                            : "Worth a look – exported as written"}
+                        </span>
+                        {group.map((issue, i) => (
+                          <span
+                            key={i}
+                            className={`editor__issue editor__issue--${issue.severity}`}
+                          >
+                            {issue.message}
+                          </span>
+                        ))}
+                      </span>
+                    );
+                  })}
+                </span>
               </>
             )}
             {translateMsg && translateMsgKind === "note" && (

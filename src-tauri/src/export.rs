@@ -1747,7 +1747,7 @@ mod tests {
         assert_eq!(result.skipped[0].key, "bad");
         assert!(result.skipped[0]
             .reason
-            .contains("English 1, translation 0"));
+            .contains("is missing from the translation"));
         let body = read(&i18n.join("de.json"));
         assert!(body.contains("Hallo {{name}}"));
         assert!(!body.contains("Tschüss"));
@@ -1781,7 +1781,7 @@ mod tests {
         assert_eq!(result.skipped.len(), 1);
         assert!(result.skipped[0]
             .reason
-            .contains("English 1, translation 2"));
+            .contains("appears 2 times in the translation instead of 1"));
         assert!(!i18n.join("de.json").exists());
         assert!(!i18n.join("de.json.bak").exists());
 

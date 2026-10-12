@@ -1320,7 +1320,7 @@ describe("App shell", () => {
               modName: "Test Mod",
               relativeDir: "i18n",
               key: "greeting",
-              reason: "#$b# is missing (English 1, translation 0).",
+              reason: "#$b# is missing from the translation.",
             },
           ],
         });
@@ -1348,7 +1348,7 @@ describe("App shell", () => {
     expect(preflight).toHaveTextContent("1 string stays in English");
     expect(preflight).toHaveTextContent("greeting");
     expect(preflight).toHaveTextContent(
-      "#$b# is missing (English 1, translation 0).",
+      "#$b# is missing from the translation.",
     );
     expect(
       within(preflight).getByRole("button", { name: "Export JSON" }),
@@ -2755,7 +2755,7 @@ describe("App shell", () => {
         {
           relativeDir: "i18n",
           key: "greeting",
-          reason: "#$b# is missing (English 1, translation 0).",
+          reason: "#$b# is missing from the translation.",
         },
       ],
       filesWritten: 0,

@@ -163,24 +163,28 @@ body {
 
 /* The validation line groups errors before notes; each group names its
    consequence once instead of repeating it per sentence. */
+#stardew-i18n-translator .editor__issue-list {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
 #stardew-i18n-translator .editor__issue-group {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  flex: 1 1 100%;
+  gap: 1px;
 }
 
-#stardew-i18n-translator .editor__issue-group + .editor__issue-group {
-  border-top: 1px dashed
-    color-mix(in srgb, var(--translator-border) 80%, transparent);
-  padding-top: 4px;
+/* Messages read as normal text; only the group title carries the colour. */
+#stardew-i18n-translator .editor__issue-group .editor__issue {
+  color: var(--translator-text);
 }
 
 #stardew-i18n-translator .editor__issue-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 #stardew-i18n-translator .editor__issue-title--error {
@@ -194,6 +198,14 @@ body {
 #stardew-i18n-translator .translator-editor .editor__validation {
   align-items: flex-start;
   flex-wrap: wrap;
+  padding: 6px 10px;
+}
+
+#stardew-i18n-translator .translator-editor .editor__validation > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+  flex-shrink: 0;
 }
 
 #stardew-i18n-translator .translator-editor .editor__validation.is-error {

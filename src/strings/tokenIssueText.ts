@@ -65,9 +65,9 @@ export function tokenConsequence(difference: TokenDifference): string {
       ? "The event branch or gift-taste reveal is lost."
       : "It changes event logic the English text does not have.";
   if (token.startsWith("{{") || /^\{\d+\}$/.test(token)) {
-    if (missing) return "The value is left out. Fine if intended.";
+    if (missing) return "The game shows nothing in its place. Fine if intended.";
     return token.startsWith("{{")
-      ? "An unknown placeholder stays visible as raw text."
+      ? "The game would show it as raw text."
       : "A placeholder without a value breaks the text.";
   }
   if (token.toLowerCase().startsWith("[articlefor"))
@@ -85,11 +85,22 @@ export function tokenConsequence(difference: TokenDifference): string {
     : "The game would show it as raw text or misread the line.";
 }
 
+/** How a token count differs, in words. Mirrors Rust `change_phrase`. */
+function changePhrase(sourceCount: number, targetCount: number): string {
+  const times = (n: number) => (n === 1 ? "1 time" : `${n} times`);
+  if (targetCount < sourceCount)
+    return targetCount === 0
+      ? "is missing from the translation"
+      : `appears ${times(targetCount)} in the translation instead of ${sourceCount}`;
+  return sourceCount === 0
+    ? "is not in the English text"
+    : `appears ${times(targetCount)} in the translation instead of ${sourceCount}`;
+}
+
 function genericMessage(difference: TokenDifference): string {
   const { token, sourceCount, targetCount, severity } = difference;
-  const counts = `(English ${sourceCount}, translation ${targetCount})`;
   const missing = targetCount < sourceCount;
-  const change = missing ? "is missing" : "was added";
+  const change = changePhrase(sourceCount, targetCount);
   if (isGenderSwitchShape(token))
     return missing
       ? "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
@@ -97,20 +108,19 @@ function genericMessage(difference: TokenDifference): string {
   if (isPortraitCommand(token))
     return severity === "error"
       ? missing
-        ? `The portrait ${token} ${change} ${counts}: the portraits changed and one dialogue page now shows a portrait as raw text.`
-        : `The portrait ${token} ${change} ${counts}: a second portrait on one dialogue page is shown as raw text.`
-      : `The portrait ${token} ${change} ${counts}: the character shows a different face. Fine if intended.`;
-  if (token === "@")
-    return `The player name @ ${change} ${counts}. Fine if intended.`;
+        ? `The portrait ${token} ${change}: the portraits changed and one dialogue page now shows a portrait as raw text.`
+        : `The portrait ${token} ${change}: a second portrait on one dialogue page is shown as raw text.`
+      : `The portrait ${token} ${change}: the character shows a different face. Fine if intended.`;
+  if (token === "@") return `The player name @ ${change}. Fine if intended.`;
   if ((token === "^" || token === "#") && severity === "error")
-    return `${token} ${change} ${counts}: a dialogue page now has two different portraits, and the second shows as raw text.`;
+    return `${token} ${change}: a dialogue page now has two different portraits, and the second shows as raw text.`;
   if (token === "^")
-    return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.`;
+    return `^ ${change}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.`;
   if (token === "{" || token === "}")
-    return `A single ${token} ${change} ${counts}. The game treats single braces as commands and hides text.`;
+    return `A single ${token} ${change}. The game treats single braces as commands and hides text.`;
   if (token === "#")
-    return `# ${change} ${counts}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.`;
-  return `${token} ${change} ${counts}. ${tokenConsequence(difference)}`;
+    return `# ${change}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.`;
+  return `${token} ${change}. ${tokenConsequence(difference)}`;
 }
 
 /**

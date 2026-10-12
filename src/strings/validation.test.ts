@@ -9,7 +9,7 @@ describe("validate", () => {
         ruleId: "token-missing",
         severity: "error",
         message:
-          "#$b# is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes.",
+          "#$b# is missing from the translation. It starts a new dialogue box, so the page structure changes.",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
@@ -22,7 +22,7 @@ describe("validate", () => {
         ruleId: "token-missing",
         severity: "warning",
         message:
-          "{{name}} is missing (English 1, translation 0). The value is left out. Fine if intended.",
+          "{{name}} is missing from the translation. The game shows nothing in its place. Fine if intended.",
       },
     ]);
     expect(worstSeverity(issues)).toBe("warning");
@@ -168,7 +168,7 @@ describe("validate", () => {
         ruleId: "token-missing",
         severity: "warning",
         message:
-          "The player name @ is missing (English 1, translation 0). Fine if intended.",
+          "The player name @ is missing from the translation. Fine if intended.",
       },
     ]);
   });
@@ -177,7 +177,7 @@ describe("validate", () => {
     const issues = validate("a$b b$b c", "a$b b c", false);
     expect(issues.map((i) => i.ruleId)).toEqual(["token-missing"]);
     expect(issues[0].message).toBe(
-      "$b is missing (English 2, translation 1). The game would show it as text or change the dialogue flow.",
+      "$b appears 1 time in the translation instead of 2. The game would show it as text or change the dialogue flow.",
     );
   });
 
@@ -192,8 +192,8 @@ describe("validate", () => {
       "token-missing",
     ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
-      "#$b# is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes.",
-      "The portrait $s is missing (English 2, translation 0): the character shows a different face. Fine if intended.",
+      "#$b# is missing from the translation. It starts a new dialogue box, so the page structure changes.",
+      "The portrait $s is missing from the translation: the character shows a different face. Fine if intended.",
     ]);
   });
 
@@ -281,8 +281,8 @@ describe("validate", () => {
       .map((issue) => issue.message)
       .sort();
     expect(notes).toEqual([
-      "# is missing (English 1, translation 0). In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.",
-      "^ is missing (English 2, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
+      "# is missing from the translation. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.",
+      "^ appears 1 time in the translation instead of 2. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
     ]);
     expect(issues.every((issue) => issue.severity === "warning")).toBe(true);
     expect(

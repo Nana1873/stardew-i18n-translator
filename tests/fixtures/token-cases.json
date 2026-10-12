@@ -642,172 +642,172 @@
     {
       "source": "Hi.#$b#Bye.",
       "target": "Hallo. Tschüss.",
-      "text": "#$b# is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes."
+      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the page structure changes."
     },
     {
       "source": "A gift.%item object 128 1 %%[#]Title",
       "target": "Ein Geschenk.%item object 128 1 %%Titel",
-      "text": "[#] is missing (English 1, translation 0). The letter title would show as part of the letter text."
+      "text": "[#] is missing from the translation. The letter title would show as part of the letter text."
     },
     {
       "source": "A gift.%item object 128 1 %%",
       "target": "Ein Geschenk.",
-      "text": "%item object 128 1 %% is missing (English 1, translation 0). The attached item or reward would not be given."
+      "text": "%item object 128 1 %% is missing from the translation. The attached item or reward would not be given."
     },
     {
       "source": "Price: {{Price}} gold",
       "target": "Preis: Gold",
-      "text": "{{Price}} is missing (English 1, translation 0). The value is left out. Fine if intended."
+      "text": "{{Price}} is missing from the translation. The game shows nothing in its place. Fine if intended."
     },
     {
       "source": "Price: gold",
       "target": "Preis: {{Preis}} Gold",
-      "text": "{{Preis}} was added (English 0, translation 1). An unknown placeholder stays visible as raw text."
+      "text": "{{Preis}} is not in the English text. The game would show it as raw text."
     },
     {
       "source": "You caught {0} fish.",
       "target": "Du hast {0} {1} Fische.",
-      "text": "{1} was added (English 0, translation 1). A placeholder without a value breaks the text."
+      "text": "{1} is not in the English text. A placeholder without a value breaks the text."
     },
     {
       "source": "Welcome to [FarmName].",
       "target": "Willkommen.",
-      "text": "[FarmName] is missing (English 1, translation 0). The game would not insert this value or item."
+      "text": "[FarmName] is missing from the translation. The game would not insert this value or item."
     },
     {
       "source": "Thanks @!",
       "target": "Danke!",
-      "text": "The player name @ is missing (English 1, translation 0). Fine if intended."
+      "text": "The player name @ is missing from the translation. Fine if intended."
     },
     {
       "source": "Try it %revealtaste:Haley:(O)221 now.",
       "target": "Probier es jetzt.",
-      "text": "%revealtaste:Haley:(O)221 is missing (English 1, translation 0). The event branch or gift-taste reveal is lost."
+      "text": "%revealtaste:Haley:(O)221 is missing from the translation. The event branch or gift-taste reveal is lost."
     },
     {
       "source": "$1 metHarvey#Nice.",
       "target": "Schön.",
-      "text": "$1 metHarvey# is missing (English 1, translation 0). It carries response ids, flags, or keys the game needs."
+      "text": "$1 metHarvey# is missing from the translation. It carries response ids, flags, or keys the game needs."
     },
     {
       "source": "Hello.$h",
       "target": "Hallo.$h nett$s",
-      "text": "The portrait $s was added (English 0, translation 1): a second portrait on one dialogue page is shown as raw text."
+      "text": "The portrait $s is not in the English text: a second portrait on one dialogue page is shown as raw text."
     },
     {
       "source": "Hi.#$b$Bye.",
       "target": "Hallo. Tschüss.",
-      "text": "#$b$ is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes."
+      "text": "#$b$ is missing from the translation. It starts a new dialogue box, so the page structure changes."
     },
     {
       "source": "Go.#$e#Later.",
       "target": "Los. Später.",
-      "text": "#$e# is missing (English 1, translation 0). It ends the conversation and shows the rest next time, so the page structure changes."
+      "text": "#$e# is missing from the translation. It ends the conversation and shows the rest next time, so the page structure changes."
     },
     {
       "source": "Hi {0}!",
       "target": "Hallo!",
-      "text": "{0} is missing (English 1, translation 0). The value is left out. Fine if intended."
+      "text": "{0} is missing from the translation. The game shows nothing in its place. Fine if intended."
     },
     {
       "source": "Hi {0}!",
       "target": "Hallo {0} {1}!",
-      "text": "{1} was added (English 0, translation 1). A placeholder without a value breaks the text."
+      "text": "{1} is not in the English text. A placeholder without a value breaks the text."
     },
     {
       "source": "Take [ArticleFor apple] apple.",
       "target": "Nimm den Apfel.",
-      "text": "[ArticleFor apple] is missing (English 1, translation 0). Only the a/an article is lost. Fine if intended."
+      "text": "[ArticleFor apple] is missing from the translation. Only the a/an article is lost. Fine if intended."
     },
     {
       "source": "Take it.",
       "target": "Nimm [articlefor Apfel] Apfel.",
-      "text": "[articlefor Apfel] was added (English 0, translation 1). A changed or extra game token shows as raw text."
+      "text": "[articlefor Apfel] is not in the English text. A changed or extra game token shows as raw text."
     },
     {
       "source": "Money!%action AddMoney 500 %%",
       "target": "Geld!",
-      "text": "%action AddMoney 500 %% is missing (English 1, translation 0). The attached item or reward would not be given."
+      "text": "%action AddMoney 500 %% is missing from the translation. The attached item or reward would not be given."
     },
     {
       "source": "Hi.",
       "target": "Hallo.%item object 128 1 %%",
-      "text": "%item object 128 1 %% was added (English 0, translation 1). It adds an item or reward the English mail does not give."
+      "text": "%item object 128 1 %% is not in the English text. It adds an item or reward the English mail does not give."
     },
     {
       "source": "Hi%fork",
       "target": "Hallo",
-      "text": "%fork is missing (English 1, translation 0). The event branch or gift-taste reveal is lost."
+      "text": "%fork is missing from the translation. The event branch or gift-taste reveal is lost."
     },
     {
       "source": "Hi",
       "target": "Hallo%revealtaste Abigail 128",
-      "text": "%revealtaste was added (English 0, translation 1). It changes event logic the English text does not have."
+      "text": "%revealtaste is not in the English text. It changes event logic the English text does not have."
     },
     {
       "source": "Hi$k",
       "target": "Hallo",
-      "text": "$k is missing (English 1, translation 0). The game would show it as text or change the dialogue flow."
+      "text": "$k is missing from the translation. The game would show it as text or change the dialogue flow."
     },
     {
       "source": "Hi$8#Bye",
       "target": "Hallo#Tschuess",
-      "text": "The portrait $8 is missing (English 1, translation 0): the character shows a different face. Fine if intended."
+      "text": "The portrait $8 is missing from the translation: the character shows a different face. Fine if intended."
     },
     {
       "source": "a }$ b",
       "target": "a b",
-      "text": "}$ is missing (English 1, translation 0). A he/she switch marker is unbalanced, so the game would show broken text."
+      "text": "}$ is missing from the translation. A he/she switch marker is unbalanced, so the game would show broken text."
     },
     {
       "source": "a ${ b",
       "target": "a b",
-      "text": "${ is missing (English 1, translation 0). A he/she switch marker is unbalanced, so the game would show broken text."
+      "text": "${ is missing from the translation. A he/she switch marker is unbalanced, so the game would show broken text."
     },
     {
       "source": "Hi#$h$Bye",
       "target": "Hallo Tschuess",
-      "text": "#$h$ is missing (English 1, translation 0). The game would show it as raw text or misread the line."
+      "text": "#$h$ is missing from the translation. The game would show it as raw text or misread the line."
     },
     {
       "source": "A[#]T",
       "target": "AT",
-      "text": "[#] is missing (English 1, translation 0). The letter title would show as part of the letter text."
+      "text": "[#] is missing from the translation. The letter title would show as part of the letter text."
     },
     {
       "source": "A",
       "target": "A[#]T",
-      "text": "[#] was added (English 0, translation 1). Text after it would become the letter title."
+      "text": "[#] is not in the English text. Text after it would become the letter title."
     },
     {
       "source": "A$h#B$s",
       "target": "A$h$u#B",
-      "text": "The portrait $s is missing (English 1, translation 0): the portraits changed and one dialogue page now shows a portrait as raw text. The portrait $u was added (English 0, translation 1): a second portrait on one dialogue page is shown as raw text."
+      "text": "The portrait $s is missing from the translation: the portraits changed and one dialogue page now shows a portrait as raw text. The portrait $u is not in the English text: a second portrait on one dialogue page is shown as raw text."
     },
     {
       "source": "Hi.",
       "target": "Hallo.^Du.",
-      "text": "^ was added (English 0, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."
+      "text": "^ is not in the English text. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."
     },
     {
       "source": "Hi.",
       "target": "Hallo.#Du.",
-      "text": "# was added (English 0, translation 1). In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."
+      "text": "# is not in the English text. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."
     },
     {
       "source": "Hi.",
       "target": "Hallo { Du.",
-      "text": "A single { was added (English 0, translation 1). The game treats single braces as commands and hides text."
+      "text": "A single { is not in the English text. The game treats single braces as commands and hides text."
     },
     {
       "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
       "target": "$y 'Magst du Fisch?_Ja_Toll!_Nein Schade.'",
-      "text": "_ is missing (English 4, translation 3). It separates the question, answers, and replies of a $y quick response."
+      "text": "_ appears 3 times in the translation instead of 4. It separates the question, answers, and replies of a $y quick response."
     },
     {
       "source": "$y 'Hungry?_Yes_Here.*Enjoy!'",
       "target": "$y 'Hunger?_Ja_Hier. Guten Appetit!'",
-      "text": "* is missing (English 1, translation 0). In a $y reply it starts a new dialogue box, so the page structure changes."
+      "text": "* is missing from the translation. In a $y reply it starts a new dialogue box, so the page structure changes."
     },
     {
       "source": "${He^She}$ is here.",
@@ -817,7 +817,7 @@
     {
       "source": "Hi.#$y 'Q?_Yes_Great'",
       "target": "Hallo. $y 'Frage?_Ja_Toll'",
-      "text": "#$y is missing (English 1, translation 0). It starts the quick response on a new page; without it the game shows the command as text. $y was added (English 0, translation 1). The game would show it as text or change the dialogue flow."
+      "text": "#$y is missing from the translation. It starts the quick response on a new page; without it the game shows the command as text. $y is not in the English text. The game would show it as text or change the dialogue flow."
     }
   ]
 }

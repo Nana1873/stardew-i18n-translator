@@ -76,7 +76,7 @@ describe("JSON export confirmation", () => {
         {
           relativeDir: "i18n",
           key: "status.saved",
-          reason: "# is missing (English 1, translation 0).",
+          reason: "# is missing from the translation.",
         },
       ],
       acceptedMismatches: 1,

@@ -719,7 +719,9 @@ describe("StringEditor", () => {
 
     expect(onSave).not.toHaveBeenCalled();
     expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
-    expect(screen.getAllByText(/English 0, translation 1/)).not.toHaveLength(0);
+    expect(screen.getAllByText(/is not in the English text/)).not.toHaveLength(
+      0,
+    );
   });
 
   it("shows an accepted token mismatch as a non-blocking warning", () => {

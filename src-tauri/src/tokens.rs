@@ -237,15 +237,39 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
     messages.join(" ")
 }
 
+/// How a token count differs, in words (mirrors TS `changePhrase`).
+fn change_phrase(source_count: usize, target_count: usize) -> String {
+    let times = |n: usize| {
+        if n == 1 {
+            "1 time".to_string()
+        } else {
+            format!("{n} times")
+        }
+    };
+    if target_count < source_count {
+        if target_count == 0 {
+            "is missing from the translation".to_string()
+        } else {
+            format!(
+                "appears {} in the translation instead of {source_count}",
+                times(target_count)
+            )
+        }
+    } else if source_count == 0 {
+        "is not in the English text".to_string()
+    } else {
+        format!(
+            "appears {} in the translation instead of {source_count}",
+            times(target_count)
+        )
+    }
+}
+
 /// One plain-language sentence for a difference (mirrors TS `genericMessage`).
 fn difference_message(difference: &TokenDifference) -> String {
     let token = difference.token.as_str();
     let missing = difference.target_count < difference.source_count;
-    let change = if missing { "is missing" } else { "was added" };
-    let counts = format!(
-        "(English {}, translation {})",
-        difference.source_count, difference.target_count
-    );
+    let change = change_phrase(difference.source_count, difference.target_count);
     if is_gender_switch_shape(token) {
         return if missing {
             "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
@@ -256,25 +280,22 @@ fn difference_message(difference: &TokenDifference) -> String {
     }
     if is_portrait_command(token) {
         return if difference.is_error() && missing {
-            format!("The portrait {token} {change} {counts}: the portraits changed and one dialogue page now shows a portrait as raw text.")
+            format!("The portrait {token} {change}: the portraits changed and one dialogue page now shows a portrait as raw text.")
         } else if difference.is_error() {
-            format!("The portrait {token} {change} {counts}: a second portrait on one dialogue page is shown as raw text.")
+            format!("The portrait {token} {change}: a second portrait on one dialogue page is shown as raw text.")
         } else {
-            format!("The portrait {token} {change} {counts}: the character shows a different face. Fine if intended.")
+            format!("The portrait {token} {change}: the character shows a different face. Fine if intended.")
         };
     }
     match token {
-        "@" => return format!("The player name @ {change} {counts}. Fine if intended."),
-        "^" | "#" if difference.is_error() => return format!("{token} {change} {counts}: a dialogue page now has two different portraits, and the second shows as raw text."),
-        "^" => return format!("^ {change} {counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."),
-        "{" | "}" => return format!("A single {token} {change} {counts}. The game treats single braces as commands and hides text."),
-        "#" => return format!("# {change} {counts}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."),
+        "@" => return format!("The player name @ {change}. Fine if intended."),
+        "^" | "#" if difference.is_error() => return format!("{token} {change}: a dialogue page now has two different portraits, and the second shows as raw text."),
+        "^" => return format!("^ {change}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."),
+        "{" | "}" => return format!("A single {token} {change}. The game treats single braces as commands and hides text."),
+        "#" => return format!("# {change}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."),
         _ => {}
     }
-    format!(
-        "{token} {change} {counts}. {}",
-        token_consequence(difference)
-    )
+    format!("{token} {change}. {}", token_consequence(difference))
 }
 
 /// What a token difference does in the game, as one sentence. Errors name the
@@ -335,10 +356,10 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
     }
     if token.starts_with("{{") || match_positional(&chars, 0) == Some(chars.len()) {
         if missing {
-            return "The value is left out. Fine if intended.";
+            return "The game shows nothing in its place. Fine if intended.";
         }
         return if token.starts_with("{{") {
-            "An unknown placeholder stays visible as raw text."
+            "The game would show it as raw text."
         } else {
             "A placeholder without a value breaks the text."
         };
