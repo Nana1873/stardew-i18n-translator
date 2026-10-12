@@ -59,6 +59,9 @@ does not imply this intent. Protected-token validation still applies.
 - Import existing targets using SMAPI-compatible case-insensitive, trimmed key
   matching. Extra target keys are informational: they do not count toward
   progress or block export, and a rewritten target omits them.
+- Translate only `i18n` folders beside a `manifest.json`, the only ones SMAPI
+  loads; components with their own manifest each count. A deeper `i18n` folder
+  without one is listed as information, not offered as a target.
 - Ignore Content Patcher `assets/i18n` data. Exclude detected community language
   packs from translation targets as expected information, not a warning.
 - Report malformed components and skip them without inventing empty rows or

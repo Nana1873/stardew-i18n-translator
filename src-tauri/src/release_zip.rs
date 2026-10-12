@@ -1229,24 +1229,30 @@ mod tests {
     #[test]
     fn package_zip_requires_a_new_scan_for_added_files_and_includes_them_after_rescan() {
         let (root, config, mods) = output_fixture("package-fresh-files");
-        let component = output_component(&mods, "Pack", "Fixture.Package", r#"{"hello":"Hello"}"#);
+        let component = output_component(
+            &mods,
+            "Pack/Main",
+            "Fixture.Package",
+            r#"{"hello":"Hello"}"#,
+        );
         write(&component.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
         let displayed = scanned_package(&config, &mods, "Pack");
         assert!(resolve_components(&config, &mods, "Pack", "de", &displayed).is_ok());
-        write(
-            &component.join("extra/i18n/default.json"),
-            r#"{"bye":"Goodbye"}"#,
-        );
-        write(
-            &component.join("extra/i18n/de.json"),
-            r#"{"bye":"Tschüss"}"#,
-        );
+        // A new component folder beside the first one, as in SVE or Ridgeside.
+        let extra = output_component(&mods, "Pack/Extra", "Fixture.Extra", r#"{"bye":"Goodbye"}"#);
+        write(&extra.join("i18n/de.json"), r#"{"bye":"Tschüss"}"#);
         assert!(resolve_components(&config, &mods, "Pack", "de", &displayed)
             .unwrap_err()
             .contains("Run Scan"));
         let current = scanned_package(&config, &mods, "Pack");
         let resolved = resolve_components(&config, &mods, "Pack", "de", &current).unwrap();
-        assert_eq!(resolved[0].files.len(), 2);
+        assert_eq!(
+            resolved
+                .iter()
+                .map(|component| component.files.len())
+                .sum::<usize>(),
+            2
+        );
         let destination = root.join("package.zip");
         build(
             &translations::language_root(&config, "de").unwrap(),

@@ -43,6 +43,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- An `i18n` folder deeper inside a mod without its own `manifest.json` is no
+  longer offered for translation, because SMAPI never loads it; Scan lists it
+  as information. Mods whose components each have a manifest, such as
+  Stardew Valley Expanded, are unaffected.
 - A second portrait on the male or female part of a dialogue page split by
   `^` is a token error, and different portraits for the two parts are no
   longer flagged.

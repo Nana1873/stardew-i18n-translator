@@ -415,7 +415,7 @@ describe("ScanDialog", () => {
     );
 
     expect(
-      screen.getByText(/1 folder without a manifest.json was ignored/),
+      screen.getByText(/1 i18n folder that SMAPI does not load was ignored/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/community language pack/)).toBeNull();
     expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
