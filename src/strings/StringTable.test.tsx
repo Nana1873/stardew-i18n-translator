@@ -91,7 +91,6 @@ const ROWS = {
       key: "greeting",
       source: "Hello",
       target: "Hallo",
-      targetPresent: true,
       status: "translated",
       tokenMismatchAccepted: false,
     },
@@ -99,7 +98,6 @@ const ROWS = {
       key: "bye",
       source: "Bye",
       target: "",
-      targetPresent: false,
       status: "untranslated",
       tokenMismatchAccepted: false,
     },
@@ -107,7 +105,6 @@ const ROWS = {
       key: "token",
       source: "Hi [FarmName]",
       target: "Hallo",
-      targetPresent: true,
       status: "outdated",
       tokenMismatchAccepted: false,
       section: "Dialogue",
@@ -118,7 +115,6 @@ const ROWS = {
       key: "tomorrow",
       source: "See you tomorrow",
       target: "",
-      targetPresent: false,
       status: "untranslated",
       tokenMismatchAccepted: false,
     },
@@ -338,7 +334,9 @@ it("preserves a dirty draft until the changed source is explicitly accepted", as
   expect(screen.getByRole("textbox", { name: "Translation" })).toBe(input);
   expect(input).toHaveValue("Manual draft");
   expect(input).toHaveFocus();
-  expect(screen.getByRole("alert")).toHaveTextContent("English source changed");
+  expect(screen.getByRole("alert")).toHaveTextContent(
+    "The English text changed",
+  );
   expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
   fireEvent.keyDown(input, { key: "Enter", ctrlKey: true });
   fireEvent.keyDown(input, { key: "ArrowRight", altKey: true });
@@ -351,7 +349,9 @@ it("preserves a dirty draft until the changed source is explicitly accepted", as
   expect(input).toHaveValue("Revised manual draft");
   fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
   expect(
-    screen.getByRole("dialog", { name: "Protected token mismatch" }),
+    screen.getByRole("dialog", {
+      name: "A token differs from the English text",
+    }),
   ).toBeVisible();
   expect(
     invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
@@ -843,7 +843,6 @@ describe("StringTable workbench", () => {
               key: `key-${index}`,
               source: "Source",
               target: index === 199 ? "" : "Translation",
-              targetPresent: index !== 199,
               status: index === 199 ? "untranslated" : "translated",
             }))
           : null,
@@ -919,7 +918,6 @@ describe("StringTable workbench", () => {
           key: "review",
           source: "Review me",
           target: "Prüfen",
-          targetPresent: true,
           status: "review-needed",
           tokenMismatchAccepted: false,
         },
@@ -1088,7 +1086,6 @@ describe("StringTable workbench", () => {
                 key: "asset-key",
                 source: "Asset source",
                 target: "",
-                targetPresent: false,
                 status: "untranslated",
                 tokenMismatchAccepted: false,
               },
@@ -1208,7 +1205,6 @@ describe("StringTable workbench", () => {
           key: "light",
           source: "Light",
           target: "IŞIK",
-          targetPresent: true,
           status: "translated",
           tokenMismatchAccepted: false,
         },
@@ -1312,7 +1308,6 @@ describe("StringTable workbench", () => {
           key: "review",
           source: "Review me",
           target: "Prüfen",
-          targetPresent: true,
           status: "review-needed",
           tokenMismatchAccepted: false,
         },
@@ -1415,48 +1410,48 @@ describe("StringTable workbench", () => {
     await screen.findByText("warning");
 
     const warning = within(rowFor("warning")).getByRole("button", {
-      name: /^Note: harmless difference, exported normally\./,
+      name: /^Worth a look: exported as written\./,
     });
     const error = within(rowFor("error")).getByRole("button", {
-      name: /^Error: export leaves this string out/,
+      name: /^Must fix or Save anyway: until then this text stays English/,
     });
     expect(warning).toHaveAttribute("data-severity", "warning");
     expect(error).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("mixed")).getByRole("button", {
-        name: /^Error: export leaves this string out/,
+        name: /^Must fix or Save anyway: until then this text stays English/,
       }),
     ).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("accepted")).getByRole("button", {
-        name: /^Accepted token mismatch: exported as written\./,
+        name: /^Kept on purpose: exported as written\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
     expect(
       within(rowFor("accepted-with-invalid-text")).getByRole("button", {
-        name: /^Error: export leaves this string out \(English in game\) until it is fixed\. Token mismatch explicitly accepted; other errors remain\./,
+        name: /^Must fix: this text stays English in the game until fixed\. Other problems remain\./,
       }),
     ).toHaveAttribute("data-severity", "error");
 
     fireEvent.focus(warning);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Note: harmless difference, exported normally. Literal escape sequences differ from the original",
+      "Worth a look: exported as written. Special codes like \\n differ from the English text.",
     );
     fireEvent.blur(warning);
     fireEvent.focus(error);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Error: export leaves this string out (English in game) until it is fixed. [FarmName] is missing",
+      "Must fix or Save anyway: until then this text stays English in the game. [FarmName] is missing",
     );
     fireEvent.blur(error);
     const accepted = within(rowFor("accepted")).getByRole("button", {
-      name: /^Accepted token mismatch: exported as written\./,
+      name: /^Kept on purpose: exported as written\./,
     });
     fireEvent.focus(accepted);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Accepted token mismatch: exported as written. [FarmName] is missing",
+      "Kept on purpose: exported as written. [FarmName] is missing",
     );
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Literal escape sequences differ from the original",
+      "Special codes like \\n differ from the English text.",
     );
     fireEvent.blur(accepted);
     fireEvent.click(screen.getByRole("button", { name: "Issues 5" }));
@@ -1511,7 +1506,7 @@ describe("StringTable workbench", () => {
     expect(issues).toBeEnabled();
     expect(
       within(rowFor("token")).getByRole("button", {
-        name: /^Accepted token mismatch: exported as written\./,
+        name: /^Kept on purpose: exported as written\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
     fireEvent.click(issues);
@@ -1758,7 +1753,6 @@ describe("StringTable workbench", () => {
           key: relativeDir === "i18n" ? "first" : "second",
           source: relativeDir,
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
           section: "Shared section",
@@ -1789,7 +1783,7 @@ describe("StringTable workbench", () => {
     expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /3 selected/ })).toHaveAttribute(
       "title",
-      "Ctrl+click adds more",
+      "Actions for the selected strings (Ctrl+click a row to add more)",
     );
   });
 
@@ -2148,7 +2142,6 @@ describe("StringTable workbench", () => {
                 ? {
                     ...row,
                     target: "Bye",
-                    targetPresent: true,
                     status: "translated" as const,
                   }
                 : row,
@@ -2254,7 +2247,6 @@ describe("StringTable workbench", () => {
           key: "draft",
           source: "Draft",
           target: "Entwurf",
-          targetPresent: false,
           status: "review-needed",
           tokenMismatchAccepted: false,
         },
@@ -2275,7 +2267,6 @@ describe("StringTable workbench", () => {
       expect.objectContaining({
         key: "draft",
         target: "",
-        targetPresent: false,
       }),
     );
     expect(rowFor("draft")).toHaveAttribute("data-status", "untranslated");
@@ -2380,7 +2371,7 @@ describe("StringTable workbench", () => {
     expect(llmAction).toBeDisabled();
     expect(llmAction).toHaveAttribute(
       "title",
-      "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
+      "Select Open or Changed texts from one mod only.",
     );
 
     expect(onLlmBatchExportForMod).not.toHaveBeenCalled();
@@ -2480,7 +2471,6 @@ describe("StringTable workbench", () => {
           key: "empty",
           source: "",
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2488,7 +2478,6 @@ describe("StringTable workbench", () => {
           key: "nul",
           source: "Before\0after",
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2496,7 +2485,6 @@ describe("StringTable workbench", () => {
           key: "oversized",
           source: oversizedSource,
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2504,7 +2492,6 @@ describe("StringTable workbench", () => {
           key: "boundary",
           source: exactLimitSource,
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2512,7 +2499,6 @@ describe("StringTable workbench", () => {
           key: "valid",
           source: "Translate me",
           target: "",
-          targetPresent: false,
           status: "untranslated",
           tokenMismatchAccepted: false,
         },
@@ -2728,7 +2714,6 @@ describe("StringTable workbench", () => {
       expect.objectContaining({
         key: "bye",
         target: "Tschüss",
-        targetPresent: false,
       }),
     );
     expect(onStringSaved).toHaveBeenNthCalledWith(
@@ -2736,7 +2721,6 @@ describe("StringTable workbench", () => {
       expect.objectContaining({
         key: "token",
         target: "Hallo [FarmName]",
-        targetPresent: true,
       }),
     );
     expect(
@@ -3405,7 +3389,7 @@ it("derives blank source status and reopens it after a source update, retaining 
     "data-complete",
     "false",
   );
-  expect(screen.getByText("1 need no translation text")).toBeInTheDocument();
+  expect(screen.getByText("1 with no text to translate")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(
     "a.b",
     1,
@@ -3478,7 +3462,7 @@ it("counts a saved single space as Done, retains it on reload, and reopens on cl
   );
   const translationCell = () =>
     treeRow().querySelector("[data-translation-cell] .translator-cell-clip");
-  expect(translationCell()?.textContent).toBe(" ");
+  expect(translationCell()?.textContent).toBe("(left blank)");
   expect(screen.getByText("1 / 2 covered")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(
     "a.b",
@@ -3500,7 +3484,7 @@ it("counts a saved single space as Done, retains it on reload, and reopens on cl
   await waitFor(() =>
     expect(treeRow()).toHaveAttribute("data-status", "translated"),
   );
-  expect(translationCell()?.textContent).toBe(" ");
+  expect(translationCell()?.textContent).toBe("(left blank)");
   fireEvent.doubleClick(treeRow());
   expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(" ");
   fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {

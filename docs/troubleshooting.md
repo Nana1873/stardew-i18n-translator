@@ -81,8 +81,8 @@ Saving an edit updates `data/`; **Export…** writes it into the mod. See
 [export behavior](user-guide.md#export-translation-files) for what is included,
 omitted, or backed up.
 
-If the export confirmation says strings stay in English, use **Open string**
-to inspect an affected string. Correct its protected tokens, or use **Save
+If the export confirmation says strings stay in English, use **Open issue**
+next to an affected string to inspect it. Correct its protected tokens, or use **Save
 anyway** only for an intentional token difference after checking its effect,
 then export again.
 

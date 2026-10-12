@@ -39,6 +39,7 @@ import {
   Eraser,
   Equal,
   FileJson,
+  ChevronDown,
   ListChecks,
   MoreHorizontal,
   Pencil,
@@ -178,7 +179,6 @@ export interface SavedStringSnapshot {
   key: string;
   source: string;
   target: string;
-  targetPresent: boolean;
   tokenMismatchAccepted: boolean;
 }
 
@@ -266,13 +266,12 @@ const DISPLAY_STATUS: Record<
 
 const STATUS_HELP: Record<StringStatus | "all" | "issues", string> = {
   all: "Every string in the current scope.",
-  untranslated: "No accepted target translation exists yet.",
+  untranslated: "Not translated yet.",
   outdated:
     "The English source changed after this translation was saved. The existing translation may be outdated and should be reviewed.",
   "review-needed":
     "This imported or AI-generated suggestion still needs human approval.",
-  issues:
-    "Strings with errors, warnings, or accepted token mismatches. Warnings and accepted token mismatches do not block export.",
+  issues: "Texts with problems. Only errors keep a text out of the export.",
   translated:
     "The translation was explicitly saved or accepted for the current English source.",
 };
@@ -357,7 +356,7 @@ const validationIssuesByRow = new WeakMap<Row, ReturnType<typeof validate>>();
 function rowValidationIssues(row: Row) {
   let issues = validationIssuesByRow.get(row);
   if (!issues) {
-    const validated = validate(row.source, row.target, row.targetPresent);
+    const validated = validate(row.source, row.target);
     issues = row.tokenMismatchAccepted
       ? validated.map((issue) =>
           issue.ruleId === "token-missing" || issue.ruleId === "token-added"
@@ -1620,7 +1619,6 @@ export function StringTable({
       key: row.key,
       source: row.source,
       target,
-      targetPresent: row.targetPresent,
       tokenMismatchAccepted,
     });
   }
@@ -1768,7 +1766,6 @@ export function StringTable({
           key: row.key,
           source: row.source,
           target,
-          targetPresent: row.targetPresent,
           tokenMismatchAccepted,
         });
       }
@@ -1912,7 +1909,6 @@ export function StringTable({
         key: updated.key,
         source: updated.source,
         target: updated.target,
-        targetPresent: updated.targetPresent,
         tokenMismatchAccepted: false,
       });
     }
@@ -2182,6 +2178,28 @@ export function StringTable({
     target: targetWidth,
   } = renderedColumnWidths;
   const fixedTargetWidth = !fitColumns && targetColumnSized;
+  // Widths saved in a wider window can push the issue icons out of view.
+  // Fit them once on open; widths changed later stay as the user sets them.
+  const restoredFitChecked = useRef(false);
+  useEffect(() => {
+    if (restoredFitChecked.current || workbenchWidth <= 0) return;
+    restoredFitChecked.current = true;
+    if (fitColumns) return;
+    const restoredTotal =
+      34 +
+      ROW_ACTIONS_WIDTH +
+      (showModColumn ? columnWidths.mod : 0) +
+      (showFileColumn ? columnWidths.file : 0) +
+      columnWidths.status +
+      columnWidths.key +
+      columnWidths.source +
+      (targetColumnSized ? columnWidths.target : COLUMN_LIMITS.target.min);
+    if (restoredTotal > workbenchWidth) {
+      setFitColumns(true);
+      setTargetColumnSized(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workbenchWidth]);
   const gridTemplateColumns = [
     "34px",
     ...(showModColumn ? [String(modWidth) + "px"] : []),
@@ -2251,7 +2269,7 @@ export function StringTable({
       ? String(workingTranslated) + " / " + String(data.length) + " covered"
       : "No translatable strings",
     ...(noTextNeeded
-      ? [String(noTextNeeded) + " need no translation text"]
+      ? [String(noTextNeeded) + " with no text to translate"]
       : []),
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
@@ -2369,9 +2387,9 @@ export function StringTable({
     (editingRow.status === "untranslated" ||
       editingRow.status === "outdated") &&
     !isLiveAiSourceEligible(editingRow.source)
-      ? "This source text cannot be sent to live AI because it is empty, contains an invalid NUL character, or exceeds 64 KiB."
+      ? "This English text can't be sent to the AI: it is empty, too long, or contains a broken character."
       : !editingAiAllowed
-        ? "AI can only translate Open or Changed strings. Done and Review text must be handled manually."
+        ? "AI only translates Open or Changed strings. Edit Done and Review text yourself."
         : onRunAi && !activeLiveEngine?.ready
           ? (configuredLiveEngine?.unavailableReason ??
             "The default translation engine is not ready. Check it in Settings.")
@@ -2412,7 +2430,7 @@ export function StringTable({
     batchEligibleRows.length === 0
       ? "No selected Open or Changed strings are exportable. Done and Review text would be preserved on import."
       : !singleModSelection
-        ? "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod."
+        ? "Select Open or Changed texts from one mod only."
         : !llmExportHandlerAvailable
           ? "Choose a target language first."
           : null;
@@ -2475,8 +2493,15 @@ export function StringTable({
               <span>{effectiveHeaderTitle}</span>
             </h1>
             <div className="translator-string-meta">
+              {/* Parts are never cut one by one; on a narrow window the line
+                  fades out at its end instead (see .translator-string-meta). */}
               {workspaceMetaItems.map((item, index) => (
-                <span key={String(index) + "-" + item}>{item}</span>
+                <span
+                  key={String(index) + "-" + item}
+                  className="translator-string-meta-item"
+                >
+                  {item}
+                </span>
               ))}
               {data.length > 0 && (
                 <span
@@ -2498,7 +2523,7 @@ export function StringTable({
                   ref={bulkTriggerRef}
                   className="translator-button translator-button-quiet translator-bulk-button"
                   type="button"
-                  title="Ctrl+click adds more"
+                  title="Actions for the selected strings (Ctrl+click a row to add more)"
                   aria-label={`${selection.size} selected`}
                   aria-haspopup="menu"
                   aria-expanded={bulkMenuOpen}
@@ -2524,6 +2549,10 @@ export function StringTable({
                       selected
                     </span>
                   </span>
+                  <ChevronDown
+                    className="translator-bulk-chevron"
+                    aria-hidden="true"
+                  />
                 </button>
                 <button
                   className="translator-icon-button"
@@ -3173,7 +3202,7 @@ function ActionButtons({
       <MenuAction
         listItem={listItems}
         disabled={mutationPending}
-        title={mutationPending ? "A batch edit is being saved." : undefined}
+        title={mutationPending ? "Saving your changes…" : undefined}
         onClick={onMarkDone}
       >
         <CircleCheck aria-hidden="true" /> Mark as done
@@ -3181,7 +3210,7 @@ function ActionButtons({
       <MenuAction
         listItem={listItems}
         disabled={mutationPending}
-        title={mutationPending ? "A batch edit is being saved." : undefined}
+        title={mutationPending ? "Saving your changes…" : undefined}
         onClick={onKeepOriginal}
       >
         <Equal aria-hidden="true" /> Keep original
@@ -3189,7 +3218,7 @@ function ActionButtons({
       <MenuAction
         listItem={listItems}
         disabled={mutationPending}
-        title={mutationPending ? "A batch edit is being saved." : undefined}
+        title={mutationPending ? "Saving your changes…" : undefined}
         onClick={onClear}
       >
         <Eraser aria-hidden="true" />{" "}
@@ -3201,7 +3230,7 @@ function ActionButtons({
         disabled={mutationPending || !canRunAi}
         title={
           mutationPending
-            ? "A batch edit is being saved."
+            ? "Saving your changes…"
             : canRunAi
               ? "AI output is saved to Review."
               : (aiUnavailableReason ?? "Configure AI in Settings.")
@@ -3220,7 +3249,7 @@ function ActionButtons({
         disabled={mutationPending || !llmActionEnabled}
         title={
           mutationPending
-            ? "A batch edit is being saved."
+            ? "Saving your changes…"
             : (llmUnavailableReason ??
               "Export selected Open or Changed strings.")
         }
@@ -3479,10 +3508,19 @@ function RowView({
     );
   const issueSummary =
     severity === "error"
-      ? `Error: export leaves this string out (English in game) until it is fixed.${acceptedTokenMismatch ? " Token mismatch explicitly accepted; other errors remain." : ""}`
+      ? acceptedTokenMismatch
+        ? "Must fix: this text stays English in the game until fixed. Other problems remain."
+        : issues.some(
+              (issue) =>
+                issue.severity === "error" &&
+                (issue.ruleId === "token-missing" ||
+                  issue.ruleId === "token-added"),
+            )
+          ? "Must fix or Save anyway: until then this text stays English in the game."
+          : "Must fix: this text stays English in the game until fixed."
       : acceptedTokenMismatch
-        ? "Accepted token mismatch: exported as written."
-        : "Note: harmless difference, exported normally.";
+        ? "Kept on purpose: exported as written."
+        : "Worth a look: exported as written.";
   const issueHelp = severity
     ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";
@@ -3709,7 +3747,17 @@ function RowView({
           className="translator-cell-clip"
           title={targetOverflow.title}
         >
-          {row.target || "—"}
+          {isIntentionalBlankTarget(row.source, row.target) &&
+          row.status === "translated" ? (
+            <span
+              className="translator-blank-target"
+              title="Left blank on purpose: the game shows nothing here."
+            >
+              (left blank)
+            </span>
+          ) : (
+            row.target || "—"
+          )}
         </span>
       </span>
       <span

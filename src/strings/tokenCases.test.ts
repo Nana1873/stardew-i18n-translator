@@ -24,7 +24,7 @@ describe("shared token fixture (TS ↔ Rust parity)", () => {
 
 for (const testCase of fixture.comparisons) {
   it(testCase.name, () => {
-    const blocked = validate(testCase.source, testCase.target, true).some(
+    const blocked = validate(testCase.source, testCase.target).some(
       (issue) =>
         (issue.ruleId === "token-missing" || issue.ruleId === "token-added") &&
         issue.severity === "error",

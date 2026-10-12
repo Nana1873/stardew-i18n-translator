@@ -131,12 +131,14 @@ editing pass, not proof of correctness or human acceptance.
 
 ## External LLM batches
 
-1. Select Open or Changed strings belonging to one mod and export an external
-   LLM batch from the selection actions.
+1. Use **Files… > Export LLM batch…** to export every Open or Changed string
+   of the selected mod, or select some of them and export them from the
+   selection actions.
 2. Use **Copy prompt** in the result tray. Give that prompt and the exported
    JSON file to a file-capable LLM. Ask it to return the requested result file
    without changing identities, keys, or source metadata.
-3. Use **Import…** to select the result file, or drag it into the app.
+3. Use **Files… > Import LLM batch…** to select the result file, or drag it
+   into the app.
 4. Check the read-only preflight. A batch for another scanned mod can switch
    Workspace to that mod for a fresh check. Import when the preview is ready.
 5. Review the imported translations and save any corrections.

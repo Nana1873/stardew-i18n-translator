@@ -794,7 +794,7 @@ export function SettingsDialog({
                     onClick={onReRunSetup}
                     disabled={saving || folderPicking !== null}
                   >
-                    Setup …
+                    Setup…
                   </button>
                 </div>
                 {folderError && (
@@ -948,7 +948,7 @@ export function SettingsDialog({
                       <strong>Temperature</strong>
                       <span>
                         {llmTemperature || "0.2"} · range 0–2
-                        {!llmTemperature && " · backend default"}
+                        {!llmTemperature && " · model default"}
                       </span>
                     </span>
                     <input
@@ -1026,6 +1026,11 @@ export function SettingsDialog({
                     <span className="translator-setting-copy">
                       <strong>ChatGPT account</strong>
                       <span
+                        className={
+                          cloudAccountError
+                            ? "translator-setting-warning"
+                            : undefined
+                        }
                         role={cloudAccountError ? "alert" : "status"}
                         aria-live={cloudAccountError ? "assertive" : "polite"}
                         aria-atomic="true"
@@ -1089,8 +1094,8 @@ export function SettingsDialog({
                           ? "Loading models…"
                           : cloudModelsError
                             ? cloudModel
-                              ? "Model list unavailable · keeping the model ID"
-                              : "Model list unavailable · retry loading"
+                              ? "Couldn't load models. Your choice is kept."
+                              : "Couldn't load models. Try again."
                             : cloudAvailable && cloudModels?.length === 0
                               ? "No models listed · enter or keep a model ID"
                               : !cloudAvailable
@@ -1100,7 +1105,9 @@ export function SettingsDialog({
                                   : "Choose a listed model or enter its exact ID"}
                       </span>
                     </span>
-                    <div className="translator-setting-actions">
+                    <div
+                      className={`translator-setting-actions${showCloudModelInput ? " is-stacked" : ""}`}
+                    >
                       {cloudAvailable &&
                         (cloudModelsError || cloudModels?.length === 0) && (
                           <button
@@ -1135,14 +1142,16 @@ export function SettingsDialog({
                             {model.displayName}
                           </option>
                         ))}
-                        <option value="custom-model-id">Enter model ID…</option>
+                        <option value="custom-model-id">
+                          Other model (enter its ID)
+                        </option>
                       </select>
                       {showCloudModelInput && (
                         <input
                           className="translator-select"
                           aria-label="ChatGPT model ID"
                           value={cloudModel}
-                          placeholder="e.g. gpt-6.1-sol"
+                          placeholder="Model ID, e.g. gpt-6.1-sol"
                           maxLength={160}
                           spellCheck={false}
                           disabled={!cloudAvailable}
@@ -1158,8 +1167,7 @@ export function SettingsDialog({
                     <span className="translator-setting-copy">
                       <strong>Parallel batches</strong>
                       <small>
-                        Each batch includes quality checks. Lower values reduce
-                        simultaneous requests.
+                        Parts at once. Lower is slower but steadier.
                       </small>
                     </span>
                     <select
@@ -1427,7 +1435,7 @@ function GlossarySettings({
   const state = !glossary
     ? "Checking glossary sources"
     : glossary.outdatedCache
-      ? "Glossary cache needs rebuild"
+      ? "Glossary needs an update"
       : cached
         ? available
           ? "Glossary is up to date"
@@ -1447,7 +1455,7 @@ function GlossarySettings({
       ? "Installed community language pack" +
         (glossary.packName ? " · " + glossary.packName : "")
       : available
-        ? "Official local Content/Strings sources · processed read-only"
+        ? "From your game files (read only)"
         : "Unavailable";
   const language =
     TARGET_LANGUAGES.find((candidate) => candidate.code === targetLang)
@@ -1479,7 +1487,13 @@ function GlossarySettings({
           <strong>
             {cached ? englishNumberFormat.format(cached.termCount) : "—"}
           </strong>
-          <span>{cached ? "terms" : "terms unavailable"}</span>
+          <span>
+            {cached
+              ? cached.termCount === 1
+                ? "term"
+                : "terms"
+              : "no terms yet"}
+          </span>
         </div>
       </div>
 

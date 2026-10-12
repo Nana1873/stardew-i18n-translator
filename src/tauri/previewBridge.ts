@@ -66,6 +66,8 @@ const DOWNLOADS = "C:\\Preview\\Downloads";
 interface RowState extends StringRow {
   /** Source as it was when the translation was saved (for Changed). */
   savedSource?: string;
+  /** Whether the simulated target file has this key (for export results). */
+  inTargetFile: boolean;
 }
 
 interface HistoryRecord extends OperationHistoryEntry {
@@ -95,7 +97,7 @@ function seed(): void {
         key: s.key,
         source: s.source,
         target,
-        targetPresent: present,
+        inTargetFile: present,
         status: s.status ?? (blank ? "translated" : "untranslated"),
         tokenMismatchAccepted: Boolean(s.tokenMismatchAccepted),
         section: s.section ?? null,
@@ -157,7 +159,7 @@ function hasText(row: RowState): boolean {
 
 function blockingIssues(row: RowState): string[] {
   if (row.target === "" || row.tokenMismatchAccepted) return [];
-  return validate(row.source, row.target, row.targetPresent)
+  return validate(row.source, row.target)
     .filter(
       (issue) =>
         issue.severity === "error" &&
@@ -195,7 +197,7 @@ function scannedMod(mod: FixtureMod): ScannedMod {
         relativeDir: "i18n",
         defaultPath,
         targetPath,
-        targetExists: all.some((row) => row.targetPresent),
+        targetExists: all.some((row) => row.inTargetFile),
         totalKeys: all.length,
         translatedKeys: translated,
         noTranslationNeededKeys: blank,
@@ -270,7 +272,7 @@ function saveRow(
   map.set(key, {
     ...row,
     target,
-    targetPresent: target !== "" || row.targetPresent,
+    inTargetFile: target !== "" || row.inTargetFile,
     status: target === "" && row.source.trim() !== "" ? "untranslated" : status,
     tokenMismatchAccepted: accepted,
     savedSource: source,
@@ -333,7 +335,7 @@ function exportMod(
       targetPath: file.targetPath,
       written: written > 0,
       removed: false,
-      backedUp: map.size > 0 && [...map.values()].some((r) => r.targetPresent),
+      backedUp: map.size > 0 && [...map.values()].some((r) => r.inTargetFile),
       writtenKeys: written,
       untranslated,
       outdated,
@@ -560,6 +562,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         ? PREVIEW_MODS_PATH
         : PREVIEW_GAME_PATH;
     case "load_settings":
+      // `?broken-settings` shows the startup error page for visual checks.
+      if (new URLSearchParams(window.location.search).has("broken-settings"))
+        return reject(
+          "Settings file C:\\Preview\\data\\settings.json is corrupted (expected value at line 1 column 1) and no usable backup exists (file not found). Your translations are stored separately and are not affected. Fix the file or restore a working copy, then retry.",
+        );
       return settings;
     case "save_settings":
       settings = args.settings as AppSettings;
@@ -884,7 +891,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         kind: "import",
         outcome: "success",
         title: "LLM batch imported",
-        summary: `${imported} of ${summary.totalInFile} values saved to the review queue.`,
+        summary: `${imported} of ${summary.totalInFile} texts added to Review.`,
         itemCount: imported,
         path: `${DOWNLOADS}\\Preview.EdgeCases.llm-result.json`,
         fileName: "Preview.EdgeCases.llm-result.json",
@@ -933,10 +940,30 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "cancel_ai_run":
       cancelled.add(String(args.runId));
       return true;
+    // `?chatgpt` in the preview URL simulates a signed-in account so the
+    // ChatGPT settings can be checked visually; nothing is sent anywhere.
     case "cloud_ai_status":
-      return { authenticated: false };
+      return previewChatGpt()
+        ? { authenticated: true, authentication: "Preview account" }
+        : { authenticated: false };
     case "cloud_ai_models":
-      return [];
+      return previewChatGpt()
+        ? [
+            {
+              model: "preview-model-a",
+              displayName: "Preview model A",
+              isDefault: true,
+              defaultReasoningEffort: "medium",
+              supportedReasoningEfforts: ["low", "medium", "high"],
+            },
+            {
+              model: "preview-model-b",
+              displayName: "Preview model B",
+              isDefault: false,
+              supportedReasoningEfforts: ["low", "medium"],
+            },
+          ]
+        : [];
     case "chatgpt_sign_in":
     case "chatgpt_sign_out":
     case "translate_with_cloud_ai":
@@ -992,4 +1019,8 @@ export function installPreviewBridge(): void {
   console.info(
     "[preview] Stardew i18n Translator runs on synthetic fixtures. Add ?setup to the URL to start with the setup wizard.",
   );
+}
+
+function previewChatGpt(): boolean {
+  return new URLSearchParams(window.location.search).has("chatgpt");
 }

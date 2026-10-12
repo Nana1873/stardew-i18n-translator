@@ -94,7 +94,6 @@ export interface EditorRow {
   /** Effective current target (saved edit or imported value). */
   target: string;
   file: string;
-  targetPresent: boolean;
   status: StringStatus;
   /** This exact saved source/target pair was accepted despite token errors. */
   tokenMismatchAccepted: boolean;
@@ -374,7 +373,7 @@ export function StringEditor({
       }
       setSourceConflict(false);
       setTranslateMsg(
-        "The saved translation changed in the background. Your draft is preserved; saving will replace the saved translation.",
+        "This translation was changed elsewhere. Your edit is kept; saving replaces the other version.",
       );
       setTranslateMsgKind("note");
       return;
@@ -503,7 +502,8 @@ export function StringEditor({
         translationUnavailableReason ??
           "Configure a translation engine in Settings to use AI translation.",
       );
-      setTranslateMsgKind("ai-error");
+      // A Done or Review string is a rule, not an engine problem.
+      setTranslateMsgKind(translationAllowed ? "ai-error" : "note");
       return;
     }
     const request = ++aiRequest.current;
@@ -829,7 +829,7 @@ export function StringEditor({
       isInsertableProtectedToken(token) &&
       (valueTokenCounts.get(token) ?? 0) < required,
   );
-  const issues = validate(row.source, value, row.targetPresent);
+  const issues = validate(row.source, value);
   // Severity per token, so each chip can say whether it blocks the export.
   // Mirrors validate(): an empty field has no token findings yet.
   const tokenSeverities = new Map(
@@ -855,7 +855,7 @@ export function StringEditor({
     const severity = chipSeverity(token);
     const what =
       kind === "missing" ? `Missing token ${token}` : `Extra token ${token}`;
-    if (severity === "accepted") return `${what} (mismatch accepted)`;
+    if (severity === "accepted") return `${what} (kept on purpose)`;
     return severity === "error"
       ? `${what} (error: this string stays English on export)`
       : `${what} (note: does not affect export)`;
@@ -894,7 +894,7 @@ export function StringEditor({
   const targetHelpName =
     targetLanguageName === "Translation" ? "target" : targetLanguageName;
   const statusHelp: Record<StringStatus, string> = {
-    untranslated: `No accepted ${targetHelpName} translation exists yet.`,
+    untranslated: "Not translated yet.",
     outdated: `The English source changed after this ${targetHelpName} translation was saved. The existing translation may be outdated and should be reviewed.`,
     "review-needed":
       "This imported or AI-generated suggestion still needs human approval.",
@@ -1084,7 +1084,7 @@ export function StringEditor({
                           className={`editor__token translator-token ${chipState(token)}`}
                           title={
                             acceptedTokenMismatch
-                              ? `${token} — mismatch explicitly accepted for this exact translation`
+                              ? `${token} — you kept this difference on purpose`
                               : `Insert ${token} at the cursor`
                           }
                           aria-label={`Insert missing token ${token}`}
@@ -1218,6 +1218,10 @@ export function StringEditor({
               <textarea
                 id="translator-editor-translation"
                 className="translator-textarea"
+                // The browser spellchecker marks tokens and the target
+                // language as errors; lang still picks the right fonts.
+                spellCheck={false}
+                lang={targetLanguageCode}
                 ref={textareaRef}
                 value={value}
                 onChange={(event) => editValue(event.target.value)}
@@ -1240,42 +1244,50 @@ export function StringEditor({
             ) : (
               <>
                 <ShieldAlert aria-hidden />
-                {acceptedTokenMismatch && (
-                  <span className="editor__issue editor__issue--warning">
-                    Protected-token mismatch explicitly accepted for this exact
-                    translation. Export is allowed; editing requires
-                    confirmation again.
-                  </span>
-                )}
-                {(["error", "warning"] as const).map((severity) => {
-                  const group = visibleIssues.filter(
-                    (issue) => issue.severity === severity,
-                  );
-                  if (group.length === 0) return null;
-                  return (
-                    <span
-                      key={severity}
-                      className="editor__issue-group"
-                      data-severity={severity}
-                    >
-                      <span
-                        className={`editor__issue-title editor__issue-title--${severity}`}
-                      >
-                        {severity === "error"
-                          ? `${group.length === 1 ? "1 error" : `${group.length} errors`}${group.some((issue) => issue.ruleId === "token-missing" || issue.ruleId === "token-added") ? " · this string stays English on export until fixed" : ""}`
-                          : `${group.length === 1 ? "1 note" : `${group.length} notes`} · does not affect export`}
-                      </span>
-                      {group.map((issue, i) => (
-                        <span
-                          key={i}
-                          className={`editor__issue editor__issue--${issue.severity}`}
-                        >
-                          {issue.message}
-                        </span>
-                      ))}
+                <span className="editor__issue-list">
+                  {acceptedTokenMismatch && (
+                    <span className="editor__issue editor__issue--warning">
+                      You kept these token differences on purpose. This text is
+                      exported as written; if you edit it, you will be asked
+                      again.
                     </span>
-                  );
-                })}
+                  )}
+                  {(["error", "warning"] as const).map((severity) => {
+                    const group = visibleIssues.filter(
+                      (issue) => issue.severity === severity,
+                    );
+                    if (group.length === 0) return null;
+                    return (
+                      <span
+                        key={severity}
+                        className="editor__issue-group"
+                        data-severity={severity}
+                      >
+                        <span
+                          className={`editor__issue-title editor__issue-title--${severity}`}
+                        >
+                          {severity === "error"
+                            ? group.some(
+                                (issue) =>
+                                  issue.ruleId === "token-missing" ||
+                                  issue.ruleId === "token-added",
+                              )
+                              ? "Must fix or Save anyway – until then this string stays English in the game"
+                              : "Must fix"
+                            : "Worth a look – exported as written"}
+                        </span>
+                        {group.map((issue, i) => (
+                          <span
+                            key={i}
+                            className={`editor__issue editor__issue--${issue.severity}`}
+                          >
+                            {issue.message}
+                          </span>
+                        ))}
+                      </span>
+                    );
+                  })}
+                </span>
               </>
             )}
             {translateMsg && translateMsgKind === "note" && (
@@ -1289,12 +1301,16 @@ export function StringEditor({
           </div>
 
           {sourceSaveBlocked && (
-            <div className="translator-flow-callout is-warning" role="alert">
+            <div
+              className="translator-flow-callout is-warning translator-source-conflict"
+              role="alert"
+            >
               <span>
-                English source changed while you were editing. Your draft is
-                preserved. Review the updated source before saving.
-                <br />
-                Previous source: {acceptedSource}
+                The English text changed while you were editing. Your draft is
+                kept; check the new English text, then save.
+                <span className="translator-source-conflict-old">
+                  Before: <code>{acceptedSource}</code>
+                </span>
               </span>
               <button
                 className="translator-button translator-button-quiet"
@@ -1347,14 +1363,14 @@ export function StringEditor({
                     className="translator-heading"
                     id="translator-save-anyway-title"
                   >
-                    Protected token mismatch
+                    A token differs from the English text
                   </h2>
                   <div
                     className="translator-kicker"
                     id="translator-save-anyway-description"
                   >
-                    This would break the game. Without Save anyway, export
-                    leaves this string out and the game shows the English text.
+                    This can break the game. If you don't choose Save anyway,
+                    this text stays English in the game.
                   </div>
                 </div>
                 <button
@@ -1375,13 +1391,26 @@ export function StringEditor({
                   <p key={issue.message}>{issue.message}</p>
                 ))}
                 <div className="translator-flow-callout is-warning">
-                  “Save anyway” applies only to this source revision and this
-                  exact translation. Any later edit requires confirmation again.
+                  Save anyway keeps exactly this text. If you change it or the
+                  English text changes, you will be asked again.
                 </div>
               </div>
               <div className="translator-flow-foot">
+                {/* The safe way back is the primary action; saving a
+                    token error is the deliberate, secondary one. */}
                 <button
-                  className="translator-button translator-button-quiet"
+                  type="button"
+                  className="editor__save-anyway translator-button translator-button-danger"
+                  onClick={() => {
+                    if (pendingSave) void persistConfirmed(pendingSave, true);
+                    else if (pendingMove !== null)
+                      void persistNavigation(pendingMove, true);
+                  }}
+                >
+                  Save anyway
+                </button>
+                <button
+                  className="translator-button translator-button-primary"
                   type="button"
                   onClick={() => {
                     setPendingSave(null);
@@ -1390,17 +1419,6 @@ export function StringEditor({
                   }}
                 >
                   Return to editor
-                </button>
-                <button
-                  type="button"
-                  className="editor__save-anyway translator-button translator-button-primary"
-                  onClick={() => {
-                    if (pendingSave) void persistConfirmed(pendingSave, true);
-                    else if (pendingMove !== null)
-                      void persistNavigation(pendingMove, true);
-                  }}
-                >
-                  Save anyway
                 </button>
               </div>
             </section>
@@ -1469,9 +1487,11 @@ export function StringEditor({
               disabled={
                 (translating && !onCancelTranslate) ||
                 saving ||
-                sourceSaveBlocked ||
-                (!translating && !translationAllowed)
+                sourceSaveBlocked
               }
+              // Still clickable when AI does not apply, so a click explains why
+              // (a disabled button shows no tooltip in the app window).
+              aria-disabled={!translating && !translationAllowed}
               title={
                 translationAllowed && onTranslate
                   ? `Translate with ${aiEngineLabel} — result lands in Review (${displayShortcut(shortcuts["editor.translate"])})`

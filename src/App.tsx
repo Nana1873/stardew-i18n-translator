@@ -59,7 +59,9 @@ import {
   loadGlossary,
   loadSettings,
   logFrontendError,
+  loadStrings,
   openFolder,
+  openLogsDir,
   pickLlmBatchDestination,
   pickLlmBatchFile,
   preflightLlmBatchPath,
@@ -104,6 +106,7 @@ import {
   StringTable,
 } from "./strings/StringTable";
 import type { LiveAiEngineOption } from "./strings/BatchTranslateDialog";
+import { derivedStringStatus } from "./strings/status";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { TranslationZipDialog } from "./release/TranslationZipDialog";
@@ -1017,7 +1020,7 @@ export function App() {
     if (!mod) {
       showImportResult(
         null,
-        "Select a mod before dropping an LLM batch result.",
+        "Select a mod first, then drop the file.",
         "LLM batch",
       );
       return;
@@ -1032,7 +1035,7 @@ export function App() {
     const path = paths[0];
     if (!path.toLowerCase().endsWith(".json")) {
       setImportDialogInitialError(
-        "Invalid file type. Exactly one JSON batch file is required.",
+        "This isn't a .json file. Choose the translated .json file.",
       );
       setImportDialogPath(path);
       return;
@@ -1148,14 +1151,14 @@ export function App() {
       id: "local",
       label: "Local AI",
       ready: localAiReady,
-      model: llm?.model || "Model unavailable",
+      model: llm?.model || "No model chosen",
       reasoning: "Default",
       unavailableReason: localAiReady
         ? undefined
         : "Set a local Base URL and choose a model in Settings.",
       note: localAiReady
         ? `${llm!.baseUrl} · local service`
-        : "Local endpoint unavailable",
+        : "Local AI not set up",
     },
     {
       id: CLOUD_ENGINE_ID,
@@ -1219,6 +1222,51 @@ export function App() {
         return null;
       }
     : undefined;
+
+  /** Files menu: an LLM batch with every Open or Changed string of the
+   * selected mod, without selecting rows first. */
+  // A double click must not load every file twice.
+  const llmBatchLoading = useRef(false);
+  async function exportLlmBatchForSelectedMod() {
+    if (!selectedMod || !llmBatchExport || llmBatchLoading.current) return;
+    llmBatchLoading.current = true;
+    try {
+      const items: LlmBatchItem[] = [];
+      for (const file of selectedMod.i18nFiles) {
+        const rows = await loadStrings(
+          selectedMod.uniqueId,
+          file.relativeDir,
+          file.defaultPath,
+          file.targetPath,
+        );
+        for (const row of rows) {
+          const status = derivedStringStatus(
+            row.source,
+            row.target,
+            row.status,
+          );
+          if (status === "untranslated" || status === "outdated")
+            items.push({
+              relativeDir: file.relativeDir,
+              key: row.key,
+              source: row.source,
+            });
+        }
+      }
+      if (items.length === 0) {
+        notify(
+          `${selectedMod.name} has no Open or Changed strings to export.`,
+          "info",
+        );
+        return;
+      }
+      await llmBatchExport(selectedMod, items);
+    } catch (cause) {
+      notify(`Could not prepare the LLM batch: ${String(cause)}`, "error");
+    } finally {
+      llmBatchLoading.current = false;
+    }
+  }
 
   async function savePendingLlmBatch(
     destinationPath: string | null,
@@ -1826,11 +1874,7 @@ export function App() {
       if (!current || !current.problems.some((problem) => problem.id === id)) {
         return current;
       }
-      const errors = validate(
-        snapshot.source,
-        snapshot.target,
-        snapshot.targetPresent,
-      ).filter(
+      const errors = validate(snapshot.source, snapshot.target).filter(
         (issue) =>
           issue.severity === "error" &&
           !(
@@ -1855,10 +1899,7 @@ export function App() {
 
   function handleBulkApplied(entry: OperationHistoryEntry) {
     if (!entry?.id) {
-      notify(
-        "The batch edit was saved, but operation history is unavailable.",
-        "info",
-      );
+      notify("Saved. Undo isn't available for this change.", "info");
       return;
     }
     setOperationHistory((current) =>
@@ -2028,7 +2069,7 @@ export function App() {
   // Human-readable target language for the workspace and operation results.
   const languageLine = settings?.targetLang
     ? `${languageLabel} (${settings.targetLang})`
-    : "No target language yet";
+    : "No language chosen yet";
   const focusedDialogOpen = Boolean(
     wizardOpen ||
     settingsOpen ||
@@ -2071,6 +2112,10 @@ export function App() {
       }
       onImportBatch={() => void handleImportBatch()}
       importBatchEnabled={Boolean(selectedMod) && !exporting}
+      onExportLlmBatch={() => void exportLlmBatchForSelectedMod()}
+      exportLlmBatchEnabled={
+        Boolean(selectedMod && llmBatchExport) && !exporting
+      }
       onOpenSettings={() => {
         setSettingsPage("folders");
         if (settings) setSettingsOpen(true);
@@ -2203,12 +2248,7 @@ export function App() {
           }
           language={languageLine}
           scanning={scanning}
-          warningCount={scan?.warnings.length ?? 0}
-          skippedCount={
-            scan?.skippedComponents?.filter(
-              (component) => component.requiresAttention,
-            ).length ?? null
-          }
+          attentionCount={attentionCount}
           scanError={scanError}
           history={operationHistory}
           modNames={new Map(scan?.mods.map((mod) => [mod.uniqueId, mod.name]))}
@@ -2243,18 +2283,30 @@ export function App() {
             role="alert"
           >
             <h2>Could not load settings</h2>
-            <p>{settingsLoadError}</p>
             <p>
-              Restore or repair the settings file, then retry. Your translation
-              work has not been reset.
+              The app's settings file is damaged. Your translations are stored
+              separately and are safe. Fix the file or put back a working copy,
+              then retry.
             </p>
-            <button
-              type="button"
-              className="translator-button"
-              onClick={() => setSettingsLoadAttempt((attempt) => attempt + 1)}
-            >
-              Retry loading settings
-            </button>
+            <pre className="translator-startup-error-detail">
+              {settingsLoadError}
+            </pre>
+            <div className="translator-startup-error-actions">
+              <button
+                type="button"
+                className="translator-button translator-button-primary"
+                onClick={() => setSettingsLoadAttempt((attempt) => attempt + 1)}
+              >
+                Retry loading settings
+              </button>
+              <button
+                type="button"
+                className="translator-button translator-button-quiet"
+                onClick={() => void openLogsDir()}
+              >
+                Open logs folder
+              </button>
+            </div>
           </section>
         ) : !loaded ? (
           <div className="panel__empty" role="status">
@@ -2360,7 +2412,7 @@ export function App() {
                   <input
                     className="modlist__search translator-search"
                     type="search"
-                    placeholder="Filter mods …"
+                    placeholder="Filter mods…"
                     aria-label="Filter mods"
                     value={modQuery}
                     onChange={(event) => setModQuery(event.target.value)}
@@ -2424,8 +2476,10 @@ export function App() {
                   onCancelAi={cancelAiRun}
                   headerMeta={
                     lastScanAt
-                      ? `scanned ${Math.max(0, Math.round((now - lastScanAt) / 60_000))} min ago`
-                      : "scan time unavailable"
+                      ? Math.round((now - lastScanAt) / 60_000) < 1
+                        ? "scanned just now"
+                        : `scanned ${Math.round((now - lastScanAt) / 60_000)} min ago`
+                      : "not scanned yet"
                   }
                   glossary={glossary}
                   onLlmBatchExportForMod={llmBatchExport}
@@ -2515,9 +2569,7 @@ export function App() {
             omitted={exportConfirm.omitted}
             onInspectProblem={
               exportConfirm.omitted.length > 0
-                ? () => {
-                    const problem = exportConfirm.omitted[0];
-                    if (!problem) return;
+                ? (problem) => {
                     setExportConfirm(null);
                     inspectResultProblem({
                       id: problemId(
@@ -2567,6 +2619,24 @@ export function App() {
             modsPath={settings?.modsPath ?? undefined}
             combined={zipContext?.combined}
             componentCount={zipContext?.components.length ?? null}
+            untranslated={
+              scan
+                ? scan.mods
+                    .filter(
+                      (mod) =>
+                        zipContext?.combined ||
+                        zipContext?.components.some(
+                          (component) => component.uniqueId === mod.uniqueId,
+                        ),
+                    )
+                    .reduce(
+                      (sum, mod) =>
+                        sum +
+                        Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
+                      0,
+                    )
+                : null
+            }
             error={zipError}
             building={zipBuilding}
             onInspect={inspectZipProblem}
@@ -2664,16 +2734,16 @@ function LlmBatchDropOverlay({
     paths.length === 1 &&
     paths[0].toLowerCase().endsWith(".json");
   let title = `Import into ${modName}`;
-  let detail = "Release to import this LLM batch result.";
+  let detail = "Drop to import the LLM batch.";
   if (!modName) {
     title = "Select a mod first";
-    detail = "The result must be matched against one selected mod.";
+    detail = "Choose it in the mod list, then drop the file again.";
   } else if (paths.length !== 1) {
     title = "Drop one file";
-    detail = "Batch results are imported one JSON file at a time.";
+    detail = "Drop one file at a time.";
   } else if (!paths[0].toLowerCase().endsWith(".json")) {
     title = "JSON files only";
-    detail = "Drop an *.llm-result.json or translated batch JSON file.";
+    detail = "Drop the translated .json file.";
   }
   return (
     <div
@@ -2710,6 +2780,8 @@ function AppToolbar({
   outputEnabled,
   onImportBatch,
   importBatchEnabled,
+  onExportLlmBatch,
+  exportLlmBatchEnabled,
   onOpenSettings,
   settingsEnabled,
   latestResultAvailable,
@@ -2731,6 +2803,8 @@ function AppToolbar({
   outputEnabled: boolean;
   onImportBatch: () => void;
   importBatchEnabled: boolean;
+  onExportLlmBatch: () => void;
+  exportLlmBatchEnabled: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
   latestResultAvailable: boolean;
@@ -2850,7 +2924,8 @@ function AppToolbar({
                 exportAllEnabled ||
                 buildZipEnabled ||
                 outputEnabled ||
-                importBatchEnabled
+                importBatchEnabled ||
+                exportLlmBatchEnabled
               ) || exporting
             }
           >
@@ -2882,7 +2957,7 @@ function AppToolbar({
               {
                 <>
                   <span className="translator-popover-note" role="presentation">
-                    Import
+                    LLM batch
                   </span>
                   <button
                     type="button"
@@ -2894,6 +2969,18 @@ function AppToolbar({
                     <FileActionLabel
                       title="Import LLM batch…"
                       description="Load an external AI result for the selected mod into Review."
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => run(onExportLlmBatch)}
+                    disabled={!exportLlmBatchEnabled}
+                  >
+                    <Upload aria-hidden />
+                    <FileActionLabel
+                      title="Export LLM batch…"
+                      description="Every Open or Changed string of the selected mod, for an external AI."
                     />
                   </button>
                   <div
@@ -2908,18 +2995,6 @@ function AppToolbar({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => run(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                <Folders aria-hidden />
-                <FileActionLabel
-                  title="Export JSON for all mods…"
-                  description="Write translation files into the installed mod folders."
-                />
-              </button>
-              <button
-                type="button"
-                role="menuitem"
                 onClick={() => run(onExport)}
                 disabled={!exportEnabled}
               >
@@ -2927,6 +3002,18 @@ function AppToolbar({
                 <FileActionLabel
                   title="Export JSON for selected mod…"
                   description="Write translation files into the selected mod’s folder."
+                />
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                <Folders aria-hidden />
+                <FileActionLabel
+                  title="Export JSON for all mods…"
+                  description="Write translation files into the installed mod folders."
                 />
               </button>
               <div className="translator-popover-divider" role="separator" />

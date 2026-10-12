@@ -1,4 +1,4 @@
-import { AlertTriangle } from "lucide-react";
+import { ExportCounts } from "../export/ExportOverview";
 import type { ZipPreview } from "../tauri/commands";
 
 export function ZipSourcePath({
@@ -27,50 +27,50 @@ export function ZipSourcePath({
   );
 }
 
+/** Mirrors the per-mod ZIP warnings in release_zip.rs. */
+export function outdatedZipWarning(modName: string, count: number) {
+  return `${modName} has ${count} ${count === 1 ? "translation" : "translations"} to check after English changes.`;
+}
+
+export function reviewZipWarning(modName: string, count: number) {
+  return `${modName} has ${count} AI ${count === 1 ? "suggestion" : "suggestions"} not reviewed yet.`;
+}
+
 export function remainingZipWarnings(preview: ZipPreview | null): string[] {
   return (preview?.warnings ?? []).filter(
     (warning) =>
       !preview?.entries.some(
         (entry) =>
-          warning ===
-            `${entry.modName} contains ${entry.outdated} outdated translation(s).` ||
-          warning ===
-            `${entry.modName} contains ${entry.reviewNeeded} unreviewed AI suggestion(s).`,
+          warning === outdatedZipWarning(entry.modName, entry.outdated) ||
+          warning === reviewZipWarning(entry.modName, entry.reviewNeeded),
       ),
   );
 }
 
-export function ZipSummary({ preview }: { preview: ZipPreview }) {
+export function ZipSummary({
+  preview,
+  untranslated,
+}: {
+  preview: ZipPreview;
+  untranslated: number | null;
+}) {
   const needsReview = preview.entries.reduce(
     (sum, entry) => sum + entry.reviewNeeded + entry.outdated,
     0,
   );
-  const omitted = Math.max(
-    0,
-    preview.totalSourceStrings - preview.totalStrings,
-  );
   return (
-    <div className="desktop-zip-summary" aria-label="ZIP contents">
-      <p>
-        <strong>{preview.totalStrings}</strong> of {preview.totalSourceStrings}{" "}
-        translations included
-        {omitted > 0 && <span>{omitted} not included</span>}
-      </p>
-      {needsReview > 0 && (
-        <p className="desktop-zip-review">
-          <AlertTriangle aria-hidden="true" />
-          Includes {needsReview}{" "}
-          {needsReview === 1
-            ? "translation that still needs"
-            : "translations that still need"}{" "}
-          review.
-        </p>
-      )}
+    <>
+      <ExportCounts
+        label="ZIP contents"
+        included={preview.totalStrings}
+        untranslated={untranslated}
+        needsReview={needsReview}
+      />
       {preview.entries.length === 0 && (
         <p className="desktop-zip-empty">
           No translated files are ready to export.
         </p>
       )}
-    </div>
+    </>
   );
 }

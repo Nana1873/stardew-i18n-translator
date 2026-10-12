@@ -503,7 +503,7 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
     );
-    expect(screen.getByPlaceholderText("Filter mods …")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Filter mods…")).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Setup" }),
     ).not.toBeInTheDocument();
@@ -543,7 +543,7 @@ describe("App shell", () => {
       });
       expect(
         screen.getByRole("main", { name: "String table" }),
-      ).toHaveTextContent("scanned 0 min ago");
+      ).toHaveTextContent("scanned just now");
       await act(async () => {
         vi.advanceTimersByTime(60_000);
       });
@@ -697,7 +697,6 @@ describe("App shell", () => {
             key: "fruit",
             source: "Apple",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -810,7 +809,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "review-needed",
           },
         ]);
@@ -1184,15 +1182,11 @@ describe("App shell", () => {
       within(preflight).getByLabelText("Export contents"),
     ).toHaveTextContent("1 translation included");
     expect(preflight).not.toHaveTextContent("open strings omitted");
-    expect(preflight).toHaveTextContent(
-      "2 accepted protected-token mismatches.",
-    );
+    expect(preflight).toHaveTextContent("2 token differences kept on purpose.");
     expect(
       within(preflight).getByRole("button", { name: "Export JSON" }),
     ).toBeEnabled();
-    expect(preflight).toHaveTextContent(
-      "2 accepted protected-token mismatches.",
-    );
+    expect(preflight).toHaveTextContent("2 token differences kept on purpose.");
     expect(preflight).toHaveTextContent("x/i18n/de.json");
     expect(invokeMock).not.toHaveBeenCalledWith(
       "export_mod",
@@ -1300,14 +1294,12 @@ describe("App shell", () => {
             key: "new.key",
             source: "New",
             target: "Neu",
-            targetPresent: true,
             status: "translated",
           },
           {
             key: "greeting",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -1320,7 +1312,7 @@ describe("App shell", () => {
               modName: "Test Mod",
               relativeDir: "i18n",
               key: "greeting",
-              reason: "#$b# is missing (English 1, translation 0).",
+              reason: "#$b# is missing from the translation.",
             },
           ],
         });
@@ -1348,13 +1340,13 @@ describe("App shell", () => {
     expect(preflight).toHaveTextContent("1 string stays in English");
     expect(preflight).toHaveTextContent("greeting");
     expect(preflight).toHaveTextContent(
-      "#$b# is missing (English 1, translation 0).",
+      "#$b# is missing from the translation.",
     );
     expect(
       within(preflight).getByRole("button", { name: "Export JSON" }),
     ).toBeEnabled();
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Open string" }),
+      within(preflight).getByRole("button", { name: "Open issue" }),
     );
 
     expect(
@@ -1524,7 +1516,7 @@ describe("App shell", () => {
           exportHistory({
             id: "export-all-1",
             title: "All-mod export completed",
-            summary: "3 target files written",
+            summary: "3 translation files updated",
             itemCount: 3,
             path: "x/i18n",
             fileName: undefined,
@@ -1584,7 +1576,7 @@ describe("App shell", () => {
 
     const tray = await inspectLatestResult();
     await waitFor(() => expect(tray).toHaveTextContent("All mods exported"));
-    expect(tray).toHaveTextContent("3 target files written or removed");
+    expect(tray).toHaveTextContent("3 translation files updated");
     expect(invokeMock).toHaveBeenCalledWith("export_all_mods", {
       mods: scan.mods.map((mod) => ({
         modUniqueId: mod.uniqueId,
@@ -1687,7 +1679,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -1803,7 +1794,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "review-needed",
             tokenMismatchAccepted: true,
           },
@@ -1866,7 +1856,7 @@ describe("App shell", () => {
 
   it.each([
     undefined,
-    "ChatGPT quality review could not complete for 1 string(s); unreviewed drafts were kept.",
+    "The quality check didn't finish for 1 text (an invalid review response). Their drafts are in Review; please check them.",
   ])(
     "keeps quick-editor suggestions and displays their warning: %s",
     async (warning) => {
@@ -1874,7 +1864,7 @@ describe("App shell", () => {
         id: "ai-quick-success",
         outcome: "success",
         title: "Local AI quick translation",
-        summary: "1 suggestion staged for review",
+        summary: "1 suggestion added to Review",
         itemCount: 1,
       });
       invokeMock.mockImplementation((cmd: string, args?: unknown) => {
@@ -1896,7 +1886,6 @@ describe("App shell", () => {
               key: "greeting",
               source: "Hello",
               target: "",
-              targetPresent: false,
               status: "untranslated",
             },
           ]);
@@ -1998,7 +1987,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2082,7 +2070,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2170,7 +2157,6 @@ describe("App shell", () => {
                 currentSettings.modsPath !== CONFIGURED.modsPath
                   ? "Current workspace translation"
                   : "",
-              targetPresent: false,
               status: "untranslated",
             },
           ]);
@@ -2293,14 +2279,12 @@ describe("App shell", () => {
             key: "first",
             source: "First",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
           {
             key: "second",
             source: "Second",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2431,14 +2415,12 @@ describe("App shell", () => {
             key: "first",
             source: "First",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
           {
             key: "second",
             source: "Second",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2572,7 +2554,6 @@ describe("App shell", () => {
             key: first ? "first" : "second",
             source: first ? "First" : "Second",
             target: completed ? (first ? "Erste" : "Zweite") : "",
-            targetPresent: completed,
             status: completed ? "review-needed" : "untranslated",
           },
         ]);
@@ -2701,7 +2682,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -2755,7 +2735,7 @@ describe("App shell", () => {
         {
           relativeDir: "i18n",
           key: "greeting",
-          reason: "#$b# is missing (English 1, translation 0).",
+          reason: "#$b# is missing from the translation.",
         },
       ],
       filesWritten: 0,
@@ -2771,7 +2751,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello#$b#there",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -2848,7 +2827,7 @@ describe("App shell", () => {
       name: "Import LLM batch",
     });
     expect(importDialog).toHaveTextContent(
-      "Invalid file type. Exactly one JSON batch file is required.",
+      "This isn't a .json file. Choose the translated .json file.",
     );
     expect(importDialog).toHaveTextContent("C:/result.txt");
     expect(
@@ -3264,7 +3243,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -3292,7 +3270,7 @@ describe("App shell", () => {
     );
 
     const saveDialog = screen.getByRole("dialog", { name: "Export LLM batch" });
-    expect(saveDialog).toHaveTextContent("1 of 1 selected string included");
+    expect(saveDialog).toHaveTextContent("1 Open or Changed string included");
     expect(
       within(saveDialog).getByRole("button", { name: "Choose…" }),
     ).toBeEnabled();
@@ -3337,7 +3315,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "",
-            targetPresent: false,
             status: "untranslated",
           },
         ]);
@@ -3445,14 +3422,12 @@ describe("App shell", () => {
             key: "new.key",
             source: "New",
             target: "Neu",
-            targetPresent: true,
             status: "translated",
           },
           {
             key: "broken.key",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -3873,7 +3848,7 @@ describe("App shell", () => {
       name: "Settings",
     });
     fireEvent.click(
-      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+      within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
 
     const setup = await screen.findByRole("dialog", { name: "Setup" });
@@ -3938,7 +3913,7 @@ describe("App shell", () => {
       name: "Settings",
     });
     fireEvent.click(
-      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+      within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
 
     const setup = await screen.findByRole("dialog", { name: "Setup" });
@@ -4044,7 +4019,7 @@ describe("App shell", () => {
       name: "Settings",
     });
     fireEvent.click(
-      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+      within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
     const setup = await screen.findByRole("dialog", { name: "Setup" });
     // Change the language on step 3 so a wrongly saved cancel would show up.
@@ -4183,7 +4158,7 @@ describe("App shell", () => {
       }),
     );
     const result = await inspectLatestResult();
-    expect(result).toHaveTextContent("1 of 1 value saved to the review queue");
+    expect(result).toHaveTextContent("1 of 1 text added to Review");
     expect(result).toHaveTextContent("test.llm-result.json");
     expect(result).toHaveTextContent("C:/results/test.llm-result.json");
     fireEvent.click(
@@ -4258,7 +4233,7 @@ describe("App shell", () => {
       name: "Import LLM batch",
     });
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Choose file …" }),
+      within(dialog).getByRole("button", { name: "Choose file…" }),
     );
     fireEvent.click(
       await within(dialog).findByRole("button", {
@@ -4276,7 +4251,7 @@ describe("App shell", () => {
     const switchedDialog = screen.getByRole("dialog", {
       name: "Import LLM batch",
     });
-    expect(switchedDialog).toHaveTextContent("Target: Second Mod");
+    expect(switchedDialog).toHaveTextContent("Second Mod · ");
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
         "preflight_llm_batch_path",
@@ -4332,7 +4307,7 @@ describe("App shell", () => {
       screen.queryByRole("dialog", { name: "Import LLM batch" }),
     ).toBeNull();
     expect(result).toHaveTextContent("LLM import rejected");
-    expect(result).toHaveTextContent("No changes were made");
+    expect(result).toHaveTextContent("Nothing was imported");
     fireEvent.click(
       within(result).getByRole("button", { name: "Choose another file" }),
     );
@@ -4361,7 +4336,7 @@ describe("App shell", () => {
     });
 
     expect(await inspectLatestResult()).toHaveTextContent(
-      "Select a mod before dropping",
+      "Select a mod first, then drop the file.",
     );
     expect(invokeMock).not.toHaveBeenCalledWith(
       "import_llm_batch_path",
@@ -4399,7 +4374,7 @@ describe("App shell", () => {
     dialog = await screen.findByRole("dialog", {
       name: "Import LLM batch",
     });
-    expect(dialog).toHaveTextContent("Invalid file type");
+    expect(dialog).toHaveTextContent("This isn't a .json file");
     expect(dialog).toHaveTextContent("C:/result.txt");
     expect(
       within(dialog).getByRole("button", { name: "Import file" }),
@@ -4497,7 +4472,6 @@ describe("App shell", () => {
                   key: "festival.answer",
                   source: "The dance starts at noon",
                   target: "Der Tanz beginnt mittags",
-                  targetPresent: true,
                   status: "translated",
                 },
               ]
@@ -4564,7 +4538,6 @@ describe("App shell", () => {
                   key: "festival.answer",
                   source: "The dance starts at noon",
                   target: "Der Tanz beginnt mittags",
-                  targetPresent: true,
                   status: "translated",
                 },
               ]
@@ -4638,7 +4611,6 @@ describe("App shell", () => {
             key: "greeting",
             source: "Hello",
             target: "Hallo KI",
-            targetPresent: true,
             status: "review-needed",
           },
         ]);
@@ -4703,14 +4675,12 @@ describe("App shell", () => {
             key: "changed.key",
             source: "New source",
             target: "Old target",
-            targetPresent: true,
             status: "outdated",
           },
           {
             key: "review.key",
             source: "Review source",
             target: "AI target",
-            targetPresent: true,
             status: "review-needed",
           },
         ]);
@@ -4759,7 +4729,6 @@ describe("App shell", () => {
             key: "token.issue",
             source: "Hello {{name}}",
             target: "Hallo",
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -4841,8 +4810,7 @@ describe("App shell", () => {
           componentUniqueId: "example.pack",
           componentName: "Example Pack",
           relativeLocation: "Example Pack",
-          reason:
-            "Detected as a community language pack, not a translation target.",
+          reason: "This is a language pack, not a mod to translate.",
           requiresAttention: false,
           restOfPackageLoaded: false,
         },
@@ -4960,7 +4928,6 @@ describe("App shell", () => {
             key: "token.issue",
             source: "Hello {{name}}",
             target,
-            targetPresent: true,
             status: "translated",
           },
         ]);
@@ -5008,7 +4975,6 @@ describe("App shell", () => {
             key: "new.key",
             source: "New source",
             target: "",
-            targetPresent: false,
             status: "untranslated",
             tokenMismatchAccepted: false,
           },
@@ -5061,7 +5027,6 @@ describe("App shell", () => {
             key: "changed.key",
             source: "Updated source",
             target: "Existing translation",
-            targetPresent: true,
             status: "outdated",
             tokenMismatchAccepted: false,
           },
@@ -5118,7 +5083,7 @@ describe("App shell", () => {
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Scan" })).toBe(dialog);
-    expect(within(dialog).getByText("Scanning mods …")).toBeVisible();
+    expect(within(dialog).getByText("Scanning mods…")).toBeVisible();
 
     scanResolvers.shift()!(EMPTY_SCAN);
     await waitFor(() =>
@@ -5142,7 +5107,6 @@ it("keeps App work progress and export eligibility coherent after clearing a per
           key: "blank",
           source: "",
           target: "Personal",
-          targetPresent: true,
           status: "translated",
           tokenMismatchAccepted: false,
         },

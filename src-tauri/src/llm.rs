@@ -340,17 +340,18 @@ struct ChatChoiceMessage {
 }
 
 pub(crate) fn parse_chat_response(body: &[u8]) -> Result<String, String> {
-    let parsed: ChatResponse = serde_json::from_slice(body)
-        .map_err(|error| format!("Could not parse the model response: {error}"))?;
+    let parsed: ChatResponse = serde_json::from_slice(body).map_err(|error| {
+        format!(
+            "The local AI's answer couldn't be read ({error}). Try again or choose another model."
+        )
+    })?;
     let choice = parsed
         .choices
         .into_iter()
         .next()
         .ok_or_else(|| "The model returned no response choice.".to_string())?;
     if !choice.message.tool_calls.is_empty() {
-        return Err(
-            "The model returned a tool call instead of a complete translation.".to_string(),
-        );
+        return Err("The model gave no translation. Choose another model.".to_string());
     }
     if choice
         .finish_reason
@@ -358,7 +359,7 @@ pub(crate) fn parse_chat_response(body: &[u8]) -> Result<String, String> {
         .is_some_and(|reason| reason != "stop")
     {
         return Err(format!(
-            "The model response is incomplete (finish reason: {}).",
+            "The AI stopped before finishing ({}). Try again.",
             choice.finish_reason.as_deref().unwrap_or_default()
         ));
     }

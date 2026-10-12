@@ -229,13 +229,13 @@ pub fn validate_paths(
         }
         if !file_name_is(default_path, "default.json") {
             return Err(format!(
-                "Refusing export: {} is not a default.json source file.",
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
                 default_path.display()
             ));
         }
         if !file_name_is(target_path, &expected_target) {
             return Err(format!(
-                "Refusing export: {} is not the active {target_lang} target file.",
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
                 target_path.display()
             ));
         }
@@ -248,7 +248,7 @@ pub fn validate_paths(
         })?;
         if !canonical_default.is_file() || !canonical_default.starts_with(&canonical_root) {
             return Err(format!(
-                "Refusing export outside the configured Mods folder: {}",
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
                 default_path.display()
             ));
         }
@@ -261,16 +261,15 @@ pub fn validate_paths(
             .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
         {
             return Err(format!(
-                "Refusing export: {} is not inside an i18n folder.",
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
                 default_path.display()
             ));
         }
         let canonical_target_dir = validate_target_location(target_path, &canonical_root)?;
         if canonical_source_dir != canonical_target_dir {
             return Err(format!(
-                "Refusing export: {} is not beside {}.",
-                target_path.display(),
-                default_path.display()
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
+                target_path.display()
             ));
         }
 
@@ -303,6 +302,16 @@ pub fn resolve_scan_inputs(
     resolve_scanned_inputs(&scan, requests)
 }
 
+/// The selected mod no longer matches the latest scan.
+fn changed_since_scan(request: &ExportModInput) -> String {
+    let name = if request.mod_name.trim().is_empty() {
+        &request.mod_unique_id
+    } else {
+        &request.mod_name
+    };
+    format!("{name} changed since the last scan. Scan again, then export.")
+}
+
 pub(crate) fn resolve_scanned_inputs(
     scan: &scanner::ScanResult,
     requests: &[ExportModInput],
@@ -329,14 +338,11 @@ pub(crate) fn resolve_scanned_inputs(
         let scanned = match matches.as_slice() {
             [scanned] => *scanned,
             [] => {
-                return Err(format!(
-                    "Refusing export: component {} is stale or is not present in the latest scan.",
-                    request.mod_unique_id
-                ));
+                return Err(changed_since_scan(request));
             }
             _ => {
                 return Err(format!(
-                    "Refusing export: component {} is ambiguous in the latest scan.",
+                    "Two mods have the ID {}. Remove the duplicate and scan again, then export.",
                     request.mod_unique_id
                 ));
             }
@@ -350,23 +356,12 @@ pub(crate) fn resolve_scanned_inputs(
                 target_path: file.target_path.clone(),
             })
             .collect::<Vec<_>>();
-        let requested_bindings = export_file_bindings(&request.files).ok_or_else(|| {
-            format!(
-                "Refusing export: component {} has stale or invalid file paths.",
-                request.mod_unique_id
-            )
-        })?;
-        let scanned_bindings = export_file_bindings(&files).ok_or_else(|| {
-            format!(
-                "Refusing export: component {} could not be resolved from the latest scan.",
-                request.mod_unique_id
-            )
-        })?;
+        let requested_bindings =
+            export_file_bindings(&request.files).ok_or_else(|| changed_since_scan(request))?;
+        let scanned_bindings =
+            export_file_bindings(&files).ok_or_else(|| changed_since_scan(request))?;
         if requested_bindings != scanned_bindings {
-            return Err(format!(
-                "Refusing export: component {} has changed since the displayed scan.",
-                request.mod_unique_id
-            ));
+            return Err(changed_since_scan(request));
         }
         resolved.push(ExportModInput {
             mod_unique_id: scanned.unique_id.clone(),
@@ -410,13 +405,13 @@ fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBu
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
             return Err(format!(
-                "Refusing export through a symbolic link: {}",
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
                 path.display()
             ));
         }
         Ok(metadata) if !metadata.is_file() => {
             return Err(format!(
-                "Refusing export over a non-file path: {}",
+                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
                 path.display()
             ));
         }
@@ -432,7 +427,7 @@ fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBu
     let canonical_directory = canonical_target_directory(path)?;
     if !canonical_directory.starts_with(canonical_root) {
         return Err(format!(
-            "Refusing export outside the configured Mods folder: {}",
+            "This mod's files are in an unexpected place ({}), so it wasn't exported.",
             path.display()
         ));
     }
@@ -1307,10 +1302,7 @@ mod tests {
 
         let error = resolve_scan_inputs(&mods, "de", &config, &[substituted]).unwrap_err();
 
-        assert!(
-            error.contains("changed since the displayed scan"),
-            "{error}"
-        );
+        assert!(error.contains("changed since the last scan"), "{error}");
         assert!(!mods.join("First/i18n/de.json").exists());
         assert!(!mods.join("Second/i18n/de.json").exists());
         std::fs::remove_dir_all(root).ok();
@@ -1326,7 +1318,7 @@ mod tests {
 
         let error = resolve_scan_inputs(&mods, "de", &config, &[request]).unwrap_err();
 
-        assert!(error.contains("stale or invalid file paths"), "{error}");
+        assert!(error.contains("changed since the last scan"), "{error}");
         assert!(!mods.join("After/i18n/de.json").exists());
         std::fs::remove_dir_all(root).ok();
     }
@@ -1747,7 +1739,7 @@ mod tests {
         assert_eq!(result.skipped[0].key, "bad");
         assert!(result.skipped[0]
             .reason
-            .contains("English 1, translation 0"));
+            .contains("is missing from the translation"));
         let body = read(&i18n.join("de.json"));
         assert!(body.contains("Hallo {{name}}"));
         assert!(!body.contains("Tschüss"));
@@ -1781,7 +1773,7 @@ mod tests {
         assert_eq!(result.skipped.len(), 1);
         assert!(result.skipped[0]
             .reason
-            .contains("English 1, translation 2"));
+            .contains("appears 2 times in the translation instead of 1"));
         assert!(!i18n.join("de.json").exists());
         assert!(!i18n.join("de.json.bak").exists());
 
@@ -2271,7 +2263,7 @@ mod tests {
             ..safe
         };
         let error = validate_paths(&mods, "de", &[escaped]).unwrap_err();
-        assert!(error.contains("outside") || error.contains("not beside"));
+        assert!(error.contains("unexpected place"));
 
         std::fs::remove_dir_all(base).ok();
     }
@@ -2288,7 +2280,7 @@ mod tests {
         }];
 
         let error = validate_paths(&root, "de", &files).unwrap_err();
-        assert!(error.contains("active de target"));
+        assert!(error.contains("unexpected place"));
 
         std::fs::remove_dir_all(root).ok();
     }

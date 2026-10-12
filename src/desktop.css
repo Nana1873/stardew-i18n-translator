@@ -226,6 +226,13 @@
 #stardew-i18n-translator .translator-command-actions .translator-button {
   border-color: transparent;
 }
+/* Save is a real button next to the primary Save & next, not a text label. */
+#stardew-i18n-translator
+  .translator-editor-save-actions
+  > .translator-button-quiet {
+  background: var(--translator-surface-raised);
+  border-color: var(--translator-border-strong);
+}
 #stardew-i18n-translator .translator-icon-button {
   width: 29px;
   height: 29px;
@@ -254,7 +261,8 @@
 }
 #stardew-i18n-translator .translator-mod-row {
   min-height: 32px;
-  padding: 6px 8px;
+  /* Room at the end for the row menu so it never covers the coverage value. */
+  padding: 6px 30px 6px 8px;
   font-size: 13px;
 }
 #stardew-i18n-translator .translator-mod-progress {
@@ -275,6 +283,8 @@
 #stardew-i18n-translator .translator-string-meta {
   flex-wrap: nowrap;
   overflow: hidden;
+  /* Fade the end of a line that does not fit instead of cutting every part. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 /* Reserve selection actions in the header so selecting rows never reflows filters. */
 #stardew-i18n-translator .translator-string-head > .translator-bulk-wrap {
@@ -552,6 +562,9 @@
   min-height: 0;
   overflow: auto;
   margin-top: 4px;
+}
+.desktop-log[data-scrolled="true"] {
+  mask-image: linear-gradient(to bottom, transparent, #000 16px);
 }
 .desktop-log p {
   margin: 3px 0;
@@ -1474,7 +1487,8 @@
 #stardew-i18n-translator .desktop-zip-files {
   padding-top: 12px;
 }
-#stardew-i18n-translator .desktop-zip-dialog .translator-flow-list li {
+#stardew-i18n-translator .desktop-zip-dialog .translator-flow-list li,
+#stardew-i18n-translator .desktop-export-left-out .translator-flow-list li {
   padding: 8px 0;
   background: transparent;
   border-bottom: 1px solid var(--translator-border);
@@ -1700,4 +1714,131 @@
   border-radius: 0;
   border: 0;
   border-left: 2px solid var(--translator-orange);
+}
+
+/* The editor status chip already shows its status glyph; no extra dot. */
+#stardew-i18n-translator .editor__status.translator-state::before {
+  content: none;
+}
+
+/* Spare editor height goes to the text fields, not to the issue box. */
+#stardew-i18n-translator .translator-editor-body {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* While toasts or the AI progress card float over the table, leave room to
+   scroll the last rows out from under them. */
+#stardew-i18n-translator:is(
+    :has(.desktop-notifications > :not(#ai-progress-slot)),
+    :has(#ai-progress-slot > *)
+  )
+  .translator-string-table-body {
+  padding-bottom: 120px;
+}
+
+/* No mod has a Nexus ID: drop the column instead of a row of dashes. */
+#stardew-i18n-translator .translator-mod-columns[data-no-nexus],
+#stardew-i18n-translator [data-no-nexus] .translator-mod-row,
+#stardew-i18n-translator [data-no-nexus] .translator-mod-group-row {
+  grid-template-columns: minmax(0, 1fr) 42px 52px;
+}
+#stardew-i18n-translator
+  .translator-mod-columns[data-no-nexus]
+  span:nth-child(3),
+#stardew-i18n-translator
+  [data-no-nexus]
+  .translator-mod-group-row
+  span:nth-child(3),
+#stardew-i18n-translator [data-no-nexus] .translator-mod-nexus {
+  display: none;
+}
+
+/* ZIP warnings: the icon sits beside the text, not on its own line. */
+#stardew-i18n-translator .translator-zip-warnings {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+#stardew-i18n-translator .translator-zip-warnings > svg {
+  flex-shrink: 0;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+#stardew-i18n-translator .translator-zip-warnings > ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+/* Source changed while editing: text left, action button right. */
+#stardew-i18n-translator .translator-source-conflict {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+#stardew-i18n-translator .translator-source-conflict > button {
+  flex-shrink: 0;
+}
+#stardew-i18n-translator .translator-source-conflict-old {
+  display: block;
+  margin-top: 4px;
+  color: var(--translator-muted);
+}
+#stardew-i18n-translator .translator-source-conflict-old code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+#stardew-i18n-translator .editor__ai-btn[aria-disabled="true"] {
+  opacity: 0.5;
+}
+
+#stardew-i18n-translator .translator-mod-percent[data-to-check]::after {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 3px;
+  vertical-align: middle;
+  background: var(--translator-brand);
+  border-radius: 50%;
+}
+
+#stardew-i18n-translator .translator-blank-target {
+  color: var(--translator-muted);
+  font-style: italic;
+}
+
+/* Startup error: one calm card instead of loose text across the window. */
+#stardew-i18n-translator
+  .translator-view-panel.is-active.translator-startup-error {
+  align-self: start;
+  justify-self: center;
+  width: min(640px, calc(100% - 32px));
+  height: auto;
+  min-height: 0;
+  margin-top: 48px;
+  padding: 20px 22px;
+  background: var(--translator-surface);
+  border: 1px solid var(--translator-border);
+  border-left: 3px solid var(--translator-red);
+  border-radius: 8px;
+}
+#stardew-i18n-translator .translator-startup-error h2 {
+  margin: 0 0 8px;
+}
+#stardew-i18n-translator .translator-startup-error-detail {
+  margin: 12px 0;
+  padding: 8px 10px;
+  color: var(--translator-muted);
+  background: var(--translator-canvas);
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#stardew-i18n-translator .translator-startup-error-actions {
+  display: flex;
+  gap: 8px;
 }

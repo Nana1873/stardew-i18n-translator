@@ -110,8 +110,8 @@ fn scan_mods(app: AppHandle, mods_path: String, target_lang: String) -> Result<S
             if let Err(error) = scan_snapshot::apply(&mut result, &mods_root, &config) {
                 log::warn!(target: "app", "Could not update source-change scan baseline: {error}");
                 result.warnings.push(format!(
-            "Source-change comparison is unavailable because its portable scan baseline could not be updated: {error}"
-        ));
+                    "New and changed texts can't be shown this time. Scan again later. ({error})"
+                ));
             }
             if let Some((warning_count, skipped_count)) = scan_warning_counts(&result) {
                 log::warn!(
@@ -521,8 +521,14 @@ fn export_mod(
                     },
                     title: "Translation export completed".to_string(),
                     summary: format!(
-                        "{} target files written and {} removed.",
-                        result.files_written, result.files_removed
+                        "{} translation {} updated, {} removed.",
+                        result.files_written,
+                        if result.files_written == 1 {
+                            "file"
+                        } else {
+                            "files"
+                        },
+                        result.files_removed
                     ),
                     item_count: result.total_written_keys,
                     path,
@@ -615,8 +621,20 @@ fn export_all_mods(
                     },
                     title: "All-mod export completed".to_string(),
                     summary: format!(
-                        "{} components changed; {} target files written and {} removed.",
-                        result.mods_changed, result.files_written, result.files_removed
+                        "{} {} updated; {} translation {} updated, {} removed.",
+                        result.mods_changed,
+                        if result.mods_changed == 1 {
+                            "mod"
+                        } else {
+                            "mods"
+                        },
+                        result.files_written,
+                        if result.files_written == 1 {
+                            "file"
+                        } else {
+                            "files"
+                        },
+                        result.files_removed
                     ),
                     item_count: result.total_written_keys,
                     path: Some(mods_root.display().to_string()),
@@ -1101,7 +1119,15 @@ fn remember_llm_batch_import(
                 operation_history::OperationOutcome::Warning
             },
             title: "LLM batch imported".to_string(),
-            summary: format!("{} suggestions staged for review.", summary.imported),
+            summary: format!(
+                "{} {} added to Review.",
+                summary.imported,
+                if summary.imported == 1 {
+                    "suggestion"
+                } else {
+                    "suggestions"
+                }
+            ),
             item_count: summary.imported,
             path,
             file_name,
@@ -2019,8 +2045,9 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
         _ => "an invalid review response",
     };
     Some(format!(
-        "The ChatGPT quality review could not complete for {} string(s) ({cause}); their unreviewed translation drafts were kept. Check them carefully in Review.",
-        skips.items
+        "The quality check didn't finish for {} {} ({cause}). Their drafts are in Review; please check them.",
+        skips.items,
+        if skips.items == 1 { "text" } else { "texts" }
     ))
 }
 
@@ -2036,7 +2063,7 @@ mod review_warning_tests {
         assert_eq!(review_skipped_warning(AiRunOutcome::Complete, skips), None);
         skips.record(3, ReviewSkipReason::Transient);
         let warning = review_skipped_warning(AiRunOutcome::Complete, skips).unwrap();
-        assert!(warning.contains("could not complete for 3 string(s)"));
+        assert!(warning.contains("didn't finish for 3 texts"));
         assert!(warning.contains("temporary ChatGPT failure"));
         assert!(!warning.contains("retries"));
         assert_eq!(review_skipped_warning(AiRunOutcome::Cancelled, skips), None);
@@ -2048,7 +2075,7 @@ mod review_warning_tests {
         saved.absorb(skips);
         saved.absorb(chunk);
         let warning = review_skipped_warning(AiRunOutcome::Complete, saved).unwrap();
-        assert!(warning.contains("for 4 string(s)"));
+        assert!(warning.contains("for 4 texts"));
         assert!(warning.contains("temporary ChatGPT failures and invalid review responses"));
     }
 }
@@ -2084,7 +2111,15 @@ fn remember_ai_run(
             result.completed, result.requested
         ),
         ai::AiRunOutcome::Complete => {
-            format!("{} suggestions staged for review.", result.completed)
+            format!(
+                "{} {} added to Review.",
+                result.completed,
+                if result.completed == 1 {
+                    "suggestion"
+                } else {
+                    "suggestions"
+                }
+            )
         }
         ai::AiRunOutcome::Cancelled => format!(
             "Cancelled after {} of {} suggestions.",
@@ -2971,9 +3006,14 @@ async fn translate_with_cloud_ai(
         outcome = ai::AiRunOutcome::Error;
         let cause = last_isolated_failure
             .as_deref()
-            .unwrap_or("The AI provider returned invalid structured translation data.");
+            .unwrap_or(ai::UNUSABLE_ANSWER);
         error = Some(format!(
-            "{isolated_failures} selected string(s) could not be translated after bounded response recovery. {cause}"
+            "{isolated_failures} {} couldn't be translated, even after retrying. {cause}",
+            if isolated_failures == 1 {
+                "text"
+            } else {
+                "texts"
+            }
         ));
     }
     update_ai_progress(&app, &progress_state, |progress| {

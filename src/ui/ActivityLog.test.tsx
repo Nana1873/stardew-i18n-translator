@@ -17,7 +17,7 @@ const operation: OperationHistoryEntry = {
   kind: "import",
   outcome: "warning",
   title: "LLM batch imported",
-  summary: "3 suggestions staged for review.",
+  summary: "3 suggestions added to Review.",
   itemCount: 3,
   canUndo: true,
   warnings: ["An empty value was skipped."],
@@ -34,8 +34,7 @@ const props = {
   totalStrings: 3,
   language: "German (de)",
   scanning: false,
-  warningCount: 0,
-  skippedCount: 0,
+  attentionCount: 0,
   scanError: null,
   history: [] as OperationHistoryEntry[],
   modNames: new Map([["a.b", "Test mod"]]),
@@ -89,7 +88,7 @@ it("separates scan and AI runs while retaining each run's steps and copied spaci
     ),
   ).toEqual([
     expect.stringContaining("AI translation started for Test mod."),
-    expect.stringContaining("Scanning mods"),
+    expect.stringContaining("Scan done"),
     expect.stringContaining("AI translation started for Next mod."),
   ]);
   expect(log.querySelector("p:first-child")).not.toHaveAttribute(
@@ -130,7 +129,7 @@ it.each(["success", "warning", "cancelled", "failed"] as const)(
       kind: "ai",
       outcome,
       title: "ChatGPT translation run",
-      summary: "2 suggestions staged for review.",
+      summary: "2 suggestions added to Review.",
       completedAtEpochMs: 2000,
     };
     view.rerender(
@@ -149,9 +148,13 @@ it.each(["success", "warning", "cancelled", "failed"] as const)(
     const finished = rows.findIndex((row) =>
       row.textContent?.includes(completion.title),
     );
-    const scan = rows.findIndex((row) =>
-      row.textContent?.includes("Scanning mods"),
-    );
+    // The refresh scan is the last one; the first is the initial scan.
+    const scan =
+      rows.length -
+      1 -
+      [...rows]
+        .reverse()
+        .findIndex((row) => row.textContent?.includes("Scan done"));
     expect(finished).toBeGreaterThan(0);
     expect(finished).toBeLessThan(scan);
     expect(rows[finished]).not.toHaveAttribute("data-group-start");
@@ -224,7 +227,7 @@ it("animates only each batch's current step, keeps history static, and ignores s
     activeSteps: ["second:1:preparing"],
     entries: [
       {
-        message: "Batch 1 · Preparing batch · 2 strings",
+        message: "Batch 1 · Preparing texts · 2 strings",
         aiStep: "second:1:preparing",
       },
     ],
@@ -233,7 +236,7 @@ it("animates only each batch's current step, keeps history static, and ignores s
   expect(within(log).getAllByRole("img", { name: "In progress" })).toHaveLength(
     1,
   );
-  expect(within(log).getByText(/Preparing batch/)).toHaveAttribute(
+  expect(within(log).getByText(/Preparing texts/)).toHaveAttribute(
     "data-ai-active",
     "true",
   );
@@ -267,7 +270,7 @@ it("groups distinct manual saves without recording translation text or losing ex
   expect(buffer.entries[1]).toMatchObject({
     tone: "warning",
     message:
-      "Translation saved · Test mod · first · Token mismatch accepted; export allowed.",
+      "Translation saved · Test mod · first · Token differences kept on purpose.",
   });
   buffer = appendActivity(buffer, { kind: "save", save }, 3200, 5);
   expect(buffer.entries).toHaveLength(3);
@@ -328,7 +331,7 @@ it("includes actual import counts and mod identity with an immutable operation r
     startsGroup: true,
     tone: "warning",
     message:
-      "LLM batch imported · Test mod · warning: 3 suggestions staged for review. Local translations preserved: 2 · Skipped empty values: 1.",
+      "LLM batch imported · Test mod · warning: 3 suggestions added to Review. Local translations preserved: 2 · Skipped empty values: 1.",
     details: { kind: "operation", entry: { id: "import-1", canUndo: false } },
   });
   expect(operation.canUndo).toBe(true);

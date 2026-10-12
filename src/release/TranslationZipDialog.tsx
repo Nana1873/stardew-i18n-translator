@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { ZipSummary, ZipSourcePath, remainingZipWarnings } from "./ZipDetails";
 import { useMemo, useRef, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
+import { LeftOutStrings } from "../export/ExportOverview";
 import { useDialogAccessibility } from "../dialogAccessibility";
 import type {
   ZipPreview,
@@ -20,6 +21,7 @@ export function TranslationZipDialog({
   preview,
   combined = false,
   componentCount,
+  untranslated = null,
   modFolders = [],
   modsPath,
   error,
@@ -31,6 +33,8 @@ export function TranslationZipDialog({
   preview: ZipPreview | null;
   combined?: boolean;
   componentCount: number | null;
+  /** Strings with no translation yet, counted like the JSON export. */
+  untranslated?: number | null;
   modFolders?: ReadonlyArray<{ uniqueId: string; folderPath: string }>;
   modsPath?: string;
   error: string | null;
@@ -151,10 +155,17 @@ export function TranslationZipDialog({
               <strong>Could not prepare ZIP:</strong> {error}
             </div>
           )}
-          {!preview && !error && <p>Preparing current package data …</p>}
+          {!preview && !error && <p>Preparing the package…</p>}
           {preview && (
             <>
-              {<ZipSummary preview={preview} />}
+              <ZipSummary preview={preview} untranslated={untranslated} />
+              <LeftOutStrings
+                problems={preview.problems}
+                target="ZIP"
+                showModNames={combined}
+                onInspect={onInspect}
+                disabled={building}
+              />
               <div className="translator-flow-fields">
                 {!combined && (
                   <label className="translator-flow-field">
@@ -200,49 +211,6 @@ export function TranslationZipDialog({
                     {version.trim() || "above"}.
                   </span>
                 </label>
-              )}
-
-              {preview.problems.length > 0 && (
-                <>
-                  <div className="translator-flow-callout is-warning">
-                    <strong>
-                      {preview.problems.length}{" "}
-                      {preview.problems.length === 1
-                        ? "string stays"
-                        : "strings stay"}{" "}
-                      in English:
-                    </strong>{" "}
-                    {preview.problems.length === 1 ? "it has" : "they have"} a
-                    token error that would break the game, so the ZIP leaves{" "}
-                    {preview.problems.length === 1 ? "it" : "them"} out. Fix{" "}
-                    {preview.problems.length === 1 ? "it" : "them"} in the
-                    editor, or use Save anyway if the change is intended.
-                  </div>
-                  <ul
-                    className="translator-flow-list"
-                    aria-label="Strings left out of the ZIP"
-                  >
-                    {preview.problems.map((problem) => (
-                      <li
-                        key={`${problem.modUniqueId}:${problem.relativeDir}:${problem.key}`}
-                      >
-                        <span>
-                          <strong>{problem.modName}</strong>
-                          <br />
-                          <code>{problem.key}</code> · {problem.reason}
-                        </span>
-                        <button
-                          className="translator-button translator-button-quiet"
-                          type="button"
-                          onClick={() => onInspect(problem)}
-                          disabled={building}
-                        >
-                          Open issue
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </>
               )}
 
               {
@@ -356,13 +324,17 @@ export function TranslationZipDialog({
               )}
 
               {displayedZipWarnings.length > 0 && (
-                <div className="translator-flow-callout is-warning">
+                <div className="translator-flow-callout is-warning translator-zip-warnings">
                   <AlertTriangle aria-hidden="true" />
-                  <ul>
-                    {displayedZipWarnings.map((warning, index) => (
-                      <li key={`${warning}:${index}`}>{warning}</li>
-                    ))}
-                  </ul>
+                  {displayedZipWarnings.length === 1 ? (
+                    <p>{displayedZipWarnings[0]}</p>
+                  ) : (
+                    <ul>
+                      {displayedZipWarnings.map((warning, index) => (
+                        <li key={`${warning}:${index}`}>{warning}</li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
             </>

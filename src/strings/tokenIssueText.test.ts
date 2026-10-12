@@ -42,7 +42,7 @@ describe("describeTokenIssue", () => {
         "Hallo a ${x^y",
       ).map((item) => item.message),
     ).toContain(
-      "^ is missing (English 1, translation 0). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
+      "^ is missing from the translation. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
     );
   });
 
@@ -71,7 +71,7 @@ describe("describeTokenIssue", () => {
         severity: "warning",
         kind: "missing",
         message:
-          "The portrait $8 is missing (English 1, translation 0): the character shows a different face. Fine if intended.",
+          "The portrait $8 is missing from the translation: the character shows a different face. Fine if intended.",
       },
     ]);
   });

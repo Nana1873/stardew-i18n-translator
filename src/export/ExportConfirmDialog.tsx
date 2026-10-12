@@ -2,12 +2,7 @@ import { ExportConfirmBody } from "./ExportConfirmBody";
 import { useRef } from "react";
 import { useDialogAccessibility } from "../dialogAccessibility";
 
-/** A string the export leaves out because of a game-breaking token error. */
-export interface ExportOmittedString {
-  relativeDir: string;
-  key: string;
-  reason: string;
-}
+import type { LeftOutString } from "./ExportOverview";
 
 interface ExportConfirmDialogProps {
   modName: string;
@@ -29,11 +24,11 @@ interface ExportConfirmDialogProps {
   /** Real new target paths from the selected scanned i18n components. */
   newTargetPaths?: string[];
   /** Strings left out of the export; the game shows their English source. */
-  omitted?: ExportOmittedString[];
+  omitted?: LeftOutString[];
   /** True only when the caller has validated the complete selected scope. */
   blockingValidationAvailable?: boolean;
-  /** Opens the first omitted string in the editor. */
-  onInspectProblem?: () => void;
+  /** Opens one omitted string in the editor. */
+  onInspectProblem?: (problem: LeftOutString) => void;
   /** Current-session value only; no history is invented. */
   lastExportLabel?: string | null;
   onConfirm: () => void;

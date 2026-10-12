@@ -63,7 +63,7 @@ describe("SettingsDialog", () => {
       />,
     );
     expect(screen.getByText("E:/SDV")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Setup …" }));
+    fireEvent.click(screen.getByRole("button", { name: "Setup…" }));
     expect(onReRunSetup).toHaveBeenCalled();
   });
 
@@ -1563,7 +1563,7 @@ describe("SettingsDialog", () => {
       expect(screen.getByLabelText("ChatGPT model")).toBeEnabled(),
     );
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-6.1-sol");
-    expect(screen.getByText(/keeping the model ID/i)).toBeVisible();
+    expect(screen.getByText(/Your choice is kept/i)).toBeVisible();
     expect(screen.getByText("ChatGPT").closest("button")).toHaveTextContent(
       "Ready",
     );

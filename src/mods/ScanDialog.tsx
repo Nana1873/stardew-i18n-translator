@@ -51,14 +51,14 @@ export function ScanDialog({
   );
   const sourceDeltas = result?.sourceDeltas;
   const title = scanning
-    ? "Scanning mods …"
+    ? "Scanning mods…"
     : error
       ? "Scan failed"
       : retainedResult
         ? "Latest scan"
         : result
           ? "Scan completed"
-          : "Scan unavailable";
+          : "No scan yet";
 
   return (
     <div className="translator-flow-overlay desktop-scan-overlay">
@@ -100,11 +100,7 @@ export function ScanDialog({
               aria-valuemax={100}
               aria-valuenow={complete ? 100 : undefined}
               aria-valuetext={
-                scanning
-                  ? "Scanning; exact progress is unavailable"
-                  : complete
-                    ? "Scan completed"
-                    : undefined
+                scanning ? "Scanning" : complete ? "Scan completed" : undefined
               }
               style={complete ? completeProgress : undefined}
             />
@@ -113,12 +109,10 @@ export function ScanDialog({
           {scanning ? (
             <>
               <p>
-                <RefreshCw aria-hidden="true" /> Reading manifests and i18n
-                files …
+                <RefreshCw aria-hidden="true" /> Reading your mods…
               </p>
               <div className="translator-flow-callout">
-                Exact scan progress is unavailable. Existing translation state
-                remains untouched while the local folder is read.
+                This can take a moment. Your translations are not changed.
               </div>
             </>
           ) : error ? (
@@ -129,7 +123,7 @@ export function ScanDialog({
             <ScanResultContent result={result} />
           ) : (
             <div className="translator-flow-callout">
-              Scan result unavailable.
+              No scan result yet. Click Scan to read your mods.
             </div>
           )}
         </div>
@@ -210,7 +204,7 @@ export function ScanDialog({
               ? `Scan failed: ${error}`
               : result
                 ? `Scan complete. ${result.modCount} ${result.modCount === 1 ? "mod" : "mods"} and ${result.fileCount} ${result.fileCount === 1 ? "translation file" : "translation files"} found. ${attentionCount == null ? "" : attentionCount === 0 ? "Everything is ready." : `${attentionCount} ${attentionCount === 1 ? "item needs" : "items need"} a look.`}${expectedExclusionText ? ` ${expectedExclusionText}.` : ""}`
-                : "Scan result unavailable"}
+                : "No scan result yet"}
         </span>
       </section>
     </div>
@@ -294,7 +288,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
           >
             Needs attention <span>{problemCount}</span>
           </h3>
-          <ul className="translator-scan-cards" aria-label="Skipped components">
+          <ul className="translator-scan-cards" aria-label="Problems">
             {otherSkips.map((component, index) => (
               <li
                 className="translator-scan-card"
@@ -306,7 +300,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
                     {component.componentName ??
                       component.componentUniqueId ??
                       component.packageId ??
-                      "Unnamed component"}
+                      "Unnamed mod"}
                   </strong>
                   <p>
                     {plainSkipReason(component.reason)}
@@ -379,11 +373,9 @@ function ScanResultContent({ result }: { result: ScanResult }) {
             <Info aria-hidden="true" /> {extraKeySummary}
           </summary>
           <p>
-            These entries are in the translation file but not in the local
-            English source (default.json or default/*.json). They do not count
-            toward progress or block export. Exports omit these entries. Folder
-            exports retain the original file in a backup; ZIP exports leave the
-            original files unchanged.
+            These lines are no longer in the English text, so export leaves them
+            out. They don't count toward progress. A folder export keeps the old
+            file in a backup; a ZIP export doesn't change your files.
           </p>
           <ul
             className="translator-scan-extra-groups"
@@ -464,7 +456,7 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
       ? `${packs} community language ${packs === 1 ? "pack" : "packs"}`
       : "",
     folders > 0
-      ? `${folders} i18n ${folders === 1 ? "folder" : "folders"} that SMAPI does not load`
+      ? `${folders} translation ${folders === 1 ? "folder" : "folders"} the game doesn't use`
       : "",
   ].filter(Boolean);
   return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
@@ -518,8 +510,9 @@ function groupDuplicateIds(
     if (!ids) return;
     const affected = skips.filter(
       (component) =>
-        /UniqueID is duplicated/i.test(component.reason) &&
-        ids.includes((component.componentUniqueId ?? "").toLowerCase()),
+        /UniqueID is duplicated|saved translations for this mod could not be loaded/i.test(
+          component.reason,
+        ) && ids.includes((component.componentUniqueId ?? "").toLowerCase()),
     );
     affected.forEach((component) => grouped.add(component));
     byWarning.set(index, affected);
@@ -536,12 +529,17 @@ function modFolder(location: string): string {
 /** A short title for a free-text scanner warning. */
 function warningTitle(warning: string): string {
   if (/same ID \(/i.test(warning)) return "Duplicate mod ID";
-  if (/could not be scanned completely/i.test(warning))
+  if (
+    /could not be scanned completely|mod folders could not be read/i.test(
+      warning,
+    )
+  )
     return "Incomplete scan";
   if (/cannot be read|unreadable/i.test(warning)) return "Unreadable file";
-  if (/translation[- ]state|saved translations/i.test(warning))
+  if (/translation[- ]state|saved translations|old save file/i.test(warning))
     return "Saved translations";
-  if (/baseline|comparison/i.test(warning)) return "Change comparison";
+  if (/baseline|comparison|changed texts can't be shown/i.test(warning))
+    return "Change comparison";
   return "Scan note";
 }
 
@@ -550,7 +548,11 @@ function warningTitle(warning: string): string {
 function plainSkipReason(reason: string): string {
   if (/mixed top-level and language-folder|duplicate source key/i.test(reason))
     return "It uses a translation file layout that SMAPI does not support, so it was left out.";
-  if (/translation state is unavailable/i.test(reason))
+  if (
+    /translation state is unavailable|saved translations for this mod could not be loaded/i.test(
+      reason,
+    )
+  )
     return "Its saved translations could not be loaded safely, so it was left out.";
   if (/manifest/i.test(reason))
     return "Its manifest.json could not be read, so it was left out.";

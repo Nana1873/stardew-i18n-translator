@@ -10,6 +10,32 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Texts across the app are plainer: explanations, status lines, dialog text
+  and error messages say what happened and what to do, without internal terms.
+  Token findings read, for example, "{{Preis}} is not in the English text. The
+  game would show it as raw text." instead of raw counts. Feature, button and
+  menu names are unchanged.
+- The Files menu lists Import LLM batch and a new Export LLM batch together.
+  Export LLM batch takes every Open or Changed string of the selected mod. The
+  JSON and ZIP entries both list the selected mod first.
+- The JSON and ZIP export dialogs share one layout and count the same way:
+  translations included and strings not translated yet, then the strings left
+  out with an Open issue button for each, then target and options.
+- The editor's issue box is compact, and its titles say how to get past a
+  token error ("Must fix or Save anyway"). Save sits as a framed button beside
+  Save & next, and the token warning makes Return to editor the primary action.
+- Translate with AI explains why it does not apply to Done and Review strings
+  instead of staying silently disabled.
+- An intentionally blank translation shows as "(left blank)" in the table, and
+  a dot marks 100% coverage that still has strings to check in Review or
+  Changed.
+- Smaller layout fixes: the mod list keeps its Coverage header at narrow
+  widths and hides the Nexus column when no mod has an ID, the header subline
+  uses separators, the selection button shows that it opens a menu, saved
+  column widths that no longer fit are fitted on open, each scan leaves one
+  activity line, ChatGPT settings show a custom model ID under its select, and
+  a damaged settings file shows one calm card with Retry and Open logs folder.
+
 - The mod list header shows one "Needs attention" count that matches the scan
   result, instead of separate skipped and warning counters.
 - The scan result is calmer: one sentence says whether everything is ready,
@@ -51,6 +77,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   step instead of the raw transport error.
 
 ### Fixed
+
+- An empty translation no longer shows a warning. Clearing a string in the
+  app showed a warning triangle and raised the Issues count even though the
+  export leaves the string out and the game shows English.
+- The LLM batch import preflight no longer prints its raw source check state
+  ("notChecked"); a blocked import shows its reason first.
+- The ZIP dialog no longer repeats the mod name on every left-out string, and
+  the activity log no longer cuts its top line in half.
 
 - A single-string AI translation in the editor can be cancelled, and closing
   the editor (or pressing Esc) during it cancels it instead of being blocked.

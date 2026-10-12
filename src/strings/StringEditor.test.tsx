@@ -20,7 +20,6 @@ function row(overrides: Partial<EditorRow> = {}): EditorRow {
     source: "Hello",
     target: "Hallo",
     file: "i18n",
-    targetPresent: true,
     status: "translated",
     tokenMismatchAccepted: false,
     ...overrides,
@@ -264,7 +263,7 @@ describe("StringEditor", () => {
     });
     const onSave = vi.fn();
     const first = renderEditor(
-      { target: "", targetPresent: false, status: "untranslated" },
+      { target: "", status: "untranslated" },
       onTranslate,
       undefined,
       undefined,
@@ -284,7 +283,6 @@ describe("StringEditor", () => {
       <StringEditor
         row={row({
           target: "Hallo Welt",
-          targetPresent: true,
           status: "review-needed",
         })}
         index={0}
@@ -317,7 +315,7 @@ describe("StringEditor", () => {
     const pending = deferred<EditorTranslationResult>();
     const onTranslate = vi.fn(() => pending.promise);
     const { onSave, onClose, onNavigate } = renderEditor(
-      { target: "", targetPresent: false, status: "untranslated" },
+      { target: "", status: "untranslated" },
       onTranslate,
     );
 
@@ -356,7 +354,7 @@ describe("StringEditor", () => {
     const onCancelTranslate = vi.fn();
     render(
       <StringEditor
-        row={row({ target: "", targetPresent: false, status: "untranslated" })}
+        row={row({ target: "", status: "untranslated" })}
         index={0}
         total={2}
         modName="Test Mod"
@@ -400,7 +398,7 @@ describe("StringEditor", () => {
     const onClose = vi.fn();
     render(
       <StringEditor
-        row={row({ target: "", targetPresent: false, status: "untranslated" })}
+        row={row({ target: "", status: "untranslated" })}
         index={0}
         total={2}
         modName="Test Mod"
@@ -439,7 +437,6 @@ describe("StringEditor", () => {
       <StringEditor
         row={row({
           target: "",
-          targetPresent: false,
           status: "untranslated",
         })}
         index={0}
@@ -569,7 +566,9 @@ describe("StringEditor", () => {
     fireEvent.change(input, { target: { value: "Second draft" } });
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(
-      screen.getByRole("dialog", { name: "Protected token mismatch" }),
+      screen.getByRole("dialog", {
+        name: "A token differs from the English text",
+      }),
     ).toBeVisible();
     rerender(
       <StringEditor
@@ -581,14 +580,18 @@ describe("StringEditor", () => {
       />,
     );
     expect(
-      screen.queryByRole("dialog", { name: "Protected token mismatch" }),
+      screen.queryByRole("dialog", {
+        name: "A token differs from the English text",
+      }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
     expect(input).toHaveValue("Second draft");
     fireEvent.click(screen.getByRole("button", { name: "Use updated source" }));
     fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
     expect(
-      screen.getByRole("dialog", { name: "Protected token mismatch" }),
+      screen.getByRole("dialog", {
+        name: "A token differs from the English text",
+      }),
     ).toHaveTextContent("[Second.Token]");
     expect(onSave).not.toHaveBeenCalled();
   });
@@ -645,8 +648,10 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: /Save & next/ }));
 
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
-    expect(screen.getByText(/would break the game/)).toBeInTheDocument();
+    expect(
+      screen.getByText("A token differs from the English text"),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/can break the game/)).toBeInTheDocument();
     const saveAnyway = screen.getByRole("button", { name: "Save anyway" });
     const editor = saveAnyway.closest(".translator-editor")!;
     const nestedDialog = saveAnyway.closest(".translator-flow-dialog")!;
@@ -697,7 +702,7 @@ describe("StringEditor", () => {
       true,
     );
     expect(
-      screen.queryByText("Protected token mismatch"),
+      screen.queryByText("A token differs from the English text"),
     ).not.toBeInTheDocument();
 
     await waitFor(() =>
@@ -706,7 +711,9 @@ describe("StringEditor", () => {
     const field = screen.getByRole("textbox", { name: "Translation" });
     fireEvent.change(field, { target: { value: "Was geschah?$7" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
-    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
+    expect(
+      screen.getByText("A token differs from the English text"),
+    ).toBeInTheDocument();
   });
 
   it("uses the generic token-mismatch confirmation for an added-only token", () => {
@@ -718,8 +725,12 @@ describe("StringEditor", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(onSave).not.toHaveBeenCalled();
-    expect(screen.getByText("Protected token mismatch")).toBeInTheDocument();
-    expect(screen.getAllByText(/English 0, translation 1/)).not.toHaveLength(0);
+    expect(
+      screen.getByText("A token differs from the English text"),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText(/is not in the English text/)).not.toHaveLength(
+      0,
+    );
   });
 
   it("shows an accepted token mismatch as a non-blocking warning", () => {
@@ -730,7 +741,7 @@ describe("StringEditor", () => {
     });
 
     const warning = screen.getByText(
-      /mismatch explicitly accepted for this exact translation/i,
+      /You kept these token differences on purpose/i,
     );
     expect(warning.closest(".translator-validation")).toHaveClass("is-warning");
     expect(warning.closest(".translator-validation")).not.toHaveClass(
@@ -790,7 +801,7 @@ describe("StringEditor", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(
-      screen.queryByText("Protected token mismatch"),
+      screen.queryByText("A token differs from the English text"),
     ).not.toBeInTheDocument();
     expect(onSave).toHaveBeenCalledWith(
       "${Lieber^Liebe}$ @.",
@@ -1203,7 +1214,9 @@ it.each(["", " ", "\t\r\n", "\u00a0"])(
     });
     expect(screen.getByText("Done")).toBeInTheDocument();
     expect(
-      screen.queryByText("Key is present but empty"),
+      screen.queryByText(
+        "The translation is empty, so the game shows nothing here.",
+      ),
     ).not.toBeInTheDocument();
     expect(app.onSave).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

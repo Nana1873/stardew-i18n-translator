@@ -17,6 +17,8 @@ use serde_json::{json, Map, Value};
 use crate::{llm, tokens, translations};
 
 pub const MAX_RUN_ITEMS: usize = 4_096;
+/// Shown when an AI answer cannot be matched to the requested texts.
+pub(crate) const UNUSABLE_ANSWER: &str = "The AI sent an answer this app couldn't use. Try again.";
 pub const MAX_RUN_SOURCE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_SOURCE_BYTES: usize = 64 * 1024;
 pub const MAX_CHUNK_ITEMS: usize = 100;
@@ -46,10 +48,9 @@ pub(crate) struct RunLease<'a> {
 
 impl AiRuntimeState {
     pub(crate) fn begin_run(&self, run_id: &str) -> Result<RunLease<'_>, String> {
-        let mut active = self
-            .active_run
-            .lock()
-            .map_err(|_| "The AI run state is unavailable.".to_string())?;
+        let mut active = self.active_run.lock().map_err(|_| {
+            "AI translation couldn't start. Restart the app and try again.".to_string()
+        })?;
         if active.is_some() {
             return Err("Another AI translation run is already active.".to_string());
         }
@@ -67,10 +68,9 @@ impl AiRuntimeState {
     }
 
     pub fn cancel_run(&self, run_id: &str) -> Result<bool, String> {
-        let active = self
-            .active_run
-            .lock()
-            .map_err(|_| "The AI run state is unavailable.".to_string())?;
+        let active = self.active_run.lock().map_err(|_| {
+            "AI translation couldn't start. Restart the app and try again.".to_string()
+        })?;
         let Some(active) = active.as_ref().filter(|active| active.id == run_id) else {
             return Ok(false);
         };
@@ -85,11 +85,9 @@ impl RunLease<'_> {
     /// so it can never acknowledge a cancellation while the command reports a
     /// completed result.
     pub(crate) fn finish(mut self, outcome: AiRunOutcome) -> Result<AiRunOutcome, String> {
-        let mut active = self
-            .state
-            .active_run
-            .lock()
-            .map_err(|_| "The AI run state is unavailable.".to_string())?;
+        let mut active = self.state.active_run.lock().map_err(|_| {
+            "AI translation couldn't start. Restart the app and try again.".to_string()
+        })?;
         let Some(current) = active.as_ref().filter(|active| active.id == self.id) else {
             return Err("The active AI run changed unexpectedly.".to_string());
         };
@@ -354,7 +352,7 @@ pub(crate) fn resolve_scope(
     for identity in &request.identities {
         if !current.contains_key(identity) {
             return Err(
-                "An AI string identity is stale or is not present in the latest scan.".to_string(),
+                "This text changed after the last scan. Scan again, then retry.".to_string(),
             );
         }
     }
@@ -558,9 +556,7 @@ fn fit_single_item_context(item: &mut PreparedAiItem) -> Result<(), String> {
             return Ok(());
         }
         if !remove_farthest_context(&mut item.context) {
-            return Err(
-                "One selected AI string is too large for the bounded provider input.".to_string(),
-            );
+            return Err("One text is too long to send to the AI.".to_string());
         }
     }
 }
@@ -782,10 +778,7 @@ pub(crate) fn chunks(items: &[PreparedAiItem]) -> Result<Vec<&[PreparedAiItem]>,
                 split_end += 1;
             }
             if split_end == start {
-                return Err(
-                    "One selected AI string is too large for the bounded provider input."
-                        .to_string(),
-                );
+                return Err("One text is too long to send to the AI.".to_string());
             }
             end = split_end;
             break;
@@ -868,7 +861,7 @@ pub(crate) fn build_provider_prompt(
 pub(crate) fn parse_provider_output(body: &str) -> Result<Vec<ProviderTranslation>, String> {
     serde_json::from_str::<ProviderEnvelope>(body.trim())
         .map(|envelope| envelope.translations)
-        .map_err(|_| "The AI provider returned invalid structured translation data.".to_string())
+        .map_err(|_| UNUSABLE_ANSWER.to_string())
 }
 
 pub(crate) fn validate_provider_output(
@@ -893,7 +886,7 @@ fn validate_provider_translations(
     if (require_every_item && translations.len() != items.len()) || translations.len() > items.len()
     {
         return Err(format!(
-            "The AI provider returned {} translations for {} requested strings.",
+            "The AI sent an answer this app couldn't use ({} translations for {} texts). Try again.",
             translations.len(),
             items.len()
         ));
@@ -906,23 +899,23 @@ fn validate_provider_translations(
     let mut ordered: Vec<Option<ProviderTranslation>> = vec![None; items.len()];
     for translation in translations {
         let Some(index) = expected.get(translation.id.as_str()).copied() else {
-            return Err("The AI provider returned an unknown string identity.".to_string());
+            return Err(UNUSABLE_ANSWER.to_string());
         };
         if ordered[index].is_some() {
             return Err(format!(
-                "The AI provider returned the identity {} more than once.",
+                "The AI sent an answer this app couldn't use ({} came back twice). Try again.",
                 translation.id
             ));
         }
         if translation.text.trim().is_empty() {
             return Err(format!(
-                "The AI provider returned an empty translation for {}.",
+                "The AI sent an answer this app couldn't use (empty translation for {}). Try again.",
                 translation.id
             ));
         }
         if translation.text.len() > MAX_PROVIDER_TEXT_BYTES {
             return Err(format!(
-                "The AI provider returned an oversized translation for {}.",
+                "The AI sent an answer this app couldn't use (translation for {} is too long). Try again.",
                 translation.id
             ));
         }
@@ -931,9 +924,7 @@ fn validate_provider_translations(
     if require_every_item {
         ordered
             .into_iter()
-            .map(|translation| {
-                translation.ok_or_else(|| "The AI provider omitted a requested string.".to_string())
-            })
+            .map(|translation| translation.ok_or_else(|| UNUSABLE_ANSWER.to_string()))
             .collect()
     } else {
         Ok(ordered.into_iter().flatten().collect())
@@ -1129,7 +1120,7 @@ mod tests {
             &rows,
         )
         .unwrap_err()
-        .contains("stale"));
+        .contains("changed after the last scan"));
         assert!(resolve_scope(
             &request(AiScope::OneString, vec![identity("mod.a", "i18n", "done")],),
             &rows,

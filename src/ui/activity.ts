@@ -63,6 +63,9 @@ export function reportActivity(event: ActivityEvent) {
   );
 }
 
+/** The line shown while a scan runs. */
+export const SCANNING_MESSAGE = "Scanning mods…";
+
 /** Keep a bounded session log, protecting the latest 100 warnings/errors
  * from being displaced by routine batch progress. Preserve chronological order. */
 export function appendActivity(
@@ -97,7 +100,7 @@ export function appendActivity(
         time,
         tone: save.acceptedMismatch ? "warning" : "success",
         message: save.acceptedMismatch
-          ? `Translation saved · ${save.modName} · ${save.key} · Token mismatch accepted; export allowed.`
+          ? `Translation saved · ${save.modName} · ${save.key} · Token differences kept on purpose.`
           : `1 translation saved · ${save.modName}`,
         ...(save.acceptedMismatch
           ? {}
@@ -110,6 +113,12 @@ export function appendActivity(
       });
     }
   } else {
+    // A finished scan replaces its own "Scanning mods…" line, so each scan
+    // leaves one line instead of a pair.
+    const previous = entries.at(-1);
+    const replacesScanning =
+      event.details?.kind === "scan" && previous?.message === SCANNING_MESSAGE;
+    if (replacesScanning) entries.pop();
     entries.push({
       id,
       time,
@@ -117,7 +126,7 @@ export function appendActivity(
       tone: event.tone,
       details: event.details,
       aiStep: event.aiStep,
-      startsGroup: event.startsGroup,
+      startsGroup: event.startsGroup || replacesScanning || undefined,
     });
   }
   let omitted = buffer.omitted;

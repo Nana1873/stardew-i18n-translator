@@ -10,7 +10,6 @@
  *  - token-missing    (error or warning, see tokenSeverity) a source token is
  *                                absent (or under-represented)
  *  - token-added      (error or warning) the target has more of a token
- *  - empty-target     (warning) the target key is blank while the source has text
  *  - json-invalid     (error)   the value cannot be serialized to valid JSON
  *                                (export-serialization safety; e.g. lone surrogate)
  *  - escape-suspicious   (warning) literal JSON-style escapes differ
@@ -35,11 +34,7 @@ export type Severity = "error" | "warning";
 
 export interface ValidationIssue {
   ruleId:
-    | "token-missing"
-    | "token-added"
-    | "empty-target"
-    | "json-invalid"
-    | "escape-suspicious";
+    "token-missing" | "token-added" | "json-invalid" | "escape-suspicious";
   severity: Severity;
   message: string;
 }
@@ -183,11 +178,7 @@ export function tokenDifferences(
   return differences;
 }
 
-export function validate(
-  source: string,
-  target: string,
-  targetPresent: boolean,
-): ValidationIssue[] {
+export function validate(source: string, target: string): ValidationIssue[] {
   const issues: ValidationIssue[] = [];
 
   if (noTranslationNeeded(source, target)) return issues;
@@ -205,30 +196,19 @@ export function validate(
       issues.push({
         ruleId: "json-invalid",
         severity: "error",
-        message: "Contains characters that cannot be serialized to valid JSON",
+        message:
+          "Contains a broken character that can't be saved. Retype or delete it.",
       });
     }
     if (escapeSummary(source) !== escapeSummary(target)) {
       issues.push({
         ruleId: "escape-suspicious",
         severity: "warning",
-        message: "Literal escape sequences differ from the original",
+        message:
+          "Special codes like \\n differ from the English text. Check line breaks and quotes.",
       });
     }
   }
-  if (
-    targetPresent &&
-    isBlankText(target) &&
-    !isBlankText(source) &&
-    !isIntentionalBlankTarget(source, target)
-  ) {
-    issues.push({
-      ruleId: "empty-target",
-      severity: "warning",
-      message: "Key is present but empty",
-    });
-  }
-
   return issues;
 }
 

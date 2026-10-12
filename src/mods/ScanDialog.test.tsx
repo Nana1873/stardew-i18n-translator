@@ -45,11 +45,11 @@ describe("ScanDialog", () => {
     const dialog = screen.getByRole("dialog", { name: "Scan" });
     expect(dialog).toHaveAttribute("tabindex", "-1");
     await waitFor(() => expect(dialog).toHaveFocus());
-    expect(screen.getByText("Scanning mods …")).toBeInTheDocument();
-    expect(screen.getByText(/Reading manifests and i18n/)).toBeInTheDocument();
+    expect(screen.getByText("Scanning mods…")).toBeInTheDocument();
+    expect(screen.getByText(/Reading your mods/)).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuetext",
-      "Scanning; exact progress is unavailable",
+      "Scanning",
     );
     // The dialog retains its action row but cannot close mid-scan.
     expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
@@ -212,8 +212,10 @@ describe("ScanDialog", () => {
       />,
     );
 
-    expect(screen.getByText("Scan unavailable")).toBeInTheDocument();
-    expect(screen.getByText("Scan result unavailable.")).toBeInTheDocument();
+    expect(screen.getByText("No scan yet")).toBeInTheDocument();
+    expect(
+      screen.getByText("No scan result yet. Click Scan to read your mods."),
+    ).toBeInTheDocument();
     expect(screen.queryByText("Latest scan")).toBeNull();
   });
 
@@ -264,13 +266,11 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Not found in English source")).toBeInTheDocument();
     expect(screen.getByText("removed-key")).toBeInTheDocument();
     expect(
-      screen.getByText(
-        /not in the local English source \(default.json or default\/\*.json\)/,
-      ),
+      screen.getByText(/no longer in the English text, so export leaves/),
     ).toBeInTheDocument();
     expect(screen.queryByText(/SMAPI ignores them/)).toBeNull();
     expect(
-      screen.getByText(/do not count toward progress/i),
+      screen.getByText(/don't count toward progress/i),
     ).toBeInTheDocument();
     const information = screen
       .getByText(/1 translation entry without matching English source/)
@@ -283,7 +283,7 @@ describe("ScanDialog", () => {
     fireEvent.click(screen.getByText("i18n/de.json"));
     expect(screen.getByText("removed-key")).toBeVisible();
     expect(
-      screen.getByText(/Folder exports retain the original file in a backup/),
+      screen.getByText(/A folder export keeps the old file in a backup/),
     ).toBeInTheDocument();
     expect(document.querySelector("[data-scan-diagnostics]")).toBeNull();
   });
@@ -376,7 +376,7 @@ describe("ScanDialog", () => {
 
     expect(
       screen.getAllByText(
-        /1 i18n folder that SMAPI does not load was ignored/,
+        /1 translation folder the game doesn't use was ignored/,
       )[0],
     ).toBeInTheDocument();
     expect(screen.queryByText(/community language pack/)).toBeNull();
@@ -390,7 +390,7 @@ describe("ScanDialog", () => {
       componentName: "Example",
       relativeLocation: `${folder}/i18n/default.json`,
       reason:
-        "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+        "Your saved translations for this mod could not be loaded, so it was left out.",
       requiresAttention: true,
       restOfPackageLoaded: false,
     });
@@ -437,8 +437,7 @@ describe("ScanDialog", () => {
               componentUniqueId: "example.thai",
               componentName: "Stardew Valley - THAI",
               relativeLocation: "Stardew Valley - THAI",
-              reason:
-                "Detected as a community language pack, not a translation target.",
+              reason: "This is a language pack, not a mod to translate.",
               requiresAttention: false,
               restOfPackageLoaded: false,
             },
@@ -474,8 +473,7 @@ describe("ScanDialog", () => {
               componentUniqueId: "example.thai",
               componentName: "Thai translation pack",
               relativeLocation: "Language Packs/Thai",
-              reason:
-                "Detected as a community language pack, not a translation target.",
+              reason: "This is a language pack, not a mod to translate.",
               requiresAttention: false,
               restOfPackageLoaded: false,
             },
@@ -488,7 +486,7 @@ describe("ScanDialog", () => {
 
     expect(screen.getByText("Thai translation pack")).toBeInTheDocument();
     expect(
-      screen.getByText(/Detected as a community language pack/),
+      screen.getByText(/This is a language pack, not a mod to translate/),
     ).toBeInTheDocument();
   });
 

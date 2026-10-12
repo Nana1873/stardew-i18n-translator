@@ -128,7 +128,7 @@ export async function progressCases(h) {
           kind: "ai",
           outcome: "success",
           title: `${engine === "chatgpt" ? "ChatGPT" : "Local AI"} translation run`,
-          summary: "1 suggestion staged for review.",
+          summary: "1 suggestion added to Review.",
           itemCount: 1,
           canUndo: false,
           warnings: [],
@@ -388,9 +388,7 @@ export async function progressCases(h) {
         "83 strings saved to Review",
       );
       const history = await (await log()).getText();
-      assert.ok(
-        history.includes("Batch 3 · Repairing protected tokens · 1 string"),
-      );
+      assert.ok(history.includes("Batch 3 · Fixing tokens · 1 string"));
       assert.ok(
         history.includes("Batch 1 · Checking translation quality · 83 strings"),
         "Completed phases remain in chronological history.",
@@ -532,7 +530,8 @@ export async function progressCases(h) {
           const finished = rows.indexOf(completions[0]);
           const scan = rows.findIndex(
             (row, index) =>
-              index > finished && row.textContent.includes("Scanning mods"),
+              index > finished &&
+              /Scanning mods|Scan done/.test(row.textContent),
           );
           return (
             completions.length === 1 &&

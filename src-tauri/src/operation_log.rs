@@ -118,7 +118,11 @@ fn error_category(error: &str) -> &'static str {
         || error.starts_with("Choose a target language")
     {
         "invalid_context"
-    } else if error.starts_with("Refusing export") || error.starts_with("Archive paths") {
+    } else if error.starts_with("Refusing export")
+        || error.starts_with("Archive paths")
+        || error.ends_with("so it wasn't exported.")
+        || error.ends_with("then export.")
+    {
         "validation"
     } else if error.starts_with("The selected Mods folder ") {
         "invalid_path"

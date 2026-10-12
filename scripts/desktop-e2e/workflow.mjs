@@ -252,7 +252,7 @@ const button = (name) => {
 };
 const browseFolder = (label) =>
   By.xpath(
-    `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse..."]`,
+    `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse…"]`,
   );
 async function element(locator) {
   return driver.wait(
@@ -335,7 +335,10 @@ async function saveEntry(key, value) {
     const cell = await (
       await element(row(key))
     ).findElement(css("[data-translation-cell] .translator-cell-clip"));
-    return (await cell.getAttribute("textContent")) === (value || "—");
+    return (
+      (await cell.getAttribute("textContent")) ===
+      (value === " " ? "(left blank)" : value || "—")
+    );
   });
 }
 async function screenshot(name) {
@@ -785,7 +788,7 @@ try {
     );
     assert.match(
       await (await element(css('.desktop-log[role="log"]'))).getText(),
-      /Translation saved · Desktop Smoke · greeting · Token mismatch accepted; export allowed\./,
+      /Translation saved · Desktop Smoke · greeting · Token differences kept on purpose\./,
     );
     assert.equal(
       await (await element(issues)).getAttribute("aria-pressed"),
@@ -805,19 +808,19 @@ try {
     assert.equal(await acceptedMarker.getAttribute("data-severity"), "warning");
     assert.match(
       await acceptedMarker.getAttribute("aria-label"),
-      /^Accepted token mismatch: exported as written\./,
+      /^Kept on purpose: exported as written\./,
     );
     await openEntry("greeting");
     assert.match(
       await (await element(css(".editor__issue--warning"))).getText(),
-      /Protected-token mismatch explicitly accepted for this exact translation\./,
+      /You kept these token differences on purpose\./,
     );
     await click(button("Save"));
     await absent(css("#translator-editor-translation"));
     await absent(button("Save anyway"));
     assert.equal(
       (await (await element(css('.desktop-log[role="log"]'))).getText()).split(
-        "Token mismatch accepted; export allowed.",
+        "Token differences kept on purpose.",
       ).length - 1,
       1,
       "Saving an already accepted pair must not log another acceptance.",
@@ -1071,7 +1074,9 @@ try {
     );
     await click(button("Save"));
     await element(
-      By.xpath('//*[@role="dialog"][.//*[text()="Protected token mismatch"]]'),
+      By.xpath(
+        '//*[@role="dialog"][.//*[text()="A token differs from the English text"]]',
+      ),
     );
     assert.deepEqual(
       await readFile(statePath),
@@ -1288,7 +1293,7 @@ try {
         '//button[@role="menuitem"][.//span[normalize-space(.)="Import LLM batch…"]]',
       ),
     );
-    await click(button("Choose file …"));
+    await click(button("Choose file…"));
     await native("pick", "Choose LLM translation result", file);
     await element(css('[aria-label="LLM import preflight"]'));
   }
