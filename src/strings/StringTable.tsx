@@ -793,13 +793,18 @@ export function StringTable({
   }
 
   const requestedPlanRef = useRef<string | null>(null);
+  // False after a failed load, so Retry and later reloads show the loading
+  // state and the error panel again instead of an empty table.
+  const lastLoadSucceeded = useRef(false);
   useEffect(() => {
     let active = true;
     // A reload of the same mods and language (after a rescan, AI run, import,
     // or undo) keeps the rows, selection, and open editor; identities that no
     // longer exist drop out of the selection once the new rows are visible.
     const sameContext =
-      requestedPlanRef.current === aiContextKey && rowsRef.current !== null;
+      requestedPlanRef.current === aiContextKey &&
+      rowsRef.current !== null &&
+      lastLoadSucceeded.current;
     requestedPlanRef.current = aiContextKey;
     if (!sameContext) {
       aiProvenanceByIdentity.current.clear();
@@ -846,6 +851,7 @@ export function StringTable({
         if (!active) return;
         if (revision !== manualSaveRevision.current) continue;
         rowsRef.current = loaded;
+        lastLoadSucceeded.current = true;
         setLoadedContext(
           JSON.stringify([planSignature, reloadToken, postSaveReloadToken]),
         );
@@ -860,6 +866,7 @@ export function StringTable({
         return;
       }
       rowsRef.current = [];
+      lastLoadSucceeded.current = false;
       setRows([]);
       setError(String(cause));
     });
@@ -1044,6 +1051,9 @@ export function StringTable({
 
   const displayRef = useRef(display);
   displayRef.current = display;
+  // Where the edited row was last displayed. A save can move it out of the
+  // filter while the editor is open; focus then goes to the row now there.
+  const editedDisplayIndex = useRef(0);
 
   const virtualizer = useVirtualizer({
     count: display.length,
@@ -1705,6 +1715,8 @@ export function StringTable({
           tokenMismatchAccepted: change.tokenMismatchAccepted,
         };
       });
+      // A reload read before this write must not overwrite it.
+      manualSaveRevision.current += 1;
       const currentRows = rowsRef.current;
       if (currentRows) {
         const presentCompletedMods = new Set<string>();
@@ -1827,6 +1839,7 @@ export function StringTable({
     // a different table context, even if the user switched away and back.
     if (aiContextRef.current.version !== aiContextVersion) return;
     if (result.suggestions.length === 0) return;
+    manualSaveRevision.current += 1;
     const suggestions = new Map(
       result.suggestions.map((suggestion) => [
         JSON.stringify([
@@ -2331,6 +2344,12 @@ export function StringTable({
       : rowIndex.get(editingIdentity);
   const editingRow =
     editingIndex === undefined ? null : (data[editingIndex] ?? null);
+  if (editingIdentity) {
+    const shown = display.findIndex(
+      (entry) => entry.kind === "row" && entry.identity === editingIdentity,
+    );
+    if (shown >= 0) editedDisplayIndex.current = shown;
+  }
   const editingAiAllowed = Boolean(
     editingRow &&
     (editingRow.status === "untranslated" ||
@@ -2983,12 +3002,8 @@ export function StringTable({
               saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
             }
             onClose={() => {
-              const previousIndex = display.findIndex(
-                (entry) =>
-                  entry.kind === "row" && entry.identity === editingIdentity,
-              );
               setEditorSession(null);
-              focusAfterEditor(editingIdentity, Math.max(previousIndex, 0));
+              focusAfterEditor(editingIdentity, editedDisplayIndex.current);
             }}
             onNavigate={(delta) =>
               setEditorSession((current) => {
