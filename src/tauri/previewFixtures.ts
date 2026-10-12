@@ -189,6 +189,46 @@ export const FIXTURE_MODS: FixtureMod[] = [
     nexusId: 67890,
     strings: buildVillageStrings(),
   },
+  {
+    // Every string has text but one still waits in Review: 100% with a dot.
+    uniqueId: "Preview.AlmostDone",
+    name: "Preview Almost Done",
+    version: "1.2.0",
+    folder: "Preview Almost Done",
+    nexusId: null,
+    strings: [
+      {
+        key: "hello",
+        source: "Hello!",
+        target: "Hallo!",
+        status: "translated",
+      },
+      {
+        key: "bye",
+        source: "Goodbye!",
+        target: "Tschüss!",
+        status: "translated",
+      },
+      {
+        key: "thanks",
+        source: "Thank you!",
+        target: "Danke schön!",
+        status: "review-needed",
+      },
+    ],
+  },
+  {
+    // Everything Done: 100% with a green line, for comparison.
+    uniqueId: "Preview.Finished",
+    name: "Preview Finished",
+    version: "1.0.1",
+    folder: "Preview Finished",
+    nexusId: null,
+    strings: [
+      { key: "yes", source: "Yes", target: "Ja", status: "translated" },
+      { key: "no", source: "No", target: "Nein", status: "translated" },
+    ],
+  },
 ];
 
 function buildVillageStrings(): FixtureString[] {
