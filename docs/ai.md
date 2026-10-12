@@ -151,8 +151,9 @@ translations trustworthy.
 
 ## Data and privacy
 
-Live requests send selected English source text and its key, section context, and matching
-glossary terms. They may include up to two preceding and two following English
+Live requests send the selected English source text, its section context, and
+matching glossary terms. ChatGPT requests also send each string's key; Local AI
+requests do not. They may include up to two preceding and two following English
 strings from the same component, i18n file, section, and related key group.
 These neighbors provide read-only context; only selected strings can be saved.
 Every batch receives the same saved language settings and matching glossary
