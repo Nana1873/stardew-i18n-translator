@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "tauri dev",
     "dev:web": "vite --host 127.0.0.1",
+    "dev:preview": "vite --host 127.0.0.1 --mode preview",
     "build:web": "tsc && vite build",
     "build": "tsc && vite build && tauri build",
     "preview": "vite preview --host 127.0.0.1",
