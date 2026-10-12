@@ -90,6 +90,42 @@ function groupByPackage(mods: ScannedMod[]): PackageGroup[] {
   }).sort((a, b) => byName(groupLabel(a), groupLabel(b)));
 }
 
+/** Strings that have text but are not Done yet (Review or Changed). */
+function toCheck(mod: ScannedMod): number {
+  return (
+    (mod.statusCounts?.["review-needed"] ?? 0) +
+    (mod.statusCounts?.outdated ?? 0)
+  );
+}
+
+/** Coverage counts text that exists; a dot at 100% says some of it still
+ * needs a check, which is why the bar is gold rather than green. */
+function CoveragePercent({
+  percent,
+  totalKeys,
+  toCheck,
+}: {
+  percent: number;
+  totalKeys: number;
+  toCheck: number;
+}) {
+  if (totalKeys === 0) return <span className="translator-mod-percent">—</span>;
+  const pending = percent === 100 && toCheck > 0;
+  return (
+    <span
+      className="translator-mod-percent"
+      data-to-check={pending || undefined}
+      title={
+        pending
+          ? `Every string has text; ${toCheck} still ${toCheck === 1 ? "needs" : "need"} a check in Review or Changed.`
+          : undefined
+      }
+    >
+      {percent}%
+    </span>
+  );
+}
+
 function progressStyle(percent: number): CSSProperties {
   return {
     "--translator-progress": `${percent}%`,
@@ -512,7 +548,11 @@ function PackageNode({
         </strong>
         <span />
         <span className="translator-mod-nexus">{group.nexusId ?? "—"}</span>
-        <span className="translator-mod-percent">{percent}%</span>
+        <CoveragePercent
+          percent={percent}
+          totalKeys={group.totalKeys}
+          toCheck={group.mods.reduce((sum, mod) => sum + toCheck(mod), 0)}
+        />
         <span
           className="translator-mod-progress"
           data-complete={
@@ -618,9 +658,11 @@ function ModRow({
       >
         {mod.nexusId ?? "—"}
       </span>
-      <span className="translator-mod-percent">
-        {mod.totalKeys > 0 ? `${percent}%` : "—"}
-      </span>
+      <CoveragePercent
+        percent={percent}
+        totalKeys={mod.totalKeys}
+        toCheck={toCheck(mod)}
+      />
       <span
         className="translator-mod-progress"
         data-complete={
