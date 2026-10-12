@@ -72,9 +72,12 @@ impl ResponseState {
                 ));
             }
             "response.incomplete" => return Err(invalid()),
+            // A refusal concerns the content of this batch, not the run: treat
+            // it like invalid output so the batch is split until the refused
+            // string is isolated and every other string is still translated.
             "response.refusal.delta" | "response.refusal.done" => {
-                return Err(ProviderFailure::Message(
-                    "The model declined to produce a translation.".into(),
+                return Err(ProviderFailure::InvalidResponse(
+                    crate::chatgpt::REFUSAL_MESSAGE.into(),
                 ))
             }
             kind if kind.contains("reasoning") => {
@@ -191,10 +194,14 @@ pub async fn consume(
     let mut state = ResponseState::default();
     let mut is_json = None;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| {
-            ProviderFailure::Transient(
-                "The OpenAI response stream was interrupted. Try again.".into(),
-            )
+        let chunk = chunk.map_err(|error| {
+            if error.is_timeout() && !error.is_connect() {
+                crate::chatgpt::timeout_failure()
+            } else {
+                ProviderFailure::Transient(
+                    "The OpenAI response stream was interrupted. Try again.".into(),
+                )
+            }
         })?;
         total = total.saturating_add(chunk.len());
         if total > MAX_BODY {
@@ -278,6 +285,19 @@ mod tests {
                 &progress()
             )
             .is_err());
+    }
+    #[test]
+    fn refusal_events_are_splittable_batch_failures() {
+        for kind in ["response.refusal.delta", "response.refusal.done"] {
+            let mut state = ResponseState::default();
+            let failure = state
+                .event(json!({"type": kind, "delta": "no"}), &progress())
+                .unwrap_err();
+            assert!(
+                matches!(failure, ProviderFailure::InvalidResponse(_)),
+                "{kind}"
+            );
+        }
     }
     #[test]
     fn invalid_duplicate_and_refused_output_is_rejected() {

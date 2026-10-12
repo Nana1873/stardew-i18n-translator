@@ -36,6 +36,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - A dialogue page that starts with a he/she switch or a portrait, such as
   `#${He^She}$ is here.` or `#$hSo happy!`, is translatable again; it was
   treated as one protected token, so every translation was an error.
+- A ChatGPT refusal for one string no longer ends the whole run. The batch is
+  split until the refused string is isolated; every other string is still
+  translated, and in the quality review drafts are kept.
+- A ChatGPT batch that reaches the five-minute limit is split into smaller
+  batches right away instead of being retried at the same size and reported
+  as a network error. A failed connection is still reported as a network
+  problem.
 - Existing Chinese translations in `i18n/zh-CN.json` are imported like
   `pt-BR.json`; export writes `zh.json` and backs up and removes the regional
   file, so the exported translation is the one SMAPI loads.
