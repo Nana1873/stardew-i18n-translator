@@ -281,11 +281,15 @@ fn save_session(state: &AuthState, session: &Session) -> Result<(), String> {
         &protect(&bytes, &state.registration.host_id, true)?,
     )
 }
+/// Total limit for one translation request, from `send` to the end of the
+/// streamed body.
+pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+
 pub fn client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(300))
+        .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|_| "Could not prepare the ChatGPT connection.".into())
 }

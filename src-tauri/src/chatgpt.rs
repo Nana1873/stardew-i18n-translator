@@ -167,7 +167,7 @@ pub(crate) const REFUSAL_MESSAGE: &str = "The model declined to translate part o
 /// as a timeout. Only an attempt that actually ran close to the five-minute
 /// client limit counts as too large; an earlier stall is a network problem.
 pub(crate) fn reached_time_limit(started: std::time::Instant) -> bool {
-    started.elapsed() >= Duration::from_secs(290)
+    started.elapsed() + Duration::from_secs(10) >= chatgpt_auth::REQUEST_TIMEOUT
 }
 
 pub(crate) fn timeout_failure() -> ProviderFailure {
