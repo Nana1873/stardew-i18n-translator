@@ -39,6 +39,7 @@ import {
   Eraser,
   Equal,
   FileJson,
+  ChevronDown,
   ListChecks,
   MoreHorizontal,
   Pencil,
@@ -2504,7 +2505,7 @@ export function StringTable({
                   ref={bulkTriggerRef}
                   className="translator-button translator-button-quiet translator-bulk-button"
                   type="button"
-                  title="Ctrl+click adds more"
+                  title="Actions for the selected strings (Ctrl+click a row to add more)"
                   aria-label={`${selection.size} selected`}
                   aria-haspopup="menu"
                   aria-expanded={bulkMenuOpen}
@@ -2530,6 +2531,10 @@ export function StringTable({
                       selected
                     </span>
                   </span>
+                  <ChevronDown
+                    className="translator-bulk-chevron"
+                    aria-hidden="true"
+                  />
                 </button>
                 <button
                   className="translator-icon-button"

@@ -1791,7 +1791,7 @@ describe("StringTable workbench", () => {
     expect(screen.getByRole("button", { name: /3 selected/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /3 selected/ })).toHaveAttribute(
       "title",
-      "Ctrl+click adds more",
+      "Actions for the selected strings (Ctrl+click a row to add more)",
     );
   });
 
