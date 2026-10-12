@@ -118,6 +118,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- The unreachable "Has target text" string filter is removed; a saved workspace
+  that still stores it opens with the All filter.
 - A glossary built in Settings shows its hints in the editor right away,
   also when Settings is then closed without saving, instead of only after a
   restart.

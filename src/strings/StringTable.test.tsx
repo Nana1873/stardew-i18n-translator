@@ -1686,28 +1686,21 @@ describe("StringTable workbench", () => {
     });
   });
 
-  it("applies the hidden Overview has-value filter and exposes it in the query summary", async () => {
-    const onStatusFilterChange = vi.fn();
+  it("shows no filter summary for a restored All filter", async () => {
     render(
       <StringTable
         mod={MOD}
-        statusFilter="has-value"
-        onStatusFilterChange={onStatusFilterChange}
+        statusFilter="all"
+        onStatusFilterChange={vi.fn()}
       />,
     );
 
     expect(await screen.findByText("greeting")).toBeVisible();
-    expect(screen.getByText("token")).toBeVisible();
-    expect(screen.queryByText("bye")).not.toBeInTheDocument();
+    expect(screen.getByText("bye")).toBeVisible();
+    expect(screen.queryByText(/Has target text/)).not.toBeInTheDocument();
     expect(
-      screen.getByText(/Has target text · 2 of 3 strings shown/),
-    ).toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: /Has target text/ }),
+      screen.queryByRole("button", { name: "Clear" }),
     ).not.toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(onStatusFilterChange).toHaveBeenCalledWith("all");
   });
 
   it("sorts naturally and clears the pre-sort selection", async () => {

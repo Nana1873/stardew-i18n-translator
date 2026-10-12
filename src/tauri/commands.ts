@@ -71,12 +71,7 @@ export interface WorkspaceSettings {
   stringSearch: string;
   stringScope: "mod" | "all";
   statusFilter:
-    | "all"
-    | "untranslated"
-    | "translated"
-    | "outdated"
-    | "review-needed"
-    | "has-value";
+    "all" | "untranslated" | "translated" | "outdated" | "review-needed";
   issuesOnly: boolean;
   sort?: WorkspaceSort | null;
   modPaneWidth?: number | null;

@@ -72,9 +72,8 @@ they are unavailable after an incomplete scan rather than being guessed.
 
 ## Translation progress or export looks unexpected
 
-Check the selected language, search scope, and filters first. Overview text
-totals such as **Has target text** can include Review entries; they do not mean every translation is accepted. Existing target files load as Done, while
-external LLM imports enter Review.
+Check the selected language, search scope, and filters first. Existing target
+files load as Done, while external LLM imports enter Review.
 
 Saving an edit updates `data/`; **Files… > Export JSON for selected mod…**
 writes it into the mod. See
