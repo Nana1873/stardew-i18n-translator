@@ -50,6 +50,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return missing
       ? "The attached item or reward would not be given."
       : "It adds an item or reward the English mail does not give.";
+  if (token === "#$y")
+    return "It starts the quick response on a new page; without it the game shows the command as text.";
   if (token === "*")
     return "In a $y reply it starts a new dialogue box, so the page structure changes.";
   if (token === "_")

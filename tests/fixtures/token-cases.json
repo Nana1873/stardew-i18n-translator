@@ -813,6 +813,11 @@
       "source": "${He^She}$ is here.",
       "target": "${Er ${x^y}$^Sie}$ ist da.",
       "text": "A he/she switch needs two or three variants separated by ^, like ${he^she}$, and cannot contain another switch."
+    },
+    {
+      "source": "Hi.#$y 'Q?_Yes_Great'",
+      "target": "Hallo. $y 'Frage?_Ja_Toll'",
+      "text": "#$y is missing (English 1, translation 0). It starts the quick response on a new page; without it the game shows the command as text. $y was added (English 0, translation 1). The game would show it as text or change the dialogue flow."
     }
   ]
 }
