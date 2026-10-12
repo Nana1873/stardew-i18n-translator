@@ -125,7 +125,7 @@ export function appendActivity(
     const replacesScanning =
       event.details?.kind === "scan" && previous?.message === SCANNING_MESSAGE;
     if (replacesScanning) entries.pop();
-    // Automatic rescans that found nothing new collapse into one line.
+    // Back-to-back scans with the same result collapse into one line.
     const last = entries.at(-1);
     if (
       replacesScanning &&

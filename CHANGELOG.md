@@ -95,8 +95,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - An export failure stays visible when another result replaced its card, the
   editor closes with a note when a reload removes the string being edited,
   and Open Review is offered only while strings wait in Review.
-- A damaged settings file can be copied from the error card and is listed in
-  the Activity log.
+- The error for a damaged settings file can be copied from its card and is
+  listed in the Activity log. Export refusals name files relative to the Mods
+  folder instead of the full path.
 
 - Local AI stops after three timeouts in a row with a plain hint to check LM
   Studio or Ollama, instead of trying every remaining text.
