@@ -1720,6 +1720,11 @@
 #stardew-i18n-translator .editor__status.translator-state::before {
   content: none;
 }
+/* Same status hues as the table and filters, drawn from the state class. */
+#stardew-i18n-translator .editor__status.translator-state {
+  border-color: color-mix(in srgb, currentColor 50%, transparent);
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
 
 /* Spare editor height goes to the text fields, not to the issue box. */
 #stardew-i18n-translator .translator-editor-body {

@@ -872,6 +872,13 @@ describe("StringEditor", () => {
     expect(screen.queryByText("Done")).not.toBeInTheDocument();
   });
 
+  it("colors the status badge with the shared status classes, not inline styles", () => {
+    renderEditor({ status: "review-needed" });
+    const badge = screen.getByText("Review").closest(".editor__status");
+    expect(badge).toHaveClass("translator-state", "is-review");
+    expect(badge).not.toHaveAttribute("style");
+  });
+
   it("keeps token and glossary support rows reachable in their empty states", () => {
     renderEditor();
 

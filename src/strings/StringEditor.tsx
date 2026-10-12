@@ -71,7 +71,6 @@ import {
 } from "./protectedTokens";
 import {
   STATUS_META,
-  statusTint,
   derivedStringStatus,
   noTranslationNeeded,
   isBlankText,
@@ -882,12 +881,7 @@ export function StringEditor({
       )
     : issues;
   const shownStatus = derivedStringStatus(row.source, value, row.status);
-  const shownStatusLabel: Record<StringStatus, string>[StringStatus] = {
-    untranslated: "Open",
-    outdated: "Changed",
-    "review-needed": "Review",
-    translated: "Done",
-  }[shownStatus];
+  const shownStatusLabel = STATUS_META[shownStatus].label;
   const glossaryMatches = matchGlossary(row.source, glossary);
   const targetFieldLabel = translationFieldLabel(targetLanguageLabel);
   const targetLanguageName = targetFieldLabel.replace(/\s+translation$/i, "");
@@ -976,11 +970,6 @@ export function StringEditor({
                       ? " is-change"
                       : ""
               }`}
-              style={{
-                color: STATUS_META[shownStatus].color,
-                borderColor: statusTint(STATUS_META[shownStatus].color, 0.5),
-                background: statusTint(STATUS_META[shownStatus].color, 0.14),
-              }}
               data-status-help={statusHelp[shownStatus]}
               aria-description={statusHelp[shownStatus]}
               onPointerEnter={(event) => {
