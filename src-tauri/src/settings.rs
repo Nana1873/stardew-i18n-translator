@@ -269,6 +269,19 @@ pub fn load(config_dir: &Path) -> AppSettings {
 pub fn load_checked(config_dir: &Path) -> Result<AppSettings, String> {
     let path = settings_path(config_dir);
     if !path.exists() {
+        // A crash between backup and rename can leave only the backup. Use it
+        // instead of starting setup again; with no usable backup this is a
+        // genuine first run.
+        let backup = sibling(&path, ".bak");
+        if let Ok(body) = crate::input_limits::read_json_text(&backup) {
+            if let Ok(settings) = parse_and_normalize(&body, false) {
+                log::warn!(
+                    "settings.json is missing; loaded the backup {}",
+                    backup.display()
+                );
+                return Ok(settings);
+            }
+        }
         return Ok(AppSettings::default());
     }
     match crate::input_limits::read_json_text(&path) {
@@ -932,6 +945,26 @@ mod tests {
         // Both the checked and the infallible entry points recover.
         assert_eq!(load_checked(&dir).unwrap(), sample("ja"));
         assert_eq!(load(&dir), sample("ja"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn missing_main_loads_a_valid_backup() {
+        // A crash after the backup copy but before the rename leaves only the
+        // backup; that must not look like a first run.
+        let dir = crate::test_support::temp_dir("settings-missing-main");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = settings_path(&dir);
+        std::fs::write(
+            sibling(&path, ".bak"),
+            serde_json::to_string_pretty(&sample("fr")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(load_checked(&dir).unwrap(), sample("fr"));
+
+        // A broken backup alone is still a first run.
+        std::fs::write(sibling(&path, ".bak"), "{ broken").unwrap();
+        assert_eq!(load_checked(&dir).unwrap(), AppSettings::default());
         std::fs::remove_dir_all(&dir).ok();
     }
 

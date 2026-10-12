@@ -78,6 +78,20 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- When a mod has both `pt.json` and `pt-BR.json` (or `zh.json` and
+  `zh-CN.json`), both are read like SMAPI does, with the regional value winning
+  per key. Keys only the language file had no longer look untranslated, and
+  the export no longer drops them.
+- The ZIP for one mod refuses to save into the game or Mods folder or through
+  a link, and notices an English file that changed while it was prepared, like
+  the ZIP for all mods.
+- Undo for a batch edit stays available after the editor took over existing
+  translations from a mod's files.
+- A missing `settings.json` with a valid `settings.json.bak` loads the backup
+  instead of starting setup again.
+- Saving rejects an unknown translation status instead of storing it and
+  later reading it as Done.
+
 - An empty translation no longer shows a warning. Clearing a string in the
   app showed a warning triangle and raised the Issues count even though the
   export leaves the string out and the game shows English.

@@ -1088,18 +1088,46 @@ pub(crate) fn read_target_file(path: &Path) -> Result<serde_json::Map<String, Va
         .collect())
 }
 
-/// Read the canonical target file, with SMAPI's regional filename
-/// (`pt-BR.json`, `zh-CN.json`) as an import-only fallback. The scanned path
-/// remains `pt.json`/`zh.json`, so exports always use the app's canonical
-/// filename and never overwrite the regional file.
+/// Read the canonical target file merged with SMAPI's regional file
+/// (`pt-BR.json`, `zh-CN.json`). SMAPI reads both and the regional value wins
+/// per key, so keys that only the canonical file has stay translated. The
+/// scanned path remains `pt.json`/`zh.json`: exports write that file and remove
+/// the regional one, whose values they already contain.
 pub(crate) fn read_target_object_checked(
     target_path: &Path,
 ) -> Result<serde_json::Map<String, Value>, String> {
-    let read_path = target_read_path(target_path);
-    if !read_path.is_file() {
-        return Ok(serde_json::Map::new());
-    }
-    read_target_file(&read_path)
+    read_merged_target(target_path, read_target_file)
+}
+
+/// The canonical target with the regional variant laid over it per key.
+fn read_merged_target(
+    target_path: &Path,
+    read: impl Fn(&Path) -> Result<serde_json::Map<String, Value>, String>,
+) -> Result<serde_json::Map<String, Value>, String> {
+    let Some(regional) = regional_target_variant(target_path).filter(|path| path.is_file()) else {
+        return if target_path.is_file() {
+            read(target_path)
+        } else {
+            Ok(serde_json::Map::new())
+        };
+    };
+    let regional = read(&regional)?;
+    let mut merged = if target_path.is_file() {
+        // SMAPI skips a broken file; the valid regional file still applies.
+        read(target_path).unwrap_or_else(|error| {
+            log::warn!("{error}; using the regional translation file only");
+            serde_json::Map::new()
+        })
+    } else {
+        serde_json::Map::new()
+    };
+    // Keys match case-insensitively in SMAPI, so a regional key replaces the
+    // canonical one even when only its casing differs.
+    let regional_keys: std::collections::HashSet<String> =
+        regional.keys().map(|key| key.to_lowercase()).collect();
+    merged.retain(|key, _| !regional_keys.contains(&key.to_lowercase()));
+    merged.extend(regional);
+    Ok(merged)
 }
 
 pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
@@ -1226,11 +1254,9 @@ fn read_target_object_within_root(
     target_path: &Path,
     allowed_root: &Path,
 ) -> Result<serde_json::Map<String, Value>, String> {
-    let read_path = target_read_path(target_path);
-    if !read_path.is_file() {
-        return Ok(serde_json::Map::new());
-    }
-    read_object_within_root(&read_path, allowed_root, "target")
+    read_merged_target(target_path, |path| {
+        read_object_within_root(path, allowed_root, "target")
+    })
 }
 
 fn read_object_within_root(
@@ -2146,6 +2172,71 @@ mod tests {
         assert!(file.target_path.ends_with("pt.json"));
         assert_eq!(result.mods[0].translated_keys, 1);
 
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn canonical_and_regional_targets_merge_per_key() {
+        // SMAPI reads pt-BR.json, then pt.json, per key. A key only pt.json
+        // has must stay translated instead of reading as Open.
+        let root = crate::test_support::temp_dir("scan-portuguese-merge");
+        let mod_dir = root.join("Mod");
+        write(
+            &mod_dir.join("manifest.json"),
+            "{ \"UniqueID\": \"a.b\", \"Name\": \"Mod\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("default.json"),
+            "{ \"shared\": \"Hello\", \"only.pt\": \"Bye\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("pt.json"),
+            "{ \"shared\": \"Oi\", \"only.pt\": \"Tchau\" }",
+        );
+        write(
+            &mod_dir.join("i18n").join("pt-BR.json"),
+            "{ \"shared\": \"Olá\" }",
+        );
+
+        let result = scan_mods(&root, "pt", &root);
+        assert_eq!(result.mods[0].translated_keys, 2);
+        let file = &result.mods[0].i18n_files[0];
+        let rows = load_strings(
+            Path::new(&file.default_path),
+            Path::new(&file.target_path),
+            &ModState::new(),
+            "i18n",
+        );
+        let target = |key: &str| {
+            rows.iter()
+                .find(|row| row.key == key)
+                .map(|row| row.target.clone())
+                .unwrap()
+        };
+        assert_eq!(target("shared"), "Olá");
+        assert_eq!(target("only.pt"), "Tchau");
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn regional_target_wins_across_key_casing_and_survives_a_broken_canonical() {
+        let root = crate::test_support::temp_dir("scan-portuguese-casing");
+        let i18n = root.join("i18n");
+        write(
+            &i18n.join("pt.json"),
+            "{ \"Greeting\": \"Oi\", \"bye\": \"Tchau\" }",
+        );
+        write(&i18n.join("pt-BR.json"), "{ \"greeting\": \"Olá\" }");
+        let merged = read_target_object_checked(&i18n.join("pt.json")).unwrap();
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged["greeting"], "Olá");
+        assert_eq!(merged["bye"], "Tchau");
+
+        write(&i18n.join("pt.json"), "{ broken");
+        let merged = read_target_object_checked(&i18n.join("pt.json")).unwrap();
+        assert_eq!(merged.len(), 1);
+        assert_eq!(merged["greeting"], "Olá");
         std::fs::remove_dir_all(&root).ok();
     }
 

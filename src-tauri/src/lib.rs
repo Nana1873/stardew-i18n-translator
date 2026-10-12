@@ -234,6 +234,7 @@ fn save_string(
     status: String,
     source: String,
 ) -> Result<(), String> {
+    translations::check_save_status(&status)?;
     let status = translations::status_for_save(&source, &target, &status);
     let entry = translations::StoredString {
         target,
@@ -269,19 +270,22 @@ struct SaveStringGroupInput {
     entries: Vec<SaveStringInput>,
 }
 
-fn stored_save_entries(entries: Vec<SaveStringInput>) -> Vec<(String, translations::StoredString)> {
+fn stored_save_entries(
+    entries: Vec<SaveStringInput>,
+) -> Result<Vec<(String, translations::StoredString)>, String> {
     entries
         .into_iter()
         .map(|input| {
+            translations::check_save_status(&input.status)?;
             let status = translations::status_for_save(&input.source, &input.target, &input.status);
-            (
+            Ok((
                 translations::entry_key(&input.relative_dir, &input.key),
                 translations::StoredString {
                     source_hash: translations::source_hash(&input.source),
                     target: input.target,
                     status,
                 },
-            )
+            ))
         })
         .collect()
 }
@@ -299,14 +303,12 @@ fn save_string_groups_with_undo(
     if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control) {
         return Err("The batch result title must contain 1 to 80 visible characters.".to_string());
     }
-    history.apply_reversible_batch_groups(
-        &translation_config_dir(&app)?,
-        title.to_string(),
-        groups
-            .into_iter()
-            .map(|group| (group.mod_unique_id, stored_save_entries(group.entries)))
-            .collect(),
-    )
+    // Check every entry before anything is written.
+    let groups = groups
+        .into_iter()
+        .map(|group| Ok((group.mod_unique_id, stored_save_entries(group.entries)?)))
+        .collect::<Result<Vec<_>, String>>()?;
+    history.apply_reversible_batch_groups(&translation_config_dir(&app)?, title.to_string(), groups)
 }
 
 #[tauri::command]
