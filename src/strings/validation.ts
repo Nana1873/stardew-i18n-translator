@@ -21,6 +21,7 @@ import {
   isIntentionalBlankTarget,
 } from "./status";
 import {
+  branchText,
   extractProtectedTokens,
   pagesWithMultiplePortraits,
   isGenderSwitchShape,
@@ -90,6 +91,48 @@ function hasLoneSurrogate(text: string): boolean {
   return false;
 }
 
+/** Token counts as one player sees them: switch-shape identities keep their
+ * full count, every other token takes its highest count over the gender
+ * branches instead of the sum of all branches. */
+function playerViewCounts(
+  text: string,
+  counts: Map<string, number>,
+): Map<string, number> {
+  const view = new Map<string, number>();
+  for (const [token, count] of counts)
+    if (isGenderSwitchShape(token)) view.set(token, count);
+  for (let branch = 0; branch < 3; branch += 1) {
+    for (const [token, count] of tokenCounts(branchText(text, branch))) {
+      if (count > (view.get(token) ?? 0)) view.set(token, count);
+    }
+  }
+  return view;
+}
+
+/**
+ * Source and target token counts as the comparison uses them. The editor's
+ * token chips read these too, so a chip never asks for a token the export
+ * would not require.
+ */
+export function comparableTokenCounts(
+  source: string,
+  target: string,
+): { source: Map<string, number>; target: Map<string, number> } {
+  let sourceTokens = tokenCounts(source);
+  let targetTokens = tokenCounts(target);
+  // A switch removed (languages without grammatical gender) or added (the
+  // source has none) changes only which branch a player reads. Compare the
+  // side that has the switch as a player sees it, so tokens repeated in
+  // every branch are not counted once per branch.
+  const sourceSwitches = [...sourceTokens.keys()].some(isGenderSwitchShape);
+  const targetSwitches = [...targetTokens.keys()].some(isGenderSwitchShape);
+  if (sourceSwitches && !targetSwitches)
+    sourceTokens = playerViewCounts(source, sourceTokens);
+  if (targetSwitches && !sourceSwitches)
+    targetTokens = playerViewCounts(target, targetTokens);
+  return { source: sourceTokens, target: targetTokens };
+}
+
 /**
  * Every protected-token count difference between a source and its
  * translation, with the severity the export uses. The editor reads this to
@@ -99,8 +142,10 @@ export function tokenDifferences(
   source: string,
   target: string,
 ): TokenDifference[] {
-  const sourceTokens = tokenCounts(source);
-  const targetTokens = tokenCounts(target);
+  const { source: sourceTokens, target: targetTokens } = comparableTokenCounts(
+    source,
+    target,
+  );
   const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
     isGenderSwitchShape,
   );

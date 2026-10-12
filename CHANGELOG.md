@@ -10,6 +10,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Removing every he/she switch (for languages without grammatical gender) or
+  adding one where the English text has none no longer reports tokens repeated
+  in every branch as missing or added; the editor's token chips count the
+  same way. A collapsed switch with `#$b#` in each branch, for example, is no
+  longer a token error, so the string is exported.
+- The arguments of a dialogue command that opens a string are protected:
+  changed question ids such as `$q 305/306 null#` or a renamed one-time flag
+  such as `$1 metHarvey#` are token errors instead of passing silently.
 - Token chips in the editor now show their severity: a red circle marks a
   difference that keeps the string English on export, a yellow triangle a
   harmless note. The validation line groups errors before notes and names the
@@ -25,6 +33,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A dialogue page that starts with a he/she switch or a portrait, such as
+  `#${He^She}$ is here.` or `#$hSo happy!`, is translatable again; it was
+  treated as one protected token, so every translation was an error.
 - A ChatGPT refusal for one string no longer ends the whole run. The batch is
   split until the refused string is isolated; every other string is still
   translated, and in the quality review drafts are kept.

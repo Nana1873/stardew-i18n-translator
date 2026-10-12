@@ -23,7 +23,36 @@ use serde::Serialize;
 /// Extract every protected token or switch-shape identity from `value`.
 pub fn extract(value: &str) -> Vec<String> {
     let chars: Vec<char> = value.chars().collect();
-    extract_chars(&chars)
+    match read_leading_command(&chars) {
+        Some(end) => {
+            // Arguments are split on spaces with empty entries removed by the
+            // game, so only the spacing is canonicalized.
+            let raw: String = chars[..end - 1].iter().collect();
+            let command = raw
+                .split(' ')
+                .filter(|part| !part.is_empty())
+                .collect::<Vec<_>>();
+            let mut tokens = vec![format!("{}#", command.join(" "))];
+            tokens.extend(extract_chars(&chars[end..]));
+            tokens
+        }
+        None => extract_chars(&chars),
+    }
+}
+
+/// Dialogue commands that take arguments up to the next `#` when they open a
+/// string, e.g. `$q 305/306 null#`, `$1 metHarvey#`, `$p 305#`, `$c 0.5#`,
+/// `$d bus#`. Their arguments are response ids, flags, and keys, not prose.
+fn read_leading_command(chars: &[char]) -> Option<usize> {
+    if chars.first() != Some(&'$')
+        || !chars
+            .get(1)
+            .is_some_and(|c| matches!(c, 'q' | 'p' | 'c' | 'd' | '1'))
+        || chars.get(2) != Some(&' ')
+    {
+        return None;
+    }
+    find_char(chars, 3, '#').map(|hash| hash + 1)
 }
 
 fn extract_chars(chars: &[char]) -> Vec<String> {
@@ -215,6 +244,12 @@ fn is_portrait_command(token: &str) -> bool {
 /// The text one player sees: every well-formed gender switch is replaced by its
 /// first branch, so portraits in alternative branches are not counted twice.
 fn first_branch_text(chars: &[char]) -> String {
+    branch_text(chars, 0)
+}
+
+/// The text a player sees for one gender: every well-formed switch is
+/// replaced by its branch `branch` (the last branch when it has fewer).
+fn branch_text(chars: &[char], branch: usize) -> String {
     let mut text = String::new();
     let mut index = 0;
     while index < chars.len() {
@@ -222,7 +257,14 @@ fn first_branch_text(chars: &[char]) -> String {
             if let Some(close) = find_switch_close(chars, index) {
                 if let Some((_, delimiters)) = top_level_gender_delimiters(chars, index + 2, close)
                 {
-                    text.push_str(&first_branch_text(&chars[index + 2..delimiters[0]]));
+                    let chosen = branch.min(delimiters.len());
+                    let start = if chosen == 0 {
+                        index + 2
+                    } else {
+                        delimiters[chosen - 1] + 1
+                    };
+                    let end = delimiters.get(chosen).copied().unwrap_or(close);
+                    text.push_str(&branch_text(&chars[start..end], branch));
                     index = close + 2;
                     continue;
                 }
@@ -280,8 +322,22 @@ fn token_severity(
 /// Every protected-token count that differs between source and target.
 /// Soft tokens (newlines, quote delimiters) are deliberately excluded.
 pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
-    let source_counts = counts(source);
-    let target_counts = counts(target);
+    let mut source_counts = counts(source);
+    let mut target_counts = counts(target);
+    // A switch removed (languages without grammatical gender) or added (the
+    // source has none) changes only which branch a player reads. Compare the
+    // side that has the switch as a player sees it, so tokens repeated in
+    // every branch are not counted once per branch.
+    let has_switch =
+        |counts: &HashMap<String, usize>| counts.keys().any(|token| is_gender_switch_shape(token));
+    let (source_switches, target_switches) =
+        (has_switch(&source_counts), has_switch(&target_counts));
+    if source_switches && !target_switches {
+        source_counts = player_view_counts(source, &source_counts);
+    }
+    if target_switches && !source_switches {
+        target_counts = player_view_counts(target, &target_counts);
+    }
     let source_has_gender_switch = source_counts
         .keys()
         .any(|token| is_gender_switch_shape(token));
@@ -334,6 +390,25 @@ pub fn missing_token_list(source: &str, target: &str) -> Vec<String> {
         .filter(|difference| difference.target_count < difference.source_count)
         .map(|difference| difference.token)
         .collect()
+}
+
+/// Token counts as one player sees them: switch-shape identities keep their
+/// full count, every other token takes its highest count over the gender
+/// branches instead of the sum of all branches (mirrors TS `playerViewCounts`).
+fn player_view_counts(value: &str, all: &HashMap<String, usize>) -> HashMap<String, usize> {
+    let chars: Vec<char> = value.chars().collect();
+    let mut view: HashMap<String, usize> = all
+        .iter()
+        .filter(|(token, _)| is_gender_switch_shape(token))
+        .map(|(token, count)| (token.clone(), *count))
+        .collect();
+    for branch in 0..3 {
+        for (token, count) in counts(&branch_text(&chars, branch)) {
+            let entry = view.entry(token).or_insert(0);
+            *entry = (*entry).max(count);
+        }
+    }
+    view
 }
 
 fn counts(value: &str) -> HashMap<String, usize> {
@@ -614,6 +689,22 @@ fn read_dialogue_break(chars: &[char], offset: usize) -> Option<usize> {
         {
             return Some(command_end + 1);
         }
+        // `#$hSo happy!` starts a new page with a portrait followed by prose;
+        // only `#` is the separator (mirrors TS `readDialogueBreak`).
+        // An uppercase ASCII letter or any character that is not an ASCII
+        // letter, digit, or `#` (CJK, `¡`, `«`, `Ä`, a space) starts the prose.
+        if command_end == offset + 3
+            && matches!(chars[offset + 2], 'h' | 's' | 'u' | 'l' | 'a')
+            && chars.get(command_end).is_some_and(|next| {
+                *next != '#' && (next.is_ascii_uppercase() || !next.is_ascii_alphanumeric())
+            })
+        {
+            return None;
+        }
+    }
+    // `#${He^She}$ ...` starts a new page with a gender switch.
+    if chars.get(offset + 2) == Some(&'{') {
+        return None;
     }
 
     // Only the first unquoted query branch pipe may end action arguments.

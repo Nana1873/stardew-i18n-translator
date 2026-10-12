@@ -190,6 +190,38 @@
     {
       "value": "$sHallo $uDa $lLiebe $aWut",
       "tokens": ["$s", "$u", "$l", "$a"]
+    },
+    {
+      "value": "Hi there.#${He^She}$ is my friend.#$e#",
+      "tokens": ["#", "${^}$", "#$e#"]
+    },
+    {
+      "value": "Hello.#$hSo happy!#$e#",
+      "tokens": ["#", "$h", "#$e#"]
+    },
+    {
+      "value": "$q 305/306 null#Want to go?#$r 305 15 beach_yes#Yes",
+      "tokens": ["$q 305/306 null#", "#$r 305 15 beach_yes#"]
+    },
+    {
+      "value": "$1  metHarvey#Nice to meet you.#$e#Again.",
+      "tokens": ["$1 metHarvey#", "#$e#"]
+    },
+    {
+      "value": "$query FLAG#Yes",
+      "tokens": ["$query", "#"]
+    },
+    {
+      "value": "Hello.#$h太好了！#$e#",
+      "tokens": ["#", "$h", "#$e#"]
+    },
+    {
+      "value": "Hello.#$h#More.",
+      "tokens": ["#$h#"]
+    },
+    {
+      "value": "$p 305#Yes#No",
+      "tokens": ["$p 305#", "#"]
     }
   ],
   "comparisons": [
@@ -432,6 +464,72 @@
       "source": "${Hi.^Hey.}$#Bye.$h",
       "target": "${Hallo.$h^Hey.$s}$#Tschuess.",
       "blocked": false
+    },
+    {
+      "name": "a collapsed switch counts tokens repeated in every branch once",
+      "source": "${He is#$b#here.$7^She is#$b#here.$7}$",
+      "target": "Er ist#$b#hier.$7",
+      "blocked": false
+    },
+    {
+      "name": "a target-language switch counts tokens repeated in every branch once",
+      "source": "Hello.#$b#Bye.",
+      "target": "${Er ist#$b#da.^Sie ist#$b#da.}$",
+      "blocked": false
+    },
+    {
+      "name": "damage inside one branch of a kept switch still blocks",
+      "source": "${He is#$b#here.^She is#$b#here.}$",
+      "target": "${Er ist hier.^Sie ist#$b#hier.}$",
+      "blocked": true
+    },
+    {
+      "name": "a page that starts with a gender switch is translatable",
+      "source": "Hi there.#${He^She}$ is my friend.#$e#",
+      "target": "Hallo.#${Er^Sie}$ ist mein Freund.#$e#",
+      "blocked": false
+    },
+    {
+      "name": "a renamed one-time flag at string start blocks",
+      "source": "$1 metHarvey#Nice.#$e#Again.",
+      "target": "$1 trafHarvey#Schön.#$e#Nochmal.",
+      "blocked": true
+    },
+    {
+      "name": "changed question response ids at string start block",
+      "source": "$q 305/306 null#Go?#$r 305 1 yes#Yes",
+      "target": "$q 305/307 null#Gehen?#$r 305 1 yes#Ja",
+      "blocked": true
+    },
+    {
+      "name": "extra spaces in leading command arguments are ignored",
+      "source": "$q  305/306 null#Go?",
+      "target": "$q 305/306 null#Gehen?",
+      "blocked": false
+    },
+    {
+      "name": "a page starting with a portrait and CJK prose is translatable",
+      "source": "#$hSo happy!#$b#Bye",
+      "target": "#$h太好了！#$b#再见",
+      "blocked": false
+    },
+    {
+      "name": "a collapsed three-branch switch with the alternate separator counts once",
+      "source": "${He#$b#is.¦She#$b#is.¦They#$b#are.}$",
+      "target": "他#$b#在。",
+      "blocked": false
+    },
+    {
+      "name": "a partially collapsed switch still compares sums",
+      "source": "${Mr.^Ms.}$ X ${Hi#$b#^Hello#$b#}$ Y",
+      "target": "${Herr^Frau}$ X Hallo#$b# Y",
+      "blocked": true
+    },
+    {
+      "name": "a changed probability at string start blocks",
+      "source": "$c 0.5#Yes#No",
+      "target": "$c 0.6#Ja#Nein",
+      "blocked": true
     }
   ]
 }
