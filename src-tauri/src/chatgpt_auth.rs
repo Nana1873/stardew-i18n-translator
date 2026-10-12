@@ -944,14 +944,25 @@ pub async fn abort_login() {
         }
     }
 }
-pub async fn logout() -> Result<(), String> {
-    GENERATION.fetch_add(1, Ordering::AcqRel);
-    let mut state = state()?.lock().await;
+/// End the session on this PC: stop a pending sign-in, forget the session,
+/// and delete its saved file. No network call happens here, so the caller
+/// can release the lock before revoking the tokens.
+fn take_session(state: &mut AuthState) -> (Option<Session>, Result<(), String>) {
     if let Some(task) = state.pending.take() {
         task.abort();
     }
     let session = state.session.take();
     state.error = None;
+    let deleted = match std::fs::remove_file(state.directory.join("chatgpt-session.bin")) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.".to_string()),
+    };
+    (session, deleted)
+}
+pub async fn logout() -> Result<(), String> {
+    GENERATION.fetch_add(1, Ordering::AcqRel);
+    let (session, deleted) = take_session(&mut *state()?.lock().await);
     let remote = async {
         let Some(session) = session else { return Ok(()); };
         let Some(refresh) = session.refresh_token else { return Ok(()); };
@@ -966,8 +977,7 @@ pub async fn logout() -> Result<(), String> {
         }
         Err("Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
     }.await;
-    let path = state.directory.join("chatgpt-session.bin");
-    match std::fs::remove_file(path) { Ok(()) => {}, Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}, Err(_) => return Err("Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.".into()) }
+    deleted?;
     remote.map_err(|_| "Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
 }
 
@@ -1125,6 +1135,43 @@ mod tests {
             1001
         )
         .is_err());
+    }
+    #[test]
+    fn sign_out_deletes_the_saved_session_before_any_network_call() {
+        let directory = crate::test_support::temp_dir("chatgpt-signout");
+        std::fs::create_dir_all(&directory).unwrap();
+        let saved = directory.join("chatgpt-session.bin");
+        std::fs::write(&saved, b"synthetic").unwrap();
+        let mut state = AuthState {
+            directory: directory.clone(),
+            registration: Registration {
+                host_id: "h".into(),
+                client_id: None,
+                subject: None,
+            },
+            session: Some(Session {
+                client_id: "synthetic-client".into(),
+                subject: "synthetic-subject".into(),
+                email: None,
+                access_token: "synthetic-access".into(),
+                refresh_token: Some("synthetic-refresh".into()),
+                id_token: None,
+                scope: PLAN_SCOPE.into(),
+                expires_at: 0,
+            }),
+            pending: None,
+            error: Some("old".into()),
+        };
+
+        // Synchronous: the lock is held only while the session is taken.
+        let (session, deleted) = take_session(&mut state);
+
+        assert!(deleted.is_ok());
+        assert!(!saved.exists());
+        assert_eq!(session.unwrap().access_token, "synthetic-access");
+        assert!(state.session.is_none() && state.error.is_none());
+        assert!(take_session(&mut state).1.is_ok());
+        std::fs::remove_dir_all(directory).unwrap();
     }
     #[test]
     fn errors_do_not_echo_remote_messages() {
