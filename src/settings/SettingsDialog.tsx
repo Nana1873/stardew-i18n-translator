@@ -180,23 +180,58 @@ export function SettingsDialog({
     llmProvider === "custom" ? null : (LLM_PRESETS[llmProvider] ?? null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [discardPrompt, setDiscardPrompt] = useState(false);
   const llmRequest = useRef(0);
   const dialogRef = useRef<HTMLElement>(null);
   const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
   const cloudAvailable = Boolean(cloudStatus?.authenticated);
   const cloudAccountError = chatgptAuthError || cloudStatus?.error;
-  const defaultEngine: AiEngine | null =
-    preferredEngine === CLOUD_ENGINE_ID && cloudStatus === null
+  function resolveEngine(preferred: AiEngine | null): AiEngine | null {
+    return preferred === CLOUD_ENGINE_ID && cloudStatus === null
       ? null
-      : preferredEngine === "local" && localAvailable
+      : preferred === "local" && localAvailable
         ? "local"
-        : preferredEngine === CLOUD_ENGINE_ID && cloudAvailable
+        : preferred === CLOUD_ENGINE_ID && cloudAvailable
           ? CLOUD_ENGINE_ID
           : localAvailable
             ? "local"
             : cloudAvailable
               ? CLOUD_ENGINE_ID
               : null;
+  }
+  const defaultEngine = resolveEngine(preferredEngine);
+
+  // Ask before closing only when saving would store something different.
+  // The engine is compared as resolved, so picking an engine that is not
+  // available (and would not be saved) is not a change.
+  const editableFields = {
+    stardewPath,
+    modsPath,
+    targetLang,
+    shortcuts,
+    diagnosticLogging,
+    llmProvider,
+    llmBaseUrl,
+    llmModel,
+    llmTemperature,
+    cloudReasoning,
+    cloudQualityReview,
+    cloudModel,
+    cloudParallelBatches,
+  };
+  const initialFields = useRef(editableFields);
+  const hasChanges =
+    JSON.stringify(editableFields) !== JSON.stringify(initialFields.current) ||
+    (defaultEngine ?? "local") !==
+      (resolveEngine(savedDefaultEngine) ?? "local");
+
+  function requestClose() {
+    if (hasChanges) {
+      setDiscardPrompt(true);
+      return;
+    }
+    onClose();
+  }
   const selectedCloudModel = cloudModels?.find(
     (candidate) => candidate.model === cloudModel.trim(),
   );
@@ -222,14 +257,20 @@ export function SettingsDialog({
     ) {
       return;
     }
-    setCloudReasoning(
+    const fitted =
       selectedCloudModel.defaultReasoningEffort &&
-        selectedCloudModel.supportedReasoningEfforts.includes(
-          selectedCloudModel.defaultReasoningEffort,
-        )
+      selectedCloudModel.supportedReasoningEfforts.includes(
+        selectedCloudModel.defaultReasoningEffort,
+      )
         ? selectedCloudModel.defaultReasoningEffort
-        : selectedCloudModel.supportedReasoningEfforts[0],
-    );
+        : selectedCloudModel.supportedReasoningEfforts[0];
+    if (initialFields.current.cloudReasoning === cloudReasoning) {
+      initialFields.current = {
+        ...initialFields.current,
+        cloudReasoning: fitted,
+      };
+    }
+    setCloudReasoning(fitted);
   }, [cloudReasoning, selectedCloudModel]);
 
   useEffect(
@@ -265,7 +306,7 @@ export function SettingsDialog({
 
   const { onDialogKeyDown } = useDialogAccessibility({
     dialogRef,
-    onEscape: onClose,
+    onEscape: () => (discardPrompt ? setDiscardPrompt(false) : requestClose()),
     escapeDisabled: saving || folderPicking !== null,
     initialFocusSelector: '[role="tab"][aria-selected="true"]',
   });
@@ -628,7 +669,7 @@ export function SettingsDialog({
             className="translator-icon-button"
             type="button"
             aria-label="Close settings"
-            onClick={onClose}
+            onClick={requestClose}
             disabled={saving || folderPicking !== null}
           >
             <X aria-hidden="true" />
@@ -1305,16 +1346,42 @@ export function SettingsDialog({
                 {saveError}
               </span>
             )}
+            {discardPrompt && !saveError && (
+              <span className="translator-settings-discard" role="alert">
+                You have unsaved changes.
+              </span>
+            )}
           </span>
           <div className="translator-settings-actions">
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={onClose}
-              disabled={saving || folderPicking !== null}
-            >
-              Cancel
-            </button>
+            {discardPrompt ? (
+              <>
+                <button
+                  className="translator-button translator-button-quiet"
+                  type="button"
+                  onClick={onClose}
+                  disabled={saving}
+                >
+                  Discard changes
+                </button>
+                <button
+                  className="translator-button translator-button-quiet"
+                  type="button"
+                  onClick={() => setDiscardPrompt(false)}
+                  disabled={saving}
+                >
+                  Keep editing
+                </button>
+              </>
+            ) : (
+              <button
+                className="translator-button translator-button-quiet"
+                type="button"
+                onClick={requestClose}
+                disabled={saving || folderPicking !== null}
+              >
+                Cancel
+              </button>
+            )}
             <button
               className="translator-button translator-button-primary"
               type="button"

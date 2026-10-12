@@ -301,3 +301,17 @@ describe("backend command bridges", () => {
     expect(request).not.toHaveProperty("items");
   });
 });
+
+it("reports a folder that cannot be opened to the app instead of failing silently", async () => {
+  const { openFolder, NOTIFY_EVENT } = await import("./commands");
+  vi.mocked(invoke).mockRejectedValueOnce(new Error("Access is denied."));
+  const heard: string[] = [];
+  const listener = (event: Event) =>
+    heard.push((event as CustomEvent<{ message: string }>).detail.message);
+  window.addEventListener(NOTIFY_EVENT, listener);
+  await openFolder("C:/Mods/Example");
+  window.removeEventListener(NOTIFY_EVENT, listener);
+  expect(heard).toEqual([
+    "Could not open the folder: Error: Access is denied.",
+  ]);
+});

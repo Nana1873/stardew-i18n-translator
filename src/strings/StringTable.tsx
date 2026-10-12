@@ -709,6 +709,8 @@ export function StringTable({
   const rowFocusActive = useRef(false);
   const rowsRef = useRef<Row[] | null>(null);
   const manualSaveRevision = useRef(0);
+  // The editor's single-string AI run, so its Cancel can stop it.
+  const singleAiRunId = useRef<string | null>(null);
   const bulkSavingRef = useRef(false);
   const contextMenuRef = useRef<HTMLUListElement>(null);
   const bulkMenuRef = useRef<HTMLDivElement>(null);
@@ -1944,10 +1946,12 @@ export function StringTable({
   async function runSingleLiveAi(row: Row): Promise<EditorTranslationResult> {
     if (!onRunAi || !activeLiveEngine)
       throw new Error("The selected translation engine is unavailable.");
+    const runId =
+      globalThis.crypto?.randomUUID?.() ??
+      `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    singleAiRunId.current = runId;
     const result = await onRunAi(activeLiveEngine.id, {
-      runId:
-        globalThis.crypto?.randomUUID?.() ??
-        `ai-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      runId,
       scope: "string",
       includeOpen: true,
       includeChanged: true,
@@ -2527,12 +2531,11 @@ export function StringTable({
                   aria-label="Clear string selection"
                   title="Clear selection"
                   onClick={() => {
+                    // The emptied selection is visible; a toast lingered and
+                    // contradicted a new selection made right after.
                     setSelection(new Set());
                     setBulkMenuOpen(false);
                     anchor.current = null;
-                    onNotify?.("Selection cleared.", "info", {
-                      activity: false,
-                    });
                   }}
                 >
                   <X aria-hidden="true" />
@@ -2998,6 +3001,16 @@ export function StringTable({
             }
             glossary={glossary}
             onTranslate={editorTranslate}
+            onCancelTranslate={
+              onCancelAi
+                ? () => {
+                    const runId = singleAiRunId.current;
+                    return runId
+                      ? onCancelAi(runId).catch(() => false)
+                      : Promise.resolve(false);
+                  }
+                : undefined
+            }
             onSave={(value, nextStatus, tokenMismatchAccepted) =>
               saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
             }

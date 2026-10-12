@@ -122,6 +122,9 @@ interface StringEditorProps {
   /** Official game glossary (typed entries), if built. */
   glossary?: GlossaryEntry[] | null;
   /** Translate the exact row through the configured live engine. */
+  /** Stops a running single-string AI translation. */
+  /** Resolves false when the run could not be stopped in time. */
+  onCancelTranslate?: () => Promise<boolean>;
   onTranslate?: (
     source: string,
     section?: string | null,
@@ -234,6 +237,7 @@ export function StringEditor({
   reviewProgress,
   glossary,
   onTranslate,
+  onCancelTranslate,
   onSave,
   onClose,
   onNavigate,
@@ -619,8 +623,26 @@ export function StringEditor({
     textareaRef.current?.focus();
   }
 
+  /** Stop waiting for the AI; a late result for this request is ignored. */
+  function cancelTranslate(message = "AI translation cancelled.") {
+    if (!translating) return;
+    aiRequest.current += 1;
+    const cancelledRow = draftIdentityRef.current;
+    void Promise.resolve(onCancelTranslate?.()).then((stopped) => {
+      // Only speak for the string the cancel was for.
+      if (stopped === false && draftIdentityRef.current === cancelledRow)
+        setTranslateMsg(
+          "The AI run could not be stopped in time; a finished suggestion is kept for review.",
+        );
+    });
+    setTranslating(false);
+    setTranslateMsg(message);
+    setTranslateMsgKind("note");
+  }
+
   function requestClose() {
-    if (saving || translating) return;
+    if (saving) return;
+    if (translating) cancelTranslate();
     if (aiDraftPending || dirty || value !== row.target) {
       setDiscardOpen(true);
       return;
@@ -996,7 +1018,7 @@ export function StringEditor({
               type="button"
               aria-label="Close editor"
               onClick={requestClose}
-              disabled={saving || translating}
+              disabled={saving}
             >
               <X aria-hidden />
             </button>
@@ -1441,12 +1463,14 @@ export function StringEditor({
             <button
               type="button"
               className="editor__ai-btn translator-button translator-button-quiet"
-              onClick={() => void handleTranslate()}
+              onClick={() =>
+                translating ? cancelTranslate() : void handleTranslate()
+              }
               disabled={
-                translating ||
+                (translating && !onCancelTranslate) ||
                 saving ||
                 sourceSaveBlocked ||
-                !translationAllowed
+                (!translating && !translationAllowed)
               }
               title={
                 translationAllowed && onTranslate
@@ -1456,7 +1480,7 @@ export function StringEditor({
               }
             >
               <Sparkles aria-hidden />
-              {translating ? "Translating…" : "Translate with AI"}{" "}
+              {translating ? "Translating… Cancel" : "Translate with AI"}{" "}
               <span className="translator-context-shortcut">
                 {aiEngineLabel}
               </span>

@@ -43,10 +43,7 @@ export function ScanDialog({
       : undefined,
   });
   const complete = !scanning && !error && result != null;
-  const warningCount = result?.warnings.length ?? 0;
-  const skippedCount = result?.skippedComponents?.filter(
-    (component) => component.requiresAttention,
-  ).length;
+  const attentionCount = result ? scanAttentionCount(result) : null;
   const expectedExclusionText = describeExpectedExclusions(
     result?.skippedComponents?.filter(
       (component) => !component.requiresAttention,
@@ -212,11 +209,27 @@ export function ScanDialog({
             : error
               ? `Scan failed: ${error}`
               : result
-                ? `Scan complete. ${result.modCount} ${result.modCount === 1 ? "mod" : "mods"} and ${result.fileCount} ${result.fileCount === 1 ? "i18n file" : "i18n files"} found. ${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}; ${skippedCount == null ? "skipped-component count unavailable" : `${skippedCount} ${skippedCount === 1 ? "component" : "components"} skipped`}; ${expectedExclusionText.replace(/ (was|were) ignored$/, " ignored") || "nothing ignored"}.`
+                ? `Scan complete. ${result.modCount} ${result.modCount === 1 ? "mod" : "mods"} and ${result.fileCount} ${result.fileCount === 1 ? "translation file" : "translation files"} found. ${attentionCount == null ? "" : attentionCount === 0 ? "Everything is ready." : `${attentionCount} ${attentionCount === 1 ? "item needs" : "items need"} a look.`}${expectedExclusionText ? ` ${expectedExclusionText}.` : ""}`
                 : "Scan result unavailable"}
         </span>
       </section>
     </div>
+  );
+}
+
+/** How many items in a scan need a look, counted like the scan dialog
+ * (a duplicate ID with its skipped folders is one item). `null` when the
+ * scan result carries no skip list. */
+export function scanAttentionCount(result: ScanResult): number | null {
+  if (!result.skippedComponents)
+    return result.warnings.length > 0 ? result.warnings.length : null;
+  const skips = result.skippedComponents.filter(
+    (component) => component.requiresAttention,
+  );
+  const { grouped } = groupDuplicateIds(result.warnings, skips);
+  return (
+    skips.filter((component) => !grouped.has(component)).length +
+    result.warnings.length
   );
 }
 
