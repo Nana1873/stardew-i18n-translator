@@ -372,6 +372,9 @@ export interface ExportFileResult {
   /** Keys in the existing target file that default.json no longer contains —
    * dropped by the rewrite (kept in .bak), reported so nothing is pruned silently. */
   orphanKeys: string[];
+  /** The target already held this content; it was not rewritten and its
+   * existing `.bak` was kept. Counts as written. */
+  unchanged?: boolean;
 }
 
 export interface ExportResult {

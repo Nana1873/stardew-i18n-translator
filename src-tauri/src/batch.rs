@@ -352,7 +352,9 @@ fn analyze_batch(
             let row = rows
                 .get(key.as_str())
                 .expect("snapshot validation proved this key binding");
-            if !row.target.trim().is_empty() {
+            // `has_translation` also covers a saved single space, which
+            // deliberately suppresses visible text and must not be replaced.
+            if row.has_translation() {
                 preflight.preserved_local += 1;
                 continue;
             }
@@ -598,6 +600,22 @@ mod tests {
         assert!(report.protected_token_issues.is_empty());
         assert!(report.ready);
         assert_eq!(report.blocking_reason, None);
+    }
+
+    #[test]
+    fn import_preserves_a_deliberate_single_space_translation() {
+        let mut local = rows();
+        local.get_mut("i18n").unwrap()[1] = row("done", "Done", " ", "translated");
+
+        let report = preflight_batch(&translated_batch(), "Author.Mod", "de", &local).unwrap();
+        assert_eq!(report.preserved_local, 1);
+        assert_eq!(report.importable, 2);
+
+        let prepared = apply_batch(&translated_batch(), "Author.Mod", "de", &local).unwrap();
+        assert!(prepared
+            .entries
+            .iter()
+            .all(|(_, entry)| entry.target != "Erledigt"));
     }
 
     #[test]

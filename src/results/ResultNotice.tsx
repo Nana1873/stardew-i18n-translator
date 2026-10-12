@@ -50,13 +50,20 @@ export function ResultNotice({
   }
   let cause = warnings[0]?.text ?? "";
   if (exportResult) {
-    const files = exportResult.filesWritten + exportResult.filesRemoved;
+    // Files that already held the exported content were left untouched.
+    const rewritten = exportResult.files.filter(
+      (file) => file.written && !file.unchanged,
+    );
+    const rewrittenKeys = rewritten.reduce(
+      (sum, file) => sum + file.writtenKeys,
+      0,
+    );
     copy =
-      files === 0
+      rewritten.length + exportResult.filesRemoved === 0
         ? "No translation files changed."
         : [
-            exportResult.filesWritten > 0
-              ? `${exportResult.totalWrittenKeys} ${exportResult.totalWrittenKeys === 1 ? "string" : "strings"} written to ${exportResult.filesWritten} ${exportResult.filesWritten === 1 ? "file" : "files"}.`
+            rewritten.length > 0
+              ? `${rewrittenKeys} ${rewrittenKeys === 1 ? "string" : "strings"} written to ${rewritten.length} ${rewritten.length === 1 ? "file" : "files"}.`
               : "",
             exportResult.filesRemoved > 0
               ? `${exportResult.filesRemoved} ${exportResult.filesRemoved === 1 ? "file" : "files"} removed.`

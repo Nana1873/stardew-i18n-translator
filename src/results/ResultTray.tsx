@@ -204,8 +204,16 @@ function presentationFor(
     };
   } else if (data.kind === "export") {
     const exportResult = data.result;
+    // Files that already held the exported content were left untouched.
+    const rewritten =
+      exportResult?.files.filter((file) => file.written && !file.unchanged) ??
+      [];
+    const rewrittenKeys = rewritten.reduce(
+      (sum, file) => sum + file.writtenKeys,
+      0,
+    );
     const changedFiles = exportResult
-      ? exportResult.filesWritten + exportResult.filesRemoved
+      ? rewritten.length + exportResult.filesRemoved
       : 0;
     // Strings with token errors were left out (English in game). Once every
     // one is fixed or accepted, exporting again includes them.
@@ -281,9 +289,11 @@ function presentationFor(
               ? file.backedUp
                 ? " · Removed · backup created"
                 : " · Removed"
-              : file.backedUp
-                ? " · Written · backup created"
-                : " · Written"),
+              : file.unchanged
+                ? " · Unchanged"
+                : file.backedUp
+                  ? " · Written · backup created"
+                  : " · Written"),
           path: file.targetPath,
         })) ?? [];
     const copy = exportResult
@@ -293,9 +303,9 @@ function presentationFor(
           " target " +
           plural(changedFiles, "file") +
           " written or removed. " +
-          exportResult.totalWrittenKeys +
+          rewrittenKeys +
           " " +
-          plural(exportResult.totalWrittenKeys, "string") +
+          plural(rewrittenKeys, "string") +
           " written."
       : "Result data is unavailable.";
     result = {
