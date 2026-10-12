@@ -890,7 +890,7 @@ pub(crate) fn extract_sections(text: &str) -> HashMap<String, String> {
                     comment.push(chars[i]);
                     i += 1;
                 }
-                if standalone {
+                if standalone && !is_note_or_disabled_line(&comment) {
                     // Trim decoration (`// ==== Title ====`) down to the text.
                     let title = comment
                         .trim()
@@ -918,6 +918,24 @@ pub(crate) fn extract_sections(text: &str) -> HashMap<String, String> {
         }
     }
     sections
+}
+
+/// A standalone comment that is not a section title: a commented-out entry
+/// (`//"OldGreeting": "Hi",`) or a working note (`// TODO: …`). The current
+/// section continues past it.
+fn is_note_or_disabled_line(comment: &str) -> bool {
+    let text = comment.trim();
+    if text.starts_with('"') || text.contains("\":") {
+        return true;
+    }
+    ["TODO", "FIXME", "XXX", "NOTE"].iter().any(|marker| {
+        text.get(..marker.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(marker))
+            && !text[marker.len()..]
+                .chars()
+                .next()
+                .is_some_and(char::is_alphanumeric)
+    })
 }
 
 /// Resolve the effective target + status for one key from saved state, falling
@@ -3049,6 +3067,43 @@ mod tests {
             sections.get(&folded_key("second")).map(String::as_str),
             Some("Later")
         );
+    }
+
+    #[test]
+    fn commented_out_entries_and_notes_do_not_start_sections() {
+        let body = r#"{
+  // Greetings
+  //"OldGreeting": "Hi",
+  "hello": "Hello",
+  // "Removed" : "Gone",
+  // TODO: reword this
+  "bye": "Bye",
+  // fixme later
+  // Note: keep short
+  // XXX
+  "later": "Later",
+  // Notebook entries
+  "page": "Page",
+  // ÄÖÜ title
+  "umlaut": "Umlaut"
+}"#;
+        let sections = extract_sections(body);
+        for key in ["hello", "bye", "later"] {
+            assert_eq!(
+                sections.get(&folded_key(key)).map(String::as_str),
+                Some("Greetings"),
+                "{key}"
+            );
+        }
+        assert_eq!(
+            sections.get(&folded_key("page")).map(String::as_str),
+            Some("Notebook entries")
+        );
+        assert_eq!(
+            sections.get(&folded_key("umlaut")).map(String::as_str),
+            Some("ÄÖÜ title")
+        );
+        assert!(!sections.contains_key(&folded_key("OldGreeting")));
     }
 
     #[test]
