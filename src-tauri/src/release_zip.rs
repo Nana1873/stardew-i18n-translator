@@ -344,7 +344,7 @@ fn write_prepared(
             let current = crate::input_limits::read_json_text(path)?;
             if translations::source_hash(&current) != *expected {
                 return Err(
-                    "A source file changed while preparing the output. Scan again and retry."
+                    "An English file changed while the ZIP was prepared. Scan again and retry."
                         .into(),
                 );
             }
@@ -587,9 +587,12 @@ fn check_destination(
     let parent = std::fs::canonicalize(existing_parent)
         .map_err(|e| format!("Could not inspect output folder: {e}"))?;
     for protected in std::iter::once(mods).chain(stardew_path.map(Path::new)) {
-        // A folder that does not exist cannot contain the destination.
-        let Ok(protected) = std::fs::canonicalize(protected) else {
-            continue;
+        // A folder that does not exist cannot contain the destination; any
+        // other error keeps the guard strict.
+        let protected = match std::fs::canonicalize(protected) {
+            Ok(path) => path,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("Could not inspect game folder: {error}")),
         };
         if parent.starts_with(protected) {
             return Err("Save the ZIP outside the game and Mods folders.".into());
