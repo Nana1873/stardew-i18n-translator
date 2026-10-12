@@ -28,6 +28,8 @@ import {
 } from "./protectedTokens";
 import { describeTokenIssue, type TokenDifference } from "./tokenIssueText";
 
+export type { TokenDifference };
+
 export type Severity = "error" | "warning";
 
 export interface ValidationIssue {
@@ -88,6 +90,54 @@ function hasLoneSurrogate(text: string): boolean {
   return false;
 }
 
+/**
+ * Every protected-token count difference between a source and its
+ * translation, with the severity the export uses. The editor reads this to
+ * colour its token chips; `validate` turns the same list into messages.
+ */
+export function tokenDifferences(
+  source: string,
+  target: string,
+): TokenDifference[] {
+  const sourceTokens = tokenCounts(source);
+  const targetTokens = tokenCounts(target);
+  const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
+    isGenderSwitchShape,
+  );
+  const introducesMultiplePortraits =
+    pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source);
+  const differences: TokenDifference[] = [];
+  const addDifference = (
+    token: string,
+    sourceCount: number,
+    targetCount: number,
+  ) =>
+    differences.push({
+      token,
+      sourceCount,
+      targetCount,
+      severity: tokenSeverity(
+        token,
+        sourceCount,
+        targetCount,
+        introducesMultiplePortraits,
+      ),
+    });
+  for (const [token, count] of sourceTokens) {
+    const found = targetTokens.get(token) ?? 0;
+    if (found < count) addDifference(token, count, found);
+  }
+  for (const [token, count] of targetTokens) {
+    // A translation may introduce gender grammar when the source has no
+    // switch at all. Once source switches exist, keep exact shape counts so
+    // a changed source block cannot be masked by an extra target block.
+    if (!sourceHasGenderSwitch && isGenderSwitchShape(token)) continue;
+    const expected = sourceTokens.get(token) ?? 0;
+    if (expected < count) addDifference(token, expected, count);
+  }
+  return differences;
+}
+
 export function validate(
   source: string,
   target: string,
@@ -98,42 +148,7 @@ export function validate(
   if (noTranslationNeeded(source, target)) return issues;
 
   if (target.length > 0) {
-    const sourceTokens = tokenCounts(source);
-    const targetTokens = tokenCounts(target);
-    const sourceHasGenderSwitch = [...sourceTokens.keys()].some(
-      isGenderSwitchShape,
-    );
-    const introducesMultiplePortraits =
-      pagesWithMultiplePortraits(target) > pagesWithMultiplePortraits(source);
-    const differences: TokenDifference[] = [];
-    const addDifference = (
-      token: string,
-      sourceCount: number,
-      targetCount: number,
-    ) =>
-      differences.push({
-        token,
-        sourceCount,
-        targetCount,
-        severity: tokenSeverity(
-          token,
-          sourceCount,
-          targetCount,
-          introducesMultiplePortraits,
-        ),
-      });
-    for (const [token, count] of sourceTokens) {
-      const found = targetTokens.get(token) ?? 0;
-      if (found < count) addDifference(token, count, found);
-    }
-    for (const [token, count] of targetTokens) {
-      // A translation may introduce gender grammar when the source has no
-      // switch at all. Once source switches exist, keep exact shape counts so
-      // a changed source block cannot be masked by an extra target block.
-      if (!sourceHasGenderSwitch && isGenderSwitchShape(token)) continue;
-      const expected = sourceTokens.get(token) ?? 0;
-      if (expected < count) addDifference(token, expected, count);
-    }
+    const differences = tokenDifferences(source, target);
     for (const item of describeTokenIssue(differences, target)) {
       issues.push({
         ruleId: item.kind === "missing" ? "token-missing" : "token-added",

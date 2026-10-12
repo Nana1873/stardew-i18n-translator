@@ -84,14 +84,7 @@ export function ResultNotice({
     )
       copy = "";
   } else if (issue && !issue.resolved) {
-    const mismatch =
-      /^Token count mismatch for (.+) \(expected (\d+), found (\d+)\)$/.exec(
-        issue.reason,
-      );
-    cause =
-      mismatch && Number(mismatch[3]) < Number(mismatch[2])
-        ? `Missing placeholder ${mismatch[1]} in ${issue.key}.`
-        : `${issue.key}: ${issue.reason}`;
+    cause = `${issue.key}: ${issue.reason}`;
     if (unresolved.length > 1)
       cause += ` ${unresolved.length - 1} more ${unresolved.length === 2 ? "issue" : "issues"}.`;
   }

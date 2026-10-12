@@ -289,7 +289,7 @@ export function SetupWizard({
                 <StepHeading
                   eyebrow="Step 1"
                   title="Find your game"
-                  description="We use the game folder to locate your Mods directory and, optionally, build official translation hints."
+                  description="We use the game folder to locate your Mods folder and, optionally, build official translation hints."
                 />
                 <div className="wizard__row">
                   <button

@@ -19,6 +19,21 @@ use crate::tokens;
 const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_READ_ONLY_NEIGHBORS: usize = 2;
 
+/// User-facing wording for a failed request to the local service. reqwest's
+/// `Display` already repeats the URL, so the raw text is only kept for errors
+/// that are not a plain "nothing is listening" connection failure.
+fn describe_transport_error(url: &str, error: &reqwest::Error) -> String {
+    if error.is_connect() {
+        format!(
+            "Local AI is not reachable at {url}. Start LM Studio or Ollama, check the Base              URL in Settings > Translation engines, then try again."
+        )
+    } else {
+        // reqwest repeats the URL in its own text; keep the rest of it.
+        let detail = error.to_string().replace(&format!(" for url ({url})"), "");
+        format!("Could not reach {url}: {detail}")
+    }
+}
+
 #[cfg(test)]
 #[path = "llm/repair_tests.rs"]
 mod repair_tests;
@@ -152,7 +167,7 @@ pub async fn list_models(base_url: &str) -> Result<Vec<String>, String> {
         .get(&url)
         .send()
         .await
-        .map_err(|error| format!("Could not reach {url} — is the server running? ({error})"))?;
+        .map_err(|error| describe_transport_error(&url, &error))?;
 
     if !response.status().is_success() {
         return Err(format!("Server returned {} for {url}.", response.status()));
@@ -532,7 +547,7 @@ async fn chat(
                      instruct model, or a shorter string. ({url})"
                 )
             } else {
-                format!("Could not reach {url} — is the server running? ({error})")
+                describe_transport_error(url.as_str(), &error)
             }
         })?;
 

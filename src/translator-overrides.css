@@ -133,6 +133,64 @@ body {
   border-color: color-mix(in srgb, var(--translator-green) 40%, transparent);
 }
 
+/* Chip severity mirrors the validation icons: red circle = error (the string
+   stays English on export), yellow triangle = harmless note. */
+#stardew-i18n-translator .translator-token.is-error {
+  color: var(--translator-red);
+  background: var(--translator-red-soft);
+  border-color: color-mix(in srgb, var(--translator-red) 45%, transparent);
+}
+
+#stardew-i18n-translator .translator-token.is-warning {
+  color: var(--translator-orange);
+  background: var(--translator-orange-soft);
+  border-color: color-mix(in srgb, var(--translator-orange) 40%, transparent);
+}
+
+#stardew-i18n-translator .translator-token .editor__token-glyph {
+  display: inline-block;
+  margin-right: 5px;
+  font-size: 10px;
+  vertical-align: 1px;
+}
+
+#stardew-i18n-translator .translator-token.is-accepted {
+  color: var(--translator-orange);
+  background: var(--translator-orange-soft);
+  border-color: color-mix(in srgb, var(--translator-orange) 40%, transparent);
+  border-style: dashed;
+}
+
+/* The validation line groups errors before notes; each group names its
+   consequence once instead of repeating it per sentence. */
+#stardew-i18n-translator .editor__issue-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 100%;
+}
+
+#stardew-i18n-translator .editor__issue-group + .editor__issue-group {
+  border-top: 1px dashed
+    color-mix(in srgb, var(--translator-border) 80%, transparent);
+  padding-top: 4px;
+}
+
+#stardew-i18n-translator .editor__issue-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+#stardew-i18n-translator .editor__issue-title--error {
+  color: var(--translator-red);
+}
+
+#stardew-i18n-translator .editor__issue-title--warning {
+  color: var(--translator-orange);
+}
+
 #stardew-i18n-translator .translator-editor .editor__validation {
   align-items: flex-start;
   flex-wrap: wrap;
@@ -154,7 +212,17 @@ body {
   border: 0;
 }
 
+/* The overlay is a grid; without an explicit column the dialog's percentage
+   width resolved against its own content and the dialog grew and shrank
+   with every string. A fixed column and a fixed height keep Prev/Next and
+   Save & next in place while paging through strings. */
+#stardew-i18n-translator .translator-editor-overlay {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 #stardew-i18n-translator .translator-editor-overlay > .translator-editor {
+  width: min(980px, 100%);
+  height: min(760px, calc(100dvh - 32px));
   max-height: min(760px, calc(100dvh - 32px));
 }
 

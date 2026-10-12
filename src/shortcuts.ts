@@ -144,9 +144,11 @@ export function shortcutProblem(shortcut: string): string | null {
   if (key === "Tab") return "Tab is reserved for keyboard navigation.";
   const hasModifier = parts.length > 1;
   const isFunctionKey = /^F([1-9]|1[0-2])$/.test(key);
-  const isNavigationKey = [
-    "Enter",
-    "Escape",
+  const isConfirmKey = key === "Enter" || key === "Escape";
+  // Keys that edit or move the caret inside a text field. Without a modifier
+  // they would fire while typing a translation (Backspace bound to "Clear
+  // translation" would empty the field on every keystroke).
+  const isEditingKey = [
     "Space",
     "ArrowLeft",
     "ArrowRight",
@@ -160,7 +162,9 @@ export function shortcutProblem(shortcut: string): string | null {
     "Backspace",
   ].includes(key);
 
-  if (!hasModifier && !isFunctionKey && !isNavigationKey)
+  if (!hasModifier && isEditingKey)
+    return "Typing keys such as Space, Backspace, Delete, and the arrow keys need Ctrl or Alt so they stay usable in text fields.";
+  if (!hasModifier && !isFunctionKey && !isConfirmKey)
     return "Use Ctrl, Shift, or Alt with letters and numbers.";
   return null;
 }
