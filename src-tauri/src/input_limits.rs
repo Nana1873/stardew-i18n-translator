@@ -59,13 +59,14 @@ fn decode_text(bytes: Vec<u8>) -> Result<String, String> {
         if !body.len().is_multiple_of(2) {
             return Err("UTF-16: the file ends in the middle of a character".to_string());
         }
-        let units: Vec<u16> = body
-            .chunks_exact(2)
-            .map(|pair| {
+        let units: Vec<u16> = (0..body.len())
+            .step_by(2)
+            .map(|index| {
+                let pair = [body[index], body[index + 1]];
                 if little_endian {
-                    u16::from_le_bytes([pair[0], pair[1]])
+                    u16::from_le_bytes(pair)
                 } else {
-                    u16::from_be_bytes([pair[0], pair[1]])
+                    u16::from_be_bytes(pair)
                 }
             })
             .collect();
