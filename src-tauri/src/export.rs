@@ -1713,7 +1713,7 @@ mod tests {
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye #now\" }",
+            "{ \"ok\": \"Hi {{name}}\", \"bad\": \"Bye [FarmName]\" }",
         );
         write(&i18n.join("de.json"), "{ \"old\": \"untouched\" }");
         // `ok` keeps the token; `bad` drops its page break -> only `bad` is
@@ -1736,7 +1736,7 @@ mod tests {
             translations::StoredString {
                 target: "Tschüss".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Bye #now"),
+                source_hash: translations::source_hash("Bye [FarmName]"),
             },
         )
         .unwrap();
@@ -1760,15 +1760,18 @@ mod tests {
     fn added_token_also_omits_the_string() {
         let root = crate::test_support::temp_dir("export-added-token");
         let i18n = root.join("i18n");
-        write(&i18n.join("default.json"), "{ \"bad\": \"Hello #\" }");
+        write(
+            &i18n.join("default.json"),
+            "{ \"bad\": \"Hello [FarmName]\" }",
+        );
         translations::save_one(
             &root,
             "mod.id",
             translations::entry_key("i18n", "bad"),
             translations::StoredString {
-                target: "Hallo ##".into(),
+                target: "Hallo [FarmName][FarmName]".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Hello #"),
+                source_hash: translations::source_hash("Hello [FarmName]"),
             },
         )
         .unwrap();
@@ -1860,16 +1863,16 @@ mod tests {
         let i18n = root.join("i18n");
         write(
             &i18n.join("default.json"),
-            "{ \"translated\": \"Hello #\", \"empty\": \"Bye {{name}}\" }",
+            "{ \"translated\": \"Hello [FarmName]\", \"empty\": \"Bye {{name}}\" }",
         );
         translations::save_one(
             &root,
             "mod.id",
             translations::entry_key("i18n", "translated"),
             translations::StoredString {
-                target: "Hallo #".into(),
+                target: "Hallo [FarmName]".into(),
                 status: "translated".into(),
-                source_hash: translations::source_hash("Hello #"),
+                source_hash: translations::source_hash("Hello [FarmName]"),
             },
         )
         .unwrap();

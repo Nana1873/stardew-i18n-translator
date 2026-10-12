@@ -105,8 +105,8 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
 **warning**, verified against the Stardew 1.6 dialogue, mail, and token parsers:
 
 - Errors break the game: a damaged gender switch (`${` or `}$` missing, or a
-  switch inside a switch, which the game does not nest), a
-  changed `^`, `#`, or `#$b#` page structure, dialogue commands such as `$q`,
+  switch inside a switch, which the game does not nest), a changed `#$b#`
+  page structure, dialogue commands such as `$q`,
   `$r`, `$y`, `$p`, `$d`, `$c`, `$k`, `$action`, event commands `%fork` and
   `%revealtaste`, the arguments of a command that opens the string (such as
   `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), the `_` separators
@@ -114,10 +114,15 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
   a second, different portrait command on one dialogue page for either player
   gender (the game removes every copy of the one it applies, so a repeated
-  portrait is harmless). `$neutral` is not a portrait command in dialogue text.
+  portrait is harmless; a bare `^` also splits a page into a male and a female
+  part). `$neutral` is not a portrait command in dialogue text.
 - Warnings are cosmetic or legitimate translation choices: portrait changes
   (a missing index falls back to portrait 0), a cleanly removed or reshaped
-  gender switch, `@`, and a dropped placeholder or `[ArticleFor]`.
+  gender switch, `@`, a dropped placeholder or `[ArticleFor]`, and a changed
+  bare `^` or `#` that does not put two different portraits on one page or
+  detach a `$y` quick response. Those two split pages and genders in dialogue but are plain
+  text in letters (`^` is a line break) and UI strings, and the app cannot tell
+  these apart reliably, so the translator decides.
 
 Warnings never block. An unaccepted error leaves only that string out of direct
 export and ZIP creation, so SMAPI shows its English source; every other value is

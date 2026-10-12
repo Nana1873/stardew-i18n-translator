@@ -1700,14 +1700,14 @@ mod tests {
             &mods,
             "Example",
             "Fixture.Example",
-            r#"{"hello":"Hello #you","changed":"New"}"#,
+            r#"{"hello":"Hello [FarmName]","changed":"New"}"#,
         );
         output_state(
             &config,
             "Fixture.Example",
             "i18n",
             "hello",
-            "Hello #you",
+            "Hello [FarmName]",
             "Hallo",
             "translated",
         );
@@ -1794,14 +1794,14 @@ mod tests {
             &mods,
             "Example",
             "Fixture.Example",
-            r#"{"hello":"Hello #you"}"#,
+            r#"{"hello":"Hello [FarmName]"}"#,
         );
         output_state(
             &config,
             "Fixture.Example",
             "i18n",
             "hello",
-            "Hello #you",
+            "Hello [FarmName]",
             "Hallo",
             translations::TOKEN_MISMATCH_ACCEPTED_STATUS,
         );
@@ -1811,7 +1811,7 @@ mod tests {
         let prepared = prepare_output(&config).unwrap();
         write(
             &component.join("i18n/default.json"),
-            r#"{"hello":"Changed #you"}"#,
+            r#"{"hello":"Changed [FarmName]"}"#,
         );
         assert!(write_prepared(prepared, &destination, true)
             .unwrap_err()
