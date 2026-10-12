@@ -63,7 +63,7 @@ describe("SettingsDialog", () => {
       />,
     );
     expect(screen.getByText("E:/SDV")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Setup …" }));
+    fireEvent.click(screen.getByRole("button", { name: "Setup…" }));
     expect(onReRunSetup).toHaveBeenCalled();
   });
 

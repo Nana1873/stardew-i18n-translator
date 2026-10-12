@@ -53,7 +53,7 @@ export async function installCases(h) {
     );
   const chooseOldBatch = async (file) => {
     await click(css('button[aria-label="Import LLM batch"]'));
-    await click(button("Choose file …"));
+    await click(button("Choose file…"));
     await native("pick", "Choose LLM translation result", file);
     await element(css('[aria-label="LLM import preflight"]'));
   };

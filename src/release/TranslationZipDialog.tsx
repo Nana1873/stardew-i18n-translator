@@ -151,7 +151,7 @@ export function TranslationZipDialog({
               <strong>Could not prepare ZIP:</strong> {error}
             </div>
           )}
-          {!preview && !error && <p>Preparing current package data …</p>}
+          {!preview && !error && <p>Preparing the package…</p>}
           {preview && (
             <>
               {<ZipSummary preview={preview} />}

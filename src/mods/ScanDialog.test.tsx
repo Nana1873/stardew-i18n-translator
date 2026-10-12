@@ -45,7 +45,7 @@ describe("ScanDialog", () => {
     const dialog = screen.getByRole("dialog", { name: "Scan" });
     expect(dialog).toHaveAttribute("tabindex", "-1");
     await waitFor(() => expect(dialog).toHaveFocus());
-    expect(screen.getByText("Scanning mods …")).toBeInTheDocument();
+    expect(screen.getByText("Scanning mods…")).toBeInTheDocument();
     expect(screen.getByText(/Reading your mods/)).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toHaveAttribute(
       "aria-valuetext",

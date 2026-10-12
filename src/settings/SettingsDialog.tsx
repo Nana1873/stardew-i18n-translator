@@ -794,7 +794,7 @@ export function SettingsDialog({
                     onClick={onReRunSetup}
                     disabled={saving || folderPicking !== null}
                   >
-                    Setup …
+                    Setup…
                   </button>
                 </div>
                 {folderError && (

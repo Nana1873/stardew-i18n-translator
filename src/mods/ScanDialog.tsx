@@ -51,7 +51,7 @@ export function ScanDialog({
   );
   const sourceDeltas = result?.sourceDeltas;
   const title = scanning
-    ? "Scanning mods …"
+    ? "Scanning mods…"
     : error
       ? "Scan failed"
       : retainedResult

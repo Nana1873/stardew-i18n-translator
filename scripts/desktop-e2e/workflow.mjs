@@ -1293,7 +1293,7 @@ try {
         '//button[@role="menuitem"][.//span[normalize-space(.)="Import LLM batch…"]]',
       ),
     );
-    await click(button("Choose file …"));
+    await click(button("Choose file…"));
     await native("pick", "Choose LLM translation result", file);
     await element(css('[aria-label="LLM import preflight"]'));
   }

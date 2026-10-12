@@ -188,7 +188,7 @@ export function ImportBatchDialog({
               onClick={() => void choose()}
               disabled={pending}
             >
-              <FileSearch aria-hidden /> Choose file …
+              <FileSearch aria-hidden /> Choose file…
             </button>
           </div>
           <div className="translator-flow-callout">

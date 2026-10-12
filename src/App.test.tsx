@@ -503,7 +503,7 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Scan mods" })).toBeEnabled(),
     );
-    expect(screen.getByPlaceholderText("Filter mods …")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Filter mods…")).toBeInTheDocument();
     expect(
       screen.queryByRole("dialog", { name: "Setup" }),
     ).not.toBeInTheDocument();
@@ -3869,7 +3869,7 @@ describe("App shell", () => {
       name: "Settings",
     });
     fireEvent.click(
-      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+      within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
 
     const setup = await screen.findByRole("dialog", { name: "Setup" });
@@ -3934,7 +3934,7 @@ describe("App shell", () => {
       name: "Settings",
     });
     fireEvent.click(
-      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+      within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
 
     const setup = await screen.findByRole("dialog", { name: "Setup" });
@@ -4040,7 +4040,7 @@ describe("App shell", () => {
       name: "Settings",
     });
     fireEvent.click(
-      within(settingsDialog).getByRole("button", { name: "Setup …" }),
+      within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
     const setup = await screen.findByRole("dialog", { name: "Setup" });
     // Change the language on step 3 so a wrongly saved cancel would show up.
@@ -4254,7 +4254,7 @@ describe("App shell", () => {
       name: "Import LLM batch",
     });
     fireEvent.click(
-      within(dialog).getByRole("button", { name: "Choose file …" }),
+      within(dialog).getByRole("button", { name: "Choose file…" }),
     );
     fireEvent.click(
       await within(dialog).findByRole("button", {
@@ -5113,7 +5113,7 @@ describe("App shell", () => {
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.getByRole("dialog", { name: "Scan" })).toBe(dialog);
-    expect(within(dialog).getByText("Scanning mods …")).toBeVisible();
+    expect(within(dialog).getByText("Scanning mods…")).toBeVisible();
 
     scanResolvers.shift()!(EMPTY_SCAN);
     await waitFor(() =>

@@ -2352,7 +2352,7 @@ export function App() {
                   <input
                     className="modlist__search translator-search"
                     type="search"
-                    placeholder="Filter mods …"
+                    placeholder="Filter mods…"
                     aria-label="Filter mods"
                     value={modQuery}
                     onChange={(event) => setModQuery(event.target.value)}
