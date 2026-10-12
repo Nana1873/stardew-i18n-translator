@@ -69,6 +69,9 @@ pub struct ExportFileResult {
     /// file — reported here so a community translation is never pruned
     /// silently. The pre-export content survives in `<file>.bak`.
     pub orphan_keys: Vec<String>,
+    /// The target already held exactly this content, so it was left untouched
+    /// and its existing backup was kept. Counts as written.
+    pub unchanged: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default, PartialEq, Eq)]
@@ -144,6 +147,19 @@ struct PreparedFile {
     target_path: PathBuf,
     body: Option<String>,
     removals: Vec<PathBuf>,
+}
+
+impl PreparedFile {
+    /// The target already holds exactly this content and no regional variant
+    /// needs removing. Rewriting it would only replace the previous backup
+    /// (often the original community translation) and touch its timestamp.
+    fn is_unchanged(&self) -> bool {
+        let Some(body) = self.body.as_deref() else {
+            return false;
+        };
+        self.removals.iter().all(|path| path == &self.target_path)
+            && std::fs::read(&self.target_path).is_ok_and(|current| current == body.as_bytes())
+    }
 }
 
 struct PreparedMod {
@@ -630,8 +646,12 @@ fn prepare_mod(
 
 fn execute_prepared(mods: &mut [PreparedMod]) -> Result<(), String> {
     let mut mutation_paths = Vec::new();
-    for prepared in mods.iter() {
-        for file in &prepared.files {
+    for prepared in mods.iter_mut() {
+        for file in &mut prepared.files {
+            file.result.unchanged = file.is_unchanged();
+            if file.result.unchanged {
+                continue;
+            }
             for target in target_variants(&file.target_path) {
                 mutation_paths.push(target.clone());
                 mutation_paths.push(sibling(&target, ".bak"));
@@ -643,7 +663,10 @@ fn execute_prepared(mods: &mut [PreparedMod]) -> Result<(), String> {
     let mutation = (|| -> Result<(), (String, PathBuf)> {
         for prepared in mods {
             for file in &mut prepared.files {
-                if let Some(body) = file.body.as_deref() {
+                if file.result.unchanged {
+                    file.result.written = true;
+                    prepared.result.files_written += 1;
+                } else if let Some(body) = file.body.as_deref() {
                     file.result.backed_up = write_target(&file.target_path, body)
                         .map_err(|error| (error, file.target_path.clone()))?;
                     for obsolete in file
@@ -885,6 +908,15 @@ impl ExportTransaction {
         let mut errors = Vec::new();
         for snapshot in &self.snapshots {
             let restored = match &snapshot.original {
+                // A file this export never changed (or whose write failed before
+                // replacing it) already matches its snapshot. Leave it alone so
+                // its timestamp stays and a locked file does not turn into a
+                // false "rollback incomplete".
+                OriginalPath::File(source)
+                    if std::fs::read(source).ok() == std::fs::read(&snapshot.path).ok() =>
+                {
+                    Ok(())
+                }
                 OriginalPath::File(source) => std::fs::copy(source, &snapshot.path)
                     .map(|_| ())
                     .map_err(|error| error.to_string()),
@@ -2334,6 +2366,48 @@ mod tests {
         assert!(read(&i18n.join("zh.json.bak")).contains("Short old"));
         assert!(read(&i18n.join("zh-CN.json.bak")).contains("Regional first"));
         assert!(!i18n.join("zh-CN.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_second_identical_export_keeps_the_original_backup_and_timestamp() {
+        let root = crate::test_support::temp_dir("export-unchanged");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{ "k": "Hello" }"#);
+        write(&i18n.join("de.json"), r#"{ "k": "Community" }"#);
+        translations::save_one(
+            &root,
+            "mod.id",
+            translations::entry_key("i18n", "k"),
+            translations::StoredString {
+                target: "Hallo".into(),
+                status: "translated".into(),
+                source_hash: translations::source_hash("Hello"),
+            },
+        )
+        .unwrap();
+
+        let first = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert!(!first.files[0].unchanged);
+        assert!(read(&i18n.join("de.json.bak")).contains("Community"));
+        let modified = std::fs::metadata(i18n.join("de.json"))
+            .unwrap()
+            .modified()
+            .unwrap();
+
+        let second = export_mod(&root, "mod.id", &input(&i18n)).unwrap();
+        assert_eq!(second.files_written, 1);
+        assert!(second.files[0].unchanged);
+        assert!(second.files[0].written);
+        assert!(read(&i18n.join("de.json.bak")).contains("Community"));
+        assert!(read(&i18n.join("de.json")).contains("Hallo"));
+        assert_eq!(
+            std::fs::metadata(i18n.join("de.json"))
+                .unwrap()
+                .modified()
+                .unwrap(),
+            modified
+        );
         std::fs::remove_dir_all(root).ok();
     }
 }
