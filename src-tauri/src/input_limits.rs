@@ -20,6 +20,16 @@ pub(crate) fn ensure_json_output_size(byte_len: u64, label: &str) -> Result<(), 
     Ok(())
 }
 
+/// Write a temporary file and flush it to disk before the caller renames it
+/// into place, so a power loss right after the rename cannot leave an empty
+/// or partial translation, settings, or target file.
+pub(crate) fn write_synced(path: &Path, body: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut file = File::create(path)?;
+    file.write_all(body)?;
+    file.sync_all()
+}
+
 pub(crate) fn read_json_text(path: &Path) -> Result<String, String> {
     let file =
         File::open(path).map_err(|error| format!("Could not read {}: {error}", path.display()))?;
@@ -82,6 +92,17 @@ fn decode_text(bytes: Vec<u8>) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_synced_replaces_the_file_content() {
+        let dir = crate::test_support::temp_dir("write-synced");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("state.json.tmp");
+        std::fs::write(&path, "old content that is longer").unwrap();
+        write_synced(&path, b"{}").unwrap();
+        assert_eq!(std::fs::read(&path).unwrap(), b"{}");
+        std::fs::remove_dir_all(dir).ok();
+    }
 
     #[test]
     fn rejects_oversized_file_before_reading_it() {

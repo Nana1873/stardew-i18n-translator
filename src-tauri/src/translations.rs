@@ -286,7 +286,8 @@ pub fn prepare_state_paths(
                     std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
                 }
                 let temp = sibling(&destination, ".tmp");
-                std::fs::write(&temp, body).map_err(|error| error.to_string())?;
+                crate::input_limits::write_synced(&temp, body.as_bytes())
+                    .map_err(|error| error.to_string())?;
                 std::fs::rename(&temp, &destination).map_err(|error| error.to_string())
             });
         if let Err(error) = migration {
@@ -401,7 +402,7 @@ fn stage_serialized_state(path: &Path, body: &str) -> Result<(), String> {
             .map_err(|error| format!("Could not create translations dir: {error}"))?;
     }
 
-    std::fs::write(sibling(path, ".tmp"), body.as_bytes())
+    crate::input_limits::write_synced(&sibling(path, ".tmp"), body.as_bytes())
         .map_err(|error| format!("Could not write temp state file: {error}"))
 }
 

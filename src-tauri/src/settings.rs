@@ -336,7 +336,7 @@ pub fn save(config_dir: &Path, settings: &AppSettings) -> Result<(), String> {
     }
 
     let temp = sibling(&path, ".tmp");
-    std::fs::write(&temp, body.as_bytes())
+    crate::input_limits::write_synced(&temp, body.as_bytes())
         .map_err(|error| format!("Could not write temp settings file: {error}"))?;
     std::fs::rename(&temp, &path)
         .map_err(|error| format!("Could not finalize {}: {error}", path.display()))
