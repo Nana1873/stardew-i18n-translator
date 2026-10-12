@@ -584,16 +584,24 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 .into(),
         );
     }
-    // Like the selected-mod ZIP and JSON export, a component the scan had to
-    // skip is left out instead of blocking every other translation.
-    let mut skipped: Vec<String> = scan
+    // A package the scan had to skip in whole or in part is left out instead
+    // of blocking every other translation. Like the selected-mod ZIP, which
+    // refuses a package with such a skip, no partial package is written.
+    let attention: Vec<_> = scan
         .skipped_components
         .iter()
         .filter(|item| item.requires_attention)
+        .collect();
+    let skipped_packages: std::collections::HashSet<&str> = attention
+        .iter()
+        .filter_map(|item| item.package_id.as_deref())
+        .collect();
+    let mut skipped: Vec<String> = attention
+        .iter()
         .map(|item| {
-            item.component_name
+            item.package_id
                 .clone()
-                .or_else(|| item.package_id.clone())
+                .or_else(|| item.component_name.clone())
                 .unwrap_or_else(|| item.relative_location.clone())
         })
         .collect();
@@ -614,12 +622,15 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
     };
     if !skipped.is_empty() {
         prepared.preview.warnings.push(format!(
-            "Left out because the scan could not read them: {}. Open Scan for details.",
+            "Left out because the scan skipped all or part of them: {}. Open Scan for details.",
             skipped.join(", ")
         ));
     }
     let mut identities = std::collections::HashSet::new();
     for component in scan.mods {
+        if skipped_packages.contains(component.package_id.as_str()) {
+            continue;
+        }
         if !identities.insert(component.unique_id.to_lowercase()) {
             return Err("Ambiguous component identity in the current scan.".into());
         }
@@ -1636,10 +1647,36 @@ mod tests {
                 .preview
                 .warnings
                 .iter()
-                .any(|warning| warning.contains("Left out") && warning.contains("Fixture.Broken")),
+                .any(|warning| warning.contains("Left out") && warning.contains("Broken")),
             "{:?}",
             prepared.preview.warnings
         );
+    }
+
+    #[test]
+    fn output_leaves_out_a_package_with_one_unreadable_split_document() {
+        let (_root, config, mods) = output_fixture("output-partial-package");
+        let good = output_component(&mods, "Good", "Fixture.Good", r#"{"hello":"Hello"}"#);
+        write(&good.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
+        let split = output_component(&mods, "Split", "Fixture.Split", r#"{"x":"X"}"#);
+        std::fs::remove_file(split.join("i18n/default.json")).unwrap();
+        write(&split.join("i18n/default/Fine.json"), r#"{"fine":"Fine"}"#);
+        write(&split.join("i18n/de/Fine.json"), r#"{"fine":"Gut"}"#);
+        write(
+            &split.join("i18n/default/Broken.json"),
+            r#"{ "a": "A" "b": }"#,
+        );
+
+        let prepared = prepare_output(&config).expect("a skipped part does not block");
+        assert!(prepared
+            .entries
+            .iter()
+            .all(|entry| !entry.preview.archive_path.starts_with("Split/")));
+        assert!(prepared
+            .preview
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("Split")));
     }
 
     #[test]

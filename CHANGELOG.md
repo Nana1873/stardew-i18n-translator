@@ -26,9 +26,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 ### Fixed
 
 - **Export ZIP for all mods** no longer fails completely when the scan had to
-  skip a component, such as another mod with a broken `default.json`. The
-  skipped components are left out and named in the preview; every other
-  translation is packaged.
+  skip a component, such as another mod with a broken `default.json`. A
+  package with a skipped part is left out as a whole and named in the preview;
+  every other translation is packaged.
 - Existing Chinese translations in `i18n/zh-CN.json` are imported like
   `pt-BR.json`; export writes `zh.json` and backs up and removes the regional
   file, so the exported translation is the one SMAPI loads.
