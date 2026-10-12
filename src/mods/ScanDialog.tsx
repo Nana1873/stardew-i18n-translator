@@ -255,14 +255,14 @@ function ScanResultContent({ result }: { result: ScanResult }) {
             {`Read ${mods} with ${files}.`}
             {problemCount > 0 && " Your saved work is safe."}
           </span>
+          <span
+            className={`translator-scan-changes${changeLine.highlight ? " has-changes" : ""}`}
+          >
+            <RefreshCw aria-hidden="true" />
+            {changeLine.text}
+          </span>
         </div>
       </div>
-
-      <p
-        className={`translator-scan-changes${changeLine.highlight ? " has-changes" : ""}`}
-      >
-        {changeLine.text}
-      </p>
 
       {problemCount > 0 && (
         <section
