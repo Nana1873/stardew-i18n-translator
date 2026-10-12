@@ -1913,8 +1913,8 @@ export function App() {
       settings.stardewPath === currentSettings.stardewPath;
     // The notice keeps the run's original callbacks. Refresh only that
     // workspace, using the latest scan callback to preserve current selection.
+    // The rescan reloads the table once when it completes.
     if (result.done > 0 && sameWorkspace) {
-      setReloadToken((token) => token + 1);
       void runScanRef.current(currentSettings, false, () => true, {
         preserveSelection: true,
         showDiagnostics: false,

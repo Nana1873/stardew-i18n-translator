@@ -348,7 +348,11 @@ export function StringEditor({
       document.activeElement instanceof HTMLElement
         ? document.activeElement
         : null;
-    return () => launcherRef.current?.focus();
+    // A launcher row that left the filter is no longer on the page; the
+    // table then moves focus to the nearest visible row instead.
+    return () => {
+      if (launcherRef.current?.isConnected) launcherRef.current.focus();
+    };
   }, []);
 
   const draftIdentityRef = useRef(rowIdentity);

@@ -38,6 +38,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- The string selection, scroll position, and visible rows stay in place when
+  the same strings reload after an AI run, rescan, import, or undo. Selected
+  strings that no longer exist drop out. An AI run reloads the table once
+  instead of twice.
+- Closing the string editor returns keyboard focus to the table, on the
+  edited row or the row that took its place when it left the filter.
 - Exporting a mod again without changes leaves target files that already hold
   the exported content untouched, so their earlier `.bak` backup and file
   date are kept. A failed export no longer reports an incomplete rollback for
