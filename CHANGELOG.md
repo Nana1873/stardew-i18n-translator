@@ -118,6 +118,16 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- Commented-out entries such as `//"OldGreeting": "Hi",` and notes such as
+  `// TODO` in `default.json` no longer show up as section headings in the
+  editor or in the AI request.
+- The glossary keeps names with small words such as "Ring of Yoba" or
+  "Message in a Bottle", and keeps Vietnamese names, which write each
+  syllable as a separate word.
+- When a file or folder of a split `i18n/<lang>/` translation cannot be
+  opened during a scan or an export, the message names it (relative to the
+  Mods folder or as `i18n/<lang>`) and says what to do, instead of showing
+  only a system error.
 - F5, Ctrl+R, F3 and Ctrl+P no longer reload, search or print inside the app
   window; Translate with AI keeps Ctrl+F5.
 - An export failure stays visible when another result replaced its card, the
