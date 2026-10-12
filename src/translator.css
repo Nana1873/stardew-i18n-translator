@@ -680,6 +680,22 @@
   white-space: nowrap;
 }
 
+#stardew-i18n-translator
+  .translator-string-meta
+  > .translator-string-meta-item {
+  flex: none;
+  max-width: none;
+  overflow: visible;
+}
+
+#stardew-i18n-translator
+  .translator-string-meta-item
+  + .translator-string-meta-item::before {
+  content: "·";
+  margin-right: 8px;
+  color: var(--translator-faint);
+}
+
 #stardew-i18n-translator .translator-progress-inline {
   flex: none;
   width: 94px;

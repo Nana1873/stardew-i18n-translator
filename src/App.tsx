@@ -2426,7 +2426,9 @@ export function App() {
                   onCancelAi={cancelAiRun}
                   headerMeta={
                     lastScanAt
-                      ? `scanned ${Math.max(0, Math.round((now - lastScanAt) / 60_000))} min ago`
+                      ? Math.round((now - lastScanAt) / 60_000) < 1
+                        ? "scanned just now"
+                        : `scanned ${Math.round((now - lastScanAt) / 60_000)} min ago`
                       : "scan time unavailable"
                   }
                   glossary={glossary}

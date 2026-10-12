@@ -275,6 +275,8 @@
 #stardew-i18n-translator .translator-string-meta {
   flex-wrap: nowrap;
   overflow: hidden;
+  /* Fade the end of a line that does not fit instead of cutting every part. */
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
 }
 /* Reserve selection actions in the header so selecting rows never reflows filters. */
 #stardew-i18n-translator .translator-string-head > .translator-bulk-wrap {

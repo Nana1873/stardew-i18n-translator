@@ -2247,7 +2247,7 @@ export function StringTable({
       ? String(workingTranslated) + " / " + String(data.length) + " covered"
       : "No translatable strings",
     ...(noTextNeeded
-      ? [String(noTextNeeded) + " need no translation text"]
+      ? [String(noTextNeeded) + " with no text to translate"]
       : []),
     ...suppliedHeaderMeta.filter((item) => item.trim().length > 0),
   ];
@@ -2471,8 +2471,15 @@ export function StringTable({
               <span>{effectiveHeaderTitle}</span>
             </h1>
             <div className="translator-string-meta">
+              {/* Parts are never cut one by one; on a narrow window the line
+                  fades out at its end instead (see .translator-string-meta). */}
               {workspaceMetaItems.map((item, index) => (
-                <span key={String(index) + "-" + item}>{item}</span>
+                <span
+                  key={String(index) + "-" + item}
+                  className="translator-string-meta-item"
+                >
+                  {item}
+                </span>
               ))}
               {data.length > 0 && (
                 <span

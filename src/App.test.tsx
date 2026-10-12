@@ -544,7 +544,7 @@ describe("App shell", () => {
       });
       expect(
         screen.getByRole("main", { name: "String table" }),
-      ).toHaveTextContent("scanned 0 min ago");
+      ).toHaveTextContent("scanned just now");
       await act(async () => {
         vi.advanceTimersByTime(60_000);
       });

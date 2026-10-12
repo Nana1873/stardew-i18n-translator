@@ -3403,7 +3403,7 @@ it("derives blank source status and reopens it after a source update, retaining 
     "data-complete",
     "false",
   );
-  expect(screen.getByText("1 need no translation text")).toBeInTheDocument();
+  expect(screen.getByText("1 with no text to translate")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(
     "a.b",
     1,
