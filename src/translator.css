@@ -3643,11 +3643,20 @@
 
 /* An account problem reads as a warning, not as ordinary help text. */
 #stardew-i18n-translator .translator-setting-copy .translator-setting-warning {
-  display: block;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
   margin-top: 4px;
   padding: 6px 8px;
   color: var(--translator-orange);
   background: var(--translator-orange-soft);
   border-left: 3px solid var(--translator-orange);
   border-radius: 4px;
+}
+
+#stardew-i18n-translator .translator-setting-warning-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
 }

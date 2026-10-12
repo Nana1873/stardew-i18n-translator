@@ -1,4 +1,10 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { AppSettings } from "../tauri/commands";
 
@@ -221,6 +227,14 @@ it.each([
     fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
     fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
     await screen.findByRole("button", { name: "Sign in with ChatGPT" });
-    expect(screen.getByText(warning)).toBeVisible();
+    const alert = screen.getByRole("alert");
+    expect(alert).toHaveTextContent(warning);
+    expect(alert).toBeVisible();
+    // A warning icon marks the callout; file paths read as code.
+    expect(alert.querySelector("svg")).not.toBeNull();
+    if (warning.includes("data/chatgpt-session.bin"))
+      expect(within(alert).getByText("data/chatgpt-session.bin").tagName).toBe(
+        "CODE",
+      );
   },
 );
