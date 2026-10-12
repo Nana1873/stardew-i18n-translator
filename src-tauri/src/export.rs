@@ -194,7 +194,8 @@ pub fn validate_paths(
                     "an export request names an invalid split translation file",
                 ));
             }
-            let source = std::fs::canonicalize(default_path).map_err(|e| e.to_string())?;
+            let source = std::fs::canonicalize(default_path)
+                .map_err(|error| unreadable_source(default_path, mods_root, &error))?;
             let unexpected_source = || unexpected_place(default_path, mods_root);
             let parent = source.parent().ok_or_else(unexpected_source)?;
             let i18n = parent.parent().ok_or_else(unexpected_source)?;
@@ -207,7 +208,8 @@ pub fn validate_paths(
             {
                 return Err(unexpected_source());
             }
-            let expected = scanner::split_target_path(&source, target_lang)?;
+            let expected = scanner::split_target_path(&source, target_lang)
+                .map_err(|error| scanner::safe_skip_reason(&error, mods_root))?;
             let actual_parent = validate_target_location(target_path, &canonical_root)?;
             let expected_parent = validate_target_location(&expected, &canonical_root)?;
             if actual_parent != expected_parent || target_path.file_name() != expected.file_name() {
@@ -239,12 +241,8 @@ pub fn validate_paths(
             return Err(unexpected_place(target_path, mods_root));
         }
 
-        let canonical_default = std::fs::canonicalize(default_path).map_err(|error| {
-            format!(
-                "Could not validate export source {}: {error}",
-                default_path.display()
-            )
-        })?;
+        let canonical_default = std::fs::canonicalize(default_path)
+            .map_err(|error| unreadable_source(default_path, mods_root, &error))?;
         if !canonical_default.is_file() || !canonical_default.starts_with(&canonical_root) {
             return Err(unexpected_place(default_path, mods_root));
         }
@@ -391,18 +389,32 @@ fn file_name_is(path: &Path, expected: &str) -> bool {
         .is_some_and(|name| name.eq_ignore_ascii_case(expected))
 }
 
-/// A path refusal that names the file relative to the Mods folder, so the
+/// A path relative to the Mods folder (or only its last three parts), so the
 /// message and the Activity log do not carry the user's folder layout.
-fn unexpected_place(path: &Path, mods_root: &Path) -> String {
-    let shown = path
-        .strip_prefix(mods_root)
+fn shown_path(path: &Path, mods_root: &Path) -> String {
+    path.strip_prefix(mods_root)
         .map(|relative| format!("Mods/{}", relative.display()))
         .unwrap_or_else(|_| {
             let parts: Vec<_> = path.components().rev().take(3).collect();
             let tail: PathBuf = parts.into_iter().rev().collect();
             format!(".../{}", tail.display())
-        });
+        })
+        .replace('\\', "/")
+}
+
+/// A path refusal that names the file relative to the Mods folder.
+fn unexpected_place(path: &Path, mods_root: &Path) -> String {
+    let shown = shown_path(path, mods_root);
     format!("This mod's files are in an unexpected place ({shown}), so it wasn't exported.")
+}
+
+/// The English source file of an export could not be opened.
+fn unreadable_source(path: &Path, mods_root: &Path, error: &std::io::Error) -> String {
+    format!(
+        "Could not open {} ({}), so this mod wasn't exported. Scan again, then export.",
+        shown_path(path, mods_root),
+        scanner::plain_io_error(error)
+    )
 }
 
 fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBuf, String> {
@@ -2260,6 +2272,37 @@ mod tests {
         let error = validate_paths(&mods, "de", &[escaped]).unwrap_err();
         assert!(error.contains("unexpected place"));
 
+        std::fs::remove_dir_all(base).ok();
+    }
+
+    #[test]
+    fn missing_export_sources_are_named_relative_to_mods_in_plain_words() {
+        let base = crate::test_support::temp_dir("export-path-missing");
+        let mods = base.join("Mods");
+        std::fs::create_dir_all(mods.join("Gone/i18n/default")).unwrap();
+        let flat = ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: mods.join("Gone/i18n/default.json").display().to_string(),
+            target_path: mods.join("Gone/i18n/de.json").display().to_string(),
+        };
+        let split = ExportFileInput {
+            relative_dir: "i18n/@split/Events.json".into(),
+            default_path: mods
+                .join("Gone/i18n/default/Events.json")
+                .display()
+                .to_string(),
+            target_path: mods.join("Gone/i18n/de/Events.json").display().to_string(),
+        };
+        for file in [flat, split] {
+            let error = validate_paths(&mods, "de", &[file]).unwrap_err();
+            assert!(
+                error.starts_with("Could not open Mods/Gone/i18n/"),
+                "{error}"
+            );
+            assert!(error.contains("(it no longer exists)"), "{error}");
+            assert!(!error.contains("os error"), "{error}");
+            assert!(!error.contains(&base.display().to_string()), "{error}");
+        }
         std::fs::remove_dir_all(base).ok();
     }
 

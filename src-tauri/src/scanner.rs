@@ -614,7 +614,7 @@ fn safe_relative_location(path: &Path, mods_path: &Path) -> String {
         .unwrap_or_else(|| "Unavailable".to_string())
 }
 
-fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
+pub(crate) fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
     let mut safe = reason.to_string();
     let mut roots = vec![mods_path.display().to_string()];
     if let Ok(canonical) = std::fs::canonicalize(mods_path) {
@@ -1345,13 +1345,41 @@ fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
         })
 }
 
+/// An I/O error in plain words, without the `(os error N)` suffix.
+pub(crate) fn plain_io_error(error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "it no longer exists".to_string(),
+        std::io::ErrorKind::PermissionDenied => "Windows denied access".to_string(),
+        _ => {
+            let text = error.to_string();
+            match text.rfind(" (os error ") {
+                Some(index) if text.ends_with(')') => {
+                    text[..index].trim_end_matches('.').to_string()
+                }
+                _ => text,
+            }
+        }
+    }
+}
+
+/// A translation folder that cannot be listed, named by its last two parts
+/// (`i18n/de`) so the message never carries the user's folder layout.
+fn unreadable_folder(dir: &Path, error: &std::io::Error) -> String {
+    let parts: Vec<_> = dir.components().rev().take(2).collect();
+    let shown: PathBuf = parts.into_iter().rev().collect();
+    format!(
+        "Could not read the folder {} ({}). Check that it exists and is not locked by another program, then scan again.",
+        shown.display().to_string().replace('\\', "/"),
+        plain_io_error(error)
+    )
+}
+
 /// Folded keys of every source document beside `source` (all split segments).
 fn split_source_keys(source: &Path, root: &Path) -> Result<HashSet<String>, String> {
     let mut known = HashSet::new();
-    for entry in std::fs::read_dir(source.parent().ok_or("Invalid split source")?)
-        .map_err(|e| e.to_string())?
-    {
-        let path = entry.map_err(|e| e.to_string())?.path();
+    let sources = source.parent().ok_or("Invalid split source")?;
+    for entry in std::fs::read_dir(sources).map_err(|e| unreadable_folder(sources, &e))? {
+        let path = entry.map_err(|e| unreadable_folder(sources, &e))?.path();
         if !path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -1382,8 +1410,8 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
     let mut matches = Vec::new();
     let mut all_source_keys = None;
     if target.is_dir() {
-        for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
-            let path = entry.map_err(|e| e.to_string())?.path();
+        for entry in std::fs::read_dir(&target).map_err(|e| unreadable_folder(&target, &e))? {
+            let path = entry.map_err(|e| unreadable_folder(&target, &e))?.path();
             if !path
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -1503,9 +1531,9 @@ fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, S
         return Ok(vec![Ok(dir.to_path_buf())]);
     }
     if std::fs::read_dir(dir)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| unreadable_folder(dir, &e))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| unreadable_folder(dir, &e))?
         .into_iter()
         .any(|e| {
             e.path()
@@ -1518,8 +1546,12 @@ fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, S
         );
     }
     let mut files: Vec<_> = std::fs::read_dir(&split)
-        .map_err(|e| e.to_string())?
-        .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
+        .map_err(|e| unreadable_folder(&split, &e))?
+        .map(|entry| {
+            entry
+                .map(|e| e.path())
+                .map_err(|e| unreadable_folder(&split, &e))
+        })
         .collect::<Result<_, _>>()?;
     files.retain(|p| {
         p.extension()
@@ -3564,6 +3596,19 @@ mod blank_source_tests {
 #[cfg(test)]
 mod split_locale_tests {
     use super::*;
+
+    #[test]
+    fn unreadable_split_folders_are_named_briefly_in_plain_words() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let message = unreadable_folder(Path::new("C:/Users/Someone/Mods/Mod/i18n/de"), &missing);
+        assert_eq!(
+            message,
+            "Could not read the folder i18n/de (it no longer exists). Check that it exists and is not locked by another program, then scan again."
+        );
+        let other = std::io::Error::other("The disk is busy. (os error 170)");
+        assert_eq!(plain_io_error(&other), "The disk is busy");
+    }
+
     #[test]
     fn split_units_roundtrip_through_batch_working_state_and_folder_export() {
         let root = crate::test_support::temp_dir("split-working-roundtrip");
