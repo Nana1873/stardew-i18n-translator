@@ -38,6 +38,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A ChatGPT connection that stalls early is reported as an interrupted
+  connection and retried, instead of as a batch that exceeded the five-minute
+  limit and was split.
 - If a package breaks between the preview and the build of the ZIP for all
   mods, the result and the Activity log name it as left out instead of leaving
   it out without a word.

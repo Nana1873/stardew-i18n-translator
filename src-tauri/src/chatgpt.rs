@@ -118,6 +118,7 @@ pub async fn run_prompt(
             return Err(ProviderFailure::Cancelled);
         }
         progress(ProviderProgressEvent::Activity(ProviderActivity::Starting));
+        let started = std::time::Instant::now();
         let response = chatgpt_auth::client().map_err(ProviderFailure::Message)?.post(format!("{}/responses", chatgpt_auth::RESOURCE)).bearer_auth(token).json(&json!({
             "model": model, "instructions": prompt.instructions,
             "input": [{"role":"user","content":prompt.input}],
@@ -127,7 +128,7 @@ pub async fn run_prompt(
         })).send().await.map_err(|error| {
             // The 10 s connect timeout also reports is_timeout(); that is a
             // network problem, not an oversized batch.
-            if error.is_timeout() && !error.is_connect() {
+            if error.is_timeout() && !error.is_connect() && reached_time_limit(started) {
                 timeout_failure()
             } else {
                 ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into())
@@ -139,7 +140,7 @@ pub async fn run_prompt(
             let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
             return Err(chatgpt_auth::api_failure(status, &body));
         }
-        crate::chatgpt_response::consume(response, progress).await
+        crate::chatgpt_response::consume(response, progress, started).await
     };
     tokio::pin!(request);
     loop {
@@ -162,6 +163,13 @@ pub(crate) const TIMEOUT_MESSAGE: &str =
 /// A refusal concerns content, not the response structure.
 pub(crate) const REFUSAL_MESSAGE: &str = "The model declined to translate part of this batch.";
 
+/// reqwest also reports an operating-system `TimedOut` (a stalled connection)
+/// as a timeout. Only an attempt that actually ran close to the five-minute
+/// client limit counts as too large; an earlier stall is a network problem.
+pub(crate) fn reached_time_limit(started: std::time::Instant) -> bool {
+    started.elapsed() + Duration::from_secs(10) >= chatgpt_auth::REQUEST_TIMEOUT
+}
+
 pub(crate) fn timeout_failure() -> ProviderFailure {
     ProviderFailure::InvalidResponse(TIMEOUT_MESSAGE.into())
 }
@@ -169,3 +177,18 @@ pub(crate) fn timeout_failure() -> ProviderFailure {
 #[path = "cloud_translation.rs"]
 mod cloud_translation;
 pub(crate) use cloud_translation::{repair_token_mismatches_once, translate_chunk};
+
+#[cfg(test)]
+mod time_limit_tests {
+    use super::*;
+
+    #[test]
+    fn only_an_attempt_near_five_minutes_counts_as_the_time_limit() {
+        let now = std::time::Instant::now();
+        assert!(!reached_time_limit(now));
+        let early = now.checked_sub(Duration::from_secs(20)).unwrap();
+        assert!(!reached_time_limit(early));
+        let late = now.checked_sub(Duration::from_secs(300)).unwrap();
+        assert!(reached_time_limit(late));
+    }
+}
