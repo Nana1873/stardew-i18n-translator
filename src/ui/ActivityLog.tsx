@@ -18,8 +18,7 @@ export function ActivityLog({
   totalStrings,
   language,
   scanning,
-  warningCount,
-  skippedCount,
+  attentionCount,
   scanError,
   history,
   modNames,
@@ -33,8 +32,7 @@ export function ActivityLog({
   totalStrings: number;
   language: string;
   scanning: boolean;
-  warningCount: number;
-  skippedCount: number | null;
+  attentionCount: number | null;
   scanError: string | null;
   history: OperationHistoryEntry[];
   modNames: ReadonlyMap<string, string>;
@@ -141,25 +139,12 @@ export function ActivityLog({
   useEffect(() => {
     if (!lastScanAt || seenScan.current === lastScanAt) return;
     seenScan.current = lastScanAt;
-    const diagnostics = [
-      ...(warningCount
-        ? [
-            `${warningCount} scanner ${warningCount === 1 ? "warning" : "warnings"}`,
-          ]
-        : []),
-      ...(skippedCount === null
-        ? ["skipped-component details unavailable"]
-        : skippedCount
-          ? [
-              `${skippedCount} ${skippedCount === 1 ? "component" : "components"} skipped`,
-            ]
-          : []),
-    ];
+    const attention = attentionCount ?? 0;
     append(
       {
         kind: "message",
-        message: `Scan completed: ${modCount} ${modCount === 1 ? "mod" : "mods"}, ${totalStrings} source ${totalStrings === 1 ? "string" : "strings"}, ${language}.${diagnostics.length ? ` ${diagnostics.join(", ")}.` : ""}`,
-        tone: diagnostics.length ? "warning" : "success",
+        message: `Scan done: ${modCount} ${modCount === 1 ? "mod" : "mods"}, ${totalStrings} English ${totalStrings === 1 ? "text" : "texts"}, ${language}.${attention ? ` ${attention} ${attention === 1 ? "item needs" : "items need"} a look.` : ""}`,
+        tone: attention ? "warning" : "success",
         details: { kind: "scan", time: lastScanAt },
       },
       lastScanAt,

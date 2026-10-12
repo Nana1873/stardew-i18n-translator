@@ -351,7 +351,9 @@ it("preserves a dirty draft until the changed source is explicitly accepted", as
   expect(input).toHaveValue("Revised manual draft");
   fireEvent.click(screen.getByRole("button", { name: /^Save$/ }));
   expect(
-    screen.getByRole("dialog", { name: "Protected token mismatch" }),
+    screen.getByRole("dialog", {
+      name: "A token differs from the English text",
+    }),
   ).toBeVisible();
   expect(
     invokeMock.mock.calls.filter(([cmd]) => cmd === "save_string"),
@@ -1415,48 +1417,48 @@ describe("StringTable workbench", () => {
     await screen.findByText("warning");
 
     const warning = within(rowFor("warning")).getByRole("button", {
-      name: /^Note: harmless difference, exported normally\./,
+      name: /^Worth a look: exported as written\./,
     });
     const error = within(rowFor("error")).getByRole("button", {
-      name: /^Error: export leaves this string out/,
+      name: /^Must fix: this text stays English/,
     });
     expect(warning).toHaveAttribute("data-severity", "warning");
     expect(error).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("mixed")).getByRole("button", {
-        name: /^Error: export leaves this string out/,
+        name: /^Must fix: this text stays English/,
       }),
     ).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("accepted")).getByRole("button", {
-        name: /^Accepted token mismatch: exported as written\./,
+        name: /^Kept on purpose: exported as written\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
     expect(
       within(rowFor("accepted-with-invalid-text")).getByRole("button", {
-        name: /^Error: export leaves this string out \(English in game\) until it is fixed\. Token mismatch explicitly accepted; other errors remain\./,
+        name: /^Must fix: this text stays English in the game until fixed\. Other problems remain\./,
       }),
     ).toHaveAttribute("data-severity", "error");
 
     fireEvent.focus(warning);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Note: harmless difference, exported normally. Literal escape sequences differ from the original",
+      "Worth a look: exported as written. Special codes like \\n differ from the English text.",
     );
     fireEvent.blur(warning);
     fireEvent.focus(error);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Error: export leaves this string out (English in game) until it is fixed. [FarmName] is missing",
+      "Must fix: this text stays English in the game until fixed. [FarmName] is missing",
     );
     fireEvent.blur(error);
     const accepted = within(rowFor("accepted")).getByRole("button", {
-      name: /^Accepted token mismatch: exported as written\./,
+      name: /^Kept on purpose: exported as written\./,
     });
     fireEvent.focus(accepted);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Accepted token mismatch: exported as written. [FarmName] is missing",
+      "Kept on purpose: exported as written. [FarmName] is missing",
     );
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Literal escape sequences differ from the original",
+      "Special codes like \\n differ from the English text.",
     );
     fireEvent.blur(accepted);
     fireEvent.click(screen.getByRole("button", { name: "Issues 5" }));
@@ -1511,7 +1513,7 @@ describe("StringTable workbench", () => {
     expect(issues).toBeEnabled();
     expect(
       within(rowFor("token")).getByRole("button", {
-        name: /^Accepted token mismatch: exported as written\./,
+        name: /^Kept on purpose: exported as written\./,
       }),
     ).toHaveAttribute("data-severity", "warning");
     fireEvent.click(issues);
@@ -2380,7 +2382,7 @@ describe("StringTable workbench", () => {
     expect(llmAction).toBeDisabled();
     expect(llmAction).toHaveAttribute(
       "title",
-      "Select Open or Changed strings from one mod; each LLM batch is bound to exactly one mod.",
+      "Select Open or Changed texts from one mod only.",
     );
 
     expect(onLlmBatchExportForMod).not.toHaveBeenCalled();

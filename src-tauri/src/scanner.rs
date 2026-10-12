@@ -351,7 +351,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     let traversal_complete = collect(mods_path, &mut manifest_files, &mut i18n_dirs);
     if !traversal_complete {
         warnings.push(
-            "The Mods folder could not be scanned completely. Source-change totals are unavailable, and the scan baseline was not updated."
+            "Some mod folders could not be read, so new and changed texts can't be counted this time. Fix the listed problems and scan again."
                 .to_string(),
         );
     }
@@ -447,7 +447,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     scanned,
                     i18n_dir,
                     mods_path,
-                    "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely."
+                    "Your saved translations for this mod could not be loaded, so it was left out."
                         .to_string(),
                 ));
                 continue;
@@ -556,7 +556,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
             component_unique_id: Some(scanned.unique_id.clone()),
             component_name: Some(scanned.name.clone()),
             relative_location: safe_relative_location(Path::new(&scanned.folder_path), mods_path),
-            reason: "Detected as a community language pack, not a translation target.".to_string(),
+            reason: "This is a language pack, not a mod to translate.".to_string(),
             requires_attention: false,
             rest_of_package_loaded: false,
         });

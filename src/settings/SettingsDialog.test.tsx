@@ -1563,7 +1563,7 @@ describe("SettingsDialog", () => {
       expect(screen.getByLabelText("ChatGPT model")).toBeEnabled(),
     );
     expect(screen.getByLabelText("ChatGPT model")).toHaveValue("gpt-6.1-sol");
-    expect(screen.getByText(/keeping the model ID/i)).toBeVisible();
+    expect(screen.getByText(/Your choice is kept/i)).toBeVisible();
     expect(screen.getByText("ChatGPT").closest("button")).toHaveTextContent(
       "Ready",
     );

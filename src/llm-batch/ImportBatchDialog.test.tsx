@@ -99,7 +99,7 @@ describe("ImportBatchDialog", () => {
         targetName="Test Mod"
         targetLanguage="German (de)"
         initialPath={path}
-        initialError="Invalid file type. Exactly one JSON batch file is required."
+        initialError="This isn't a .json file. Choose the translated .json file."
         onChooseFile={vi.fn().mockResolvedValue(null)}
         onPreflight={vi.fn().mockResolvedValue(READY_PREFLIGHT)}
         onImport={onImport}
@@ -108,7 +108,9 @@ describe("ImportBatchDialog", () => {
     );
 
     expect(screen.getByText(path)).toBeVisible();
-    expect(screen.getByRole("alert")).toHaveTextContent("Invalid file type");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This isn't a .json file",
+    );
     expect(screen.getByRole("button", { name: "Import file" })).toBeDisabled();
     expect(
       container.querySelector("[data-import-valid='false']"),

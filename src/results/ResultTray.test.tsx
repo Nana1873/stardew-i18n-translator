@@ -269,9 +269,7 @@ describe("ResultTray", () => {
     expect(screen.getByText(LLM_BATCH_HANDOFF_PROMPT)).toBeInTheDocument();
     fireEvent.click(screen.getByText("Show workflow"));
     expect(
-      screen.getByText(
-        "Upload the JSON file to an LLM that supports file uploads.",
-      ),
+      screen.getByText("Upload the file to an AI chat that accepts files."),
     ).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Copy prompt" }));
@@ -292,14 +290,14 @@ describe("ResultTray", () => {
   it.each([
     {
       count: 1,
-      open: "1 Open string omitted; SMAPI will use default.json.",
+      open: "1 untranslated text left out; the game shows it in English.",
       included: "1 Changed string and 1 Review string included.",
       withoutSource:
         "1 translation entry without a matching English source was removed from output and retained in backups.",
     },
     {
       count: 2,
-      open: "2 Open strings omitted; SMAPI will use default.json.",
+      open: "2 untranslated texts left out; the game shows them in English.",
       included: "2 Changed strings and 2 Review strings included.",
       withoutSource:
         "2 translation entries without a matching English source were removed from output and retained in backups.",
@@ -332,9 +330,7 @@ describe("ResultTray", () => {
       expect(screen.getByText(open)).toBeVisible();
       expect(screen.getByText(included)).toBeVisible();
       expect(screen.getByText(withoutSource)).toBeVisible();
-      expect(
-        screen.queryByText(/untranslated|review-needed|orphan/i),
-      ).toBeNull();
+      expect(screen.queryByText(/review-needed|orphan/i)).toBeNull();
     },
   );
 
@@ -557,7 +553,7 @@ describe("ResultTray", () => {
       screen.getByText("C:\\Temp\\Meadow.de.llm-result.json"),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/18 of 21 values saved to the review queue/),
+      screen.getByText(/18 of 21 texts added to Review/),
     ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Show source file" }));
     fireEvent.click(screen.getByRole("button", { name: "Open Review" }));

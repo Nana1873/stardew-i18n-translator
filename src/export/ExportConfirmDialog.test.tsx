@@ -60,14 +60,12 @@ describe("JSON export confirmation", () => {
     expect(screen.getByText(/2 in Review, 1 Changed/)).toBeVisible();
     expect(
       screen.getByText(/Counts reflect the current scan/),
-    ).toHaveTextContent("Protected-token checks passed.");
+    ).toHaveTextContent("Tokens checked.");
   });
   it("does not invent counts or claim readiness when preflight data is missing", () => {
     show();
-    expect(screen.getByText("Translation count unavailable")).toBeVisible();
-    expect(
-      screen.getByText("Review and Changed counts unavailable."),
-    ).toBeVisible();
+    expect(screen.getByText("Count not available yet")).toBeVisible();
+    expect(screen.getByText("Review counts not available yet.")).toBeVisible();
     expect(screen.queryByText(/Ready to export/)).toBeNull();
   });
   it("exports everything else and names the strings that stay English", () => {

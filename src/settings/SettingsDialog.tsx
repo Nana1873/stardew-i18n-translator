@@ -948,7 +948,7 @@ export function SettingsDialog({
                       <strong>Temperature</strong>
                       <span>
                         {llmTemperature || "0.2"} · range 0–2
-                        {!llmTemperature && " · backend default"}
+                        {!llmTemperature && " · model default"}
                       </span>
                     </span>
                     <input
@@ -1089,8 +1089,8 @@ export function SettingsDialog({
                           ? "Loading models…"
                           : cloudModelsError
                             ? cloudModel
-                              ? "Model list unavailable · keeping the model ID"
-                              : "Model list unavailable · retry loading"
+                              ? "Couldn't load models. Your choice is kept."
+                              : "Couldn't load models. Try again."
                             : cloudAvailable && cloudModels?.length === 0
                               ? "No models listed · enter or keep a model ID"
                               : !cloudAvailable
@@ -1158,8 +1158,7 @@ export function SettingsDialog({
                     <span className="translator-setting-copy">
                       <strong>Parallel batches</strong>
                       <small>
-                        Each batch includes quality checks. Lower values reduce
-                        simultaneous requests.
+                        Parts at once. Lower is slower but steadier.
                       </small>
                     </span>
                     <select
@@ -1427,7 +1426,7 @@ function GlossarySettings({
   const state = !glossary
     ? "Checking glossary sources"
     : glossary.outdatedCache
-      ? "Glossary cache needs rebuild"
+      ? "Glossary needs an update"
       : cached
         ? available
           ? "Glossary is up to date"
@@ -1447,7 +1446,7 @@ function GlossarySettings({
       ? "Installed community language pack" +
         (glossary.packName ? " · " + glossary.packName : "")
       : available
-        ? "Official local Content/Strings sources · processed read-only"
+        ? "From your game files (read only)"
         : "Unavailable";
   const language =
     TARGET_LANGUAGES.find((candidate) => candidate.code === targetLang)

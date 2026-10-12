@@ -532,7 +532,7 @@ export function SetupWizard({
                         ? `A cached glossary with ${glossary.cached.termCount} terms already exists. Rebuild it to refresh the data.`
                         : glossary.gameXnbPresent
                           ? "Game Strings were found. Building usually takes only a moment."
-                          : "Unpacked game content was found as a fallback source. Building usually takes only a moment."}
+                          : "Unpacked game files were found and can be used instead. Building usually takes only a moment."}
                   </StatusCard>
                 ) : (
                   <StatusCard

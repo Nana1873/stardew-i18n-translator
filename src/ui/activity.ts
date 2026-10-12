@@ -97,7 +97,7 @@ export function appendActivity(
         time,
         tone: save.acceptedMismatch ? "warning" : "success",
         message: save.acceptedMismatch
-          ? `Translation saved · ${save.modName} · ${save.key} · Token mismatch accepted; export allowed.`
+          ? `Translation saved · ${save.modName} · ${save.key} · Token differences kept on purpose.`
           : `1 translation saved · ${save.modName}`,
         ...(save.acceptedMismatch
           ? {}

@@ -238,7 +238,7 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
     componentName: "Preview Duplicate",
     relativeLocation: "Preview Duplicate/i18n/default.json",
     reason:
-      "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+      "Your saved translations for this mod could not be loaded, so it was left out.",
     requiresAttention: true,
     restOfPackageLoaded: false,
   },
@@ -248,7 +248,7 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
     componentName: "Preview Duplicate",
     relativeLocation: "Preview Duplicate - Copy/i18n/default.json",
     reason:
-      "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+      "Your saved translations for this mod could not be loaded, so it was left out.",
     requiresAttention: true,
     restOfPackageLoaded: false,
   },

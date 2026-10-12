@@ -1184,15 +1184,11 @@ describe("App shell", () => {
       within(preflight).getByLabelText("Export contents"),
     ).toHaveTextContent("1 translation included");
     expect(preflight).not.toHaveTextContent("open strings omitted");
-    expect(preflight).toHaveTextContent(
-      "2 accepted protected-token mismatches.",
-    );
+    expect(preflight).toHaveTextContent("2 token differences kept on purpose.");
     expect(
       within(preflight).getByRole("button", { name: "Export JSON" }),
     ).toBeEnabled();
-    expect(preflight).toHaveTextContent(
-      "2 accepted protected-token mismatches.",
-    );
+    expect(preflight).toHaveTextContent("2 token differences kept on purpose.");
     expect(preflight).toHaveTextContent("x/i18n/de.json");
     expect(invokeMock).not.toHaveBeenCalledWith(
       "export_mod",
@@ -1524,7 +1520,7 @@ describe("App shell", () => {
           exportHistory({
             id: "export-all-1",
             title: "All-mod export completed",
-            summary: "3 target files written",
+            summary: "3 translation files updated",
             itemCount: 3,
             path: "x/i18n",
             fileName: undefined,
@@ -1584,7 +1580,7 @@ describe("App shell", () => {
 
     const tray = await inspectLatestResult();
     await waitFor(() => expect(tray).toHaveTextContent("All mods exported"));
-    expect(tray).toHaveTextContent("3 target files written or removed");
+    expect(tray).toHaveTextContent("3 translation files updated");
     expect(invokeMock).toHaveBeenCalledWith("export_all_mods", {
       mods: scan.mods.map((mod) => ({
         modUniqueId: mod.uniqueId,
@@ -1866,7 +1862,7 @@ describe("App shell", () => {
 
   it.each([
     undefined,
-    "ChatGPT quality review could not complete for 1 string(s); unreviewed drafts were kept.",
+    "The quality check didn't finish for 1 text (an invalid review response). Their drafts are in Review; please check them.",
   ])(
     "keeps quick-editor suggestions and displays their warning: %s",
     async (warning) => {
@@ -1874,7 +1870,7 @@ describe("App shell", () => {
         id: "ai-quick-success",
         outcome: "success",
         title: "Local AI quick translation",
-        summary: "1 suggestion staged for review",
+        summary: "1 suggestion added to Review",
         itemCount: 1,
       });
       invokeMock.mockImplementation((cmd: string, args?: unknown) => {
@@ -2848,7 +2844,7 @@ describe("App shell", () => {
       name: "Import LLM batch",
     });
     expect(importDialog).toHaveTextContent(
-      "Invalid file type. Exactly one JSON batch file is required.",
+      "This isn't a .json file. Choose the translated .json file.",
     );
     expect(importDialog).toHaveTextContent("C:/result.txt");
     expect(
@@ -4183,7 +4179,7 @@ describe("App shell", () => {
       }),
     );
     const result = await inspectLatestResult();
-    expect(result).toHaveTextContent("1 of 1 value saved to the review queue");
+    expect(result).toHaveTextContent("1 of 1 text added to Review");
     expect(result).toHaveTextContent("test.llm-result.json");
     expect(result).toHaveTextContent("C:/results/test.llm-result.json");
     fireEvent.click(
@@ -4276,7 +4272,7 @@ describe("App shell", () => {
     const switchedDialog = screen.getByRole("dialog", {
       name: "Import LLM batch",
     });
-    expect(switchedDialog).toHaveTextContent("Target: Second Mod");
+    expect(switchedDialog).toHaveTextContent("Second Mod · ");
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith(
         "preflight_llm_batch_path",
@@ -4332,7 +4328,7 @@ describe("App shell", () => {
       screen.queryByRole("dialog", { name: "Import LLM batch" }),
     ).toBeNull();
     expect(result).toHaveTextContent("LLM import rejected");
-    expect(result).toHaveTextContent("No changes were made");
+    expect(result).toHaveTextContent("Nothing was imported");
     fireEvent.click(
       within(result).getByRole("button", { name: "Choose another file" }),
     );
@@ -4361,7 +4357,7 @@ describe("App shell", () => {
     });
 
     expect(await inspectLatestResult()).toHaveTextContent(
-      "Select a mod before dropping",
+      "Select a mod first, then drop the file.",
     );
     expect(invokeMock).not.toHaveBeenCalledWith(
       "import_llm_batch_path",
@@ -4399,7 +4395,7 @@ describe("App shell", () => {
     dialog = await screen.findByRole("dialog", {
       name: "Import LLM batch",
     });
-    expect(dialog).toHaveTextContent("Invalid file type");
+    expect(dialog).toHaveTextContent("This isn't a .json file");
     expect(dialog).toHaveTextContent("C:/result.txt");
     expect(
       within(dialog).getByRole("button", { name: "Import file" }),
@@ -4841,8 +4837,7 @@ describe("App shell", () => {
           componentUniqueId: "example.pack",
           componentName: "Example Pack",
           relativeLocation: "Example Pack",
-          reason:
-            "Detected as a community language pack, not a translation target.",
+          reason: "This is a language pack, not a mod to translate.",
           requiresAttention: false,
           restOfPackageLoaded: false,
         },

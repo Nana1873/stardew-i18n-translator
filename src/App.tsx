@@ -1017,7 +1017,7 @@ export function App() {
     if (!mod) {
       showImportResult(
         null,
-        "Select a mod before dropping an LLM batch result.",
+        "Select a mod first, then drop the file.",
         "LLM batch",
       );
       return;
@@ -1032,7 +1032,7 @@ export function App() {
     const path = paths[0];
     if (!path.toLowerCase().endsWith(".json")) {
       setImportDialogInitialError(
-        "Invalid file type. Exactly one JSON batch file is required.",
+        "This isn't a .json file. Choose the translated .json file.",
       );
       setImportDialogPath(path);
       return;
@@ -1148,14 +1148,14 @@ export function App() {
       id: "local",
       label: "Local AI",
       ready: localAiReady,
-      model: llm?.model || "Model unavailable",
+      model: llm?.model || "No model chosen",
       reasoning: "Default",
       unavailableReason: localAiReady
         ? undefined
         : "Set a local Base URL and choose a model in Settings.",
       note: localAiReady
         ? `${llm!.baseUrl} · local service`
-        : "Local endpoint unavailable",
+        : "Local AI not set up",
     },
     {
       id: CLOUD_ENGINE_ID,
@@ -1855,10 +1855,7 @@ export function App() {
 
   function handleBulkApplied(entry: OperationHistoryEntry) {
     if (!entry?.id) {
-      notify(
-        "The batch edit was saved, but operation history is unavailable.",
-        "info",
-      );
+      notify("Saved. Undo isn't available for this change.", "info");
       return;
     }
     setOperationHistory((current) =>
@@ -2203,12 +2200,7 @@ export function App() {
           }
           language={languageLine}
           scanning={scanning}
-          warningCount={scan?.warnings.length ?? 0}
-          skippedCount={
-            scan?.skippedComponents?.filter(
-              (component) => component.requiresAttention,
-            ).length ?? null
-          }
+          attentionCount={attentionCount}
           scanError={scanError}
           history={operationHistory}
           modNames={new Map(scan?.mods.map((mod) => [mod.uniqueId, mod.name]))}
@@ -2427,7 +2419,7 @@ export function App() {
                       ? Math.round((now - lastScanAt) / 60_000) < 1
                         ? "scanned just now"
                         : `scanned ${Math.round((now - lastScanAt) / 60_000)} min ago`
-                      : "scan time unavailable"
+                      : "not scanned yet"
                   }
                   glossary={glossary}
                   onLlmBatchExportForMod={llmBatchExport}
@@ -2666,16 +2658,16 @@ function LlmBatchDropOverlay({
     paths.length === 1 &&
     paths[0].toLowerCase().endsWith(".json");
   let title = `Import into ${modName}`;
-  let detail = "Release to import this LLM batch result.";
+  let detail = "Drop to import the LLM batch.";
   if (!modName) {
     title = "Select a mod first";
-    detail = "The result must be matched against one selected mod.";
+    detail = "Choose it in the mod list, then drop the file again.";
   } else if (paths.length !== 1) {
     title = "Drop one file";
-    detail = "Batch results are imported one JSON file at a time.";
+    detail = "Drop one file at a time.";
   } else if (!paths[0].toLowerCase().endsWith(".json")) {
     title = "JSON files only";
-    detail = "Drop an *.llm-result.json or translated batch JSON file.";
+    detail = "Drop the translated .json file.";
   }
   return (
     <div

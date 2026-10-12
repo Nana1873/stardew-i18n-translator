@@ -17,6 +17,12 @@ interface ImportBatchDialogProps {
   onClose: () => void;
 }
 
+const SNAPSHOT_TEXT: Record<LlmImportPreflight["snapshotResult"], string> = {
+  matched: "unchanged",
+  mismatch: "changed since export",
+  notChecked: "not checked",
+};
+
 function fileName(path: string): string {
   return path.split(/[\\/]/).at(-1) || path;
 }
@@ -93,7 +99,7 @@ export function ImportBatchDialog({
         if (!chosen.toLocaleLowerCase("en").endsWith(".json")) {
           setInvalidSelection(true);
           setError(
-            "Invalid file type. Exactly one JSON batch file is required.",
+            "This isn't a .json file. Choose the translated .json file.",
           );
         } else {
           setInvalidSelection(false);
@@ -145,7 +151,7 @@ export function ImportBatchDialog({
               Import LLM batch
             </h2>
             <div className="translator-kicker">
-              Target: {targetName} · {targetLanguage}
+              {targetName} · {targetLanguage}
             </div>
           </div>
           <button
@@ -160,8 +166,8 @@ export function ImportBatchDialog({
         </div>
         <div className="translator-flow-body">
           <p id="translator-import-description">
-            Choose the translated JSON returned by your LLM. It must match this
-            mod, {targetLanguage}, and the current English source.
+            Choose the translated file you got back from the AI. It must be for
+            this mod and {targetLanguage}.
           </p>
           <div
             className="translator-file-choice translator-drop-zone"
@@ -190,8 +196,7 @@ export function ImportBatchDialog({
           </div>
           {checking && (
             <div className="translator-flow-callout" role="status">
-              Checking mod, language, source snapshot, keys, and protected
-              tokens…
+              Checking the file…
             </div>
           )}
           {preflight && (
@@ -212,7 +217,7 @@ export function ImportBatchDialog({
                     (preflight.ready ? "is-ready" : "is-change")
                   }
                 >
-                  {preflight.ready ? "Validated" : "No writes"}
+                  {preflight.ready ? "Checked" : "Nothing changed yet"}
                 </span>
               </div>
               <dl className="translator-import-preflight-grid">
@@ -241,7 +246,7 @@ export function ImportBatchDialog({
                 <summary>Details</summary>
                 <dl className="translator-import-preflight-grid">
                   <div>
-                    <dt>Mod / component</dt>
+                    <dt>Mod</dt>
                     <dd>
                       {preflight.modMatches
                         ? preflight.selectedModUniqueId
@@ -252,15 +257,17 @@ export function ImportBatchDialog({
                     <dt>Target language</dt>
                     <dd>
                       {preflight.batchTargetLang} ·{" "}
-                      {preflight.languageMatches ? "matched" : "mismatch"}
+                      {preflight.languageMatches
+                        ? "matches"
+                        : "different language"}
                     </dd>
                   </div>
                   <div>
-                    <dt>Source snapshot</dt>
-                    <dd>{preflight.snapshotResult}</dd>
+                    <dt>English text</dt>
+                    <dd>{SNAPSHOT_TEXT[preflight.snapshotResult]}</dd>
                   </div>
                   <div>
-                    <dt>Strings supplied / matched</dt>
+                    <dt>Texts in file / matched</dt>
                     <dd>
                       {preflight.suppliedStrings} / {preflight.matchedStrings}
                     </dd>

@@ -884,7 +884,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         kind: "import",
         outcome: "success",
         title: "LLM batch imported",
-        summary: `${imported} of ${summary.totalInFile} values saved to the review queue.`,
+        summary: `${imported} of ${summary.totalInFile} texts added to Review.`,
         itemCount: imported,
         path: `${DOWNLOADS}\\Preview.EdgeCases.llm-result.json`,
         fileName: "Preview.EdgeCases.llm-result.json",

@@ -6,18 +6,18 @@ import type {
 import type { AiActivityMessage } from "../ui/activity";
 
 export const AI_PHASE_LABELS: Record<AiRunPhase, string> = {
-  preparing: "Preparing batch",
+  preparing: "Preparing texts",
   translating: "Translating draft",
   reviewing: "Checking translation quality",
   terminologyRepair: "Checking terminology",
-  tokenRepair: "Repairing protected tokens",
+  tokenRepair: "Fixing tokens",
   saving: "Validating & saving",
 };
 
 const RECOVERY_LABELS: Record<AiRunRecovery, string> = {
   transientRetry: "Retrying temporary failure",
-  structureRetry: "Retrying response structure",
-  split: "Splitting affected batch",
+  structureRetry: "Retrying (unclear answer)",
+  split: "Retrying in smaller parts",
 };
 
 function batchPrefix(progress: AiRunProgress) {
@@ -79,13 +79,13 @@ export function describeProgressChanges(
     next.parallelLimit !== previous?.parallelLimit
   ) {
     entries.push({
-      message: `Parallel limit · up to ${next.parallelLimit} ${next.parallelLimit === 1 ? "batch" : "batches"}`,
+      message: `Up to ${next.parallelLimit} ${next.parallelLimit === 1 ? "part" : "parts"} at once`,
     });
   }
 
   if (next.providerStage === "failed" && previous?.providerStage !== "failed") {
     entries.push({
-      message: batchPrefix(next) + "Provider request failed",
+      message: batchPrefix(next) + "The AI service didn't answer",
       warning: true,
     });
   }
@@ -157,7 +157,7 @@ export function describeProgressChanges(
     !entries.some((entry) => entry.message.includes(RECOVERY_LABELS.split))
   ) {
     entries.push({
-      message: `Batch split requested · ${next.splits} ${next.splits === 1 ? "split" : "splits"} total`,
+      message: `${RECOVERY_LABELS.split} · ${next.splits} ${next.splits === 1 ? "split" : "splits"} total`,
       warning: true,
     });
   }

@@ -166,51 +166,53 @@ struct BatchAnalysis {
 }
 
 fn batch_envelope(result: &Value) -> Result<BatchEnvelope<'_>, String> {
-    let object = result.as_object().ok_or("The file is not a JSON object.")?;
+    let object = result
+        .as_object()
+        .ok_or("This file isn't an LLM batch. Nothing was imported.")?;
     let format = object.get("format").and_then(Value::as_str).unwrap_or("");
     let version = object.get("version").and_then(Value::as_u64);
     if format != BATCH_FORMAT || version != Some(BATCH_VERSION) {
         if version == Some(1) {
             return Err(
-                "LLM batch format 1 is no longer supported. Import and review old batches with v1.4.1 or earlier before updating. No changes were made."
+                "This LLM batch was made by an older app version. Import it with v1.4.1 or earlier, or export a new batch. Nothing was imported."
                     .to_string(),
             );
         }
         return Err(format!(
-            "Unsupported LLM batch format or version (expected {BATCH_FORMAT} version {BATCH_VERSION}). No changes were made."
+            "This file isn't an LLM batch from this app version (expected {BATCH_FORMAT} version {BATCH_VERSION}). Nothing was imported."
         ));
     }
 
     let metadata = object
         .get("metadata")
         .and_then(Value::as_object)
-        .ok_or("The batch has no valid metadata object. No changes were made.")?;
+        .ok_or("The file is missing its mod and language details. Export a new batch. Nothing was imported.")?;
     let mod_unique_id = required_metadata(metadata, "modUniqueId")?;
     let target_lang = required_metadata(metadata, "targetLang")?;
     let source_snapshot = required_metadata(metadata, "sourceSnapshot")?;
     let files = object
         .get("files")
         .and_then(Value::as_object)
-        .ok_or("The batch has no valid files object. No changes were made.")?;
+        .ok_or("The file has no translations. Nothing was imported.")?;
     if files.is_empty() {
-        return Err("The batch contains no files. No changes were made.".to_string());
+        return Err("The file has no translations. Nothing was imported.".to_string());
     }
 
     let mut supplied_strings = 0usize;
     for (relative_dir, group) in files {
         let group = group.as_object().ok_or_else(|| {
-            format!("Batch file group \"{relative_dir}\" is not an object. No changes were made.")
+            format!("The part \"{relative_dir}\" in the file is damaged. Export a new batch. Nothing was imported.")
         })?;
         if group.is_empty() {
             return Err(format!(
-                "Batch file group \"{relative_dir}\" is empty. No changes were made."
+                "The part \"{relative_dir}\" in the file is empty. Nothing was imported."
             ));
         }
         for (key, value) in group {
             supplied_strings += 1;
             if !value.is_string() {
                 return Err(format!(
-                    "Translation \"{relative_dir} · {key}\" is not a string. No changes were made."
+                    "The translation for \"{relative_dir} · {key}\" is not text. Nothing was imported."
                 ));
             }
         }
@@ -255,7 +257,7 @@ fn analyze_batch(
 
     if !mod_matches {
         preflight.blocking_reason = Some(format!(
-            "This batch belongs to mod \"{}\", not \"{expected_mod_unique_id}\". No changes were made.",
+            "This file belongs to mod \"{}\", not \"{expected_mod_unique_id}\". Nothing was imported.",
             batch.mod_unique_id
         ));
         return Ok(BatchAnalysis {
@@ -265,7 +267,7 @@ fn analyze_batch(
     }
     if !language_matches {
         preflight.blocking_reason = Some(format!(
-            "This batch targets language \"{}\", not \"{expected_target_lang}\". No changes were made.",
+            "This file is for language \"{}\", not \"{expected_target_lang}\". Nothing was imported.",
             batch.target_lang
         ));
         return Ok(BatchAnalysis {
@@ -292,7 +294,7 @@ fn analyze_batch(
     for (relative_dir, group) in batch.files {
         let Some(rows) = rows_by_key.get(relative_dir.as_str()) else {
             first_binding_error.get_or_insert_with(|| {
-                format!("Batch contains unknown file \"{relative_dir}\". No changes were made.")
+                format!("The file has a part this mod doesn't have (\"{relative_dir}\"). Export a new batch. Nothing was imported.")
             });
             continue;
         };
@@ -304,7 +306,7 @@ fn analyze_batch(
             let Some(row) = rows.get(key.as_str()) else {
                 first_binding_error.get_or_insert_with(|| {
                     format!(
-                        "Batch contains unknown key \"{relative_dir} · {key}\". No changes were made."
+                        "The file has a text this mod doesn't have (\"{relative_dir} · {key}\"). Export a new batch. Nothing was imported."
                     )
                 });
                 continue;
@@ -324,7 +326,7 @@ fn analyze_batch(
     };
     if !snapshot_matches {
         preflight.blocking_reason = Some(first_binding_error.unwrap_or_else(|| {
-            "The batch file/key set or English source text changed since export. Create a new format-2 batch. No changes were made."
+            "The mod's English source text changed after you exported. Export again and translate the new file. Nothing was imported."
                 .to_string()
         }));
         return Ok(BatchAnalysis {
@@ -461,7 +463,7 @@ fn required_metadata<'a>(metadata: &'a Map<String, Value>, key: &str) -> Result<
         .and_then(Value::as_str)
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            format!("Batch metadata \"{key}\" is missing or invalid. No changes were made.")
+            format!("The file is missing \"{key}\". Export a new batch. Nothing was imported.")
         })
 }
 
@@ -653,7 +655,7 @@ mod tests {
             .blocking_reason
             .as_deref()
             .unwrap()
-            .contains("targets language"));
+            .contains("is for language"));
     }
 
     #[test]
@@ -689,7 +691,7 @@ mod tests {
             .blocking_reason
             .as_deref()
             .unwrap()
-            .contains("unknown file"));
+            .contains("part this mod doesn't have"));
     }
 
     #[test]

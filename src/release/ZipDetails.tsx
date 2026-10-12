@@ -27,15 +27,22 @@ export function ZipSourcePath({
   );
 }
 
+/** Mirrors the per-mod ZIP warnings in release_zip.rs. */
+export function outdatedZipWarning(modName: string, count: number) {
+  return `${modName} has ${count} ${count === 1 ? "translation" : "translations"} to check after English changes.`;
+}
+
+export function reviewZipWarning(modName: string, count: number) {
+  return `${modName} has ${count} AI ${count === 1 ? "suggestion" : "suggestions"} not reviewed yet.`;
+}
+
 export function remainingZipWarnings(preview: ZipPreview | null): string[] {
   return (preview?.warnings ?? []).filter(
     (warning) =>
       !preview?.entries.some(
         (entry) =>
-          warning ===
-            `${entry.modName} contains ${entry.outdated} outdated translation(s).` ||
-          warning ===
-            `${entry.modName} contains ${entry.reviewNeeded} unreviewed AI suggestion(s).`,
+          warning === outdatedZipWarning(entry.modName, entry.outdated) ||
+          warning === reviewZipWarning(entry.modName, entry.reviewNeeded),
       ),
   );
 }

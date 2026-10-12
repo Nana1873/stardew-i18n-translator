@@ -279,9 +279,7 @@ fn difference_message(difference: &TokenDifference) -> String {
         };
     }
     if is_portrait_command(token) {
-        return if difference.is_error() && missing {
-            format!("The portrait {token} {change}: one dialogue box now has two different portraits, so the second shows as raw text.")
-        } else if difference.is_error() {
+        return if difference.is_error() {
             format!("The portrait {token} {change}: one dialogue box now has two different portraits, so the second shows as raw text.")
         } else {
             format!("The portrait {token} {change}: the character shows a different face. Fine if intended.")

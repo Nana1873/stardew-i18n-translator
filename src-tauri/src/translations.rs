@@ -267,7 +267,7 @@ pub fn prepare_state_paths(
                 blocked.insert(id.to_lowercase());
             }
             warnings.push(format!(
-                "Multiple mods map to the same legacy translation-state file: {}. No state was migrated or opened for writing.",
+                "Several mods share one old save file ({}), so their translations were left out. Remove duplicate mod copies and scan again.",
                 ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
             ));
         }
@@ -299,7 +299,7 @@ pub fn prepare_state_paths(
         if let Err(error) = migration {
             blocked.insert(id.to_lowercase());
             warnings.push(format!(
-                "Could not safely migrate translation state for {id}: {error}. The legacy file was left untouched."
+                "Your saved translations for {id} could not be loaded ({error}), so this mod was left out. The old file was not changed."
             ));
         }
     }

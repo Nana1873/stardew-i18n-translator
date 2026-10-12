@@ -108,9 +108,7 @@ function genericMessage(difference: TokenDifference): string {
       : "The he/she switches differ from the English text. Fine if intended.";
   if (isPortraitCommand(token))
     return severity === "error"
-      ? missing
-        ? `The portrait ${token} ${change}: one dialogue box now has two different portraits, so the second shows as raw text.`
-        : `The portrait ${token} ${change}: one dialogue box now has two different portraits, so the second shows as raw text.`
+      ? `The portrait ${token} ${change}: one dialogue box now has two different portraits, so the second shows as raw text.`
       : `The portrait ${token} ${change}: the character shows a different face. Fine if intended.`;
   if (token === "@") return `The player name @ ${change}. Fine if intended.`;
   if ((token === "^" || token === "#") && severity === "error")

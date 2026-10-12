@@ -355,7 +355,7 @@ export function ModList({
           <span>
             {query.trim()
               ? "Change or clear the search term."
-              : "The latest scan did not find a supported i18n component."}
+              : "No mods with translatable text were found. Check the Mods folder in Settings."}
           </span>
           {query.trim() && (
             <button

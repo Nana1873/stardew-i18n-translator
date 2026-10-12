@@ -115,7 +115,7 @@ export function ExportConfirmBody({
             >
               <p>
                 {willWrite == null ? (
-                  "Translation count unavailable"
+                  "Count not available yet"
                 ) : (
                   <>
                     <strong>{willWrite}</strong>{" "}
@@ -138,7 +138,7 @@ export function ExportConfirmBody({
               )}
               {attention == null && (
                 <p className="desktop-export-muted">
-                  Review and Changed counts unavailable.
+                  Review counts not available yet.
                 </p>
               )}
             </div>
@@ -180,8 +180,9 @@ export function ExportConfirmBody({
 
           {acceptedMismatches != null && acceptedMismatches > 0 && (
             <p className="desktop-export-muted">
-              {acceptedMismatches} accepted protected-token{" "}
-              {acceptedMismatches === 1 ? "mismatch" : "mismatches"}.
+              {acceptedMismatches} token{" "}
+              {acceptedMismatches === 1 ? "difference" : "differences"} kept on
+              purpose.
             </p>
           )}
 
@@ -226,7 +227,7 @@ export function ExportConfirmBody({
               )}
               {existingTargetPaths.length === 0 &&
                 newTargetPaths.length === 0 && (
-                  <p>Target paths unavailable before export.</p>
+                  <p>The file list appears after export.</p>
                 )}
               {
                 <>
@@ -247,7 +248,7 @@ export function ExportConfirmBody({
                     before writing.
                     {blockingValidationAvailable &&
                       omitted.length === 0 &&
-                      " Protected-token checks passed."}
+                      " Tokens checked."}
                     {existingFiles > 0 &&
                       " A failed write rolls back the affected files and backups."}
                   </p>

@@ -205,14 +205,16 @@ export function validate(
       issues.push({
         ruleId: "json-invalid",
         severity: "error",
-        message: "Contains characters that cannot be serialized to valid JSON",
+        message:
+          "Contains a broken character that can't be saved. Retype or delete it.",
       });
     }
     if (escapeSummary(source) !== escapeSummary(target)) {
       issues.push({
         ruleId: "escape-suspicious",
         severity: "warning",
-        message: "Literal escape sequences differ from the original",
+        message:
+          "Special codes like \\n differ from the English text. Check line breaks and quotes.",
       });
     }
   }
@@ -225,7 +227,7 @@ export function validate(
     issues.push({
       ruleId: "empty-target",
       severity: "warning",
-      message: "Key is present but empty",
+      message: "The translation is empty, so the game shows nothing here.",
     });
   }
 

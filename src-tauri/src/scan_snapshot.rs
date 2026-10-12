@@ -506,7 +506,7 @@ mod tests {
         assert!(incomplete
             .warnings
             .iter()
-            .any(|warning| warning.contains("could not be scanned completely")));
+            .any(|warning| warning.contains("Some mod folders could not be read")));
         assert_eq!(std::fs::read(&baseline_path).unwrap(), baseline);
 
         std::fs::rename(deep_parent.join("Example"), mods.join("Example")).unwrap();
@@ -529,7 +529,7 @@ mod tests {
             component_unique_id: Some("Example.LanguagePack".to_string()),
             component_name: Some("Example Language Pack".to_string()),
             relative_location: "Example Language Pack".to_string(),
-            reason: "Detected as a community language pack, not a translation target.".to_string(),
+            reason: "This is a language pack, not a mod to translate.".to_string(),
             requires_attention: false,
             rest_of_package_loaded: false,
         };

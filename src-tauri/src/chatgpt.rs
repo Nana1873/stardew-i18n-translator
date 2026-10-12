@@ -161,7 +161,7 @@ pub async fn run_prompt(
 pub(crate) const TIMEOUT_MESSAGE: &str =
     "OpenAI did not finish within the five-minute limit for one attempt.";
 /// A refusal concerns content, not the response structure.
-pub(crate) const REFUSAL_MESSAGE: &str = "The model declined to translate part of this batch.";
+pub(crate) const REFUSAL_MESSAGE: &str = "The AI refused to translate some of these texts.";
 
 /// reqwest also reports an operating-system `TimedOut` (a stalled connection)
 /// as a timeout. Only an attempt that actually ran close to the five-minute

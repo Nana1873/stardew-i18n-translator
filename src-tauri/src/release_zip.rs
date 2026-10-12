@@ -258,6 +258,28 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
     write_prepared(prepared, destination, request.overwrite)
 }
 
+/// Per-mod warning for translations whose English text changed. Mirrored in
+/// `src/release/ZipDetails.tsx`.
+fn outdated_warning(name: &str, count: usize) -> String {
+    let noun = if count == 1 {
+        "translation"
+    } else {
+        "translations"
+    };
+    format!("{name} has {count} {noun} to check after English changes.")
+}
+
+/// Per-mod warning for unreviewed AI suggestions. Mirrored in
+/// `src/release/ZipDetails.tsx`.
+fn review_warning(name: &str, count: usize) -> String {
+    let noun = if count == 1 {
+        "suggestion"
+    } else {
+        "suggestions"
+    };
+    format!("{name} has {count} AI {noun} not reviewed yet.")
+}
+
 fn write_prepared(
     prepared: PreparedPackage,
     destination: &Path,
@@ -359,7 +381,7 @@ fn prepare(
     validate_segment(package_name, "package folder")?;
     let target_lang = crate::language::normalize_target_code(target_lang)?;
     if components.is_empty() {
-        return Err("The selected package has no translatable components.".to_string());
+        return Err("The selected package has no texts to translate.".to_string());
     }
     let package_root = mods_path.join(package_name);
     let (selected_version, version_source) = select_version(&package_root, components)?;
@@ -461,16 +483,10 @@ fn prepare(
                 review_needed,
             };
             if outdated > 0 {
-                warnings.push(format!(
-                    "{} contains {outdated} outdated translation(s).",
-                    component.name
-                ));
+                warnings.push(outdated_warning(&component.name, outdated));
             }
             if review_needed > 0 {
-                warnings.push(format!(
-                    "{} contains {review_needed} unreviewed AI suggestion(s).",
-                    component.name
-                ));
+                warnings.push(review_warning(&component.name, review_needed));
             }
             entries.push(PreparedEntry {
                 preview: entry_preview,
@@ -638,7 +654,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             continue;
         }
         if !identities.insert(component.unique_id.to_lowercase()) {
-            return Err("Ambiguous component identity in the current scan.".into());
+            return Err("Two mods look identical. Remove the duplicate and scan again.".into());
         }
         let state = translations::load(&working, &component.unique_id)?;
         let component_root = Path::new(&component.folder_path);
@@ -708,16 +724,16 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             prepared.preview.total_source_strings += source_count;
             prepared.preview.total_strings += output.len();
             if outdated > 0 {
-                prepared.preview.warnings.push(format!(
-                    "{} contains {outdated} outdated translation(s).",
-                    component.name
-                ));
+                prepared
+                    .preview
+                    .warnings
+                    .push(outdated_warning(&component.name, outdated));
             }
             if review_needed > 0 {
-                prepared.preview.warnings.push(format!(
-                    "{} contains {review_needed} unreviewed AI suggestion(s).",
-                    component.name
-                ));
+                prepared
+                    .preview
+                    .warnings
+                    .push(review_warning(&component.name, review_needed));
             }
             let preview = ZipEntryPreview {
                 mod_unique_id: component.unique_id.clone(),
@@ -793,7 +809,7 @@ fn apply_install_folders(
     for item in folders {
         let id = item.mod_unique_id.to_lowercase();
         if !ids.contains(&id) {
-            return Err("The ZIP component selection changed. Open its preview again.".into());
+            return Err("The mod list changed. Open the ZIP preview again.".into());
         }
         if overrides
             .insert(id, normalize_install_folder(&item.folder)?)
@@ -1776,11 +1792,11 @@ mod tests {
         assert!(preview
             .warnings
             .iter()
-            .any(|warning| warning.contains("1 outdated")));
+            .any(|warning| warning.contains("has 1 translation to check")));
         assert!(preview
             .warnings
             .iter()
-            .any(|warning| warning.contains("1 unreviewed")));
+            .any(|warning| warning.contains("1 AI suggestion not reviewed")));
         let destination = root.join("output.zip");
         build_output(&config, &destination, false).unwrap();
         assert_eq!(

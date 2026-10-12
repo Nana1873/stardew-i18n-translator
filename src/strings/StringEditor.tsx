@@ -374,7 +374,7 @@ export function StringEditor({
       }
       setSourceConflict(false);
       setTranslateMsg(
-        "The saved translation changed in the background. Your draft is preserved; saving will replace the saved translation.",
+        "This translation was changed elsewhere. Your edit is kept; saving replaces the other version.",
       );
       setTranslateMsgKind("note");
       return;
@@ -855,7 +855,7 @@ export function StringEditor({
     const severity = chipSeverity(token);
     const what =
       kind === "missing" ? `Missing token ${token}` : `Extra token ${token}`;
-    if (severity === "accepted") return `${what} (mismatch accepted)`;
+    if (severity === "accepted") return `${what} (kept on purpose)`;
     return severity === "error"
       ? `${what} (error: this string stays English on export)`
       : `${what} (note: does not affect export)`;
@@ -894,7 +894,7 @@ export function StringEditor({
   const targetHelpName =
     targetLanguageName === "Translation" ? "target" : targetLanguageName;
   const statusHelp: Record<StringStatus, string> = {
-    untranslated: `No accepted ${targetHelpName} translation exists yet.`,
+    untranslated: "Not translated yet.",
     outdated: `The English source changed after this ${targetHelpName} translation was saved. The existing translation may be outdated and should be reviewed.`,
     "review-needed":
       "This imported or AI-generated suggestion still needs human approval.",
@@ -1084,7 +1084,7 @@ export function StringEditor({
                           className={`editor__token translator-token ${chipState(token)}`}
                           title={
                             acceptedTokenMismatch
-                              ? `${token} — mismatch explicitly accepted for this exact translation`
+                              ? `${token} — you kept this difference on purpose`
                               : `Insert ${token} at the cursor`
                           }
                           aria-label={`Insert missing token ${token}`}
@@ -1243,9 +1243,9 @@ export function StringEditor({
                 <span className="editor__issue-list">
                   {acceptedTokenMismatch && (
                     <span className="editor__issue editor__issue--warning">
-                      Protected-token mismatch explicitly accepted for this
-                      exact translation. Export is allowed; editing requires
-                      confirmation again.
+                      You kept these token differences on purpose. This text is
+                      exported as written; if you edit it, you will be asked
+                      again.
                     </span>
                   )}
                   {(["error", "warning"] as const).map((severity) => {
@@ -1349,14 +1349,14 @@ export function StringEditor({
                     className="translator-heading"
                     id="translator-save-anyway-title"
                   >
-                    Protected token mismatch
+                    A token differs from the English text
                   </h2>
                   <div
                     className="translator-kicker"
                     id="translator-save-anyway-description"
                   >
-                    This would break the game. Without Save anyway, export
-                    leaves this string out and the game shows the English text.
+                    This can break the game. If you don't choose Save anyway,
+                    this text stays English in the game.
                   </div>
                 </div>
                 <button

@@ -180,7 +180,7 @@ function presentationFor(
     ];
     result = {
       label,
-      kicker: "Backend operation history",
+      kicker: "Earlier result",
       copy: entry.summary,
       tone:
         entry.outcome === "success"
@@ -224,9 +224,11 @@ function presentationFor(
         notices.push({
           text:
             exportResult.totalUntranslated +
-            " Open " +
-            plural(exportResult.totalUntranslated, "string") +
-            " omitted; SMAPI will use default.json.",
+            " untranslated " +
+            plural(exportResult.totalUntranslated, "text") +
+            " left out; the game shows " +
+            (exportResult.totalUntranslated === 1 ? "it" : "them") +
+            " in English.",
         });
       if (
         exportResult.totalOutdated > 0 ||
@@ -300,13 +302,13 @@ function presentationFor(
       ? changedFiles === 0
         ? "No translation file was changed."
         : changedFiles +
-          " target " +
+          " translation " +
           plural(changedFiles, "file") +
-          " written or removed. " +
+          " updated (" +
           rewrittenKeys +
           " " +
-          plural(rewrittenKeys, "string") +
-          " written."
+          plural(rewrittenKeys, "text") +
+          ")."
       : "Result data is unavailable.";
     result = {
       label: ready
@@ -364,9 +366,9 @@ function presentationFor(
       notices.push({
         text:
           summary.unmatched +
-          " unmatched, empty, or non-string " +
-          plural(summary.unmatched, "value") +
-          " skipped.",
+          " " +
+          plural(summary.unmatched, "line") +
+          " skipped (empty or not in this mod).",
         tone: "warning",
       });
     if (summary?.importedWithTokenErrors)
@@ -400,8 +402,8 @@ function presentationFor(
           " of " +
           summary.totalInFile +
           " " +
-          plural(summary.totalInFile, "value") +
-          " saved to the review queue."
+          plural(summary.totalInFile, "text") +
+          " added to Review."
         : "Import result data is unavailable.",
       tone:
         unresolved.length > 0 || notices.some((item) => item.tone === "warning")
@@ -436,10 +438,10 @@ function presentationFor(
       notices: [],
       paths,
       workflow: [
-        "Upload the JSON file to an LLM that supports file uploads.",
-        "Send the handoff prompt and download the returned JSON file.",
-        "Import it through Import … or drag and drop.",
-        "Review the results in the review queue.",
+        "Upload the file to an AI chat that accepts files.",
+        "Paste the copied instructions, then download the file it returns.",
+        "Drag that file into this app, or use Files › Import LLM batch….",
+        "Check the results in Review.",
       ],
       openFolderPath: outcome ? folderOf(outcome.path) : null,
       canOpenReview: false,
@@ -589,7 +591,7 @@ function presentationFor(
                     : "Export failed";
       result.tone = "error";
       result.notices.unshift({ text: data.error, tone: "error" });
-      if (data.kind === "import") result.copy = "No changes were made.";
+      if (data.kind === "import") result.copy = "Nothing was imported.";
     }
   }
 
