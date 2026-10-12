@@ -78,6 +78,21 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- ChatGPT waits a moment before retrying a temporary failure and follows
+  OpenAI's suggested wait when it sends one.
+- An error that OpenAI sends in the middle of a response is reported in plain
+  words instead of as "HTTP 400"; a busy service counts as temporary.
+- A text too long for the quality check keeps its draft instead of dropping
+  the drafts of its whole batch; the warning names that reason.
+- A failed run that still saved suggestions keeps the warning about unchecked
+  drafts, and skipped terminology or token repairs show in the Activity log.
+- When ChatGPT cannot translate some texts even after retrying, the message
+  names up to three of their keys.
+- Signing in or out of ChatGPT waits until a running AI translation is
+  finished or cancelled, instead of silently cancelling it.
+- Sign-out deletes the saved session right away, no longer blocks other
+  ChatGPT actions while it contacts OpenAI, and revokes the access token too.
+
 - When a mod has both `pt.json` and `pt-BR.json` (or `zh.json` and
   `zh-CN.json`), both are read like SMAPI does, with the regional value winning
   per key. Keys only the language file had no longer look untranslated, and
