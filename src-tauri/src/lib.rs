@@ -2485,7 +2485,11 @@ async fn cloud_ai_models() -> Result<Vec<ai_provider::CloudAiModel>, String> {
 }
 
 #[tauri::command]
-async fn chatgpt_sign_in(app: AppHandle) -> Result<(), String> {
+async fn chatgpt_sign_in(
+    app: AppHandle,
+    state: State<'_, ai::AiRuntimeState>,
+) -> Result<(), String> {
+    state.ensure_idle_for_sign_in()?;
     let url = chatgpt_auth::login_url().await?;
     if app.opener().open_url(&url, None::<String>).is_err() {
         chatgpt_auth::abort_login().await;
@@ -2494,7 +2498,8 @@ async fn chatgpt_sign_in(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-async fn chatgpt_sign_out() -> Result<(), String> {
+async fn chatgpt_sign_out(state: State<'_, ai::AiRuntimeState>) -> Result<(), String> {
+    state.ensure_idle_for_sign_in()?;
     chatgpt_auth::logout().await
 }
 
