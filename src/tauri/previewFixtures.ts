@@ -245,7 +245,7 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
 ];
 
 export const FIXTURE_WARNINGS: string[] = [
-  "Case-insensitive duplicate mod UniqueID: Preview.DuplicateId. Their translation files were excluded until the duplicate is removed.",
+  "Two installed mods use the same UniqueID (Preview.DuplicateId), so their translations were left out. Remove the extra copy.",
 ];
 
 export const FIXTURE_GLOSSARY: GlossaryEntry[] = [

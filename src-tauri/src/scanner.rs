@@ -1988,7 +1988,7 @@ mod tests {
             result
                 .warnings
                 .iter()
-                .any(|w| w.contains("duplicate") && w.contains("same.id")),
+                .any(|w| w.contains("same UniqueID") && w.contains("same.id")),
             "expected a duplicate-UniqueID warning, got: {:?}",
             result.warnings
         );

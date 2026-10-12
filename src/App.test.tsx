@@ -529,7 +529,7 @@ describe("App shell", () => {
 
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
     expect(dialog).toHaveTextContent("Latest scan");
-    expect(dialog).toHaveTextContent("No scanner warnings.");
+    expect(dialog).toHaveTextContent("Everything is ready.");
     expect(dialog).not.toHaveTextContent("No components were skipped");
   });
 

@@ -251,7 +251,7 @@ pub fn prepare_state_paths(
             blocked.insert(id.to_lowercase());
         }
         warnings.push(format!(
-            "Case-insensitive duplicate mod UniqueID: {}. Their translation files were excluded until the duplicate is removed.",
+            "Two installed mods use the same UniqueID ({}), so their translations were left out. Remove the extra copy.",
             ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
         ));
     }

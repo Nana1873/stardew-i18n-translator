@@ -23,14 +23,6 @@ const completeProgress = {
   "--translator-batch-progress": "100%",
 } as CSSProperties;
 
-function countLabel(
-  value: number | string,
-  singular: string,
-  plural: string,
-): string {
-  return value === 1 ? singular : plural;
-}
-
 export function ScanDialog({
   scanning,
   result,
@@ -237,202 +229,103 @@ function ScanResultContent({ result }: { result: ScanResult }) {
     skipped?.filter((component) => !component.requiresAttention) ?? [];
   const extraKeys = result.extraKeys ?? [];
   const extraKeyGroups = groupExtraKeys(extraKeys);
-  const warningParts: string[] = [];
-  if (warnings.length > 0) {
-    warningParts.push(
-      `${warnings.length} scanner ${warnings.length === 1 ? "warning" : "warnings"}`,
-    );
-  }
-  if (skipped == null) {
-    warningParts.push("Skipped-component details unavailable");
-  } else if (skippedForAttention.length > 0) {
-    warningParts.push(
-      `${skippedForAttention.length} ${skippedForAttention.length === 1 ? "component" : "components"} skipped`,
-    );
-  }
-  const hasWarningDiagnostics = warningParts.length > 0;
-  const hasInformation = expectedExclusions.length > 0;
+  const problemCount = skippedForAttention.length + warnings.length;
   const extraKeySummary = `${extraKeys.length} ${extraKeys.length === 1 ? "translation entry" : "translation entries"} without matching English source`;
+  const mods = `${result.modCount} ${result.modCount === 1 ? "mod" : "mods"}`;
+  const files = `${result.fileCount} ${result.fileCount === 1 ? "translation file" : "translation files"}`;
 
   return (
     <>
-      <p className="desktop-scan-completion">
-        <CheckCircle2 aria-hidden="true" /> Read {result.modCount}{" "}
-        {result.modCount === 1 ? "mod" : "mods"} and {result.fileCount}{" "}
-        {result.fileCount === 1 ? "i18n file" : "i18n files"}.
+      <p
+        className={`translator-scan-summary${problemCount > 0 ? " is-warning" : " is-success"}`}
+      >
+        {problemCount > 0 ? (
+          <AlertTriangle aria-hidden="true" />
+        ) : (
+          <CheckCircle2 aria-hidden="true" />
+        )}{" "}
+        {problemCount > 0
+          ? `Read ${mods} with ${files}. ${problemCount} ${problemCount === 1 ? "item needs" : "items need"} a look; your saved work is safe.`
+          : `Read ${mods} with ${files}. Everything is ready.`}
       </p>
-      <div
-        className="translator-preflight-metrics"
-        aria-label="Latest scan result"
+      <p
+        className="translator-scan-changes"
+        aria-label="Changes since the last scan"
       >
-        <Metric
-          value={result.modCount}
-          label={countLabel(result.modCount, "mod found", "mods found")}
-        />
-        <Metric
-          value={result.fileCount}
-          label={countLabel(result.fileCount, "i18n file", "i18n files")}
-        />
-        <Metric
-          value={result.sourceDeltas?.sourcesChanged ?? "Unavailable"}
-          label={countLabel(
-            result.sourceDeltas?.sourcesChanged ?? "Unavailable",
-            "English string changed",
-            "English strings changed",
-          )}
-        />
-        <Metric
-          value={result.sourceDeltas?.stringsAdded ?? "Unavailable"}
-          label={countLabel(
-            result.sourceDeltas?.stringsAdded ?? "Unavailable",
-            "string added",
-            "strings added",
-          )}
-        />
-        <Metric
-          value={result.sourceDeltas?.stringsRemoved ?? "Unavailable"}
-          label={countLabel(
-            result.sourceDeltas?.stringsRemoved ?? "Unavailable",
-            "string removed",
-            "strings removed",
-          )}
-        />
-        <Metric
-          value={skipped == null ? "Unavailable" : skippedForAttention.length}
-          label={countLabel(
-            skipped == null ? "Unavailable" : skippedForAttention.length,
-            "component skipped",
-            "components skipped",
-          )}
-        />
-      </div>
+        {describeSourceChanges(result.sourceDeltas)}
+      </p>
 
-      <div
-        className={`translator-flow-callout translator-scan-diagnostics${hasWarningDiagnostics ? " is-warning" : hasInformation ? " is-neutral" : " is-success"}`}
-        tabIndex={-1}
-        data-scan-diagnostics
-      >
-        {hasWarningDiagnostics && (
-          <section className="translator-scan-warning-section">
-            <p>
-              <AlertTriangle aria-hidden="true" />{" "}
-              <strong>
-                <span className="desktop-scan-copy">
-                  {warningParts.join(", ")}.
-                </span>
-              </strong>
-              {(warnings.length > 0 || skippedForAttention.length > 0) &&
-                " Existing work was preserved."}
-            </p>
-
-            {skippedForAttention.length > 0 && (
-              <ul
-                className="translator-flow-list"
-                aria-label="Skipped components"
+      {problemCount > 0 && (
+        <section
+          className="translator-flow-callout translator-scan-diagnostics is-warning"
+          tabIndex={-1}
+          data-scan-diagnostics
+        >
+          <ul className="translator-flow-list" aria-label="Skipped components">
+            {skippedForAttention.map((component, index) => (
+              <li
+                key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
               >
-                {skippedForAttention.map((component, index) => (
-                  <li
-                    key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
-                  >
-                    <span>
-                      <strong>
-                        {component.componentName ??
-                          component.componentUniqueId ??
-                          component.packageId ??
-                          "Unnamed component"}
-                      </strong>
-                      {component.packageId && (
-                        <>
-                          <br />
-                          <span>Package: {component.packageId}</span>
-                        </>
-                      )}
-                      <br />
-                      <code>{component.relativeLocation}</code>
-                      <br />
-                      <span>{component.reason}</span>
-                    </span>
-                    <span>
-                      {component.restOfPackageLoaded
-                        ? "Rest of package loaded"
-                        : "No translatable files from this package were loaded"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-
-            {warnings.length > 0 && (
-              <ul className="translator-flow-list" aria-label="Scan warnings">
-                {warnings.map((warning, index) => (
-                  <li key={`${warning}:${index}`}>
-                    <span>{warning}</span>
-                    <span>Warning</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
-
-        {!hasWarningDiagnostics && !hasInformation && (
-          <p>
-            <span className="desktop-scan-copy">No scanner warnings.</span>
-          </p>
-        )}
-
-        {expectedExclusions.length > 0 && (
-          <section className="translator-scan-info-section">
-            <p className="translator-scan-info-summary">
-              <Info aria-hidden="true" />{" "}
-              <strong>{describeExpectedExclusions(expectedExclusions)}.</strong>{" "}
-              This is expected and needs no action.
-            </p>
-            <ul
-              className="translator-flow-list"
-              aria-label="Expected scan exclusions"
-            >
-              {expectedExclusions.map((component, index) => {
-                const displayName =
-                  component.componentName ??
-                  component.componentUniqueId ??
-                  component.packageId ??
-                  component.relativeLocation;
-                const showPackage =
-                  Boolean(component.packageId) &&
-                  component.packageId !== displayName;
-                const showLocation =
-                  component.relativeLocation !== displayName &&
-                  component.relativeLocation !== component.packageId;
-                return (
-                  <li
-                    key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
-                  >
-                    <span>
-                      <strong>{displayName}</strong>
-                      {showPackage && (
-                        <>
-                          <br />
-                          <span>Package: {component.packageId}</span>
-                        </>
-                      )}
-                      {showLocation && (
-                        <>
-                          <br />
-                          <code>{component.relativeLocation}</code>
-                        </>
-                      )}
-                      <br />
-                      <span>{component.reason}</span>
-                    </span>
-                    <span>No action needed</span>
-                  </li>
-                );
-              })}
+                <span>
+                  <strong>
+                    {component.componentName ??
+                      component.componentUniqueId ??
+                      component.packageId ??
+                      "Unnamed component"}
+                  </strong>{" "}
+                  {plainSkipReason(component.reason)}
+                  {component.restOfPackageLoaded &&
+                    " The rest of this mod was loaded."}
+                  <details className="translator-scan-details">
+                    <summary>Details</summary>
+                    <code>{component.relativeLocation}</code>
+                    <span>{component.reason}</span>
+                  </details>
+                </span>
+              </li>
+            ))}
+          </ul>
+          {warnings.length > 0 && (
+            <ul className="translator-flow-list" aria-label="Scan warnings">
+              {warnings.map((warning, index) => (
+                <li key={`${warning}:${index}`}>
+                  <span>{warning}</span>
+                </li>
+              ))}
             </ul>
-          </section>
-        )}
-      </div>
+          )}
+        </section>
+      )}
+
+      {expectedExclusions.length > 0 && (
+        <details className="translator-scan-extra-info translator-scan-info-section">
+          <summary>
+            <Info aria-hidden="true" />{" "}
+            {describeExpectedExclusions(expectedExclusions)} (expected, no
+            action needed)
+          </summary>
+          <ul
+            className="translator-flow-list"
+            aria-label="Expected scan exclusions"
+          >
+            {expectedExclusions.map((component, index) => (
+              <li
+                key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
+              >
+                <span>
+                  <strong>
+                    {component.componentName ??
+                      component.componentUniqueId ??
+                      component.packageId ??
+                      component.relativeLocation}
+                  </strong>{" "}
+                  {component.reason}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {extraKeys.length > 0 && (
         <details className="translator-scan-extra-info">
@@ -511,17 +404,6 @@ function groupExtraKeys(diagnostics: ExtraKeyDiagnostic[]): ExtraKeyGroup[] {
   return [...groups.values()];
 }
 
-function Metric({ value, label }: { value: number | string; label: string }) {
-  return (
-    <div className="translator-preflight-metric">
-      <strong>{value}</strong>
-      <span className="desktop-scan-copy">
-        {label.charAt(0).toUpperCase() + label.slice(1)}
-      </span>
-    </div>
-  );
-}
-
 /** Expected exclusions are community language packs (they belong to a
  * package) or `i18n` folders SMAPI does not load: without a manifest, or
  * deeper inside a mod than the folder beside its manifest. */
@@ -540,4 +422,38 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
       : "",
   ].filter(Boolean);
   return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;
+}
+
+/** One sentence about English source changes since the previous scan. */
+function describeSourceChanges(deltas: ScanResult["sourceDeltas"]): string {
+  if (!deltas)
+    return "Changes since the last scan could not be compared this time.";
+  const parts = [
+    deltas.sourcesChanged > 0 ? `${deltas.sourcesChanged} changed` : "",
+    deltas.stringsAdded > 0 ? `${deltas.stringsAdded} new` : "",
+    deltas.stringsRemoved > 0 ? `${deltas.stringsRemoved} removed` : "",
+  ].filter(Boolean);
+  return parts.length === 0
+    ? "No English text changed since the last scan."
+    : `English text since the last scan: ${parts.join(", ")}.`;
+}
+
+/** A short, plain explanation of a skip; the technical reason stays under
+ * Details for bug reports to the mod author. */
+function plainSkipReason(reason: string): string {
+  if (/duplicate.*uniqueid/i.test(reason))
+    return "Two mods use the same ID, so their translations were left out. Remove the extra copy.";
+  if (/translation state is unavailable/i.test(reason))
+    return "Its saved translations could not be loaded safely, so it was left out.";
+  if (/manifest/i.test(reason))
+    return "Its manifest.json could not be read, so it was left out.";
+  if (/outside the configured mods folder/i.test(reason))
+    return "It points outside the Mods folder and was left out for safety.";
+  if (
+    /invalid json|expected .* at line|could not read|non-string value/i.test(
+      reason,
+    )
+  )
+    return "A translation file in this mod is damaged and was left out.";
+  return "Part of this mod could not be read and was left out.";
 }

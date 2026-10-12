@@ -1299,6 +1299,49 @@
   color: var(--translator-brand);
 }
 
+#stardew-i18n-translator .translator-scan-summary {
+  margin: 0;
+  font-size: 13px;
+}
+
+#stardew-i18n-translator .translator-scan-summary > svg {
+  width: 15px;
+  height: 15px;
+  vertical-align: -3px;
+  margin-right: 4px;
+}
+
+#stardew-i18n-translator .translator-scan-summary.is-success > svg {
+  color: var(--translator-green, var(--translator-brand));
+}
+
+#stardew-i18n-translator .translator-scan-summary.is-warning > svg {
+  color: var(--translator-orange);
+}
+
+#stardew-i18n-translator .translator-scan-changes {
+  margin: 6px 0 0;
+  color: var(--translator-muted);
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-details {
+  margin-top: 4px;
+  color: var(--translator-muted);
+}
+
+#stardew-i18n-translator .translator-scan-details > summary {
+  cursor: pointer;
+  width: max-content;
+}
+
+#stardew-i18n-translator .translator-scan-details > code,
+#stardew-i18n-translator .translator-scan-details > span {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
 #stardew-i18n-translator .translator-scan-extra-info {
   color: var(--translator-muted);
   font-size: 12px;
