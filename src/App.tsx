@@ -2605,6 +2605,9 @@ export function App() {
             onClose={() => {
               setSettingsOpen(false);
               void refreshAiAvailability();
+              // A glossary built in Settings is saved at once, even when the
+              // dialog is then cancelled; reload it for the current language.
+              refreshGlossary(settings.targetLang);
             }}
             onReRunSetup={() => {
               setSettingsOpen(false);

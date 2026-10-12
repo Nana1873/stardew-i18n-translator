@@ -118,6 +118,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A glossary built in Settings shows its hints in the editor right away,
+  also when Settings is then closed without saving, instead of only after a
+  restart.
 - Commented-out entries such as `//"OldGreeting": "Hi",` and notes such as
   `// TODO` in `default.json` no longer show up as section headings in the
   editor or in the AI request.

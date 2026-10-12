@@ -710,7 +710,7 @@ export interface GlossaryInfo {
 export interface GlossaryStatus {
   /** Direct game Content/Strings/*.xnb assets are available. */
   gameXnbPresent: boolean;
-  /** Any local game string source is available for glossary extraction. */
+  /** The game's Content/Strings XNB files are available for glossary extraction (same as gameXnbPresent). */
   sourceAvailable: boolean;
   cached: GlossaryInfo | null;
   /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */
