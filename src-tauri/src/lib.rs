@@ -1792,6 +1792,18 @@ fn local_ai_model_probe_diagnostic(error_category: &'static str) -> serde_json::
     })
 }
 
+/// Run one Local AI request until it finishes or the run is cancelled; a
+/// cancel does not wait for the local server to answer.
+async fn cancellable_local_ai<T>(
+    request: impl std::future::Future<Output = Result<T, String>>,
+    cancelled: Arc<AtomicBool>,
+) -> Result<T, ai::ProviderFailure> {
+    tokio::select! {
+        result = request => result.map_err(ai::ProviderFailure::Message),
+        () = ai::wait_for_cancel(cancelled) => Err(ai::ProviderFailure::Cancelled),
+    }
+}
+
 #[derive(Debug)]
 struct LocalAiItemFailure {
     identity: ai::AiStringIdentity,
@@ -2382,8 +2394,8 @@ async fn translate_with_local_ai(
             .iter()
             .map(|entry| entry.source.clone())
             .collect::<Vec<_>>();
-        let translation = tokio::select! {
-            result = llm::translate_with_context(
+        let translation = cancellable_local_ai(
+            llm::translate_with_context(
                 &local.base_url,
                 &local.model,
                 &item.source,
@@ -2393,9 +2405,10 @@ async fn translate_with_local_ai(
                 &before_context,
                 &after_context,
                 local.temperature,
-            ) => result.map_err(ai::ProviderFailure::Message),
-            () = ai::wait_for_cancel(lease.cancelled.clone()) => Err(ai::ProviderFailure::Cancelled),
-        };
+            ),
+            lease.cancelled.clone(),
+        )
+        .await;
         let failure_category = match &translation {
             Err(
                 ai::ProviderFailure::Message(cause)
@@ -4099,6 +4112,48 @@ mod ai_run_contract_tests {
         }))
         .unwrap_err();
         assert_eq!(error, "Choose a Mods folder before using AI translation.");
+    }
+
+    #[tokio::test]
+    async fn local_ai_cancel_stops_a_request_the_server_never_answers() {
+        // A loopback server that accepts the request and then stays silent.
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+            drop(stream);
+        });
+        let base_url = format!("http://{address}/v1");
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let cancel = Arc::clone(&cancelled);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            cancel.store(true, Ordering::Release);
+        });
+
+        let started = Instant::now();
+        let result = cancellable_local_ai(
+            llm::translate_with_context(
+                &base_url,
+                "synthetic-instruct",
+                "Hello",
+                "German",
+                None,
+                &[],
+                &[],
+                &[],
+                None,
+            ),
+            cancelled,
+        )
+        .await;
+
+        assert!(matches!(result, Err(ai::ProviderFailure::Cancelled)));
+        assert!(started.elapsed() < std::time::Duration::from_secs(10));
+        server.abort();
     }
 
     #[test]
