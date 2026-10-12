@@ -70,9 +70,12 @@ does not imply this intent. Protected-token validation still applies.
 Source-change comparison uses component UniqueID, relative i18n directory, and
 exact key. It compares hashes of the decoded source inventory against the last
 complete scan of the same Mods folder. The first scan creates a baseline with
-zero observed changes; target edits do not affect it. Traversal failures,
-traversal limits, or components needing attention make change counts unavailable
-and leave the last complete baseline intact. Intentional exclusions do not.
+zero observed changes; target edits do not affect it. A component the scan had
+to skip is left out of the comparison and keeps its previous baseline until it
+scans again, so the other components are still compared. Traversal failures,
+traversal limits, or a skip without a component identity (such as an unreadable
+manifest) make change counts unavailable and leave the last complete baseline
+intact. Intentional exclusions do not.
 
 ## Editing and Status
 

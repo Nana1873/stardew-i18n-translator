@@ -10,6 +10,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- One mod the scan has to skip no longer turns off the comparison of changed
+  and new English strings for every other mod. The skipped mod keeps its
+  previous baseline and is compared again once it scans cleanly.
 - A changed bare `^` or `#` is a note instead of a token error, so the string
   is exported. In dialogue they split pages and genders, but in letters `^` is a
   line break and in UI strings `#` is ordinary text, so the translator decides.

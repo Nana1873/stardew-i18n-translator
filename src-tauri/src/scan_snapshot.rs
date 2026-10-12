@@ -3,7 +3,7 @@
 //! This is deliberately one small derived snapshot, not a scan-history or job
 //! system. It stores hashes only and is rebuilt after every complete scan.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use crate::scanner::{ScanDeltas, ScanResult, ScanStringIdentity};
 use crate::{input_limits, translations};
 
-const SNAPSHOT_VERSION: u32 = 1;
+const SNAPSHOT_VERSION: u32 = 2;
 const SNAPSHOT_FILE: &str = "scan-source-snapshot.json";
 
 static SNAPSHOT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -22,29 +22,65 @@ static SNAPSHOT_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 struct SourceSnapshot {
     version: u32,
     mods_root_hash: String,
-    entries: BTreeMap<String, String>,
+    entries: BTreeMap<String, SnapshotEntry>,
+}
+
+/// One source hash. Version 2 also records the owning component (lowercase
+/// UniqueID) so a component the scan had to skip keeps its baseline; version 1
+/// baselines stored the hash alone.
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[serde(untagged)]
+enum SnapshotEntry {
+    Owned { owner: String, source: String },
+    Legacy(String),
+}
+
+impl SnapshotEntry {
+    fn source(&self) -> &str {
+        match self {
+            Self::Owned { source, .. } | Self::Legacy(source) => source,
+        }
+    }
+
+    fn owner(&self) -> Option<&str> {
+        match self {
+            Self::Owned { owner, .. } => Some(owner),
+            Self::Legacy(_) => None,
+        }
+    }
 }
 
 /// Compare the completed scan to the immediately preceding scan of the same
 /// Mods root, then replace the rebuildable hash snapshot. A first scan begins
-/// tracking with zero observed changes. A scan that omitted a component needing
-/// attention is incomplete, so it must neither report deltas nor replace the
-/// last valid snapshot. A bounded or failed directory traversal is incomplete
-/// for the same reason. Expected exclusions remain eligible to update it.
+/// tracking with zero observed changes. A component the scan had to skip
+/// (wholly or in part) is left out of the comparison and keeps its previous
+/// baseline, so one broken mod does not hide changes in all others. A bounded
+/// or failed directory traversal, or a skip that names no component (such as
+/// an unreadable manifest), still makes the whole comparison unavailable and
+/// leaves the last valid snapshot intact. Expected exclusions are ignored.
 pub(crate) fn apply(
     result: &mut ScanResult,
     mods_root: &Path,
     data_dir: &Path,
 ) -> Result<(), String> {
+    let attention: Vec<_> = result
+        .skipped_components
+        .iter()
+        .filter(|component| component.requires_attention)
+        .collect();
     if !result.traversal_complete
-        || result
-            .skipped_components
+        || attention
             .iter()
-            .any(|component| component.requires_attention)
+            .any(|component| component.component_unique_id.is_none())
     {
         result.source_deltas = None;
         return Ok(());
     }
+    let skipped: HashSet<String> = attention
+        .iter()
+        .filter_map(|component| component.component_unique_id.as_deref())
+        .map(str::to_lowercase)
+        .collect();
 
     let mutex = SNAPSHOT_LOCK.get_or_init(|| Mutex::new(()));
     let _guard = mutex
@@ -52,7 +88,7 @@ pub(crate) fn apply(
         .unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let root_hash = mods_root_hash(mods_root)?;
-    let (current, current_identities) = current_snapshot(result, root_hash)?;
+    let (mut current, current_identities) = current_snapshot(result, root_hash, &skipped)?;
     let path = snapshot_path(data_dir);
     let previous = match load(&path) {
         Ok(snapshot) => snapshot,
@@ -64,11 +100,34 @@ pub(crate) fn apply(
         }
     };
 
-    let deltas = previous
+    let same_root = previous
         .as_ref()
-        .filter(|snapshot| snapshot.mods_root_hash == current.mods_root_hash)
-        .map(|snapshot| compare(snapshot, &current, &current_identities))
+        .filter(|snapshot| snapshot.mods_root_hash == current.mods_root_hash);
+    // A version 1 baseline does not record owners, so a skipped component's
+    // entries cannot be told apart. Keep the old rule for that one scan: no
+    // counts and the baseline stays as it is.
+    if !skipped.is_empty()
+        && same_root.is_some_and(|snapshot| {
+            snapshot
+                .entries
+                .values()
+                .any(|entry| entry.owner().is_none())
+        })
+    {
+        result.source_deltas = None;
+        return Ok(());
+    }
+    let deltas = same_root
+        .map(|snapshot| compare(snapshot, &current, &current_identities, &skipped))
         .unwrap_or_default();
+    // Skipped components keep their last baseline for the next healthy scan.
+    if let Some(snapshot) = same_root {
+        for (identity, entry) in &snapshot.entries {
+            if entry.owner().is_some_and(|owner| skipped.contains(owner)) {
+                current.entries.insert(identity.clone(), entry.clone());
+            }
+        }
+    }
 
     save_atomic(&path, &current)?;
     result.source_deltas = Some(deltas);
@@ -102,11 +161,16 @@ fn mods_root_hash(mods_root: &Path) -> Result<String, String> {
 fn current_snapshot(
     result: &ScanResult,
     mods_root_hash: String,
+    skipped: &HashSet<String>,
 ) -> Result<(SourceSnapshot, BTreeMap<String, ScanStringIdentity>), String> {
     let mut entries = BTreeMap::new();
     let mut identities = BTreeMap::new();
 
     for scanned_mod in &result.mods {
+        let owner = scanned_mod.unique_id.to_lowercase();
+        if skipped.contains(&owner) {
+            continue;
+        }
         for file in &scanned_mod.i18n_files {
             for source in &file.source_hashes {
                 let identity = ScanStringIdentity {
@@ -121,7 +185,13 @@ fn current_snapshot(
                 ))
                 .map_err(|error| format!("Could not serialize a scan identity: {error}"))?;
                 let identity_hash = translations::source_hash(&identity_json);
-                entries.insert(identity_hash.clone(), source.source_hash.clone());
+                entries.insert(
+                    identity_hash.clone(),
+                    SnapshotEntry::Owned {
+                        owner: owner.clone(),
+                        source: source.source_hash.clone(),
+                    },
+                );
                 identities.insert(identity_hash, identity);
             }
         }
@@ -141,12 +211,18 @@ fn compare(
     previous: &SourceSnapshot,
     current: &SourceSnapshot,
     current_identities: &BTreeMap<String, ScanStringIdentity>,
+    skipped: &HashSet<String>,
 ) -> ScanDeltas {
     let mut added_strings = Vec::new();
     let mut changed_sources = Vec::new();
 
-    for (identity_hash, source_hash) in &current.entries {
-        match previous.entries.get(identity_hash) {
+    for (identity_hash, entry) in &current.entries {
+        let source_hash = entry.source();
+        match previous
+            .entries
+            .get(identity_hash)
+            .map(SnapshotEntry::source)
+        {
             None => {
                 if let Some(identity) = current_identities.get(identity_hash) {
                     added_strings.push(identity.clone());
@@ -165,8 +241,9 @@ fn compare(
     changed_sources.sort();
     let strings_removed = previous
         .entries
-        .keys()
-        .filter(|identity| !current.entries.contains_key(*identity))
+        .iter()
+        .filter(|(_, entry)| !entry.owner().is_some_and(|owner| skipped.contains(owner)))
+        .filter(|(identity, _)| !current.entries.contains_key(*identity))
         .count();
 
     ScanDeltas {
@@ -185,7 +262,7 @@ fn load(path: &Path) -> Result<Option<SourceSnapshot>, String> {
     let body = input_limits::read_json_text(path)?;
     let snapshot: SourceSnapshot = serde_json::from_str(&body)
         .map_err(|error| format!("the saved scan baseline is invalid JSON: {error}"))?;
-    if snapshot.version != SNAPSHOT_VERSION {
+    if snapshot.version != SNAPSHOT_VERSION && snapshot.version != 1 {
         return Err(format!(
             "scan baseline version {} is not supported",
             snapshot.version
@@ -273,7 +350,7 @@ mod tests {
     }
 
     #[test]
-    fn incomplete_scan_preserves_the_last_valid_snapshot() {
+    fn a_skipped_component_keeps_its_baseline_until_it_scans_again() {
         let root = crate::test_support::temp_dir("scan-snapshot-incomplete");
         let data = root.join("data");
         let mods = fixture(
@@ -293,7 +370,8 @@ mod tests {
             .skipped_components
             .iter()
             .any(|component| component.requires_attention));
-        assert_eq!(incomplete.source_deltas, None);
+        // Only the broken component is left out; nothing else changed.
+        assert_eq!(incomplete.source_deltas, Some(ScanDeltas::default()));
         assert_eq!(std::fs::read(&baseline_path).unwrap(), baseline);
 
         write(
@@ -306,6 +384,102 @@ mod tests {
         assert_eq!(deltas.strings_added, 1);
         assert_eq!(deltas.strings_removed, 1);
 
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn one_broken_component_does_not_hide_changes_in_another() {
+        let root = crate::test_support::temp_dir("scan-snapshot-per-component");
+        let data = root.join("data");
+        let mods = root.join("Mods");
+        for (folder, unique_id) in [("Broken", "Example.Broken"), ("Healthy", "Example.Healthy")] {
+            write(
+                &mods.join(folder).join("manifest.json"),
+                &format!(r#"{{"Name":"{folder}","UniqueID":"{unique_id}","Version":"1.0.0"}}"#),
+            );
+            write(
+                &mods.join(folder).join("i18n/default.json"),
+                r#"{"line":"Before"}"#,
+            );
+        }
+        scan_with_snapshot(&mods, &data, "de");
+
+        write(&mods.join("Broken/i18n/default.json"), r#"{"broken":"#);
+        write(
+            &mods.join("Healthy/i18n/default.json"),
+            r#"{"line":"After"}"#,
+        );
+        let partial = scan_with_snapshot(&mods, &data, "de");
+        let deltas = partial
+            .source_deltas
+            .expect("the healthy component is compared");
+        assert_eq!(deltas.sources_changed, 1);
+        assert_eq!(deltas.changed_sources[0].mod_unique_id, "Example.Healthy");
+        assert_eq!(
+            deltas.strings_removed, 0,
+            "the broken component's strings are not removed"
+        );
+
+        // Repaired, the broken component compares against its kept baseline.
+        write(
+            &mods.join("Broken/i18n/default.json"),
+            r#"{"line":"Changed"}"#,
+        );
+        let repaired = scan_with_snapshot(&mods, &data, "de")
+            .source_deltas
+            .unwrap();
+        assert_eq!(repaired.sources_changed, 1);
+        assert_eq!(repaired.changed_sources[0].mod_unique_id, "Example.Broken");
+
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn version_one_baselines_are_still_compared() {
+        let root = crate::test_support::temp_dir("scan-snapshot-v1");
+        let data = root.join("data");
+        let mods = fixture(&root, "Example.Mod", r#"{"line":"Before"}"#, "{}");
+        scan_with_snapshot(&mods, &data, "de");
+        // Rewrite the saved baseline in the version 1 shape (hash only).
+        let path = snapshot_path(&data);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        value["version"] = 1.into();
+        for entry in value["entries"].as_object_mut().unwrap().values_mut() {
+            *entry = entry["source"].clone();
+        }
+        std::fs::write(&path, value.to_string()).unwrap();
+
+        write(
+            &mods.join("Example/i18n/default.json"),
+            r#"{"line":"After"}"#,
+        );
+        let rescanned = scan_with_snapshot(&mods, &data, "de");
+        assert!(rescanned.warnings.is_empty(), "{:?}", rescanned.warnings);
+        assert_eq!(rescanned.source_deltas.unwrap().sources_changed, 1);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn a_version_one_baseline_with_a_skipped_component_stays_untouched() {
+        let root = crate::test_support::temp_dir("scan-snapshot-v1-skip");
+        let data = root.join("data");
+        let mods = fixture(&root, "Example.Mod", r#"{"line":"Before"}"#, "{}");
+        scan_with_snapshot(&mods, &data, "de");
+        let path = snapshot_path(&data);
+        let mut value: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        value["version"] = 1.into();
+        for entry in value["entries"].as_object_mut().unwrap().values_mut() {
+            *entry = entry["source"].clone();
+        }
+        std::fs::write(&path, value.to_string()).unwrap();
+        let legacy = std::fs::read(&path).unwrap();
+
+        write(&mods.join("Example/i18n/default.json"), r#"{"broken":"#);
+        let skipped = scan_with_snapshot(&mods, &data, "de");
+        assert_eq!(skipped.source_deltas, None);
+        assert_eq!(std::fs::read(&path).unwrap(), legacy);
         std::fs::remove_dir_all(root).ok();
     }
 
