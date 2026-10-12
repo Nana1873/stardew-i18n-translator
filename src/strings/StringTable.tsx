@@ -3485,7 +3485,16 @@ function RowView({
     );
   const issueSummary =
     severity === "error"
-      ? `Must fix: this text stays English in the game until fixed.${acceptedTokenMismatch ? " Other problems remain." : ""}`
+      ? acceptedTokenMismatch
+        ? "Must fix: this text stays English in the game until fixed. Other problems remain."
+        : issues.some(
+              (issue) =>
+                issue.severity === "error" &&
+                (issue.ruleId === "token-missing" ||
+                  issue.ruleId === "token-added"),
+            )
+          ? "Must fix or Save anyway: until then this text stays English in the game."
+          : "Must fix: this text stays English in the game until fixed."
       : acceptedTokenMismatch
         ? "Kept on purpose: exported as written."
         : "Worth a look: exported as written.";

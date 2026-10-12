@@ -2025,7 +2025,7 @@ export function App() {
   // Human-readable target language for the workspace and operation results.
   const languageLine = settings?.targetLang
     ? `${languageLabel} (${settings.targetLang})`
-    : "No target language yet";
+    : "No language chosen yet";
   const focusedDialogOpen = Boolean(
     wizardOpen ||
     settingsOpen ||

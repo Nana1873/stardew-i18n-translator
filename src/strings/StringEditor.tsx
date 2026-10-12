@@ -1267,7 +1267,13 @@ export function StringEditor({
                           className={`editor__issue-title editor__issue-title--${severity}`}
                         >
                           {severity === "error"
-                            ? `Must fix${group.some((issue) => issue.ruleId === "token-missing" || issue.ruleId === "token-added") ? " – until then this string stays English in the game" : ""}`
+                            ? group.some(
+                                (issue) =>
+                                  issue.ruleId === "token-missing" ||
+                                  issue.ruleId === "token-added",
+                              )
+                              ? "Must fix or Save anyway – until then this string stays English in the game"
+                              : "Must fix"
                             : "Worth a look – exported as written"}
                         </span>
                         {group.map((issue, i) => (

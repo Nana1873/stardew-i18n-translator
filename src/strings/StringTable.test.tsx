@@ -1420,13 +1420,13 @@ describe("StringTable workbench", () => {
       name: /^Worth a look: exported as written\./,
     });
     const error = within(rowFor("error")).getByRole("button", {
-      name: /^Must fix: this text stays English/,
+      name: /^Must fix or Save anyway: until then this text stays English/,
     });
     expect(warning).toHaveAttribute("data-severity", "warning");
     expect(error).toHaveAttribute("data-severity", "error");
     expect(
       within(rowFor("mixed")).getByRole("button", {
-        name: /^Must fix: this text stays English/,
+        name: /^Must fix or Save anyway: until then this text stays English/,
       }),
     ).toHaveAttribute("data-severity", "error");
     expect(
@@ -1447,7 +1447,7 @@ describe("StringTable workbench", () => {
     fireEvent.blur(warning);
     fireEvent.focus(error);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
-      "Must fix: this text stays English in the game until fixed. [FarmName] is missing",
+      "Must fix or Save anyway: until then this text stays English in the game. [FarmName] is missing",
     );
     fireEvent.blur(error);
     const accepted = within(rowFor("accepted")).getByRole("button", {
