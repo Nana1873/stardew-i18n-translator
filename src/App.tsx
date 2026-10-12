@@ -45,6 +45,8 @@ import {
   buildStardewTranslatorOutput,
   previewStardewTranslatorOutput,
   cancelAiRun,
+  NOTIFY_EVENT,
+  type NotifyDetail,
   cloudAiStatus,
   CLOUD_ENGINE_LABEL,
   CLOUD_ENGINE_ID,
@@ -92,7 +94,7 @@ import { TARGET_LANGUAGES } from "./languages";
 import { SetupWizard } from "./setup/SetupWizard";
 import { SettingsDialog } from "./settings/SettingsDialog";
 import { ModList } from "./mods/ModList";
-import { ScanDialog } from "./mods/ScanDialog";
+import { ScanDialog, scanAttentionCount } from "./mods/ScanDialog";
 import {
   type AiBatchFinishedResult,
   type SavedStringSnapshot,
@@ -568,9 +570,23 @@ export function App() {
   ) {
     if (activity && !scanDetails)
       reportActivity({ kind: "message", message, tone });
-    setResultHidden(true);
+    // Toasts stack above the result report; only a problem takes its place,
+    // so a quick "Copied" or "Saved" note keeps the latest result visible.
+    if (tone === "warning" || tone === "error") setResultHidden(true);
     setToast({ id: Date.now(), message, tone, scanDetails });
   }
+
+  // Fire-and-forget actions (open folder or link) report failures here.
+  const notifyRef = useRef(notify);
+  notifyRef.current = notify;
+  useEffect(() => {
+    const onNotify = (event: Event) => {
+      const { message, tone } = (event as CustomEvent<NotifyDetail>).detail;
+      notifyRef.current(message, tone);
+    };
+    window.addEventListener(NOTIFY_EVENT, onNotify);
+    return () => window.removeEventListener(NOTIFY_EVENT, onNotify);
+  }, []);
 
   useEffect(() => {
     if (!toast || modalOpen) return;
@@ -963,9 +979,7 @@ export function App() {
   const selectedModRef = useRef<ScannedMod | null>(selectedMod);
   selectedModRef.current = selectedMod;
   const inProgressMods = scan ? countInProgressPackages(scan.mods) : 0;
-  const attentionSkippedCount = scan?.skippedComponents?.filter(
-    (component) => component.requiresAttention,
-  ).length;
+  const attentionCount = scan ? scanAttentionCount(scan) : null;
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -2295,45 +2309,29 @@ export function App() {
                           </>
                         )}
                         <button
-                          className="panel__header-tail translator-kicker-action"
+                          className={`panel__header-tail translator-kicker-action${attentionCount ? " panel__warn" : ""}`}
                           type="button"
                           aria-label={
-                            attentionSkippedCount == null
-                              ? "Skipped components unavailable; open scan diagnostics"
-                              : `${attentionSkippedCount} skipped ${attentionSkippedCount === 1 ? "component" : "components"}; open scan diagnostics`
+                            attentionCount == null
+                              ? "Scan details unavailable; open scan results"
+                              : `${attentionCount} ${attentionCount === 1 ? "item needs" : "items need"} attention; open scan results`
                           }
-                          title="Open structured scan diagnostics"
+                          title="Open the latest scan results"
                           onClick={() => openLatestScan(true)}
                         >
-                          Skipped ·{" "}
-                          {attentionSkippedCount == null ? (
-                            "Unavailable"
+                          {attentionCount == null ? (
+                            "Scan details"
+                          ) : attentionCount === 0 ? (
+                            "Scan OK"
                           ) : (
-                            <span className="translator-pane-count">
-                              {attentionSkippedCount}
-                            </span>
+                            <>
+                              Needs attention ·{" "}
+                              <span className="translator-pane-count">
+                                {attentionCount}
+                              </span>
+                            </>
                           )}
                         </button>
-                        {scan && scan.warnings.length > 0 && (
-                          <>
-                            <span
-                              className="panel__header-tail"
-                              aria-hidden="true"
-                            >
-                              ·
-                            </span>
-                            <button
-                              className="panel__warn translator-kicker-action"
-                              type="button"
-                              onClick={() => openLatestScan(true)}
-                            >
-                              {scan.warnings.length}{" "}
-                              {scan.warnings.length === 1
-                                ? "warning"
-                                : "warnings"}
-                            </button>
-                          </>
-                        )}
                       </span>
                     )}
                   </div>

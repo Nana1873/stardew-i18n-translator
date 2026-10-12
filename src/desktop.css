@@ -782,19 +782,10 @@
   }
 }
 
-.desktop-scan-copy {
-  display: none;
-}
-
-#stardew-i18n-translator .desktop-scan-original,
-#stardew-i18n-translator .desktop-scan-completion,
 #stardew-i18n-translator
   .translator-scan-dialog[data-scanning="false"]
   .translator-progress-row {
   display: none;
-}
-#stardew-i18n-translator .desktop-scan-copy {
-  display: inline;
 }
 #stardew-i18n-translator .desktop-scan-overlay {
   background: rgba(0, 0, 0, 0.35);
@@ -825,71 +816,6 @@
 #stardew-i18n-translator .translator-scan-dialog .translator-flow-body {
   gap: 8px;
   padding: 10px 12px;
-}
-#stardew-i18n-translator .translator-scan-dialog .translator-preflight-metrics {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-}
-#stardew-i18n-translator .translator-scan-dialog .translator-preflight-metric {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 5px 0;
-  border: 0;
-}
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-preflight-metric:nth-child(3) {
-  margin-top: 6px;
-  padding-top: 10px;
-  border-top: 1px solid var(--translator-border);
-}
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-preflight-metric
-  span {
-  order: -1;
-  margin: 0;
-  font-size: 12px;
-  white-space: normal;
-}
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-preflight-metric
-  strong {
-  flex-shrink: 0;
-  font-size: 13px;
-  font-weight: 500;
-  font-variant-numeric: tabular-nums;
-}
-#stardew-i18n-translator .translator-scan-dialog .translator-scan-diagnostics {
-  padding: 8px 0 0;
-  background: transparent;
-  border-left: 0;
-  border-top: 1px solid var(--translator-border);
-  border-radius: 0;
-  font-size: 12px;
-}
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-scan-warning-section
-  > p {
-  color: var(--translator-orange);
-}
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-scan-warning-section
-  > p
-  > svg {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  vertical-align: -2px;
-  margin-right: 3px;
 }
 #stardew-i18n-translator .translator-scan-dialog .translator-flow-list li {
   padding: 7px 0;

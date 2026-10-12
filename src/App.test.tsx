@@ -521,10 +521,9 @@ describe("App shell", () => {
     render(<App />);
 
     const skipped = await screen.findByRole("button", {
-      name: "0 skipped components; open scan diagnostics",
+      name: "0 items need attention; open scan results",
     });
-    expect(skipped).toHaveTextContent("Skipped · 0");
-    expect(within(skipped).getByText("0")).toHaveClass("translator-pane-count");
+    expect(skipped).toHaveTextContent("Scan OK");
     fireEvent.click(skipped);
 
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
@@ -3806,7 +3805,9 @@ describe("App shell", () => {
       targetLang: "fr",
     });
 
+    // Closing with unsaved changes asks first.
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    fireEvent.click(screen.getByRole("button", { name: "Discard changes" }));
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(screen.getByLabelText("Target language")).toHaveValue("de");
   });
@@ -4058,6 +4059,9 @@ describe("App shell", () => {
     fireEvent.change(language, { target: { value: "fr" } });
     expect(language).toHaveValue("fr");
     fireEvent.click(within(setup).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(
+      within(setup).getByRole("button", { name: "Discard changes" }),
+    );
 
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull(),
@@ -4822,7 +4826,7 @@ describe("App shell", () => {
     render(<App />);
 
     const dialog = await screen.findByRole("dialog", { name: "Scan" });
-    expect(dialog).toHaveTextContent("1 component skipped");
+    expect(dialog).toHaveTextContent("1 item needs a look");
     expect(dialog).toHaveTextContent("Example Pack");
     expect(dialog).not.toHaveTextContent("1 scanner warning");
   });
@@ -4847,7 +4851,7 @@ describe("App shell", () => {
     render(<App />);
 
     await screen.findByRole("button", {
-      name: /skipped components; open scan diagnostics/,
+      name: /need attention; open scan results/,
     });
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
   });
@@ -4867,7 +4871,7 @@ describe("App shell", () => {
     render(<App />);
 
     const latest = await screen.findByRole("button", {
-      name: /skipped components; open scan diagnostics/,
+      name: /need attention; open scan results/,
     });
     expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
     fireEvent.click(latest);
@@ -4893,9 +4897,9 @@ describe("App shell", () => {
     openWorkspace();
 
     const skipped = screen.getByRole("button", {
-      name: "Skipped components unavailable; open scan diagnostics",
+      name: "Scan details unavailable; open scan results",
     });
-    expect(skipped).toHaveTextContent("Skipped · Unavailable");
+    expect(skipped).toHaveTextContent("Scan details");
     fireEvent.click(skipped);
     expect(
       await screen.findByRole("dialog", { name: "Scan" }),

@@ -313,7 +313,7 @@ describe("StringEditor", () => {
     expect(screen.getByText(/Medium/)).toBeInTheDocument();
   });
 
-  it("blocks close, navigation, saving, and editing while live translation is pending", async () => {
+  it("blocks navigation, saving, and editing while live translation is pending", async () => {
     const pending = deferred<EditorTranslationResult>();
     const onTranslate = vi.fn(() => pending.promise);
     const { onSave, onClose, onNavigate } = renderEditor(
@@ -325,10 +325,8 @@ describe("StringEditor", () => {
 
     const field = screen.getByRole("textbox", { name: "Translation" });
     expect(field).toHaveAttribute("readonly");
-    expect(screen.getByRole("button", { name: "Close editor" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Next string" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /^Save$/ })).toBeDisabled();
-    fireEvent.keyDown(window, { key: "Escape" });
     fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
     fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
     fireEvent.change(field, { target: { value: "Manual overwrite" } });
@@ -350,6 +348,78 @@ describe("StringEditor", () => {
     await waitFor(() => expect(field).toHaveValue("Persisted result"));
     expect(field).not.toHaveAttribute("readonly");
     expect(screen.getByRole("button", { name: "Close editor" })).toBeEnabled();
+  });
+
+  it("cancels a pending AI translation and ignores its late result", async () => {
+    const pending = deferred<EditorTranslationResult>();
+    const onTranslate = vi.fn(() => pending.promise);
+    const onCancelTranslate = vi.fn();
+    render(
+      <StringEditor
+        row={row({ target: "", targetPresent: false, status: "untranslated" })}
+        index={0}
+        total={2}
+        modName="Test Mod"
+        aiEngineLabel="ChatGPT"
+        aiModel="cloud-test-model"
+        aiReasoning="High"
+        onTranslate={onTranslate}
+        onCancelTranslate={onCancelTranslate}
+        onSave={vi.fn()}
+        onClose={vi.fn()}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Translating… Cancel/ }),
+    );
+
+    expect(onCancelTranslate).toHaveBeenCalledOnce();
+    expect(screen.getByText("AI translation cancelled.")).toBeInTheDocument();
+    const field = screen.getByRole("textbox", { name: "Translation" });
+    expect(field).not.toHaveAttribute("readonly");
+
+    pending.resolve({
+      text: "Too late",
+      missingTokens: [],
+      glossaryMisses: [],
+    });
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /Translate with AI/ }),
+      ).toBeEnabled(),
+    );
+    expect(field).toHaveValue("");
+  });
+
+  it("closing during a pending AI translation cancels it and closes", () => {
+    const pending = deferred<EditorTranslationResult>();
+    const onCancelTranslate = vi.fn();
+    const onClose = vi.fn();
+    render(
+      <StringEditor
+        row={row({ target: "", targetPresent: false, status: "untranslated" })}
+        index={0}
+        total={2}
+        modName="Test Mod"
+        aiEngineLabel="ChatGPT"
+        aiModel="cloud-test-model"
+        aiReasoning="High"
+        onTranslate={() => pending.promise}
+        onCancelTranslate={onCancelTranslate}
+        onSave={vi.fn()}
+        onClose={onClose}
+        onNavigate={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Translate with AI/ }));
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    expect(onCancelTranslate).toHaveBeenCalledOnce();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it("hides suggestion provenance when no real metadata is available", () => {

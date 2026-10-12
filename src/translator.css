@@ -3508,22 +3508,6 @@
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
 }
 
-#stardew-i18n-translator .translator-scan-dialog .translator-preflight-metrics {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-preflight-metric:nth-child(3n) {
-  border-right: 0;
-}
-
-#stardew-i18n-translator
-  .translator-scan-dialog
-  .translator-preflight-metric:nth-child(n + 4) {
-  border-top: 1px solid var(--translator-border);
-}
-
 #stardew-i18n-translator .translator-export-details {
   color: var(--translator-muted);
 }
@@ -3643,4 +3627,9 @@
     scroll-behavior: auto !important;
     transition: none !important;
   }
+}
+
+#stardew-i18n-translator .translator-settings-discard {
+  color: var(--translator-orange);
+  font-size: 12px;
 }

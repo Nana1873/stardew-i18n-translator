@@ -1873,9 +1873,11 @@ describe("StringTable workbench", () => {
       screen.getByRole("button", { name: "Clear string selection" }),
     );
     expect(screen.queryByRole("button", { name: /selected/ })).toBeNull();
-    expect(onNotify).toHaveBeenCalledWith("Selection cleared.", "info", {
-      activity: false,
-    });
+    expect(onNotify).not.toHaveBeenCalledWith(
+      "Selection cleared.",
+      expect.anything(),
+      expect.anything(),
+    );
   });
 
   it("opens Batch actions with ArrowDown and closes menus when focus leaves", async () => {
