@@ -690,7 +690,7 @@ fn execute_prepared(mods: &mut [PreparedMod]) -> Result<(), String> {
                     if !file.removals.is_empty() {
                         // With every translation cleared, removing the stale target
                         // makes SMAPI fall back to default.json. The value may have
-                        // been imported from pt-BR.json or zh-CN.json, so remove the
+                        // been imported from a regional file such as pt-BR.json or de-DE.json, so remove the
                         // read variant too.
                         file.result.removed = true;
                         prepared.result.files_removed += 1;
@@ -2408,6 +2408,30 @@ mod tests {
         assert!(read(&i18n.join("zh-CN.json.bak")).contains("Regional first"));
         assert!(!i18n.join("zh-CN.json").exists());
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn german_and_spanish_regional_files_are_backed_up_and_removed() {
+        for (code, regional) in [("de", "de-DE.json"), ("es", "es-ES.json")] {
+            let root = crate::test_support::temp_dir(&format!("export-{code}-regional"));
+            let i18n = root.join("i18n");
+            write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+            write(&i18n.join(regional), r#"{"k":"Regional value"}"#);
+            write(&i18n.join("en-GB.json"), r#"{"k":"Unrelated"}"#);
+            let files = vec![ExportFileInput {
+                relative_dir: "i18n".into(),
+                default_path: i18n.join("default.json").display().to_string(),
+                target_path: i18n.join(format!("{code}.json")).display().to_string(),
+            }];
+
+            export_mod(&root, "mod.id", &files).unwrap();
+            assert!(read(&i18n.join(format!("{code}.json"))).contains("Regional value"));
+            assert!(read(&i18n.join(format!("{regional}.bak"))).contains("Regional value"));
+            assert!(!i18n.join(regional).exists());
+            assert!(read(&i18n.join("en-GB.json")).contains("Unrelated"));
+            assert!(!i18n.join("en-GB.json.bak").exists());
+            std::fs::remove_dir_all(root).ok();
+        }
     }
 
     #[test]
