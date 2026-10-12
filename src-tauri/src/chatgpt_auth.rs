@@ -322,23 +322,63 @@ pub fn message(error: crate::ai::ProviderFailure) -> String {
         Transient(e, _) | InvalidResponse(e) | Message(e) => e,
     }
 }
-pub fn api_failure(status: u16, body: &Value) -> crate::ai::ProviderFailure {
-    use crate::ai::ProviderFailure;
-    let guidance = match body["error"]["code"]
-        .as_str()
-        .or_else(|| body["error"].as_str())
-    {
-        Some("subscription_sharing_user_not_eligible") => {
+fn code_guidance(code: Option<&str>) -> Option<&'static str> {
+    Some(match code? {
+        "subscription_sharing_user_not_eligible" => {
             "ChatGPT plan use is not available for this account or workspace yet."
         }
-        Some("subscription_sharing_usage_limit_exceeded") => {
+        "subscription_sharing_usage_limit_exceeded" => {
             "A ChatGPT plan or app usage limit was reached. Check ChatGPT usage settings."
         }
-        Some("subscription_sharing_usage_unavailable") => {
+        "subscription_sharing_usage_unavailable" => {
             "ChatGPT plan usage is temporarily unavailable. Try later."
         }
-        Some("invalid_grant") => "The ChatGPT session expired. Sign in again.",
-        _ => match status {
+        "invalid_grant" => "The ChatGPT session expired. Sign in again.",
+        _ => return None,
+    })
+}
+/// An `error` or `response.failed` event inside a streamed response. It has
+/// no HTTP status of its own; busy or overloaded services are temporary.
+pub fn stream_failure(error: &Value) -> crate::ai::ProviderFailure {
+    use crate::ai::ProviderFailure;
+    let code = error["code"].as_str().or_else(|| error.as_str());
+    let busy = [code, error["type"].as_str()]
+        .into_iter()
+        .flatten()
+        .any(|c| {
+            matches!(
+                c,
+                "server_error"
+                    | "server_overloaded"
+                    | "server_is_overloaded"
+                    | "overloaded"
+                    | "overloaded_error"
+                    | "rate_limit_exceeded"
+                    | "rate_limit_error"
+                    | "subscription_sharing_usage_unavailable"
+            )
+        });
+    if busy {
+        return ProviderFailure::Transient(
+            "OpenAI was busy and stopped the response early. Try again in a moment.".into(),
+            None,
+        );
+    }
+    ProviderFailure::Message(
+        code_guidance(code)
+            .unwrap_or("OpenAI stopped the response with an error. Try again later.")
+            .into(),
+    )
+}
+pub fn api_failure(status: u16, body: &Value) -> crate::ai::ProviderFailure {
+    use crate::ai::ProviderFailure;
+    let guidance = match code_guidance(
+        body["error"]["code"]
+            .as_str()
+            .or_else(|| body["error"].as_str()),
+    ) {
+        Some(guidance) => guidance,
+        None => match status {
             401 => "OpenAI did not accept this session. Sign in again.",
             403 => "OpenAI refused this request under the current account or workspace policy.",
             429 => "OpenAI's usage limit was reached. Check ChatGPT usage settings.",
