@@ -149,15 +149,6 @@ fn is_soft_token(token: &str) -> bool {
     token == "\n" || token == "'"
 }
 
-/// True if `target` is missing (or under-represents) any protected token that
-/// appears in `source`. Soft tokens (newlines, quote delimiters) are exempt.
-#[cfg(test)]
-pub fn missing_tokens(source: &str, target: &str) -> bool {
-    token_differences(source, target)
-        .iter()
-        .any(|difference| difference.target_count < difference.source_count)
-}
-
 /// How serious a protected-token difference is, verified against the
 /// Stardew 1.6 dialogue, mail, and token parsers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -1221,6 +1212,15 @@ fn is_word_apostrophe(chars: &[char], offset: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// True if `target` is missing (or under-represents) any protected token
+    /// that appears in `source`. Soft tokens (newlines, quote delimiters) are
+    /// exempt.
+    fn missing_tokens(source: &str, target: &str) -> bool {
+        token_differences(source, target)
+            .iter()
+            .any(|difference| difference.target_count < difference.source_count)
+    }
 
     #[test]
     fn extracts_content_patcher_and_dialogue_tokens() {

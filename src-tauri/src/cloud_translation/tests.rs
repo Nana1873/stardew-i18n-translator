@@ -90,6 +90,32 @@ fn diagnostic_model_labels_reject_paths_and_free_text() {
 }
 
 #[test]
+fn translation_and_review_prompts_share_one_schema_and_model_check() {
+    let items = vec![prepared_item("a", "Hello"), prepared_item("b", "Bye")];
+    let prompt = ai::build_provider_prompt("German", &items).unwrap();
+    assert_eq!(prompt.schema, exact_translation_schema(&items));
+    let sparse = sparse_review_schema(&items);
+    assert_eq!(sparse["properties"]["translations"]["minItems"], 0);
+    assert_eq!(sparse["properties"]["translations"]["maxItems"], 2);
+    assert_eq!(
+        sparse["properties"]["translations"]["items"]["properties"]["id"]["enum"],
+        json!(["a", "b"])
+    );
+
+    assert!(matches!(validated_model(None), Ok(None)));
+    assert_eq!(
+        validated_model(Some(" gpt-5.6-sol ")).unwrap().as_deref(),
+        Some("gpt-5.6-sol")
+    );
+    for invalid in ["", "-flag", "bad\nmodel"] {
+        assert!(matches!(
+            validated_model(Some(invalid)),
+            Err(ProviderFailure::Message(message)) if message == "The selected cloud model is invalid."
+        ));
+    }
+}
+
+#[test]
 fn structural_retry_prompt_uses_only_a_bounded_validator_hint() {
     let item = prepared_item("item-0000", "Hello");
     let validator_error = format!("{} SHOULD_NOT_SURVIVE", "🦀".repeat(300));

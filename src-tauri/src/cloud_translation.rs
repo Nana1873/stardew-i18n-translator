@@ -53,6 +53,16 @@ fn clean_model_value(value: &str) -> Option<String> {
     .then(|| value.to_string())
 }
 
+fn validated_model(model: Option<&str>) -> Result<Option<String>, ProviderFailure> {
+    model
+        .map(|model| {
+            clean_model_value(model).ok_or_else(|| {
+                ProviderFailure::Message("The selected cloud model is invalid.".to_string())
+            })
+        })
+        .transpose()
+}
+
 fn bounded_structural_hint(error: &str) -> String {
     let compact = error.split_whitespace().collect::<Vec<_>>().join(" ");
     let hint = compact
@@ -87,41 +97,12 @@ fn build_translation_attempt_prompt(
     Ok(prompt)
 }
 
-fn translation_schema(items: &[PreparedAiItem], min_items: usize) -> serde_json::Value {
-    let ids = items
-        .iter()
-        .map(|item| item.id.as_str())
-        .collect::<Vec<_>>();
-    let count = items.len();
-    serde_json::json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["translations"],
-        "properties": {
-            "translations": {
-                "type": "array",
-                "minItems": min_items,
-                "maxItems": count,
-                "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["id", "text"],
-                    "properties": {
-                        "id": {"type": "string", "enum": ids},
-                        "text": {"type": "string"}
-                    }
-                }
-            }
-        }
-    })
-}
-
 fn exact_translation_schema(items: &[PreparedAiItem]) -> serde_json::Value {
-    translation_schema(items, items.len())
+    ai::translation_schema(items, items.len())
 }
 
 fn sparse_review_schema(items: &[PreparedAiItem]) -> serde_json::Value {
-    translation_schema(items, 0)
+    ai::translation_schema(items, 0)
 }
 
 struct ReviewPlan {
@@ -1292,12 +1273,7 @@ pub async fn translate_chunk(
     cancelled: Arc<AtomicBool>,
     progress: ProviderProgressCallback,
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
-    let model = match model {
-        Some(model) => Some(clean_model_value(model).ok_or_else(|| {
-            ProviderFailure::Message("The selected cloud model is invalid.".to_string())
-        })?),
-        None => None,
-    };
+    let model = validated_model(model)?;
     let reasoning = ai::normalize_reasoning(reasoning)?;
     let target_language = target_language.to_string();
     let items = items.to_vec();
@@ -1366,12 +1342,7 @@ pub async fn repair_token_mismatches_once(
             cancelled: cancelled.load(Ordering::Acquire),
         });
     }
-    let model = match model {
-        Some(model) => Some(clean_model_value(model).ok_or_else(|| {
-            ProviderFailure::Message("The selected cloud model is invalid.".to_string())
-        })?),
-        None => None,
-    };
+    let model = validated_model(model)?;
     let reasoning = ai::normalize_reasoning(reasoning)?;
     let plans = build_token_repair_plans(target_language, items, translations)?;
     if plans.is_empty() {
