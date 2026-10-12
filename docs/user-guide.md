@@ -54,8 +54,8 @@ mod's translation files until you export.
 
 The example uses synthetic text. Preserve placeholders such as `{{PlayerName}}`
 and dialogue commands when translating the surrounding words. The editor's token
-chips use the same marks as Issues: a red circle for an error, a yellow triangle
-for a harmless difference, and a dashed outline for an accepted mismatch.
+chips use the marks from Issues, a red circle for an error and a yellow triangle
+for a harmless difference; a dashed outline marks an accepted mismatch.
 
 ## Understand status and validation
 

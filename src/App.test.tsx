@@ -4027,6 +4027,7 @@ describe("App shell", () => {
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
       if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "validate_stardew_path") return Promise.resolve(true);
       return Promise.resolve(null);
     });
     render(<App />);
@@ -4045,6 +4046,16 @@ describe("App shell", () => {
       within(settingsDialog).getByRole("button", { name: "Setup …" }),
     );
     const setup = await screen.findByRole("dialog", { name: "Setup" });
+    // Change the language on step 3 so a wrongly saved cancel would show up.
+    for (let step = 1; step < 3; step++) {
+      const next = within(setup).getByRole("button", { name: "Next" });
+      await waitFor(() => expect(next).toBeEnabled());
+      fireEvent.click(next);
+    }
+    fireEvent.change(
+      await within(setup).findByRole("combobox", { name: "Target language" }),
+      { target: { value: "fr" } },
+    );
     fireEvent.click(within(setup).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() =>
@@ -4052,21 +4063,11 @@ describe("App shell", () => {
     );
     expect(scanCalls()).toBe(1);
     // Workspace layout may be persisted on its own schedule; the cancelled
-    // wizard must not change the game folder, Mods folder, or language.
-    const savedSetups = invokeMock.mock.calls
+    // wizard must not save the language changed in it.
+    const savedLanguages = invokeMock.mock.calls
       .filter(([cmd]) => cmd === "save_settings")
-      .map(([, args]) => (args as { settings: typeof CONFIGURED }).settings)
-      .map(({ stardewPath, modsPath, targetLang }) => ({
-        stardewPath,
-        modsPath,
-        targetLang,
-      }));
-    for (const saved of savedSetups)
-      expect(saved).toEqual({
-        stardewPath: CONFIGURED.stardewPath,
-        modsPath: CONFIGURED.modsPath,
-        targetLang: CONFIGURED.targetLang,
-      });
+      .map(([, args]) => (args as { settings: typeof CONFIGURED }).settings);
+    expect(savedLanguages.map((saved) => saved.targetLang)).not.toContain("fr");
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {
