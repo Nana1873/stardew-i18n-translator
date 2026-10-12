@@ -890,9 +890,12 @@ fn select_version(
         .iter()
         .map(|component| {
             let path = Path::new(&component.folder_path);
-            let relative = path
-                .strip_prefix(package_root)
-                .map_err(|_| format!("Component '{}' is outside the package.", component.name))?;
+            let relative = path.strip_prefix(package_root).map_err(|_| {
+                crate::internal_error(&format!(
+                    "component '{}' is outside its ZIP package",
+                    component.name
+                ))
+            })?;
             Ok((
                 !relative.as_os_str().is_empty(),
                 relative.to_string_lossy().replace('\\', "/"),
@@ -910,7 +913,7 @@ fn select_version(
     let selected = candidates
         .first()
         .map(|candidate| candidate.3)
-        .ok_or_else(|| "The package has no components.".to_string())?;
+        .ok_or_else(|| crate::internal_error("the ZIP package has no components"))?;
     Ok((selected.version.clone(), selected.name.clone()))
 }
 

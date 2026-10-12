@@ -190,11 +190,19 @@ pub fn validate_paths(
         let target_path = Path::new(&file.target_path);
         if let Some((relative_root, name)) = file.relative_dir.split_once("/@split/") {
             if name.contains(['/', '\\']) || !name.to_ascii_lowercase().ends_with(".json") {
-                return Err("Invalid split translation identity".into());
+                return Err(crate::internal_error(
+                    "an export request names an invalid split translation file",
+                ));
             }
             let source = std::fs::canonicalize(default_path).map_err(|e| e.to_string())?;
-            let parent = source.parent().ok_or("Invalid split source")?;
-            let i18n = parent.parent().ok_or("Invalid split source")?;
+            let unexpected_source = || {
+                format!(
+                    "This mod's files are in an unexpected place ({}), so it wasn't exported.",
+                    default_path.display()
+                )
+            };
+            let parent = source.parent().ok_or_else(unexpected_source)?;
+            let i18n = parent.parent().ok_or_else(unexpected_source)?;
             if !source.is_file()
                 || !source.starts_with(&canonical_root)
                 || !file_name_is(parent, "default")
@@ -202,13 +210,16 @@ pub fn validate_paths(
                 || !file_name_is(&source, name)
                 || relative_root.is_empty()
             {
-                return Err("Invalid split translation source".into());
+                return Err(unexpected_source());
             }
             let expected = scanner::split_target_path(&source, target_lang)?;
             let actual_parent = validate_target_location(target_path, &canonical_root)?;
             let expected_parent = validate_target_location(&expected, &canonical_root)?;
             if actual_parent != expected_parent || target_path.file_name() != expected.file_name() {
-                return Err("Invalid split translation target".into());
+                return Err(format!(
+                    "This mod's files are in an unexpected place ({}), so it wasn't exported.",
+                    target_path.display()
+                ));
             }
             for variant in target_variants(target_path) {
                 validate_target_location(&variant, &canonical_root)?;
@@ -219,11 +230,18 @@ pub fn validate_paths(
                     target_path
                         .file_name()
                         .and_then(|n| n.to_str())
-                        .ok_or("Invalid split target filename")?
+                        .ok_or_else(|| {
+                            format!(
+                    "This mod's files are in an unexpected place ({}), so it wasn't exported.",
+                    target_path.display()
+                )
+                        })?
                         .to_lowercase(),
                 ),
             ) {
-                return Err("Duplicate split translation target".into());
+                return Err(crate::internal_error(
+                    "an export request lists the same split translation file twice",
+                ));
             }
             continue;
         }
