@@ -1480,18 +1480,36 @@ async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
     }
 }
 
+type PreparedAiRequest = (
+    settings::AppSettings,
+    String,
+    PathBuf,
+    Vec<ai::PreparedAiItem>,
+);
+
+/// Run blocking file work (a Mods scan, state loads) off the async runtime so
+/// an AI command does not stall other async commands while it prepares.
+async fn run_blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .map_err(|_| "Could not prepare the AI run. Try again.".to_string())?
+}
+
+async fn prepare_ai_request_blocking(
+    app: &AppHandle,
+    request: &ai::AiTranslationRequest,
+) -> Result<PreparedAiRequest, String> {
+    let app = app.clone();
+    let request = request.clone();
+    run_blocking(move || prepare_ai_request(&app, &request)).await
+}
+
 fn prepare_ai_request(
     app: &AppHandle,
     request: &ai::AiTranslationRequest,
-) -> Result<
-    (
-        settings::AppSettings,
-        String,
-        PathBuf,
-        Vec<ai::PreparedAiItem>,
-    ),
-    String,
-> {
+) -> Result<PreparedAiRequest, String> {
     ai::validate_request_shape(request)?;
     let config = config_dir(app)?;
     let settings = settings::load_checked(&config)?;
@@ -2282,7 +2300,7 @@ async fn translate_with_local_ai(
     ai::validate_request_shape(&request)?;
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
-        prepare_ai_request(&app, &request)?;
+        prepare_ai_request_blocking(&app, &request).await?;
     let local = settings
         .llm
         .ok_or_else(|| "Configure and test Local AI in Settings first.".to_string())?;
@@ -2678,7 +2696,7 @@ async fn translate_with_cloud_ai(
     ai::validate_request_shape(&request)?;
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
-        prepare_ai_request(&app, &request)?;
+        prepare_ai_request_blocking(&app, &request).await?;
     let cloud_model = required_cloud_model(settings.ai.cloud_model.as_deref())?;
     let reasoning = ai::normalize_reasoning(&settings.ai.cloud_reasoning)?;
     let cloud_quality_review = settings.ai.cloud_quality_review;
@@ -4056,6 +4074,21 @@ mod ai_run_contract_tests {
         for category in ["invalidResponse", "responseTooLarge", "timeout", "provider"] {
             assert!(!local_ai_error_is_systemic(category), "{category}");
         }
+    }
+
+    #[test]
+    fn ai_request_preparation_runs_off_the_async_thread() {
+        let caller = std::thread::current().id();
+        let worker = tauri::async_runtime::block_on(run_blocking(|| {
+            Ok::<_, String>(std::thread::current().id())
+        }))
+        .unwrap();
+        assert_ne!(worker, caller);
+        let error = tauri::async_runtime::block_on(run_blocking(|| {
+            Err::<(), _>("Choose a Mods folder before using AI translation.".to_string())
+        }))
+        .unwrap_err();
+        assert_eq!(error, "Choose a Mods folder before using AI translation.");
     }
 
     #[test]
