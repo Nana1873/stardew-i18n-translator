@@ -227,7 +227,8 @@ export function validate(
     issues.push({
       ruleId: "empty-target",
       severity: "warning",
-      message: "The translation is empty, so the game shows nothing here.",
+      message:
+        "The installed translation file has an empty value here, so the game shows “(no translation)”. Translate it, or export to remove the empty value.",
     });
   }
 

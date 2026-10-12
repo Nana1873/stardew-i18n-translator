@@ -830,7 +830,12 @@ export function StringEditor({
       isInsertableProtectedToken(token) &&
       (valueTokenCounts.get(token) ?? 0) < required,
   );
-  const issues = validate(row.source, value, row.targetPresent);
+  // The installed empty value only matters while the draft still is it.
+  const issues = validate(
+    row.source,
+    value,
+    row.targetPresent && value === row.target,
+  );
   // Severity per token, so each chip can say whether it blocks the export.
   // Mirrors validate(): an empty field has no token findings yet.
   const tokenSeverities = new Map(

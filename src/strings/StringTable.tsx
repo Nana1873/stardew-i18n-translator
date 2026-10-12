@@ -1597,6 +1597,9 @@ export function StringTable({
         ? {
             ...candidate,
             target,
+            // An edited value is no longer the installed file's own value.
+            targetPresent:
+              candidate.targetPresent && target === candidate.target,
             status: derivedStringStatus(candidate.source, target, nextStatus),
             tokenMismatchAccepted,
           }
@@ -1735,6 +1738,7 @@ export function StringTable({
           return {
             ...row,
             target: change.target,
+            targetPresent: row.targetPresent && change.target === row.target,
             status: derivedStringStatus(
               row.source,
               change.target,
