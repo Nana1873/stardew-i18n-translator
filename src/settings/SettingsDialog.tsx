@@ -1290,7 +1290,7 @@ export function SettingsDialog({
                   </div>
                 </div>
                 <p className="desktop-about-data">
-                  Data is stored in the <code>Data</code> folder next to the
+                  Data is stored in the <code>data</code> folder next to the
                   application.
                 </p>
               </section>

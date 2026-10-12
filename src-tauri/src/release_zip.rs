@@ -231,7 +231,11 @@ pub fn preview(
 
 pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOutcome, String> {
     let destination = Path::new(&request.destination);
-    if destination.extension().and_then(|value| value.to_str()) != Some("zip") {
+    if !destination
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+    {
         return Err("The destination must use the .zip extension.".to_string());
     }
     if destination.exists() && !request.overwrite {
@@ -255,7 +259,11 @@ fn write_prepared(
     destination: &Path,
     overwrite: bool,
 ) -> Result<ZipBuildOutcome, String> {
-    if destination.extension().and_then(|value| value.to_str()) != Some("zip") {
+    if !destination
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
+    {
         return Err("The destination must use the .zip extension.".to_string());
     }
     if destination.exists() && !overwrite {

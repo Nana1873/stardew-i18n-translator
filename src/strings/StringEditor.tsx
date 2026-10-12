@@ -8,7 +8,7 @@
  * translated).
  *
  * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
- * fast path) · Esc cancel · Alt+←/→ prev/next · F2/F3 keep original (copies
+ * fast path) · Esc cancel · Alt+←/→ prev/next · F2 keep original (copies
  * the source — an explicit identical translation) · F4 reset (clears
  * the field) · Ctrl+F5 translate with the configured live AI engine.
  */
@@ -59,7 +59,7 @@ export interface EditorSuggestionProvenance {
   /** Exact target value this metadata describes. */
   value: string;
 }
-import { validate } from "./validation";
+import { tokenDifferences, validate } from "./validation";
 import {
   describeToken,
   extractProtectedTokens,
@@ -601,7 +601,7 @@ export function StringEditor({
     }
   }
 
-  /** Keep original (F2/F3): copy the source into the field — kept English is
+  /** Keep original (F2): copy the source into the field — kept English is
    * an explicit identical translation, so outdated detection still applies. */
   function keepOriginal() {
     if (translating) return;
@@ -762,6 +762,22 @@ export function StringEditor({
         }
       }
       if (overlayOpen) return;
+      // While typing in a text field, plain keys belong to the field. Only
+      // Ctrl/Alt/Meta combinations, function keys, Enter, and Escape may act
+      // as editor commands there (guards against custom plain-key bindings).
+      const target = event.target;
+      const typing =
+        target instanceof HTMLTextAreaElement ||
+        (target instanceof HTMLInputElement &&
+          !["button", "checkbox", "radio", "range"].includes(target.type));
+      const plainKey =
+        !event.ctrlKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        !/^F([1-9]|1[0-2])$/.test(event.key) &&
+        event.key !== "Enter" &&
+        event.key !== "Escape";
+      if (typing && plainKey) return;
       onKeyDownRef.current(event);
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -794,6 +810,36 @@ export function StringEditor({
       (valueTokenCounts.get(token) ?? 0) < required,
   );
   const issues = validate(row.source, value, row.targetPresent);
+  // Severity per token, so each chip can say whether it blocks the export.
+  // Mirrors validate(): an empty field has no token findings yet.
+  const tokenSeverities = new Map(
+    value.length === 0
+      ? []
+      : tokenDifferences(row.source, value).map((d) => [d.token, d.severity]),
+  );
+  const chipSeverity = (token: string) =>
+    acceptedTokenMismatch
+      ? "accepted"
+      : (tokenSeverities.get(token) ?? "warning");
+  const chipGlyph = (token: string) => {
+    const severity = chipSeverity(token);
+    return severity === "error" ? "●" : "▲";
+  };
+  const chipState = (token: string) => {
+    const severity = chipSeverity(token);
+    return severity === "accepted"
+      ? "is-missing is-accepted"
+      : `is-missing is-${severity}`;
+  };
+  const chipLabel = (token: string, kind: "missing" | "extra") => {
+    const severity = chipSeverity(token);
+    const what =
+      kind === "missing" ? `Missing token ${token}` : `Extra token ${token}`;
+    if (severity === "accepted") return `${what} (mismatch accepted)`;
+    return severity === "error"
+      ? `${what} (error: this string stays English on export)`
+      : `${what} (note: does not affect export)`;
+  };
   const blockingTokenIssues = issues.filter(
     (issue) =>
       issue.severity === "error" &&
@@ -988,7 +1034,7 @@ export function StringEditor({
                           className={
                             satisfied
                               ? "editor__token translator-token editor__token--done is-valid"
-                              : `editor__token translator-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`
+                              : `editor__token translator-token ${chipState(token)}`
                           }
                           title={
                             satisfied
@@ -1000,22 +1046,34 @@ export function StringEditor({
                               ? `Token ${token} is present in full`
                               : `Missing token ${token}`
                           }
+                          aria-description={
+                            satisfied ? undefined : chipLabel(token, "missing")
+                          }
                         >
+                          {!satisfied && (
+                            <span className="editor__token-glyph" aria-hidden>
+                              {chipGlyph(token)}
+                            </span>
+                          )}
                           {contents}
                         </span>
                       ) : (
                         <button
                           key={`source-${i}-${token}`}
                           type="button"
-                          className={`editor__token translator-token${acceptedTokenMismatch ? " is-missing is-accepted" : " is-missing"}`}
+                          className={`editor__token translator-token ${chipState(token)}`}
                           title={
                             acceptedTokenMismatch
                               ? `${token} — mismatch explicitly accepted for this exact translation`
                               : `Insert ${token} at the cursor`
                           }
                           aria-label={`Insert missing token ${token}`}
+                          aria-description={chipLabel(token, "missing")}
                           onClick={() => insertToken(token)}
                         >
+                          <span className="editor__token-glyph" aria-hidden>
+                            {chipGlyph(token)}
+                          </span>
                           {contents}
                         </button>
                       );
@@ -1023,10 +1081,14 @@ export function StringEditor({
                     {addedTokenCounts.map(([token, found], i) => (
                       <span
                         key={`added-${i}-${token}`}
-                        className={`editor__token translator-token is-missing${acceptedTokenMismatch ? " is-accepted" : ""}`}
+                        className={`editor__token translator-token ${chipState(token)}`}
                         aria-label={`Extra token ${token}`}
+                        aria-description={chipLabel(token, "extra")}
                         title={`Extra token ${token}`}
                       >
+                        <span className="editor__token-glyph" aria-hidden>
+                          {chipGlyph(token)}
+                        </span>
                         {describeToken(token)}
                         {found > 1 ? ` ×${found}` : ""}
                       </span>
@@ -1165,14 +1227,35 @@ export function StringEditor({
                     confirmation again.
                   </span>
                 )}
-                {visibleIssues.map((issue, i) => (
-                  <span
-                    key={i}
-                    className={`editor__issue editor__issue--${issue.severity}`}
-                  >
-                    {issue.message}
-                  </span>
-                ))}
+                {(["error", "warning"] as const).map((severity) => {
+                  const group = visibleIssues.filter(
+                    (issue) => issue.severity === severity,
+                  );
+                  if (group.length === 0) return null;
+                  return (
+                    <span
+                      key={severity}
+                      className="editor__issue-group"
+                      data-severity={severity}
+                    >
+                      <span
+                        className={`editor__issue-title editor__issue-title--${severity}`}
+                      >
+                        {severity === "error"
+                          ? `${group.length === 1 ? "1 error" : `${group.length} errors`}${group.some((issue) => issue.ruleId === "token-missing" || issue.ruleId === "token-added") ? " · this string stays English on export until fixed" : ""}`
+                          : `${group.length === 1 ? "1 note" : `${group.length} notes`} · does not affect export`}
+                      </span>
+                      {group.map((issue, i) => (
+                        <span
+                          key={i}
+                          className={`editor__issue editor__issue--${issue.severity}`}
+                        >
+                          {issue.message}
+                        </span>
+                      ))}
+                    </span>
+                  );
+                })}
               </>
             )}
             {translateMsg && translateMsgKind === "note" && (

@@ -868,7 +868,9 @@ export function App() {
     scanDismissedRef.current = false;
     setScanDiagnosticsFocus(false);
     setScanDialogRetained(false);
-    setScanStringFilter(null);
+    // A visible scan replaces the previous report, so its "new/changed
+    // strings" filter goes with it. Silent rescans (after an AI run) keep it.
+    if (showProgress || options.clearExisting) setScanStringFilter(null);
     setScanError(null);
     const selectionBeforeScan =
       options.preserveSelection === false
@@ -2099,16 +2101,14 @@ export function App() {
               Details…
             </button>
           )}
-          {(toast.tone === "error" || true) && (
-            <button
-              className="translator-toast-dismiss"
-              type="button"
-              aria-label="Dismiss notification"
-              onClick={() => setToast(null)}
-            >
-              <X aria-hidden />
-            </button>
-          )}
+          <button
+            className="translator-toast-dismiss"
+            type="button"
+            aria-label="Dismiss notification"
+            onClick={() => setToast(null)}
+          >
+            <X aria-hidden />
+          </button>
         </div>
       )}
       {resultTray && !resultHidden && (

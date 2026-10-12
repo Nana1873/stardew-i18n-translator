@@ -43,7 +43,9 @@ does not imply this intent. Protected-token validation still applies.
 
 - Scan recursively, associate i18n components with manifests, and group related
   components into installed packages. Do not follow links outside the selected
-  Mods folder.
+  Mods folder. Match `manifest.json` case-insensitively and skip folders whose
+  name starts with `.`, as SMAPI does; such folders are neither translation
+  targets nor duplicate-UniqueID candidates.
 - Accept relaxed mod JSON, but require source and target dictionaries to be
   flat string objects. Preserve source key order for display and export.
 - Import existing targets using SMAPI-compatible case-insensitive, trimmed key

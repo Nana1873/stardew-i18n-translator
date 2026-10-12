@@ -583,8 +583,15 @@ fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
     let mut safe = reason.to_string();
     let mut roots = vec![mods_path.display().to_string()];
     if let Ok(canonical) = std::fs::canonicalize(mods_path) {
-        roots.push(canonical.display().to_string());
+        // Canonical Windows paths carry the `\\?\` verbatim prefix. Replace the
+        // longest spelling first, otherwise the plain root matches inside the
+        // verbatim one and leaves `\\?\Mods\...` behind in the message.
+        let canonical = canonical.display().to_string();
+        roots.push(canonical.trim_start_matches(r"\\?\").to_string());
+        roots.push(canonical);
     }
+    roots.sort_by_key(|root| std::cmp::Reverse(root.len()));
+    roots.dedup();
     for root in roots {
         if root.is_empty() {
             continue;
@@ -1048,9 +1055,6 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
             return fallback;
         }
     }
-    if target_path.is_file() {
-        return target_path.to_path_buf();
-    }
     target_path.to_path_buf()
 }
 
@@ -1513,7 +1517,11 @@ fn collect_bounded(
                     .is_some_and(|target| target.is_dir());
 
             if target_is_file {
-                if path.file_name().is_some_and(|n| n == "manifest.json") {
+                // SMAPI finds the manifest case-insensitively on Windows; so do we.
+                if path
+                    .file_name()
+                    .is_some_and(|n| n.eq_ignore_ascii_case("manifest.json"))
+                {
                     match symlink_target
                         .clone()
                         .map(Ok)
@@ -1532,6 +1540,15 @@ fn collect_bounded(
             }
 
             if target_is_dir {
+                // SMAPI ignores folders whose name starts with a dot (the usual
+                // way to park a disabled mod copy). Scanning them would turn the
+                // parked copy into a duplicate UniqueID that blocks the live mod.
+                if path
+                    .file_name()
+                    .is_some_and(|n| n.to_string_lossy().starts_with('.'))
+                {
+                    continue;
+                }
                 let is_i18n = path
                     .file_name()
                     .is_some_and(|n| n.eq_ignore_ascii_case("i18n"));
@@ -3499,5 +3516,75 @@ mod split_locale_tests {
         assert!(scan_mods(&root.join("Mods"), "de", &root.join("data"))
             .mods
             .is_empty());
+    }
+}
+
+#[cfg(test)]
+mod audit_quick_win_tests {
+    use super::*;
+
+    fn write(path: &Path, body: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn skip_reason_hides_the_verbatim_prefix_of_canonical_paths() {
+        let root = crate::test_support::temp_dir("scan-verbatim-reason");
+        std::fs::create_dir_all(&root).unwrap();
+        let canonical = std::fs::canonicalize(&root).unwrap();
+        let reason = format!(
+            "Invalid JSON in {}: expected `,` or `}}`",
+            canonical
+                .join("Broken")
+                .join("i18n")
+                .join("default.json")
+                .display()
+        );
+        let safe = safe_skip_reason(&reason, &root);
+        assert!(!safe.contains(r"\\?\"), "{safe}");
+        assert!(safe.starts_with("Invalid JSON in Mods"), "{safe}");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn manifest_is_found_regardless_of_filename_case() {
+        let root = crate::test_support::temp_dir("scan-manifest-case");
+        write(
+            &root.join("Cased/Manifest.json"),
+            r#"{"UniqueID":"cased.mod"}"#,
+        );
+        write(&root.join("Cased/i18n/default.json"), r#"{"k":"source"}"#);
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+        assert!(collect(&root, &mut manifests, &mut i18n_dirs));
+        assert_eq!(manifests.len(), 1, "{manifests:?}");
+        assert_eq!(i18n_dirs.len(), 1, "{i18n_dirs:?}");
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn dot_folders_are_skipped_like_smapi_does() {
+        let root = crate::test_support::temp_dir("scan-dot-folders");
+        write(
+            &root.join("Live/manifest.json"),
+            r#"{"UniqueID":"same.mod"}"#,
+        );
+        write(&root.join("Live/i18n/default.json"), r#"{"k":"source"}"#);
+        write(
+            &root.join(".disabled/Old/manifest.json"),
+            r#"{"UniqueID":"same.mod"}"#,
+        );
+        write(
+            &root.join(".disabled/Old/i18n/default.json"),
+            r#"{"k":"old"}"#,
+        );
+        let mut manifests = Vec::new();
+        let mut i18n_dirs = Vec::new();
+        assert!(collect(&root, &mut manifests, &mut i18n_dirs));
+        assert_eq!(manifests.len(), 1, "{manifests:?}");
+        assert!(manifests[0].starts_with(root.join("Live")));
+        assert_eq!(i18n_dirs.len(), 1, "{i18n_dirs:?}");
+        std::fs::remove_dir_all(root).ok();
     }
 }

@@ -34,6 +34,19 @@ describe("shortcuts", () => {
     expect(shortcutProblem("F6")).toBeNull();
   });
 
+  it("rejects bare typing keys that would fire inside text fields", () => {
+    for (const key of ["Backspace", "Delete", "Space", "ArrowLeft", "Home"]) {
+      expect(shortcutProblem(key)).toMatch(/text fields/);
+    }
+    expect(shortcutProblem("Ctrl+Backspace")).toBeNull();
+    expect(shortcutProblem("Shift+Delete")).toMatch(/text fields/);
+    expect(shortcutProblem("Shift+Enter")).toBeNull();
+    expect(shortcutProblem("Shift+K")).toMatch(/types a character/);
+    expect(shortcutProblem("Ctrl+Shift+K")).toBeNull();
+    expect(shortcutProblem("Enter")).toBeNull();
+    expect(shortcutProblem("Escape")).toBeNull();
+  });
+
   it("drops saved overrides that are no longer allowed", () => {
     const resolved = resolveShortcuts({
       "editor.save": "Tab",

@@ -8,6 +8,33 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ## [Unreleased]
 
+### Changed
+
+- Token chips in the editor now show their severity: a red circle marks a
+  difference that keeps the string English on export, a yellow triangle a
+  harmless note. The validation line groups errors before notes and names the
+  consequence once per group.
+- The string editor keeps a fixed width and height while paging through
+  strings, so Prev/Next and Save & next no longer move with the content.
+- Shortcuts for editor commands can no longer be bound to bare typing keys
+  such as Backspace, Delete, Space, or the arrow keys; existing bindings of
+  that kind fall back to the default. Plain keys typed in a text field never
+  trigger editor commands.
+- A Local AI connection failure is reported in one sentence with the next
+  step instead of the raw transport error.
+
+### Fixed
+
+- The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
+- Folders whose name starts with a dot (for example `.disabled`) are skipped
+  like SMAPI does, so a parked copy of a mod no longer counts as a duplicate
+  UniqueID that blocks the live mod, the source-change comparison, and the
+  all-mods ZIP.
+- Scan reports no longer show `\\?\` in front of relative file paths.
+- The automatic rescan after an AI run keeps the "new or changed strings"
+  scan filter.
+- `.ZIP` in any letter case is accepted as the translation ZIP destination.
+
 ## [2.4.0] - 2026-10-11
 
 ### Changed
