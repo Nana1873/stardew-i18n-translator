@@ -4274,6 +4274,54 @@ describe("App shell", () => {
     ).toHaveAttribute("aria-current", "true");
   });
 
+  it("resets the status and Issues filters when another mod is opened", async () => {
+    const scan = exportScan(false);
+    scan.mods.push({
+      ...scan.mods[0],
+      uniqueId: "second.mod",
+      name: "Second Mod",
+      packageId: "Second Mod",
+      folderPath: "y",
+    });
+    scan.modCount = 2;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(scan);
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "greeting",
+            source: "Hello",
+            target: "",
+            status: "untranslated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+    await screen.findByRole("treeitem", { name: /Second Mod/ });
+
+    fireEvent.click(await screen.findByRole("button", { name: /^Done\b/ }));
+    expect(screen.getByRole("button", { name: /^Done\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    fireEvent.click(screen.getByRole("treeitem", { name: /Second Mod/ }));
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /^Done\b/ })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      ),
+    );
+    expect(screen.getByRole("button", { name: /^Issues\b/ })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  });
+
   it("closes a rejected import before exposing Choose another file", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);

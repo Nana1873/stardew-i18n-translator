@@ -1053,6 +1053,13 @@ export function App() {
 
   /** Open a mod and remember it for the next startup. */
   function openMod(uniqueId: string) {
+    // A status or Issues filter from the previous mod would hide most of the
+    // new mod's strings. Callers that jump to a filtered view (Open Review)
+    // set their filter after this call.
+    if (uniqueId !== selectedModId) {
+      setStatusFilter("all");
+      setIssuesOnly(false);
+    }
     setSelectedModId(uniqueId);
     setStringScope("mod");
     const nextLastOpened = { ...lastOpened, [uniqueId]: Date.now() };
@@ -2010,10 +2017,6 @@ export function App() {
     ];
     setSearch("");
     setScanStringFilter(null);
-    setStatusFilter(
-      resultTray?.kind === "export" ? "needs-review" : "review-needed",
-    );
-    setIssuesOnly(false);
     if (reviewModIds.length === 1) {
       openMod(reviewModIds[0]);
     } else {
@@ -2021,6 +2024,10 @@ export function App() {
       // All mods guarantees the requested Review results are not hidden.
       setStringScope("all");
     }
+    setStatusFilter(
+      resultTray?.kind === "export" ? "needs-review" : "review-needed",
+    );
+    setIssuesOnly(false);
     setResultHidden(true);
     window.dispatchEvent(new Event("translator-focus-filters"));
   }
