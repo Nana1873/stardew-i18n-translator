@@ -1078,6 +1078,45 @@ describe("App shell", () => {
     expect(exportActions).toHaveTextContent("Files…");
   });
 
+  it("reports an export failure after its result card was replaced", async () => {
+    const exported = deferred<typeof EXPORT_RESULT>();
+    backendHistory = [importHistory()];
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preview_export")
+        return Promise.resolve({ acceptedMismatches: 0, omitted: [] });
+      if (cmd === "export_mod") return exported.promise;
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    chooseToolbarAction("File actions", "Export current mod");
+    const preflight = await screen.findByRole("dialog", {
+      name: "Export translation JSON",
+    });
+    fireEvent.click(
+      within(preflight).getByRole("button", { name: "Export JSON" }),
+    );
+    // Another result replaces the pending export card.
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /^Details: LLM batch imported/,
+      }),
+    );
+    await act(async () => {
+      exported.reject("The disk is full.");
+    });
+
+    expect(
+      await screen.findAllByText("Export failed: The disk is full."),
+    ).not.toHaveLength(0);
+  });
+
   it("labels only the confirmed export write as exporting", async () => {
     const exported = deferred<typeof EXPORT_RESULT>();
     invokeMock.mockImplementation((cmd: string) => {

@@ -313,6 +313,8 @@ export function App() {
     activeRequestId: number | null;
   }>({ nextRequestId: 0, activeRequestId: null });
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
+  const resultTrayRef = useRef(resultTray);
+  resultTrayRef.current = resultTray;
   const latestResultRef = useRef<ResultTrayData | null>(null);
   const [operationHistory, setOperationHistory] = useState<
     OperationHistoryEntry[]
@@ -1578,6 +1580,13 @@ export function App() {
     else presentResult(data);
   }
 
+  /** The export result card may have been replaced by another result while
+   * the export ran; then the failure would vanish with it. Say it instead. */
+  function reportExportFailureElsewhere(error: string) {
+    if (resultTrayRef.current?.kind !== "export")
+      notify(`Export failed: ${error}`, "error");
+  }
+
   function beginExport(
     title: string,
     retry: { kind: "selected"; modUniqueId: string } | { kind: "all" },
@@ -1782,6 +1791,7 @@ export function App() {
       );
     } catch (error) {
       logFrontendError("exportMod", String(error));
+      reportExportFailureElsewhere(String(error));
       setResultTray((current) =>
         current?.kind === "export"
           ? { ...current, pending: false, error: String(error) }
@@ -1846,6 +1856,7 @@ export function App() {
       );
     } catch (error) {
       logFrontendError("exportAll", String(error));
+      reportExportFailureElsewhere(String(error));
       setResultTray((current) =>
         current?.kind === "export"
           ? {
