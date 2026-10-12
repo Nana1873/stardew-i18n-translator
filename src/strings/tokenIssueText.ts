@@ -12,8 +12,32 @@ export interface TokenDifference {
   severity: TokenSeverity;
 }
 
-/** Full-width look-alikes an LLM may write instead of ASCII token syntax. */
-const FULL_WIDTH_LOOKALIKES = /[＄｛｝＾]/u;
+/** Token characters an LLM or a CJK keyboard may write as their full-width
+ * look-alikes (U+FF01..U+FF5E, ASCII + 0xFEE0). Mirrors Rust
+ * `FULL_WIDTH_LOOKALIKES`. */
+const FULL_WIDTH_LOOKALIKES = "${}^#@%[]";
+
+function fullWidth(char: string): string {
+  return String.fromCharCode(char.charCodeAt(0) + 0xfee0);
+}
+
+/** A hint when the translation has the full-width form of a character of a
+ * token that went missing or changed. `％［］` are ordinary CJK punctuation,
+ * so they only count when such a token needs them. Mirrors Rust
+ * `full_width_hint`. */
+function fullWidthHint(
+  differences: TokenDifference[],
+  translation: string,
+): string | null {
+  const needed = new Set<string>();
+  for (const { token, sourceCount, targetCount } of differences)
+    if (targetCount < sourceCount) for (const char of token) needed.add(char);
+  const found = [...FULL_WIDTH_LOOKALIKES].filter(
+    (char) => needed.has(char) && translation.includes(fullWidth(char)),
+  );
+  if (found.length === 0) return null;
+  return `The text contains full-width ${found.map(fullWidth).join("")} where the English text has ${found.join(" ")}. The game shows them as they are; use the normal characters.`;
+}
 
 export interface TokenIssueMessage {
   severity: TokenSeverity;
@@ -23,6 +47,28 @@ export interface TokenIssueMessage {
   /** The single token this message is about, when there is one. */
   token?: string;
 }
+
+/** What the game does with each dialogue placeholder (Stardew 1.6
+ * `Dialogue.cs`). Mirrors Rust `PERCENT_PLACEHOLDERS`. */
+const PERCENT_PLACEHOLDER_TEXT: Partial<Record<string, string>> = {
+  "%adj": "The game puts a random adjective here.",
+  "%noun": "The game puts a random noun here.",
+  "%place": "The game puts a random place name here.",
+  "%spouse": "The game puts the spouse's name here.",
+  "%name": "The game puts a random name here.",
+  "%firstnameletter": "The game puts the first half of the player's name here.",
+  "%time": "The game puts the current time here.",
+  "%band": "The game puts the name of Sam's band here.",
+  "%book": "The game puts the name of Elliott's book here.",
+  "%pet": "The game puts the pet's name here.",
+  "%farm": "The game puts the farm's name here.",
+  "%favorite": "The game puts the player's favorite thing here.",
+  "%year": "The game puts the current year here.",
+  "%kid1": "The game puts the first child's name here.",
+  "%kid2": "The game puts the second child's name here.",
+  "%season": "The game puts the current season here.",
+  "%noturn": "It keeps the character from turning to face the player.",
+};
 
 function delta(differences: TokenDifference[], token: string) {
   const difference = differences.find((item) => item.token === token);
@@ -66,6 +112,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return missing
       ? "The event choice or gift-taste reveal would not happen."
       : "It adds event behavior the English text does not have.";
+  const percent = PERCENT_PLACEHOLDER_TEXT[token];
+  if (percent) return `${percent} Fine if intended.`;
   if (token.startsWith("{{") || /^\{\d+\}$/.test(token)) {
     if (missing)
       return "The game shows nothing in its place. Fine if intended.";
@@ -181,15 +229,16 @@ export function describeTokenIssue(
     });
   }
 
-  if (
-    messages.some((item) => item.severity === "error") &&
-    FULL_WIDTH_LOOKALIKES.test(translation)
-  ) {
+  // A look-alike explains a token difference but never adds one, so the hint
+  // takes the strongest severity already present.
+  const hint = fullWidthHint(differences, translation);
+  if (messages.length > 0 && hint !== null) {
     messages.push({
-      severity: "error",
+      severity: messages.some((item) => item.severity === "error")
+        ? "error"
+        : "warning",
       kind: "added",
-      message:
-        "The text contains full-width characters such as ＄｛｝＾. Tokens must use the normal characters $ { } ^.",
+      message: hint,
     });
   }
   return messages;

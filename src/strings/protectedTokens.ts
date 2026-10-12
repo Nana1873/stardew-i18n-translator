@@ -18,6 +18,7 @@
  *  - structural characters: `#`, paired `'` quote delimiters (quotes are
  *    classified but ignored by validation and editor token counts)
  *  - single-character tokens: `@` (player name), `^` / `\n` (line break)
+ *  - dialogue placeholders such as `%spouse`, `%farm`, `%kid1`, and `%noturn`
  *
  * The order of the readers matters — more specific shapes are tried first.
  *
@@ -28,6 +29,16 @@
 const positionalPlaceholderPattern = /^\{\d+\}/;
 const simpleDialogueCommandPattern = /^\$(?:[a-zA-Z]+|\d+)/;
 const namespacedTokenNamePattern = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/;
+
+/** Unicode White_Space, the set Rust `char::is_whitespace`, `trim`, and
+ * `split_whitespace` use. JS `\s` and `trim()` differ: they include U+FEFF
+ * but not U+0085, so the two readers would split tokens differently. */
+const whiteSpace = /\p{White_Space}/u;
+const whiteSpaceRun = /\p{White_Space}+/u;
+
+function trimWhiteSpace(value: string): string {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+}
 
 /** TokenizableString forms whose complete bracket expression is opaque: they
  * contain no visible prose arguments that a translation should rewrite. */
@@ -118,6 +129,7 @@ function extractTokens(value: string): string[] {
       readGenderSwitchFragment(value, offset) ??
       readSimpleDialogueCommand(value, offset) ??
       readEventCommand(value, offset) ??
+      readPercentPlaceholder(value, offset) ??
       readSingleCharacterToken(value, offset);
 
     if (token) {
@@ -234,6 +246,9 @@ export function tokenSeverity(
   const harmless =
     isGenderSwitchShape(token) ||
     token === "@" ||
+    // The game fills in or drops these placeholders; a missing, extra, or
+    // renamed one only changes or shows text.
+    isPercentPlaceholder(token) ||
     // A bare `^` or `#` changes the page or gender split in dialogue but is
     // plain text in letters and UI strings; translators decide (PD-1), unless
     // the change puts two different portraits on one page.
@@ -413,7 +428,8 @@ function readBetasMessage(
   if (!value.startsWith(prefix, offset)) return null;
   let cursor = offset + prefix.length;
   const npcStart = cursor;
-  while (cursor < value.length && !/[\s#"]/.test(value[cursor])) cursor++;
+  while (cursor < value.length && !/[\p{White_Space}#"]/u.test(value[cursor]))
+    cursor++;
   if (cursor === npcStart) return null;
   while (value[cursor] === " ") cursor++;
   const escapedQuote = String.fromCharCode(92, 34);
@@ -562,13 +578,25 @@ function readDialogueBreak(value: string, offset: number): Token | null {
 
   const raw = value.slice(offset, end + 1);
   return {
-    // Dialogue responses are split on ASCII spaces with empty entries removed.
-    // Canonicalize spacing only; every argument and response key stays exact.
-    raw: raw.startsWith("#$r ")
+    raw: hasSpaceSplitArguments(raw)
       ? `#${raw.slice(1, -1).split(" ").filter(Boolean).join(" ")}#`
       : raw,
     end: end + 1,
   };
+}
+
+/** `Dialogue.parseDialogueString` splits a `$command` from its arguments and
+ * the arguments on ASCII spaces with empty entries removed
+ * (`ArgUtility.SplitBySpace`), so only the spacing is canonicalized; every
+ * argument stays exact. `$y` reads its raw text, and quoted `$action` or
+ * `$query` arguments keep their inner spaces, so those stay as written.
+ * Mirrors Rust `has_space_split_arguments`. */
+function hasSpaceSplitArguments(raw: string): boolean {
+  return (
+    /^#\$[A-Za-z0-9]+ /.test(raw) &&
+    !raw.startsWith("#$y ") &&
+    !raw.includes('"')
+  );
 }
 
 function readBracketToken(value: string, offset: number): Token | null {
@@ -633,7 +661,7 @@ function isProtectedBracketBody(body: string): boolean {
   if (normalizedName === "toolname")
     return hasAtomicArgumentCount(argumentText, 1, 2);
   if (normalizedName === "itemname") {
-    const itemId = argumentText.split(/\s+/, 1)[0] ?? "";
+    const itemId = argumentText.split(whiteSpaceRun, 1)[0] ?? "";
     return isItemId(itemId);
   }
   if (normalizedName === "localizedtext") return argumentText.length > 0;
@@ -648,18 +676,18 @@ function splitBracketName(body: string): {
   arguments: string;
   name: string;
 } {
-  const nameEnd = body.search(/\s/);
+  const nameEnd = body.search(whiteSpace);
   return nameEnd < 0
     ? { arguments: "", name: body }
     : {
-        arguments: body.slice(nameEnd).trim(),
+        arguments: trimWhiteSpace(body.slice(nameEnd)),
         name: body.slice(0, nameEnd),
       };
 }
 
 function atomicArguments(argumentsText: string): string[] {
   if (argumentsText.includes("[") || argumentsText.includes("]")) return [];
-  return argumentsText.length === 0 ? [] : argumentsText.split(/\s+/);
+  return argumentsText.length === 0 ? [] : argumentsText.split(whiteSpaceRun);
 }
 
 function hasAtomicArgumentCount(
@@ -673,12 +701,25 @@ function hasAtomicArgumentCount(
   return argumentsList.length >= minimum && argumentsList.length <= maximum;
 }
 
+/** The inner bracket token of `[ArticleFor [X]]`, i.e. `[X]`, or null when
+ * the token is no such wrapper. Mirrors Rust `article_for_argument`. */
+export function articleForArgument(token: string): string | null {
+  if (!token.startsWith("[") || !token.endsWith("]")) return null;
+  const { name, arguments: argumentText } = splitBracketName(
+    token.slice(1, -1),
+  );
+  return name.toLowerCase() === "articlefor" &&
+    isSingleProtectedBracketArgument(argumentText)
+    ? argumentText
+    : null;
+}
+
 function isSingleProtectedBracketArgument(argumentsText: string): boolean {
   if (argumentsText[0] !== "[") return false;
   const end = findBalancedBracketEnd(argumentsText, 0);
   return (
     end === argumentsText.length &&
-    isProtectedBracketBody(argumentsText.slice(1, -1).trim())
+    isProtectedBracketBody(trimWhiteSpace(argumentsText.slice(1, -1)))
   );
 }
 
@@ -691,8 +732,8 @@ function isItemId(value: string): boolean {
 }
 
 function isItemIdPool(value: string): boolean {
-  if (value.trim() !== value) return false;
-  const itemIds = value.split(/\s+/);
+  if (trimWhiteSpace(value) !== value) return false;
+  const itemIds = value.split(whiteSpaceRun);
   if (itemIds.length < 2) return false;
 
   // Bare string item IDs are indistinguishable from bracketed UI prose
@@ -748,8 +789,47 @@ function readEventCommand(value: string, offset: number): Token | null {
     return token(value, offset, offset + 5);
   if (!value.startsWith("%revealtaste", offset)) return null;
   let end = offset + "%revealtaste".length;
-  while (end < value.length && !/[\s#%$^*{]/u.test(value[end])) end += 1;
+  while (end < value.length && !/[\p{White_Space}#%$^*{]/u.test(value[end]))
+    end += 1;
   return token(value, offset, end);
+}
+
+/** Dialogue placeholders the game fills in (Stardew 1.6
+ * `Dialogue.percentTokens`), plus `%noturn`, which the game removes and which
+ * keeps the speaker from turning to the player. The game replaces them with
+ * an exact, case-sensitive substring replace, so `%Spouse` stays literal text
+ * and `50%` is never one. Longest names first. Mirrors Rust
+ * `PERCENT_PLACEHOLDERS`. */
+export const PERCENT_PLACEHOLDERS = [
+  "%firstnameletter",
+  "%favorite",
+  "%season",
+  "%spouse",
+  "%noturn",
+  "%place",
+  "%band",
+  "%book",
+  "%farm",
+  "%kid1",
+  "%kid2",
+  "%name",
+  "%noun",
+  "%time",
+  "%year",
+  "%adj",
+  "%pet",
+] as const;
+
+export function isPercentPlaceholder(token: string): boolean {
+  return (PERCENT_PLACEHOLDERS as readonly string[]).includes(token);
+}
+
+function readPercentPlaceholder(value: string, offset: number): Token | null {
+  if (value[offset] !== "%") return null;
+  const name = PERCENT_PLACEHOLDERS.find((candidate) =>
+    value.startsWith(candidate, offset),
+  );
+  return name ? token(value, offset, offset + name.length) : null;
 }
 
 function readSingleCharacterToken(value: string, offset: number): Token | null {

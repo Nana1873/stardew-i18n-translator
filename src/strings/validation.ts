@@ -20,6 +20,7 @@ import {
   isIntentionalBlankTarget,
 } from "./status";
 import {
+  articleForArgument,
   branchText,
   extractProtectedTokens,
   pagesWithMultiplePortraits,
@@ -132,7 +133,110 @@ export function comparableTokenCounts(
     sourceTokens = playerViewCounts(source, sourceTokens);
   if (targetSwitches && !sourceSwitches)
     targetTokens = playerViewCounts(target, targetTokens);
+  [sourceTokens, targetTokens] = unifyPlaceholderSpellings(
+    sourceTokens,
+    targetTokens,
+  );
+  allowArticleForArguments(sourceTokens, targetTokens);
   return { source: sourceTokens, target: targetTokens };
+}
+
+/** Compares by Unicode code point, like Rust `str` ordering. */
+function compareCodePoints(left: string, right: string): number {
+  const a = Array.from(left, (char) => char.codePointAt(0) ?? 0);
+  const b = Array.from(right, (char) => char.codePointAt(0) ?? 0);
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1)
+    if (a[index] !== b[index]) return a[index] - b[index];
+  return a.length - b.length;
+}
+
+/**
+ * SMAPI trims `{{…}}` token names and looks them up case-insensitively, and
+ * Content Patcher tokens are case-insensitive too, so `{{ name }}`,
+ * `{{name}}`, and `{{Name}}` are one placeholder. Each group keeps one
+ * spelling as written: the first in code-point order from the English text,
+ * else from the translation. Mirrors Rust `unify_placeholder_spellings`.
+ */
+function unifyPlaceholderSpellings(
+  source: Map<string, number>,
+  target: Map<string, number>,
+): [Map<string, number>, Map<string, number>] {
+  const spelling = new Map<string, string>();
+  for (const counts of [source, target]) {
+    const own = new Map<string, string>();
+    for (const token of counts.keys()) {
+      if (!token.startsWith("{{")) continue;
+      const key = placeholderKey(token);
+      if (spelling.has(key)) continue;
+      const known = own.get(key);
+      if (known === undefined || compareCodePoints(token, known) < 0)
+        own.set(key, token);
+    }
+    for (const [key, token] of own) spelling.set(key, token);
+  }
+  const merge = (counts: Map<string, number>) => {
+    const merged = new Map<string, number>();
+    for (const [token, count] of counts) {
+      const name = token.startsWith("{{")
+        ? (spelling.get(placeholderKey(token)) ?? token)
+        : token;
+      merged.set(name, (merged.get(name) ?? 0) + count);
+    }
+    return merged;
+  };
+  return [merge(source), merge(target)];
+}
+
+/** Lowercase, with ASCII spaces removed right inside each `{{` and `}}`.
+ * SMAPI only replaces `{{([ \w\.\-]+)}}`, so a tab, U+00A0, or U+3000 there
+ * stays visible and keeps the token different. Mirrors Rust
+ * `placeholder_key` character for character. */
+function placeholderKey(token: string): string {
+  const chars = Array.from(token.toLowerCase());
+  const isSpace = (char: string | undefined) => char === " ";
+  let key = "";
+  let index = 0;
+  while (index < chars.length) {
+    if (chars[index] === "{" && chars[index + 1] === "{") {
+      key += "{{";
+      index += 2;
+      while (isSpace(chars[index])) index += 1;
+      continue;
+    }
+    if (isSpace(chars[index])) {
+      let end = index;
+      while (isSpace(chars[end])) end += 1;
+      if (chars[end] === "}" && chars[end + 1] === "}") {
+        index = end;
+        continue;
+      }
+    }
+    key += chars[index];
+    index += 1;
+  }
+  return key;
+}
+
+/** A translation that drops `[ArticleFor [X]]` but keeps `[X]` itself (to
+ * write its own article) loses only the article. The inner `[X]` is provided
+ * by the dropped wrapper, so it is not also reported as added. Mirrors Rust
+ * `allow_article_for_arguments`. */
+function allowArticleForArguments(
+  source: Map<string, number>,
+  target: Map<string, number>,
+) {
+  const dropped = new Map<string, number>();
+  for (const [token, count] of source) {
+    const inner = articleForArgument(token);
+    if (inner === null) continue;
+    const lost = count - (target.get(token) ?? 0);
+    if (lost > 0) dropped.set(inner, (dropped.get(inner) ?? 0) + lost);
+  }
+  for (const [inner, lost] of dropped) {
+    const expected = source.get(inner) ?? 0;
+    const extra = (target.get(inner) ?? 0) - expected;
+    if (extra > 0) source.set(inner, expected + Math.min(lost, extra));
+  }
 }
 
 /**

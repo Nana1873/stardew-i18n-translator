@@ -2192,13 +2192,18 @@ export function StringTable({
     target: targetWidth,
   } = renderedColumnWidths;
   const fixedTargetWidth = !fitColumns && targetColumnSized;
-  // Widths saved in a wider window can push the issue icons out of view.
-  // Fit them once on open; widths changed later stay as the user sets them.
-  const restoredFitChecked = useRef(false);
+  // Widths saved in a wider window can push the issue icons in the
+  // translation column out of view. On open, and each time the Issues view
+  // opens, overflowing widths are fitted to the window; this includes widths
+  // set inside Issues earlier. Widths that fit, and changes made while a view
+  // stays open, are kept as the user sets them.
+  const fitCheckedForIssues = useRef<boolean | null>(null);
   useEffect(() => {
-    if (restoredFitChecked.current || workbenchWidth <= 0) return;
-    restoredFitChecked.current = true;
-    if (fitColumns) return;
+    if (workbenchWidth <= 0) return;
+    const previous = fitCheckedForIssues.current;
+    fitCheckedForIssues.current = effectiveIssuesOnly;
+    const openedIssues = effectiveIssuesOnly && previous === false;
+    if ((previous !== null && !openedIssues) || fitColumns) return;
     const restoredTotal =
       34 +
       ROW_ACTIONS_WIDTH +
@@ -2211,9 +2216,10 @@ export function StringTable({
     if (restoredTotal > workbenchWidth) {
       setFitColumns(true);
       setTargetColumnSized(false);
+      if (tableWrapRef.current) tableWrapRef.current.scrollLeft = 0;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [workbenchWidth]);
+  }, [workbenchWidth, effectiveIssuesOnly]);
   const gridTemplateColumns = [
     "34px",
     ...(showModColumn ? [String(modWidth) + "px"] : []),

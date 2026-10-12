@@ -464,7 +464,7 @@ fn prepare(
                         mod_name: component.name.clone(),
                         relative_dir: file.relative_dir.clone(),
                         key: row.key,
-                        reason: tokens::explain_differences(&differences),
+                        reason: tokens::explain_differences(&differences, &row.target),
                     });
                     continue;
                 }
@@ -729,7 +729,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
                 }
                 let differences = tokens::blocking_differences(&row.source, &row.target);
                 let reason = (!row.token_mismatch_accepted && !differences.is_empty())
-                    .then(|| tokens::explain_differences(&differences));
+                    .then(|| tokens::explain_differences(&differences, &row.target));
                 if let Some(reason) = reason {
                     prepared.preview.problems.push(ZipProblem {
                         mod_unique_id: component.unique_id.clone(),

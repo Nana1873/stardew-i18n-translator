@@ -88,8 +88,9 @@ release.
 - Red circles mark token **errors** that would break the game, such as a
   he/she switch missing its closing `}$`. Export leaves only that string out, so
   the game shows its English text; everything else is exported.
-- Yellow triangles mark harmless differences, such as a changed portrait or a
-  removed he/she variant, and accepted token mismatches. They never block.
+- Yellow triangles mark harmless differences, such as a changed portrait, a
+  removed he/she variant, or a missing name placeholder like `%spouse`, and
+  accepted token mismatches. They never block.
 
 If an error is intentional, **Save anyway** accepts that exact source/target
 mismatch, and export includes the string as written. It stays visible in Issues,

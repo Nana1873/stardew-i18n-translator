@@ -3221,6 +3221,42 @@ describe("StringTable workbench", () => {
     ).toHaveAttribute("aria-valuenow", "720");
   });
 
+  it("fits saved widths to the window when the Issues view opens", async () => {
+    const { container } = render(
+      <StringTable
+        mod={MOD}
+        initialColumnWidths={{
+          status: 80,
+          key: 140,
+          source: 700,
+          target: 700,
+        }}
+      />,
+    );
+    await screen.findByText("greeting");
+    const workbench = container.querySelector(".translator-string-workbench");
+    if (!workbench) throw new Error("Missing string workbench");
+    const source = () =>
+      screen.getByRole("separator", { name: "Resize English source column" });
+    Object.defineProperty(workbench, "clientWidth", {
+      configurable: true,
+      value: 4_000,
+    });
+    fireEvent(window, new Event("resize"));
+    expect(source()).toHaveAttribute("aria-valuenow", "700");
+
+    // The window shrinks during the session: the saved widths stay until
+    // the Issues view opens, whose icons sit in the translation column.
+    Object.defineProperty(workbench, "clientWidth", {
+      configurable: true,
+      value: 1_200,
+    });
+    fireEvent(window, new Event("resize"));
+    expect(source()).toHaveAttribute("aria-valuenow", "700");
+    fireEvent.click(screen.getByRole("button", { name: /^Issues/ }));
+    expect(source()).toHaveAttribute("aria-valuenow", "444");
+  });
+
   it("resizes status and content columns while action and issue controls stay fixed", async () => {
     const secondFile = {
       ...MOD.i18nFiles[0],

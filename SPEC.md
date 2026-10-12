@@ -124,7 +124,12 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
   part). `$neutral` is not a portrait command in dialogue text.
 - Warnings are cosmetic or legitimate translation choices: portrait changes
   (a missing index falls back to portrait 0), a cleanly removed or reshaped
-  gender switch, `@`, a dropped placeholder or `[ArticleFor]`, and a changed
+  gender switch, `@`, the dialogue placeholders `%adj`, `%noun`, `%place`,
+  `%spouse`, `%name`, `%firstnameletter`, `%time`, `%band`, `%book`, `%pet`,
+  `%farm`, `%favorite`, `%year`, `%kid1`, `%kid2`, `%season`, and `%noturn`
+  (missing, added, or renamed; the game replaces only the exact lowercase
+  name, so `%Spouse` stays text, and a percent sign such as `50%` is never
+  one), a dropped placeholder or `[ArticleFor]`, and a changed
   bare `^` or `#` that does not put two different portraits on one page or
   detach a `$y` quick response. Those two split pages and genders in dialogue but are plain
   text in letters (`^` is a line break) and UI strings, and the app cannot tell

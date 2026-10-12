@@ -6,7 +6,8 @@
 //! each other's structural damage. The remaining forms cover Content Patcher
 //! `{{...}}`, mail commands, dialogue breaks, recognized bracket tokens,
 //! positional `{0}`, dialogue commands `$b`, structural `#` / paired `'`
-//! quote delimiters, and single-char `@`/`^`.
+//! quote delimiters, single-char `@`/`^`, and dialogue placeholders such as
+//! `%spouse` or `%noturn`.
 //!
 //! Every difference carries a [`Severity`]. Only `Error` differences are
 //! verified to break the game (raw syntax shown, dialogue split wrongly, lost
@@ -105,6 +106,7 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             .or_else(|| read_positional(chars, offset))
             .or_else(|| read_simple_dialogue(chars, offset))
             .or_else(|| read_event_command(chars, offset))
+            .or_else(|| read_percent_placeholder(chars, offset))
             .or_else(|| read_single_char(chars, offset));
 
         match end {
@@ -121,10 +123,8 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
 }
 
 /// Canonicalize only syntax differences which the game parser ignores.
-/// Dialogue responses are split on ASCII spaces with empty entries removed,
-/// so only spacing is normalized; every argument and response key remains exact.
 fn normalize_protected_token(raw: &str) -> String {
-    if raw.starts_with("#$r ") && raw.ends_with('#') {
+    if has_space_split_arguments(raw) {
         let command = raw[1..raw.len() - 1]
             .split(' ')
             .filter(|part| !part.is_empty())
@@ -133,6 +133,27 @@ fn normalize_protected_token(raw: &str) -> String {
         return format!("#{command}#");
     }
     raw.to_owned()
+}
+
+/// `Dialogue.parseDialogueString` splits a `$command` from its arguments and
+/// the arguments on ASCII spaces with empty entries removed
+/// (`ArgUtility.SplitBySpace`), so only the spacing is canonicalized; every
+/// argument stays exact. `$y` reads its raw text, and quoted `$action` or
+/// `$query` arguments keep their inner spaces, so those stay as written.
+/// Mirrors TS `hasSpaceSplitArguments`.
+fn has_space_split_arguments(raw: &str) -> bool {
+    let Some(rest) = raw.strip_prefix("#$") else {
+        return false;
+    };
+    let name_len = rest
+        .bytes()
+        .take_while(|byte| byte.is_ascii_alphanumeric())
+        .count();
+    name_len > 0
+        && rest.as_bytes().get(name_len) == Some(&b' ')
+        && raw.ends_with('#')
+        && !raw.starts_with("#$y ")
+        && !raw.contains('"')
 }
 
 /// Tokens that are still *extracted* (the editor shows them as chips) but are
@@ -184,11 +205,17 @@ pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> 
         .collect()
 }
 
+/// Token characters an LLM or a CJK keyboard may write as their full-width
+/// look-alikes (U+FF01..U+FF5E, ASCII + 0xFEE0). Mirrors TS
+/// `FULL_WIDTH_LOOKALIKES`.
+const FULL_WIDTH_LOOKALIKES: &str = "${}^#@%[]";
+
 /// A plain-language explanation of game-breaking differences for export and
 /// release results. Gender-switch damage is described as one structural
 /// problem instead of its raw `${`, `}$`, and `^` counts (mirrors the TS
-/// `describeTokenIssue`).
-pub fn explain_differences(differences: &[TokenDifference]) -> String {
+/// `describeTokenIssue`). `translation` is the target text the differences
+/// come from; full-width look-alikes in it get one extra hint.
+pub fn explain_differences(differences: &[TokenDifference], translation: &str) -> String {
     let delta = |token: &str| {
         differences
             .iter()
@@ -225,7 +252,39 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
         }
         messages.push(difference_message(difference));
     }
+    // A look-alike explains a token difference but never adds one.
+    if !messages.is_empty() {
+        messages.extend(full_width_hint(differences, translation));
+    }
     messages.join(" ")
+}
+
+/// A hint when the translation has the full-width form of a character of a
+/// token that went missing or changed. `％［］` are ordinary CJK punctuation,
+/// so they only count when such a token needs them. Mirrors TS
+/// `fullWidthHint`.
+fn full_width_hint(differences: &[TokenDifference], translation: &str) -> Option<String> {
+    let full_width = |c: char| char::from_u32(c as u32 + 0xfee0).unwrap_or(c);
+    let found: Vec<char> = FULL_WIDTH_LOOKALIKES
+        .chars()
+        .filter(|c| {
+            differences.iter().any(|difference| {
+                difference.target_count < difference.source_count && difference.token.contains(*c)
+            }) && translation.contains(full_width(*c))
+        })
+        .collect();
+    if found.is_empty() {
+        return None;
+    }
+    let wide: String = found.iter().map(|c| full_width(*c)).collect();
+    let ascii = found
+        .iter()
+        .map(char::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(format!(
+        "The text contains full-width {wide} where the English text has {ascii}. The game shows them as they are; use the normal characters."
+    ))
 }
 
 /// How a token count differs, in words (mirrors TS `changePhrase`).
@@ -342,6 +401,9 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         } else {
             "It adds event behavior the English text does not have."
         };
+    }
+    if let Some(text) = percent_placeholder_text(token) {
+        return text;
     }
     if token.starts_with("{{") || match_positional(&chars, 0) == Some(chars.len()) {
         if missing {
@@ -467,6 +529,9 @@ fn token_severity(
     let dropped = target_count < source_count;
     let harmless = is_gender_switch_shape(token)
         || token == "@"
+        // The game fills in or drops these placeholders; a missing, extra, or
+        // renamed one only changes or shows text.
+        || percent_placeholder_text(token).is_some()
         // A bare `^` or `#` changes the page or gender split in dialogue but is
         // plain text in letters and UI strings; translators decide (PD-1),
         // unless the change puts two different portraits on one page.
@@ -502,6 +567,8 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     if target_switches && !source_switches {
         target_counts = player_view_counts(target, &target_counts);
     }
+    (source_counts, target_counts) = unify_placeholder_spellings(&source_counts, &target_counts);
+    allow_article_for_arguments(&mut source_counts, &target_counts);
     let source_has_gender_switch = source_counts
         .keys()
         .any(|token| is_gender_switch_shape(token));
@@ -542,6 +609,122 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
             })
         })
         .collect()
+}
+
+/// SMAPI trims `{{…}}` token names and looks them up case-insensitively, and
+/// Content Patcher tokens are case-insensitive too, so `{{ name }}`,
+/// `{{name}}`, and `{{Name}}` are one placeholder. Each group keeps one
+/// spelling as written: the first in code-point order from the English text,
+/// else from the translation. Mirrors TS `unifyPlaceholderSpellings`.
+fn unify_placeholder_spellings(
+    source: &HashMap<String, usize>,
+    target: &HashMap<String, usize>,
+) -> (HashMap<String, usize>, HashMap<String, usize>) {
+    let mut spelling: HashMap<String, String> = HashMap::new();
+    for counts in [source, target] {
+        let mut own: HashMap<String, String> = HashMap::new();
+        for token in counts.keys().filter(|token| token.starts_with("{{")) {
+            let key = placeholder_key(token);
+            if spelling.contains_key(&key) {
+                continue;
+            }
+            let entry = own.entry(key).or_insert_with(|| token.clone());
+            if token < entry {
+                *entry = token.clone();
+            }
+        }
+        spelling.extend(own);
+    }
+    let merge = |counts: &HashMap<String, usize>| {
+        let mut merged: HashMap<String, usize> = HashMap::new();
+        for (token, count) in counts {
+            let name = if token.starts_with("{{") {
+                spelling
+                    .get(&placeholder_key(token))
+                    .cloned()
+                    .unwrap_or_else(|| token.clone())
+            } else {
+                token.clone()
+            };
+            *merged.entry(name).or_insert(0) += count;
+        }
+        merged
+    };
+    (merge(source), merge(target))
+}
+
+/// Lowercase, with ASCII spaces removed right inside each `{{` and `}}`.
+/// SMAPI only replaces `{{([ \w\.\-]+)}}`, so a tab, U+00A0, or U+3000 there
+/// stays visible and keeps the token different. Mirrors TS `placeholderKey`
+/// character for character.
+fn placeholder_key(token: &str) -> String {
+    let chars: Vec<char> = token.to_lowercase().chars().collect();
+    let is_space = |index: usize| chars.get(index) == Some(&' ');
+    let mut key = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if starts_with(&chars, index, "{{") {
+            key.push_str("{{");
+            index += 2;
+            while is_space(index) {
+                index += 1;
+            }
+            continue;
+        }
+        if is_space(index) {
+            let mut end = index;
+            while is_space(end) {
+                end += 1;
+            }
+            if starts_with(&chars, end, "}}") {
+                index = end;
+                continue;
+            }
+        }
+        key.push(chars[index]);
+        index += 1;
+    }
+    key
+}
+
+/// A translation that drops `[ArticleFor [X]]` but keeps `[X]` itself (to
+/// write its own article) loses only the article. The inner `[X]` is provided
+/// by the dropped wrapper, so it is not also reported as added. Mirrors TS
+/// `allowArticleForArguments`.
+fn allow_article_for_arguments(
+    source: &mut HashMap<String, usize>,
+    target: &HashMap<String, usize>,
+) {
+    let mut dropped: HashMap<String, usize> = HashMap::new();
+    for (token, count) in source.iter() {
+        let Some(inner) = article_for_argument(token) else {
+            continue;
+        };
+        let lost = count.saturating_sub(target.get(token).copied().unwrap_or(0));
+        if lost > 0 {
+            *dropped.entry(inner.to_string()).or_insert(0) += lost;
+        }
+    }
+    for (inner, lost) in dropped {
+        let expected = source.get(&inner).copied().unwrap_or(0);
+        let extra = target
+            .get(&inner)
+            .copied()
+            .unwrap_or(0)
+            .saturating_sub(expected);
+        if extra > 0 {
+            source.insert(inner, expected + lost.min(extra));
+        }
+    }
+}
+
+/// The inner bracket token of `[ArticleFor [X]]`, i.e. `[X]`, or `None` when
+/// the token is no such wrapper. Mirrors TS `articleForArgument`.
+fn article_for_argument(token: &str) -> Option<&str> {
+    let body = token.strip_prefix('[')?.strip_suffix(']')?;
+    let (name, arguments) = split_bracket_name(body);
+    (name.eq_ignore_ascii_case("articlefor") && is_single_protected_bracket_argument(arguments))
+        .then_some(arguments)
 }
 
 /// The protected tokens that `target` is missing (or under-represents) relative
@@ -1178,6 +1361,101 @@ fn read_event_command(chars: &[char], offset: usize) -> Option<usize> {
     Some(end)
 }
 
+/// Dialogue placeholders the game fills in (Stardew 1.6
+/// `Dialogue.percentTokens`), plus `%noturn`, which the game removes and which
+/// keeps the speaker from turning to the player, each with what the game does
+/// with it. The game replaces them with an exact, case-sensitive substring
+/// replace, so `%Spouse` stays literal text and `50%` is never one. Longest
+/// names first. Mirrors TS `PERCENT_PLACEHOLDERS` and
+/// `PERCENT_PLACEHOLDER_TEXT`.
+const PERCENT_PLACEHOLDERS: [(&str, &str); 17] = [
+    (
+        "%firstnameletter",
+        "The game puts the first half of the player's name here. Fine if intended.",
+    ),
+    (
+        "%favorite",
+        "The game puts the player's favorite thing here. Fine if intended.",
+    ),
+    (
+        "%season",
+        "The game puts the current season here. Fine if intended.",
+    ),
+    (
+        "%spouse",
+        "The game puts the spouse's name here. Fine if intended.",
+    ),
+    (
+        "%noturn",
+        "It keeps the character from turning to face the player. Fine if intended.",
+    ),
+    (
+        "%place",
+        "The game puts a random place name here. Fine if intended.",
+    ),
+    (
+        "%band",
+        "The game puts the name of Sam's band here. Fine if intended.",
+    ),
+    (
+        "%book",
+        "The game puts the name of Elliott's book here. Fine if intended.",
+    ),
+    (
+        "%farm",
+        "The game puts the farm's name here. Fine if intended.",
+    ),
+    (
+        "%kid1",
+        "The game puts the first child's name here. Fine if intended.",
+    ),
+    (
+        "%kid2",
+        "The game puts the second child's name here. Fine if intended.",
+    ),
+    (
+        "%name",
+        "The game puts a random name here. Fine if intended.",
+    ),
+    (
+        "%noun",
+        "The game puts a random noun here. Fine if intended.",
+    ),
+    (
+        "%time",
+        "The game puts the current time here. Fine if intended.",
+    ),
+    (
+        "%year",
+        "The game puts the current year here. Fine if intended.",
+    ),
+    (
+        "%adj",
+        "The game puts a random adjective here. Fine if intended.",
+    ),
+    (
+        "%pet",
+        "The game puts the pet's name here. Fine if intended.",
+    ),
+];
+
+fn percent_placeholder_text(token: &str) -> Option<&'static str> {
+    PERCENT_PLACEHOLDERS
+        .iter()
+        .find(|(name, _)| *name == token)
+        .map(|(_, text)| *text)
+}
+
+fn read_percent_placeholder(chars: &[char], offset: usize) -> Option<usize> {
+    if chars.get(offset) != Some(&'%') {
+        return None;
+    }
+    PERCENT_PLACEHOLDERS
+        .iter()
+        .find(|(name, _)| starts_with(chars, offset, name))
+        .map(|(name, _)| offset + name.chars().count())
+}
+
 fn read_single_char(chars: &[char], offset: usize) -> Option<usize> {
     match chars.get(offset) {
         // A stray `{` marks "continues on next screen" and a `}` turns the text
@@ -1574,7 +1852,7 @@ mod tests {
                 case["target"].as_str().unwrap(),
             );
             assert_eq!(
-                explain_differences(&token_differences(source, target)),
+                explain_differences(&token_differences(source, target), target),
                 case["text"].as_str().unwrap(),
                 "explain({target:?})"
             );
