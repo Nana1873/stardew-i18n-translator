@@ -81,6 +81,16 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             continue;
         }
 
+        // `#$y '…'`: the page break belongs to the quick response; without it
+        // the game shows the command as text, so it is protected with it.
+        if chars[offset] == '#' && quick_response_quote(chars, offset + 1).is_some() {
+            if let Some((end, quick)) = read_quick_response(chars, offset + 1) {
+                tokens.push("#$y".to_string());
+                tokens.extend(quick.into_iter().skip(1));
+                offset = end;
+                continue;
+            }
+        }
         if let Some((end, action_tokens)) =
             read_betas_message(chars, offset).or_else(|| read_quick_response(chars, offset))
         {
@@ -255,9 +265,10 @@ fn difference_message(difference: &TokenDifference) -> String {
     }
     match token {
         "@" => return format!("The player name @ {change} {counts}. Fine if intended."),
-        "^" => return format!("^ {change} {counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break."),
+        "^" | "#" if difference.is_error() => return format!("{token} {change} {counts}: a dialogue page now has two different portraits, and the second shows as raw text."),
+        "^" => return format!("^ {change} {counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."),
         "{" | "}" => return format!("A single {token} {change} {counts}. The game treats single braces as commands and hides text."),
-        "#" => return format!("# {change} {counts}. # separates dialogue boxes."),
+        "#" => return format!("# {change} {counts}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."),
         _ => {}
     }
     format!(
@@ -298,6 +309,9 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         } else {
             "It adds an item or reward the English mail does not give."
         };
+    }
+    if token == "#$y" {
+        return "It starts the quick response on a new page; without it the game shows the command as text.";
     }
     if token == "*" {
         return "In a $y reply it starts a new dialogue box, so the page structure changes.";
@@ -362,6 +376,17 @@ fn is_portrait_command(token: &str) -> bool {
             .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
 }
 
+/// `Dialogue.applyGenderSwitch` also cuts a page at its first bare `^`: the
+/// male player sees the left part, everyone else the right part. Letters have
+/// no portraits, so this split never affects them. Mirrors TS `genderHalf`.
+fn gender_half(page: &str, branch: usize) -> &str {
+    match page.find('^') {
+        None => page,
+        Some(caret) if branch == 0 => &page[..caret],
+        Some(caret) => &page[caret + 1..],
+    }
+}
+
 /// The text a player sees for one gender: every well-formed switch is
 /// replaced by its branch `branch` (the last branch when it has fewer).
 fn branch_text(chars: &[char], branch: usize) -> String {
@@ -402,6 +427,7 @@ fn pages_with_multiple_portraits(value: &str) -> usize {
         .map(|branch| {
             branch_text(&chars, branch)
                 .split('#')
+                .map(|page| gender_half(page, branch))
                 .filter(|page| {
                     extract(page)
                         .into_iter()
@@ -431,6 +457,10 @@ fn token_severity(
     let dropped = target_count < source_count;
     let harmless = is_gender_switch_shape(token)
         || token == "@"
+        // A bare `^` or `#` changes the page or gender split in dialogue but is
+        // plain text in letters and UI strings; translators decide (PD-1),
+        // unless the change puts two different portraits on one page.
+        || (matches!(token, "^" | "#") && !introduces_multiple_portraits)
         || (is_portrait_command(token) && !introduces_multiple_portraits)
         // A missing placeholder only drops its value; a renamed or extra one
         // stays visible as literal `{{...}}` or breaks string.Format.
@@ -1374,7 +1404,7 @@ mod tests {
                     token: "#".into(),
                     source_count: 1,
                     target_count: 0,
-                    severity: Severity::Error,
+                    severity: Severity::Warning,
                 },
                 TokenDifference {
                     token: "{{name}}".into(),
@@ -1422,8 +1452,8 @@ mod tests {
             "Mein ${Ehemann^Ehefrau}?$4"
         )
         .is_empty());
-        // An extra `^` splits dialogue by gender.
-        assert!(!blocking_differences("Hello there.", "Hallo^du.").is_empty());
+        // A bare `^` or `#` is a note only: plain text outside dialogue.
+        assert!(blocking_differences("Hello there.", "Hallo^du.").is_empty());
         // Renamed or added placeholders stay literal.
         assert!(!blocking_differences("Hi {{name}}", "Hallo {{Name2}}").is_empty());
         assert!(!blocking_differences("Hi", "Hallo {{name}}").is_empty());

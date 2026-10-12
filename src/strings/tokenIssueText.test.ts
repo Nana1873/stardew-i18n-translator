@@ -37,12 +37,12 @@ describe("describeTokenIssue", () => {
             targetCount: 0,
             severity: "warning",
           },
-          { token: "^", sourceCount: 1, targetCount: 0, severity: "error" },
+          { token: "^", sourceCount: 1, targetCount: 0, severity: "warning" },
         ],
         "Hallo a ${x^y",
       ).map((item) => item.message),
     ).toContain(
-      "^ is missing (English 1, translation 0). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break.",
+      "^ is missing (English 1, translation 0). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
     );
   });
 

@@ -50,6 +50,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return missing
       ? "The attached item or reward would not be given."
       : "It adds an item or reward the English mail does not give.";
+  if (token === "#$y")
+    return "It starts the quick response on a new page; without it the game shows the command as text.";
   if (token === "*")
     return "In a $y reply it starts a new dialogue box, so the page structure changes.";
   if (token === "_")
@@ -100,12 +102,14 @@ function genericMessage(difference: TokenDifference): string {
       : `The portrait ${token} ${change} ${counts}: the character shows a different face. Fine if intended.`;
   if (token === "@")
     return `The player name @ ${change} ${counts}. Fine if intended.`;
+  if ((token === "^" || token === "#") && severity === "error")
+    return `${token} ${change} ${counts}: a dialogue page now has two different portraits, and the second shows as raw text.`;
   if (token === "^")
-    return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break.`;
+    return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.`;
   if (token === "{" || token === "}")
     return `A single ${token} ${change} ${counts}. The game treats single braces as commands and hides text.`;
   if (token === "#")
-    return `# ${change} ${counts}. # separates dialogue boxes.`;
+    return `# ${change} ${counts}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.`;
   return `${token} ${change} ${counts}. ${tokenConsequence(difference)}`;
 }
 
