@@ -164,9 +164,12 @@ describe("ScanDialog", () => {
       />,
     );
     expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
-    // Without a comparison there is no change line; the reason is listed
-    // under Needs attention.
-    expect(screen.queryByText(/since your last scan/i)).toBeNull();
+    // Without a comparison the line says when changes are listed again.
+    expect(
+      screen.getByText(
+        "New and changed texts are listed again once the problems below are fixed.",
+      ),
+    ).toBeInTheDocument();
   });
 
   it("focuses the real diagnostic block when opened from the skipped control", async () => {

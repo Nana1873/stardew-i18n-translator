@@ -1269,36 +1269,6 @@
   margin-top: 8px;
 }
 
-#stardew-i18n-translator .translator-scan-diagnostics > section + section {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--translator-border);
-}
-
-#stardew-i18n-translator
-  .translator-scan-diagnostics
-  > section
-  > .translator-flow-list,
-#stardew-i18n-translator
-  .translator-scan-diagnostics
-  > section
-  > .translator-scan-extra-groups {
-  margin-top: 8px;
-}
-
-#stardew-i18n-translator .translator-scan-warning-section > p,
-#stardew-i18n-translator .translator-scan-info-section > p {
-  margin: 0;
-}
-
-#stardew-i18n-translator .translator-scan-warning-section > p svg {
-  color: var(--translator-orange);
-}
-
-#stardew-i18n-translator .translator-scan-info-summary svg {
-  color: var(--translator-brand);
-}
-
 #stardew-i18n-translator .translator-scan-status {
   display: flex;
   align-items: center;

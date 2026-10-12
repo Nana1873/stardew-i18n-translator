@@ -239,6 +239,8 @@ function ScanResultContent({ result }: { result: ScanResult }) {
     <>
       <div
         className={`translator-scan-status ${problemCount > 0 ? "is-attention" : "is-ready"}`}
+        role="group"
+        aria-label="Latest scan result"
       >
         <span className="translator-scan-status-icon" aria-hidden="true">
           {problemCount > 0 ? <AlertTriangle /> : <CheckCircle2 />}
@@ -256,22 +258,23 @@ function ScanResultContent({ result }: { result: ScanResult }) {
         </div>
       </div>
 
-      {changeLine && (
-        <p
-          className={`translator-scan-changes${changeLine.highlight ? " has-changes" : ""}`}
-        >
-          {changeLine.text}
-        </p>
-      )}
+      <p
+        className={`translator-scan-changes${changeLine.highlight ? " has-changes" : ""}`}
+      >
+        {changeLine.text}
+      </p>
 
       {problemCount > 0 && (
         <section
           className="translator-scan-attention is-warning"
           tabIndex={-1}
           data-scan-diagnostics
-          aria-label="Needs attention"
+          aria-labelledby="scan-attention-title"
         >
-          <h3 className="translator-scan-section-title">
+          <h3
+            id="scan-attention-title"
+            className="translator-scan-section-title"
+          >
             Needs attention <span>{problemCount}</span>
           </h3>
           <ul className="translator-scan-cards" aria-label="Skipped components">
@@ -437,12 +440,17 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
 }
 
 /** What a translator needs to know about English source changes since the
- * previous scan. Nothing is shown when the comparison was not possible; the
- * reason is already listed under Needs attention. */
-function describeSourceChanges(
-  deltas: ScanResult["sourceDeltas"],
-): { text: string; highlight: boolean } | null {
-  if (!deltas) return null;
+ * previous scan. A comparison is only unavailable when the scan had problems,
+ * which are listed under Needs attention. */
+function describeSourceChanges(deltas: ScanResult["sourceDeltas"]): {
+  text: string;
+  highlight: boolean;
+} {
+  if (!deltas)
+    return {
+      text: "New and changed texts are listed again once the problems below are fixed.",
+      highlight: false,
+    };
   const parts = [
     deltas.stringsAdded > 0 ? `${deltas.stringsAdded} new` : "",
     deltas.sourcesChanged > 0 ? `${deltas.sourcesChanged} changed` : "",
@@ -462,8 +470,10 @@ function describeSourceChanges(
 /** A short title for a free-text scanner warning. */
 function warningTitle(warning: string): string {
   if (/same uniqueid/i.test(warning)) return "Duplicate mod ID";
+  if (/could not be scanned completely/i.test(warning))
+    return "Incomplete scan";
   if (/cannot be read|unreadable/i.test(warning)) return "Unreadable file";
-  if (/translation state|saved translations/i.test(warning))
+  if (/translation[- ]state|saved translations/i.test(warning))
     return "Saved translations";
   if (/baseline|comparison/i.test(warning)) return "Change comparison";
   return "Scan note";
@@ -472,8 +482,8 @@ function warningTitle(warning: string): string {
 /** A short, plain explanation of a skip; the technical reason stays under
  * Details for bug reports to the mod author. */
 function plainSkipReason(reason: string): string {
-  if (/duplicate.*uniqueid/i.test(reason))
-    return "Two mods use the same ID, so their translations were left out. Remove the extra copy.";
+  if (/mixed top-level and language-folder|duplicate source key/i.test(reason))
+    return "It uses a translation file layout that SMAPI does not support, so it was left out.";
   if (/translation state is unavailable/i.test(reason))
     return "Its saved translations could not be loaded safely, so it was left out.";
   if (/manifest/i.test(reason))
@@ -481,7 +491,7 @@ function plainSkipReason(reason: string): string {
   if (/outside the configured mods folder/i.test(reason))
     return "It points outside the Mods folder and was left out for safety.";
   if (
-    /invalid json|expected .* at line|could not read|non-string value/i.test(
+    /invalid json|expected .* at line|could not read|non-string value|flat json object/i.test(
       reason,
     )
   )
