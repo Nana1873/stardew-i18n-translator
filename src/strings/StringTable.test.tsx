@@ -630,6 +630,22 @@ beforeEach(() => {
   });
 });
 
+/** Issue markers carry a short name and their full help as aria-description. */
+function issueMarkers(scope: HTMLElement, help: RegExp): HTMLElement[] {
+  return [
+    ...scope.querySelectorAll<HTMLElement>(".translator-inline-validation"),
+  ].filter((marker) =>
+    help.test(marker.getAttribute("aria-description") ?? ""),
+  );
+}
+
+function issueMarker(scope: HTMLElement, help: RegExp): HTMLElement {
+  const [marker, ...rest] = issueMarkers(scope, help);
+  if (!marker || rest.length)
+    throw new Error("Expected one issue marker: " + help);
+  return marker;
+}
+
 describe("StringTable workbench", () => {
   it("loads only real selected-mod files and renders the workspace controls", async () => {
     render(<StringTable mod={MOD} />);
@@ -1338,9 +1354,7 @@ describe("StringTable workbench", () => {
     render(<StringTable mod={MOD} onLlmBatchExportForMod={vi.fn()} />);
     await screen.findByText("token");
 
-    const validation = screen.getByRole("button", {
-      name: /\[FarmName\] is missing/i,
-    });
+    const validation = issueMarker(document.body, /\[FarmName\] is missing/i);
     expect(validation).toHaveClass("translator-inline-validation");
     fireEvent.click(validation);
     expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
@@ -1409,28 +1423,36 @@ describe("StringTable workbench", () => {
     render(<StringTable mod={MOD} />);
     await screen.findByText("warning");
 
-    const warning = within(rowFor("warning")).getByRole("button", {
-      name: /^Worth a look: exported as written\./,
-    });
-    const error = within(rowFor("error")).getByRole("button", {
-      name: /^Must fix or Save anyway: until then this text stays English/,
-    });
+    const warning = issueMarker(
+      rowFor("warning"),
+      /^Worth a look: exported as written\./,
+    );
+    const error = issueMarker(
+      rowFor("error"),
+      /^Must fix or Save anyway: until then this text stays English/,
+    );
     expect(warning).toHaveAttribute("data-severity", "warning");
     expect(error).toHaveAttribute("data-severity", "error");
+    // The marker name stays short; the full help is its description.
+    expect(warning).toHaveAccessibleName("Worth a look");
+    expect(error).toHaveAccessibleName("Must fix");
     expect(
-      within(rowFor("mixed")).getByRole("button", {
-        name: /^Must fix or Save anyway: until then this text stays English/,
-      }),
+      issueMarker(
+        rowFor("mixed"),
+        /^Must fix or Save anyway: until then this text stays English/,
+      ),
     ).toHaveAttribute("data-severity", "error");
     expect(
-      within(rowFor("accepted")).getByRole("button", {
-        name: /^Kept on purpose: exported as written\./,
-      }),
+      issueMarker(
+        rowFor("accepted"),
+        /^Kept on purpose: exported as written\./,
+      ),
     ).toHaveAttribute("data-severity", "warning");
     expect(
-      within(rowFor("accepted-with-invalid-text")).getByRole("button", {
-        name: /^Must fix: this text stays English in the game until fixed\. Other problems remain\./,
-      }),
+      issueMarker(
+        rowFor("accepted-with-invalid-text"),
+        /^Must fix: this text stays English in the game until fixed\. Other problems remain\./,
+      ),
     ).toHaveAttribute("data-severity", "error");
 
     fireEvent.focus(warning);
@@ -1443,9 +1465,10 @@ describe("StringTable workbench", () => {
       "Must fix or Save anyway: until then this text stays English in the game. [FarmName] is missing",
     );
     fireEvent.blur(error);
-    const accepted = within(rowFor("accepted")).getByRole("button", {
-      name: /^Kept on purpose: exported as written\./,
-    });
+    const accepted = issueMarker(
+      rowFor("accepted"),
+      /^Kept on purpose: exported as written\./,
+    );
     fireEvent.focus(accepted);
     expect(screen.getByRole("tooltip")).toHaveTextContent(
       "Kept on purpose: exported as written. [FarmName] is missing",
@@ -1505,9 +1528,7 @@ describe("StringTable workbench", () => {
     const issues = screen.getByRole("button", { name: "Issues 1" });
     expect(issues).toBeEnabled();
     expect(
-      within(rowFor("token")).getByRole("button", {
-        name: /^Kept on purpose: exported as written\./,
-      }),
+      issueMarker(rowFor("token"), /^Kept on purpose: exported as written\./),
     ).toHaveAttribute("data-severity", "warning");
     fireEvent.click(issues);
     expect(dataRows()).toHaveLength(1);
@@ -1905,12 +1926,17 @@ describe("StringTable workbench", () => {
     fireEvent.blur(menu, { relatedTarget: search });
     expect(screen.queryByRole("menu", { name: "Batch actions" })).toBeNull();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "More actions for bye" }),
-    );
+    const more = screen.getByRole("button", { name: "More actions for bye" });
+    fireEvent.click(more);
     const context = await screen.findByRole("menu", {
       name: "String actions",
     });
+    // Only the More actions button announces the menu; the row itself is a
+    // plain grid row without popup state.
+    expect(more).toHaveAttribute("aria-expanded", "true");
+    const row = more.closest('[role="row"]');
+    expect(row).not.toHaveAttribute("aria-haspopup");
+    expect(row).not.toHaveAttribute("aria-expanded");
     fireEvent.blur(context, { relatedTarget: search });
     expect(screen.queryByRole("menu", { name: "String actions" })).toBeNull();
   });
@@ -3240,9 +3266,10 @@ describe("StringTable workbench", () => {
     expect(actionHeader).toHaveClass("translator-row-actions-col");
     expect(actionHeader).toHaveStyle({ gridColumn: "-2 / -1" });
 
-    const issueControl = screen.getAllByRole("button", {
-      name: /\[FarmName\] is missing/i,
-    })[0];
+    const issueControl = issueMarkers(
+      document.body,
+      /\[FarmName\] is missing/i,
+    )[0];
     const tokenRow = issueControl.closest<HTMLElement>(".stringrow--data");
     if (!tokenRow) throw new Error("Missing row for validation control");
     const translationCell = tokenRow.querySelector<HTMLElement>(

@@ -3524,6 +3524,14 @@ function RowView({
   const issueHelp = severity
     ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";
+  // Short name for the issue marker; the full help is its description so a
+  // screen reader does not read a paragraph as the button name.
+  const issueLabel =
+    severity === "error"
+      ? "Must fix"
+      : acceptedTokenMismatch
+        ? "Kept on purpose"
+        : "Worth a look";
   const matchesSearch = (field: SearchField, metadata = false) =>
     (!metadata || searchAllMetadata) &&
     searchFieldMatches(row, field, searchNeedles, searchLocale);
@@ -3572,8 +3580,6 @@ function RowView({
       }}
       role="row"
       aria-selected={selected}
-      aria-haspopup="menu"
-      aria-expanded={menuOpen}
       aria-description={statusHelp}
       tabIndex={tabStop ? 0 : -1}
       data-string-row=""
@@ -3771,7 +3777,8 @@ function RowView({
             className="translator-inline-validation"
             type="button"
             data-severity={severity}
-            aria-label={issueHelp}
+            aria-label={issueLabel}
+            aria-description={issueHelp}
             data-status-help={issueHelp}
             onPointerEnter={(event) =>
               onShowStatusHelp(event.currentTarget, issueHelp)

@@ -807,7 +807,7 @@ try {
     ).findElement(css(".translator-inline-validation"));
     assert.equal(await acceptedMarker.getAttribute("data-severity"), "warning");
     assert.match(
-      await acceptedMarker.getAttribute("aria-label"),
+      await acceptedMarker.getAttribute("aria-description"),
       /^Kept on purpose: exported as written\./,
     );
     await openEntry("greeting");
