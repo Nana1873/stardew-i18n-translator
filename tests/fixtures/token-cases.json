@@ -279,6 +279,17 @@
     {
       "value": "%names and %farmer",
       "tokens": ["%name", "%farm"]
+    },
+    {
+      "value": "[FARMERSTAT\u0085stepsTaken] [FARMERSTAT﻿stepsTaken] [ArticleFor\u0085[FarmName]\u0085]",
+      "tokens": [
+        "[FARMERSTAT\u0085stepsTaken]",
+        "[ArticleFor\u0085[FarmName]\u0085]"
+      ]
+    },
+    {
+      "value": "%revealtaste:Haley:(O)221\u0085now %revealtaste:Abigail﻿(O)128 then",
+      "tokens": ["%revealtaste:Haley:(O)221", "%revealtaste:Abigail﻿(O)128"]
     }
   ],
   "comparisons": [

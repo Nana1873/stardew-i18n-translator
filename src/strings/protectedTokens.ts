@@ -30,6 +30,16 @@ const positionalPlaceholderPattern = /^\{\d+\}/;
 const simpleDialogueCommandPattern = /^\$(?:[a-zA-Z]+|\d+)/;
 const namespacedTokenNamePattern = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)+$/;
 
+/** Unicode White_Space, the set Rust `char::is_whitespace`, `trim`, and
+ * `split_whitespace` use. JS `\s` and `trim()` differ: they include U+FEFF
+ * but not U+0085, so the two readers would split tokens differently. */
+const whiteSpace = /\p{White_Space}/u;
+const whiteSpaceRun = /\p{White_Space}+/u;
+
+function trimWhiteSpace(value: string): string {
+  return value.replace(/^\p{White_Space}+|\p{White_Space}+$/gu, "");
+}
+
 /** TokenizableString forms whose complete bracket expression is opaque: they
  * contain no visible prose arguments that a translation should rewrite. */
 const argumentlessBracketTokens = new Set([
@@ -418,7 +428,8 @@ function readBetasMessage(
   if (!value.startsWith(prefix, offset)) return null;
   let cursor = offset + prefix.length;
   const npcStart = cursor;
-  while (cursor < value.length && !/[\s#"]/.test(value[cursor])) cursor++;
+  while (cursor < value.length && !/[\p{White_Space}#"]/u.test(value[cursor]))
+    cursor++;
   if (cursor === npcStart) return null;
   while (value[cursor] === " ") cursor++;
   const escapedQuote = String.fromCharCode(92, 34);
@@ -638,7 +649,7 @@ function isProtectedBracketBody(body: string): boolean {
   if (normalizedName === "toolname")
     return hasAtomicArgumentCount(argumentText, 1, 2);
   if (normalizedName === "itemname") {
-    const itemId = argumentText.split(/\s+/, 1)[0] ?? "";
+    const itemId = argumentText.split(whiteSpaceRun, 1)[0] ?? "";
     return isItemId(itemId);
   }
   if (normalizedName === "localizedtext") return argumentText.length > 0;
@@ -653,18 +664,18 @@ function splitBracketName(body: string): {
   arguments: string;
   name: string;
 } {
-  const nameEnd = body.search(/\s/);
+  const nameEnd = body.search(whiteSpace);
   return nameEnd < 0
     ? { arguments: "", name: body }
     : {
-        arguments: body.slice(nameEnd).trim(),
+        arguments: trimWhiteSpace(body.slice(nameEnd)),
         name: body.slice(0, nameEnd),
       };
 }
 
 function atomicArguments(argumentsText: string): string[] {
   if (argumentsText.includes("[") || argumentsText.includes("]")) return [];
-  return argumentsText.length === 0 ? [] : argumentsText.split(/\s+/);
+  return argumentsText.length === 0 ? [] : argumentsText.split(whiteSpaceRun);
 }
 
 function hasAtomicArgumentCount(
@@ -683,7 +694,7 @@ function isSingleProtectedBracketArgument(argumentsText: string): boolean {
   const end = findBalancedBracketEnd(argumentsText, 0);
   return (
     end === argumentsText.length &&
-    isProtectedBracketBody(argumentsText.slice(1, -1).trim())
+    isProtectedBracketBody(trimWhiteSpace(argumentsText.slice(1, -1)))
   );
 }
 
@@ -696,8 +707,8 @@ function isItemId(value: string): boolean {
 }
 
 function isItemIdPool(value: string): boolean {
-  if (value.trim() !== value) return false;
-  const itemIds = value.split(/\s+/);
+  if (trimWhiteSpace(value) !== value) return false;
+  const itemIds = value.split(whiteSpaceRun);
   if (itemIds.length < 2) return false;
 
   // Bare string item IDs are indistinguishable from bracketed UI prose
@@ -753,7 +764,8 @@ function readEventCommand(value: string, offset: number): Token | null {
     return token(value, offset, offset + 5);
   if (!value.startsWith("%revealtaste", offset)) return null;
   let end = offset + "%revealtaste".length;
-  while (end < value.length && !/[\s#%$^*{]/u.test(value[end])) end += 1;
+  while (end < value.length && !/[\p{White_Space}#%$^*{]/u.test(value[end]))
+    end += 1;
   return token(value, offset, end);
 }
 
