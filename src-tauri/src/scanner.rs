@@ -1058,8 +1058,10 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
     target_path.to_path_buf()
 }
 
-/// SMAPI looks up the game's regional locale file before the language file
-/// (`pt-BR.json` before `pt.json`, `zh-CN.json` before `zh.json`). Aliases apply
+/// Regional locale files mods commonly ship for Portuguese and Chinese
+/// (`pt-BR.json` before `pt.json`, `zh-CN.json` before `zh.json`). Other game
+/// locales such as `de-DE` are not aliased yet (unverified against SMAPI's
+/// lookup chain). Aliases apply
 /// to top-level locale files, never to the arbitrary document names inside a
 /// split locale folder.
 pub(crate) fn regional_target_variant(path: &Path) -> Option<PathBuf> {

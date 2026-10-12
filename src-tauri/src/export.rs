@@ -2315,4 +2315,25 @@ mod tests {
         assert!(!i18n.join("zh-CN.json").exists());
         std::fs::remove_dir_all(root).ok();
     }
+
+    #[test]
+    fn chinese_with_both_variants_prefers_zh_cn_and_backs_up_both() {
+        let root = crate::test_support::temp_dir("export-zh-both");
+        let i18n = root.join("i18n");
+        write(&i18n.join("default.json"), r#"{"k":"Hello"}"#);
+        write(&i18n.join("zh.json"), r#"{"k":"Short old"}"#);
+        write(&i18n.join("zh-CN.json"), r#"{"k":"Regional first"}"#);
+        let files = vec![ExportFileInput {
+            relative_dir: "i18n".into(),
+            default_path: i18n.join("default.json").display().to_string(),
+            target_path: i18n.join("zh.json").display().to_string(),
+        }];
+
+        export_mod(&root, "mod.id", &files).unwrap();
+        assert!(read(&i18n.join("zh.json")).contains("Regional first"));
+        assert!(read(&i18n.join("zh.json.bak")).contains("Short old"));
+        assert!(read(&i18n.join("zh-CN.json.bak")).contains("Regional first"));
+        assert!(!i18n.join("zh-CN.json").exists());
+        std::fs::remove_dir_all(root).ok();
+    }
 }
