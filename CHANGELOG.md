@@ -21,6 +21,24 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   reported with the Activity log.
 - Dialogs are named by their visible heading and take focus reliably; issue
   markers have short names and a larger target.
+- Dialogue placeholders the game fills in, such as `%spouse`, `%farm`,
+  `%kid1`, or `%time`, and `%noturn` are now checked. A missing, extra, or
+  renamed one is a note that says what the game puts there, never an error.
+  A percent sign such as `50%` is not a placeholder.
+- The note about full-width characters such as `＄｛｝＾` now appears next to
+  any token finding, also for `＃＠％［］`, and no longer turns a note into an
+  error.
+- `{{ name }}`, `{{name}}`, and `{{Name}}` count as the same placeholder,
+  like in the game.
+- Extra spaces between the arguments of any dialogue command, such as
+  `#$q 305/306  null#`, no longer count as a token error; the game ignores
+  them.
+- Dropping `[ArticleFor [SuggestedItem]]` while keeping `[SuggestedItem]` is
+  only a note about the lost article, without an extra error.
+- The editor and the export now read unusual spaces inside tokens the same
+  way.
+- Opening Issues fits the columns to the window when saved widths would push
+  the issue icons out of view.
 
 - Texts across the app are plainer: explanations, status lines, dialog text
   and error messages say what happened and what to do, without internal terms.
