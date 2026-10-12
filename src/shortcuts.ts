@@ -169,7 +169,9 @@ export function shortcutProblem(shortcut: string): string | null {
 
   if (!hasCommandModifier && isEditingKey)
     return "Typing keys such as Space, Backspace, Delete, and the arrow keys need Ctrl or Alt so they stay usable in text fields.";
+  if (!hasCommandModifier && hasModifier && /^[A-Za-z0-9]$/.test(key))
+    return "Shift with a letter or number types a character; add Ctrl or Alt.";
   if (!hasModifier && !isFunctionKey && !isConfirmKey)
-    return "Use Ctrl, Shift, or Alt with letters and numbers.";
+    return "Use Ctrl or Alt with letters and numbers.";
   return null;
 }

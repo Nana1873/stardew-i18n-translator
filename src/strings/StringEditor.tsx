@@ -811,8 +811,11 @@ export function StringEditor({
   );
   const issues = validate(row.source, value, row.targetPresent);
   // Severity per token, so each chip can say whether it blocks the export.
+  // Mirrors validate(): an empty field has no token findings yet.
   const tokenSeverities = new Map(
-    tokenDifferences(row.source, value).map((d) => [d.token, d.severity]),
+    value.length === 0
+      ? []
+      : tokenDifferences(row.source, value).map((d) => [d.token, d.severity]),
   );
   const chipSeverity = (token: string) =>
     acceptedTokenMismatch
@@ -1239,7 +1242,7 @@ export function StringEditor({
                         className={`editor__issue-title editor__issue-title--${severity}`}
                       >
                         {severity === "error"
-                          ? `${group.length === 1 ? "1 error" : `${group.length} errors`} · this string stays English on export until fixed`
+                          ? `${group.length === 1 ? "1 error" : `${group.length} errors`}${group.some((issue) => issue.ruleId === "token-missing" || issue.ruleId === "token-added") ? " · this string stays English on export until fixed" : ""}`
                           : `${group.length === 1 ? "1 note" : `${group.length} notes`} · does not affect export`}
                       </span>
                       {group.map((issue, i) => (

@@ -22,11 +22,17 @@ const MAX_READ_ONLY_NEIGHBORS: usize = 2;
 /// User-facing wording for a failed request to the local service. reqwest's
 /// `Display` already repeats the URL, so the raw text is only kept for errors
 /// that are not a plain "nothing is listening" connection failure.
-fn describe_transport_error(url: &str, error: &reqwest::Error) -> String {
+/// Wording for "nothing is listening"; starts with "Could not reach" so
+/// `local_ai_error_category` keeps classifying it as unreachable.
+pub(crate) fn connection_failure_message(url: &str) -> String {
+    format!(
+        "Could not reach Local AI at {url}. Start LM Studio or Ollama, check the Base URL in Settings > Translation engines, then try again."
+    )
+}
+
+pub(crate) fn describe_transport_error(url: &str, error: &reqwest::Error) -> String {
     if error.is_connect() {
-        format!(
-            "Local AI is not reachable at {url}. Start LM Studio or Ollama, check the Base URL in Settings > Translation engines, then try again."
-        )
+        connection_failure_message(url)
     } else {
         // reqwest repeats the URL in its own text; keep the rest of it.
         let detail = error.to_string().replace(&format!(" for url ({url})"), "");

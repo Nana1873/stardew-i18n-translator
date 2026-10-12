@@ -3613,6 +3613,13 @@ mod ai_run_contract_tests {
     #[test]
     fn local_ai_probe_diagnostics_are_categorized_without_provider_details() {
         let raw_error = "Could not reach http://localhost:11434/v1/models (private detail)";
+        // The real connection-failure wording must stay in the systemic bucket.
+        assert_eq!(
+            local_ai_error_category(&crate::llm::connection_failure_message(
+                "http://localhost:11434/v1/models"
+            )),
+            "unreachable"
+        );
         let diagnostic =
             local_ai_model_probe_diagnostic(local_ai_error_category(raw_error)).to_string();
 
