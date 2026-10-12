@@ -49,7 +49,9 @@ does not imply this intent. Protected-token validation still applies.
 - Accept relaxed mod JSON in UTF-8 or, with a byte order mark, UTF-16. Require
   source dictionaries to be flat string objects. In a target, read numbers and
   booleans as text and treat other non-string values as untranslated; a
-  rewritten target drops them, and only its `.bak` keeps them. Preserve
+  rewritten target drops them, and only its `.bak` keeps them. SMAPI itself
+  skips a whole file that holds a list or object value, so exporting again
+  makes such a file usable in the game. Preserve
   source key order for display and export.
 - In a split `i18n/<lang>/` folder, an unreadable locale document blocks only
   the source document of the same name; other unreadable documents are

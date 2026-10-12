@@ -1346,7 +1346,8 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
             });
             let values = match read_object_within_root(&path, root, "target") {
                 Ok(values) => values,
-                // SMAPI skips a locale document it cannot parse, so one broken
+                // SMAPI skips a locale document it cannot parse (per-file
+                // try/continue in SCore.ReadTranslationFiles), so one broken
                 // file only blocks the source document it would be written to;
                 // the scan reports it once (see `unreadable_split_targets`).
                 Err(_) if !same_name => continue,
