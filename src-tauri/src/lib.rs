@@ -1744,6 +1744,28 @@ fn local_ai_error_is_systemic(error_category: &str) -> bool {
     )
 }
 
+/// A single timeout can be one slow string; several in a row mean the local
+/// server is not answering, so the run stops instead of waiting on every item.
+const LOCAL_AI_TIMEOUT_STOP_LIMIT: usize = 3;
+const LOCAL_AI_TIMEOUT_STOP_MESSAGE: &str = "Local AI did not answer in time three times in a row. Check that LM Studio or Ollama is running and the model is loaded, then try again.";
+
+/// Counts consecutive Local AI timeouts. Any other result resets the count.
+#[derive(Debug, Default)]
+struct LocalAiTimeoutStreak(usize);
+
+impl LocalAiTimeoutStreak {
+    /// Record one item's error category (`None` for a success). Returns true
+    /// when the run should stop.
+    fn record(&mut self, error_category: Option<&str>) -> bool {
+        if error_category == Some("timeout") {
+            self.0 += 1;
+        } else {
+            self.0 = 0;
+        }
+        self.0 >= LOCAL_AI_TIMEOUT_STOP_LIMIT
+    }
+}
+
 fn local_ai_model_probe_diagnostic(error_category: &'static str) -> serde_json::Value {
     serde_json::json!({
         "event": "model_probe_failed",
@@ -2286,6 +2308,7 @@ async fn translate_with_local_ai(
     let mut outcome = ai::AiRunOutcome::Complete;
     let mut terminal_error = None;
     let mut item_failures = Vec::new();
+    let mut timeout_streak = LocalAiTimeoutStreak::default();
     let mut progress = AiRunProgress {
         run_id: request.run_id.clone(),
         phase: "preparing",
@@ -2356,6 +2379,15 @@ async fn translate_with_local_ai(
             ) => result.map_err(ai::ProviderFailure::Message),
             () = ai::wait_for_cancel(lease.cancelled.clone()) => Err(ai::ProviderFailure::Cancelled),
         };
+        let failure_category = match &translation {
+            Err(
+                ai::ProviderFailure::Message(cause)
+                | ai::ProviderFailure::Transient(cause, _)
+                | ai::ProviderFailure::InvalidResponse(cause),
+            ) => Some(local_ai_error_category(cause)),
+            _ => None,
+        };
+        let timed_out_repeatedly = timeout_streak.record(failure_category);
         match translation {
             Ok(result) => match ai::suggestions(
                 std::slice::from_ref(item),
@@ -2458,6 +2490,11 @@ async fn translate_with_local_ai(
                 });
                 if local_ai_error_is_systemic(error_category) {
                     outcome = ai::AiRunOutcome::Error;
+                    break;
+                }
+                if timed_out_repeatedly {
+                    outcome = ai::AiRunOutcome::Error;
+                    terminal_error = Some(LOCAL_AI_TIMEOUT_STOP_MESSAGE.to_string());
                     break;
                 }
             }
@@ -3997,6 +4034,34 @@ mod ai_run_contract_tests {
         for category in ["invalidResponse", "responseTooLarge", "timeout", "provider"] {
             assert!(!local_ai_error_is_systemic(category), "{category}");
         }
+    }
+
+    #[test]
+    fn local_ai_stops_after_three_consecutive_timeouts() {
+        let mut streak = LocalAiTimeoutStreak::default();
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(streak.record(Some("timeout")));
+
+        // A success or any other failure resets the streak.
+        let mut streak = LocalAiTimeoutStreak::default();
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(None));
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("provider")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(!streak.record(Some("timeout")));
+        assert!(streak.record(Some("timeout")));
+
+        // The real Local AI timeout text is classified as a timeout.
+        assert_eq!(
+            local_ai_error_category(
+                "The model timed out — it may be too slow or stuck. Try a smaller/faster instruct model, or a shorter string. (http://127.0.0.1:1234/v1/chat/completions)"
+            ),
+            "timeout"
+        );
+        assert!(LOCAL_AI_TIMEOUT_STOP_MESSAGE.contains("three times in a row"));
     }
 
     #[test]

@@ -191,7 +191,7 @@ and [llm.rs](../src-tauri/src/llm.rs).
 - Local AI processes one selected string at a time, saves each successful
   suggestion to Review, and continues past item-specific failures. Connection,
   HTTP-status, client-setup, cancellation, stale-state, and save failures stop
-  remaining work. An error after a save is reported as completed with issues;
+  remaining work, as do three timeouts in a row. An error after a save is reported as completed with issues;
   before any save it is a failure. Missing, unexpected, or duplicated protected
   tokens that would break the game trigger one targeted retry with the source's
   exact token counts; harmless differences such as portrait changes do not. The
