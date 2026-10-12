@@ -373,6 +373,7 @@ pub fn typed_asset_names() -> Vec<&'static str> {
 fn build_entries(
     english_map: &dyn Fn(&str) -> Option<HashMap<String, String>>,
     target_map: &dyn Fn(&str) -> Option<HashMap<String, String>>,
+    target_lang: &str,
 ) -> Vec<GlossaryEntry> {
     let mut entries: Vec<GlossaryEntry> = Vec::new();
     let mut seen: HashSet<String> = HashSet::new();
@@ -401,7 +402,7 @@ fn build_entries(
             } else {
                 base[key].clone()
             };
-            let Some((source, target)) = glossary_term(&english, target) else {
+            let Some((source, target)) = glossary_term(&english, target, target_lang) else {
                 continue;
             };
             // First typed asset to define a name wins (assets are in priority
@@ -425,10 +426,12 @@ fn build_entries_from_json(
     english_dir: &Path,
     target_dir: &Path,
     target_file: &dyn Fn(&str) -> String,
+    target_lang: &str,
 ) -> Vec<GlossaryEntry> {
     build_entries(
         &|asset| read_string_map(&english_dir.join(format!("{asset}.json"))),
         &|asset| read_string_map(&target_dir.join(target_file(asset))),
+        target_lang,
     )
 }
 
@@ -448,9 +451,12 @@ pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, Str
         ));
     }
 
-    let entries = build_entries_from_json(&strings_dir, &strings_dir, &|asset| {
-        format!("{asset}.{suffix}.json")
-    });
+    let entries = build_entries_from_json(
+        &strings_dir,
+        &strings_dir,
+        &|asset| format!("{asset}.{suffix}.json"),
+        target_lang,
+    );
     Ok(Glossary {
         format: GLOSSARY_FORMAT,
         source_lang: "default".to_string(),
@@ -497,6 +503,7 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
                 english
             },
             &|asset| read(asset, format!("{asset}.{suffix}.xnb")),
+            target_lang,
         );
         for (_, problem) in problems.borrow().iter() {
             log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {problem}");
@@ -583,6 +590,7 @@ pub fn build_from_pack(
         build_entries(
             &|asset| xnb::read_string_dictionary(&game_strings.join(format!("{asset}.xnb"))).ok(),
             &target_map,
+            target_lang,
         )
     } else {
         Vec::new()
@@ -591,6 +599,7 @@ pub fn build_from_pack(
         build_entries(
             &|asset| read_string_map(&strings_dir.join(format!("{asset}.json"))),
             &target_map,
+            target_lang,
         )
     } else {
         entries
@@ -636,7 +645,7 @@ fn key_allowed(rule: KeyRule, key: &str) -> bool {
 
 /// Accept a pair only if it is a short, term-like official name (not prose, not
 /// a token, not a UI command). Returns the trimmed (english, target) to store.
-fn glossary_term(english: &str, target: &str) -> Option<(String, String)> {
+fn glossary_term(english: &str, target: &str, target_lang: &str) -> Option<(String, String)> {
     let en = english.trim();
     let tgt = target.trim();
     if en.is_empty() || tgt.is_empty() || en.eq_ignore_ascii_case(tgt) {
@@ -645,12 +654,13 @@ fn glossary_term(english: &str, target: &str) -> Option<(String, String)> {
     // The glossary is strictly official names, not dialogue or UI
     // vocabulary. Official names are Title Case proper nouns (`Parsnip`,
     // `Pelican Town`, `Iridium Ore`), so a value with a lowercase word — whether
-    // a leading function word (`the farm`, `away from`) or an interior one
+    // a leading one (`the farm`, `away from`) or an interior one
     // (`Hello there`) — is prose and must never become a forced "official term".
-    if en
-        .split_whitespace()
-        .any(|word| word.chars().next().is_some_and(char::is_lowercase))
-    {
+    // Only short function words inside a name stay lowercase (`Ring of Yoba`).
+    if en.split_whitespace().enumerate().any(|(index, word)| {
+        word.chars().next().is_some_and(char::is_lowercase)
+            && (index == 0 || !is_name_function_word(word))
+    }) {
         return None;
     }
     // Common UI/menu commands (`Play`, `Quit`, `Yes`, `Back`) are capitalized and
@@ -667,7 +677,11 @@ fn glossary_term(english: &str, target: &str) -> Option<(String, String)> {
     // target with several more words than the source is a mis-paired dialogue
     // fragment (e.g. `head` -> `meinen schmerzenden Kopf`), not a named entity.
     // Allow a single extra word for the occasional legitimate expansion.
-    if tgt.split_whitespace().count() > en.split_whitespace().count() + 1 {
+    // Vietnamese writes every syllable as its own word (`Củ cải vàng`), so the
+    // count says nothing there.
+    if !writes_syllables_as_words(target_lang)
+        && tgt.split_whitespace().count() > en.split_whitespace().count() + 1
+    {
         return None;
     }
     // Exclude tokens, multi-line / tab-laden format strings, and sentence-like
@@ -694,6 +708,24 @@ fn is_common_ui_word(term: &str) -> bool {
         "book", "right", "left", "up", "down", "and", "or", "with", "good", "bad", "ran", "run",
     ];
     STOPWORDS.iter().any(|word| term.eq_ignore_ascii_case(word))
+}
+
+/// Short function words that stay lowercase inside an official name
+/// (`Ring of Yoba`, `Message in a Bottle`). Kept small and explicit.
+fn is_name_function_word(word: &str) -> bool {
+    const FUNCTION_WORDS: &[&str] = &[
+        "of", "the", "and", "a", "an", "in", "on", "de", "la", "le", "von", "der", "die", "das",
+    ];
+    FUNCTION_WORDS.contains(&word)
+}
+
+/// Languages that separate every syllable with a space, so a word count does
+/// not show whether a target is longer than its source.
+fn writes_syllables_as_words(target_lang: &str) -> bool {
+    target_lang
+        .split(['-', '_'])
+        .next()
+        .is_some_and(|base| base.eq_ignore_ascii_case("vi"))
 }
 
 fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
@@ -1014,27 +1046,27 @@ mod tests {
         // Genuine named entities (items, locations, seasons, an NPC, a +1-word
         // expansion) are kept.
         assert_eq!(
-            glossary_term("Parsnip", "Pastinake"),
+            glossary_term("Parsnip", "Pastinake", "de"),
             Some(("Parsnip".to_string(), "Pastinake".to_string()))
         );
         assert_eq!(
-            glossary_term("Iridium Ore", "Iridiumerz"),
+            glossary_term("Iridium Ore", "Iridiumerz", "de"),
             Some(("Iridium Ore".to_string(), "Iridiumerz".to_string()))
         );
         assert_eq!(
-            glossary_term("Pelican Town", "Pelikanstadt"),
+            glossary_term("Pelican Town", "Pelikanstadt", "de"),
             Some(("Pelican Town".to_string(), "Pelikanstadt".to_string()))
         );
         assert_eq!(
-            glossary_term("Spring", "Frühling"),
+            glossary_term("Spring", "Frühling", "de"),
             Some(("Spring".to_string(), "Frühling".to_string()))
         );
         assert_eq!(
-            glossary_term("Abigail", "Abigail-DE"),
+            glossary_term("Abigail", "Abigail-DE", "de"),
             Some(("Abigail".to_string(), "Abigail-DE".to_string()))
         );
         assert_eq!(
-            glossary_term("Mayor", "Der Bürgermeister"),
+            glossary_term("Mayor", "Der Bürgermeister", "de"),
             Some(("Mayor".to_string(), "Der Bürgermeister".to_string()))
         );
     }
@@ -1042,27 +1074,56 @@ mod tests {
     #[test]
     fn quality_gate_rejects_prose_and_ui_and_tokens() {
         // Prose / dialogue fragments (a lowercase interior word betrays them).
-        assert_eq!(glossary_term("Hello there", "Hallo zusammen"), None);
-        assert_eq!(glossary_term("the farm", "der Hof"), None);
-        assert_eq!(glossary_term("away from", "weg von"), None);
-        assert_eq!(glossary_term("good", "gut"), None);
+        assert_eq!(glossary_term("Hello there", "Hallo zusammen", "de"), None);
+        assert_eq!(glossary_term("the farm", "der Hof", "de"), None);
+        assert_eq!(glossary_term("away from", "weg von", "de"), None);
+        assert_eq!(glossary_term("good", "gut", "de"), None);
         // A full sentence / description (ends with punctuation).
         assert_eq!(
-            glossary_term("A long sentence describing things.", "Ein langer Satz."),
+            glossary_term(
+                "A long sentence describing things.",
+                "Ein langer Satz.",
+                "de"
+            ),
             None
         );
         // Capitalized UI/menu commands -> stoplist.
-        assert_eq!(glossary_term("Play", "Spielen"), None);
-        assert_eq!(glossary_term("Right", "Rechts"), None);
-        assert_eq!(glossary_term("Back", "Zurück"), None);
-        assert_eq!(glossary_term("Good", "Gut"), None);
+        assert_eq!(glossary_term("Play", "Spielen", "de"), None);
+        assert_eq!(glossary_term("Right", "Rechts", "de"), None);
+        assert_eq!(glossary_term("Back", "Zurück", "de"), None);
+        assert_eq!(glossary_term("Good", "Gut", "de"), None);
         // Mis-paired dialogue fragment (target far longer than the source).
-        assert_eq!(glossary_term("Head", "mein ganzer schmerzender Kopf"), None);
+        assert_eq!(
+            glossary_term("Head", "mein ganzer schmerzender Kopf", "de"),
+            None
+        );
         // Format strings / tokens / multi-line.
-        assert_eq!(glossary_term("Day {0}", "Tag {0}"), None);
-        assert_eq!(glossary_term("Line\tbreak", "Zeile\tumbruch"), None);
+        assert_eq!(glossary_term("Day {0}", "Tag {0}", "de"), None);
+        assert_eq!(glossary_term("Line\tbreak", "Zeile\tumbruch", "de"), None);
         // Identical value (no translation).
-        assert_eq!(glossary_term("Junimo", "Junimo"), None);
+        assert_eq!(glossary_term("Junimo", "Junimo", "de"), None);
+    }
+
+    #[test]
+    fn quality_gate_keeps_names_with_function_words() {
+        assert_eq!(
+            glossary_term("Ring of Yoba", "Ring von Yoba", "de"),
+            Some(("Ring of Yoba".to_string(), "Ring von Yoba".to_string()))
+        );
+        assert!(glossary_term("Message in a Bottle", "Flaschenpost", "de").is_some());
+        // A leading function word or any other lowercase word is still prose.
+        assert_eq!(glossary_term("the Farm", "der Hof", "de"), None);
+        assert_eq!(glossary_term("Ring for Yoba", "Ring für Yoba", "de"), None);
+    }
+
+    #[test]
+    fn word_count_rule_does_not_apply_to_vietnamese() {
+        assert_eq!(
+            glossary_term("Parsnip", "Củ cải vàng", "vi"),
+            Some(("Parsnip".to_string(), "Củ cải vàng".to_string()))
+        );
+        assert!(glossary_term("Iridium Ore", "Quặng I ri đi", "vi").is_some());
+        assert_eq!(glossary_term("Parsnip", "Củ cải vàng", "de"), None);
     }
 
     #[test]
@@ -1361,6 +1422,7 @@ mod tests {
         build_entries(
             &|asset| read(strings.join(format!("{asset}.xnb"))),
             &|asset| read(strings.join(format!("{asset}.de-DE.xnb"))),
+            "de",
         )
     }
 
