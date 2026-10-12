@@ -3270,7 +3270,7 @@ describe("App shell", () => {
     );
 
     const saveDialog = screen.getByRole("dialog", { name: "Export LLM batch" });
-    expect(saveDialog).toHaveTextContent("1 of 1 selected string included");
+    expect(saveDialog).toHaveTextContent("1 Open or Changed string included");
     expect(
       within(saveDialog).getByRole("button", { name: "Choose…" }),
     ).toBeEnabled();

@@ -97,10 +97,17 @@ export function LlmBatchExportDialog({
           {
             <>
               <div className="desktop-export-summary">
-                <p>
-                  <strong>{eligibleCount}</strong> of {selectedCount} selected{" "}
-                  {selectedCount === 1 ? "string" : "strings"} included
-                </p>
+                {eligibleCount === selectedCount ? (
+                  <p>
+                    <strong>{eligibleCount}</strong> Open or Changed{" "}
+                    {eligibleCount === 1 ? "string" : "strings"} included
+                  </p>
+                ) : (
+                  <p>
+                    <strong>{eligibleCount}</strong> of {selectedCount} selected{" "}
+                    {selectedCount === 1 ? "string" : "strings"} included
+                  </p>
+                )}
               </div>
               <div className="translator-flow-field desktop-zip-filename">
                 <span>Batch file</span>

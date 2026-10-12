@@ -59,6 +59,7 @@ import {
   loadGlossary,
   loadSettings,
   logFrontendError,
+  loadStrings,
   openFolder,
   openLogsDir,
   pickLlmBatchDestination,
@@ -105,6 +106,7 @@ import {
   StringTable,
 } from "./strings/StringTable";
 import type { LiveAiEngineOption } from "./strings/BatchTranslateDialog";
+import { derivedStringStatus } from "./strings/status";
 import { validate } from "./strings/validation";
 import { ExportConfirmDialog } from "./export/ExportConfirmDialog";
 import { TranslationZipDialog } from "./release/TranslationZipDialog";
@@ -1221,6 +1223,46 @@ export function App() {
       }
     : undefined;
 
+  /** Files menu: an LLM batch with every Open or Changed string of the
+   * selected mod, without selecting rows first. */
+  async function exportLlmBatchForSelectedMod() {
+    if (!selectedMod || !llmBatchExport) return;
+    try {
+      const items: LlmBatchItem[] = [];
+      for (const file of selectedMod.i18nFiles) {
+        const rows = await loadStrings(
+          selectedMod.uniqueId,
+          file.relativeDir,
+          file.defaultPath,
+          file.targetPath,
+        );
+        for (const row of rows) {
+          const status = derivedStringStatus(
+            row.source,
+            row.target,
+            row.status,
+          );
+          if (status === "untranslated" || status === "outdated")
+            items.push({
+              relativeDir: file.relativeDir,
+              key: row.key,
+              source: row.source,
+            });
+        }
+      }
+      if (items.length === 0) {
+        notify(
+          `${selectedMod.name} has no Open or Changed strings to export.`,
+          "info",
+        );
+        return;
+      }
+      await llmBatchExport(selectedMod, items);
+    } catch (cause) {
+      notify(`Could not prepare the LLM batch: ${String(cause)}`, "error");
+    }
+  }
+
   async function savePendingLlmBatch(
     destinationPath: string | null,
   ): Promise<boolean> {
@@ -2065,6 +2107,10 @@ export function App() {
       }
       onImportBatch={() => void handleImportBatch()}
       importBatchEnabled={Boolean(selectedMod) && !exporting}
+      onExportLlmBatch={() => void exportLlmBatchForSelectedMod()}
+      exportLlmBatchEnabled={
+        Boolean(selectedMod && llmBatchExport) && !exporting
+      }
       onOpenSettings={() => {
         setSettingsPage("folders");
         if (settings) setSettingsOpen(true);
@@ -2713,6 +2759,8 @@ function AppToolbar({
   outputEnabled,
   onImportBatch,
   importBatchEnabled,
+  onExportLlmBatch,
+  exportLlmBatchEnabled,
   onOpenSettings,
   settingsEnabled,
   latestResultAvailable,
@@ -2734,6 +2782,8 @@ function AppToolbar({
   outputEnabled: boolean;
   onImportBatch: () => void;
   importBatchEnabled: boolean;
+  onExportLlmBatch: () => void;
+  exportLlmBatchEnabled: boolean;
   onOpenSettings: () => void;
   settingsEnabled: boolean;
   latestResultAvailable: boolean;
@@ -2853,7 +2903,8 @@ function AppToolbar({
                 exportAllEnabled ||
                 buildZipEnabled ||
                 outputEnabled ||
-                importBatchEnabled
+                importBatchEnabled ||
+                exportLlmBatchEnabled
               ) || exporting
             }
           >
@@ -2885,7 +2936,7 @@ function AppToolbar({
               {
                 <>
                   <span className="translator-popover-note" role="presentation">
-                    Import
+                    LLM batch
                   </span>
                   <button
                     type="button"
@@ -2897,6 +2948,18 @@ function AppToolbar({
                     <FileActionLabel
                       title="Import LLM batch…"
                       description="Load an external AI result for the selected mod into Review."
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => run(onExportLlmBatch)}
+                    disabled={!exportLlmBatchEnabled}
+                  >
+                    <Upload aria-hidden />
+                    <FileActionLabel
+                      title="Export LLM batch…"
+                      description="Every Open or Changed string of the selected mod, for an external AI."
                     />
                   </button>
                   <div
@@ -2911,18 +2974,6 @@ function AppToolbar({
               <button
                 type="button"
                 role="menuitem"
-                onClick={() => run(onExportAll)}
-                disabled={!exportAllEnabled}
-              >
-                <Folders aria-hidden />
-                <FileActionLabel
-                  title="Export JSON for all mods…"
-                  description="Write translation files into the installed mod folders."
-                />
-              </button>
-              <button
-                type="button"
-                role="menuitem"
                 onClick={() => run(onExport)}
                 disabled={!exportEnabled}
               >
@@ -2930,6 +2981,18 @@ function AppToolbar({
                 <FileActionLabel
                   title="Export JSON for selected mod…"
                   description="Write translation files into the selected mod’s folder."
+                />
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => run(onExportAll)}
+                disabled={!exportAllEnabled}
+              >
+                <Folders aria-hidden />
+                <FileActionLabel
+                  title="Export JSON for all mods…"
+                  description="Write translation files into the installed mod folders."
                 />
               </button>
               <div className="translator-popover-divider" role="separator" />
