@@ -20,6 +20,8 @@ export interface TokenIssueMessage {
   /** Whether the message is about something missing or something added. */
   kind: "missing" | "added";
   message: string;
+  /** The single token this message is about, when there is one. */
+  token?: string;
 }
 
 function delta(differences: TokenDifference[], token: string) {
@@ -175,6 +177,7 @@ export function describeTokenIssue(
       kind:
         difference.targetCount < difference.sourceCount ? "missing" : "added",
       message: genericMessage(difference),
+      token,
     });
   }
 

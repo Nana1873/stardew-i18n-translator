@@ -66,12 +66,14 @@ describe("describeTokenIssue", () => {
         kind: "missing",
         message:
           "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended.",
+        token: "${^}$",
       },
       {
         severity: "warning",
         kind: "missing",
         message:
           "The portrait $8 is missing from the translation: the character shows a different face. Fine if intended.",
+        token: "$8",
       },
     ]);
   });

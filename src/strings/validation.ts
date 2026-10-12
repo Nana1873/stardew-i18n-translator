@@ -37,6 +37,13 @@ export interface ValidationIssue {
     "token-missing" | "token-added" | "json-invalid" | "escape-suspicious";
   severity: Severity;
   message: string;
+  /** The protected token a token issue is about, when it names one. */
+  token?: string;
+}
+
+/** True for a token-missing or token-added issue. */
+export function isTokenIssue(issue: ValidationIssue): boolean {
+  return issue.ruleId === "token-missing" || issue.ruleId === "token-added";
 }
 
 /** Non-blocking markers kept out of the token error multisets.
@@ -190,6 +197,7 @@ export function validate(source: string, target: string): ValidationIssue[] {
         ruleId: item.kind === "missing" ? "token-missing" : "token-added",
         severity: item.severity,
         message: item.message,
+        ...(item.token === undefined ? {} : { token: item.token }),
       });
     }
     if (hasLoneSurrogate(target)) {

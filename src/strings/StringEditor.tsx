@@ -61,6 +61,7 @@ export interface EditorSuggestionProvenance {
 }
 import {
   comparableTokenCounts,
+  isTokenIssue,
   tokenDifferences,
   validate,
 } from "./validation";
@@ -860,25 +861,17 @@ export function StringEditor({
       : `${what} (note: does not affect export)`;
   };
   const blockingTokenIssues = issues.filter(
-    (issue) =>
-      issue.severity === "error" &&
-      (issue.ruleId === "token-missing" || issue.ruleId === "token-added"),
+    (issue) => issue.severity === "error" && isTokenIssue(issue),
   );
   const acceptedTokenMismatch =
     mismatchAccepted && blockingTokenIssues.length > 0;
   const unacceptedErrors = issues.filter(
     (issue) =>
       issue.severity === "error" &&
-      !(
-        acceptedTokenMismatch &&
-        (issue.ruleId === "token-missing" || issue.ruleId === "token-added")
-      ),
+      !(acceptedTokenMismatch && isTokenIssue(issue)),
   );
   const visibleIssues = acceptedTokenMismatch
-    ? issues.filter(
-        (issue) =>
-          issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
-      )
+    ? issues.filter((issue) => !isTokenIssue(issue))
     : issues;
   const shownStatus = derivedStringStatus(row.source, value, row.status);
   const shownStatusLabel = STATUS_META[shownStatus].label;
@@ -1271,11 +1264,7 @@ export function StringEditor({
                           className={`editor__issue-title editor__issue-title--${severity}`}
                         >
                           {severity === "error"
-                            ? group.some(
-                                (issue) =>
-                                  issue.ruleId === "token-missing" ||
-                                  issue.ruleId === "token-added",
-                              )
+                            ? group.some(isTokenIssue)
                               ? "Must fix or Save anyway – until then this string stays English in the game"
                               : "Must fix"
                             : "Worth a look – exported as written"}
