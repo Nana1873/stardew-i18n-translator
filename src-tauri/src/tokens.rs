@@ -629,11 +629,13 @@ fn unify_placeholder_spellings(
     (merge(source), merge(target))
 }
 
-/// Lowercase, with white space removed right inside each `{{` and `}}`.
-/// Mirrors TS `placeholderKey` character for character.
+/// Lowercase, with ASCII spaces removed right inside each `{{` and `}}`.
+/// SMAPI only replaces `{{([ \w\.\-]+)}}`, so a tab, U+00A0, or U+3000 there
+/// stays visible and keeps the token different. Mirrors TS `placeholderKey`
+/// character for character.
 fn placeholder_key(token: &str) -> String {
     let chars: Vec<char> = token.to_lowercase().chars().collect();
-    let is_space = |index: usize| chars.get(index).is_some_and(|c| c.is_whitespace());
+    let is_space = |index: usize| chars.get(index) == Some(&' ');
     let mut key = String::new();
     let mut index = 0;
     while index < chars.len() {

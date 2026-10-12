@@ -301,9 +301,31 @@
     {
       "value": "A#$action AddMail  Current \"a  b\"#B#$y  plain text#C",
       "tokens": ["#$action AddMail  Current \"a  b\"#", "#$y  plain text#"]
+    },
+    {
+      "value": "A#$b #B#$1  mailA#C %kid12 %names",
+      "tokens": ["#$b#", "#$1 mailA#", "%kid1", "%name"]
     }
   ],
   "comparisons": [
+    {
+      "name": "a tab inside placeholder braces stays visible",
+      "source": "Hi {{name}}",
+      "target": "Hallo {{\tname}}",
+      "blocked": true
+    },
+    {
+      "name": "an ideographic space inside placeholder braces stays visible",
+      "source": "Hi {{name}}",
+      "target": "Hallo {{　name}}",
+      "blocked": true
+    },
+    {
+      "name": "ASCII spaces and case inside placeholder braces are ignored",
+      "source": "Hi {{ name }}",
+      "target": "Hallo {{Name}}",
+      "blocked": false
+    },
     {
       "name": "dropping ArticleFor but keeping its item token is only a warning",
       "source": "Bring [ArticleFor [SuggestedItem]].",

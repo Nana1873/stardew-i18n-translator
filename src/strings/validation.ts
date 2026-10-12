@@ -187,12 +187,13 @@ function unifyPlaceholderSpellings(
   return [merge(source), merge(target)];
 }
 
-/** Lowercase, with white space removed right inside each `{{` and `}}`.
- * Mirrors Rust `placeholder_key` character for character. */
+/** Lowercase, with ASCII spaces removed right inside each `{{` and `}}`.
+ * SMAPI only replaces `{{([ \w\.\-]+)}}`, so a tab, U+00A0, or U+3000 there
+ * stays visible and keeps the token different. Mirrors Rust
+ * `placeholder_key` character for character. */
 function placeholderKey(token: string): string {
   const chars = Array.from(token.toLowerCase());
-  const isSpace = (char: string | undefined) =>
-    char !== undefined && /\p{White_Space}/u.test(char);
+  const isSpace = (char: string | undefined) => char === " ";
   let key = "";
   let index = 0;
   while (index < chars.length) {
