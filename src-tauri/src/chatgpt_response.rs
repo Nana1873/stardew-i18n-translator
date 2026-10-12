@@ -303,7 +303,6 @@ mod tests {
                 .unwrap_err()
         };
         for event in [
-            json!({"type":"error","code":"rate_limit_exceeded","message":"SECRET"}),
             json!({"type":"response.failed","response":{"error":{"code":"server_is_overloaded"}}}),
             json!({"type":"error","error":{"code":"server_error"}}),
         ] {
@@ -314,6 +313,8 @@ mod tests {
         }
         for event in [
             json!({"type":"error","code":"invalid_prompt","message":"SECRET"}),
+            // Rate limits stop the run until real 429 data says otherwise (PD-3).
+            json!({"type":"error","code":"rate_limit_exceeded","message":"SECRET"}),
             json!({"type":"response.failed","response":{"error":null}}),
         ] {
             let ProviderFailure::Message(message) = fail(event) else {

@@ -353,8 +353,6 @@ pub fn stream_failure(error: &Value) -> crate::ai::ProviderFailure {
                     | "server_is_overloaded"
                     | "overloaded"
                     | "overloaded_error"
-                    | "rate_limit_exceeded"
-                    | "rate_limit_error"
                     | "subscription_sharing_usage_unavailable"
             )
         });
@@ -1003,7 +1001,9 @@ pub async fn logout() -> Result<(), String> {
                     tokio::time::sleep(Duration::from_millis(500)).await;
                 }
             }
-            confirmed &= revoked;
+            // The refresh token decides the warning: without it no new access
+            // token can be issued. Revoking the access token is best effort.
+            confirmed &= revoked || hint == "access_token";
         }
         if confirmed {
             Ok(())
