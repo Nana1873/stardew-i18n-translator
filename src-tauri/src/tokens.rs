@@ -215,21 +215,134 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
         let token = difference.token.as_str();
         if switch_damaged
             && (matches!(token, "${" | "}$")
+                || is_gender_switch_shape(token)
                 || (token == "^" && difference.target_count > difference.source_count))
         {
             continue;
         }
-        let change = if difference.target_count < difference.source_count {
-            "is missing"
-        } else {
-            "was added"
-        };
-        messages.push(format!(
-            "{token} {change} (English {}, translation {}).",
-            difference.source_count, difference.target_count
-        ));
+        messages.push(difference_message(difference));
     }
     messages.join(" ")
+}
+
+/// One plain-language sentence for a difference (mirrors TS `genericMessage`).
+fn difference_message(difference: &TokenDifference) -> String {
+    let token = difference.token.as_str();
+    let missing = difference.target_count < difference.source_count;
+    let change = if missing { "is missing" } else { "was added" };
+    let counts = format!(
+        "(English {}, translation {})",
+        difference.source_count, difference.target_count
+    );
+    if is_gender_switch_shape(token) {
+        return if missing {
+            "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
+                .to_string()
+        } else {
+            "The number or shape of he/she switches changed. Fine if intended.".to_string()
+        };
+    }
+    if is_portrait_command(token) {
+        return if difference.is_error() && missing {
+            format!("The portrait {token} {change} {counts}: the portraits changed and one dialogue page now shows a portrait as raw text.")
+        } else if difference.is_error() {
+            format!("The portrait {token} {change} {counts}: a second portrait on one dialogue page is shown as raw text.")
+        } else {
+            format!("The portrait {token} {change} {counts}: the character shows a different face. Fine if intended.")
+        };
+    }
+    match token {
+        "@" => return format!("The player name @ {change} {counts}. Fine if intended."),
+        "^" => return format!("^ {change} {counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break."),
+        "{" | "}" => return format!("A single {token} {change} {counts}. The game treats single braces as commands and hides text."),
+        "#" => return format!("# {change} {counts}. # separates dialogue boxes."),
+        _ => {}
+    }
+    format!(
+        "{token} {change} {counts}. {}",
+        token_consequence(difference)
+    )
+}
+
+/// What a token difference does in the game, as one sentence. Errors name the
+/// consequence; warnings end with "Fine if intended." Mirrors TS
+/// `tokenConsequence` word for word.
+fn token_consequence(difference: &TokenDifference) -> &'static str {
+    let token = difference.token.as_str();
+    let missing = difference.target_count < difference.source_count;
+    let chars: Vec<char> = token.chars().collect();
+    if matches!(token, "${" | "}$") {
+        return if difference.is_error() {
+            "A he/she switch marker is unbalanced, so the game would show broken text."
+        } else {
+            "Fine if intended."
+        };
+    }
+    let page_marker = chars.get(3).is_some_and(|c| matches!(c, '#' | '$' | '*'));
+    if token.starts_with("#$b") && page_marker {
+        return "It starts a new dialogue box, so the page structure changes.";
+    }
+    if token.starts_with("#$e") && page_marker {
+        return "It ends the conversation and shows the rest next time, so the page structure changes.";
+    }
+    if token.starts_with("#$action")
+        || ((token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#'))
+    {
+        return "It carries response ids, flags, or keys the game needs.";
+    }
+    if token.starts_with("%item") || token.starts_with("%action") {
+        return if missing {
+            "The attached item or reward would not be given."
+        } else {
+            "It adds an item or reward the English mail does not give."
+        };
+    }
+    if token == "[#]" {
+        return if missing {
+            "The letter title would show as part of the letter text."
+        } else {
+            "Text after it would become the letter title."
+        };
+    }
+    if token == "%fork" || token.starts_with("%revealtaste") {
+        return if missing {
+            "The event branch or gift-taste reveal is lost."
+        } else {
+            "It changes event logic the English text does not have."
+        };
+    }
+    if token.starts_with("{{") || match_positional(&chars, 0) == Some(chars.len()) {
+        if missing {
+            return "The value is left out. Fine if intended.";
+        }
+        return if token.starts_with("{{") {
+            "An unknown placeholder stays visible as raw text."
+        } else {
+            "A placeholder without a value breaks the text."
+        };
+    }
+    if token.to_ascii_lowercase().starts_with("[articlefor") {
+        return if missing {
+            "Only the a/an article is lost. Fine if intended."
+        } else {
+            "A changed or extra game token shows as raw text."
+        };
+    }
+    if token.starts_with('[') {
+        return if missing {
+            "The game would not insert this value or item."
+        } else {
+            "A changed or extra game token shows as raw text."
+        };
+    }
+    if token.starts_with('$') && !is_portrait_command(token) {
+        return "The game would show it as text or change the dialogue flow.";
+    }
+    if difference.is_error() {
+        "The game would show it as raw text or misread the line."
+    } else {
+        "Fine if intended."
+    }
 }
 
 /// Portrait/emotion commands only change the face; a missing sheet index falls
@@ -1337,6 +1450,17 @@ mod tests {
                 case["blocked"].as_bool().unwrap(),
                 "{}",
                 case["name"]
+            );
+        }
+        for case in parsed["explanations"].as_array().unwrap() {
+            let (source, target) = (
+                case["source"].as_str().unwrap(),
+                case["target"].as_str().unwrap(),
+            );
+            assert_eq!(
+                explain_differences(&token_differences(source, target)),
+                case["text"].as_str().unwrap(),
+                "explain({target:?})"
             );
         }
         let cases = parsed["cases"].as_array().expect("fixture has cases");
