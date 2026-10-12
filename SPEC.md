@@ -163,15 +163,16 @@ Results retain the actual destination and filename for **Show in folder**.
 ZIP replacement is confirmed by the native Windows Save dialog, without a
 second app confirmation. Canceling the picker leaves the existing archive
 unchanged; a confirmed build replaces it only after the new archive is complete.
-**Translation ZIP · all mods** previews and writes one translation ZIP for
-all scanned components with effective target-language values in the configured
-Mods folder. A package the scan had to skip in whole or in part is left out and
-named in the preview; only an incomplete folder traversal blocks the build. Each included locale combines existing target values for current
-source keys with saved overrides. It uses the same installation-folder mapping
-as package ZIPs. Like package ZIPs, it includes token-valid Changed and Review
-values with warnings without approving them. It reuses export
-validation, existing destination/overwrite behavior and the result tray. No
-Nexus, community-library, mod-manager or deployment state is required.
+**Translation ZIP · all mods** previews and writes one translation ZIP for all
+scanned components with effective target-language values in the configured Mods
+folder. A package the scan had to skip in whole or in part is left out and named
+in the preview; only an incomplete folder traversal blocks the build. Each
+included locale combines existing target values for current source keys with
+saved overrides. It uses the same installation-folder mapping as package ZIPs.
+Like package ZIPs, it includes token-valid Changed and Review values with
+warnings without approving them. It reuses export validation, existing
+destination/overwrite behavior and the result tray. No Nexus, community-library,
+mod-manager or deployment state is required.
 
 ## External LLM Batches
 

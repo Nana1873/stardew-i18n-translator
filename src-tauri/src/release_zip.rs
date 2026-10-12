@@ -1654,29 +1654,33 @@ mod tests {
     }
 
     #[test]
-    fn output_leaves_out_a_package_with_one_unreadable_split_document() {
+    fn output_leaves_out_the_readable_rest_of_a_partly_skipped_package() {
         let (_root, config, mods) = output_fixture("output-partial-package");
         let good = output_component(&mods, "Good", "Fixture.Good", r#"{"hello":"Hello"}"#);
         write(&good.join("i18n/de.json"), r#"{"hello":"Hallo"}"#);
-        let split = output_component(&mods, "Split", "Fixture.Split", r#"{"x":"X"}"#);
-        std::fs::remove_file(split.join("i18n/default.json")).unwrap();
-        write(&split.join("i18n/default/Fine.json"), r#"{"fine":"Fine"}"#);
-        write(&split.join("i18n/de/Fine.json"), r#"{"fine":"Gut"}"#);
-        write(
-            &split.join("i18n/default/Broken.json"),
-            r#"{ "a": "A" "b": }"#,
-        );
+        let readable = output_component(&mods, "Pack/Readable", "Fixture.Readable", r#"{"a":"A"}"#);
+        write(&readable.join("i18n/de.json"), r#"{"a":"A-de"}"#);
+        let broken = output_component(&mods, "Pack/Broken", "Fixture.PackBroken", r#"{"b":"B"}"#);
+        write(&broken.join("i18n/default.json"), r#"{ "b": "B" "c": }"#);
 
+        let scan = scanner::scan_mods(&mods, "de", &config);
+        assert!(
+            scan.mods.iter().any(|m| m.unique_id == "Fixture.Readable"),
+            "the readable component is scanned"
+        );
         let prepared = prepare_output(&config).expect("a skipped part does not block");
-        assert!(prepared
+        let paths: Vec<_> = prepared
             .entries
             .iter()
-            .all(|entry| !entry.preview.archive_path.starts_with("Split/")));
+            .map(|entry| entry.preview.archive_path.clone())
+            .collect();
+        assert_eq!(paths.len(), 1, "{paths:?}");
+        assert!(paths[0].starts_with("Good/"), "{paths:?}");
         assert!(prepared
             .preview
             .warnings
             .iter()
-            .any(|warning| warning.contains("Split")));
+            .any(|warning| warning.contains("Left out") && warning.contains("Pack")));
     }
 
     #[test]
