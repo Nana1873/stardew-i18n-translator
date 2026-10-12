@@ -145,6 +145,12 @@ impl WriteSession {
     fn record_mutation(&mut self, path: &Path, touched_keys: &[String]) {
         let revision = self.revisions.entry(path.to_path_buf()).or_default();
         *revision = revision.wrapping_add(1).max(1);
+        self.record_entry_mutation(path, touched_keys);
+    }
+
+    /// Advances only the touched strings. Used for changes that cannot alter
+    /// any string a pending undo restores, so that undo stays valid.
+    fn record_entry_mutation(&mut self, path: &Path, touched_keys: &[String]) {
         for key in touched_keys {
             let revision = self
                 .entry_revisions
@@ -456,6 +462,20 @@ fn write_state(
     write_serialized_state(path, &body, session, touched_keys)
 }
 
+/// Writes entries that were untracked before. No string an undo snapshot
+/// covers can change, so only those entries advance their revision.
+fn write_new_entries(
+    path: &Path,
+    state: &ModState,
+    session: &mut WriteSession,
+    new_keys: &[String],
+) -> Result<(), String> {
+    let file_revision = session.revision(path);
+    write_state(path, state, session, new_keys)?;
+    session.revisions.insert(path.to_path_buf(), file_revision);
+    Ok(())
+}
+
 /// Upsert a single string's saved state (one serialized load-modify-write).
 pub fn save_one(
     config_dir: &Path,
@@ -517,7 +537,7 @@ pub(crate) fn adopt_imported_baselines(
     if touched_keys.is_empty() {
         return Ok(());
     }
-    write_state(
+    write_new_entries(
         &state_path(config_dir, unique_id),
         &state,
         &mut session,
@@ -1383,6 +1403,26 @@ mod tests {
             assert_eq!(state[&key], value);
         }
         assert_eq!(state[&entry_key("i18n", "new")], entry("New baseline"));
+        std::fs::remove_dir_all(dir).ok();
+    }
+
+    #[test]
+    fn adopting_new_baselines_keeps_a_batch_undo_valid() {
+        // Opening the editor adopts untracked disk translations. That must not
+        // make an earlier batch undo look stale.
+        let dir = crate::test_support::temp_dir("imported-baselines-keep-undo");
+        let changed = vec![("batch".to_string(), entry("Batch"))];
+        let snapshots =
+            save_groups_with_previous(&dir, vec![("mod".to_string(), changed)]).unwrap();
+        adopt_imported_baselines(&dir, "mod", vec![("disk".to_string(), entry("Disk"))]).unwrap();
+
+        assert_eq!(
+            restore_groups_if_unchanged(&dir, &snapshots).unwrap(),
+            RestoreManyOutcome::Restored
+        );
+        let state = load(&dir, "mod").unwrap();
+        assert!(!state.contains_key("batch"));
+        assert_eq!(state["disk"].target, "Disk");
         std::fs::remove_dir_all(dir).ok();
     }
 
