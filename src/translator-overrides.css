@@ -420,6 +420,14 @@ body {
   border-color: var(--translator-brand);
 }
 
+/* A disabled primary button is an outline, so it does not look clickable. */
+#stardew-i18n-translator .wizard button.wizard__primary:disabled {
+  color: var(--translator-muted);
+  background: transparent;
+  border-color: var(--translator-border);
+  opacity: 1;
+}
+
 #stardew-i18n-translator .wizard button.wizard__primary:hover:not(:disabled) {
   background: var(--translator-brand);
   border-color: var(--translator-brand);

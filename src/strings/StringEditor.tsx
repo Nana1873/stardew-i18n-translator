@@ -1218,6 +1218,10 @@ export function StringEditor({
               <textarea
                 id="translator-editor-translation"
                 className="translator-textarea"
+                // The browser spellchecker marks tokens and the target
+                // language as errors; lang still picks the right fonts.
+                spellCheck={false}
+                lang={targetLanguageCode}
                 ref={textareaRef}
                 value={value}
                 onChange={(event) => editValue(event.target.value)}

@@ -563,6 +563,9 @@
   overflow: auto;
   margin-top: 4px;
 }
+.desktop-log[data-scrolled="true"] {
+  mask-image: linear-gradient(to bottom, transparent, #000 16px);
+}
 .desktop-log p {
   margin: 3px 0;
   font:
@@ -1720,4 +1723,14 @@
 /* Spare editor height goes to the text fields, not to the issue box. */
 #stardew-i18n-translator .translator-editor-body {
   grid-template-rows: auto minmax(0, 1fr);
+}
+
+/* While toasts or the AI progress card float over the table, leave room to
+   scroll the last rows out from under them. */
+#stardew-i18n-translator:is(
+    :has(.desktop-notifications > :not(#ai-progress-slot)),
+    :has(#ai-progress-slot > *)
+  )
+  .translator-string-table-body {
+  padding-bottom: 120px;
 }

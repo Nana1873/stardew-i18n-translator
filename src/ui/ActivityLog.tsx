@@ -295,6 +295,8 @@ export function ActivityLog({
         aria-label="Activity entries"
         onScroll={(event) => {
           const log = event.currentTarget;
+          // Fade the top edge only when an entry is scrolled partly out.
+          log.dataset.scrolled = String(log.scrollTop > 0);
           followTail.current =
             log.scrollHeight - log.scrollTop - log.clientHeight <= 12;
           if (followTail.current) setUnread(false);
@@ -307,7 +309,7 @@ export function ActivityLog({
           </p>
         )}
         {buffer.entries.length === 0 ? (
-          <p>Ready. Scan your mods to begin.</p>
+          <p>Nothing here yet. Scans, saves and exports are listed here.</p>
         ) : (
           buffer.entries.map((entry, index) => {
             const working =
