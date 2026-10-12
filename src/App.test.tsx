@@ -4781,7 +4781,7 @@ describe("App shell", () => {
     ).toHaveTextContent("Skipped broken manifest");
   });
 
-  it("opens the scan dialog when an automatic scan skips a component that needs attention", async () => {
+  it("keeps the startup scan report closed when it skips a component that needs attention", async () => {
     mockConfigured({
       ...EMPTY_SCAN,
       warnings: [],
@@ -4799,6 +4799,12 @@ describe("App shell", () => {
     });
     render(<App />);
 
+    // The header names the problem; the report opens only on request.
+    const latest = await screen.findByRole("button", {
+      name: "1 item needs attention; open scan results",
+    });
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
+    fireEvent.click(latest);
     const dialog = await screen.findByRole("dialog", { name: /scan/i });
     expect(dialog).toHaveTextContent("1 item needs a look");
     expect(dialog).toHaveTextContent("Example Pack");

@@ -715,7 +715,12 @@ export function App() {
         const complete = setupComplete(effectiveSettings);
         setWizardOpen(!complete);
         refreshGlossary(effectiveSettings.targetLang);
-        if (complete) void runScan(effectiveSettings, false, () => active);
+        // At startup, skipped components only show in the header's
+        // "Needs attention" button instead of opening the scan report.
+        if (complete)
+          void runScan(effectiveSettings, false, () => active, {
+            openForSkippedComponents: false,
+          });
       })
       .catch((error) => {
         logFrontendError("loadSettings", String(error));
@@ -877,6 +882,7 @@ export function App() {
       clearExisting?: boolean;
       preserveSelection?: boolean;
       showDiagnostics?: boolean;
+      openForSkippedComponents?: boolean;
     } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
@@ -954,10 +960,11 @@ export function App() {
         setScanDialogOpen(
           (!quietScan && showProgress) ||
             result.warnings.length > 0 ||
-            (result.skippedComponents?.some(
-              (component) => component.requiresAttention,
-            ) ??
-              false),
+            (options.openForSkippedComponents !== false &&
+              (result.skippedComponents?.some(
+                (component) => component.requiresAttention,
+              ) ??
+                false)),
         );
       }
     } catch (error) {
