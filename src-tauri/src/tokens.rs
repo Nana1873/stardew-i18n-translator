@@ -123,10 +123,8 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
 }
 
 /// Canonicalize only syntax differences which the game parser ignores.
-/// Dialogue responses are split on ASCII spaces with empty entries removed,
-/// so only spacing is normalized; every argument and response key remains exact.
 fn normalize_protected_token(raw: &str) -> String {
-    if raw.starts_with("#$r ") && raw.ends_with('#') {
+    if has_space_split_arguments(raw) {
         let command = raw[1..raw.len() - 1]
             .split(' ')
             .filter(|part| !part.is_empty())
@@ -135,6 +133,27 @@ fn normalize_protected_token(raw: &str) -> String {
         return format!("#{command}#");
     }
     raw.to_owned()
+}
+
+/// `Dialogue.parseDialogueString` splits a `$command` from its arguments and
+/// the arguments on ASCII spaces with empty entries removed
+/// (`ArgUtility.SplitBySpace`), so only the spacing is canonicalized; every
+/// argument stays exact. `$y` reads its raw text, and quoted `$action` or
+/// `$query` arguments keep their inner spaces, so those stay as written.
+/// Mirrors TS `hasSpaceSplitArguments`.
+fn has_space_split_arguments(raw: &str) -> bool {
+    let Some(rest) = raw.strip_prefix("#$") else {
+        return false;
+    };
+    let name_len = rest
+        .bytes()
+        .take_while(|byte| byte.is_ascii_alphanumeric())
+        .count();
+    name_len > 0
+        && rest.as_bytes().get(name_len) == Some(&b' ')
+        && raw.ends_with('#')
+        && !raw.starts_with("#$y ")
+        && !raw.contains('"')
 }
 
 /// Tokens that are still *extracted* (the editor shows them as chips) but are

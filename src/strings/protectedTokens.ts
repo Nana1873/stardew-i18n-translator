@@ -578,13 +578,25 @@ function readDialogueBreak(value: string, offset: number): Token | null {
 
   const raw = value.slice(offset, end + 1);
   return {
-    // Dialogue responses are split on ASCII spaces with empty entries removed.
-    // Canonicalize spacing only; every argument and response key stays exact.
-    raw: raw.startsWith("#$r ")
+    raw: hasSpaceSplitArguments(raw)
       ? `#${raw.slice(1, -1).split(" ").filter(Boolean).join(" ")}#`
       : raw,
     end: end + 1,
   };
+}
+
+/** `Dialogue.parseDialogueString` splits a `$command` from its arguments and
+ * the arguments on ASCII spaces with empty entries removed
+ * (`ArgUtility.SplitBySpace`), so only the spacing is canonicalized; every
+ * argument stays exact. `$y` reads its raw text, and quoted `$action` or
+ * `$query` arguments keep their inner spaces, so those stay as written.
+ * Mirrors Rust `has_space_split_arguments`. */
+function hasSpaceSplitArguments(raw: string): boolean {
+  return (
+    /^#\$[A-Za-z0-9]+ /.test(raw) &&
+    !raw.startsWith("#$y ") &&
+    !raw.includes('"')
+  );
 }
 
 function readBracketToken(value: string, offset: number): Token | null {
