@@ -66,7 +66,6 @@ import {
 } from "./validation";
 import {
   describeToken,
-  extractProtectedTokens,
   isGenderSwitchShape,
   isInsertableProtectedToken,
 } from "./protectedTokens";
