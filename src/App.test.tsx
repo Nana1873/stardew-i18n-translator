@@ -2051,6 +2051,7 @@ describe("App shell", () => {
             defaultEngine: "chatgpt",
             cloudReasoning: "high",
             cloudQualityReview: true,
+            cloudModel: "gpt-test-model",
           },
         });
       if (cmd === "cloud_ai_status")

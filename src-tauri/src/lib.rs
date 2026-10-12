@@ -1765,7 +1765,7 @@ fn local_ai_error_is_systemic(error_category: &str) -> bool {
 /// A single timeout can be one slow string; several in a row mean the local
 /// server is not answering, so the run stops instead of waiting on every item.
 const LOCAL_AI_TIMEOUT_STOP_LIMIT: usize = 3;
-const LOCAL_AI_TIMEOUT_STOP_MESSAGE: &str = "Local AI did not answer in time three times in a row. Check that LM Studio or Ollama is running and the model is loaded, then try again.";
+const LOCAL_AI_TIMEOUT_STOP_MESSAGE: &str = "Local AI did not answer in time three times in a row. Check that LM Studio or Ollama is running and the model is loaded, then try again. Very long texts may need a faster model.";
 
 /// Counts consecutive Local AI timeouts. Any other result resets the count.
 #[derive(Debug, Default)]

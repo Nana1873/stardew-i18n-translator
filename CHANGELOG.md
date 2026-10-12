@@ -81,11 +81,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - Local AI stops after three timeouts in a row with a plain hint to check LM
   Studio or Ollama, instead of trying every remaining text.
 - Local AI gives long texts a large enough answer budget, so texts of about
-  4,000 characters are no longer cut off with "stopped before finishing".
-- A ChatGPT run needs a selected model before it starts, and preparing an AI
-  run no longer blocks the app while it reads the Mods folder.
+  4,000 characters are no longer cut off with "stopped before finishing" (a
+  slow model still has 120 seconds per text).
+- ChatGPT counts as ready only with a selected model, and preparing an AI run
+  no longer blocks the app while it reads the Mods folder.
 - The docs say which engine sends string keys (only ChatGPT does).
-
 - ChatGPT waits a moment before retrying a temporary failure and follows
   OpenAI's suggested wait when it sends one.
 - An error that OpenAI sends in the middle of a response is reported in plain

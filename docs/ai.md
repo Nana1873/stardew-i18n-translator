@@ -200,8 +200,10 @@ and [llm.rs](../src-tauri/src/llm.rs).
   worsening another token. Unresolved mismatches remain visible in Review.
 - A Local AI answer may use about twice the source's character count in output
   tokens, at most 8,192. That covers sources of roughly 4,000 characters in
-  full. A longer answer that does not fit is reported as stopped before
-  finishing; the string stays untranslated instead of being saved cut off.
+  full, as long as the model answers within the 120-second limit per text; a
+  slow model may need longer for very long texts. A longer answer that does
+  not fit is reported as stopped before finishing; the string stays
+  untranslated instead of being saved cut off.
 - If a Local AI response is a valid JSON-encoded string, the client decodes one
   layer only when it preserves the source's quotation layout, double-quote,
   line-break, and backslash counts without worsening protected-token validation.
