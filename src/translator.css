@@ -1405,6 +1405,25 @@
   font-size: 12px;
 }
 
+#stardew-i18n-translator .translator-scan-card-mods {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-card-mods strong {
+  display: inline;
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-card-mods code {
+  color: var(--translator-faint);
+  overflow-wrap: anywhere;
+}
+
 #stardew-i18n-translator .translator-scan-details {
   margin-top: 6px;
   color: var(--translator-faint);

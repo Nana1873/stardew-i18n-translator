@@ -229,7 +229,11 @@ function ScanResultContent({ result }: { result: ScanResult }) {
     skipped?.filter((component) => !component.requiresAttention) ?? [];
   const extraKeys = result.extraKeys ?? [];
   const extraKeyGroups = groupExtraKeys(extraKeys);
-  const problemCount = skippedForAttention.length + warnings.length;
+  const duplicates = groupDuplicateIds(warnings, skippedForAttention);
+  const otherSkips = skippedForAttention.filter(
+    (component) => !duplicates.grouped.has(component),
+  );
+  const problemCount = otherSkips.length + warnings.length;
   const extraKeySummary = `${extraKeys.length} ${extraKeys.length === 1 ? "translation entry" : "translation entries"} without matching English source`;
   const mods = `${result.modCount} ${result.modCount === 1 ? "mod" : "mods"}`;
   const files = `${result.fileCount} ${result.fileCount === 1 ? "translation file" : "translation files"}`;
@@ -278,7 +282,7 @@ function ScanResultContent({ result }: { result: ScanResult }) {
             Needs attention <span>{problemCount}</span>
           </h3>
           <ul className="translator-scan-cards" aria-label="Skipped components">
-            {skippedForAttention.map((component, index) => (
+            {otherSkips.map((component, index) => (
               <li
                 className="translator-scan-card"
                 key={`${component.relativeLocation}:${component.componentUniqueId ?? index}`}
@@ -310,6 +314,20 @@ function ScanResultContent({ result }: { result: ScanResult }) {
                 <div>
                   <strong>{warningTitle(warning)}</strong>
                   <p>{warning}</p>
+                  {(duplicates.byWarning.get(index)?.length ?? 0) > 0 && (
+                    <ul
+                      className="translator-scan-card-mods"
+                      aria-label="Affected mods"
+                    >
+                      {duplicates.byWarning.get(index)!.map((component) => (
+                        <li key={component.relativeLocation}>
+                          <code>
+                            Mods/{modFolder(component.relativeLocation)}
+                          </code>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </li>
             ))}
@@ -465,6 +483,41 @@ function describeSourceChanges(deltas: ScanResult["sourceDeltas"]): {
     text: `Since your last scan: ${parts.join(" and ")} ${total === 1 ? "text" : "texts"} to translate.`,
     highlight: true,
   };
+}
+
+/** Duplicate-UniqueID warnings name only the ID; the scan also skips each
+ * affected folder. Show those folders inside the warning instead of as
+ * separate cards, so one problem is one card. */
+function groupDuplicateIds(
+  warnings: string[],
+  skips: SkippedComponent[],
+): {
+  byWarning: Map<number, SkippedComponent[]>;
+  grouped: Set<SkippedComponent>;
+} {
+  const byWarning = new Map<number, SkippedComponent[]>();
+  const grouped = new Set<SkippedComponent>();
+  warnings.forEach((warning, index) => {
+    const ids = /same UniqueID \(([^)]*)\)/i
+      .exec(warning)?.[1]
+      ?.split(",")
+      .map((id) => id.trim().toLowerCase());
+    if (!ids) return;
+    const affected = skips.filter(
+      (component) =>
+        /UniqueID is duplicated/i.test(component.reason) &&
+        ids.includes((component.componentUniqueId ?? "").toLowerCase()),
+    );
+    affected.forEach((component) => grouped.add(component));
+    byWarning.set(index, affected);
+  });
+  return { byWarning, grouped };
+}
+
+/** The mod folder of a skip location such as `Mod/i18n/default.json`. */
+function modFolder(location: string): string {
+  const cut = location.search(/\/i18n(\/|$)/i);
+  return cut > 0 ? location.slice(0, cut) : location;
 }
 
 /** A short title for a free-text scanner warning. */

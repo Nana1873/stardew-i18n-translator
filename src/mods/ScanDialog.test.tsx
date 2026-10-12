@@ -381,6 +381,47 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
   });
 
+  it("shows a duplicate mod ID as one card that names both folders", () => {
+    const duplicateSkip = (folder: string) => ({
+      packageId: folder,
+      componentUniqueId: "Example.Same",
+      componentName: "Example",
+      relativeLocation: `${folder}/i18n/default.json`,
+      reason:
+        "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+      requiresAttention: true,
+      restOfPackageLoaded: false,
+    });
+    render(
+      <ScanDialog
+        scanning={false}
+        result={{
+          ...RESULT,
+          warnings: [
+            "Two installed mods use the same UniqueID (Example.Same), so their translations were left out. Remove the extra copy.",
+          ],
+          skippedComponents: [
+            duplicateSkip("Example"),
+            duplicateSkip("Example - Copy"),
+          ],
+        }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("1 item needs a look")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("listitem", { name: undefined }).length,
+    ).toBeGreaterThan(0);
+    const affected = screen.getByRole("list", { name: "Affected mods" });
+    expect(affected).toHaveTextContent("Mods/Example");
+    expect(affected).toHaveTextContent("Mods/Example - Copy");
+    expect(
+      screen.queryByText(/saved translations could not be loaded/),
+    ).toBeNull();
+  });
+
   it("folds an expected language-pack exclusion into one quiet line", () => {
     render(
       <ScanDialog

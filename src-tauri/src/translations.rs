@@ -252,7 +252,12 @@ pub fn prepare_state_paths(
         }
         warnings.push(format!(
             "Two installed mods use the same UniqueID ({}), so their translations were left out. Remove the extra copy.",
-            ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+            ids.iter()
+                .map(|id| id.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     for ids in by_legacy.values().filter(|ids| ids.len() > 1) {

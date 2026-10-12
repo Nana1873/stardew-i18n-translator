@@ -233,6 +233,26 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
     restOfPackageLoaded: false,
   },
   {
+    packageId: "Preview Duplicate",
+    componentUniqueId: "Preview.DuplicateId",
+    componentName: "Preview Duplicate",
+    relativeLocation: "Preview Duplicate/i18n/default.json",
+    reason:
+      "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+    requiresAttention: true,
+    restOfPackageLoaded: false,
+  },
+  {
+    packageId: "Preview Duplicate - Copy",
+    componentUniqueId: "Preview.DuplicateId",
+    componentName: "Preview Duplicate",
+    relativeLocation: "Preview Duplicate - Copy/i18n/default.json",
+    reason:
+      "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+    requiresAttention: true,
+    restOfPackageLoaded: false,
+  },
+  {
     packageId: "Preview Language Pack",
     componentUniqueId: "Preview.LanguagePack",
     componentName: "Preview Language Pack (de)",
