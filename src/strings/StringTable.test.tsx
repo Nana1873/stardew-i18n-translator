@@ -243,7 +243,10 @@ it.each(["mod", "reload"] as const)(
       rerender(table(change === "mod" ? OTHER_MOD : MOD, 1));
     });
     expect(outside).toHaveFocus();
-    expect(screen.getByText("Loading strings…")).toBeVisible();
+    // A reload of the same mod keeps the current rows visible meanwhile.
+    if (change === "mod")
+      expect(screen.getByText("Loading strings…")).toBeVisible();
+    else expect(screen.getByText("greeting")).toBeVisible();
     act(() => pending.resolve(ROWS[change === "mod" ? "c.d" : "a.b"]));
     const current = await screen.findByRole("button", {
       name: change === "mod" ? "All 1" : "All 3",
@@ -3654,4 +3657,73 @@ it("records the actual manual save failure without recording a successful save",
   expect(
     screen.getByRole("textbox", { name: "Translation" }),
   ).toBeInTheDocument();
+});
+
+it("keeps the selection when the same strings reload", async () => {
+  installBackendRows();
+  const { rerender } = render(<StringTable mod={MOD} reloadToken={0} />);
+  fireEvent.click(await screen.findByRole("checkbox", { name: "Select bye" }));
+  expect(screen.getByRole("button", { name: "1 selected" })).toBeVisible();
+
+  rerender(<StringTable mod={MOD} reloadToken={1} />);
+  await waitFor(() =>
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "load_strings"),
+    ).toHaveLength(2),
+  );
+  expect(screen.getByRole("checkbox", { name: "Select bye" })).toBeChecked();
+  expect(screen.getByRole("button", { name: "1 selected" })).toBeVisible();
+});
+
+it("returns focus to the edited row when its launcher is gone", async () => {
+  installBackendRows();
+  render(<StringTable mod={MOD} />);
+  await screen.findByText("greeting");
+  (document.activeElement as HTMLElement | null)?.blur();
+  fireEvent.doubleClick(rowFor("greeting"));
+  const close = screen.getByRole("button", { name: "Close editor" });
+  close.focus();
+  fireEvent.click(close);
+  await waitFor(() => expect(rowFor("greeting")).toHaveFocus());
+});
+
+it("moves focus to the row that took the place of a saved row leaving the filter", async () => {
+  installBackendRows({
+    "a.b": [
+      ROWS["a.b"][0],
+      { ...ROWS["a.b"][1], key: "early", source: "Early" },
+      ROWS["a.b"][1],
+      { ...ROWS["a.b"][1], key: "later", source: "Later" },
+    ],
+  });
+  render(<StringTable mod={MOD} />);
+  await screen.findByText("bye");
+  fireEvent.click(screen.getByRole("button", { name: /^Open / }));
+  await waitFor(() => expect(screen.queryByText("greeting")).toBeNull());
+  (document.activeElement as HTMLElement | null)?.blur();
+  fireEvent.doubleClick(rowFor("bye"));
+  fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
+    target: { value: "Tschüss" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() => expect(screen.queryByText("bye")).toBeNull());
+  await waitFor(() => expect(rowFor("later")).toHaveFocus());
+});
+
+it("shows the error panel again when a retried load fails", async () => {
+  invokeMock.mockImplementation((command: string) =>
+    command === "load_strings"
+      ? Promise.reject(new Error("disk unavailable"))
+      : Promise.resolve(undefined),
+  );
+  render(<StringTable mod={MOD} />);
+  const retry = await screen.findByRole("button", { name: /Retry/ });
+  fireEvent.click(retry);
+  await waitFor(() =>
+    expect(
+      invokeMock.mock.calls.filter(([command]) => command === "load_strings"),
+    ).toHaveLength(2),
+  );
+  expect(await screen.findByRole("button", { name: /Retry/ })).toBeVisible();
+  expect(screen.getByText(/disk unavailable/)).toBeVisible();
 });
