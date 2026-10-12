@@ -77,7 +77,7 @@ impl ResponseState {
             // string is isolated and every other string is still translated.
             "response.refusal.delta" | "response.refusal.done" => {
                 return Err(ProviderFailure::InvalidResponse(
-                    "The model declined to translate part of this batch.".into(),
+                    crate::chatgpt::REFUSAL_MESSAGE.into(),
                 ))
             }
             kind if kind.contains("reasoning") => {
@@ -195,7 +195,7 @@ pub async fn consume(
     let mut is_json = None;
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|error| {
-            if error.is_timeout() {
+            if error.is_timeout() && !error.is_connect() {
                 crate::chatgpt::timeout_failure()
             } else {
                 ProviderFailure::Transient(

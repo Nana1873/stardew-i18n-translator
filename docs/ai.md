@@ -215,9 +215,9 @@ and [llm.rs](../src-tauri/src/llm.rs).
 - Each ChatGPT attempt has a five-minute ceiling. A transient failure can be retried
   once; invalid structured output gets one corrected attempt. Persistent invalid
   output splits only the affected batch until the failing string is isolated.
-  A model refusal and an attempt that reaches the five-minute ceiling are
-  handled the same way, so one refused or oversized string does not stop the
-  run.
+  A model refusal is handled the same way. An attempt that reaches the
+  five-minute ceiling is split right away without a same-size retry. A failed
+  connection stays a transient network error.
 - With quality enabled, every draft receives full language review. Its response
   contains corrections only; omitted IDs retain their draft. Only then do
   conservatively detected terminology candidates receive one focused repair.

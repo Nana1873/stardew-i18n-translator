@@ -27,9 +27,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 - A ChatGPT refusal for one string no longer ends the whole run. The batch is
   split until the refused string is isolated; every other string is still
-  translated and drafts already received are kept.
-- A ChatGPT batch that reaches the five-minute limit is reported as too large
-  and split into smaller batches instead of being reported as a network error.
+  translated, and in the quality review drafts are kept.
+- A ChatGPT batch that reaches the five-minute limit is split into smaller
+  batches right away instead of being retried at the same size and reported
+  as a network error. A failed connection is still reported as a network
+  problem.
 
 - The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
 - Folders whose name starts with a dot (for example `.disabled`) are skipped
