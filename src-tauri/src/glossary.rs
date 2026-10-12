@@ -663,7 +663,9 @@ fn is_common_ui_word(term: &str) -> bool {
 
 fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
     let body = crate::input_limits::read_json_text(path).ok()?;
-    let value: Value = serde_json::from_str(&body).ok()?;
+    // Pack and unpacked Strings files are hand-edited like other mod JSON:
+    // accept comments and trailing commas (SPEC: relaxed mod JSON).
+    let value: Value = crate::scanner::parse_json_lenient(&body).ok()?;
     let object = value.as_object()?;
     let mut map = HashMap::with_capacity(object.len());
     for (key, value) in object {
@@ -1511,6 +1513,25 @@ mod tests {
         assert!(legacy_cache_present(&dir));
         assert_eq!(load(&dir, "de"), None);
 
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn pack_strings_accept_comments_and_trailing_commas() {
+        let dir = crate::test_support::temp_dir("glossary-lenient-strings");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("Objects.json");
+        std::fs::write(
+            &path,
+            "{
+  // hand-edited pack file
+  \"24\": \"Pastinake\",
+}
+",
+        )
+        .unwrap();
+        let map = read_string_map(&path).expect("relaxed JSON is accepted");
+        assert_eq!(map.get("24").map(String::as_str), Some("Pastinake"));
         std::fs::remove_dir_all(&dir).ok();
     }
 }
