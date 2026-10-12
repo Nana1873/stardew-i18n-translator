@@ -1834,6 +1834,28 @@ fn local_ai_failure_summary(failures: &[LocalAiItemFailure]) -> Option<String> {
     ))
 }
 
+/// Name a few strings that stayed untranslated, so they can be found again.
+fn isolated_failure_message(failures: &[ai::AiStringIdentity], cause: &str) -> String {
+    const MAX_NAMED: usize = 3;
+    let named = failures
+        .iter()
+        .take(MAX_NAMED)
+        .map(|identity| bounded_single_line(&identity.key, 80))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = failures.len().saturating_sub(MAX_NAMED);
+    let more = if more == 0 {
+        String::new()
+    } else {
+        format!(" and {more} more")
+    };
+    format!(
+        "{} {} couldn't be translated, even after retrying ({named}{more}). {cause}",
+        failures.len(),
+        if failures.len() == 1 { "text" } else { "texts" },
+    )
+}
+
 fn combine_local_ai_errors(
     terminal_error: Option<String>,
     item_failures: &[LocalAiItemFailure],
@@ -2587,7 +2609,7 @@ async fn translate_with_cloud_ai(
     let mut staging_available = true;
     let mut batch_attempt = 0usize;
     let mut batch_total = pending.len();
-    let mut isolated_failures = 0usize;
+    let mut isolated_failures = Vec::<ai::AiStringIdentity>::new();
     let mut last_isolated_failure = None;
     let run_started_at = Instant::now();
     let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
@@ -3056,7 +3078,7 @@ async fn translate_with_cloud_ai(
                 );
             }
             Err(ai::ProviderFailure::InvalidResponse(cause)) => {
-                isolated_failures += 1;
+                isolated_failures.extend(chunk.iter().map(|item| item.identity.clone()));
                 last_isolated_failure = Some(cause);
                 log::info!(
                     target: "ai_run",
@@ -3066,7 +3088,7 @@ async fn translate_with_cloud_ai(
                         "runId": log_run_id,
                         "batchAttempt": batch_attempt,
                         "outcome": "isolatedInvalidResponse",
-                        "isolatedFailures": isolated_failures,
+                        "isolatedFailures": isolated_failures.len(),
                     })
                 );
             }
@@ -3099,19 +3121,12 @@ async fn translate_with_cloud_ai(
             }
         }
     }
-    if outcome == ai::AiRunOutcome::Complete && isolated_failures > 0 {
+    if outcome == ai::AiRunOutcome::Complete && !isolated_failures.is_empty() {
         outcome = ai::AiRunOutcome::Error;
         let cause = last_isolated_failure
             .as_deref()
             .unwrap_or(ai::UNUSABLE_ANSWER);
-        error = Some(format!(
-            "{isolated_failures} {} couldn't be translated, even after retrying. {cause}",
-            if isolated_failures == 1 {
-                "text"
-            } else {
-                "texts"
-            }
-        ));
+        error = Some(isolated_failure_message(&isolated_failures, cause));
     }
     update_ai_progress(&app, &progress_state, |progress| {
         progress.active_batches = Some(0);
@@ -3956,6 +3971,28 @@ mod ai_run_contract_tests {
         for category in ["invalidResponse", "responseTooLarge", "timeout", "provider"] {
             assert!(!local_ai_error_is_systemic(category), "{category}");
         }
+    }
+
+    #[test]
+    fn isolated_cloud_failures_name_up_to_three_keys() {
+        let identity = |key: &str| ai::AiStringIdentity {
+            mod_unique_id: "Example.Mod".to_string(),
+            relative_dir: "i18n".to_string(),
+            key: key.to_string(),
+        };
+        let one = isolated_failure_message(&[identity("greeting")], ai::UNUSABLE_ANSWER);
+        assert_eq!(
+            one,
+            format!(
+                "1 text couldn't be translated, even after retrying (greeting). {}",
+                ai::UNUSABLE_ANSWER
+            )
+        );
+        let many = ["a", "b", "c", "d", "e"].map(identity);
+        let message = isolated_failure_message(&many, "Cause.");
+        assert!(message.starts_with("5 texts couldn't be translated"));
+        assert!(message.contains("(a, b, c and 2 more). Cause."));
+        assert!(!message.contains("item-"));
     }
 
     #[test]
