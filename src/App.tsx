@@ -1346,11 +1346,7 @@ export function App() {
   async function importSelectedBatch(path: string) {
     if (!selectedMod || !targetLang) return;
     try {
-      const summary = await importLlmBatchPath(
-        selectedMod.uniqueId,
-        filesOf(selectedMod),
-        path,
-      );
+      const summary = await importLlmBatchPath(selectedMod.uniqueId, path);
       setImportDialogPath(undefined);
       setImportDialogInitialError(null);
       showImportResult(
@@ -2742,11 +2738,7 @@ export function App() {
             initialError={importDialogInitialError}
             onChooseFile={pickLlmBatchFile}
             onPreflight={(path) =>
-              preflightLlmBatchPath(
-                selectedMod.uniqueId,
-                filesOf(selectedMod),
-                path,
-              )
+              preflightLlmBatchPath(selectedMod.uniqueId, path)
             }
             onImport={importSelectedBatch}
             canSwitchToMatchingMod={(modUniqueId) =>

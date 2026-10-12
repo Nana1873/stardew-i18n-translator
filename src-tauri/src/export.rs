@@ -9,8 +9,9 @@
 //!  - **Untranslated** keys are omitted (SMAPI falls back to `default.json`).
 //!    Kept-original strings carry the source as their target
 //!    and are written like any other translation.
-//!  - Any protected-token count mismatch blocks the complete mod export before
-//!    backups or target writes begin.
+//!  - A verified game-breaking token error leaves only that string out (SMAPI
+//!    then shows its English source) unless the user accepted it; token
+//!    warnings never block. Every other translation is still exported.
 //!
 //! Saved translation state on disk is the source of truth: every edit is
 //! persisted immediately via `save_string`, so export reads it back here.
@@ -760,9 +761,9 @@ fn orphan_keys_checked(default_path: &Path, target_path: &Path) -> Result<Vec<St
         .collect())
 }
 
-/// Serialize `map` and write it to `target_path` safely: back up an existing
-/// file, write+verify a temp sibling, then rename over the target. Returns
-/// whether a backup was created.
+/// Serialize `map` as the 2-space-indented export body with a trailing
+/// newline, checking its size and that it parses back as JSON. Writing is
+/// done separately by `write_target`.
 fn serialize_target(map: &Map<String, Value>) -> Result<String, String> {
     let mut body = serde_json::to_string_pretty(map)
         .map_err(|error| format!("Could not serialize export JSON: {error}"))?;

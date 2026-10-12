@@ -4207,13 +4207,6 @@ describe("App shell", () => {
     expect(dialog).toHaveTextContent("1 / 1");
     expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
       modUniqueId: "a.b",
-      files: [
-        {
-          relativeDir: "i18n",
-          defaultPath: "x/i18n/default.json",
-          targetPath: "x/i18n/de.json",
-        },
-      ],
       path: "C:/results/test.llm-result.json",
     });
     expect(invokeMock).not.toHaveBeenCalledWith(
@@ -4226,13 +4219,6 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
         modUniqueId: "a.b",
-        files: [
-          {
-            relativeDir: "i18n",
-            defaultPath: "x/i18n/default.json",
-            targetPath: "x/i18n/de.json",
-          },
-        ],
         path: "C:/results/test.llm-result.json",
       }),
     );
@@ -4303,13 +4289,6 @@ describe("App shell", () => {
     expect(dialog).toHaveTextContent("1 / 1");
     expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
       modUniqueId: "a.b",
-      files: [
-        {
-          relativeDir: "i18n",
-          defaultPath: "x/i18n/default.json",
-          targetPath: "x/i18n/de.json",
-        },
-      ],
       path: "C:/results/test.llm-result.json",
     });
     expect(invokeMock).not.toHaveBeenCalledWith(
@@ -4322,13 +4301,6 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
         modUniqueId: "a.b",
-        files: [
-          {
-            relativeDir: "i18n",
-            defaultPath: "x/i18n/default.json",
-            targetPath: "x/i18n/de.json",
-          },
-        ],
         path: "C:/results/test.llm-result.json",
       }),
     );

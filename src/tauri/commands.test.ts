@@ -127,20 +127,12 @@ describe("backend command bridges", () => {
   });
 
   it("preflights the chosen LLM batch path without invoking import", async () => {
-    const files = [
-      {
-        relativeDir: "i18n",
-        defaultPath: "C:\\Mods\\Example\\i18n\\default.json",
-        targetPath: "C:\\Mods\\Example\\i18n\\de.json",
-      },
-    ];
     invokeMock.mockResolvedValue({ ready: true });
 
-    await preflightLlmBatchPath("example.mod", files, "C:\\Temp\\result.json");
+    await preflightLlmBatchPath("example.mod", "C:\\Temp\\result.json");
 
     expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
       modUniqueId: "example.mod",
-      files,
       path: "C:\\Temp\\result.json",
     });
     expect(invokeMock).not.toHaveBeenCalledWith(

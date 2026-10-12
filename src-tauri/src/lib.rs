@@ -1176,16 +1176,14 @@ struct LlmBatchContext {
 fn load_llm_batch_context(
     app: &AppHandle,
     mod_unique_id: &str,
-    untrusted_files: &[export::ExportFileInput],
     source: &Path,
 ) -> Result<LlmBatchContext, String> {
-    load_llm_batch_context_from_config(&config_dir(app)?, mod_unique_id, untrusted_files, source)
+    load_llm_batch_context_from_config(&config_dir(app)?, mod_unique_id, source)
 }
 
 fn load_llm_batch_context_from_config(
     config: &Path,
     mod_unique_id: &str,
-    _untrusted_files: &[export::ExportFileInput],
     source: &Path,
 ) -> Result<LlmBatchContext, String> {
     let body = input_limits::read_json_text(source)?;
@@ -1214,9 +1212,8 @@ fn load_llm_batch_context_from_config(
         return Err("The configured Mods folder is unavailable.".to_string());
     }
 
-    // The WebView's file list is display state, not an authorization boundary.
-    // Resolve the selected component and all source/target paths from a fresh
-    // backend scan so stale or substituted IPC paths cannot change the import.
+    // The WebView names only the component. Its source/target paths come from
+    // a fresh backend scan, so stale WebView state cannot change the import.
     let scan = scanner::scan_mods(&mods_path, &target_lang, config);
     let scanned = scan
         .mods
@@ -1259,14 +1256,13 @@ fn load_llm_batch_context_from_config(
 fn preflight_llm_batch_path(
     app: AppHandle,
     mod_unique_id: String,
-    files: Vec<export::ExportFileInput>,
     path: String,
 ) -> Result<batch::ImportPreflight, String> {
     use operation_log::{Outcome, Summary};
     operation_log::run(
         "preflight_llm_batch_path",
         || {
-            let context = load_llm_batch_context(&app, &mod_unique_id, &files, Path::new(&path))?;
+            let context = load_llm_batch_context(&app, &mod_unique_id, Path::new(&path))?;
             batch::preflight_batch(
         &context.parsed,
         &mod_unique_id,
@@ -1295,12 +1291,11 @@ fn preflight_llm_batch_path(
 fn import_llm_batch_from_path(
     app: &AppHandle,
     mod_unique_id: &str,
-    files: &[export::ExportFileInput],
     source: &Path,
 ) -> Result<batch::ImportSummary, String> {
     // Import reruns the complete read-only analysis immediately before the
     // first write, so a changed file or changed local/source state is refused.
-    let context = load_llm_batch_context(app, mod_unique_id, files, source)?;
+    let context = load_llm_batch_context(app, mod_unique_id, source)?;
     let prepared = batch::apply_batch(
         &context.parsed,
         mod_unique_id,
@@ -1320,7 +1315,6 @@ fn import_llm_batch_path(
     app: AppHandle,
     history: State<'_, operation_history::OperationHistoryState>,
     mod_unique_id: String,
-    files: Vec<export::ExportFileInput>,
     path: String,
 ) -> Result<batch::ImportSummary, String> {
     use operation_log::{Outcome, Summary};
@@ -1329,7 +1323,7 @@ fn import_llm_batch_path(
         || {
             let source = Path::new(&path);
             let summary =
-        import_llm_batch_from_path(&app, &mod_unique_id, &files, source).inspect_err(|error| {
+        import_llm_batch_from_path(&app, &mod_unique_id, source).inspect_err(|error| {
             log::error!(target: "app", "import_llm_batch_path({mod_unique_id}) failed: {error}")
         })?;
             remember_llm_batch_import(&history, &summary, source, &mod_unique_id);
@@ -3848,12 +3842,13 @@ mod llm_batch_context_tests {
     }
 
     #[test]
-    fn llm_batch_context_ignores_webview_paths_and_refreshes_the_selected_component() {
+    fn llm_batch_context_reads_the_selected_component_from_a_fresh_scan() {
         let root = test_support::temp_dir("llm-batch-context");
         let config = root.join("data");
         let mods = root.join("Mods");
         let selected = install_mod(&mods, "Selected", "Author.Selected", "Hello {{name}}");
-        let other = install_mod(&mods, "Other", "Author.Other", "Wrong {{name}}");
+        // Another component with the same key must never be bound instead.
+        install_mod(&mods, "Other", "Author.Other", "Wrong {{name}}");
         settings::save(
             &config,
             &settings::AppSettings {
@@ -3878,25 +3873,8 @@ mod llm_batch_context_tests {
             &serde_json::to_string_pretty(&translated).unwrap(),
         );
 
-        // These paths belong to another component. They intentionally mirror a
-        // stale or substituted WebView selection and must never affect binding.
-        let untrusted_files = [export::ExportFileInput {
-            relative_dir: "i18n".to_string(),
-            default_path: other
-                .join("i18n")
-                .join("default.json")
-                .display()
-                .to_string(),
-            target_path: other.join("i18n").join("de.json").display().to_string(),
-        }];
-
-        let context = load_llm_batch_context_from_config(
-            &config,
-            "Author.Selected",
-            &untrusted_files,
-            &batch_path,
-        )
-        .unwrap();
+        let context =
+            load_llm_batch_context_from_config(&config, "Author.Selected", &batch_path).unwrap();
         assert_eq!(context.rows_by_dir["i18n"][0].source, "Hello {{name}}");
         assert!(
             batch::preflight_batch(
@@ -3913,13 +3891,8 @@ mod llm_batch_context_tests {
             &selected.join("i18n").join("default.json"),
             r#"{ "hello": "Changed {{name}}" }"#,
         );
-        let refreshed = load_llm_batch_context_from_config(
-            &config,
-            "Author.Selected",
-            &untrusted_files,
-            &batch_path,
-        )
-        .unwrap();
+        let refreshed =
+            load_llm_batch_context_from_config(&config, "Author.Selected", &batch_path).unwrap();
         let report = batch::preflight_batch(
             &refreshed.parsed,
             "Author.Selected",

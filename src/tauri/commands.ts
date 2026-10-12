@@ -676,12 +676,10 @@ export function pickLlmBatchFile(): Promise<string | null> {
 /** Analyze a selected batch against the current mod without writing state. */
 export function preflightLlmBatchPath(
   modUniqueId: string,
-  files: ExportFileInput[],
   path: string,
 ): Promise<LlmImportPreflight> {
   return invoke<LlmImportPreflight>("preflight_llm_batch_path", {
     modUniqueId,
-    files,
     path,
   });
 }
@@ -689,12 +687,10 @@ export function preflightLlmBatchPath(
 /** Import a drag-and-dropped LLM batch/result file for one selected mod. */
 export function importLlmBatchPath(
   modUniqueId: string,
-  files: ExportFileInput[],
   path: string,
 ): Promise<LlmImportSummary> {
   return invoke<LlmImportSummary>("import_llm_batch_path", {
     modUniqueId,
-    files,
     path,
   });
 }
