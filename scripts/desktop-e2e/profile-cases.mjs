@@ -92,7 +92,8 @@ export async function profileCases(h) {
         await h.waitFor("persistent sign-out warning", async () => {
           const warningElement = await h.element(
             By.xpath(
-              `//*[self::p or self::span][text()=${JSON.stringify(warning)}]`,
+              // The callout splits the text around its icon and the path.
+              `//*[self::p or self::span][normalize-space(.)=${JSON.stringify(warning)}]`,
             ),
           );
           return warningElement.isDisplayed();

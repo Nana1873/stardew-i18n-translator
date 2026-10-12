@@ -561,8 +561,14 @@ export async function progressCases(h) {
       const previousRunId = await h
         .driver()
         .executeScript(() => window.progressTestRunId());
-      // A successful run clears the selection; select fresh input for the next.
-      await h.click(h.css('[aria-label="Select all visible strings"]'));
+      // A run keeps the selection (#285); select only if nothing is selected.
+      const stillSelected = await h
+        .driver()
+        .executeScript(() =>
+          Boolean(document.querySelector(".translator-bulk-button")),
+        );
+      if (!stillSelected)
+        await h.click(h.css('[aria-label="Select all visible strings"]'));
       await h.click(h.css(".translator-bulk-button"));
       await h.click(
         By.xpath("//button[.//span[contains(.,'Translate selected with AI')]]"),

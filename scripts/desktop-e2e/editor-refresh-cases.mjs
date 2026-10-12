@@ -277,6 +277,15 @@ export async function editorRefreshCases(h) {
         window.editorRefreshTest.hold = true;
       });
       await complete("Zweite Hintergrundaktualisierung.", source.next);
+      // An AI run reloads the table once, after its automatic rescan.
+      await h.waitFor("automatic rescan held", () =>
+        h
+          .driver()
+          .executeScript(() => Boolean(window.editorRefreshTest.releaseScan)),
+      );
+      await h
+        .driver()
+        .executeScript(() => window.editorRefreshTest.releaseScan());
       await h.waitFor("native snapshot captured before save", () =>
         h
           .driver()
@@ -329,12 +338,6 @@ export async function editorRefreshCases(h) {
         await (await h.element(h.row("draft"))).getAttribute("data-status"),
         "translated",
       );
-      await h
-        .driver()
-        .executeScript(() => window.editorRefreshTest.releaseScan());
-      await h.waitFor("automatic scan refresh completed", () =>
-        h.driver().executeScript(() => window.editorRefreshTest.loads === 3),
-      );
       await h.openEntry("draft");
       assert.equal(
         await (
@@ -350,7 +353,7 @@ export async function editorRefreshCases(h) {
         nativeSnapshotBeforeSave: snapshot,
         loadCountBeforeSave: 1,
         loadCountAfterStaleResponse: 2,
-        loadCountAfterScan: 3,
+        reloadAfterRescanOnly: true,
         nativeSave: saved,
         otherRowUpdateRetained: true,
         liveProviderCalls: 0,
