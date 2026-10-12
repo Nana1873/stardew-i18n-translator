@@ -541,7 +541,7 @@
     {
       "source": "A gift.%item object 128 1 %%[#]Title",
       "target": "Ein Geschenk.%item object 128 1 %%Titel",
-      "text": "[#] is missing (English 1, translation 0). It separates the letter text from its title."
+      "text": "[#] is missing (English 1, translation 0). The letter title would show as part of the letter text."
     },
     {
       "source": "A gift.%item object 128 1 %%",
@@ -587,6 +587,111 @@
       "source": "Hello.$h",
       "target": "Hallo.$h nett$s",
       "text": "The portrait $s was added (English 0, translation 1): a second portrait on one dialogue page is shown as raw text."
+    },
+    {
+      "source": "Hi.#$b$Bye.",
+      "target": "Hallo. Tschüss.",
+      "text": "#$b$ is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes."
+    },
+    {
+      "source": "Go.#$e#Later.",
+      "target": "Los. Später.",
+      "text": "#$e# is missing (English 1, translation 0). It ends the conversation and shows the rest next time, so the page structure changes."
+    },
+    {
+      "source": "Hi {0}!",
+      "target": "Hallo!",
+      "text": "{0} is missing (English 1, translation 0). The value is left out. Fine if intended."
+    },
+    {
+      "source": "Hi {0}!",
+      "target": "Hallo {0} {1}!",
+      "text": "{1} was added (English 0, translation 1). A placeholder without a value breaks the text."
+    },
+    {
+      "source": "Take [ArticleFor apple] apple.",
+      "target": "Nimm den Apfel.",
+      "text": "[ArticleFor apple] is missing (English 1, translation 0). Only the a/an article is lost. Fine if intended."
+    },
+    {
+      "source": "Take it.",
+      "target": "Nimm [articlefor Apfel] Apfel.",
+      "text": "[articlefor Apfel] was added (English 0, translation 1). A changed or extra game token shows as raw text."
+    },
+    {
+      "source": "Money!%action AddMoney 500 %%",
+      "target": "Geld!",
+      "text": "%action AddMoney 500 %% is missing (English 1, translation 0). The attached item or reward would not be given."
+    },
+    {
+      "source": "Hi.",
+      "target": "Hallo.%item object 128 1 %%",
+      "text": "%item object 128 1 %% was added (English 0, translation 1). It adds an item or reward the English mail does not give."
+    },
+    {
+      "source": "Hi%fork",
+      "target": "Hallo",
+      "text": "%fork is missing (English 1, translation 0). The event branch or gift-taste reveal is lost."
+    },
+    {
+      "source": "Hi",
+      "target": "Hallo%revealtaste Abigail 128",
+      "text": "%revealtaste was added (English 0, translation 1). It changes event logic the English text does not have."
+    },
+    {
+      "source": "Hi$k",
+      "target": "Hallo",
+      "text": "$k is missing (English 1, translation 0). The game would show it as text or change the dialogue flow."
+    },
+    {
+      "source": "Hi$8#Bye",
+      "target": "Hallo#Tschuess",
+      "text": "The portrait $8 is missing (English 1, translation 0): the character shows a different face. Fine if intended."
+    },
+    {
+      "source": "a }$ b",
+      "target": "a b",
+      "text": "}$ is missing (English 1, translation 0). A he/she switch marker is unbalanced, so the game would show broken text."
+    },
+    {
+      "source": "a ${ b",
+      "target": "a b",
+      "text": "${ is missing (English 1, translation 0). A he/she switch marker is unbalanced, so the game would show broken text."
+    },
+    {
+      "source": "Hi#$h$Bye",
+      "target": "Hallo Tschuess",
+      "text": "#$h$ is missing (English 1, translation 0). The game would show it as raw text or misread the line."
+    },
+    {
+      "source": "A[#]T",
+      "target": "AT",
+      "text": "[#] is missing (English 1, translation 0). The letter title would show as part of the letter text."
+    },
+    {
+      "source": "A",
+      "target": "A[#]T",
+      "text": "[#] was added (English 0, translation 1). Text after it would become the letter title."
+    },
+    {
+      "source": "A$h#B$s",
+      "target": "A$h$u#B",
+      "text": "The portrait $s is missing (English 1, translation 0): another portrait on the same dialogue page is now shown as raw text. The portrait $u was added (English 0, translation 1): a second portrait on one dialogue page is shown as raw text."
+    },
+    {
+      "source": "Hi.",
+      "target": "Hallo.^Du.",
+      "text": "^ was added (English 0, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break."
+    },
+    {
+      "source": "Hi.",
+      "target": "Hallo.#Du.",
+      "text": "# was added (English 0, translation 1). # separates dialogue boxes."
+    },
+    {
+      "source": "Hi.",
+      "target": "Hallo { Du.",
+      "text": "A single { was added (English 0, translation 1). The game treats single braces as commands and hides text."
     }
   ]
 }

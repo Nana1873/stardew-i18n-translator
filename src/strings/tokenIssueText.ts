@@ -33,15 +33,27 @@ function delta(differences: TokenDifference[], token: string) {
 export function tokenConsequence(difference: TokenDifference): string {
   const { token, sourceCount, targetCount, severity } = difference;
   const missing = targetCount < sourceCount;
-  if (/^#\$[be][#$*]/.test(token))
+  if (token === "${" || token === "}$")
+    return severity === "error"
+      ? "A he/she switch marker is unbalanced, so the game would show broken text."
+      : "Fine if intended.";
+  if (/^#\$b[#$*]/.test(token))
     return "It starts a new dialogue box, so the page structure changes.";
-  if ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
+  if (/^#\$e[#$*]/.test(token))
+    return "It ends the conversation and shows the rest next time, so the page structure changes.";
+  if (
+    token.startsWith("#$action") ||
+    ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
+  )
     return "It carries response ids, flags, or keys the game needs.";
   if (token.startsWith("%item") || token.startsWith("%action"))
     return missing
       ? "The attached item or reward would not be given."
       : "It adds an item or reward the English mail does not give.";
-  if (token === "[#]") return "It separates the letter text from its title.";
+  if (token === "[#]")
+    return missing
+      ? "The letter title would show as part of the letter text."
+      : "Text after it would become the letter title.";
   if (token === "%fork" || token.startsWith("%revealtaste"))
     return missing
       ? "The event branch or gift-taste reveal is lost."
@@ -62,7 +74,9 @@ export function tokenConsequence(difference: TokenDifference): string {
       : "A changed or extra game token shows as raw text.";
   if (token.startsWith("$") && !isPortraitCommand(token))
     return "The game would show it as text or change the dialogue flow.";
-  return severity === "warning" ? "Fine if intended." : "";
+  return severity === "warning"
+    ? "Fine if intended."
+    : "The game would show it as raw text or misread the line.";
 }
 
 function genericMessage(difference: TokenDifference): string {
@@ -76,7 +90,9 @@ function genericMessage(difference: TokenDifference): string {
       : "The number or shape of he/she switches changed. Fine if intended.";
   if (isPortraitCommand(token))
     return severity === "error"
-      ? `The portrait ${token} ${change} ${counts}: a second portrait on one dialogue page is shown as raw text.`
+      ? missing
+        ? `The portrait ${token} ${change} ${counts}: another portrait on the same dialogue page is now shown as raw text.`
+        : `The portrait ${token} ${change} ${counts}: a second portrait on one dialogue page is shown as raw text.`
       : `The portrait ${token} ${change} ${counts}: the character shows a different face. Fine if intended.`;
   if (token === "@")
     return `The player name @ ${change} ${counts}. Fine if intended.`;
@@ -86,8 +102,7 @@ function genericMessage(difference: TokenDifference): string {
     return `A single ${token} ${change} ${counts}. The game treats single braces as commands and hides text.`;
   if (token === "#")
     return `# ${change} ${counts}. # separates dialogue boxes.`;
-  const consequence = tokenConsequence(difference);
-  return `${token} ${change} ${counts}.${consequence ? ` ${consequence}` : ""}`;
+  return `${token} ${change} ${counts}. ${tokenConsequence(difference)}`;
 }
 
 /**

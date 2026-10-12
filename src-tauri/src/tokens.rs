@@ -215,6 +215,7 @@ pub fn explain_differences(differences: &[TokenDifference]) -> String {
         let token = difference.token.as_str();
         if switch_damaged
             && (matches!(token, "${" | "}$")
+                || is_gender_switch_shape(token)
                 || (token == "^" && difference.target_count > difference.source_count))
         {
             continue;
@@ -242,7 +243,9 @@ fn difference_message(difference: &TokenDifference) -> String {
         };
     }
     if is_portrait_command(token) {
-        return if difference.is_error() {
+        return if difference.is_error() && missing {
+            format!("The portrait {token} {change} {counts}: another portrait on the same dialogue page is now shown as raw text.")
+        } else if difference.is_error() {
             format!("The portrait {token} {change} {counts}: a second portrait on one dialogue page is shown as raw text.")
         } else {
             format!("The portrait {token} {change} {counts}: the character shows a different face. Fine if intended.")
@@ -255,12 +258,10 @@ fn difference_message(difference: &TokenDifference) -> String {
         "#" => return format!("# {change} {counts}. # separates dialogue boxes."),
         _ => {}
     }
-    let consequence = token_consequence(difference);
-    if consequence.is_empty() {
-        format!("{token} {change} {counts}.")
-    } else {
-        format!("{token} {change} {counts}. {consequence}")
-    }
+    format!(
+        "{token} {change} {counts}. {}",
+        token_consequence(difference)
+    )
 }
 
 /// What a token difference does in the game, as one sentence. Errors name the
@@ -270,12 +271,23 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
     let token = difference.token.as_str();
     let missing = difference.target_count < difference.source_count;
     let chars: Vec<char> = token.chars().collect();
-    if (token.starts_with("#$b") || token.starts_with("#$e"))
-        && chars.get(3).is_some_and(|c| matches!(c, '#' | '$' | '*'))
-    {
+    if matches!(token, "${" | "}$") {
+        return if difference.is_error() {
+            "A he/she switch marker is unbalanced, so the game would show broken text."
+        } else {
+            "Fine if intended."
+        };
+    }
+    let page_marker = chars.get(3).is_some_and(|c| matches!(c, '#' | '$' | '*'));
+    if token.starts_with("#$b") && page_marker {
         return "It starts a new dialogue box, so the page structure changes.";
     }
-    if (token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#') {
+    if token.starts_with("#$e") && page_marker {
+        return "It ends the conversation and shows the rest next time, so the page structure changes.";
+    }
+    if token.starts_with("#$action")
+        || ((token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#'))
+    {
         return "It carries response ids, flags, or keys the game needs.";
     }
     if token.starts_with("%item") || token.starts_with("%action") {
@@ -286,7 +298,11 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         };
     }
     if token == "[#]" {
-        return "It separates the letter text from its title.";
+        return if missing {
+            "The letter title would show as part of the letter text."
+        } else {
+            "Text after it would become the letter title."
+        };
     }
     if token == "%fork" || token.starts_with("%revealtaste") {
         return if missing {
@@ -323,7 +339,7 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         return "The game would show it as text or change the dialogue flow.";
     }
     if difference.is_error() {
-        ""
+        "The game would show it as raw text or misread the line."
     } else {
         "Fine if intended."
     }
