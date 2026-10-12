@@ -1867,6 +1867,16 @@ fn update_ai_progress(
     emit_ai_progress(app, &snapshot);
 }
 
+/// A failed run that still saved suggestions is reported as complete; its
+/// error explains what was left out.
+fn settled_outcome(outcome: ai::AiRunOutcome, completed: usize) -> ai::AiRunOutcome {
+    if outcome == ai::AiRunOutcome::Error && completed > 0 {
+        ai::AiRunOutcome::Complete
+    } else {
+        outcome
+    }
+}
+
 fn ai_run_result(
     request: &ai::AiTranslationRequest,
     requested: usize,
@@ -1877,11 +1887,7 @@ fn ai_run_result(
 ) -> ai::AiRunResult {
     let (engine, model, reasoning) = provider;
     let completed = suggestions.len();
-    let outcome = if outcome == ai::AiRunOutcome::Error && completed > 0 {
-        ai::AiRunOutcome::Complete
-    } else {
-        outcome
-    };
+    let outcome = settled_outcome(outcome, completed);
     ai::AiRunResult {
         run_id: request.run_id.clone(),
         engine: engine.to_string(),
@@ -2053,9 +2059,51 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
     ))
 }
 
+/// Settle the run outcome first, so a failed run that still saved suggestions
+/// also reports the review warning for them.
+fn with_review_warning(
+    outcome: ai::AiRunOutcome,
+    completed: usize,
+    error: Option<String>,
+    skips: ReviewSkips,
+) -> (ai::AiRunOutcome, Option<String>) {
+    let outcome = settled_outcome(outcome, completed);
+    let error = match (error, review_skipped_warning(outcome, skips)) {
+        (Some(error), Some(warning)) => Some(format!("{error} {warning}")),
+        (error, warning) => error.or(warning),
+    };
+    (outcome, error)
+}
+
 #[cfg(test)]
 mod review_warning_tests {
-    use super::{review_skipped_warning, ReviewSkips};
+    use super::{review_skipped_warning, with_review_warning, ReviewSkips};
+
+    #[test]
+    fn review_warning_survives_a_failed_run_that_saved_suggestions() {
+        let mut skips = ReviewSkips::default();
+        skips.record(2, ReviewSkipReason::Transient);
+        let (outcome, error) = with_review_warning(
+            AiRunOutcome::Error,
+            3,
+            Some("1 text couldn't be translated, even after retrying.".into()),
+            skips,
+        );
+        assert_eq!(outcome, AiRunOutcome::Complete);
+        let error = error.unwrap();
+        assert!(error.starts_with("1 text couldn't be translated"));
+        assert!(error.contains("didn't finish for 2 texts"));
+
+        let (outcome, error) =
+            with_review_warning(AiRunOutcome::Error, 0, Some("Stopped.".into()), skips);
+        assert_eq!(outcome, AiRunOutcome::Error);
+        assert_eq!(error.as_deref(), Some("Stopped."));
+
+        let (_, error) = with_review_warning(AiRunOutcome::Complete, 3, None, skips);
+        assert!(error
+            .unwrap()
+            .starts_with("The quality check didn't finish"));
+    }
     use crate::ai::AiRunOutcome;
     use crate::ai_provider::ReviewSkipReason;
 
@@ -3033,12 +3081,7 @@ async fn translate_with_cloud_ai(
             .unwrap_or(usize::MAX)
     });
     outcome = lease.finish(outcome)?;
-    if let Some(warning) = review_skipped_warning(outcome, saved_review_skips) {
-        error = Some(match error {
-            Some(error) => format!("{error} {warning}"),
-            None => warning,
-        });
-    }
+    (outcome, error) = with_review_warning(outcome, suggestions.len(), error, saved_review_skips);
     let progress_snapshot = progress_state.lock().ok().map(|progress| progress.clone());
     let result = ai_run_result(
         &request,
