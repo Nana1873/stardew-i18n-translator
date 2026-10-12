@@ -298,14 +298,14 @@ fn recover_from_backup(path: &Path, main_error: &str) -> Result<AppSettings, Str
             }
             Err(backup_error) => Err(format!(
                 "Settings file {} is corrupted ({main_error}) and its backup {} is \
-                 also corrupted ({backup_error}). Your translations are stored separately and are not                  affected. Fix the file or restore a working copy, then retry.",
+                 also corrupted ({backup_error}). Your translations are stored separately and are not affected. Fix the file or restore a working copy, then retry.",
                 path.display(),
                 backup.display()
             )),
         },
         Err(backup_error) => Err(format!(
             "Settings file {} is corrupted ({main_error}) and no usable backup exists \
-             ({backup_error}). Your translations are stored separately and are not affected.              Fix the file or restore a working copy, then retry.",
+             ({backup_error}). Your translations are stored separately and are not affected. Fix the file or restore a working copy, then retry.",
             path.display()
         )),
     }
