@@ -438,10 +438,17 @@ function chooseToolbarAction(_menuName: "File actions", actionName: string) {
 
 async function inspectLatestResult() {
   await screen.findByLabelText("Operation result");
-  if (screen.queryByRole("button", { name: "Hide result" })) {
-    fireEvent.click(screen.getByRole("button", { name: "Hide result" }));
-  }
-  fireEvent.click(await screen.findByRole("button", { name: "Latest result" }));
+  // The notice can finish rendering after the first check on a slow CI
+  // runner, so keep hiding it until the collapsed "Latest result" appears.
+  const latest = await waitFor(
+    () => {
+      const hide = screen.queryByRole("button", { name: "Hide result" });
+      if (hide) fireEvent.click(hide);
+      return screen.getByRole("button", { name: "Latest result" });
+    },
+    { timeout: 3000 },
+  );
+  fireEvent.click(latest);
   await screen.findByRole("button", { name: "Back to notification" });
   return screen.getByRole("complementary", { name: "Operation result" });
 }
@@ -4020,6 +4027,7 @@ describe("App shell", () => {
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
       if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "validate_stardew_path") return Promise.resolve(true);
       return Promise.resolve(null);
     });
     render(<App />);
@@ -4038,16 +4046,29 @@ describe("App shell", () => {
       within(settingsDialog).getByRole("button", { name: "Setup …" }),
     );
     const setup = await screen.findByRole("dialog", { name: "Setup" });
+    // Change the language on step 3 so a wrongly saved cancel would show up.
+    for (let step = 1; step < 3; step++) {
+      const next = within(setup).getByRole("button", { name: "Next" });
+      await waitFor(() => expect(next).toBeEnabled());
+      fireEvent.click(next);
+    }
+    const language = await within(setup).findByRole("combobox", {
+      name: "Target language",
+    });
+    fireEvent.change(language, { target: { value: "fr" } });
+    expect(language).toHaveValue("fr");
     fireEvent.click(within(setup).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull(),
     );
     expect(scanCalls()).toBe(1);
-    expect(invokeMock).not.toHaveBeenCalledWith(
-      "save_settings",
-      expect.anything(),
-    );
+    // Workspace layout may be persisted on its own schedule; the cancelled
+    // wizard must not save the language changed in it.
+    const savedLanguages = invokeMock.mock.calls
+      .filter(([cmd]) => cmd === "save_settings")
+      .map(([, args]) => (args as { settings: typeof CONFIGURED }).settings);
+    expect(savedLanguages.map((saved) => saved.targetLang)).not.toContain("fr");
   });
 
   it("opens the setup wizard on first launch (no saved Stardew path)", async () => {

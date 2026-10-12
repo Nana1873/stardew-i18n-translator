@@ -33,6 +33,7 @@ import type {
   ZipBuildOutcome,
   ZipPreview,
 } from "./commands";
+import { TARGET_LANGUAGES } from "../languages";
 import { validate } from "../strings/validation";
 import {
   FIXTURE_GLOSSARY,
@@ -47,8 +48,19 @@ import {
 type Handler = (payload: unknown) => void;
 type Args = Record<string, unknown>;
 
-const TARGET_LANG = "de";
-const TARGET_LANGUAGE = "German";
+const DEFAULT_TARGET_LANG = "de";
+
+/** The target language chosen in the preview's settings (German by default). */
+function targetLang(): string {
+  return settings?.targetLang ?? DEFAULT_TARGET_LANG;
+}
+
+function targetLanguage(): string {
+  const label =
+    TARGET_LANGUAGES.find((language) => language.code === targetLang())
+      ?.label ?? targetLang();
+  return label.replace(/ \([^)]*\)$/, "");
+}
 const DOWNLOADS = "C:\\Preview\\Downloads";
 
 interface RowState extends StringRow {
@@ -58,6 +70,8 @@ interface RowState extends StringRow {
 
 interface HistoryRecord extends OperationHistoryEntry {
   snapshot?: Map<string, RowState>;
+  /** Rows right after the edit; undo refuses when any changed since. */
+  after?: Map<string, RowState>;
 }
 
 const rows = new Map<string, Map<string, RowState>>();
@@ -95,7 +109,7 @@ function seed(): void {
     stardewPath: fresh ? null : PREVIEW_GAME_PATH,
     modsPath: fresh ? null : PREVIEW_MODS_PATH,
     sourceLang: "default",
-    targetLang: fresh ? null : TARGET_LANG,
+    targetLang: fresh ? null : DEFAULT_TARGET_LANG,
     llm: fresh
       ? null
       : {
@@ -132,7 +146,7 @@ function paths(mod: FixtureMod) {
   return {
     folderPath: `${PREVIEW_MODS_PATH}\\${mod.folder}`,
     defaultPath: `${dir}\\default.json`,
-    targetPath: `${dir}\\${TARGET_LANG}.json`,
+    targetPath: `${dir}\\${targetLang()}.json`,
   };
 }
 
@@ -372,7 +386,7 @@ function zipPreview(packageName: string, ids: string[]): ZipPreview {
       modName: mod.name,
       modVersion: mod.version,
       installFolder,
-      archivePath: `${installFolder}/i18n/${TARGET_LANG}.json`,
+      archivePath: `${installFolder}/i18n/${targetLang()}.json`,
       strings,
       totalSourceStrings: all.length,
       outdated,
@@ -385,11 +399,12 @@ function zipPreview(packageName: string, ids: string[]): ZipPreview {
   return {
     packageName,
     selectedVersion: version,
-    versionSource: mods.length === 1 ? "manifest" : "",
+    // Like the backend, name the component whose manifest gave the version.
+    versionSource: mods.length === 1 ? mods[0].name : "",
     versionConflicts: [],
-    defaultFileName: `${packageName}${version ? ` - ${version}` : ""} - ${TARGET_LANGUAGE} (${TARGET_LANG}).zip`,
-    targetLang: TARGET_LANG,
-    targetLanguage: TARGET_LANGUAGE,
+    defaultFileName: `${packageName}${version ? ` - ${version}` : ""} - ${targetLanguage()} (${targetLang()}).zip`,
+    targetLang: targetLang(),
+    targetLanguage: targetLanguage(),
     entries,
     omittedComponents: [],
     warnings: [],
@@ -601,6 +616,12 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         canUndo: true,
         completedAtEpochMs: Date.now(),
         snapshot,
+        after: new Map(
+          [...snapshot.keys()].map((compound) => {
+            const [modId, key] = compound.split("\u0000");
+            return [compound, { ...rows.get(modId)!.get(key)! }];
+          }),
+        ),
       });
     }
     case "list_operation_history":
@@ -609,6 +630,18 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       const entry = history.find((h) => h.id === args.operationId);
       if (!entry?.canUndo || !entry.snapshot)
         return reject("This batch edit can no longer be undone.");
+      // Like the backend, never overwrite a string edited after this batch.
+      for (const [compound, saved] of entry.after ?? []) {
+        const [modId, key] = compound.split("\u0000");
+        const current = rows.get(modId)?.get(key);
+        if (
+          current?.target !== saved.target ||
+          current?.status !== saved.status
+        )
+          return reject(
+            "This batch edit was not undone because one of its strings changed afterwards.",
+          );
+      }
       for (const [compound, row] of entry.snapshot) {
         const [modId, key] = compound.split("\u0000");
         rows.get(modId)?.set(key, row);
@@ -786,9 +819,9 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       );
       const preflight: LlmImportPreflight = {
         batchModUniqueId: "Preview.EdgeCases",
-        batchTargetLang: TARGET_LANG,
+        batchTargetLang: targetLang(),
         selectedModUniqueId: modId,
-        selectedTargetLang: TARGET_LANG,
+        selectedTargetLang: targetLang(),
         modMatches: modId === "Preview.EdgeCases",
         languageMatches: true,
         snapshotResult:
@@ -869,7 +902,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         unpackedPresent: false,
         sourceAvailable: false,
         cached: {
-          targetLang: TARGET_LANG,
+          targetLang: targetLang(),
           termCount: FIXTURE_GLOSSARY.length,
           source: "official",
         },
@@ -883,7 +916,7 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
       const glossary: Glossary = {
         format: 2,
         sourceLang: "default",
-        targetLang: TARGET_LANG,
+        targetLang: targetLang(),
         termCount: FIXTURE_GLOSSARY.length,
         entries: FIXTURE_GLOSSARY,
       };
