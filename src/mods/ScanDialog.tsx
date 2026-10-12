@@ -498,7 +498,7 @@ function groupDuplicateIds(
   const byWarning = new Map<number, SkippedComponent[]>();
   const grouped = new Set<SkippedComponent>();
   warnings.forEach((warning, index) => {
-    const ids = /same UniqueID \(([^)]*)\)/i
+    const ids = /same ID \(([^)]*)\)/i
       .exec(warning)?.[1]
       ?.split(",")
       .map((id) => id.trim().toLowerCase());
@@ -522,7 +522,7 @@ function modFolder(location: string): string {
 
 /** A short title for a free-text scanner warning. */
 function warningTitle(warning: string): string {
-  if (/same uniqueid/i.test(warning)) return "Duplicate mod ID";
+  if (/same ID \(/i.test(warning)) return "Duplicate mod ID";
   if (/could not be scanned completely/i.test(warning))
     return "Incomplete scan";
   if (/cannot be read|unreadable/i.test(warning)) return "Unreadable file";
@@ -548,6 +548,6 @@ function plainSkipReason(reason: string): string {
       reason,
     )
   )
-    return "A translation file in this mod is damaged and was left out.";
+    return "A translation file in this mod is damaged and was left out. Reinstalling the mod usually fixes it; your other mods are not affected.";
   return "Part of this mod could not be read and was left out.";
 }

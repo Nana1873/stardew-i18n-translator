@@ -265,7 +265,7 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
 ];
 
 export const FIXTURE_WARNINGS: string[] = [
-  "Two installed mods use the same UniqueID (Preview.DuplicateId), so their translations were left out. Remove the extra copy.",
+  "2 installed mods have the same ID (Preview.DuplicateId), so their translations were left out. Usually one folder is an old or duplicate copy; delete it or move it out of the Mods folder.",
 ];
 
 export const FIXTURE_GLOSSARY: GlossaryEntry[] = [

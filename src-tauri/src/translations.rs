@@ -251,7 +251,8 @@ pub fn prepare_state_paths(
             blocked.insert(id.to_lowercase());
         }
         warnings.push(format!(
-            "Two installed mods use the same UniqueID ({}), so their translations were left out. Remove the extra copy.",
+            "{} installed mods have the same ID ({}), so their translations were left out. Usually one folder is an old or duplicate copy; delete it or move it out of the Mods folder.",
+            ids.len(),
             ids.iter()
                 .map(|id| id.as_str())
                 .collect::<std::collections::BTreeSet<_>>()

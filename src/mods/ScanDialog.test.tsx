@@ -398,7 +398,7 @@ describe("ScanDialog", () => {
         result={{
           ...RESULT,
           warnings: [
-            "Two installed mods use the same UniqueID (Example.Same), so their translations were left out. Remove the extra copy.",
+            "2 installed mods have the same ID (Example.Same), so their translations were left out. Usually one folder is an old or duplicate copy; delete it or move it out of the Mods folder.",
           ],
           skippedComponents: [
             duplicateSkip("Example"),
