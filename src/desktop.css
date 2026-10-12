@@ -1803,3 +1803,8 @@
   background: var(--translator-brand);
   border-radius: 50%;
 }
+
+#stardew-i18n-translator .translator-blank-target {
+  color: var(--translator-muted);
+  font-style: italic;
+}

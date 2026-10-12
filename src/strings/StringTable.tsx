@@ -3729,7 +3729,16 @@ function RowView({
           className="translator-cell-clip"
           title={targetOverflow.title}
         >
-          {row.target || "—"}
+          {isIntentionalBlankTarget(row.source, row.target) ? (
+            <span
+              className="translator-blank-target"
+              title="Intentionally blank: a single space is exported."
+            >
+              (space)
+            </span>
+          ) : (
+            row.target || "—"
+          )}
         </span>
       </span>
       <span

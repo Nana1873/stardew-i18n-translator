@@ -335,7 +335,10 @@ async function saveEntry(key, value) {
     const cell = await (
       await element(row(key))
     ).findElement(css("[data-translation-cell] .translator-cell-clip"));
-    return (await cell.getAttribute("textContent")) === (value || "—");
+    return (
+      (await cell.getAttribute("textContent")) ===
+      (value === " " ? "(space)" : value || "—")
+    );
   });
 }
 async function screenshot(name) {

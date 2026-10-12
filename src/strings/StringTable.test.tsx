@@ -3480,7 +3480,7 @@ it("counts a saved single space as Done, retains it on reload, and reopens on cl
   );
   const translationCell = () =>
     treeRow().querySelector("[data-translation-cell] .translator-cell-clip");
-  expect(translationCell()?.textContent).toBe(" ");
+  expect(translationCell()?.textContent).toBe("(space)");
   expect(screen.getByText("1 / 2 covered")).toBeInTheDocument();
   expect(onModCountsChange).toHaveBeenLastCalledWith(
     "a.b",
@@ -3502,7 +3502,7 @@ it("counts a saved single space as Done, retains it on reload, and reopens on cl
   await waitFor(() =>
     expect(treeRow()).toHaveAttribute("data-status", "translated"),
   );
-  expect(translationCell()?.textContent).toBe(" ");
+  expect(translationCell()?.textContent).toBe("(space)");
   fireEvent.doubleClick(treeRow());
   expect(screen.getByRole("textbox", { name: "Translation" })).toHaveValue(" ");
   fireEvent.change(screen.getByRole("textbox", { name: "Translation" }), {
