@@ -25,7 +25,14 @@ corepack pnpm dev
 ```
 
 `corepack pnpm dev:web` starts the Vite frontend for browser work, but native
-dialogs, scanning, and file operations require the Tauri desktop app. No real
+dialogs, scanning, and file operations require the Tauri desktop app.
+`corepack pnpm dev:preview` starts the same frontend on synthetic fixture data
+(`src/tauri/previewFixtures.ts`): a fake command bridge answers every backend
+call in memory, so screens, dialogs, and result notices can be reviewed in a
+browser tab without a game, mods, or AI service. Add `?setup` to the URL to
+start with the setup wizard. Nothing is written anywhere; ChatGPT sign-in and
+glossary builds reject on purpose. The bridge loads only in Vite's `preview`
+mode during development and is never part of a release build. No real
 game installation, AI service, or ChatGPT login is needed for the default automated
 tests. The explicit live-engine release profile requires both real engines.
 
