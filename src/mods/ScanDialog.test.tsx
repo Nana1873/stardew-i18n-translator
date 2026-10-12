@@ -55,7 +55,7 @@ describe("ScanDialog", () => {
     expect(screen.getByRole("button", { name: "Close" })).toBeDisabled();
   });
 
-  it("shows structured skipped components alongside independent scanner warnings", () => {
+  it("summarises skipped components and warnings in plain language", () => {
     render(
       <ScanDialog
         scanning={false}
@@ -65,54 +65,49 @@ describe("ScanDialog", () => {
       />,
     );
     expect(screen.getByText("Scan results")).toBeInTheDocument();
+    expect(screen.getByText("2 items need a look")).toBeInTheDocument();
     expect(
-      screen.getByText(/Read 12 mods and 18 i18n files/),
+      screen.getByText(
+        "Read 12 mods with 18 translation files. Your saved work is safe.",
+      ),
     ).toBeInTheDocument();
     expect(
-      screen.getByText(/1 scanner warning, 1 component skipped/),
+      screen.getByText(
+        "Since your last scan: 3 new and 2 changed texts to translate.",
+      ),
     ).toBeInTheDocument();
-    expect(screen.getAllByText(/invalid manifest JSON/)).toHaveLength(1);
+    expect(screen.getByText("Change comparison")).toBeInTheDocument();
+    expect(screen.getByText("Broken Component")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Its manifest.json could not be read, so it was left out\./,
+      ),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/The rest of this mod was loaded\./),
+    ).toBeInTheDocument();
+    // The technical reason and location stay folded under Details.
+    expect(screen.getByText("invalid manifest JSON")).not.toBeVisible();
+    fireEvent.click(screen.getByText("Details"));
+    expect(screen.getByText("invalid manifest JSON")).toBeVisible();
+    expect(screen.getByText("Sample/Broken/manifest.json")).toBeVisible();
     expect(
       screen.getByText("Source comparison is unavailable for this scan."),
     ).toBeInTheDocument();
     expect(screen.queryByText("Unavailable")).toBeNull();
-    expect(
-      screen
-        .getByText("English strings changed")
-        .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("2English strings changed");
-    expect(
-      screen.getByText("Strings added").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("3Strings added");
-    expect(
-      screen
-        .getByText("String removed")
-        .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1String removed");
-    const skippedMetric = screen
-      .getByText("Component skipped")
-      .closest(".translator-preflight-metric");
-    expect(skippedMetric).toHaveTextContent("1Component skipped");
-    expect(screen.getByText("Broken Component")).toBeInTheDocument();
-    expect(screen.getByText("Package: Sample Pack")).toBeInTheDocument();
-    expect(screen.getByText("Sample/Broken/manifest.json")).toBeInTheDocument();
-    expect(screen.getByText("Rest of package loaded")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: /Review changed strings/ }),
-    ).toBeNull();
   });
 
-  it("uses singular count labels for a one-mod scan", () => {
+  it("uses singular wording for a one-mod scan", () => {
     const singleResult: ScanResult = {
       ...RESULT,
       modCount: 1,
       fileCount: 1,
       warnings: [],
-      skippedComponents: [RESULT.skippedComponents![0]],
+      skippedComponents: [],
       sourceDeltas: {
         sourcesChanged: 1,
         stringsAdded: 1,
-        stringsRemoved: 1,
+        stringsRemoved: 0,
         addedStrings: RESULT.sourceDeltas!.addedStrings,
         changedSources: RESULT.sourceDeltas!.changedSources,
       },
@@ -129,30 +124,15 @@ describe("ScanDialog", () => {
       />,
     );
 
+    expect(screen.getByText("Everything is ready")).toBeInTheDocument();
     expect(
-      screen.getByText("Mod found").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1Mod found");
+      screen.getByText("Read 1 mod with 1 translation file."),
+    ).toBeInTheDocument();
     expect(
-      screen.getByText("I18n file").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1I18n file");
-    expect(
-      screen
-        .getByText("English string changed")
-        .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1English string changed");
-    expect(
-      screen.getByText("String added").closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1String added");
-    expect(
-      screen
-        .getByText("String removed")
-        .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1String removed");
-    expect(
-      screen
-        .getByText("Component skipped")
-        .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("1Component skipped");
+      screen.getByText(
+        "Since your last scan: 1 new and 1 changed texts to translate.",
+      ),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Show new strings (1)" }),
     ).toBeEnabled();
@@ -164,7 +144,7 @@ describe("ScanDialog", () => {
     );
   });
 
-  it("distinguishes a known zero skipped count from an unavailable field", () => {
+  it("counts only real problems and tolerates a missing skip list", () => {
     const { rerender } = render(
       <ScanDialog
         scanning={false}
@@ -173,33 +153,22 @@ describe("ScanDialog", () => {
         onClose={() => {}}
       />,
     );
-
-    let skippedMetric = screen
-      .getByText("Components skipped")
-      .closest(".translator-preflight-metric");
-    expect(skippedMetric).toHaveTextContent("0Components skipped");
-    expect(screen.queryByText("No components were skipped.")).toBeNull();
-    expect(
-      screen.queryByText(
-        /Structured skipped-component details are unavailable/,
-      ),
-    ).toBeNull();
+    expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
 
     rerender(
       <ScanDialog
         scanning={false}
-        result={{ ...RESULT, skippedComponents: undefined }}
+        result={{ ...RESULT, skippedComponents: undefined, sourceDeltas: null }}
         error={null}
         onClose={() => {}}
       />,
     );
-
-    skippedMetric = screen
-      .getByText("Components skipped")
-      .closest(".translator-preflight-metric");
-    expect(skippedMetric).toHaveTextContent("UnavailableComponents skipped");
+    expect(screen.getByText(/1 item needs a look/)).toBeInTheDocument();
+    // Without a comparison the line says when changes are listed again.
     expect(
-      screen.getByText(/Skipped-component details unavailable/),
+      screen.getByText(
+        "New and changed texts are listed again once the problems below are fixed.",
+      ),
     ).toBeInTheDocument();
   });
 
@@ -316,9 +285,7 @@ describe("ScanDialog", () => {
     expect(
       screen.getByText(/Folder exports retain the original file in a backup/),
     ).toBeInTheDocument();
-    expect(document.querySelector("[data-scan-diagnostics]")).not.toHaveClass(
-      "is-warning",
-    );
+    expect(document.querySelector("[data-scan-diagnostics]")).toBeNull();
   });
 
   it("retains warning tone when information accompanies a skipped component", () => {
@@ -344,14 +311,7 @@ describe("ScanDialog", () => {
 
     const diagnostics = document.querySelector("[data-scan-diagnostics]");
     expect(diagnostics).toHaveClass("is-warning");
-    expect(
-      diagnostics?.querySelector(".translator-scan-warning-section"),
-    ).toBeInTheDocument();
-    expect(diagnostics).toHaveTextContent("1 component skipped");
-    expect(
-      screen.getByText(/1 translation entry without matching English source/),
-    ).toBeInTheDocument();
-    expect(diagnostics?.querySelectorAll(":scope > section")).toHaveLength(1);
+    expect(diagnostics).toHaveTextContent("Broken Component");
     const summary = screen.getByText(
       /1 translation entry without matching English source/,
     );
@@ -421,7 +381,48 @@ describe("ScanDialog", () => {
     expect(screen.getByText("Loose/i18n")).toBeInTheDocument();
   });
 
-  it("shows an expected language-pack exclusion as information, not a skipped problem", () => {
+  it("shows a duplicate mod ID as one card that names both folders", () => {
+    const duplicateSkip = (folder: string) => ({
+      packageId: folder,
+      componentUniqueId: "Example.Same",
+      componentName: "Example",
+      relativeLocation: `${folder}/i18n/default.json`,
+      reason:
+        "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+      requiresAttention: true,
+      restOfPackageLoaded: false,
+    });
+    render(
+      <ScanDialog
+        scanning={false}
+        result={{
+          ...RESULT,
+          warnings: [
+            "2 installed mods have the same ID (Example.Same), so their translations were left out. Usually one folder is an old or duplicate copy; delete it or move it out of the Mods folder.",
+          ],
+          skippedComponents: [
+            duplicateSkip("Example"),
+            duplicateSkip("Example - Copy"),
+          ],
+        }}
+        error={null}
+        onClose={() => {}}
+      />,
+    );
+
+    expect(screen.getByText("1 item needs a look")).toBeInTheDocument();
+    expect(
+      screen.getAllByRole("listitem", { name: undefined }).length,
+    ).toBeGreaterThan(0);
+    const affected = screen.getByRole("list", { name: "Affected mods" });
+    expect(affected).toHaveTextContent("Mods/Example");
+    expect(affected).toHaveTextContent("Mods/Example - Copy");
+    expect(
+      screen.queryByText(/saved translations could not be loaded/),
+    ).toBeNull();
+  });
+
+  it("folds an expected language-pack exclusion into one quiet line", () => {
     render(
       <ScanDialog
         scanning={false}
@@ -449,21 +450,16 @@ describe("ScanDialog", () => {
     expect(
       screen.getByText(/1 community language pack was ignored/),
     ).toBeInTheDocument();
+    expect(screen.getByText("Everything is ready")).toBeInTheDocument();
+    const line = screen
+      .getByText(/1 community language pack was ignored/)
+      .closest("details");
+    expect(line).not.toHaveAttribute("open");
     expect(screen.getAllByText("Stardew Valley - THAI")).toHaveLength(1);
-    expect(screen.queryByText("Package: Stardew Valley - THAI")).toBeNull();
-    expect(screen.getByText("No action needed")).toBeInTheDocument();
-    expect(screen.queryByText(/1 component skipped/)).toBeNull();
-    expect(
-      screen
-        .getByText("Components skipped")
-        .closest(".translator-preflight-metric"),
-    ).toHaveTextContent("0Components skipped");
-    expect(document.querySelector("[data-scan-diagnostics]")).not.toHaveClass(
-      "is-warning",
-    );
+    expect(document.querySelector("[data-scan-diagnostics]")).toBeNull();
   });
 
-  it("keeps distinct language-pack package and path details", () => {
+  it("names an expected exclusion with its reason", () => {
     render(
       <ScanDialog
         scanning={false}
@@ -490,12 +486,11 @@ describe("ScanDialog", () => {
 
     expect(screen.getByText("Thai translation pack")).toBeInTheDocument();
     expect(
-      screen.getByText("Package: Stardew Valley - THAI"),
+      screen.getByText(/Detected as a community language pack/),
     ).toBeInTheDocument();
-    expect(screen.getByText("Language Packs/Thai")).toBeInTheDocument();
   });
 
-  it("uses one diagnostics box and keeps redundant zero-state prose out", () => {
+  it("keeps a clean scan to two short lines", () => {
     render(
       <ScanDialog
         scanning={false}
@@ -516,12 +511,11 @@ describe("ScanDialog", () => {
       />,
     );
 
-    expect(screen.getAllByText("No scanner warnings.")).toHaveLength(1);
-    expect(document.querySelectorAll("[data-scan-diagnostics]")).toHaveLength(
-      1,
-    );
-    expect(screen.queryByText(/No components were skipped/)).toBeNull();
-    expect(screen.queryByText(/No scan history is invented/)).toBeNull();
+    expect(screen.getByText("Everything is ready")).toBeInTheDocument();
+    expect(
+      screen.getByText("No new or changed English text since your last scan."),
+    ).toBeInTheDocument();
+    expect(document.querySelector("[data-scan-diagnostics]")).toBeNull();
   });
 
   it("opens the exact added and changed scan subsets", () => {

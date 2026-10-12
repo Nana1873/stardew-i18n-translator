@@ -1269,34 +1269,198 @@
   margin-top: 8px;
 }
 
-#stardew-i18n-translator .translator-scan-diagnostics > section + section {
-  margin-top: 10px;
-  padding-top: 8px;
+#stardew-i18n-translator .translator-scan-status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-status-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+}
+
+#stardew-i18n-translator .translator-scan-status-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+#stardew-i18n-translator
+  .translator-scan-status.is-ready
+  .translator-scan-status-icon {
+  color: var(--translator-green);
+  background: var(--translator-green-soft);
+}
+
+#stardew-i18n-translator
+  .translator-scan-status.is-attention
+  .translator-scan-status-icon {
+  color: var(--translator-orange);
+  background: var(--translator-orange-soft);
+}
+
+#stardew-i18n-translator .translator-scan-status strong {
+  display: block;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+#stardew-i18n-translator .translator-scan-status > div {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+}
+
+#stardew-i18n-translator .translator-scan-status > div > span {
+  color: var(--translator-muted);
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-status span.translator-scan-changes {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  padding-top: 6px;
+  color: var(--translator-faint);
   border-top: 1px solid var(--translator-border);
 }
 
-#stardew-i18n-translator
-  .translator-scan-diagnostics
-  > section
-  > .translator-flow-list,
-#stardew-i18n-translator
-  .translator-scan-diagnostics
-  > section
-  > .translator-scan-extra-groups {
-  margin-top: 8px;
+#stardew-i18n-translator .translator-scan-changes svg {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
 }
 
-#stardew-i18n-translator .translator-scan-warning-section > p,
-#stardew-i18n-translator .translator-scan-info-section > p {
+#stardew-i18n-translator
+  .translator-scan-status
+  span.translator-scan-changes.has-changes {
+  color: var(--translator-blue);
+  font-weight: 600;
+}
+
+#stardew-i18n-translator .translator-scan-attention {
+  margin-top: 16px;
+  outline: none;
+}
+
+#stardew-i18n-translator .translator-scan-section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px;
+  color: var(--translator-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+#stardew-i18n-translator .translator-scan-section-title span {
+  padding: 0 6px;
+  color: var(--translator-orange);
+  background: var(--translator-orange-soft);
+  border-radius: 999px;
+  letter-spacing: 0;
+}
+
+#stardew-i18n-translator .translator-scan-cards {
+  display: grid;
+  gap: 8px;
   margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-#stardew-i18n-translator .translator-scan-warning-section > p svg {
+#stardew-i18n-translator .translator-scan-card {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--translator-surface-raised);
+  border: 1px solid var(--translator-border);
+  border-left: 3px solid var(--translator-orange);
+  border-radius: 6px;
+}
+
+#stardew-i18n-translator .translator-scan-card > svg {
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
   color: var(--translator-orange);
 }
 
-#stardew-i18n-translator .translator-scan-info-summary svg {
-  color: var(--translator-brand);
+#stardew-i18n-translator .translator-scan-card strong {
+  display: block;
+  font-size: 13px;
+}
+
+#stardew-i18n-translator .translator-scan-card p {
+  margin: 2px 0 0;
+  color: var(--translator-muted);
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-card-mods {
+  display: grid;
+  gap: 3px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-card-mods strong {
+  display: inline;
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-card-mods code {
+  color: var(--translator-faint);
+  overflow-wrap: anywhere;
+}
+
+#stardew-i18n-translator .translator-scan-details {
+  margin-top: 6px;
+  color: var(--translator-faint);
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-details > summary {
+  width: max-content;
+  cursor: pointer;
+}
+
+#stardew-i18n-translator .translator-scan-details > code,
+#stardew-i18n-translator .translator-scan-details > span {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+#stardew-i18n-translator .translator-scan-footnote {
+  margin-top: 14px;
+  color: var(--translator-faint);
+  font-size: 12px;
+}
+
+#stardew-i18n-translator .translator-scan-footnote > summary {
+  cursor: pointer;
+}
+
+#stardew-i18n-translator .translator-scan-footnote > summary svg {
+  width: 13px;
+  height: 13px;
+  vertical-align: -2px;
+}
+
+#stardew-i18n-translator .translator-scan-footnote ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
 }
 
 #stardew-i18n-translator .translator-scan-extra-info {

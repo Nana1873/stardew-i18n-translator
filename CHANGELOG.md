@@ -10,6 +10,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- The scan result is calmer: one sentence says whether everything is ready,
+  changes since the last scan are one line, and each problem is explained in
+  plain words with the technical details folded away. Expected exclusions such
+  as community language packs collapse into one quiet line.
 - One mod the scan has to skip no longer turns off the comparison of changed
   and new English strings for every other mod. The skipped mod keeps its
   previous baseline and is compared again once it scans cleanly.

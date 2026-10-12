@@ -226,16 +226,15 @@ function scan(): ScanResult {
     extraKeys: [],
     modCount: FIXTURE_MODS.length,
     fileCount: FIXTURE_MODS.length,
-    sourceDeltas:
-      scanCount === 1
-        ? null
-        : {
-            sourcesChanged: 0,
-            stringsAdded: 0,
-            stringsRemoved: 0,
-            addedStrings: [],
-            changedSources: [],
-          },
+    // Like the backend: skips with a known component no longer block the
+    // comparison, and the first scan starts at zero changes.
+    sourceDeltas: {
+      sourcesChanged: 0,
+      stringsAdded: 0,
+      stringsRemoved: 0,
+      addedStrings: [],
+      changedSources: [],
+    },
   };
 }
 

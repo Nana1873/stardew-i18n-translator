@@ -251,8 +251,14 @@ pub fn prepare_state_paths(
             blocked.insert(id.to_lowercase());
         }
         warnings.push(format!(
-            "Case-insensitive duplicate mod UniqueID: {}. Their translation files were excluded until the duplicate is removed.",
-            ids.iter().map(|id| id.as_str()).collect::<Vec<_>>().join(", ")
+            "{} installed mods have the same ID ({}), so their translations were left out. Usually one folder is an old or duplicate copy; delete it or move it out of the Mods folder.",
+            ids.len(),
+            ids.iter()
+                .map(|id| id.as_str())
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .join(", ")
         ));
     }
     for ids in by_legacy.values().filter(|ids| ids.len() > 1) {

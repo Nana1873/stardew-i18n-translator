@@ -233,6 +233,26 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
     restOfPackageLoaded: false,
   },
   {
+    packageId: "Preview Duplicate",
+    componentUniqueId: "Preview.DuplicateId",
+    componentName: "Preview Duplicate",
+    relativeLocation: "Preview Duplicate/i18n/default.json",
+    reason:
+      "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+    requiresAttention: true,
+    restOfPackageLoaded: false,
+  },
+  {
+    packageId: "Preview Duplicate - Copy",
+    componentUniqueId: "Preview.DuplicateId",
+    componentName: "Preview Duplicate",
+    relativeLocation: "Preview Duplicate - Copy/i18n/default.json",
+    reason:
+      "Translation state is unavailable because this component's UniqueID is duplicated or could not be migrated safely.",
+    requiresAttention: true,
+    restOfPackageLoaded: false,
+  },
+  {
     packageId: "Preview Language Pack",
     componentUniqueId: "Preview.LanguagePack",
     componentName: "Preview Language Pack (de)",
@@ -245,7 +265,7 @@ export const FIXTURE_SKIPPED: SkippedComponent[] = [
 ];
 
 export const FIXTURE_WARNINGS: string[] = [
-  "Case-insensitive duplicate mod UniqueID: Preview.DuplicateId. Their translation files were excluded until the duplicate is removed.",
+  "2 installed mods have the same ID (Preview.DuplicateId), so their translations were left out. Usually one folder is an old or duplicate copy; delete it or move it out of the Mods folder.",
 ];
 
 export const FIXTURE_GLOSSARY: GlossaryEntry[] = [
