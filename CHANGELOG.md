@@ -10,6 +10,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- A `manifest.json` inside another mod's folder is no longer offered for
+  translation; the game does not load it, so the scan lists it as information.
 - Glossaries are built only from the game's own `Content/Strings` files; the
   app no longer reads a `Content (unpacked)` folder or points to
   StardewXnbHack. Community language packs take their English names from the

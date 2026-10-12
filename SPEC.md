@@ -62,6 +62,11 @@ does not imply this intent. Protected-token validation still applies.
 - Translate only `i18n` folders beside a `manifest.json`, the only ones SMAPI
   loads; components with their own manifest each count. A deeper `i18n` folder
   without one is listed as information, not offered as a target.
+- A `manifest.json` inside a folder that is already under another
+  `manifest.json` is never loaded by SMAPI, which stops at the first manifest.
+  It is listed as information (path relative to the Mods folder), not offered
+  as a component; sibling components in a package folder without a manifest
+  are unaffected.
 - Ignore Content Patcher `assets/i18n` data. Exclude detected community language
   packs from translation targets as expected information, not a warning.
 - Report malformed components and skip them without inventing empty rows or

@@ -359,15 +359,46 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // Build a mod per manifest, keyed by its folder.
     let mut mods: HashMap<PathBuf, ScannedMod> = HashMap::new();
     let mut order: Vec<PathBuf> = Vec::new();
-    let manifest_dirs: HashSet<PathBuf> = manifest_files
+    let all_manifest_dirs: HashSet<PathBuf> = manifest_files
         .iter()
         .filter_map(|file| file.parent().map(Path::to_path_buf))
+        .collect();
+    // SMAPI stops at the first folder with a manifest.json and never loads one
+    // nested inside it, so such a folder is information, not a component.
+    let mut nested_manifest_dirs: HashSet<PathBuf> = HashSet::new();
+    for manifest in &manifest_files {
+        let Some(dir) = manifest.parent() else {
+            continue;
+        };
+        if dir
+            .parent()
+            .and_then(|parent| nearest_ancestor_in(parent, mods_path, &all_manifest_dirs))
+            .is_some()
+        {
+            nested_manifest_dirs.insert(dir.to_path_buf());
+            skipped_components.push(SkippedComponent {
+                package_id: None,
+                component_unique_id: None,
+                component_name: None,
+                relative_location: safe_relative_location(manifest, mods_path),
+                reason: "This manifest.json is inside another mod that has its own manifest.json, so the game does not load it.".to_string(),
+                requires_attention: false,
+                rest_of_package_loaded: false,
+            });
+        }
+    }
+    let manifest_dirs: HashSet<PathBuf> = all_manifest_dirs
+        .difference(&nested_manifest_dirs)
+        .cloned()
         .collect();
 
     for manifest in &manifest_files {
         let Some(dir) = manifest.parent() else {
             continue;
         };
+        if nested_manifest_dirs.contains(dir) {
+            continue;
+        }
         match read_manifest(manifest, dir, mods_path) {
             Ok(scanned) => {
                 order.push(dir.to_path_buf());
@@ -410,6 +441,13 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // Mods folder vanished mid-scan, the unresolved path refuses every read.
     let canonical_mods = canonical_root(mods_path).unwrap_or_else(|_| mods_path.to_path_buf());
     for i18n_dir in &i18n_dirs {
+        // Covered by the note for the nested manifest.json beside it.
+        if i18n_dir
+            .parent()
+            .is_some_and(|dir| nested_manifest_dirs.contains(dir))
+        {
+            continue;
+        }
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             // SMAPI only loads i18n folders of a mod with a manifest. Report the
             // folder as information so it does not vanish without a trace.
@@ -1333,6 +1371,21 @@ fn package_id_for(dir: &Path, mods_path: &Path) -> Option<String> {
         .map(String::from)
 }
 
+/// The closest directory at or above `start`, below `root`, listed in `dirs`.
+fn nearest_ancestor_in(start: &Path, root: &Path, dirs: &HashSet<PathBuf>) -> Option<PathBuf> {
+    let mut current = Some(start);
+    while let Some(dir) = current {
+        if dir == root {
+            return None;
+        }
+        if dirs.contains(dir) {
+            return Some(dir.to_path_buf());
+        }
+        current = dir.parent();
+    }
+    None
+}
+
 fn nearest_manifest_owner(i18n_dir: &Path, manifest_dirs: &HashSet<PathBuf>) -> Option<PathBuf> {
     let mut current = i18n_dir.parent();
     while let Some(dir) = current {
@@ -2182,6 +2235,60 @@ mod tests {
     }
 
     #[test]
+    fn ignores_manifest_nested_inside_another_mod_like_smapi() {
+        let root = crate::test_support::temp_dir("scan-nested-manifest");
+        write(
+            &root.join("Mod").join("manifest.json"),
+            "{ \"Name\": \"Outer\", \"UniqueID\": \"outer.mod\" }",
+        );
+        write(
+            &root.join("Mod").join("i18n").join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
+        write(
+            &root.join("Mod").join("optional").join("manifest.json"),
+            "{ \"Name\": \"Inner\", \"UniqueID\": \"inner.mod\" }",
+        );
+        write(
+            &root
+                .join("Mod")
+                .join("optional")
+                .join("i18n")
+                .join("default.json"),
+            "{ \"k\": \"v\" }",
+        );
+        // Sibling components in a package folder without a manifest still work.
+        for name in ["[CP] X", "[JA] X"] {
+            write(
+                &root.join("Pkg").join(name).join("manifest.json"),
+                &format!("{{ \"Name\": \"{name}\", \"UniqueID\": \"id.{name}\" }}"),
+            );
+            write(
+                &root
+                    .join("Pkg")
+                    .join(name)
+                    .join("i18n")
+                    .join("default.json"),
+                "{ \"k\": \"v\" }",
+            );
+        }
+
+        let result = scan_mods(&root, "de", &root);
+
+        let mut names: Vec<&str> = result.mods.iter().map(|m| m.name.as_str()).collect();
+        names.sort_unstable();
+        assert_eq!(names, vec!["Outer", "[CP] X", "[JA] X"]);
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
+        assert_eq!(result.skipped_components.len(), 1);
+        let note = &result.skipped_components[0];
+        assert_eq!(note.relative_location, "Mod/optional/manifest.json");
+        assert!(!note.requires_attention);
+        assert!(note.package_id.is_none() && note.component_unique_id.is_none());
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
     fn detects_existing_target_translation() {
         let root = crate::test_support::temp_dir("scan-target");
         let mod_dir = root.join("Mod");
@@ -2652,7 +2759,7 @@ mod tests {
     }
 
     #[test]
-    fn does_not_ignore_i18n_owned_by_an_assets_child_mod() {
+    fn ignores_i18n_owned_by_a_manifest_nested_in_an_assets_folder() {
         let root = crate::test_support::temp_dir("scanner-assets-child-owner");
         let package = root.join("Package");
         write(
@@ -2670,16 +2777,15 @@ mod tests {
         );
 
         let result = scan_mods(&root, "de", &root);
-        assert_eq!(result.mod_count, 1, "parent and child share one package");
-        assert_eq!(result.file_count, 2);
-        assert_eq!(result.mods.len(), 2, "both components remain available");
-        let child = result
-            .mods
-            .iter()
-            .find(|candidate| candidate.unique_id == "Author.Child")
-            .expect("assets child mod should remain translatable");
-        assert_eq!(child.i18n_files.len(), 1);
-        assert_eq!(child.i18n_files[0].relative_dir, "i18n");
+        assert_eq!(result.mod_count, 1);
+        assert_eq!(result.file_count, 1);
+        assert_eq!(result.mods.len(), 1, "SMAPI never loads the nested child");
+        assert_eq!(result.mods[0].unique_id, "Author.Parent");
+        assert_eq!(result.skipped_components.len(), 1);
+        assert_eq!(
+            result.skipped_components[0].relative_location,
+            "Package/assets/manifest.json"
+        );
         std::fs::remove_dir_all(root).ok();
     }
 
