@@ -258,14 +258,23 @@ fn build_review_plans(
     target_language: &str,
     items: &[PreparedAiItem],
     drafts: &[ProviderTranslation],
-) -> Result<Vec<ReviewPlan>, ProviderFailure> {
-    let ordered = ai::validate_provider_output(items, drafts.to_vec())
+) -> Result<(Vec<ReviewPlan>, usize), ProviderFailure> {
+    let validated = ai::validate_provider_output(items, drafts.to_vec())
         .map_err(ProviderFailure::InvalidResponse)?;
-    let fitted = items
-        .iter()
-        .zip(&ordered)
-        .map(|(item, draft)| fit_review_item(target_language, item, draft))
-        .collect::<Result<Vec<_>, _>>()?;
+    // An item whose review prompt cannot be built is not reviewed; it keeps
+    // its draft and counts as skipped, while the other items are reviewed.
+    let mut skipped = 0usize;
+    let mut fitted = Vec::with_capacity(items.len());
+    let mut ordered = Vec::with_capacity(items.len());
+    for (item, draft) in items.iter().zip(validated) {
+        match fit_review_item(target_language, item, &draft) {
+            Ok(item) => {
+                fitted.push(item);
+                ordered.push(draft);
+            }
+            Err(_) => skipped += 1,
+        }
+    }
     let mut plans = Vec::new();
     let mut start = 0usize;
     while start < fitted.len() {
@@ -301,13 +310,14 @@ fn build_review_plans(
                 }
                 split_end = candidate_end;
             }
-            if split_end == start {
-                return Err(ProviderFailure::InvalidResponse(
-                    "One AI full-review item exceeds the bounded prompt size.".to_string(),
-                ));
-            }
             end = split_end;
             break;
+        }
+        if end == start {
+            // Even this item alone does not fit: skip it, keep its draft.
+            skipped += 1;
+            start += 1;
+            continue;
         }
         plans.push(ReviewPlan {
             items: fitted[start..end].to_vec(),
@@ -315,7 +325,7 @@ fn build_review_plans(
         });
         start = end;
     }
-    Ok(plans)
+    Ok((plans, skipped))
 }
 
 fn build_review_attempt_prompt(
@@ -1182,7 +1192,15 @@ async fn apply_quality_review(
         return Ok(drafts);
     }
 
-    let review_plans = build_review_plans(&target_language, &items, &drafts)?;
+    // An item whose review cannot be prepared is skipped like a failed review:
+    // its draft is kept and goes to Review unreviewed. Only drafts that do not match their items fail here; those are invalid.
+    let (review_plans, skipped) = build_review_plans(&target_language, &items, &drafts)?;
+    if skipped > 0 {
+        progress(ProviderProgressEvent::ReviewSkipped {
+            item_count: skipped,
+            reason: ReviewSkipReason::InvalidResponse,
+        });
+    }
     let review_model = model.clone();
     let review_reasoning = reasoning.clone();
     let review_language = target_language.clone();

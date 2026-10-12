@@ -348,7 +348,7 @@ fn review_plans_keep_context_groups_together_and_bound_retry_prompts() {
         provider_translation("item-0002", &"c".repeat(65 * 1024)),
     ];
 
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+    let plans = build_review_plans("German", &items, &drafts).unwrap().0;
     let scheduled = plans
         .iter()
         .flat_map(|plan| plan.items.iter().map(|item| item.id.clone()))
@@ -384,13 +384,14 @@ fn review_fit_trims_only_context_and_rejects_oversized_source_or_draft() {
     let draft_text = "d".repeat(ai::MAX_CHUNK_BYTES / 3);
     let draft = provider_translation("item-0000", &draft_text);
 
-    let plans = build_review_plans(
+    let (plans, skipped) = build_review_plans(
         "German",
         std::slice::from_ref(&item),
         std::slice::from_ref(&draft),
     )
     .unwrap();
 
+    assert_eq!(skipped, 0);
     assert_eq!(plans.len(), 1);
     assert_eq!(plans[0].items[0].source, item.source);
     assert_eq!(plans[0].drafts[0].text, draft_text);
@@ -399,21 +400,60 @@ fn review_fit_trims_only_context_and_rejects_oversized_source_or_draft() {
 
     let oversized_item = prepared_item("item-0001", "Source must not be trimmed");
     let oversized_draft = provider_translation("item-0001", &"x".repeat(ai::MAX_CHUNK_BYTES));
-    assert!(matches!(
-        build_review_plans(
-            "German",
-            std::slice::from_ref(&oversized_item),
-            std::slice::from_ref(&oversized_draft),
-        ),
-        Err(ProviderFailure::InvalidResponse(_))
+    let (plans, skipped) = build_review_plans(
+        "German",
+        std::slice::from_ref(&oversized_item),
+        std::slice::from_ref(&oversized_draft),
+    )
+    .unwrap();
+    assert!(plans.is_empty());
+    assert_eq!(skipped, 1);
+}
+
+#[test]
+fn an_unplannable_review_item_keeps_its_draft_and_the_others_are_reviewed() {
+    let items = vec![
+        prepared_item("item-0000", "Fits"),
+        prepared_item("item-0001", "Too long to review"),
+    ];
+    let drafts = vec![
+        provider_translation("item-0000", "Passt"),
+        provider_translation("item-0001", &"x".repeat(ai::MAX_CHUNK_BYTES)),
+    ];
+    let (plans, skipped) = build_review_plans("German", &items, &drafts).unwrap();
+    assert_eq!(skipped, 1);
+    assert_eq!(plans.len(), 1);
+    assert_eq!(plans[0].items[0].id, "item-0000");
+    assert_eq!(plans[0].drafts, drafts[..1]);
+
+    // With nothing left to review, the drafts come back without a network call.
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&events);
+    let result = tauri::async_runtime::block_on(apply_quality_review(
+        true,
+        None,
+        "medium".to_string(),
+        "German".to_string(),
+        items[1..].to_vec(),
+        drafts[1..].to_vec(),
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(move |event| recorded.lock().unwrap().push(event)),
     ));
+    assert_eq!(result, Ok(drafts[1..].to_vec()));
+    assert_eq!(
+        *events.lock().unwrap(),
+        vec![ProviderProgressEvent::ReviewSkipped {
+            item_count: 1,
+            reason: ReviewSkipReason::InvalidResponse,
+        }]
+    );
 }
 
 #[test]
 fn persistent_review_failure_keeps_drafts_and_cancellation_propagates() {
     let items = vec![prepared_item("item-0000", "Hello")];
     let drafts = vec![provider_translation("item-0000", "Hallo")];
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+    let plans = build_review_plans("German", &items, &drafts).unwrap().0;
     let mut attempts = 0usize;
     let failed = tauri::async_runtime::block_on(execute_review_plans(
         &items,
@@ -437,7 +477,7 @@ fn persistent_review_failure_keeps_drafts_and_cancellation_propagates() {
     let cancellation = tauri::async_runtime::block_on(execute_review_plans(
         &items,
         &drafts,
-        build_review_plans("German", &items, &drafts).unwrap(),
+        build_review_plans("German", &items, &drafts).unwrap().0,
         cancelled,
         no_progress_callback(),
         |_, _, _| {
@@ -463,7 +503,7 @@ fn sparse_review_merges_changes_by_identity_and_retains_omitted_drafts() {
         provider_translation("item-0001", "Zweiter Entwurf"),
         provider_translation("item-0002", "Dritter Entwurf"),
     ];
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+    let plans = build_review_plans("German", &items, &drafts).unwrap().0;
     let mut calls = 0usize;
 
     let reviewed = tauri::async_runtime::block_on(execute_review_plans(
@@ -492,7 +532,7 @@ fn sparse_review_merges_changes_by_identity_and_retains_omitted_drafts() {
 fn empty_sparse_review_keeps_every_draft_without_retry() {
     let items = vec![prepared_item("item-0000", "Hello")];
     let drafts = vec![provider_translation("item-0000", "Hallo")];
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+    let plans = build_review_plans("German", &items, &drafts).unwrap().0;
     let mut calls = 0usize;
 
     let reviewed = tauri::async_runtime::block_on(execute_review_plans(
@@ -516,7 +556,7 @@ fn empty_sparse_review_keeps_every_draft_without_retry() {
 fn review_token_damage_is_rejected_and_keeps_the_draft() {
     let items = vec![prepared_item("item-0000", "Hello, [FarmName].")];
     let drafts = vec![provider_translation("item-0000", "Hallo, [FarmName].")];
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+    let plans = build_review_plans("German", &items, &drafts).unwrap().0;
 
     let reviewed = tauri::async_runtime::block_on(execute_review_plans(
         &items,
@@ -543,7 +583,7 @@ fn review_token_damage_is_rejected_and_keeps_the_draft() {
 fn full_review_runs_without_glossary_and_schedules_no_terminology_repair() {
     let items = vec![prepared_item("item-0000", "This sounds awkward.")];
     let drafts = vec![provider_translation("item-0000", "Dies klingt unbeholfen.")];
-    let plans = build_review_plans("German", &items, &drafts).unwrap();
+    let plans = build_review_plans("German", &items, &drafts).unwrap().0;
     let mut review_calls = 0usize;
 
     let reviewed = tauri::async_runtime::block_on(execute_review_plans(
