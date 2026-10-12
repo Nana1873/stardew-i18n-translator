@@ -6,7 +6,8 @@
  * skip rule disagree. Add new cases to the fixture, never to one suite only.
  */
 import fixture from "../../tests/fixtures/token-cases.json";
-import { validate } from "./validation";
+import { tokenDifferences, validate } from "./validation";
+import { describeTokenIssue } from "./tokenIssueText";
 import { extractProtectedTokens } from "./protectedTokens";
 
 describe("shared token fixture (TS ↔ Rust parity)", () => {
@@ -29,5 +30,15 @@ for (const testCase of fixture.comparisons) {
         issue.severity === "error",
     );
     expect(blocked).toBe(testCase.blocked);
+  });
+}
+
+for (const testCase of fixture.explanations) {
+  it(`explains ${JSON.stringify(testCase.target)} like the export does`, () => {
+    const messages = describeTokenIssue(
+      tokenDifferences(testCase.source, testCase.target),
+      testCase.target,
+    ).map((item) => item.message);
+    expect(messages.join(" ")).toBe(testCase.text);
   });
 }

@@ -10,6 +10,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Every token finding now says what it does in the game, for example that a
+  missing `[#]` merges the letter title into the text or that a missing
+  `%item … %%` means the attached item is not given. Notes end with "Fine if
+  intended."; the export and ZIP results use the same sentences as the editor.
+
 - Removing every he/she switch (for languages without grammatical gender) or
   adding one where the English text has none no longer reports tokens repeated
   in every branch as missing or added; the editor's token chips count the

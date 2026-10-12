@@ -531,5 +531,62 @@
       "target": "$c 0.6#Ja#Nein",
       "blocked": true
     }
+  ],
+  "explanations": [
+    {
+      "source": "Hi.#$b#Bye.",
+      "target": "Hallo. Tschüss.",
+      "text": "#$b# is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes."
+    },
+    {
+      "source": "A gift.%item object 128 1 %%[#]Title",
+      "target": "Ein Geschenk.%item object 128 1 %%Titel",
+      "text": "[#] is missing (English 1, translation 0). It separates the letter text from its title."
+    },
+    {
+      "source": "A gift.%item object 128 1 %%",
+      "target": "Ein Geschenk.",
+      "text": "%item object 128 1 %% is missing (English 1, translation 0). The attached item or reward would not be given."
+    },
+    {
+      "source": "Price: {{Price}} gold",
+      "target": "Preis: Gold",
+      "text": "{{Price}} is missing (English 1, translation 0). The value is left out. Fine if intended."
+    },
+    {
+      "source": "Price: gold",
+      "target": "Preis: {{Preis}} Gold",
+      "text": "{{Preis}} was added (English 0, translation 1). An unknown placeholder stays visible as raw text."
+    },
+    {
+      "source": "You caught {0} fish.",
+      "target": "Du hast {0} {1} Fische.",
+      "text": "{1} was added (English 0, translation 1). A placeholder without a value breaks the text."
+    },
+    {
+      "source": "Welcome to [FarmName].",
+      "target": "Willkommen.",
+      "text": "[FarmName] is missing (English 1, translation 0). The game would not insert this value or item."
+    },
+    {
+      "source": "Thanks @!",
+      "target": "Danke!",
+      "text": "The player name @ is missing (English 1, translation 0). Fine if intended."
+    },
+    {
+      "source": "Try it %revealtaste:Haley:(O)221 now.",
+      "target": "Probier es jetzt.",
+      "text": "%revealtaste:Haley:(O)221 is missing (English 1, translation 0). The event branch or gift-taste reveal is lost."
+    },
+    {
+      "source": "$1 metHarvey#Nice.",
+      "target": "Schön.",
+      "text": "$1 metHarvey# is missing (English 1, translation 0). It carries response ids, flags, or keys the game needs."
+    },
+    {
+      "source": "Hello.$h",
+      "target": "Hallo.$h nett$s",
+      "text": "The portrait $s was added (English 0, translation 1): a second portrait on one dialogue page is shown as raw text."
+    }
   ]
 }
