@@ -1387,25 +1387,16 @@ export function StringEditor({
                   <p key={issue.message}>{issue.message}</p>
                 ))}
                 <div className="translator-flow-callout is-warning">
-                  “Save anyway” applies only to this source revision and this
-                  exact translation. Any later edit requires confirmation again.
+                  Save anyway keeps exactly this text. If you change it or the
+                  English text changes, you will be asked again.
                 </div>
               </div>
               <div className="translator-flow-foot">
-                <button
-                  className="translator-button translator-button-quiet"
-                  type="button"
-                  onClick={() => {
-                    setPendingSave(null);
-                    setPendingMove(null);
-                    requestAnimationFrame(() => textareaRef.current?.focus());
-                  }}
-                >
-                  Return to editor
-                </button>
+                {/* The safe way back is the primary action; saving a
+                    token error is the deliberate, secondary one. */}
                 <button
                   type="button"
-                  className="editor__save-anyway translator-button translator-button-primary"
+                  className="editor__save-anyway translator-button translator-button-danger"
                   onClick={() => {
                     if (pendingSave) void persistConfirmed(pendingSave, true);
                     else if (pendingMove !== null)
@@ -1413,6 +1404,18 @@ export function StringEditor({
                   }}
                 >
                   Save anyway
+                </button>
+                <button
+                  className="translator-button translator-button-primary"
+                  type="button"
+                  autoFocus
+                  onClick={() => {
+                    setPendingSave(null);
+                    setPendingMove(null);
+                    requestAnimationFrame(() => textareaRef.current?.focus());
+                  }}
+                >
+                  Return to editor
                 </button>
               </div>
             </section>
