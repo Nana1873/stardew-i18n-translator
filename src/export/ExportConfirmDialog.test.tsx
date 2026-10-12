@@ -53,7 +53,7 @@ describe("JSON export confirmation", () => {
       "8 translations included",
     );
     expect(screen.getByLabelText("Export contents")).toHaveTextContent(
-      "2 untranslated omitted",
+      "2 not translated yet",
     );
     expect(screen.getByText(/Includes 3 translations/)).toBeVisible();
     fireEvent.click(screen.getByText("Details", { selector: "summary" }));
@@ -65,13 +65,14 @@ describe("JSON export confirmation", () => {
   it("does not invent counts or claim readiness when preflight data is missing", () => {
     show();
     expect(screen.getByText("Count not available yet")).toBeVisible();
-    expect(screen.getByText("Review counts not available yet.")).toBeVisible();
     expect(screen.queryByText(/Ready to export/)).toBeNull();
   });
   it("exports everything else and names the strings that stay English", () => {
     const props = show({
       omitted: [
         {
+          modUniqueId: "test.mod",
+          modName: "Test Mod",
           relativeDir: "i18n",
           key: "status.saved",
           reason: "# is missing from the translation.",
@@ -81,11 +82,15 @@ describe("JSON export confirmation", () => {
       onInspectProblem: vi.fn(),
     });
     expect(screen.queryByRole("alert")).toBeNull();
-    const omitted = screen.getByLabelText("Strings left out of the export");
-    expect(omitted).toHaveTextContent("1 string stays in English");
+    expect(screen.getByText(/1 string stays in English/)).toBeVisible();
+    const omitted = screen.getByRole("list", {
+      name: "Strings left out of the export",
+    });
     expect(omitted).toHaveTextContent("status.saved");
-    fireEvent.click(screen.getByRole("button", { name: "Open string" }));
-    expect(props.onInspectProblem).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", { name: "Open issue" }));
+    expect(props.onInspectProblem).toHaveBeenCalledWith(
+      expect.objectContaining({ key: "status.saved" }),
+    );
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
     expect(props.onConfirm).toHaveBeenCalledOnce();
   });

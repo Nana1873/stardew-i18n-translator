@@ -1,4 +1,5 @@
-import { AlertTriangle, X } from "lucide-react";
+import { X } from "lucide-react";
+import { ExportCounts, LeftOutStrings } from "./ExportOverview";
 import type { ComponentProps, KeyboardEventHandler, RefObject } from "react";
 import type { ExportConfirmDialog } from "../export/ExportConfirmDialog";
 
@@ -77,71 +78,21 @@ export function ExportConfirmBody({
         </div>
 
         <div className="translator-flow-body">
-          {omitted.length > 0 && (
-            <div
-              className="translator-flow-callout is-warning"
-              aria-label="Strings left out of the export"
-            >
-              <p>
-                <AlertTriangle aria-hidden="true" />{" "}
-                <strong>
-                  {omitted.length}{" "}
-                  {omitted.length === 1 ? "string stays" : "strings stay"} in
-                  English
-                </strong>
-              </p>
-              <p>
-                {omitted.length === 1 ? "It has" : "They have"} a token error
-                that would break the game, so the export leaves{" "}
-                {omitted.length === 1 ? "it" : "them"} out. Everything else is
-                exported. Fix {omitted.length === 1 ? "it" : "them"} in the
-                editor, or use <strong>Save anyway</strong> if the change is
-                intended.
-              </p>
-              <ul>
-                {omitted.slice(0, 3).map((problem) => (
-                  <li key={`${problem.relativeDir}\0${problem.key}`}>
-                    <code>{problem.key}</code> {problem.reason}
-                  </li>
-                ))}
-                {omitted.length > 3 && <li>and {omitted.length - 3} more</li>}
-              </ul>
-            </div>
-          )}
           <>
-            <div
-              className="desktop-export-summary"
-              aria-label="Export contents"
-            >
-              <p>
-                {willWrite == null ? (
-                  "Count not available yet"
-                ) : (
-                  <>
-                    <strong>{willWrite}</strong>{" "}
-                    {willWrite === 1 ? "translation" : "translations"} included
-                  </>
-                )}
-                {openOmitted != null && openOmitted > 0 && (
-                  <span>{openOmitted} untranslated omitted</span>
-                )}
-              </p>
-              {attention != null && attention > 0 && (
-                <p className="desktop-export-review">
-                  <AlertTriangle aria-hidden="true" />
-                  Includes {attention}{" "}
-                  {attention === 1
-                    ? "translation that still needs"
-                    : "translations that still need"}{" "}
-                  review.
-                </p>
-              )}
-              {attention == null && (
-                <p className="desktop-export-muted">
-                  Review counts not available yet.
-                </p>
-              )}
-            </div>
+            <ExportCounts
+              label="Export contents"
+              included={willWrite}
+              untranslated={openOmitted}
+              needsReview={attention}
+              keptOnPurpose={acceptedMismatches}
+            />
+
+            <LeftOutStrings
+              problems={omitted}
+              target="export"
+              showModNames={(mods ?? 1) > 1}
+              onInspect={onInspectProblem}
+            />
 
             <div className="desktop-export-write">
               <p id="translator-export-summary">
@@ -177,14 +128,6 @@ export function ExportConfirmBody({
               </div>
             )}
           </>
-
-          {acceptedMismatches != null && acceptedMismatches > 0 && (
-            <p className="desktop-export-muted">
-              {acceptedMismatches} token{" "}
-              {acceptedMismatches === 1 ? "difference" : "differences"} kept on
-              purpose.
-            </p>
-          )}
 
           <details className="desktop-export-details">
             <summary>
@@ -267,16 +210,6 @@ export function ExportConfirmBody({
           >
             Cancel
           </button>
-          {omitted.length > 0 && (
-            <button
-              className="translator-button translator-button-quiet"
-              type="button"
-              onClick={onInspectProblem}
-              disabled={!onInspectProblem}
-            >
-              Open string
-            </button>
-          )}
           <button
             className="translator-button translator-button-primary"
             type="button"

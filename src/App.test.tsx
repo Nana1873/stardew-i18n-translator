@@ -1346,7 +1346,7 @@ describe("App shell", () => {
       within(preflight).getByRole("button", { name: "Export JSON" }),
     ).toBeEnabled();
     fireEvent.click(
-      within(preflight).getByRole("button", { name: "Open string" }),
+      within(preflight).getByRole("button", { name: "Open issue" }),
     );
 
     expect(

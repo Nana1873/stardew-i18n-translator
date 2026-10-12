@@ -2564,9 +2564,7 @@ export function App() {
             omitted={exportConfirm.omitted}
             onInspectProblem={
               exportConfirm.omitted.length > 0
-                ? () => {
-                    const problem = exportConfirm.omitted[0];
-                    if (!problem) return;
+                ? (problem) => {
                     setExportConfirm(null);
                     inspectResultProblem({
                       id: problemId(
@@ -2616,6 +2614,24 @@ export function App() {
             modsPath={settings?.modsPath ?? undefined}
             combined={zipContext?.combined}
             componentCount={zipContext?.components.length ?? null}
+            untranslated={
+              scan
+                ? scan.mods
+                    .filter(
+                      (mod) =>
+                        zipContext?.combined ||
+                        zipContext?.components.some(
+                          (component) => component.uniqueId === mod.uniqueId,
+                        ),
+                    )
+                    .reduce(
+                      (sum, mod) =>
+                        sum +
+                        Math.max(0, mod.totalKeys - workingCoveredKeys(mod)),
+                      0,
+                    )
+                : null
+            }
             error={zipError}
             building={zipBuilding}
             onInspect={inspectZipProblem}
