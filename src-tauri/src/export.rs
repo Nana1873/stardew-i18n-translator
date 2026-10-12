@@ -913,7 +913,10 @@ impl ExportTransaction {
                 // its timestamp stays and a locked file does not turn into a
                 // false "rollback incomplete".
                 OriginalPath::File(source)
-                    if std::fs::read(source).ok() == std::fs::read(&snapshot.path).ok() =>
+                    if matches!(
+                        (std::fs::read(source), std::fs::read(&snapshot.path)),
+                        (Ok(original), Ok(current)) if original == current
+                    ) =>
                 {
                     Ok(())
                 }
