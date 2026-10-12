@@ -25,9 +25,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   `%kid1`, or `%time`, and `%noturn` are now checked. A missing, extra, or
   renamed one is a note that says what the game puts there, never an error.
   A percent sign such as `50%` is not a placeholder.
-- The note about full-width characters such as `＄｛｝＾` now appears next to
-  any token finding, also for `＃＠％［］`, and no longer turns a note into an
-  error.
+- The note about full-width characters now appears for notes too, covers
+  `＃＠％［］` as well as `＄｛｝＾`, and names the characters found. It only
+  appears when a missing or changed token uses them, so `％` or `［］` as
+  ordinary punctuation no longer trigger it.
 - `{{ name }}`, `{{name}}`, and `{{Name}}` count as the same placeholder,
   like in the game.
 - Extra spaces between the arguments of any dialogue command, such as
