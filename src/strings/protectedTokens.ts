@@ -18,6 +18,7 @@
  *  - structural characters: `#`, paired `'` quote delimiters (quotes are
  *    classified but ignored by validation and editor token counts)
  *  - single-character tokens: `@` (player name), `^` / `\n` (line break)
+ *  - dialogue placeholders such as `%spouse`, `%farm`, `%kid1`, and `%noturn`
  *
  * The order of the readers matters — more specific shapes are tried first.
  *
@@ -118,6 +119,7 @@ function extractTokens(value: string): string[] {
       readGenderSwitchFragment(value, offset) ??
       readSimpleDialogueCommand(value, offset) ??
       readEventCommand(value, offset) ??
+      readPercentPlaceholder(value, offset) ??
       readSingleCharacterToken(value, offset);
 
     if (token) {
@@ -234,6 +236,9 @@ export function tokenSeverity(
   const harmless =
     isGenderSwitchShape(token) ||
     token === "@" ||
+    // The game fills in or drops these placeholders; a missing, extra, or
+    // renamed one only changes or shows text.
+    isPercentPlaceholder(token) ||
     // A bare `^` or `#` changes the page or gender split in dialogue but is
     // plain text in letters and UI strings; translators decide (PD-1), unless
     // the change puts two different portraits on one page.
@@ -750,6 +755,44 @@ function readEventCommand(value: string, offset: number): Token | null {
   let end = offset + "%revealtaste".length;
   while (end < value.length && !/[\s#%$^*{]/u.test(value[end])) end += 1;
   return token(value, offset, end);
+}
+
+/** Dialogue placeholders the game fills in (Stardew 1.6
+ * `Dialogue.percentTokens`), plus `%noturn`, which the game removes and which
+ * keeps the speaker from turning to the player. The game replaces them with
+ * an exact, case-sensitive substring replace, so `%Spouse` stays literal text
+ * and `50%` is never one. Longest names first. Mirrors Rust
+ * `PERCENT_PLACEHOLDERS`. */
+export const PERCENT_PLACEHOLDERS = [
+  "%firstnameletter",
+  "%favorite",
+  "%season",
+  "%spouse",
+  "%noturn",
+  "%place",
+  "%band",
+  "%book",
+  "%farm",
+  "%kid1",
+  "%kid2",
+  "%name",
+  "%noun",
+  "%time",
+  "%year",
+  "%adj",
+  "%pet",
+] as const;
+
+export function isPercentPlaceholder(token: string): boolean {
+  return (PERCENT_PLACEHOLDERS as readonly string[]).includes(token);
+}
+
+function readPercentPlaceholder(value: string, offset: number): Token | null {
+  if (value[offset] !== "%") return null;
+  const name = PERCENT_PLACEHOLDERS.find((candidate) =>
+    value.startsWith(candidate, offset),
+  );
+  return name ? token(value, offset, offset + name.length) : null;
 }
 
 function readSingleCharacterToken(value: string, offset: number): Token | null {

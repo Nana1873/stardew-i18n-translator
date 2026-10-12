@@ -24,6 +24,28 @@ export interface TokenIssueMessage {
   token?: string;
 }
 
+/** What the game does with each dialogue placeholder (Stardew 1.6
+ * `Dialogue.cs`). Mirrors Rust `PERCENT_PLACEHOLDERS`. */
+const PERCENT_PLACEHOLDER_TEXT: Partial<Record<string, string>> = {
+  "%adj": "The game puts a random adjective here.",
+  "%noun": "The game puts a random noun here.",
+  "%place": "The game puts a random place name here.",
+  "%spouse": "The game puts the spouse's name here.",
+  "%name": "The game puts a random name here.",
+  "%firstnameletter": "The game puts the first half of the player's name here.",
+  "%time": "The game puts the current time here.",
+  "%band": "The game puts the name of Sam's band here.",
+  "%book": "The game puts the name of Elliott's book here.",
+  "%pet": "The game puts the pet's name here.",
+  "%farm": "The game puts the farm's name here.",
+  "%favorite": "The game puts the player's favorite thing here.",
+  "%year": "The game puts the current year here.",
+  "%kid1": "The game puts the first child's name here.",
+  "%kid2": "The game puts the second child's name here.",
+  "%season": "The game puts the current season here.",
+  "%noturn": "It keeps the character from turning to face the player.",
+};
+
 function delta(differences: TokenDifference[], token: string) {
   const difference = differences.find((item) => item.token === token);
   return difference ? difference.targetCount - difference.sourceCount : 0;
@@ -66,6 +88,8 @@ export function tokenConsequence(difference: TokenDifference): string {
     return missing
       ? "The event choice or gift-taste reveal would not happen."
       : "It adds event behavior the English text does not have.";
+  const percent = PERCENT_PLACEHOLDER_TEXT[token];
+  if (percent) return `${percent} Fine if intended.`;
   if (token.startsWith("{{") || /^\{\d+\}$/.test(token)) {
     if (missing)
       return "The game shows nothing in its place. Fine if intended.";

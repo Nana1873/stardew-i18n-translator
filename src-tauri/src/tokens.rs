@@ -6,7 +6,8 @@
 //! each other's structural damage. The remaining forms cover Content Patcher
 //! `{{...}}`, mail commands, dialogue breaks, recognized bracket tokens,
 //! positional `{0}`, dialogue commands `$b`, structural `#` / paired `'`
-//! quote delimiters, and single-char `@`/`^`.
+//! quote delimiters, single-char `@`/`^`, and dialogue placeholders such as
+//! `%spouse` or `%noturn`.
 //!
 //! Every difference carries a [`Severity`]. Only `Error` differences are
 //! verified to break the game (raw syntax shown, dialogue split wrongly, lost
@@ -105,6 +106,7 @@ fn extract_chars(chars: &[char]) -> Vec<String> {
             .or_else(|| read_positional(chars, offset))
             .or_else(|| read_simple_dialogue(chars, offset))
             .or_else(|| read_event_command(chars, offset))
+            .or_else(|| read_percent_placeholder(chars, offset))
             .or_else(|| read_single_char(chars, offset));
 
         match end {
@@ -343,6 +345,9 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
             "It adds event behavior the English text does not have."
         };
     }
+    if let Some(text) = percent_placeholder_text(token) {
+        return text;
+    }
     if token.starts_with("{{") || match_positional(&chars, 0) == Some(chars.len()) {
         if missing {
             return "The game shows nothing in its place. Fine if intended.";
@@ -467,6 +472,9 @@ fn token_severity(
     let dropped = target_count < source_count;
     let harmless = is_gender_switch_shape(token)
         || token == "@"
+        // The game fills in or drops these placeholders; a missing, extra, or
+        // renamed one only changes or shows text.
+        || percent_placeholder_text(token).is_some()
         // A bare `^` or `#` changes the page or gender split in dialogue but is
         // plain text in letters and UI strings; translators decide (PD-1),
         // unless the change puts two different portraits on one page.
@@ -1176,6 +1184,101 @@ fn read_event_command(chars: &[char], offset: usize) -> Option<usize> {
         end += 1;
     }
     Some(end)
+}
+
+/// Dialogue placeholders the game fills in (Stardew 1.6
+/// `Dialogue.percentTokens`), plus `%noturn`, which the game removes and which
+/// keeps the speaker from turning to the player, each with what the game does
+/// with it. The game replaces them with an exact, case-sensitive substring
+/// replace, so `%Spouse` stays literal text and `50%` is never one. Longest
+/// names first. Mirrors TS `PERCENT_PLACEHOLDERS` and
+/// `PERCENT_PLACEHOLDER_TEXT`.
+const PERCENT_PLACEHOLDERS: [(&str, &str); 17] = [
+    (
+        "%firstnameletter",
+        "The game puts the first half of the player's name here. Fine if intended.",
+    ),
+    (
+        "%favorite",
+        "The game puts the player's favorite thing here. Fine if intended.",
+    ),
+    (
+        "%season",
+        "The game puts the current season here. Fine if intended.",
+    ),
+    (
+        "%spouse",
+        "The game puts the spouse's name here. Fine if intended.",
+    ),
+    (
+        "%noturn",
+        "It keeps the character from turning to face the player. Fine if intended.",
+    ),
+    (
+        "%place",
+        "The game puts a random place name here. Fine if intended.",
+    ),
+    (
+        "%band",
+        "The game puts the name of Sam's band here. Fine if intended.",
+    ),
+    (
+        "%book",
+        "The game puts the name of Elliott's book here. Fine if intended.",
+    ),
+    (
+        "%farm",
+        "The game puts the farm's name here. Fine if intended.",
+    ),
+    (
+        "%kid1",
+        "The game puts the first child's name here. Fine if intended.",
+    ),
+    (
+        "%kid2",
+        "The game puts the second child's name here. Fine if intended.",
+    ),
+    (
+        "%name",
+        "The game puts a random name here. Fine if intended.",
+    ),
+    (
+        "%noun",
+        "The game puts a random noun here. Fine if intended.",
+    ),
+    (
+        "%time",
+        "The game puts the current time here. Fine if intended.",
+    ),
+    (
+        "%year",
+        "The game puts the current year here. Fine if intended.",
+    ),
+    (
+        "%adj",
+        "The game puts a random adjective here. Fine if intended.",
+    ),
+    (
+        "%pet",
+        "The game puts the pet's name here. Fine if intended.",
+    ),
+];
+
+fn percent_placeholder_text(token: &str) -> Option<&'static str> {
+    PERCENT_PLACEHOLDERS
+        .iter()
+        .find(|(name, _)| *name == token)
+        .map(|(_, text)| *text)
+}
+
+fn read_percent_placeholder(chars: &[char], offset: usize) -> Option<usize> {
+    if chars.get(offset) != Some(&'%') {
+        return None;
+    }
+    PERCENT_PLACEHOLDERS
+        .iter()
+        .find(|(name, _)| starts_with(chars, offset, name))
+        .map(|(name, _)| offset + name.chars().count())
 }
 
 fn read_single_char(chars: &[char], offset: usize) -> Option<usize> {

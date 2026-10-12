@@ -250,6 +250,35 @@
     {
       "value": "$y  'Q_A_R'",
       "tokens": ["$y", "'", "'", "_", "_"]
+    },
+    {
+      "value": "Hi %spouse, %kid1 and %kid2 at %farm.%noturn",
+      "tokens": ["%spouse", "%kid1", "%kid2", "%farm", "%noturn"]
+    },
+    {
+      "value": "%firstnameletter %name %noun %adj %place %time %band %book %pet %favorite %year %season",
+      "tokens": [
+        "%firstnameletter",
+        "%name",
+        "%noun",
+        "%adj",
+        "%place",
+        "%time",
+        "%band",
+        "%book",
+        "%pet",
+        "%favorite",
+        "%year",
+        "%season"
+      ]
+    },
+    {
+      "value": "50% done, 100% sure, % alone, %Spouse %Ehepartner %kid3 %%",
+      "tokens": []
+    },
+    {
+      "value": "%names and %farmer",
+      "tokens": ["%name", "%farm"]
     }
   ],
   "comparisons": [
@@ -636,6 +665,24 @@
       "source": "Hi.#$y 'Q?_Yes_Great'",
       "target": "Hallo. $y 'Frage?_Ja_Toll'",
       "blocked": true
+    },
+    {
+      "name": "a missing percent placeholder is only a warning",
+      "source": "Hi %spouse, say hi to %kid1!",
+      "target": "Hallo, gruess dein Kind!",
+      "blocked": false
+    },
+    {
+      "name": "a renamed percent placeholder is only a warning",
+      "source": "Hi %spouse!",
+      "target": "Hallo %Ehepartner!",
+      "blocked": false
+    },
+    {
+      "name": "an added %noturn is only a warning",
+      "source": "Hi.",
+      "target": "Hallo.%noturn",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -818,6 +865,21 @@
       "source": "Hi.#$y 'Q?_Yes_Great'",
       "target": "Hallo. $y 'Frage?_Ja_Toll'",
       "text": "#$y is missing from the translation. It starts the quick question in a new dialogue box; without it the game shows the command as text. $y is not in the English text. The game would show it as text or change the dialogue flow."
+    },
+    {
+      "source": "Hi %spouse!",
+      "target": "Hallo!",
+      "text": "%spouse is missing from the translation. The game puts the spouse's name here. Fine if intended."
+    },
+    {
+      "source": "Hi.%noturn",
+      "target": "Hallo.",
+      "text": "%noturn is missing from the translation. It keeps the character from turning to face the player. Fine if intended."
+    },
+    {
+      "source": "Hi.",
+      "target": "Hallo, %farm.",
+      "text": "%farm is not in the English text. The game puts the farm's name here. Fine if intended."
     }
   ]
 }
