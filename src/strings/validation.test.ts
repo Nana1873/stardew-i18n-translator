@@ -9,7 +9,7 @@ describe("validate", () => {
         ruleId: "token-missing",
         severity: "error",
         message:
-          "#$b# is missing from the translation. It starts a new dialogue box, so the page structure changes.",
+          "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently.",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
@@ -95,7 +95,7 @@ describe("validate", () => {
     const issues = validate("${a^b}$", "${x^y^z}$ ${neu^neu}$", false);
 
     expect(issues.map((issue) => issue.ruleId)).toEqual(["token-added"]);
-    expect(issues[0].message).toContain("he/she switches changed");
+    expect(issues[0].message).toContain("he/she switches differ");
   });
 
   it("still blocks a malformed target-only gender switch", () => {
@@ -192,7 +192,7 @@ describe("validate", () => {
       "token-missing",
     ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
-      "#$b# is missing from the translation. It starts a new dialogue box, so the page structure changes.",
+      "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently.",
       "The portrait $s is missing from the translation: the character shows a different face. Fine if intended.",
     ]);
   });

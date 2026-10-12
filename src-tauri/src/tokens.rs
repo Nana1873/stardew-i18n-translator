@@ -275,21 +275,21 @@ fn difference_message(difference: &TokenDifference) -> String {
             "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
                 .to_string()
         } else {
-            "The number or shape of he/she switches changed. Fine if intended.".to_string()
+            "The he/she switches differ from the English text. Fine if intended.".to_string()
         };
     }
     if is_portrait_command(token) {
         return if difference.is_error() && missing {
-            format!("The portrait {token} {change}: the portraits changed and one dialogue page now shows a portrait as raw text.")
+            format!("The portrait {token} {change}: one dialogue box now has two different portraits, so the second shows as raw text.")
         } else if difference.is_error() {
-            format!("The portrait {token} {change}: a second portrait on one dialogue page is shown as raw text.")
+            format!("The portrait {token} {change}: one dialogue box now has two different portraits, so the second shows as raw text.")
         } else {
             format!("The portrait {token} {change}: the character shows a different face. Fine if intended.")
         };
     }
     match token {
         "@" => return format!("The player name @ {change}. Fine if intended."),
-        "^" | "#" if difference.is_error() => return format!("{token} {change}: a dialogue page now has two different portraits, and the second shows as raw text."),
+        "^" | "#" if difference.is_error() => return format!("{token} {change}: one dialogue box now has two different portraits, so the second shows as raw text."),
         "^" => return format!("^ {change}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."),
         "{" | "}" => return format!("A single {token} {change}. The game treats single braces as commands and hides text."),
         "#" => return format!("# {change}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."),
@@ -307,22 +307,22 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
     let chars: Vec<char> = token.chars().collect();
     if matches!(token, "${" | "}$") {
         return if difference.is_error() {
-            "A he/she switch marker is unbalanced, so the game would show broken text."
+            "A he/she switch is not opened and closed properly, so the game would show broken text."
         } else {
             "Fine if intended."
         };
     }
     let page_marker = chars.get(3).is_some_and(|c| matches!(c, '#' | '$' | '*'));
     if token.starts_with("#$b") && page_marker {
-        return "It starts a new dialogue box, so the page structure changes.";
+        return "It starts a new dialogue box, so the text would be split into boxes differently.";
     }
     if token.starts_with("#$e") && page_marker {
-        return "It ends the conversation and shows the rest next time, so the page structure changes.";
+        return "It ends today's conversation and saves the rest for next time, so the dialogue would play out differently.";
     }
     if token.starts_with("#$action")
         || ((token.starts_with("#$") || token.starts_with('$')) && token.ends_with('#'))
     {
-        return "It carries response ids, flags, or keys the game needs.";
+        return "The game needs it to run the dialogue (answers, flags, or events).";
     }
     if token.starts_with("%item") || token.starts_with("%action") {
         return if missing {
@@ -332,13 +332,13 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         };
     }
     if token == "#$y" {
-        return "It starts the quick response on a new page; without it the game shows the command as text.";
+        return "It starts the quick question in a new dialogue box; without it the game shows the command as text.";
     }
     if token == "*" {
-        return "In a $y reply it starts a new dialogue box, so the page structure changes.";
+        return "In a quick-question reply it starts a new dialogue box, so the text would be split into boxes differently.";
     }
     if token == "_" {
-        return "It separates the question, answers, and replies of a $y quick response.";
+        return "It separates the question, answers, and replies of a quick question; without it the game mixes them up.";
     }
     if token == "[#]" {
         return if missing {
@@ -349,9 +349,9 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
     }
     if token == "%fork" || token.starts_with("%revealtaste") {
         return if missing {
-            "The event branch or gift-taste reveal is lost."
+            "The event choice or gift-taste reveal would not happen."
         } else {
-            "It changes event logic the English text does not have."
+            "It adds event behaviour the English text does not have."
         };
     }
     if token.starts_with("{{") || match_positional(&chars, 0) == Some(chars.len()) {
@@ -361,21 +361,21 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         return if token.starts_with("{{") {
             "The game would show it as raw text."
         } else {
-            "A placeholder without a value breaks the text."
+            "The game has no value for it, so the text breaks."
         };
     }
     if token.to_ascii_lowercase().starts_with("[articlefor") {
         return if missing {
             "Only the a/an article is lost. Fine if intended."
         } else {
-            "A changed or extra game token shows as raw text."
+            "The game would show it as raw text."
         };
     }
     if token.starts_with('[') {
         return if missing {
             "The game would not insert this value or item."
         } else {
-            "A changed or extra game token shows as raw text."
+            "The game would show it as raw text."
         };
     }
     if token.starts_with('$') && !is_portrait_command(token) {
