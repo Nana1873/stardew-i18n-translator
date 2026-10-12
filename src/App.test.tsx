@@ -259,9 +259,22 @@ it("shows unreadable settings without starting setup and retries after repair", 
     if (command === "scan_mods") return Promise.resolve(EMPTY_SCAN);
     return Promise.resolve(null);
   });
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
   render(<App />);
   expect(await screen.findByText(error)).toBeVisible();
   expect(screen.queryByText("Game folder")).toBeNull();
+  // The detail is in the Activity log once and can be copied for a report.
+  expect(
+    within(screen.getByRole("log")).getAllByText(
+      `Could not load settings: ${error}`,
+    ),
+  ).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Copy details" }));
+  await waitFor(() => expect(writeText).toHaveBeenCalledWith(error));
   expect(screen.getByRole("button", { name: "Settings" })).toBeDisabled();
   expect(invokeMock.mock.calls.some(([cmd]) => cmd === "save_settings")).toBe(
     false,

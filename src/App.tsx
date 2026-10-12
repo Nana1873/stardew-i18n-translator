@@ -724,7 +724,13 @@ export function App() {
       })
       .catch((error) => {
         logFrontendError("loadSettings", String(error));
-        if (active) setSettingsLoadError(String(error));
+        if (!active) return;
+        setSettingsLoadError(String(error));
+        reportActivity({
+          kind: "message",
+          message: `Could not load settings: ${String(error)}`,
+          tone: "error",
+        });
       })
       .finally(() => {
         if (active) setLoaded(true);
@@ -2347,6 +2353,23 @@ export function App() {
                 onClick={() => void openLogsDir()}
               >
                 Open logs folder
+              </button>
+              <button
+                type="button"
+                className="translator-button translator-button-quiet"
+                onClick={() => {
+                  const detail = settingsLoadError;
+                  void (async () => {
+                    try {
+                      await navigator.clipboard.writeText(detail);
+                      notify("Error details copied.", "success", false, false);
+                    } catch {
+                      notify("Could not copy to the clipboard.", "error");
+                    }
+                  })();
+                }}
+              >
+                Copy details
               </button>
             </div>
           </section>
