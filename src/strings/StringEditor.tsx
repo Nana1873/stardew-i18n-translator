@@ -61,6 +61,7 @@ export interface EditorSuggestionProvenance {
 }
 import {
   comparableTokenCounts,
+  isTokenIssue,
   tokenDifferences,
   validate,
 } from "./validation";
@@ -71,7 +72,6 @@ import {
 } from "./protectedTokens";
 import {
   STATUS_META,
-  statusTint,
   derivedStringStatus,
   noTranslationNeeded,
   isBlankText,
@@ -82,6 +82,7 @@ import {
   type ResolvedShortcuts,
   displayShortcut,
   matchesShortcut,
+  isBrowserKey,
 } from "../shortcuts";
 import { useModalIsolation } from "../dialogAccessibility";
 import type { NoticeOptions } from "../ui/activity";
@@ -357,6 +358,13 @@ export function StringEditor({
       if (launcherRef.current?.isConnected) launcherRef.current.focus();
     };
   }, []);
+
+  // After Next or Save & next the launcher is an older row. Forget it so the
+  // table focuses the string that was edited last when the editor closes.
+  const launcherIdentityRef = useRef(rowIdentity);
+  useEffect(() => {
+    if (launcherIdentityRef.current !== rowIdentity) launcherRef.current = null;
+  }, [rowIdentity]);
 
   const draftIdentityRef = useRef(rowIdentity);
   // A background update of the same row must preserve a manual draft.
@@ -720,7 +728,8 @@ export function StringEditor({
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      // Browser keys arrive with their browser action already blocked.
+      if (event.defaultPrevented && !isBrowserKey(event)) return;
       const modalDialogs = Array.from(
         document.querySelectorAll<HTMLElement>(
           '[role="dialog"][aria-modal="true"]',
@@ -861,33 +870,20 @@ export function StringEditor({
       : `${what} (note: does not affect export)`;
   };
   const blockingTokenIssues = issues.filter(
-    (issue) =>
-      issue.severity === "error" &&
-      (issue.ruleId === "token-missing" || issue.ruleId === "token-added"),
+    (issue) => issue.severity === "error" && isTokenIssue(issue),
   );
   const acceptedTokenMismatch =
     mismatchAccepted && blockingTokenIssues.length > 0;
   const unacceptedErrors = issues.filter(
     (issue) =>
       issue.severity === "error" &&
-      !(
-        acceptedTokenMismatch &&
-        (issue.ruleId === "token-missing" || issue.ruleId === "token-added")
-      ),
+      !(acceptedTokenMismatch && isTokenIssue(issue)),
   );
   const visibleIssues = acceptedTokenMismatch
-    ? issues.filter(
-        (issue) =>
-          issue.ruleId !== "token-missing" && issue.ruleId !== "token-added",
-      )
+    ? issues.filter((issue) => !isTokenIssue(issue))
     : issues;
   const shownStatus = derivedStringStatus(row.source, value, row.status);
-  const shownStatusLabel: Record<StringStatus, string>[StringStatus] = {
-    untranslated: "Open",
-    outdated: "Changed",
-    "review-needed": "Review",
-    translated: "Done",
-  }[shownStatus];
+  const shownStatusLabel = STATUS_META[shownStatus].label;
   const glossaryMatches = matchGlossary(row.source, glossary);
   const targetFieldLabel = translationFieldLabel(targetLanguageLabel);
   const targetLanguageName = targetFieldLabel.replace(/\s+translation$/i, "");
@@ -943,6 +939,7 @@ export function StringEditor({
         aria-modal="true"
         aria-labelledby="translator-editor-title"
         aria-describedby="translator-editor-context-description"
+        tabIndex={-1}
       >
         <header
           className="editor__meta translator-editor-head"
@@ -976,11 +973,6 @@ export function StringEditor({
                       ? " is-change"
                       : ""
               }`}
-              style={{
-                color: STATUS_META[shownStatus].color,
-                borderColor: statusTint(STATUS_META[shownStatus].color, 0.5),
-                background: statusTint(STATUS_META[shownStatus].color, 0.14),
-              }}
               data-status-help={statusHelp[shownStatus]}
               aria-description={statusHelp[shownStatus]}
               onPointerEnter={(event) => {
@@ -1199,6 +1191,20 @@ export function StringEditor({
                 <label htmlFor="translator-editor-translation">
                   {targetFieldLabel}
                 </label>
+                {/* A single space is invisible in the field; say what it
+                    means in the head, so both fields keep the same height. */}
+                {isIntentionalBlankTarget(row.source, value) && (
+                  <span
+                    className="translator-editor-blank-hint"
+                    id="translator-editor-blank-hint"
+                    title="Left blank on purpose: the game shows nothing here."
+                  >
+                    Left blank on purpose
+                    <span className="translator-sr-only">
+                      : the game shows nothing here.
+                    </span>
+                  </span>
+                )}
                 <button
                   className="translator-icon-button translator-editor-copy"
                   type="button"
@@ -1226,6 +1232,11 @@ export function StringEditor({
                 value={value}
                 onChange={(event) => editValue(event.target.value)}
                 readOnly={saving || translating}
+                aria-describedby={
+                  isIntentionalBlankTarget(row.source, value)
+                    ? "translator-editor-blank-hint"
+                    : undefined
+                }
               />
             </div>
           </div>
@@ -1267,11 +1278,7 @@ export function StringEditor({
                           className={`editor__issue-title editor__issue-title--${severity}`}
                         >
                           {severity === "error"
-                            ? group.some(
-                                (issue) =>
-                                  issue.ruleId === "token-missing" ||
-                                  issue.ruleId === "token-added",
-                              )
+                            ? group.some(isTokenIssue)
                               ? "Must fix or Save anyway – until then this string stays English in the game"
                               : "Must fix"
                             : "Worth a look – exported as written"}

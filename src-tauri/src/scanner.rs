@@ -662,10 +662,15 @@ fn extra_target_keys(
 }
 
 fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<ScannedMod, String> {
-    let body = input_limits::read_json_text(manifest)
-        .map_err(|error| format!("unreadable manifest: {error}"))?;
-    let value = parse_json_lenient(&body).map_err(|e| format!("invalid manifest JSON: {e}"))?;
-    let object = value.as_object().ok_or("manifest is not an object")?;
+    let body = input_limits::read_json_text(manifest).map_err(|error| {
+        format!("The manifest.json could not be read ({error}), so this mod was left out.")
+    })?;
+    let value = parse_json_lenient(&body).map_err(|e| {
+        format!("The manifest.json is not valid JSON ({e}), so this mod was left out.")
+    })?;
+    let object = value
+        .as_object()
+        .ok_or("The manifest.json does not contain a JSON object, so this mod was left out.")?;
 
     let folder_name = dir
         .file_name()
@@ -1555,7 +1560,10 @@ fn build_i18n_file(
         .strip_prefix(mod_dir)
         .map_err(|_| "i18n folder is outside its mod folder".to_string())?
         .to_str()
-        .ok_or_else(|| "i18n path is not valid Unicode".to_string())?
+        .ok_or_else(|| {
+            "The i18n folder path contains characters that cannot be read as text, so its translations were left out."
+                .to_string()
+        })?
         .replace('\\', "/");
     let (default_path, target_path) = if split {
         let name = i18n_dir
@@ -3949,5 +3957,36 @@ mod audit_quick_win_tests {
         assert!(manifests[0].starts_with(root.join("Live")));
         assert_eq!(i18n_dirs.len(), 1, "{i18n_dirs:?}");
         std::fs::remove_dir_all(root).ok();
+    }
+}
+
+#[cfg(test)]
+mod manifest_reason_tests {
+    use super::*;
+
+    #[test]
+    fn manifest_skip_reasons_are_full_sentences() {
+        let root = crate::test_support::temp_dir("manifest-reasons");
+        let dir = root.join("Broken");
+        std::fs::create_dir_all(&dir).unwrap();
+        let manifest = dir.join("manifest.json");
+
+        std::fs::write(&manifest, "[1, 2]").unwrap();
+        let error = read_manifest(&manifest, &dir, &root).unwrap_err();
+        assert_eq!(
+            error,
+            "The manifest.json does not contain a JSON object, so this mod was left out."
+        );
+
+        std::fs::write(&manifest, "{ not json").unwrap();
+        let error = read_manifest(&manifest, &dir, &root).unwrap_err();
+        assert!(error.starts_with("The manifest.json is not valid JSON ("));
+        assert!(error.ends_with("), so this mod was left out."));
+
+        std::fs::remove_file(&manifest).unwrap();
+        let error = read_manifest(&manifest, &dir, &root).unwrap_err();
+        assert!(error.starts_with("The manifest.json could not be read ("));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

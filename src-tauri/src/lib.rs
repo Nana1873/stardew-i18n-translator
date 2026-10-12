@@ -301,7 +301,9 @@ fn save_string_groups_with_undo(
 ) -> Result<operation_history::OperationHistoryEntry, String> {
     let title = title.trim();
     if title.is_empty() || title.chars().count() > 80 || title.chars().any(char::is_control) {
-        return Err("The batch result title must contain 1 to 80 visible characters.".to_string());
+        return Err(internal_error(
+            "the batch result title must contain 1 to 80 visible characters",
+        ));
     }
     // Check every entry before anything is written.
     let groups = groups
@@ -3498,6 +3500,12 @@ fn log_plugin<R: tauri::Runtime>() -> tauri::plugin::TauriPlugin<R> {
         .max_file_size(2_000_000)
         .rotation_strategy(RotationStrategy::KeepSome(5))
         .build()
+}
+
+/// Message for a state the app itself should never create (a frontend or
+/// backend bug, not something the user did). It asks for a bug report.
+pub(crate) fn internal_error(detail: &str) -> String {
+    format!("Internal error: {detail}. Please report this and attach the Activity log.")
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

@@ -48,7 +48,7 @@ without an AI service._
   community language pack, so item, place, and character names match the game.
   Optional: translation and export work without a glossary.
 - **Batch work**: select rows with checkboxes, Ctrl+click, or Shift+click, then
-  translate with AI, export an LLM batch, keep the original, clear, or mark Done.
+  translate with AI, export an LLM batch, keep the original, clear, or **Mark as done**.
   The most recent batch edit can be undone during the session.
 - **Keyboard friendly**: Ctrl+F to search, Ctrl+Enter to save, and
   Ctrl+Shift+Enter for Save & next. All shortcuts can be changed in

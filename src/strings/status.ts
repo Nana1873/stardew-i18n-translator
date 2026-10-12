@@ -1,50 +1,24 @@
 import type { StringStatus } from "../tauri/commands";
 
 /**
- * Labels, glyphs and colors for the current string statuses.
+ * Labels and glyphs for the current string statuses, matching the table and
+ * filter labels.
  *
- * Design rule: a status is always shown as hue + glyph (+ 3px row edge in the
- * table) — any one signal alone is sufficient. Gold is reserved for
- * brand/selection and must never appear here. `edge` is the row-edge color
- * (the resting states use a dimmed edge so worked-on rows stand out).
+ * Design rule: a status is always shown as hue + glyph, and either signal
+ * alone is sufficient. The hue comes from the shared CSS status colors
+ * (`.translator-state.is-ready` / `is-change` / `is-review`), the same ones
+ * the table and the status filters use. Gold is reserved for brand/selection
+ * and must never appear here.
  */
 export const STATUS_META: Record<
   StringStatus,
-  { label: string; glyph: string; color: string; edge: string }
+  { label: string; glyph: string }
 > = {
-  untranslated: {
-    label: "Untranslated",
-    glyph: "○",
-    color: "#9aa0a6",
-    edge: "rgba(154, 160, 166, 0.5)",
-  },
-  translated: {
-    label: "Translated",
-    glyph: "✓",
-    color: "#5ec488",
-    edge: "#5ec488",
-  },
-  outdated: {
-    label: "Outdated",
-    glyph: "↻",
-    color: "#7db4d4",
-    edge: "#7db4d4",
-  },
-  "review-needed": {
-    label: "Needs review",
-    glyph: "⚑",
-    color: "#ec8b3f",
-    edge: "#ec8b3f",
-  },
+  untranslated: { label: "Open", glyph: "○" },
+  translated: { label: "Done", glyph: "✓" },
+  outdated: { label: "Changed", glyph: "↻" },
+  "review-needed": { label: "Review", glyph: "⚑" },
 };
-
-/** `#rrggbb` + alpha → `rgba()` (STATUS_META colors are all 6-digit hex). */
-export function statusTint(hex: string, alpha: number): string {
-  const r = parseInt(hex.slice(1, 3), 16);
-  const g = parseInt(hex.slice(3, 5), 16);
-  const b = parseInt(hex.slice(5, 7), 16);
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
-}
 
 /** Unicode White_Space matches Rust str::trim, including NEL but excluding BOM. */
 export function isBlankText(text: string): boolean {

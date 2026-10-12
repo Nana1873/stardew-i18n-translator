@@ -51,13 +51,16 @@ export function ExportConfirmBody({
         className="translator-flow-dialog translator-export-dialog desktop-export-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Confirm export overwrite"
+        aria-labelledby="translator-export-title"
         aria-describedby="translator-export-summary"
+        tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">Export translation JSON</h2>
+            <h2 className="translator-heading" id="translator-export-title">
+              Export translation JSON
+            </h2>
             <div className="translator-kicker">
               <span>{modName}</span>
               {targetLanguage && (

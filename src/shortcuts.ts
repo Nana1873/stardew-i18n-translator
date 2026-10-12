@@ -57,6 +57,7 @@ export const SHORTCUT_COMMANDS = [
     id: "editor.translate",
     group: "String editor",
     label: "Translate with AI",
+    // The browser action of Ctrl+F5 (reload) is blocked, so the key is free.
     defaultShortcut: "Ctrl+F5",
   },
   {
@@ -127,6 +128,21 @@ export function displayShortcut(shortcut: string): string {
     .replace("ArrowDown", "↓");
 }
 
+// Keys the WebView would handle itself: reload, find next, and print. The
+// app blocks only their browser action (see blockBrowserKeys); they stay
+// free for app shortcuts.
+const BROWSER_KEYS = new Set([
+  "F5",
+  "Ctrl+F5",
+  "Shift+F5",
+  "Ctrl+R",
+  "Ctrl+Shift+R",
+  "F3",
+  "Shift+F3",
+  "Ctrl+P",
+  "Ctrl+Shift+P",
+]);
+
 const RESERVED_SHORTCUTS = new Set([
   "Alt+F4",
   "Ctrl+W",
@@ -134,6 +150,30 @@ const RESERVED_SHORTCUTS = new Set([
   "Ctrl+Shift+I",
   "Ctrl+Shift+J",
 ]);
+
+/** True for keys whose default WebView action (reload, print, find next) must not run. */
+export function isBrowserKey(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "ctrlKey" | "metaKey" | "shiftKey" | "altKey"
+  >,
+): boolean {
+  const shortcut = shortcutFromEvent(event);
+  return shortcut !== null && BROWSER_KEYS.has(shortcut);
+}
+
+/**
+ * Stops the WebView from reloading (F5, Ctrl+R) or opening print or find
+ * (Ctrl+P, F3) inside the desktop app, where a reload would drop unsaved
+ * edits. Tauri 2 has no option to turn these browser keys off.
+ */
+export function blockBrowserKeys(target: Window = window): () => void {
+  const handler = (event: KeyboardEvent) => {
+    if (isBrowserKey(event)) event.preventDefault();
+  };
+  target.addEventListener("keydown", handler, true);
+  return () => target.removeEventListener("keydown", handler, true);
+}
 
 export function shortcutProblem(shortcut: string): string | null {
   if (RESERVED_SHORTCUTS.has(shortcut))

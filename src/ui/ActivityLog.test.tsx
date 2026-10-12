@@ -481,3 +481,47 @@ it("expands, collapses, and allows keyboard resizing with bounds", () => {
   for (let i = 0; i < 10; i++) fireEvent.keyDown(resize, { key: "ArrowDown" });
   expect(resize).toHaveAttribute("aria-valuenow", "80");
 });
+
+it("collapses consecutive unchanged rescans into one counted line", () => {
+  const scanning = {
+    kind: "message",
+    message: "Scanning mods…",
+    tone: "info",
+    startsGroup: true,
+  } as const;
+  const done = (time: number, message = "Scan done: 1 mod, 3 English texts.") =>
+    ({
+      kind: "message",
+      message,
+      tone: "success",
+      details: { kind: "scan", time },
+    }) as const;
+  let buffer: ActivityBuffer = { entries: [], omitted: 0 };
+  let id = 0;
+  for (const [event, time] of [
+    [scanning, 1],
+    [done(1), 1],
+    [scanning, 2],
+    [done(2), 2],
+    [scanning, 3],
+    [done(3), 3],
+  ] as const) {
+    buffer = appendActivity(buffer, event, time, (id += 1));
+  }
+  expect(buffer.entries.map((entry) => entry.message)).toEqual([
+    "Scan done: 1 mod, 3 English texts. (3 times)",
+  ]);
+  expect(buffer.entries[0].time).toBe(3);
+
+  buffer = appendActivity(buffer, scanning, 4, (id += 1));
+  buffer = appendActivity(
+    buffer,
+    done(4, "Scan done: 1 mod, 4 English texts."),
+    4,
+    (id += 1),
+  );
+  expect(buffer.entries.map((entry) => entry.message)).toEqual([
+    "Scan done: 1 mod, 3 English texts. (3 times)",
+    "Scan done: 1 mod, 4 English texts.",
+  ]);
+});

@@ -648,16 +648,22 @@ try {
     );
     await click(button("Next"));
     await click(button("Finish"));
-    await absent(css('[aria-label="Setup"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
+    );
     await click(css('[aria-label="Scan mods"]'));
     await waitFor("native scan snapshot", () =>
       exists(join(data, "scan-source-snapshot.json")),
     );
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
     await click(css('button[aria-label$="open scan results"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
     const settings = await json(join(data, "settings.json"));
     assert.equal(settings.stardewPath, game);
     assert.equal(settings.modsPath, mods);
@@ -724,7 +730,9 @@ try {
     );
     const rescan = async () => {
       await click(css('[aria-label="Scan mods"]'));
-      await absent(css('[role="dialog"][aria-label="Scan"]'));
+      await absent(
+        css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+      );
       await waitFor(
         "reloaded issue counts",
         async () =>
@@ -807,7 +815,7 @@ try {
     ).findElement(css(".translator-inline-validation"));
     assert.equal(await acceptedMarker.getAttribute("data-severity"), "warning");
     assert.match(
-      await acceptedMarker.getAttribute("aria-label"),
+      await acceptedMarker.getAttribute("aria-description"),
       /^Kept on purpose: exported as written\./,
     );
     await openEntry("greeting");
@@ -1008,7 +1016,11 @@ try {
       "The app resumes directly in the workspace.",
     );
     assert.equal(
-      (await driver.findElements(css('[aria-label="Setup"]'))).length,
+      (
+        await driver.findElements(
+          css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
+        )
+      ).length,
       0,
     );
     assert.equal(
@@ -1132,7 +1144,9 @@ try {
     const backupBefore = await readFile(`${exported}.bak`);
     await click(button("Export …"));
     await click(button("Translation ZIP · current mod"));
-    await element(css('[aria-label="Export translation ZIP"]'));
+    await element(
+      css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+    );
     await click(button("Choose save location …"));
     await native("cancel", "Save translation ZIP", destination);
     await driver.wait(
@@ -1149,7 +1163,9 @@ try {
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("translation ZIP created", () => exists(destination));
-    await absent(css('[aria-label="Export translation ZIP"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+    );
     const files = await archive("read", destination);
     // Only locale files; no original assets, installer metadata, or app state.
     assert.deepEqual(Object.keys(files), [
@@ -1177,18 +1193,24 @@ try {
       const backupBefore = await readFile(`${exported}.bak`);
       await click(button("Export …"));
       await click(button("Translation ZIP · current mod"));
-      await element(css('[aria-label="Export translation ZIP"]'));
+      await element(
+        css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+      );
       await fill(
         By.xpath("//label[contains(., 'Install folder')]/input"),
         "ReplacedDesktopSmoke",
       );
       await click(button("Choose save location …"));
       await native("cancel-overwrite", "Save translation ZIP", destination);
-      await element(css('[aria-label="Export translation ZIP"]'));
+      await element(
+        css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+      );
       assert.deepEqual(await readFile(destination), archiveBefore);
       await click(button("Choose save location …"));
       await native("save-overwrite", "Save translation ZIP", destination);
-      await absent(css('[aria-label="Export translation ZIP"]'));
+      await absent(
+        css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+      );
       await absent(css('[aria-label="Confirm ZIP overwrite"]'));
       const files = await archive("read", destination);
       assert.deepEqual(Object.keys(files), [
@@ -1209,13 +1231,17 @@ try {
     const diskBefore = await readFile(exported);
     await click(button("Export …"));
     await click(button("Translation ZIP · all mods"));
-    await element(css('[aria-label="Export translation ZIP"]'));
+    await element(
+      css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+    );
     await click(button("Choose save location …"));
     await native("save", "Save translation ZIP", destination);
     await waitFor("combined translation ZIP created", () =>
       exists(destination),
     );
-    await absent(css('[aria-label="Export translation ZIP"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+    );
     const files = await archive("read", destination);
     assert.deepEqual(Object.keys(files), ["DesktopSmoke/i18n/de.json"]);
     assert.deepEqual(JSON.parse(files["DesktopSmoke/i18n/de.json"]), {
@@ -1252,7 +1278,9 @@ try {
         '//button[.//span[normalize-space(.)="Export selection as LLM batch"]]',
       ),
     );
-    await element(css('[aria-label="Export LLM batch"]'));
+    await element(
+      css('[role="dialog"][aria-labelledby="translator-llm-export-title"]'),
+    );
     await click(button("Choose…"));
     await native("save", "Export LLM translation batch", batchFile);
     assert.equal(
@@ -1262,7 +1290,9 @@ try {
     );
     await click(button("Save JSON batch"));
     await waitFor("batch exported", () => exists(batchFile));
-    await absent(css('[aria-label="Export LLM batch"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-llm-export-title"]'),
+    );
     const batch = await json(batchFile);
     assert.equal(batch.format, "stardew-translator-llm-batch");
     assert.equal(batch.version, 2);

@@ -6,6 +6,7 @@ import {
   useState,
 } from "react";
 import {
+  AlertTriangle,
   BookOpen,
   Folder,
   HardDrive,
@@ -105,6 +106,15 @@ const DEFAULT_AI_SETTINGS = {
 const CLOUD_REASONING_OPTIONS = ["low", "medium", "high"] as const;
 const DEFAULT_CHATGPT_MODEL = "gpt-6.1-sol";
 const englishNumberFormat = new Intl.NumberFormat("en-US");
+
+/** Shows data-folder file names in account messages as code. */
+function withCodePaths(message: string) {
+  return message
+    .split(/(data\/[\w.-]+)/)
+    .map((part, index) =>
+      index % 2 === 1 ? <code key={index}>{part}</code> : part,
+    );
+}
 
 export function SettingsDialog({
   settings,
@@ -651,6 +661,7 @@ export function SettingsDialog({
         aria-busy={saving}
         aria-labelledby="translator-settings-title"
         aria-describedby="translator-settings-description"
+        tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-settings-head">
@@ -1035,15 +1046,24 @@ export function SettingsDialog({
                         aria-live={cloudAccountError ? "assertive" : "polite"}
                         aria-atomic="true"
                       >
-                        {cloudAccountError ||
-                          (chatgptSigningIn
-                            ? "Complete sign-in in your browser. This screen updates automatically."
-                            : cloudChecking
-                              ? "Checking ChatGPT sign-in…"
-                              : cloudAvailable
-                                ? cloudStatus?.authentication ||
-                                  "Signed in with ChatGPT"
-                                : "Sign in to use your ChatGPT plan.")}
+                        {cloudAccountError ? (
+                          <>
+                            <AlertTriangle
+                              className="translator-setting-warning-icon"
+                              aria-hidden="true"
+                            />
+                            <span>{withCodePaths(cloudAccountError)}</span>
+                          </>
+                        ) : chatgptSigningIn ? (
+                          "Complete sign-in in your browser. This screen updates automatically."
+                        ) : cloudChecking ? (
+                          "Checking ChatGPT sign-in…"
+                        ) : cloudAvailable ? (
+                          cloudStatus?.authentication ||
+                          "Signed in with ChatGPT"
+                        ) : (
+                          "Sign in to use your ChatGPT plan."
+                        )}
                       </span>
                     </span>
                     <div className="translator-setting-actions">

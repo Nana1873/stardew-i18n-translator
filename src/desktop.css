@@ -491,8 +491,8 @@
   height: 14px;
 }
 #stardew-i18n-translator .translator-inline-validation {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   border-radius: 3px;
   background: transparent;
 }
@@ -1719,6 +1719,22 @@
 /* The editor status chip already shows its status glyph; no extra dot. */
 #stardew-i18n-translator .editor__status.translator-state::before {
   content: none;
+}
+#stardew-i18n-translator .translator-editor-blank-hint {
+  flex: 1;
+  min-width: 0;
+  margin: 0 8px;
+  overflow: hidden;
+  color: var(--translator-muted);
+  font-size: 12px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Same status hues as the table and filters, drawn from the state class. */
+#stardew-i18n-translator .editor__status.translator-state {
+  border-color: color-mix(in srgb, currentColor 50%, transparent);
+  background: color-mix(in srgb, currentColor 14%, transparent);
 }
 
 /* Spare editor height goes to the text fields, not to the issue box. */

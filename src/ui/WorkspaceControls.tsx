@@ -54,7 +54,6 @@ export function DesktopFilters({
           type="button"
           aria-pressed={issues}
           aria-label={`Issues ${issueCount}`}
-          disabled={!issues && issueCount === 0}
           data-status="issues"
           onFocus={(event) => onHelp?.(event.currentTarget, "issues")}
           onBlur={onHideHelp}

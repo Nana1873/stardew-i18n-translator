@@ -42,6 +42,12 @@ describe("CSS custom properties", () => {
     expect(overrideStyles).toContain("color: var(--translator-faint);");
   });
 
+  it("draws search and select fields with the strong input border", () => {
+    expect(translatorStyles).toMatch(
+      /\.translator-search,\s*#stardew-i18n-translator \.translator-select,\s*#stardew-i18n-translator \.translator-textarea\s*{[^}]*border:\s*1px solid var\(--translator-border-strong\);/s,
+    );
+  });
+
   it("keeps the production string workbench inside its pane", () => {
     expect(overrideStyles).toMatch(
       /#stardew-i18n-translator \.translator-string-pane\s*{[^}]*grid-template-rows:\s*minmax\(0, 1fr\);/s,

@@ -49,6 +49,8 @@ export interface ActivityEntry {
   aiStep?: string;
   startsGroup?: boolean;
   saves?: { modUniqueId: string; identities: string[] };
+  /** How many identical scans in a row this line stands for. */
+  repeat?: number;
 }
 export interface ActivityBuffer {
   entries: ActivityEntry[];
@@ -65,6 +67,10 @@ export function reportActivity(event: ActivityEvent) {
 
 /** The line shown while a scan runs. */
 export const SCANNING_MESSAGE = "Scanning mods…";
+
+function repeatedMessage(message: string, repeat: number | undefined) {
+  return repeat && repeat > 1 ? `${message} (${repeat} times)` : message;
+}
 
 /** Keep a bounded session log, protecting the latest 100 warnings/errors
  * from being displaced by routine batch progress. Preserve chronological order. */
@@ -119,6 +125,23 @@ export function appendActivity(
     const replacesScanning =
       event.details?.kind === "scan" && previous?.message === SCANNING_MESSAGE;
     if (replacesScanning) entries.pop();
+    // Back-to-back scans with the same result collapse into one line.
+    const last = entries.at(-1);
+    if (
+      replacesScanning &&
+      last?.details?.kind === "scan" &&
+      last.message === repeatedMessage(event.message, last.repeat)
+    ) {
+      const repeat = (last.repeat ?? 1) + 1;
+      entries[entries.length - 1] = {
+        ...last,
+        time,
+        details: event.details,
+        repeat,
+        message: repeatedMessage(event.message, repeat),
+      };
+      return { entries, omitted: buffer.omitted };
+    }
     entries.push({
       id,
       time,

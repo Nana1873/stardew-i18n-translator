@@ -10,6 +10,18 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- The automatic scan at start no longer opens the scan report when it only
+  skips a component; the header's "Needs attention" button shows it. Repeated
+  scans without changes share one Activity log line.
+- Opening another mod resets the status and Issues filters to All, and Issues
+  stays clickable with "No validation findings in this scope." when empty.
+- An intentionally blank translation is named next to the field in the editor,
+  and the editor's status badge uses the table's colors and labels.
+- Reasons for skipped mods are full sentences, and internal errors ask to be
+  reported with the Activity log.
+- Dialogs are named by their visible heading and take focus reliably; issue
+  markers have short names and a larger target.
+
 - Texts across the app are plainer: explanations, status lines, dialog text
   and error messages say what happened and what to do, without internal terms.
   Token findings read, for example, "{{Preis}} is not in the English text. The
@@ -77,6 +89,15 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   step instead of the raw transport error.
 
 ### Fixed
+
+- F5, Ctrl+R, F3 and Ctrl+P no longer reload, search or print inside the app
+  window; Translate with AI keeps Ctrl+F5.
+- An export failure stays visible when another result replaced its card, the
+  editor closes with a note when a reload removes the string being edited,
+  and Open Review is offered only while strings wait in Review.
+- The error for a damaged settings file can be copied from its card and is
+  listed in the Activity log. Export refusals name files relative to the Mods
+  folder instead of the full path.
 
 - Local AI stops after three timeouts in a row with a plain hint to check LM
   Studio or Ollama, instead of trying every remaining text.

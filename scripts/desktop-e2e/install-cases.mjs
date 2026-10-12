@@ -104,7 +104,9 @@ export async function installCases(h) {
     await click(css('[aria-label="Scan mods"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
   };
   let savedState, savedSettings, oldFiles, backupFiles;
   evidence.installation = { passed: false, cleanWindows: false, baseline };
@@ -207,7 +209,9 @@ export async function installCases(h) {
     ).sendKeys("German", Key.ENTER);
     await click(button("Next"));
     await click(button("Finish"));
-    await absent(css('[aria-label="Setup"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
+    );
     await rescan();
     await click(button("Workspace"));
     await click(css('[data-tree-id="mod:E2E.UpgradeSmoke"]'));
@@ -337,7 +341,11 @@ export async function installCases(h) {
     await launch(newExe);
     await element(css('[aria-label="Translation workspace"]'));
     assert.equal(
-      (await driver.findElements(css('[aria-label="Setup"]'))).length,
+      (
+        await driver.findElements(
+          css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
+        )
+      ).length,
       0,
     );
     assert.equal(

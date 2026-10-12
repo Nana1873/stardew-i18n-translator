@@ -143,6 +143,7 @@ export function ImportBatchDialog({
         aria-modal="true"
         aria-labelledby="translator-import-title"
         aria-describedby="translator-import-description"
+        tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">

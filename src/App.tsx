@@ -313,6 +313,8 @@ export function App() {
     activeRequestId: number | null;
   }>({ nextRequestId: 0, activeRequestId: null });
   const [resultTray, setResultTray] = useState<ResultTrayData | null>(null);
+  const resultTrayRef = useRef(resultTray);
+  resultTrayRef.current = resultTray;
   const latestResultRef = useRef<ResultTrayData | null>(null);
   const [operationHistory, setOperationHistory] = useState<
     OperationHistoryEntry[]
@@ -715,11 +717,22 @@ export function App() {
         const complete = setupComplete(effectiveSettings);
         setWizardOpen(!complete);
         refreshGlossary(effectiveSettings.targetLang);
-        if (complete) void runScan(effectiveSettings, false, () => active);
+        // At startup, skipped components only show in the header's
+        // "Needs attention" button instead of opening the scan report.
+        if (complete)
+          void runScan(effectiveSettings, false, () => active, {
+            openForSkippedComponents: false,
+          });
       })
       .catch((error) => {
         logFrontendError("loadSettings", String(error));
-        if (active) setSettingsLoadError(String(error));
+        if (!active) return;
+        setSettingsLoadError(String(error));
+        reportActivity({
+          kind: "message",
+          message: `Could not load settings: ${String(error)}`,
+          tone: "error",
+        });
       })
       .finally(() => {
         if (active) setLoaded(true);
@@ -877,6 +890,7 @@ export function App() {
       clearExisting?: boolean;
       preserveSelection?: boolean;
       showDiagnostics?: boolean;
+      openForSkippedComponents?: boolean;
     } = {},
   ) {
     if (!scanSettings.modsPath || !scanSettings.targetLang) return;
@@ -954,10 +968,11 @@ export function App() {
         setScanDialogOpen(
           (!quietScan && showProgress) ||
             result.warnings.length > 0 ||
-            (result.skippedComponents?.some(
-              (component) => component.requiresAttention,
-            ) ??
-              false),
+            (options.openForSkippedComponents !== false &&
+              (result.skippedComponents?.some(
+                (component) => component.requiresAttention,
+              ) ??
+                false)),
         );
       }
     } catch (error) {
@@ -1046,6 +1061,13 @@ export function App() {
 
   /** Open a mod and remember it for the next startup. */
   function openMod(uniqueId: string) {
+    // A status or Issues filter from the previous mod would hide most of the
+    // new mod's strings. Callers that jump to a filtered view (Open Review)
+    // set their filter after this call.
+    if (uniqueId !== selectedModId) {
+      setStatusFilter("all");
+      setIssuesOnly(false);
+    }
     setSelectedModId(uniqueId);
     setStringScope("mod");
     const nextLastOpened = { ...lastOpened, [uniqueId]: Date.now() };
@@ -1558,6 +1580,13 @@ export function App() {
     else presentResult(data);
   }
 
+  /** The export result card may have been replaced by another result while
+   * the export ran; then the failure would vanish with it. Say it instead. */
+  function reportExportFailureElsewhere(error: string) {
+    if (resultTrayRef.current?.kind !== "export")
+      notify(`Export failed: ${error}`, "error");
+  }
+
   function beginExport(
     title: string,
     retry: { kind: "selected"; modUniqueId: string } | { kind: "all" },
@@ -1762,6 +1791,7 @@ export function App() {
       );
     } catch (error) {
       logFrontendError("exportMod", String(error));
+      reportExportFailureElsewhere(String(error));
       setResultTray((current) =>
         current?.kind === "export"
           ? { ...current, pending: false, error: String(error) }
@@ -1826,6 +1856,7 @@ export function App() {
       );
     } catch (error) {
       logFrontendError("exportAll", String(error));
+      reportExportFailureElsewhere(String(error));
       setResultTray((current) =>
         current?.kind === "export"
           ? {
@@ -1982,6 +2013,38 @@ export function App() {
     }
   }
 
+  function resultReviewModIds(): string[] {
+    const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
+    const exportModIds =
+      resultTray?.kind === "export" && resultTray.retry.kind === "selected"
+        ? [resultTray.retry.modUniqueId]
+        : [];
+    return [
+      ...new Set(
+        (resultTray?.reviewModUniqueIds ?? exportModIds).filter((id) =>
+          knownModIds.has(id),
+        ),
+      ),
+    ];
+  }
+
+  /** Strings the Open Review jump would show right now (not at result time). */
+  function currentResultReviewCount(): number {
+    const ids = resultReviewModIds();
+    const mods =
+      ids.length === 1
+        ? (scan?.mods.filter((mod) => mod.uniqueId === ids[0]) ?? [])
+        : (scan?.mods ?? []);
+    const includeChanged = resultTray?.kind === "export";
+    return mods.reduce(
+      (total, mod) =>
+        total +
+        (mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded) +
+        (includeChanged ? (mod.statusCounts?.outdated ?? 0) : 0),
+      0,
+    );
+  }
+
   function openResultReviewQueue() {
     if (
       resultTray?.reviewWorkspace &&
@@ -1989,24 +2052,9 @@ export function App() {
         resultTray.reviewWorkspace.targetLang !== settings?.targetLang)
     )
       return;
-    const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
-    const exportModIds =
-      resultTray?.kind === "export" && resultTray.retry.kind === "selected"
-        ? [resultTray.retry.modUniqueId]
-        : [];
-    const reviewModIds = [
-      ...new Set(
-        (resultTray?.reviewModUniqueIds ?? exportModIds).filter((id) =>
-          knownModIds.has(id),
-        ),
-      ),
-    ];
+    const reviewModIds = resultReviewModIds();
     setSearch("");
     setScanStringFilter(null);
-    setStatusFilter(
-      resultTray?.kind === "export" ? "needs-review" : "review-needed",
-    );
-    setIssuesOnly(false);
     if (reviewModIds.length === 1) {
       openMod(reviewModIds[0]);
     } else {
@@ -2014,6 +2062,10 @@ export function App() {
       // All mods guarantees the requested Review results are not hidden.
       setStringScope("all");
     }
+    setStatusFilter(
+      resultTray?.kind === "export" ? "needs-review" : "review-needed",
+    );
+    setIssuesOnly(false);
     setResultHidden(true);
     window.dispatchEvent(new Event("translator-focus-filters"));
   }
@@ -2219,7 +2271,9 @@ export function App() {
               (resultTray.kind === "history" &&
                 (resultTray.entry.kind === "import" ||
                   resultTray.entry.kind === "ai") &&
-                resultTray.entry.itemCount > 0))
+                resultTray.entry.itemCount > 0)) &&
+            // Offer the jump only while there is still something to review.
+            currentResultReviewCount() > 0
               ? openResultReviewQueue
               : undefined
           }
@@ -2310,6 +2364,23 @@ export function App() {
                 onClick={() => void openLogsDir()}
               >
                 Open logs folder
+              </button>
+              <button
+                type="button"
+                className="translator-button translator-button-quiet"
+                onClick={() => {
+                  const detail = settingsLoadError;
+                  void (async () => {
+                    try {
+                      await navigator.clipboard.writeText(detail);
+                      notify("Error details copied.", "success", false, false);
+                    } catch {
+                      notify("Could not copy to the clipboard.", "error");
+                    }
+                  })();
+                }}
+              >
+                Copy details
               </button>
             </div>
           </section>

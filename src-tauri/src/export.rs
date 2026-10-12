@@ -190,11 +190,14 @@ pub fn validate_paths(
         let target_path = Path::new(&file.target_path);
         if let Some((relative_root, name)) = file.relative_dir.split_once("/@split/") {
             if name.contains(['/', '\\']) || !name.to_ascii_lowercase().ends_with(".json") {
-                return Err("Invalid split translation identity".into());
+                return Err(crate::internal_error(
+                    "an export request names an invalid split translation file",
+                ));
             }
             let source = std::fs::canonicalize(default_path).map_err(|e| e.to_string())?;
-            let parent = source.parent().ok_or("Invalid split source")?;
-            let i18n = parent.parent().ok_or("Invalid split source")?;
+            let unexpected_source = || unexpected_place(default_path, mods_root);
+            let parent = source.parent().ok_or_else(unexpected_source)?;
+            let i18n = parent.parent().ok_or_else(unexpected_source)?;
             if !source.is_file()
                 || !source.starts_with(&canonical_root)
                 || !file_name_is(parent, "default")
@@ -202,13 +205,13 @@ pub fn validate_paths(
                 || !file_name_is(&source, name)
                 || relative_root.is_empty()
             {
-                return Err("Invalid split translation source".into());
+                return Err(unexpected_source());
             }
             let expected = scanner::split_target_path(&source, target_lang)?;
             let actual_parent = validate_target_location(target_path, &canonical_root)?;
             let expected_parent = validate_target_location(&expected, &canonical_root)?;
             if actual_parent != expected_parent || target_path.file_name() != expected.file_name() {
-                return Err("Invalid split translation target".into());
+                return Err(unexpected_place(target_path, mods_root));
             }
             for variant in target_variants(target_path) {
                 validate_target_location(&variant, &canonical_root)?;
@@ -219,25 +222,21 @@ pub fn validate_paths(
                     target_path
                         .file_name()
                         .and_then(|n| n.to_str())
-                        .ok_or("Invalid split target filename")?
+                        .ok_or_else(|| unexpected_place(target_path, mods_root))?
                         .to_lowercase(),
                 ),
             ) {
-                return Err("Duplicate split translation target".into());
+                return Err(crate::internal_error(
+                    "an export request lists the same split translation file twice",
+                ));
             }
             continue;
         }
         if !file_name_is(default_path, "default.json") {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                default_path.display()
-            ));
+            return Err(unexpected_place(default_path, mods_root));
         }
         if !file_name_is(target_path, &expected_target) {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                target_path.display()
-            ));
+            return Err(unexpected_place(target_path, mods_root));
         }
 
         let canonical_default = std::fs::canonicalize(default_path).map_err(|error| {
@@ -247,10 +246,7 @@ pub fn validate_paths(
             )
         })?;
         if !canonical_default.is_file() || !canonical_default.starts_with(&canonical_root) {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                default_path.display()
-            ));
+            return Err(unexpected_place(default_path, mods_root));
         }
         let canonical_source_dir = canonical_default
             .parent()
@@ -260,17 +256,11 @@ pub fn validate_paths(
             .and_then(|name| name.to_str())
             .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
         {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                default_path.display()
-            ));
+            return Err(unexpected_place(default_path, mods_root));
         }
         let canonical_target_dir = validate_target_location(target_path, &canonical_root)?;
         if canonical_source_dir != canonical_target_dir {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                target_path.display()
-            ));
+            return Err(unexpected_place(target_path, mods_root));
         }
 
         for variant in target_variants(target_path) {
@@ -401,19 +391,27 @@ fn file_name_is(path: &Path, expected: &str) -> bool {
         .is_some_and(|name| name.eq_ignore_ascii_case(expected))
 }
 
+/// A path refusal that names the file relative to the Mods folder, so the
+/// message and the Activity log do not carry the user's folder layout.
+fn unexpected_place(path: &Path, mods_root: &Path) -> String {
+    let shown = path
+        .strip_prefix(mods_root)
+        .map(|relative| format!("Mods/{}", relative.display()))
+        .unwrap_or_else(|_| {
+            let parts: Vec<_> = path.components().rev().take(3).collect();
+            let tail: PathBuf = parts.into_iter().rev().collect();
+            format!(".../{}", tail.display())
+        });
+    format!("This mod's files are in an unexpected place ({shown}), so it wasn't exported.")
+}
+
 fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBuf, String> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if metadata.file_type().is_symlink() => {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                path.display()
-            ));
+            return Err(unexpected_place(path, canonical_root));
         }
         Ok(metadata) if !metadata.is_file() => {
-            return Err(format!(
-                "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-                path.display()
-            ));
+            return Err(unexpected_place(path, canonical_root));
         }
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -426,10 +424,7 @@ fn validate_target_location(path: &Path, canonical_root: &Path) -> Result<PathBu
     }
     let canonical_directory = canonical_target_directory(path)?;
     if !canonical_directory.starts_with(canonical_root) {
-        return Err(format!(
-            "This mod's files are in an unexpected place ({}), so it wasn't exported.",
-            path.display()
-        ));
+        return Err(unexpected_place(path, canonical_root));
     }
     Ok(canonical_directory)
 }
@@ -2411,5 +2406,16 @@ mod tests {
             modified
         );
         std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn unexpected_place_names_the_file_relative_to_mods() {
+        let mods = Path::new("C:/Games/Stardew/Mods");
+        let inside = unexpected_place(&mods.join("Some Mod/i18n/de.json"), mods);
+        assert!(inside.contains("(Mods/Some Mod"), "{inside}");
+        assert!(!inside.contains("Games"), "{inside}");
+        let outside = unexpected_place(Path::new("D:/Other/Place/i18n/de.json"), mods);
+        assert!(outside.contains(".../"), "{outside}");
+        assert!(!outside.contains("Other"), "{outside}");
     }
 }

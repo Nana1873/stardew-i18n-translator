@@ -92,7 +92,8 @@ export async function profileCases(h) {
         await h.waitFor("persistent sign-out warning", async () => {
           const warningElement = await h.element(
             By.xpath(
-              `//*[self::p or self::span][text()=${JSON.stringify(warning)}]`,
+              // The callout splits the text around its icon and the path.
+              `//*[self::p or self::span][normalize-space(.)=${JSON.stringify(warning)}]`,
             ),
           );
           return warningElement.isDisplayed();
@@ -124,7 +125,9 @@ export async function profileCases(h) {
       await h.launch();
       const error = await h.element(h.css(".translator-startup-error"));
       assert.match(await error.getText(), /Settings file .*corrupted/);
-      await h.absent(h.css('[aria-label="Setup"]'));
+      await h.absent(
+        h.css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
+      );
       assert.equal(
         await readFile(settingsPath, "utf8"),
         "invalid synthetic settings",

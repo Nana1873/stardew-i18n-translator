@@ -101,7 +101,9 @@ impl RunLease<'_> {
             "AI translation couldn't start. Restart the app and try again.".to_string()
         })?;
         let Some(current) = active.as_ref().filter(|active| active.id == self.id) else {
-            return Err("The active AI run changed unexpectedly.".to_string());
+            return Err(crate::internal_error(
+                "the active AI run changed while it was being finished",
+            ));
         };
         let cancelled = current.cancelled.load(Ordering::Acquire);
         *active = None;
@@ -299,7 +301,7 @@ pub struct AiRunResult {
 pub(crate) fn validate_request_shape(request: &AiTranslationRequest) -> Result<(), String> {
     let run_id = request.run_id.trim();
     if run_id.is_empty() || run_id.len() > 128 || run_id.chars().any(char::is_control) {
-        return Err("The AI run id is invalid.".to_string());
+        return Err(crate::internal_error("the AI run id is invalid"));
     }
     if !request.include_open && !request.include_changed {
         return Err("Choose Open and/or Changed strings for AI translation.".to_string());
@@ -317,18 +319,24 @@ pub(crate) fn validate_request_shape(request: &AiTranslationRequest) -> Result<(
                 .checked_add(identity.mod_unique_id.len())
                 .and_then(|total| total.checked_add(identity.relative_dir.len()))
                 .and_then(|total| total.checked_add(identity.key.len()))
-                .ok_or_else(|| "The AI string identities are too large.".to_string())
+                .ok_or_else(|| crate::internal_error("the AI string identities are too large"))
         })?;
     if identity_bytes > MAX_RUN_SOURCE_BYTES {
-        return Err("The AI string identities are too large.".to_string());
+        return Err(crate::internal_error(
+            "the AI string identities are too large",
+        ));
     }
 
     match request.scope {
         AiScope::OneString if request.identities.len() != 1 => {
-            return Err("The one-string AI scope requires exactly one identity.".to_string());
+            return Err(crate::internal_error(
+                "the one-string AI scope needs exactly one string",
+            ));
         }
         AiScope::Selected if request.identities.is_empty() => {
-            return Err("The selected AI scope requires identities.".to_string());
+            return Err(crate::internal_error(
+                "the selected AI scope has no strings",
+            ));
         }
         _ => {}
     }
@@ -339,7 +347,9 @@ pub(crate) fn validate_request_shape(request: &AiTranslationRequest) -> Result<(
         .iter()
         .any(|identity| !identities.insert(identity))
     {
-        return Err("The AI scope contains a duplicate string identity.".to_string());
+        return Err(crate::internal_error(
+            "the AI scope lists the same string twice",
+        ));
     }
     Ok(())
 }
@@ -394,17 +404,17 @@ fn validate_resolved_items(items: &[AiScopeRow]) -> Result<(), String> {
     for item in items {
         if item.source.trim().is_empty() || item.source.contains('\0') {
             return Err(
-                "A current source string cannot be sent to live AI translation.".to_string(),
+                "One English text is empty or contains a null character, so it cannot be sent to the AI. Leave it out of the selection and try again.".to_string(),
             );
         }
         if item.source.len() > MAX_SOURCE_BYTES {
             return Err(
-                "A current source string is too large for live AI translation.".to_string(),
+                "One English text is too long to send to the AI. Leave it out of the selection and try again.".to_string(),
             );
         }
         total_bytes = total_bytes
             .checked_add(item.source.len())
-            .ok_or_else(|| "The resolved AI scope is too large.".to_string())?;
+            .ok_or_else(|| crate::internal_error("the AI scope size overflowed"))?;
     }
     if total_bytes > MAX_RUN_SOURCE_BYTES {
         return Err(format!(
@@ -484,7 +494,9 @@ fn source_positions(
     let mut positions = HashMap::with_capacity(source_order.len());
     for (index, row) in source_order.iter().enumerate() {
         if positions.insert(&row.identity, index).is_some() {
-            return Err("The source-order AI context contains an ambiguous identity.".to_string());
+            return Err(crate::internal_error(
+                "the AI context lists the same string twice",
+            ));
         }
     }
     Ok(positions)
@@ -859,14 +871,18 @@ pub(crate) fn build_provider_prompt(
     items: &[PreparedAiItem],
 ) -> Result<ProviderPrompt, String> {
     if items.is_empty() {
-        return Err("An AI provider chunk must contain at least one string.".to_string());
+        return Err(crate::internal_error("an AI request batch has no strings"));
     }
     if items.len() > MAX_CHUNK_ITEMS {
-        return Err("An AI provider chunk contains too many selected strings.".to_string());
+        return Err(crate::internal_error(
+            "an AI request batch has too many strings",
+        ));
     }
     let input = provider_input(items)?;
     if input.len() > MAX_CHUNK_BYTES {
-        return Err("An AI provider chunk exceeds the bounded input size.".to_string());
+        return Err(crate::internal_error(
+            "an AI request batch is larger than allowed",
+        ));
     }
     let schema = translation_schema(items, items.len());
     let mut instructions = llm::translation_instructions(target_language);
@@ -1054,10 +1070,13 @@ mod tests {
         .is_err());
         assert!(validate_request_shape(&request(AiScope::Selected, vec![])).is_err());
 
+        // The frontend never sends a duplicate, so this is an app bug and the
+        // message asks for a report instead of blaming the user.
         let duplicate = request(AiScope::Selected, vec![one.clone(), one]);
-        assert!(validate_request_shape(&duplicate)
-            .unwrap_err()
-            .contains("duplicate"));
+        assert_eq!(
+            validate_request_shape(&duplicate).unwrap_err(),
+            "Internal error: the AI scope lists the same string twice. Please report this and attach the Activity log."
+        );
 
         let thousand = request(
             AiScope::Selected,

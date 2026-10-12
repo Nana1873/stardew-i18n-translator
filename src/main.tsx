@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./App";
+import { blockBrowserKeys } from "./shortcuts";
 import { logFrontendError } from "./tauri/commands";
 import "./styles.css";
 import "./translator.css";
@@ -21,6 +22,10 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   logFrontendError("unhandled rejection", String(event.reason));
 });
+
+// Inside the desktop window F5 or Ctrl+R would reload the page and drop
+// unsaved edits. A plain browser preview keeps its usual keys.
+if ("__TAURI_INTERNALS__" in window) blockBrowserKeys();
 
 const container = document.getElementById("root");
 if (!container) {

@@ -82,6 +82,7 @@ import {
   type ResolvedShortcuts,
   displayShortcut,
   matchesShortcut,
+  isBrowserKey,
 } from "../shortcuts";
 
 export type StringTableScope = "mod" | "all";
@@ -911,6 +912,19 @@ export function StringTable({
     return byIdentity;
   }, [data]);
 
+  // A reload (rescan, file change) can drop the string being edited. Close
+  // the editor instead of leaving an invisible session behind.
+  useEffect(() => {
+    if (!editorSession || rows === null) return;
+    const identity = editorSession.identities[editorSession.position];
+    if (identity !== undefined && rowIndex.has(identity)) return;
+    setEditorSession(null);
+    onNotify?.(
+      "The string you were editing is no longer in the file, so the editor closed.",
+      "info",
+    );
+  }, [editorSession, rows, rowIndex]);
+
   const statusCounts = useMemo(() => countByStatus(data), [data]);
   const issueCount = useMemo(
     () => data.filter((row) => rowHasIssues(row)).length,
@@ -1213,7 +1227,7 @@ export function StringTable({
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
       if (
-        event.defaultPrevented ||
+        (event.defaultPrevented && !isBrowserKey(event)) ||
         editorSession ||
         document.querySelector('[role="dialog"][aria-modal="true"]')
       )
@@ -1395,7 +1409,7 @@ export function StringTable({
     function selectAllFromWorkspace(event: KeyboardEvent) {
       if (!matchesShortcut(event, shortcuts["table.selectAll"])) return;
       if (preservesNativeTextSelection(event.target)) return;
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented && !isBrowserKey(event)) return;
       event.preventDefault();
       event.stopPropagation();
       if (
@@ -2763,8 +2777,17 @@ export function StringTable({
           {visible.length === 0 ? (
             <div className="tableempty translator-empty-state">
               <SearchX aria-hidden="true" />
-              <strong>No matching strings</strong>
-              <span>Change the filter, scope, or search text.</span>
+              {effectiveIssuesOnly && issueCount === 0 ? (
+                <>
+                  <strong>No validation findings in this scope.</strong>
+                  <span>Token and text checks found nothing to fix here.</span>
+                </>
+              ) : (
+                <>
+                  <strong>No matching strings</strong>
+                  <span>Change the filter, scope, or search text.</span>
+                </>
+              )}
               <button
                 className="translator-button translator-button-quiet"
                 type="button"
@@ -3524,6 +3547,14 @@ function RowView({
   const issueHelp = severity
     ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";
+  // Short name for the issue marker; the full help is its description so a
+  // screen reader does not read a paragraph as the button name.
+  const issueLabel =
+    severity === "error"
+      ? "Must fix"
+      : acceptedTokenMismatch
+        ? "Kept on purpose"
+        : "Worth a look";
   const matchesSearch = (field: SearchField, metadata = false) =>
     (!metadata || searchAllMetadata) &&
     searchFieldMatches(row, field, searchNeedles, searchLocale);
@@ -3572,8 +3603,6 @@ function RowView({
       }}
       role="row"
       aria-selected={selected}
-      aria-haspopup="menu"
-      aria-expanded={menuOpen}
       aria-description={statusHelp}
       tabIndex={tabStop ? 0 : -1}
       data-string-row=""
@@ -3771,7 +3800,8 @@ function RowView({
             className="translator-inline-validation"
             type="button"
             data-severity={severity}
-            aria-label={issueHelp}
+            aria-label={issueLabel}
+            aria-description={issueHelp}
             data-status-help={issueHelp}
             onPointerEnter={(event) =>
               onShowStatusHelp(event.currentTarget, issueHelp)

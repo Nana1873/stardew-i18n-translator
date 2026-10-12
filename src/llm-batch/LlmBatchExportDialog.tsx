@@ -75,12 +75,15 @@ export function LlmBatchExportDialog({
         }
         role="dialog"
         aria-modal="true"
-        aria-label="Export LLM batch"
+        aria-labelledby="translator-llm-export-title"
+        tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">{"Export LLM batch"}</h2>
+            <h2 className="translator-heading" id="translator-llm-export-title">
+              Export LLM batch
+            </h2>
             <div className="translator-kicker">{modName}</div>
           </div>
           <button

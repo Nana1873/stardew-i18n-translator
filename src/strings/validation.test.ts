@@ -10,6 +10,7 @@ describe("validate", () => {
         severity: "error",
         message:
           "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently.",
+        token: "#$b#",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
@@ -23,6 +24,7 @@ describe("validate", () => {
         severity: "warning",
         message:
           "{{name}} is missing from the translation. The game shows nothing in its place. Fine if intended.",
+        token: "{{name}}",
       },
     ]);
     expect(worstSeverity(issues)).toBe("warning");
@@ -71,6 +73,7 @@ describe("validate", () => {
       severity: "warning",
       message:
         "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended.",
+      token: "${^^}$",
     });
   });
 
@@ -156,6 +159,7 @@ describe("validate", () => {
         severity: "warning",
         message:
           "The player name @ is missing from the translation. Fine if intended.",
+        token: "@",
       },
     ]);
   });
