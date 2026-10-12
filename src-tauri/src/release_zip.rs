@@ -78,6 +78,9 @@ pub struct ZipBuildOutcome {
     pub file_name: String,
     pub entries: usize,
     pub strings: usize,
+    /// Packages the ZIP for all mods left out because the scan at build time
+    /// skipped all or part of them; the preview may have been older.
+    pub left_out: Vec<String>,
 }
 
 #[derive(Deserialize, Clone, Debug)]
@@ -208,6 +211,7 @@ struct PreparedPackage {
     preview: ZipPreview,
     entries: Vec<PreparedEntry>,
     source_checks: Vec<(PathBuf, String)>,
+    left_out: Vec<String>,
 }
 
 pub fn preview(
@@ -340,6 +344,7 @@ fn write_prepared(
         file_name,
         entries: prepared.entries.len(),
         strings: prepared.preview.total_strings,
+        left_out: prepared.left_out,
     })
 }
 
@@ -503,6 +508,7 @@ fn prepare(
         preview,
         entries,
         source_checks: Vec::new(),
+        left_out: Vec::new(),
     })
 }
 
@@ -618,7 +624,7 @@ fn prepare_output(config: &Path) -> Result<PreparedPackage, String> {
             warnings: vec!["Includes current local translations across the scanned mods, with saved working translations taking priority. Untranslated and obsolete keys are omitted.".into()],
             problems: Vec::new(), total_strings: 0, total_source_strings: 0,
         },
-        entries: Vec::new(), source_checks: Vec::new(),
+        entries: Vec::new(), source_checks: Vec::new(), left_out: skipped.clone(),
     };
     if !skipped.is_empty() {
         prepared.preview.warnings.push(format!(
@@ -1681,6 +1687,10 @@ mod tests {
             .warnings
             .iter()
             .any(|warning| warning.contains("Left out") && warning.contains("Pack")));
+        assert_eq!(prepared.left_out, vec!["Pack".to_string()]);
+        let built =
+            build_output_with_folders(&config, &_root.join("out/all.zip"), false, &[]).unwrap();
+        assert_eq!(built.left_out, vec!["Pack".to_string()]);
     }
 
     #[test]

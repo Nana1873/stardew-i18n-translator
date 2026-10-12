@@ -459,7 +459,7 @@ function presentationFor(
           plural(outcome.entries, "file") +
           "."
         : "ZIP result data is unavailable.",
-      tone: "success",
+      tone: outcome?.leftOut?.length ? "warning" : "success",
       notices: outcome
         ? [
             {
@@ -472,6 +472,17 @@ function presentationFor(
                 " " +
                 plural(outcome.strings, "string"),
             },
+            ...(outcome.leftOut?.length
+              ? [
+                  {
+                    text:
+                      "Left out because the scan skipped all or part of them: " +
+                      outcome.leftOut.join(", ") +
+                      ". Open Scan for details.",
+                    tone: "warning" as const,
+                  },
+                ]
+              : []),
           ]
         : [],
       paths: outcome

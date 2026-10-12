@@ -38,6 +38,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- If a package breaks between the preview and the build of the ZIP for all
+  mods, the result and the Activity log name it as left out instead of leaving
+  it out without a word.
 - An LLM batch is written only to a `.json` file picked in the Save dialog,
   never into the app's data folder or the game and Mods folders, and through a
   temporary file so a failed write leaves no half-written batch.
