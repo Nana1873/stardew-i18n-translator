@@ -2370,7 +2370,7 @@ export function StringTable({
     !isLiveAiSourceEligible(editingRow.source)
       ? "This English text can't be sent to the AI: it is empty, too long, or contains a broken character."
       : !editingAiAllowed
-        ? "AI can only translate Open or Changed strings. Done and Review text must be handled manually."
+        ? "AI only translates Open or Changed strings. Edit Done and Review text yourself."
         : onRunAi && !activeLiveEngine?.ready
           ? (configuredLiveEngine?.unavailableReason ??
             "The default translation engine is not ready. Check it in Settings.")

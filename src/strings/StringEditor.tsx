@@ -503,7 +503,8 @@ export function StringEditor({
         translationUnavailableReason ??
           "Configure a translation engine in Settings to use AI translation.",
       );
-      setTranslateMsgKind("ai-error");
+      // A Done or Review string is a rule, not an engine problem.
+      setTranslateMsgKind(translationAllowed ? "ai-error" : "note");
       return;
     }
     const request = ++aiRequest.current;
@@ -1488,9 +1489,11 @@ export function StringEditor({
               disabled={
                 (translating && !onCancelTranslate) ||
                 saving ||
-                sourceSaveBlocked ||
-                (!translating && !translationAllowed)
+                sourceSaveBlocked
               }
+              // Still clickable when AI does not apply, so a click explains why
+              // (a disabled button shows no tooltip in the app window).
+              aria-disabled={!translating && !translationAllowed}
               title={
                 translationAllowed && onTranslate
                   ? `Translate with ${aiEngineLabel} — result lands in Review (${displayShortcut(shortcuts["editor.translate"])})`
