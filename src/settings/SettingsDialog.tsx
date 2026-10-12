@@ -1026,6 +1026,11 @@ export function SettingsDialog({
                     <span className="translator-setting-copy">
                       <strong>ChatGPT account</strong>
                       <span
+                        className={
+                          cloudAccountError
+                            ? "translator-setting-warning"
+                            : undefined
+                        }
                         role={cloudAccountError ? "alert" : "status"}
                         aria-live={cloudAccountError ? "assertive" : "polite"}
                         aria-atomic="true"
@@ -1100,7 +1105,9 @@ export function SettingsDialog({
                                   : "Choose a listed model or enter its exact ID"}
                       </span>
                     </span>
-                    <div className="translator-setting-actions">
+                    <div
+                      className={`translator-setting-actions${showCloudModelInput ? " is-stacked" : ""}`}
+                    >
                       {cloudAvailable &&
                         (cloudModelsError || cloudModels?.length === 0) && (
                           <button
@@ -1135,14 +1142,16 @@ export function SettingsDialog({
                             {model.displayName}
                           </option>
                         ))}
-                        <option value="custom-model-id">Enter model ID…</option>
+                        <option value="custom-model-id">
+                          Other model (enter its ID)
+                        </option>
                       </select>
                       {showCloudModelInput && (
                         <input
                           className="translator-select"
                           aria-label="ChatGPT model ID"
                           value={cloudModel}
-                          placeholder="e.g. gpt-6.1-sol"
+                          placeholder="Model ID, e.g. gpt-6.1-sol"
                           maxLength={160}
                           spellCheck={false}
                           disabled={!cloudAvailable}

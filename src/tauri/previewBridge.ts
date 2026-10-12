@@ -933,10 +933,30 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "cancel_ai_run":
       cancelled.add(String(args.runId));
       return true;
+    // `?chatgpt` in the preview URL simulates a signed-in account so the
+    // ChatGPT settings can be checked visually; nothing is sent anywhere.
     case "cloud_ai_status":
-      return { authenticated: false };
+      return previewChatGpt()
+        ? { authenticated: true, authentication: "Preview account" }
+        : { authenticated: false };
     case "cloud_ai_models":
-      return [];
+      return previewChatGpt()
+        ? [
+            {
+              model: "preview-model-a",
+              displayName: "Preview model A",
+              isDefault: true,
+              defaultReasoningEffort: "medium",
+              supportedReasoningEfforts: ["low", "medium", "high"],
+            },
+            {
+              model: "preview-model-b",
+              displayName: "Preview model B",
+              isDefault: false,
+              supportedReasoningEfforts: ["low", "medium"],
+            },
+          ]
+        : [];
     case "chatgpt_sign_in":
     case "chatgpt_sign_out":
     case "translate_with_cloud_ai":
@@ -992,4 +1012,8 @@ export function installPreviewBridge(): void {
   console.info(
     "[preview] Stardew i18n Translator runs on synthetic fixtures. Add ?setup to the URL to start with the setup wizard.",
   );
+}
+
+function previewChatGpt(): boolean {
+  return new URLSearchParams(window.location.search).has("chatgpt");
 }

@@ -920,11 +920,11 @@ pub async fn logout() -> Result<(), String> {
             if matches!(&result, Ok(response) if response.status().as_u16() == 200) { return Ok(()); }
             if retry == 0 { tokio::time::sleep(Duration::from_millis(500)).await; }
         }
-        Err("Signed out locally. Remote revocation was not confirmed; disconnect this app in ChatGPT settings.".to_string())
+        Err("Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
     }.await;
     let path = state.directory.join("chatgpt-session.bin");
-    match std::fs::remove_file(path) { Ok(()) => {}, Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}, Err(_) => return Err("Signed out in memory, but the saved session could not be removed. Close the app and remove data/chatgpt-session.bin before restarting.".into()) }
-    remote.map_err(|_| "Signed out locally. Remote revocation was not confirmed; disconnect this app in ChatGPT settings.".to_string())
+    match std::fs::remove_file(path) { Ok(()) => {}, Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}, Err(_) => return Err("Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.".into()) }
+    remote.map_err(|_| "Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
 }
 
 #[cfg(test)]

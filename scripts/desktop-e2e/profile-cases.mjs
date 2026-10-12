@@ -34,8 +34,8 @@ export async function profileCases(h) {
 
   await h.step("sign-out-warnings-remain-visible", async () => {
     const warnings = [
-      "Signed out locally. Remote revocation was not confirmed; disconnect this app in ChatGPT settings.",
-      "Signed out in memory, but the saved session could not be removed. Close the app and remove data/chatgpt-session.bin before restarting.",
+      "Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.",
+      "Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.",
     ];
     await h.launch();
     for (const [index, warning] of warnings.entries()) {

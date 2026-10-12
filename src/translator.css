@@ -1972,6 +1972,12 @@
   gap: 8px;
 }
 
+/* A custom model ID sits under its select, so both read as one control. */
+#stardew-i18n-translator .translator-setting-actions.is-stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
 #stardew-i18n-translator .translator-setting-copy strong,
 #stardew-i18n-translator .translator-setting-copy span {
   display: block;
@@ -3632,4 +3638,15 @@
 #stardew-i18n-translator .translator-settings-discard {
   color: var(--translator-orange);
   font-size: 12px;
+}
+
+/* An account problem reads as a warning, not as ordinary help text. */
+#stardew-i18n-translator .translator-setting-copy .translator-setting-warning {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 8px;
+  color: var(--translator-orange);
+  background: var(--translator-orange-soft);
+  border-left: 3px solid var(--translator-orange);
+  border-radius: 4px;
 }
