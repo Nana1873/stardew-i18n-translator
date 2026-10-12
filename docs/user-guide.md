@@ -177,9 +177,21 @@ see [data sent to AI](ai.md#data-and-privacy).
 
 ## Export translation files
 
-Choose **Files… > Export JSON for selected mod…** or **Export JSON for all
-mods…**. The confirmation shows the scope, replacement information, and strings
-needing attention.
+Choose **Files… > Export…**. The dialog asks two questions at the top:
+
+- **Mods**: **This mod** (the selected mod) or **All mods**.
+- **Output**: **ZIP** saves an installable translation package (see
+  [Share a translation](#share-a-translation)); **JSON** writes the files
+  directly into your Mods folder.
+
+It opens on **This mod** and **ZIP** (or **All mods** when no mod is
+selected) and remembers your last choice until the app closes. Below the
+choice, a preview shows how many translations are included, which strings
+are left out, and where the files go.
+
+For JSON, the preview names the target files relative to the Mods folder and
+says whether existing files are backed up. Confirm with **Export to Mods
+folder**, or **Replace in Mods folder** when files already exist.
 
 **Nonempty Review and Changed translations are included in export after a
 warning.** They do not become Done as a result. Empty entries are omitted so
@@ -201,8 +213,8 @@ For flat locale files, Portuguese export uses `i18n/pt.json` and Chinese
 export uses `i18n/zh.json`; an existing `i18n/pt-BR.json` or `i18n/zh-CN.json`
 is accepted on import and backed up when normalized during export. Split document names such as `i18n/de/pt.json` are kept literally.
 
-For a combined translation archive, choose **Files… > Export ZIP for all
-mods…**. Its preview includes all scanned components with effective
+For a combined translation archive, choose **Files… > Export…** with **All
+mods** and **ZIP**. Its preview includes all scanned components with effective
 target-language values in the configured Mods folder. Each included locale
 combines the existing target values for current source keys with saved
 overrides, using the same validation rules. Changed and Review values are
@@ -211,12 +223,12 @@ confirm replacement in the Windows Save dialog if that file exists. There is
 no second app confirmation. The output uses the same installation
 folders as the current-mod ZIP described below. It contains no
 original mod assets or manifests and does not install anything itself.
-Existing per-mod JSON export and package ZIP actions remain available.
 
 ## Share a translation
 
-Select a mod package and use **Files… > Export ZIP for selected mod…**. Check its
-preview and choose a destination. The ZIP contains only generated target-language
+Select a mod package and choose **Files… > Export…** with **This mod** and
+**ZIP**. Check its preview and choose a destination with **Save ZIP…**.
+Version, file name, and install folder are under **ZIP settings**. The ZIP contains only generated target-language
 i18n files. Recipients still need the original mod; its assets, DLLs, and manifest are not included.
 
 **Install folder** is relative to the game's Mods folder. Its default is the
