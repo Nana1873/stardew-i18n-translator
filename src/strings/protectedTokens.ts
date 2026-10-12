@@ -60,7 +60,22 @@ interface GenderSwitch {
   separator: "^" | "¦";
 }
 
+/** Dialogue commands that take arguments up to the next `#` when they open a
+ * string, e.g. `$q 305/306 null#`, `$1 metHarvey#`, `$p 305#`, `$c 0.5#`,
+ * `$d bus#`. Their arguments are response ids, flags, and keys, not prose. */
+const leadingCommandPattern = /^\$(?:q|p|c|d|1) [^#]*#/;
+
 export function extractProtectedTokens(value: string): string[] {
+  const leading = leadingCommandPattern.exec(value);
+  if (!leading) return extractTokens(value);
+  // Arguments are split on spaces with empty entries removed by the game, so
+  // only the spacing is canonicalized; every argument stays exact.
+  const raw = leading[0];
+  const command = `${raw.slice(0, -1).split(" ").filter(Boolean).join(" ")}#`;
+  return [command, ...extractTokens(value.slice(raw.length))];
+}
+
+function extractTokens(value: string): string[] {
   const tokens: string[] = [];
   let offset = 0;
 
@@ -71,7 +86,7 @@ export function extractProtectedTokens(value: string): string[] {
         genderSwitchShape(genderSwitch.separator, genderSwitch.branches.length),
       );
       genderSwitch.branches.forEach((branch) => {
-        tokens.push(...extractProtectedTokens(branch));
+        tokens.push(...extractTokens(branch));
       });
       offset = genderSwitch.end;
       continue;
@@ -147,12 +162,22 @@ export function pagesWithMultiplePortraits(value: string): number {
 /** The text one player sees: every well-formed gender switch is replaced by
  * its first branch, so portraits in alternative branches are not counted twice. */
 function firstBranchText(value: string): string {
+  return branchText(value, 0);
+}
+
+/** The text a player sees for one gender: every well-formed switch is
+ * replaced by its branch `branch` (the last branch when it has fewer). */
+export function branchText(value: string, branch: number): string {
   let text = "";
   let offset = 0;
   while (offset < value.length) {
     const genderSwitch = readGenderSwitch(value, offset);
     if (genderSwitch) {
-      text += firstBranchText(genderSwitch.branches[0]);
+      const branches = genderSwitch.branches;
+      text += branchText(
+        branches[Math.min(branch, branches.length - 1)],
+        branch,
+      );
       offset = genderSwitch.end;
       continue;
     }
@@ -397,9 +422,17 @@ function readBetasMessage(
     end,
     tokens: [
       value.slice(offset, start) + value.slice(close, end),
-      ...extractProtectedTokens(body),
+      ...extractTokens(body),
     ],
   };
+}
+
+/** After `#$h|s|u|l|a`, an uppercase ASCII letter or any character that is
+ * not an ASCII letter, digit, or `#` (CJK, `¡`, `«`, `Ä`, a space) starts the
+ * page's prose. Lowercase ASCII would be a longer command such as `#$action`. */
+function startsPagePortrait(next: string | undefined): boolean {
+  if (next === undefined || next === "#") return false;
+  return /[A-Z]/.test(next) || !/[A-Za-z0-9]/.test(next);
 }
 
 function readDialogueBreak(value: string, offset: number): Token | null {
@@ -416,6 +449,16 @@ function readDialogueBreak(value: string, offset: number): Token | null {
   if (command?.raw === "$b" && value[command.end] === "*") {
     return token(value, offset, command.end + 1);
   }
+  // `#${He^She}$ ...` and `#$hSo happy!` start a new page with a gender switch
+  // or a portrait followed by prose. Only `#` is the separator here; reading
+  // up to the next `#` would turn the whole page into one opaque token.
+  if (value[offset + 2] === "{") return null;
+  if (
+    command &&
+    /^\$[hsula]$/.test(command.raw) &&
+    startsPagePortrait(value[command.end])
+  )
+    return null;
 
   // Only the first unquoted query branch separator may end action arguments.
   // A later pipe in an opaque action is not another branch delimiter.

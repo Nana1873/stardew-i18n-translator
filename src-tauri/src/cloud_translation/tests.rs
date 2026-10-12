@@ -196,6 +196,36 @@ fn repeated_same_class_failure_stops_after_its_single_retry() {
 }
 
 #[test]
+fn a_timed_out_attempt_is_split_without_a_same_size_retry() {
+    let mut attempts = 0usize;
+    let result = tauri::async_runtime::block_on(translate_chunk_with_recovery(
+        Arc::new(AtomicBool::new(false)),
+        |_| {
+            attempts += 1;
+            std::future::ready(Err(super::super::timeout_failure()))
+        },
+    ));
+    assert_eq!(result, Err(super::super::timeout_failure()));
+    assert_eq!(attempts, 1);
+}
+
+#[test]
+fn a_refusal_is_retried_once_without_a_validator_hint() {
+    let mut hints = Vec::new();
+    let result = tauri::async_runtime::block_on(translate_chunk_with_recovery(
+        Arc::new(AtomicBool::new(false)),
+        |hint| {
+            hints.push(hint);
+            std::future::ready(Err(ProviderFailure::InvalidResponse(
+                super::super::REFUSAL_MESSAGE.into(),
+            )))
+        },
+    ));
+    assert!(result.is_err());
+    assert_eq!(hints, vec![None, None]);
+}
+
+#[test]
 fn cancellation_wins_before_a_scheduled_retry() {
     let cancelled = Arc::new(AtomicBool::new(false));
     let cancel_from_attempt = Arc::clone(&cancelled);

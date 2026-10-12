@@ -124,7 +124,15 @@ pub async fn run_prompt(
             "reasoning":{"effort":reasoning},
             "text":{"format":{"type":"json_schema","name":"translator_output","strict":true,"schema":prompt.schema}},
             "store":false,"stream":true,
-        })).send().await.map_err(|_| ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into()))?;
+        })).send().await.map_err(|error| {
+            // The 10 s connect timeout also reports is_timeout(); that is a
+            // network problem, not an oversized batch.
+            if error.is_timeout() && !error.is_connect() {
+                timeout_failure()
+            } else {
+                ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into())
+            }
+        })?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
             let bytes = chatgpt_auth::read_bounded(response).await?;
@@ -147,6 +155,17 @@ pub async fn run_prompt(
         }
     }
 }
+/// A request that hit the five-minute ceiling is too large for one attempt,
+/// not a network problem. Recovery splits the batch without a same-size retry.
+pub(crate) const TIMEOUT_MESSAGE: &str =
+    "OpenAI did not finish within the five-minute limit for one attempt.";
+/// A refusal concerns content, not the response structure.
+pub(crate) const REFUSAL_MESSAGE: &str = "The model declined to translate part of this batch.";
+
+pub(crate) fn timeout_failure() -> ProviderFailure {
+    ProviderFailure::InvalidResponse(TIMEOUT_MESSAGE.into())
+}
+
 #[path = "cloud_translation.rs"]
 mod cloud_translation;
 pub(crate) use cloud_translation::{repair_token_mismatches_once, translate_chunk};
