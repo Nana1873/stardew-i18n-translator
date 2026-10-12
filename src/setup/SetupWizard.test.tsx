@@ -62,6 +62,10 @@ async function gotoGlossaryStep(lang = "de") {
   fireEvent.click(screen.getByRole("button", { name: "Next" })); // step 4
 }
 
+/** The Setup dialog is named by its visible heading. */
+const SETUP_DIALOG =
+  /^(Welcome to Stardew i18n Translator|Configure your workspace)$/;
+
 describe("SetupWizard", () => {
   it("does not reuse a previous folder validation while a new folder is being checked", async () => {
     let finishValidation!: (valid: boolean) => void;
@@ -174,7 +178,10 @@ describe("SetupWizard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Finish" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("cannot save");
-    expect(screen.getByRole("dialog", { name: "Setup" })).toBeVisible();
+    const setup = screen.getByRole("dialog", { name: SETUP_DIALOG });
+    expect(setup).toBeVisible();
+    expect(setup).toHaveAccessibleName("Welcome to Stardew i18n Translator");
+    expect(setup).toHaveAttribute("tabindex", "-1");
     expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
   });
 

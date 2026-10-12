@@ -239,7 +239,8 @@ export function SetupWizard({
       className="wizard__backdrop"
       role="dialog"
       aria-modal="true"
-      aria-label="Setup"
+      aria-labelledby="translator-setup-title"
+      tabIndex={-1}
       onKeyDown={onDialogKeyDown}
     >
       <div className="wizard wizard--setup">
@@ -248,7 +249,7 @@ export function SetupWizard({
             <span className="setup__eyebrow">
               {onCancel ? "Workspace setup" : "First-time setup"}
             </span>
-            <h2>
+            <h2 id="translator-setup-title">
               {onCancel
                 ? "Configure your workspace"
                 : "Welcome to Stardew i18n Translator"}

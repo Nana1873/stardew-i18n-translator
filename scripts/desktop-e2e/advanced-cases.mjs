@@ -39,11 +39,15 @@ export async function advancedCases(h) {
   };
   const rescan = async () => {
     await click(css('[aria-label="Scan mods"]'));
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
     await click(css('button[aria-label$="open scan results"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
   };
   const fixture = async (name, id, source) => {
     const folder = join(mods, name);

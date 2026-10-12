@@ -45,7 +45,14 @@ describe("TranslationZipDialog", () => {
       />,
     );
     expect(screen.getByText("[CP] Sample/i18n/de.json")).toBeInTheDocument();
-    expect(screen.getByRole("dialog")).toHaveTextContent(PREVIEW.packageName);
+    const dialog = screen.getByRole("dialog", {
+      name: "Export translation ZIP",
+    });
+    expect(dialog).toHaveTextContent(PREVIEW.packageName);
+    // Named by its visible heading; focusable itself as the focus fallback.
+    expect(dialog).toHaveAttribute("aria-labelledby", "translator-zip-title");
+    expect(dialog).not.toHaveAttribute("aria-label");
+    expect(dialog).toHaveAttribute("tabindex", "-1");
     expect(screen.getByText(/Framework/)).toBeInTheDocument();
     expect(screen.getByText(/Component versions differ/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save ZIP…" })).toBeDisabled();

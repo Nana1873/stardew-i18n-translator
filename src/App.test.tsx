@@ -464,6 +464,10 @@ function deferred<T>() {
   return { promise, resolve, reject };
 }
 
+/** The Setup dialog is named by its visible heading. */
+const SETUP_DIALOG =
+  /^(Welcome to Stardew i18n Translator|Configure your workspace)$/;
+
 describe("App shell", () => {
   it("opens the complete workspace directly", async () => {
     const strings = deferred<unknown[]>();
@@ -505,7 +509,7 @@ describe("App shell", () => {
     );
     expect(screen.getByPlaceholderText("Filter mods…")).toBeInTheDocument();
     expect(
-      screen.queryByRole("dialog", { name: "Setup" }),
+      screen.queryByRole("dialog", { name: SETUP_DIALOG }),
     ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("scan_mods", {
@@ -513,7 +517,7 @@ describe("App shell", () => {
         targetLang: "de",
       }),
     );
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
   });
 
   it("shows the current scan's real skipped-component count", async () => {
@@ -526,7 +530,7 @@ describe("App shell", () => {
     expect(skipped).toHaveTextContent("Scan OK");
     fireEvent.click(skipped);
 
-    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    const dialog = await screen.findByRole("dialog", { name: /scan/i });
     expect(dialog).toHaveTextContent("Latest scan");
     expect(dialog).toHaveTextContent("Everything is ready");
     expect(dialog).not.toHaveTextContent("No components were skipped");
@@ -672,7 +676,7 @@ describe("App shell", () => {
     ).toHaveAttribute("aria-current", "true");
     expect(screen.queryByRole("treeitem", { name: /German Mod/ })).toBeNull();
     expect(screen.queryByText("Stale startup warning")).toBeNull();
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
     expect(screen.getByLabelText("Scan mods")).toBeEnabled();
   });
 
@@ -969,7 +973,7 @@ describe("App shell", () => {
     chooseToolbarAction("File actions", "Export current mod");
 
     expect(
-      await screen.findByRole("dialog", { name: "Confirm export overwrite" }),
+      await screen.findByRole("dialog", { name: "Export translation JSON" }),
     ).toHaveTextContent("1 existing translation file");
     expect(invokeMock).toHaveBeenCalledWith("preview_export", {
       mods: [
@@ -992,7 +996,7 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(
-      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+      screen.queryByRole("dialog", { name: "Export translation JSON" }),
     ).toBeNull();
     expect(screen.getByRole("button", { name: "File actions" })).toHaveFocus();
   });
@@ -1041,7 +1045,7 @@ describe("App shell", () => {
       preflight.resolve({ acceptedMismatches: 0, omitted: [] });
     });
     expect(
-      await screen.findByRole("dialog", { name: "Confirm export overwrite" }),
+      await screen.findByRole("dialog", { name: "Export translation JSON" }),
     ).toBeVisible();
     expect(exportActions).toHaveTextContent("Files…");
   });
@@ -1067,7 +1071,7 @@ describe("App shell", () => {
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("File actions", "Export current mod");
     const preflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     fireEvent.click(
       within(preflight).getByRole("button", { name: "Export JSON" }),
@@ -1115,7 +1119,7 @@ describe("App shell", () => {
     chooseToolbarAction("File actions", "Export current mod");
 
     const preflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     expect(preflight).toHaveTextContent(
       "Replaces 1 existing translation file and creates 1 new translation file",
@@ -1145,7 +1149,7 @@ describe("App shell", () => {
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    await screen.findByRole("dialog", { name: "Export translation JSON" });
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
 
     await waitFor(() =>
@@ -1175,7 +1179,7 @@ describe("App shell", () => {
     chooseToolbarAction("File actions", "Export current mod");
 
     const preflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     expect(preflight).toHaveTextContent("Creates 1 new translation file");
     expect(
@@ -1246,7 +1250,7 @@ describe("App shell", () => {
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("File actions", "Export current mod");
     const confirm = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     fireEvent.click(
       within(confirm).getByRole("button", { name: "Export JSON" }),
@@ -1334,7 +1338,7 @@ describe("App shell", () => {
     expect(screen.queryByText("greeting")).toBeNull();
     chooseToolbarAction("File actions", "Export current mod");
     const preflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
 
     expect(preflight).toHaveTextContent("1 string stays in English");
@@ -1350,7 +1354,7 @@ describe("App shell", () => {
     );
 
     expect(
-      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+      screen.queryByRole("dialog", { name: "Export translation JSON" }),
     ).toBeNull();
     expect(
       screen.getByRole("searchbox", { name: "Search strings" }),
@@ -1384,7 +1388,7 @@ describe("App shell", () => {
       "Could not check export readiness: Error: Preview unavailable",
     );
     expect(
-      screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+      screen.queryByRole("dialog", { name: "Export translation JSON" }),
     ).toBeNull();
     expect(
       invokeMock.mock.calls.filter(([cmd]) => cmd === "export_mod"),
@@ -1398,7 +1402,7 @@ describe("App shell", () => {
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    await screen.findByRole("dialog", { name: "Export translation JSON" });
     fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
     await inspectLatestResult();
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
@@ -1447,7 +1451,7 @@ describe("App shell", () => {
 
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    await screen.findByRole("dialog", { name: "Export translation JSON" });
     fireEvent.click(screen.getByRole("button", { name: "Export and replace" }));
     await waitFor(() => expect(exports).toBe(1));
     expect(screen.getByLabelText("Operation result")).toHaveTextContent(
@@ -1460,7 +1464,7 @@ describe("App shell", () => {
 
     chooseToolbarAction("File actions", "Export current mod");
     const secondPreflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     expect(secondPreflight).toHaveTextContent("Creates 1 new translation file");
     fireEvent.click(
@@ -1550,7 +1554,7 @@ describe("App shell", () => {
     );
     chooseToolbarAction("File actions", "Export all mods …");
     const preflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     expect(preflight).toHaveTextContent("Export translation JSON");
     expect(preflight).toHaveTextContent(
@@ -1614,7 +1618,7 @@ describe("App shell", () => {
     );
     chooseToolbarAction("File actions", "Export all mods …");
     const firstPreflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     fireEvent.click(
       within(firstPreflight).getByRole("button", {
@@ -1634,7 +1638,7 @@ describe("App shell", () => {
     fireEvent.click(within(tray).getByRole("button", { name: "Export again" }));
 
     const retryPreflight = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     expect(retryPreflight).toHaveTextContent("Export translation JSON");
     expect(
@@ -1648,7 +1652,7 @@ describe("App shell", () => {
     );
     await waitFor(() =>
       expect(
-        screen.queryByRole("dialog", { name: "Confirm export overwrite" }),
+        screen.queryByRole("dialog", { name: "Export translation JSON" }),
       ).toBeNull(),
     );
     expect(exportAttempts).toBe(1);
@@ -1658,7 +1662,7 @@ describe("App shell", () => {
       await screen.findByRole("button", { name: "Retry export" }),
     );
     const confirmedRetry = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     fireEvent.click(
       within(confirmedRetry).getByRole("button", {
@@ -2006,7 +2010,7 @@ describe("App shell", () => {
     expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
     chooseToolbarAction("File actions", "Export current mod");
     const confirm = await screen.findByRole("dialog", {
-      name: "Confirm export overwrite",
+      name: "Export translation JSON",
     });
     fireEvent.click(
       within(confirm).getByRole("button", { name: "Export JSON" }),
@@ -2763,7 +2767,7 @@ describe("App shell", () => {
 
     await screen.findByText("greeting");
     chooseToolbarAction("File actions", "Export current mod");
-    await screen.findByRole("dialog", { name: "Confirm export overwrite" });
+    await screen.findByRole("dialog", { name: "Export translation JSON" });
     fireEvent.click(screen.getByRole("button", { name: "Export JSON" }));
 
     const tray = await inspectLatestResult();
@@ -3701,7 +3705,7 @@ describe("App shell", () => {
       }),
     );
     expect(screen.queryByText("removed-after-switch")).toBeNull();
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
   });
 
   it("changes only the selected Mods folder and rescans the saved workspace", async () => {
@@ -3726,7 +3730,7 @@ describe("App shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Change Mods folder" }));
 
     expect(await screen.findByText("E:/Other/Mods")).toBeInTheDocument();
-    expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: SETUP_DIALOG })).toBeNull();
     expect(invokeMock).toHaveBeenCalledWith("pick_folder", {
       title: "Select your Mods folder",
     });
@@ -3852,7 +3856,7 @@ describe("App shell", () => {
       within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
 
-    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    const setup = await screen.findByRole("dialog", { name: SETUP_DIALOG });
     fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
     await within(setup).findByRole("region", { name: "Mods folder" });
     fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
@@ -3917,7 +3921,7 @@ describe("App shell", () => {
       within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
 
-    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    const setup = await screen.findByRole("dialog", { name: SETUP_DIALOG });
     fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
     await within(setup).findByRole("region", { name: "Mods folder" });
     fireEvent.click(within(setup).getByRole("button", { name: "Next" }));
@@ -3936,7 +3940,7 @@ describe("App shell", () => {
       }),
     );
     expect(
-      screen.queryByRole("dialog", { name: "Setup" }),
+      screen.queryByRole("dialog", { name: SETUP_DIALOG }),
     ).not.toBeInTheDocument();
   });
 
@@ -3971,7 +3975,7 @@ describe("App shell", () => {
     });
     render(<App />);
 
-    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    const setup = await screen.findByRole("dialog", { name: SETUP_DIALOG });
     expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", expect.anything());
     fireEvent.click(within(setup).getByRole("button", { name: "Auto-detect" }));
     await waitFor(() =>
@@ -4022,7 +4026,7 @@ describe("App shell", () => {
     fireEvent.click(
       within(settingsDialog).getByRole("button", { name: "Setup…" }),
     );
-    const setup = await screen.findByRole("dialog", { name: "Setup" });
+    const setup = await screen.findByRole("dialog", { name: SETUP_DIALOG });
     // Change the language on step 3 so a wrongly saved cancel would show up.
     for (let step = 1; step < 3; step++) {
       const next = within(setup).getByRole("button", { name: "Next" });
@@ -4040,7 +4044,7 @@ describe("App shell", () => {
     );
 
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Setup" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: SETUP_DIALOG })).toBeNull(),
     );
     expect(scanCalls()).toBe(1);
     // Workspace layout may be persisted on its own schedule; the cancelled
@@ -4066,7 +4070,7 @@ describe("App shell", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("dialog", { name: "Setup" }),
+      await screen.findByRole("dialog", { name: SETUP_DIALOG }),
     ).toBeInTheDocument();
     expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", expect.anything());
   });
@@ -4773,7 +4777,7 @@ describe("App shell", () => {
     render(<App />);
 
     expect(
-      await screen.findByRole("dialog", { name: "Scan" }),
+      await screen.findByRole("dialog", { name: /scan/i }),
     ).toHaveTextContent("Skipped broken manifest");
   });
 
@@ -4795,7 +4799,7 @@ describe("App shell", () => {
     });
     render(<App />);
 
-    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    const dialog = await screen.findByRole("dialog", { name: /scan/i });
     expect(dialog).toHaveTextContent("1 item needs a look");
     expect(dialog).toHaveTextContent("Example Pack");
     expect(dialog).not.toHaveTextContent("1 scanner warning");
@@ -4822,7 +4826,7 @@ describe("App shell", () => {
     await screen.findByRole("button", {
       name: /need attention; open scan results/,
     });
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
   });
 
   it("keeps extra target keys quiet on automatic scans and available in latest scan", async () => {
@@ -4842,7 +4846,7 @@ describe("App shell", () => {
     const latest = await screen.findByRole("button", {
       name: /need attention; open scan results/,
     });
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
     fireEvent.click(latest);
     const summary = await screen.findByText(
       "1 translation entry without matching English source",
@@ -4860,7 +4864,7 @@ describe("App shell", () => {
     });
     render(<App />);
 
-    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    const dialog = await screen.findByRole("dialog", { name: /scan/i });
     expect(dialog).toHaveTextContent("Mods folder not found");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     openWorkspace();
@@ -4871,7 +4875,7 @@ describe("App shell", () => {
     expect(skipped).toHaveTextContent("Scan details");
     fireEvent.click(skipped);
     expect(
-      await screen.findByRole("dialog", { name: "Scan" }),
+      await screen.findByRole("dialog", { name: /scan/i }),
     ).toHaveTextContent("Mods folder not found");
   });
 
@@ -4901,20 +4905,20 @@ describe("App shell", () => {
 
     fireEvent.click(screen.getByLabelText("Scan mods"));
     expect(
-      await screen.findByRole("dialog", { name: "Scan" }),
+      await screen.findByRole("dialog", { name: /scan/i }),
     ).toHaveTextContent("Scanning mods");
     finishScan(EMPTY_SCAN);
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull(),
     );
     const toast = await screen.findByRole("status");
     expect(toast).toHaveTextContent("Scan complete");
     fireEvent.click(within(toast).getByRole("button", { name: "Details…" }));
     expect(
-      await screen.findByRole("dialog", { name: "Scan" }),
+      await screen.findByRole("dialog", { name: /scan/i }),
     ).toHaveTextContent("Latest scan");
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
   });
 
   it("refreshes strings and unresolved issues after scanning unchanged file paths", async () => {
@@ -4989,11 +4993,11 @@ describe("App shell", () => {
     );
     fireEvent.click(screen.getByLabelText("Scan mods"));
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull(),
     );
     const toast = await screen.findByRole("status");
     fireEvent.click(within(toast).getByRole("button", { name: "Details…" }));
-    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    const dialog = await screen.findByRole("dialog", { name: /scan/i });
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Show new strings (1)" }),
     );
@@ -5002,7 +5006,7 @@ describe("App shell", () => {
     expect(
       screen.getByText("New strings from latest scan · 1 of 1 string shown"),
     ).toBeVisible();
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
   });
 
   it("opens the exact changed-English-string subset from the completed scan", async () => {
@@ -5041,11 +5045,11 @@ describe("App shell", () => {
     );
     fireEvent.click(screen.getByLabelText("Scan mods"));
     await waitFor(() =>
-      expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull(),
+      expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull(),
     );
     const toast = await screen.findByRole("status");
     fireEvent.click(within(toast).getByRole("button", { name: "Details…" }));
-    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    const dialog = await screen.findByRole("dialog", { name: /scan/i });
     fireEvent.click(
       within(dialog).getByRole("button", {
         name: "Show changed strings (1)",
@@ -5058,7 +5062,7 @@ describe("App shell", () => {
         "Changed English strings from latest scan · 1 of 1 string shown",
       ),
     ).toBeVisible();
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
   });
 
   it("keeps a running scan open after Escape and completes it in place", async () => {
@@ -5081,16 +5085,16 @@ describe("App shell", () => {
     );
 
     fireEvent.click(screen.getByLabelText("Scan mods"));
-    const dialog = await screen.findByRole("dialog", { name: "Scan" });
+    const dialog = await screen.findByRole("dialog", { name: /scan/i });
     fireEvent.keyDown(dialog, { key: "Escape" });
-    expect(screen.getByRole("dialog", { name: "Scan" })).toBe(dialog);
+    expect(screen.getByRole("dialog", { name: /scan/i })).toBe(dialog);
     expect(within(dialog).getByText("Scanning mods…")).toBeVisible();
 
     scanResolvers.shift()!(EMPTY_SCAN);
     await waitFor(() =>
       expect(screen.getByLabelText("Scan mods")).toBeEnabled(),
     );
-    expect(screen.queryByRole("dialog", { name: "Scan" })).toBeNull();
+    expect(screen.queryByRole("dialog", { name: /scan/i })).toBeNull();
     expect(await screen.findByRole("status")).toHaveTextContent(
       "Scan complete",
     );
@@ -5132,7 +5136,7 @@ it("keeps App work progress and export eligibility coherent after clearing a per
   expect(screen.getByText("1 / 1 covered")).toBeInTheDocument();
   chooseToolbarAction("File actions", "Export current mod");
   const confirmation = await screen.findByRole("dialog", {
-    name: "Confirm export overwrite",
+    name: "Export translation JSON",
   });
   const eligible = within(confirmation).getByLabelText("Export contents");
   const open = within(confirmation).queryByText("open strings omitted");

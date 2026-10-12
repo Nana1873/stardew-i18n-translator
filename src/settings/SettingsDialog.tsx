@@ -651,6 +651,7 @@ export function SettingsDialog({
         aria-busy={saving}
         aria-labelledby="translator-settings-title"
         aria-describedby="translator-settings-description"
+        tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-settings-head">

@@ -42,7 +42,8 @@ describe("ScanDialog", () => {
     render(
       <ScanDialog scanning result={null} error={null} onClose={() => {}} />,
     );
-    const dialog = screen.getByRole("dialog", { name: "Scan" });
+    const dialog = screen.getByRole("dialog", { name: /scan/i });
+    expect(dialog).toHaveAccessibleName("Scanning mods…");
     expect(dialog).toHaveAttribute("tabindex", "-1");
     await waitFor(() => expect(dialog).toHaveFocus());
     expect(screen.getByText("Scanning mods…")).toBeInTheDocument();
@@ -562,7 +563,7 @@ describe("ScanDialog", () => {
       <ScanDialog scanning result={null} error={null} onClose={onClose} />,
     );
 
-    fireEvent.keyDown(screen.getByRole("dialog", { name: "Scan" }), {
+    fireEvent.keyDown(screen.getByRole("dialog", { name: /scan/i }), {
       key: "Escape",
     });
     expect(onClose).not.toHaveBeenCalled();

@@ -937,6 +937,7 @@ export function StringEditor({
         aria-modal="true"
         aria-labelledby="translator-editor-title"
         aria-describedby="translator-editor-context-description"
+        tabIndex={-1}
       >
         <header
           className="editor__meta translator-editor-head"

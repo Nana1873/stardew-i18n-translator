@@ -67,14 +67,14 @@ export function ScanDialog({
         className="translator-flow-dialog translator-scan-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="Scan"
+        aria-labelledby="translator-scan-title"
         data-scanning={scanning}
         tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">
+            <h2 className="translator-heading" id="translator-scan-title">
               {complete && !retainedResult ? "Scan results" : title}
             </h2>
             <div className="translator-kicker">{"Mods folder (read-only)"}</div>

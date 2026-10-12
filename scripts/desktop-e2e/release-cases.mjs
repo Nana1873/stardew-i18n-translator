@@ -79,11 +79,15 @@ export async function releaseCases(h) {
   };
   const rescan = async () => {
     await click(css('[aria-label="Scan mods"]'));
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
     await click(css('button[aria-label$="open scan results"]'));
     await element(css('[aria-label="Latest scan result"]'));
     await click(css('[aria-label="Close scan"]'));
-    await absent(css('[role="dialog"][aria-label="Scan"]'));
+    await absent(
+      css('[role="dialog"][aria-labelledby="translator-scan-title"]'),
+    );
   };
   const diskInventory = async () => {
     const { readdir } = await import("node:fs/promises");
@@ -308,7 +312,7 @@ export async function releaseCases(h) {
       await click(button("Export …"));
       await click(button("Translation ZIP · all mods"));
       const preview = css(
-        '[role="dialog"][aria-label="Export translation ZIP"]',
+        '[role="dialog"][aria-labelledby="translator-zip-title"]',
       );
       await element(preview);
       await click(css(".desktop-zip-details summary"));
@@ -536,12 +540,16 @@ export async function releaseCases(h) {
     ]) {
       await click(button("Export …"));
       await click(button(`Translation ZIP · ${scope}`));
-      await element(css('[aria-label="Export translation ZIP"]'));
+      await element(
+        css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+      );
       const destination = join(runtime, name);
       await click(button("Choose save location …"));
       await native("save", "Save translation ZIP", destination);
       await waitFor(name, () => exists(destination));
-      await absent(css('[aria-label="Export translation ZIP"]'));
+      await absent(
+        css('[role="dialog"][aria-labelledby="translator-zip-title"]'),
+      );
       const files = await archive("read", destination);
       assert.deepEqual(
         JSON.parse(files["IntentionalBlankSmoke/i18n/de.json"]),

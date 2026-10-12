@@ -119,12 +119,15 @@ export function TranslationZipDialog({
         role="dialog"
         aria-modal="true"
         aria-busy={building}
-        aria-label={title}
+        aria-labelledby="translator-zip-title"
+        tabIndex={-1}
         onKeyDown={onDialogKeyDown}
       >
         <div className="translator-flow-head">
           <div>
-            <h2 className="translator-heading">{title}</h2>
+            <h2 className="translator-heading" id="translator-zip-title">
+              {title}
+            </h2>
             <div className="translator-kicker">
               {
                 <>

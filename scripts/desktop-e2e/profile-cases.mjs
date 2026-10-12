@@ -124,7 +124,9 @@ export async function profileCases(h) {
       await h.launch();
       const error = await h.element(h.css(".translator-startup-error"));
       assert.match(await error.getText(), /Settings file .*corrupted/);
-      await h.absent(h.css('[aria-label="Setup"]'));
+      await h.absent(
+        h.css('[role="dialog"][aria-labelledby="translator-setup-title"]'),
+      );
       assert.equal(
         await readFile(settingsPath, "utf8"),
         "invalid synthetic settings",
