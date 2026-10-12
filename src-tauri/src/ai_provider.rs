@@ -50,6 +50,12 @@ pub(crate) enum ProviderProgressEvent {
         item_count: usize,
         reason: ReviewSkipReason,
     },
+    /// A terminology or token repair (`phase`) failed for `item_count`
+    /// strings; their previous translations are kept unrepaired.
+    RepairSkipped {
+        phase: ProviderPhase,
+        item_count: usize,
+    },
     Activity(ProviderActivity),
     Usage(ProviderTokenUsage),
 }

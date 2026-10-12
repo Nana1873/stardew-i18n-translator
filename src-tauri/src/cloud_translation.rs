@@ -808,6 +808,10 @@ where
                 log::warn!(
                     "One focused AI terminology-repair sub-batch failed; its full-review translations are retained."
                 );
+                progress(ProviderProgressEvent::RepairSkipped {
+                    phase: ProviderPhase::TerminologyRepair,
+                    item_count: plan.items.len(),
+                });
             }
         }
     }
@@ -994,6 +998,10 @@ where
                 log::warn!(
                     "One AI token-repair sub-batch failed; its original suggestions are retained."
                 );
+                progress(ProviderProgressEvent::RepairSkipped {
+                    phase: ProviderPhase::TokenRepair,
+                    item_count: repair_items.len(),
+                });
             }
         }
     }
@@ -1238,6 +1246,10 @@ async fn apply_quality_review(
             log::warn!(
                     "The focused AI terminology-repair plan could not be prepared; the full-review translations are retained."
                 );
+            progress(ProviderProgressEvent::RepairSkipped {
+                phase: ProviderPhase::TerminologyRepair,
+                item_count: items.len(),
+            });
             return Ok(reviewed);
         }
     };

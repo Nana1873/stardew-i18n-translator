@@ -904,6 +904,9 @@ export interface AiRunProgress {
   parallelLimit?: number;
   retries: number;
   splits: number;
+  /** Strings kept unrepaired after a failed terminology or token repair. */
+  terminologyRepairSkipped?: number;
+  tokenRepairSkipped?: number;
   recovery?: AiRunRecovery;
   providerStage?: ProviderActivityStage;
   providerActivitySequence?: number;

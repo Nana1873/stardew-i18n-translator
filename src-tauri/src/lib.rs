@@ -1622,6 +1622,10 @@ struct AiRunProgress {
     parallel_limit: Option<usize>,
     retries: usize,
     splits: usize,
+    /// Strings whose terminology or token repair failed and that are kept
+    /// unrepaired; the activity log names each new skip.
+    terminology_repair_skipped: usize,
+    token_repair_skipped: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     recovery: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -2255,6 +2259,8 @@ async fn translate_with_local_ai(
         parallel_limit: None,
         retries: 0,
         splits: 0,
+        terminology_repair_skipped: 0,
+        token_repair_skipped: 0,
         recovery: None,
         provider_stage: None,
         provider_activity_sequence: 0,
@@ -2520,7 +2526,7 @@ async fn complete_cloud_batch(
         chunk,
         &translations,
         cancelled,
-        progress,
+        Arc::clone(&progress),
     )
     .await
     {
@@ -2528,6 +2534,22 @@ async fn complete_cloud_batch(
         Err(ai::ProviderFailure::Cancelled) => Ok((translations, true)),
         Err(failure) => {
             log::warn!(target: "ai_run", "{}", serde_json::json!({"event":"token_repair_not_applied", "errorCategory":provider_failure_category(&failure)}));
+            let damaged = chunk
+                .iter()
+                .filter(|item| {
+                    translations.iter().any(|translation| {
+                        translation.id == item.id
+                            && !tokens::blocking_differences(&item.source, &translation.text)
+                                .is_empty()
+                    })
+                })
+                .count();
+            if damaged > 0 {
+                progress(ai_provider::ProviderProgressEvent::RepairSkipped {
+                    phase: ai_provider::ProviderPhase::TokenRepair,
+                    item_count: damaged,
+                });
+            }
             Ok((translations, false))
         }
     }
@@ -2600,6 +2622,8 @@ async fn translate_with_cloud_ai(
         parallel_limit: None,
         retries: 0,
         splits: 0,
+        terminology_repair_skipped: 0,
+        token_repair_skipped: 0,
         recovery: None,
         provider_stage: None,
         provider_activity_sequence: 0,
@@ -2662,6 +2686,14 @@ async fn translate_with_cloud_ai(
                         progress.set_batch_recovery(batch_index, "split");
                     }
                     ai_provider::ProviderProgressEvent::ReviewSkipped { .. } => {}
+                    ai_provider::ProviderProgressEvent::RepairSkipped { phase, item_count } => {
+                        let skipped = if phase == ai_provider::ProviderPhase::TokenRepair {
+                            &mut progress.token_repair_skipped
+                        } else {
+                            &mut progress.terminology_repair_skipped
+                        };
+                        *skipped = skipped.saturating_add(item_count);
+                    }
                     ai_provider::ProviderProgressEvent::Activity(activity) => {
                         progress.provider_stage = Some(provider_activity_stage(activity));
                         progress.provider_activity_sequence =
@@ -2750,6 +2782,22 @@ async fn translate_with_cloud_ai(
                             "reason": match reason {
                                 ai_provider::ReviewSkipReason::Transient => "transient",
                                 ai_provider::ReviewSkipReason::InvalidResponse => "invalidResponse",
+                            },
+                        })
+                    );
+                }
+                ai_provider::ProviderProgressEvent::RepairSkipped { phase, item_count } => {
+                    log::warn!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "repair_skipped",
+                            "runId": log_run_id,
+                            "itemCount": item_count,
+                            "phase": if phase == ai_provider::ProviderPhase::TokenRepair {
+                                "tokenRepair"
+                            } else {
+                                "terminologyRepair"
                             },
                         })
                     );
@@ -3974,6 +4022,8 @@ mod ai_run_contract_tests {
             parallel_limit: Some(4),
             retries: 1,
             splits: 2,
+            terminology_repair_skipped: 3,
+            token_repair_skipped: 5,
             recovery: Some("structureRetry"),
             provider_stage: Some("reasoning"),
             provider_activity_sequence: 7,
@@ -3995,6 +4045,8 @@ mod ai_run_contract_tests {
         assert_eq!(value["recovery"], "structureRetry");
         assert_eq!(value["providerStage"], "reasoning");
         assert_eq!(value["providerActivitySequence"], 7);
+        assert_eq!(value["terminologyRepairSkipped"], 3);
+        assert_eq!(value["tokenRepairSkipped"], 5);
         assert!(value.get("codexStage").is_none());
         assert!(value.get("codexActivitySequence").is_none());
         assert_eq!(value["usage"]["cachedInputTokens"], 32_900);
