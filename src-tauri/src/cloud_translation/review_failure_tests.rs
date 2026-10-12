@@ -105,7 +105,7 @@ fn persistent_transient_review_failure_keeps_drafts_and_reports_a_warning() {
         |_, _, _| {
             attempts += 1;
             std::future::ready(Err::<Vec<ProviderTranslation>, _>(
-                ProviderFailure::Transient("provider unavailable".to_string()),
+                ProviderFailure::Transient("provider unavailable".to_string(), None),
             ))
         },
     ));
@@ -130,7 +130,7 @@ fn one_failing_plan_keeps_its_draft_while_other_plans_are_reviewed() {
         progress,
         |review_items, _, _| {
             std::future::ready(if review_items[0].id == "item-0000" {
-                Err(ProviderFailure::Transient("temporary".to_string()))
+                Err(ProviderFailure::Transient("temporary".to_string(), None))
             } else {
                 Ok(vec![translation("item-0001", "Zweiter, geprüft")])
             })

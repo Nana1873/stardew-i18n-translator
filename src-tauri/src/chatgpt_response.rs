@@ -64,6 +64,7 @@ impl ResponseState {
                 ) {
                     return Err(ProviderFailure::Transient(
                         "OpenAI temporarily could not complete the response. Try again.".into(),
+                        None,
                     ));
                 }
                 return Err(crate::chatgpt_auth::api_failure(
@@ -204,6 +205,7 @@ pub async fn consume(
             } else {
                 ProviderFailure::Transient(
                     "The OpenAI response stream was interrupted. Try again.".into(),
+                    None,
                 )
             }
         })?;

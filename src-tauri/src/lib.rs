@@ -1704,7 +1704,7 @@ fn provider_activity_stage(activity: ai_provider::ProviderActivity) -> &'static 
 fn provider_failure_category(failure: &ai::ProviderFailure) -> &'static str {
     match failure {
         ai::ProviderFailure::Cancelled => "cancelled",
-        ai::ProviderFailure::Transient(_) => "transient",
+        ai::ProviderFailure::Transient(..) => "transient",
         ai::ProviderFailure::InvalidResponse(_) => "invalidResponse",
         ai::ProviderFailure::Message(_) => "provider",
     }
@@ -2341,7 +2341,7 @@ async fn translate_with_local_ai(
             }
             Err(
                 ai::ProviderFailure::Message(cause)
-                | ai::ProviderFailure::Transient(cause)
+                | ai::ProviderFailure::Transient(cause, _)
                 | ai::ProviderFailure::InvalidResponse(cause),
             ) => {
                 let error_category = local_ai_error_category(&cause);
@@ -2977,9 +2977,8 @@ async fn translate_with_cloud_ai(
             Err(failure) => {
                 let error_category = provider_failure_category(&failure);
                 let cause = match failure {
-                    ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause) => {
-                        cause
-                    }
+                    ai::ProviderFailure::Message(cause)
+                    | ai::ProviderFailure::Transient(cause, _) => cause,
                     ai::ProviderFailure::Cancelled | ai::ProviderFailure::InvalidResponse(_) => {
                         unreachable!("cancelled and invalid-response failures are handled above")
                     }

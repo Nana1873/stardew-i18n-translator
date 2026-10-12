@@ -140,7 +140,7 @@ fn initial_chunks_reserve_the_complete_utf8_structure_retry_prompt() {
 fn transient_and_structural_retry_budgets_are_independent_and_bounded() {
     let cancelled = Arc::new(AtomicBool::new(false));
     let mut scripted = std::collections::VecDeque::from([
-        Err(ProviderFailure::Transient("temporary".to_string())),
+        Err(ProviderFailure::Transient("temporary".to_string(), None)),
         Err(ProviderFailure::InvalidResponse("wrong ids".to_string())),
         Ok(vec![provider_translation("item-0000", "Hallo")]),
     ]);
@@ -173,8 +173,8 @@ fn transient_and_structural_retry_budgets_are_independent_and_bounded() {
 fn repeated_same_class_failure_stops_after_its_single_retry() {
     for scripted in [
         std::collections::VecDeque::from([
-            Err(ProviderFailure::Transient("first".to_string())),
-            Err(ProviderFailure::Transient("second".to_string())),
+            Err(ProviderFailure::Transient("first".to_string(), None)),
+            Err(ProviderFailure::Transient("second".to_string(), None)),
         ]),
         std::collections::VecDeque::from([
             Err(ProviderFailure::InvalidResponse("first".to_string())),
@@ -233,11 +233,51 @@ fn cancellation_wins_before_a_scheduled_retry() {
     let result = tauri::async_runtime::block_on(translate_chunk_with_recovery(cancelled, |_| {
         attempts += 1;
         cancel_from_attempt.store(true, Ordering::Release);
-        std::future::ready(Err(ProviderFailure::Transient("temporary".to_string())))
+        std::future::ready(Err(ProviderFailure::Transient(
+            "temporary".to_string(),
+            None,
+        )))
     }));
 
     assert_eq!(result, Err(ProviderFailure::Cancelled));
     assert_eq!(attempts, 1);
+}
+
+#[test]
+fn transient_retry_waits_and_honors_a_capped_retry_after_hint() {
+    assert_eq!(transient_retry_delay(None), TRANSIENT_RETRY_DELAY);
+    assert_eq!(
+        transient_retry_delay(Some(Duration::from_secs(5))),
+        Duration::from_secs(5)
+    );
+    assert_eq!(
+        transient_retry_delay(Some(Duration::from_secs(3600))),
+        MAX_RETRY_AFTER
+    );
+}
+
+#[test]
+fn cancellation_ends_the_wait_before_a_transient_retry() {
+    let cancelled = Arc::new(AtomicBool::new(false));
+    let cancel_later = Arc::clone(&cancelled);
+    let canceller = std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        cancel_later.store(true, Ordering::Release);
+    });
+    let mut attempts = 0usize;
+    let started = std::time::Instant::now();
+    let result = tauri::async_runtime::block_on(translate_chunk_with_recovery(cancelled, |_| {
+        attempts += 1;
+        std::future::ready(Err(ProviderFailure::Transient(
+            "busy".to_string(),
+            Some(Duration::from_secs(30)),
+        )))
+    }));
+    canceller.join().unwrap();
+
+    assert_eq!(result, Err(ProviderFailure::Cancelled));
+    assert_eq!(attempts, 1);
+    assert!(started.elapsed() < Duration::from_secs(10));
 }
 
 #[test]
@@ -645,7 +685,7 @@ fn terminology_repair_has_independent_bounded_transient_and_structure_retries() 
     let reviewed = vec![provider_translation("item-0000", "Rübe")];
     let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
     let mut scripted = std::collections::VecDeque::from([
-        Err(ProviderFailure::Transient("temporary".to_string())),
+        Err(ProviderFailure::Transient("temporary".to_string(), None)),
         Err(ProviderFailure::InvalidResponse("wrong ids".to_string())),
         Ok(vec![provider_translation("item-0000", "Pastinake")]),
     ]);
@@ -774,7 +814,7 @@ fn existing_token_damage_reaches_failed_final_repair_as_blocking_diff() {
         no_progress_callback(),
         |_, _| {
             std::future::ready(Err::<Vec<ProviderTranslation>, _>(
-                ProviderFailure::Transient("temporary".to_string()),
+                ProviderFailure::Transient("temporary".to_string(), None),
             ))
         },
     ))
@@ -924,7 +964,7 @@ fn failed_token_repair_sub_batch_keeps_its_original_and_later_plans_continue() {
         |_, expected| {
             calls += 1;
             let result = if calls == 1 {
-                Err(ProviderFailure::Transient("temporary".to_string()))
+                Err(ProviderFailure::Transient("temporary".to_string(), None))
             } else {
                 Ok(expected
                     .iter()

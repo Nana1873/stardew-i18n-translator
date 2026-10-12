@@ -131,14 +131,18 @@ pub async fn run_prompt(
             if error.is_timeout() && !error.is_connect() && reached_time_limit(started) {
                 timeout_failure()
             } else {
-                ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into())
+                ProviderFailure::Transient("Could not reach OpenAI. Check the network and try again.".into(), None)
             }
         })?;
         if !response.status().is_success() {
             let status = response.status().as_u16();
+            let hint = retry_after(response.headers());
             let bytes = chatgpt_auth::read_bounded(response).await?;
             let body = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-            return Err(chatgpt_auth::api_failure(status, &body));
+            return Err(match chatgpt_auth::api_failure(status, &body) {
+                ProviderFailure::Transient(message, _) => ProviderFailure::Transient(message, hint),
+                failure => failure,
+            });
         }
         crate::chatgpt_response::consume(response, progress, started).await
     };
@@ -156,6 +160,19 @@ pub async fn run_prompt(
         }
     }
 }
+/// The Retry-After header in whole seconds. An HTTP date is ignored; the
+/// default retry delay applies then.
+fn retry_after(headers: &reqwest::header::HeaderMap) -> Option<Duration> {
+    headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(Duration::from_secs)
+}
+
 /// A request that hit the five-minute ceiling is too large for one attempt,
 /// not a network problem. Recovery splits the batch without a same-size retry.
 pub(crate) const TIMEOUT_MESSAGE: &str =
@@ -190,5 +207,21 @@ mod time_limit_tests {
         assert!(!reached_time_limit(early));
         let late = now.checked_sub(Duration::from_secs(300)).unwrap();
         assert!(reached_time_limit(late));
+    }
+
+    #[test]
+    fn retry_after_accepts_only_whole_seconds() {
+        use reqwest::header::{HeaderMap, HeaderValue, RETRY_AFTER};
+        let mut headers = HeaderMap::new();
+        assert_eq!(retry_after(&headers), None);
+        headers.insert(RETRY_AFTER, HeaderValue::from_static(" 7 "));
+        assert_eq!(retry_after(&headers), Some(Duration::from_secs(7)));
+        headers.insert(
+            RETRY_AFTER,
+            HeaderValue::from_static("Wed, 21 Oct 2026 07:28:00 GMT"),
+        );
+        assert_eq!(retry_after(&headers), None);
+        headers.insert(RETRY_AFTER, HeaderValue::from_static("-1"));
+        assert_eq!(retry_after(&headers), None);
     }
 }

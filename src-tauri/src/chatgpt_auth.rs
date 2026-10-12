@@ -301,7 +301,10 @@ pub async fn read_bounded(
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| {
-            crate::ai::ProviderFailure::Transient("The OpenAI response was interrupted.".into())
+            crate::ai::ProviderFailure::Transient(
+                "The OpenAI response was interrupted.".into(),
+                None,
+            )
         })?;
         if bytes.len().saturating_add(chunk.len()) > 2 * 1024 * 1024 {
             return Err(crate::ai::ProviderFailure::InvalidResponse(
@@ -316,7 +319,7 @@ pub fn message(error: crate::ai::ProviderFailure) -> String {
     use crate::ai::ProviderFailure::*;
     match error {
         Cancelled => "The request was cancelled.".into(),
-        Transient(e) | InvalidResponse(e) | Message(e) => e,
+        Transient(e, _) | InvalidResponse(e) | Message(e) => e,
     }
 }
 pub fn api_failure(status: u16, body: &Value) -> crate::ai::ProviderFailure {
@@ -344,7 +347,7 @@ pub fn api_failure(status: u16, body: &Value) -> crate::ai::ProviderFailure {
     };
     let safe = format!("{guidance} HTTP {status}.");
     if status >= 500 {
-        ProviderFailure::Transient(safe)
+        ProviderFailure::Transient(safe, None)
     } else {
         ProviderFailure::Message(safe)
     }
@@ -357,6 +360,7 @@ async fn json(request: reqwest::RequestBuilder) -> Result<Value, crate::ai::Prov
         .map_err(|_| {
             crate::ai::ProviderFailure::Transient(
                 "Could not reach OpenAI. Check the network and try again.".into(),
+                None,
             )
         })?;
     let status = response.status();
@@ -1088,7 +1092,7 @@ mod tests {
         assert!(!message(api_failure(400, &body)).contains("SECRET"));
         assert!(matches!(
             api_failure(503, &body),
-            crate::ai::ProviderFailure::Transient(_)
+            crate::ai::ProviderFailure::Transient(..)
         ));
     }
     #[cfg(windows)]

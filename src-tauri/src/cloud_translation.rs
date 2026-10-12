@@ -13,7 +13,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 const MAX_STRUCTURAL_HINT_CHARS: usize = 240;
@@ -445,7 +445,7 @@ where
                     })
                 );
                 match failure {
-                    ProviderFailure::Transient(_) => ReviewSkipReason::Transient,
+                    ProviderFailure::Transient(..) => ReviewSkipReason::Transient,
                     ProviderFailure::InvalidResponse(_) => ReviewSkipReason::InvalidResponse,
                     // Messages are configuration or environment errors such as
                     // a signed-out or missing cloud provider. They get no retry and
@@ -792,7 +792,7 @@ where
             }
             Err(
                 ProviderFailure::Message(_)
-                | ProviderFailure::Transient(_)
+                | ProviderFailure::Transient(..)
                 | ProviderFailure::InvalidResponse(_),
             ) => {
                 log::warn!(
@@ -1039,9 +1039,12 @@ async fn run_review_attempt(
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
     #[cfg(debug_assertions)]
     if std::env::var(FORCE_REVIEW_FAILURE_ENV).is_ok_and(|value| value == "1") {
-        return Err(ProviderFailure::Transient(format!(
-            "AI review failure forced by {FORCE_REVIEW_FAILURE_ENV}=1 (debug builds only)."
-        )));
+        return Err(ProviderFailure::Transient(
+            format!(
+                "AI review failure forced by {FORCE_REVIEW_FAILURE_ENV}=1 (debug builds only)."
+            ),
+            None,
+        ));
     }
     let prompt = build_review_attempt_prompt(
         &target_language,
@@ -1092,6 +1095,19 @@ async fn run_terminology_repair_attempt(
     .await
 }
 
+/// Wait before the one transient retry. Tests use no wait.
+const TRANSIENT_RETRY_DELAY: Duration = if cfg!(test) {
+    Duration::ZERO
+} else {
+    Duration::from_secs(2)
+};
+/// Upper bound for a provider's Retry-After hint.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+
+fn transient_retry_delay(retry_after: Option<Duration>) -> Duration {
+    retry_after.map_or(TRANSIENT_RETRY_DELAY, |delay| delay.min(MAX_RETRY_AFTER))
+}
+
 async fn translate_chunk_with_recovery_reporting<F, Fut, R>(
     cancelled: Arc<AtomicBool>,
     mut attempt: F,
@@ -1111,9 +1127,16 @@ where
             return Err(ProviderFailure::Cancelled);
         }
         match attempt(structural_error.clone()).await {
-            Err(ProviderFailure::Transient(_)) if !transient_retried => {
+            Err(ProviderFailure::Transient(_, retry_after)) if !transient_retried => {
                 transient_retried = true;
                 report(ProviderProgressEvent::TransientRetry);
+                // An immediate retry usually meets the same overloaded service.
+                tokio::select! {
+                    () = tokio::time::sleep(transient_retry_delay(retry_after)) => {}
+                    () = ai::wait_for_cancel(Arc::clone(&cancelled)) => {
+                        return Err(ProviderFailure::Cancelled);
+                    }
+                }
             }
             // A same-size retry after the five-minute limit would only time out
             // again: hand it straight to the split.
@@ -1374,7 +1397,7 @@ async fn run_prompt_once(
     let outcome = match &result {
         Ok(_) => "complete",
         Err(ProviderFailure::Cancelled) => "cancelled",
-        Err(ProviderFailure::Transient(_)) => "transient_error",
+        Err(ProviderFailure::Transient(..)) => "transient_error",
         Err(ProviderFailure::InvalidResponse(_)) => "invalid_response",
         Err(ProviderFailure::Message(_)) => "error",
     };

@@ -235,7 +235,7 @@ fn copied_mod_fixture_with_options(
 fn failure_category(failure: &ProviderFailure) -> &'static str {
     match failure {
         ProviderFailure::Cancelled => "cancelled",
-        ProviderFailure::Transient(_) => "transient_error",
+        ProviderFailure::Transient(..) => "transient_error",
         ProviderFailure::InvalidResponse(_) => "invalid_response",
         ProviderFailure::Message(_) => "provider_error",
     }

@@ -216,7 +216,9 @@ pub(crate) struct ProviderTranslation {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ProviderFailure {
     Cancelled,
-    Transient(String),
+    /// A temporary failure that gets one delayed retry. The optional delay is
+    /// the provider's Retry-After hint.
+    Transient(String, Option<std::time::Duration>),
     InvalidResponse(String),
     Message(String),
 }
