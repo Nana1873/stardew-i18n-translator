@@ -356,16 +356,10 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
 /// Portrait/emotion commands only change the face; a missing sheet index falls
 /// back to portrait 0 (DialogueBox bounds check).
 fn is_portrait_command(token: &str) -> bool {
-    matches!(token, "$h" | "$s" | "$u" | "$l" | "$a" | "$neutral")
+    matches!(token, "$h" | "$s" | "$u" | "$l" | "$a")
         || token
             .strip_prefix('$')
             .is_some_and(|rest| !rest.is_empty() && rest.bytes().all(|b| b.is_ascii_digit()))
-}
-
-/// The text one player sees: every well-formed gender switch is replaced by its
-/// first branch, so portraits in alternative branches are not counted twice.
-fn first_branch_text(chars: &[char]) -> String {
-    branch_text(chars, 0)
 }
 
 /// The text a player sees for one gender: every well-formed switch is
@@ -403,17 +397,23 @@ fn branch_text(chars: &[char], branch: usize) -> String {
 /// `pagesWithMultiplePortraits`.
 fn pages_with_multiple_portraits(value: &str) -> usize {
     let chars: Vec<char> = value.chars().collect();
-    first_branch_text(&chars)
-        .split('#')
-        .filter(|page| {
-            extract(page)
-                .into_iter()
-                .filter(|token| is_portrait_command(token))
-                .collect::<std::collections::HashSet<_>>()
-                .len()
-                > 1
+    // Each switch branch is what one player gender sees; count the worst one.
+    (0..3)
+        .map(|branch| {
+            branch_text(&chars, branch)
+                .split('#')
+                .filter(|page| {
+                    extract(page)
+                        .into_iter()
+                        .filter(|token| is_portrait_command(token))
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                        > 1
+                })
+                .count()
         })
-        .count()
+        .max()
+        .unwrap_or(0)
 }
 
 fn is_placeholder(token: &str) -> bool {

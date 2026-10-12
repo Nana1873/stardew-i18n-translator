@@ -38,6 +38,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A second portrait that only the other player gender sees, inside a he/she
+  switch, is now a token error like any other second portrait on a page.
+- `$neutral` is no longer treated as a portrait. The game does not read it
+  from dialogue text and shows it as written, so adding it is an error.
 - Saved translations, settings, the glossary, and exported translation files
   are flushed to disk before they replace the previous file, so a power loss
   right after a save cannot leave an empty file behind.
