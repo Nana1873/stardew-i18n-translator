@@ -190,6 +190,26 @@
     {
       "value": "$sHallo $uDa $lLiebe $aWut",
       "tokens": ["$s", "$u", "$l", "$a"]
+    },
+    {
+      "value": "Hi there.#${He^She}$ is my friend.#$e#",
+      "tokens": ["#", "${^}$", "#$e#"]
+    },
+    {
+      "value": "Hello.#$hSo happy!#$e#",
+      "tokens": ["#", "$h", "#$e#"]
+    },
+    {
+      "value": "$q 305/306 null#Want to go?#$r 305 15 beach_yes#Yes",
+      "tokens": ["$q 305/306 null#", "#$r 305 15 beach_yes#"]
+    },
+    {
+      "value": "$1  metHarvey#Nice to meet you.#$e#Again.",
+      "tokens": ["$1 metHarvey#", "#$e#"]
+    },
+    {
+      "value": "$query FLAG#Yes",
+      "tokens": ["$query", "#"]
     }
   ],
   "comparisons": [
@@ -431,6 +451,48 @@
       "name": "one portrait per gender branch stays a single portrait",
       "source": "${Hi.^Hey.}$#Bye.$h",
       "target": "${Hallo.$h^Hey.$s}$#Tschuess.",
+      "blocked": false
+    },
+    {
+      "name": "a collapsed switch counts tokens repeated in every branch once",
+      "source": "${He is#$b#here.$7^She is#$b#here.$7}$",
+      "target": "Er ist#$b#hier.$7",
+      "blocked": false
+    },
+    {
+      "name": "a target-language switch counts tokens repeated in every branch once",
+      "source": "Hello.#$b#Bye.",
+      "target": "${Er ist#$b#da.^Sie ist#$b#da.}$",
+      "blocked": false
+    },
+    {
+      "name": "damage inside one branch of a kept switch still blocks",
+      "source": "${He is#$b#here.^She is#$b#here.}$",
+      "target": "${Er ist hier.^Sie ist#$b#hier.}$",
+      "blocked": true
+    },
+    {
+      "name": "a page that starts with a gender switch is translatable",
+      "source": "Hi there.#${He^She}$ is my friend.#$e#",
+      "target": "Hallo.#${Er^Sie}$ ist mein Freund.#$e#",
+      "blocked": false
+    },
+    {
+      "name": "a renamed one-time flag at string start blocks",
+      "source": "$1 metHarvey#Nice.#$e#Again.",
+      "target": "$1 trafHarvey#Schön.#$e#Nochmal.",
+      "blocked": true
+    },
+    {
+      "name": "changed question response ids at string start block",
+      "source": "$q 305/306 null#Go?#$r 305 1 yes#Yes",
+      "target": "$q 305/307 null#Gehen?#$r 305 1 yes#Ja",
+      "blocked": true
+    },
+    {
+      "name": "extra spaces in leading command arguments are ignored",
+      "source": "$q  305/306 null#Go?",
+      "target": "$q 305/306 null#Gehen?",
       "blocked": false
     }
   ]

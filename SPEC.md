@@ -99,7 +99,8 @@ placeholder, and formatting tokens. Each count difference is an **error** or a
 - Errors break the game: a damaged gender switch (`${` or `}$` missing), a
   changed `^`, `#`, or `#$b#` page structure, dialogue commands such as `$q`,
   `$r`, `$y`, `$p`, `$d`, `$c`, `$k`, `$action`, event commands `%fork` and
-  `%revealtaste`, single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
+  `%revealtaste`, the arguments of a command that opens the string (such as
+  `$q 305/306 null#` or the one-time flag `$1 metHarvey#`), single `{` or `}`, mail `%item`/`%action ... %%` and `[#]`,
   item brackets, renamed or added `[Tokens]`, `{{placeholders}}`, and `{0}`, and
   a second portrait command on one dialogue page.
 - Warnings are cosmetic or legitimate translation choices: portrait changes
@@ -119,6 +120,9 @@ Literal-escape differences are non-blocking warnings. Ordinary quote punctuation
 and physical newline-count differences are ignored. Identical non-empty source
 and target text is valid. Target-language gender switches may be added when the
 source has none, while protected tokens inside their branches remain checked.
+When only one side has a switch, tokens are counted as one player sees them: a
+token repeated in every branch counts once. A page may start with a switch or a
+portrait (`#${he^she}$ ...`, `#$hSo ...`).
 Parser-insignificant `$r` header spaces are ignored and malformed `#$b*` prefix
 recovery is bounded. The [shared token fixtures](tests/fixtures/README.md)
 exercise the same extraction rules in TypeScript and Rust.

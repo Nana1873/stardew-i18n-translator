@@ -10,6 +10,14 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Removing a he/she switch (for languages without grammatical gender) or
+  adding one no longer reports tokens repeated in every branch as missing or
+  added. A collapsed switch with `#$b#` in each branch, for example, is no
+  longer a token error, so the string is exported.
+- The arguments of a dialogue command that opens a string are protected:
+  changed question ids such as `$q 305/306 null#` or a renamed one-time flag
+  such as `$1 metHarvey#` are token errors instead of passing silently.
+
 - Token chips in the editor now show their severity: a red circle marks a
   difference that keeps the string English on export, a yellow triangle a
   harmless note. The validation line groups errors before notes and names the
@@ -24,6 +32,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   step instead of the raw transport error.
 
 ### Fixed
+
+- A dialogue page that starts with a he/she switch or a portrait, such as
+  `#${He^She}$ is here.` or `#$hSo happy!`, is translatable again; it was
+  treated as one protected token, so every translation was an error.
 
 - The scanner finds `Manifest.json` regardless of filename case, like SMAPI.
 - Folders whose name starts with a dot (for example `.disabled`) are skipped
