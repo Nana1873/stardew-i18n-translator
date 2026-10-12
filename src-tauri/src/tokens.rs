@@ -543,6 +543,8 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
     if target_switches && !source_switches {
         target_counts = player_view_counts(target, &target_counts);
     }
+    (source_counts, target_counts) = unify_placeholder_spellings(&source_counts, &target_counts);
+    allow_article_for_arguments(&mut source_counts, &target_counts);
     let source_has_gender_switch = source_counts
         .keys()
         .any(|token| is_gender_switch_shape(token));
@@ -583,6 +585,120 @@ pub fn token_differences(source: &str, target: &str) -> Vec<TokenDifference> {
             })
         })
         .collect()
+}
+
+/// SMAPI trims `{{…}}` token names and looks them up case-insensitively, and
+/// Content Patcher tokens are case-insensitive too, so `{{ name }}`,
+/// `{{name}}`, and `{{Name}}` are one placeholder. Each group keeps one
+/// spelling as written: the first in code-point order from the English text,
+/// else from the translation. Mirrors TS `unifyPlaceholderSpellings`.
+fn unify_placeholder_spellings(
+    source: &HashMap<String, usize>,
+    target: &HashMap<String, usize>,
+) -> (HashMap<String, usize>, HashMap<String, usize>) {
+    let mut spelling: HashMap<String, String> = HashMap::new();
+    for counts in [source, target] {
+        let mut own: HashMap<String, String> = HashMap::new();
+        for token in counts.keys().filter(|token| token.starts_with("{{")) {
+            let key = placeholder_key(token);
+            if spelling.contains_key(&key) {
+                continue;
+            }
+            let entry = own.entry(key).or_insert_with(|| token.clone());
+            if token < entry {
+                *entry = token.clone();
+            }
+        }
+        spelling.extend(own);
+    }
+    let merge = |counts: &HashMap<String, usize>| {
+        let mut merged: HashMap<String, usize> = HashMap::new();
+        for (token, count) in counts {
+            let name = if token.starts_with("{{") {
+                spelling
+                    .get(&placeholder_key(token))
+                    .cloned()
+                    .unwrap_or_else(|| token.clone())
+            } else {
+                token.clone()
+            };
+            *merged.entry(name).or_insert(0) += count;
+        }
+        merged
+    };
+    (merge(source), merge(target))
+}
+
+/// Lowercase, with white space removed right inside each `{{` and `}}`.
+/// Mirrors TS `placeholderKey` character for character.
+fn placeholder_key(token: &str) -> String {
+    let chars: Vec<char> = token.to_lowercase().chars().collect();
+    let is_space = |index: usize| chars.get(index).is_some_and(|c| c.is_whitespace());
+    let mut key = String::new();
+    let mut index = 0;
+    while index < chars.len() {
+        if starts_with(&chars, index, "{{") {
+            key.push_str("{{");
+            index += 2;
+            while is_space(index) {
+                index += 1;
+            }
+            continue;
+        }
+        if is_space(index) {
+            let mut end = index;
+            while is_space(end) {
+                end += 1;
+            }
+            if starts_with(&chars, end, "}}") {
+                index = end;
+                continue;
+            }
+        }
+        key.push(chars[index]);
+        index += 1;
+    }
+    key
+}
+
+/// A translation that drops `[ArticleFor [X]]` but keeps `[X]` itself (to
+/// write its own article) loses only the article. The inner `[X]` is provided
+/// by the dropped wrapper, so it is not also reported as added. Mirrors TS
+/// `allowArticleForArguments`.
+fn allow_article_for_arguments(
+    source: &mut HashMap<String, usize>,
+    target: &HashMap<String, usize>,
+) {
+    let mut dropped: HashMap<String, usize> = HashMap::new();
+    for (token, count) in source.iter() {
+        let Some(inner) = article_for_argument(token) else {
+            continue;
+        };
+        let lost = count.saturating_sub(target.get(token).copied().unwrap_or(0));
+        if lost > 0 {
+            *dropped.entry(inner.to_string()).or_insert(0) += lost;
+        }
+    }
+    for (inner, lost) in dropped {
+        let expected = source.get(&inner).copied().unwrap_or(0);
+        let extra = target
+            .get(&inner)
+            .copied()
+            .unwrap_or(0)
+            .saturating_sub(expected);
+        if extra > 0 {
+            source.insert(inner, expected + lost.min(extra));
+        }
+    }
+}
+
+/// The inner bracket token of `[ArticleFor [X]]`, i.e. `[X]`, or `None` when
+/// the token is no such wrapper. Mirrors TS `articleForArgument`.
+fn article_for_argument(token: &str) -> Option<&str> {
+    let body = token.strip_prefix('[')?.strip_suffix(']')?;
+    let (name, arguments) = split_bracket_name(body);
+    (name.eq_ignore_ascii_case("articlefor") && is_single_protected_bracket_argument(arguments))
+        .then_some(arguments)
 }
 
 /// The protected tokens that `target` is missing (or under-represents) relative

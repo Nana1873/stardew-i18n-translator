@@ -701,6 +701,19 @@ function hasAtomicArgumentCount(
   return argumentsList.length >= minimum && argumentsList.length <= maximum;
 }
 
+/** The inner bracket token of `[ArticleFor [X]]`, i.e. `[X]`, or null when
+ * the token is no such wrapper. Mirrors Rust `article_for_argument`. */
+export function articleForArgument(token: string): string | null {
+  if (!token.startsWith("[") || !token.endsWith("]")) return null;
+  const { name, arguments: argumentText } = splitBracketName(
+    token.slice(1, -1),
+  );
+  return name.toLowerCase() === "articlefor" &&
+    isSingleProtectedBracketArgument(argumentText)
+    ? argumentText
+    : null;
+}
+
 function isSingleProtectedBracketArgument(argumentsText: string): boolean {
   if (argumentsText[0] !== "[") return false;
   const end = findBalancedBracketEnd(argumentsText, 0);

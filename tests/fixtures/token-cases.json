@@ -305,6 +305,42 @@
   ],
   "comparisons": [
     {
+      "name": "dropping ArticleFor but keeping its item token is only a warning",
+      "source": "Bring [ArticleFor [SuggestedItem]].",
+      "target": "Bring [SuggestedItem].",
+      "blocked": false
+    },
+    {
+      "name": "dropping ArticleFor with its item is only a warning",
+      "source": "Bring [ArticleFor [SuggestedItem]].",
+      "target": "Bring es.",
+      "blocked": false
+    },
+    {
+      "name": "an item token beyond the dropped ArticleFor is still added",
+      "source": "Bring [ArticleFor [SuggestedItem]].",
+      "target": "Bring [SuggestedItem] [SuggestedItem].",
+      "blocked": true
+    },
+    {
+      "name": "placeholder names compare trimmed and case-insensitively",
+      "source": "Hi {{ name }} and {{PlayerName}}",
+      "target": "Hallo {{Name}} und {{ playername }}",
+      "blocked": false
+    },
+    {
+      "name": "nested placeholders compare trimmed and case-insensitively",
+      "source": "Hi {{Lookup:{{Other}}}}",
+      "target": "Hallo {{lookup:{{ other }} }}",
+      "blocked": false
+    },
+    {
+      "name": "a renamed placeholder is still an error",
+      "source": "Hi {{name}}",
+      "target": "Hallo {{Namen}}",
+      "blocked": true
+    },
+    {
       "name": "extra spaces in a dialogue command's arguments are ignored like in the game",
       "source": "Hi#$q 305/306 null#Question?#$r 305 0 a#Yes#$p 305#Great|Oh",
       "target": "Hallo#$q  305/306  null #Frage?#$r 305  0 a#Ja#$p  305#Toll|Oh",
@@ -726,6 +762,16 @@
     }
   ],
   "explanations": [
+    {
+      "source": "Take [ArticleFor [SuggestedItem]].",
+      "target": "Nimm [SuggestedItem].",
+      "text": "[ArticleFor [SuggestedItem]] is missing from the translation. Only the a/an article is lost. Fine if intended."
+    },
+    {
+      "source": "Hi {{ name }}, {{Name}}!",
+      "target": "Hallo {{NAME}}!",
+      "text": "{{ name }} appears 1 time in the translation instead of 2. The game shows nothing in its place. Fine if intended."
+    },
     {
       "source": "Hi.#$b#Bye.",
       "target": "Hallo. Tschüss.",
