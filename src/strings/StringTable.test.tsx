@@ -3714,6 +3714,20 @@ it("closes the editor with a note when a reload drops the edited string", async 
   );
 });
 
+it("returns focus to the last edited row after moving to the next string", async () => {
+  installBackendRows();
+  render(<StringTable mod={MOD} />);
+  await screen.findByText("greeting");
+  rowFor("greeting").focus();
+  fireEvent.doubleClick(rowFor("greeting"));
+  fireEvent.click(screen.getByRole("button", { name: "Next string" }));
+  await waitFor(() =>
+    expect(screen.getByRole("heading", { name: "bye" })).toBeVisible(),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Close editor" }));
+  await waitFor(() => expect(rowFor("bye")).toHaveFocus());
+});
+
 it("returns focus to the edited row when its launcher is gone", async () => {
   installBackendRows();
   render(<StringTable mod={MOD} />);

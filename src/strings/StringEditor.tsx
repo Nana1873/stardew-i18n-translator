@@ -358,6 +358,13 @@ export function StringEditor({
     };
   }, []);
 
+  // After Next or Save & next the launcher is an older row. Forget it so the
+  // table focuses the string that was edited last when the editor closes.
+  const launcherIdentityRef = useRef(rowIdentity);
+  useEffect(() => {
+    if (launcherIdentityRef.current !== rowIdentity) launcherRef.current = null;
+  }, [rowIdentity]);
+
   const draftIdentityRef = useRef(rowIdentity);
   // A background update of the same row must preserve a manual draft.
   useEffect(() => {
