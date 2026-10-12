@@ -1189,6 +1189,20 @@ export function StringEditor({
                 <label htmlFor="translator-editor-translation">
                   {targetFieldLabel}
                 </label>
+                {/* A single space is invisible in the field; say what it
+                    means in the head, so both fields keep the same height. */}
+                {isIntentionalBlankTarget(row.source, value) && (
+                  <span
+                    className="translator-editor-blank-hint"
+                    id="translator-editor-blank-hint"
+                    title="Left blank on purpose: the game shows nothing here."
+                  >
+                    Left blank on purpose
+                    <span className="translator-sr-only">
+                      : the game shows nothing here.
+                    </span>
+                  </span>
+                )}
                 <button
                   className="translator-icon-button translator-editor-copy"
                   type="button"
@@ -1222,15 +1236,6 @@ export function StringEditor({
                     : undefined
                 }
               />
-              {/* A single space is invisible in the field; say what it means. */}
-              {isIntentionalBlankTarget(row.source, value) && (
-                <p
-                  className="translator-editor-blank-hint"
-                  id="translator-editor-blank-hint"
-                >
-                  Left blank on purpose: the game shows nothing here.
-                </p>
-              )}
             </div>
           </div>
 

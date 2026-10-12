@@ -1721,9 +1721,15 @@
   content: none;
 }
 #stardew-i18n-translator .translator-editor-blank-hint {
-  margin: 4px 0 0;
+  flex: 1;
+  min-width: 0;
+  margin: 0 8px;
+  overflow: hidden;
   color: var(--translator-muted);
   font-size: 12px;
+  font-style: italic;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* Same status hues as the table and filters, drawn from the state class. */
 #stardew-i18n-translator .editor__status.translator-state {
