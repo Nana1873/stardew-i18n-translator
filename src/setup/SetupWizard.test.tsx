@@ -31,7 +31,6 @@ beforeEach(() => {
       case "glossary_status":
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -185,13 +184,16 @@ describe("SetupWizard", () => {
     expect(screen.getByRole("button", { name: "Finish" })).toBeEnabled();
   });
 
-  it("shows StardewXnbHack guidance when no unpacked content is present", async () => {
+  it("asks to check the game folder when the game Strings are missing", async () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);
     await gotoGlossaryStep();
 
     expect(
-      await screen.findByRole("button", { name: "Open StardewXnbHack" }),
+      await screen.findByText(
+        /The game’s Content\/Strings files were not found\. Check the Stardew Valley folder/,
+      ),
     ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /StardewXnbHack/ })).toBeNull();
     expect(
       screen.getByRole("region", { name: "How the glossary works" }),
     ).toHaveTextContent("Read locally");
@@ -218,7 +220,6 @@ describe("SetupWizard", () => {
         cmd === "glossary_status"
           ? Promise.resolve({
               gameXnbPresent: sourceAvailable,
-              unpackedPresent: false,
               sourceAvailable,
               cached: {
                 targetLang: "th",
@@ -259,7 +260,6 @@ describe("SetupWizard", () => {
         case "glossary_status":
           return Promise.resolve({
             gameXnbPresent: true,
-            unpackedPresent: true,
             sourceAvailable: true,
             cached: null,
             outdatedCache: false,
@@ -302,7 +302,6 @@ describe("SetupWizard", () => {
         case "glossary_status":
           return Promise.resolve({
             gameXnbPresent: true,
-            unpackedPresent: true,
             sourceAvailable: true,
             cached: null,
             outdatedCache: false,

@@ -228,9 +228,10 @@ they are fixed or accepted.
 ## Optional Glossary and AI
 
 The glossary supplies high-confidence names for items, tools, weapons, clothing,
-NPCs, locations, and seasons, not prose. Built-in languages use local
-`Content/Strings/*.xnb` dictionaries, with `Content (unpacked)/Strings/*.json` as
-a fallback. Custom-language packs may supply local `Strings` JSON or XNB files.
+NPCs, locations, and seasons, not prose. Built-in languages read the game's
+`Content/Strings/*.xnb` dictionaries directly; no unpacking tool is needed.
+Custom-language packs may supply local `Strings` JSON or XNB files, paired with
+the English names from the same game files.
 Pack inspection is read-only and limited to language registration and string
 assets. Missing glossary data never blocks the core workflow; glossaries are
 stored per language and never bundled with the app.

@@ -802,6 +802,67 @@ describe("App shell", () => {
     expect(editor).not.toHaveTextContent("Apple → Apfel");
   });
 
+  it("reloads the glossary when Settings closes without saving", async () => {
+    let built = false;
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary")
+        return Promise.resolve(
+          built
+            ? {
+                format: 2,
+                sourceLang: "default",
+                targetLang: "de",
+                termCount: 1,
+                entries: [
+                  {
+                    source: "Apple",
+                    target: "Apfel",
+                    kind: "item",
+                    asset: "Strings/Objects",
+                    key: "Apple",
+                  },
+                ],
+              }
+            : null,
+        );
+      if (cmd === "glossary_status") return Promise.resolve(null);
+      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings")
+        return Promise.resolve([
+          {
+            key: "fruit",
+            source: "Apple",
+            target: "",
+            status: "untranslated",
+          },
+        ]);
+      return Promise.resolve(null);
+    });
+
+    render(<App />);
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("load_glossary", {
+        targetLang: "de",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    // A glossary built in Settings is saved right away.
+    built = true;
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog", { name: "Settings" })).toBeNull(),
+    );
+
+    openWorkspace();
+    const key = await screen.findByRole("button", { name: "fruit" });
+    const row = key.closest<HTMLElement>("[data-string-row]");
+    if (!row) throw new Error("String row was not rendered");
+    fireEvent.doubleClick(row);
+    const editor = await screen.findByRole("dialog", { name: "fruit" });
+    await waitFor(() => expect(editor).toHaveTextContent("Apple → Apfel"));
+  });
+
   it("has one workspace without redundant view navigation", async () => {
     mockConfigured();
     render(<App />);
@@ -3744,7 +3805,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -3908,7 +3968,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -3967,7 +4026,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -4038,7 +4096,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -4207,13 +4264,6 @@ describe("App shell", () => {
     expect(dialog).toHaveTextContent("1 / 1");
     expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
       modUniqueId: "a.b",
-      files: [
-        {
-          relativeDir: "i18n",
-          defaultPath: "x/i18n/default.json",
-          targetPath: "x/i18n/de.json",
-        },
-      ],
       path: "C:/results/test.llm-result.json",
     });
     expect(invokeMock).not.toHaveBeenCalledWith(
@@ -4226,13 +4276,6 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
         modUniqueId: "a.b",
-        files: [
-          {
-            relativeDir: "i18n",
-            defaultPath: "x/i18n/default.json",
-            targetPath: "x/i18n/de.json",
-          },
-        ],
         path: "C:/results/test.llm-result.json",
       }),
     );
@@ -4303,13 +4346,6 @@ describe("App shell", () => {
     expect(dialog).toHaveTextContent("1 / 1");
     expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
       modUniqueId: "a.b",
-      files: [
-        {
-          relativeDir: "i18n",
-          defaultPath: "x/i18n/default.json",
-          targetPath: "x/i18n/de.json",
-        },
-      ],
       path: "C:/results/test.llm-result.json",
     });
     expect(invokeMock).not.toHaveBeenCalledWith(
@@ -4322,13 +4358,6 @@ describe("App shell", () => {
     await waitFor(() =>
       expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
         modUniqueId: "a.b",
-        files: [
-          {
-            relativeDir: "i18n",
-            defaultPath: "x/i18n/default.json",
-            targetPath: "x/i18n/de.json",
-          },
-        ],
         path: "C:/results/test.llm-result.json",
       }),
     );

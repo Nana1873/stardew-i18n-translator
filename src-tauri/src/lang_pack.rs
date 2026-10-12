@@ -3,12 +3,13 @@
 //! A Stardew "language pack" is a Content Patcher content pack that registers an
 //! additional in-game language (`Data/AdditionalLanguages` → `LanguageCode`) and
 //! ships translated `Strings/*` for it. For a game-unsupported target language we
-//! can build a typed glossary from such a pack (English base from unpacked
-//! content + the pack's translated `Strings`). This module only *locates* a
+//! can build a typed glossary from such a pack (English base from the game's
+//! `Content/Strings` XNB files + the pack's translated `Strings`). This module only *locates* a
 //! usable pack; [`crate::glossary::build_from_pack`] does the extraction.
 //!
 //! Read-only and narrowly bounded: a pack's
-//! `manifest.json` + `content.json` are parsed only to detect the language
+//! `manifest.json` + `content.json` (and the JSON files its `Include` changes
+//! load, see [`pack_changes`]) are parsed only to detect the language
 //! registration and locate its `Strings/` folder; the game's own `Data/*` is
 //! never read here. We do **not** implement Content Patcher — `When` matching is
 //! deliberately tolerant (a `Language` string or string array), and anything more
@@ -54,7 +55,7 @@ pub fn registered_language_codes(mod_dir: &Path) -> Vec<String> {
         return Vec::new();
     }
     match read_json(&mod_dir.join("content.json")) {
-        Some(content) => language_codes(&content),
+        Some(content) => language_codes(&pack_changes(mod_dir, &content)),
         None => Vec::new(),
     }
 }
@@ -87,13 +88,14 @@ pub fn detect_language_pack(mods_dir: &Path, target_lang: &str) -> Detection {
         let Some(content) = read_json(&mod_dir.join("content.json")) else {
             continue;
         };
-        if !language_codes(&content)
+        let changes = pack_changes(mod_dir, &content);
+        if !language_codes(&changes)
             .iter()
             .any(|code| code.eq_ignore_ascii_case(target))
         {
             continue;
         }
-        let Some(strings_dir) = resolve_strings_dir(mod_dir, &content, target) else {
+        let Some(strings_dir) = resolve_strings_dir(mod_dir, &changes, target) else {
             continue;
         };
         if !seen_dirs.insert(strings_dir.clone()) {
@@ -155,9 +157,9 @@ fn is_content_patcher_pack(mod_dir: &Path) -> bool {
 
 /// The language codes added by `EditData` changes targeting
 /// `Data/AdditionalLanguages`.
-fn language_codes(content: &Value) -> Vec<String> {
+fn language_codes(changes: &[Value]) -> Vec<String> {
     let mut codes = Vec::new();
-    for change in changes(content) {
+    for change in changes {
         if !is_action(change, "EditData") || !targets(change, "Data/AdditionalLanguages") {
             continue;
         }
@@ -180,8 +182,8 @@ fn language_codes(content: &Value) -> Vec<String> {
 /// substituting only the `{{Target}}` token (Content Patcher's per-asset token);
 /// fall back to a bounded probe when the path carries other tokens or the action
 /// shape is unusual.
-fn resolve_strings_dir(mod_dir: &Path, content: &Value, target: &str) -> Option<PathBuf> {
-    for change in changes(content) {
+fn resolve_strings_dir(mod_dir: &Path, changes: &[Value], target: &str) -> Option<PathBuf> {
+    for change in changes {
         if !is_action(change, "Load") || !when_selects_language(change, target) {
             continue;
         }
@@ -368,6 +370,84 @@ fn changes(content: &Value) -> &[Value] {
         .unwrap_or(&[])
 }
 
+/// How many `Include` levels are followed below `content.json`.
+const MAX_INCLUDE_DEPTH: usize = 5;
+
+/// Every change of a pack: `content.json`'s own plus those of the JSON files
+/// its `Include` changes load (`FromFile`, comma-separated, relative to the
+/// pack folder), followed up to [`MAX_INCLUDE_DEPTH`] levels. Paths with
+/// Content Patcher tokens cannot be resolved and are skipped, as are files
+/// outside the pack folder and files already read (cycles). `When`
+/// conditions are not evaluated, like elsewhere in this detector. At most
+/// [`MAX_INCLUDE_FILES`] included files are read per pack.
+fn pack_changes(mod_dir: &Path, content: &Value) -> Vec<Value> {
+    let mut walk = IncludeWalk::default();
+    if let Ok(path) = mod_dir.join("content.json").canonicalize() {
+        walk.visited.insert(path);
+    }
+    let mut collected = Vec::new();
+    collect_changes(mod_dir, content, 0, &mut walk, &mut collected);
+    collected
+}
+
+/// How many included files are read per pack, across all levels.
+const MAX_INCLUDE_FILES: usize = 50;
+
+#[derive(Default)]
+struct IncludeWalk {
+    visited: HashSet<PathBuf>,
+    followed: usize,
+    capped: bool,
+}
+
+fn collect_changes(
+    mod_dir: &Path,
+    content: &Value,
+    depth: usize,
+    walk: &mut IncludeWalk,
+    collected: &mut Vec<Value>,
+) {
+    for change in changes(content) {
+        if !is_action(change, "Include") {
+            collected.push(change.clone());
+            continue;
+        }
+        if depth >= MAX_INCLUDE_DEPTH {
+            continue;
+        }
+        let Some(from_file) = change.get("FromFile").and_then(Value::as_str) else {
+            continue;
+        };
+        for relative in from_file.split(',').map(str::trim) {
+            if relative.is_empty() || relative.contains("{{") {
+                continue;
+            }
+            let Some(file) = resolved_pack_file(mod_dir, relative) else {
+                continue;
+            };
+            if walk.visited.contains(&file) {
+                continue;
+            }
+            if walk.followed >= MAX_INCLUDE_FILES {
+                if !walk.capped {
+                    walk.capped = true;
+                    log::warn!(
+                        target: "app",
+                        "Language pack {}: stopped after {MAX_INCLUDE_FILES} included files.",
+                        mod_dir.file_name().map(|name| name.to_string_lossy()).unwrap_or_default()
+                    );
+                }
+                continue;
+            }
+            walk.visited.insert(file.clone());
+            walk.followed += 1;
+            if let Some(included) = read_json(&file) {
+                collect_changes(mod_dir, &included, depth + 1, walk, collected);
+            }
+        }
+    }
+}
+
 fn is_action(change: &Value, action: &str) -> bool {
     change
         .get("Action")
@@ -485,6 +565,144 @@ mod tests {
             assert!(detect_language_pack(&mods, "th").pack.is_none());
             std::fs::remove_dir_all(root).unwrap();
         }
+    }
+
+    fn write_manifest(mod_dir: &Path, name: &str) {
+        write(
+            &mod_dir.join("manifest.json"),
+            &format!(
+                r#"{{ "Name": "{name}", "UniqueID": "test.{name}",
+                     "ContentPackFor": {{ "UniqueID": "Pathoschild.ContentPatcher" }} }}"#
+            ),
+        );
+    }
+
+    #[test]
+    fn included_files_register_the_language_and_load_strings() {
+        let root = crate::test_support::temp_dir("lp-include");
+        let pack = root.join("Included Pack");
+        write_manifest(&pack, "Included Pack");
+        write(
+            &pack.join("content.json"),
+            r#"{ "Changes": [
+                { "Action": "Include", "FromFile": "data/language.json, {{Season}}/x.json" },
+                { "Action": "Include", "FromFile": "data/strings.json" }
+            ] }"#,
+        );
+        write(
+            &pack.join("data/language.json"),
+            r#"{ "Changes": [ { "Action": "EditData", "Target": "Data/AdditionalLanguages",
+                 "Entries": { "x": { "LanguageCode": "vi" } } } ] }"#,
+        );
+        // A nested include that loads the Strings, plus a cycle back to itself.
+        write(
+            &pack.join("data/strings.json"),
+            r#"{ "Changes": [
+                { "Action": "Include", "FromFile": "data/strings-load.json" }
+            ] }"#,
+        );
+        write(
+            &pack.join("data/strings-load.json"),
+            r#"{ "Changes": [
+                { "Action": "Include", "FromFile": "data/strings.json, content.json" },
+                { "Action": "Load", "Target": "Strings/Objects",
+                  "FromFile": "i18n-assets/{{Target}}.json", "When": { "Language": "vi" } }
+            ] }"#,
+        );
+        write(
+            &pack.join("i18n-assets/Strings/Objects.json"),
+            r#"{ "24": "Củ cải" }"#,
+        );
+
+        assert_eq!(registered_language_codes(&pack), vec!["vi".to_string()]);
+        let found = detect_language_pack(&root, "vi")
+            .pack
+            .expect("pack detected");
+        assert_eq!(
+            found.strings_dir,
+            pack.join("i18n-assets/Strings").canonicalize().unwrap()
+        );
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn includes_stay_inside_the_pack_and_stop_at_the_depth_limit() {
+        let root = crate::test_support::temp_dir("lp-include-bounds");
+        let register = r#"{ "Changes": [ { "Action": "EditData",
+            "Target": "Data/AdditionalLanguages",
+            "Entries": { "x": { "LanguageCode": "vi" } } } ] }"#;
+
+        // An include that escapes the pack folder is ignored.
+        let escaping = root.join("Escaping");
+        write_manifest(&escaping, "Escaping");
+        write(
+            &escaping.join("content.json"),
+            r#"{ "Changes": [ { "Action": "Include", "FromFile": "../outside.json" } ] }"#,
+        );
+        write(&root.join("outside.json"), register);
+        assert!(registered_language_codes(&escaping).is_empty());
+
+        // A chain of includes deeper than the limit is not followed.
+        let deep = root.join("Deep");
+        write_manifest(&deep, "Deep");
+        write(
+            &deep.join("content.json"),
+            r#"{ "Changes": [ { "Action": "Include", "FromFile": "level1.json" } ] }"#,
+        );
+        for level in 1..=MAX_INCLUDE_DEPTH {
+            write(
+                &deep.join(format!("level{level}.json")),
+                &format!(
+                    r#"{{ "Changes": [ {{ "Action": "Include", "FromFile": "level{}.json" }} ] }}"#,
+                    level + 1
+                ),
+            );
+        }
+        write(
+            &deep.join(format!("level{}.json", MAX_INCLUDE_DEPTH + 1)),
+            register,
+        );
+        assert!(registered_language_codes(&deep).is_empty());
+        // One level less is still found.
+        write(
+            &deep.join(format!("level{MAX_INCLUDE_DEPTH}.json")),
+            register,
+        );
+        assert_eq!(registered_language_codes(&deep), vec!["vi".to_string()]);
+
+        std::fs::remove_dir_all(&root).ok();
+    }
+
+    #[test]
+    fn include_files_are_capped_per_pack() {
+        let root = crate::test_support::temp_dir("lp-include-cap");
+        let pack = root.join("Wide");
+        write_manifest(&pack, "Wide");
+        let register = r#"{ "Changes": [ { "Action": "EditData",
+            "Target": "Data/AdditionalLanguages",
+            "Entries": { "x": { "LanguageCode": "vi" } } } ] }"#;
+        let filler: Vec<String> = (0..MAX_INCLUDE_FILES)
+            .map(|index| format!("part{index}.json"))
+            .collect();
+        for file in &filler {
+            write(&pack.join(file), r#"{ "Changes": [] }"#);
+        }
+        write(&pack.join("language.json"), register);
+        // The registration sits after the cap; changes beside the includes
+        // are still collected.
+        write(
+            &pack.join("content.json"),
+            &format!(
+                r#"{{ "Changes": [
+                    {{ "Action": "Include", "FromFile": "{}, language.json" }},
+                    {{ "Action": "EditData", "Target": "Data/AdditionalLanguages",
+                       "Entries": {{ "y": {{ "LanguageCode": "th" }} }} }}
+                ] }}"#,
+                filler.join(", ")
+            ),
+        );
+        assert_eq!(registered_language_codes(&pack), vec!["th".to_string()]);
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
@@ -707,9 +925,9 @@ mod tests {
             detection.warnings.len()
         );
 
-        let unpacked = crate::glossary::default_unpacked_path(stardew);
+        let game_strings = crate::glossary::default_game_strings_path(stardew);
         match crate::glossary::build_from_pack(
-            &unpacked,
+            &game_strings,
             &pack.root,
             &pack.strings_dir,
             pack.format,

@@ -406,6 +406,9 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // silently treated as empty, and saves elsewhere refuse to overwrite it.
     let mut state_cache: HashMap<String, ModState> = HashMap::new();
     let mut extra_keys = Vec::new();
+    // The read boundary for every i18n file, resolved once per scan. If the
+    // Mods folder vanished mid-scan, the unresolved path refuses every read.
+    let canonical_mods = canonical_root(mods_path).unwrap_or_else(|_| mods_path.to_path_buf());
     for i18n_dir in &i18n_dirs {
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             // SMAPI only loads i18n folders of a mod with a manifest. Report the
@@ -467,7 +470,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            for (path, error) in unreadable_split_targets(i18n_dir, target_lang, mods_path) {
+            for (path, error) in unreadable_split_targets(i18n_dir, target_lang, &canonical_mods) {
                 warnings.push(format!(
                     "{} in {} was ignored because it cannot be read: {}",
                     safe_relative_location(&path, mods_path),
@@ -475,33 +478,23 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     safe_skip_reason(&error, mods_path)
                 ));
             }
-            for unit in i18n_units(i18n_dir, mods_path).unwrap_or_else(|error| vec![Err(error)]) {
-                match unit
-                    .and_then(|unit| build_i18n_file(&owner, &unit, mods_path, target_lang, state))
-                {
-                    Ok((file, status_counts)) => {
-                        let diagnostics = extra_target_keys(
-                            &scanned.name,
-                            &file.relative_dir,
-                            Path::new(&file.default_path),
-                            Path::new(&file.target_path),
-                            mods_path,
-                        );
-                        match diagnostics {
-                            Ok(diagnostics) => {
-                                extra_keys.extend(diagnostics);
-                                scanned.status_counts.merge(&status_counts);
-                                scanned.i18n_files.push(file);
+            for unit in
+                i18n_units(i18n_dir, &canonical_mods).unwrap_or_else(|error| vec![Err(error)])
+            {
+                match unit.and_then(|unit| {
+                    build_i18n_file(&owner, &unit, &canonical_mods, target_lang, state)
+                }) {
+                    Ok((file, status_counts, extra_target_keys)) => {
+                        extra_keys.extend(extra_target_keys.into_iter().map(|key| {
+                            ExtraKeyDiagnostic {
+                                mod_name: scanned.name.clone(),
+                                relative_dir: file.relative_dir.clone(),
+                                target_path: file.target_path.clone(),
+                                key,
                             }
-                            Err(error) => {
-                                skipped_components.push(skipped_i18n_component(
-                                    scanned,
-                                    i18n_dir,
-                                    mods_path,
-                                    safe_skip_reason(&error, mods_path),
-                                ));
-                            }
-                        }
+                        }));
+                        scanned.status_counts.merge(&status_counts);
+                        scanned.i18n_files.push(file);
                     }
                     Err(error) => {
                         skipped_components.push(skipped_i18n_component(
@@ -614,7 +607,7 @@ fn safe_relative_location(path: &Path, mods_path: &Path) -> String {
         .unwrap_or_else(|| "Unavailable".to_string())
 }
 
-fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
+pub(crate) fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
     let mut safe = reason.to_string();
     let mut roots = vec![mods_path.display().to_string()];
     if let Ok(canonical) = std::fs::canonicalize(mods_path) {
@@ -635,30 +628,6 @@ fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
         safe = safe.replace(&root.replace('\\', "/"), "Mods");
     }
     safe
-}
-
-fn extra_target_keys(
-    mod_name: &str,
-    relative_dir: &str,
-    default_path: &Path,
-    target_path: &Path,
-    allowed_root: &Path,
-) -> Result<Vec<ExtraKeyDiagnostic>, String> {
-    let target = read_target_object_within_root(target_path, allowed_root)?;
-    let source = read_object_within_root(default_path, allowed_root, "source")?;
-    let source_folded: HashSet<String> = source.keys().map(|key| folded_key(key)).collect();
-
-    Ok(target
-        .keys()
-        .filter(|key| !is_ignored_i18n_key(key))
-        .filter(|key| !source_folded.contains(&folded_key(key)))
-        .map(|key| ExtraKeyDiagnostic {
-            mod_name: mod_name.to_string(),
-            relative_dir: relative_dir.to_string(),
-            target_path: target_path.display().to_string(),
-            key: key.clone(),
-        })
-        .collect())
 }
 
 fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<ScannedMod, String> {
@@ -890,7 +859,7 @@ pub(crate) fn extract_sections(text: &str) -> HashMap<String, String> {
                     comment.push(chars[i]);
                     i += 1;
                 }
-                if standalone {
+                if standalone && !is_note_or_disabled_line(&comment) {
                     // Trim decoration (`// ==== Title ====`) down to the text.
                     let title = comment
                         .trim()
@@ -918,6 +887,27 @@ pub(crate) fn extract_sections(text: &str) -> HashMap<String, String> {
         }
     }
     sections
+}
+
+/// A standalone comment that is not a section title: a commented-out entry
+/// (`//"OldGreeting": "Hi",`, a quoted key followed by `:`) or a working note
+/// whose marker stands alone or before a colon (`// TODO`, `// NOTE: …`).
+/// Headings such as `// "Festival" lines` or `// Note on festivals` stay
+/// sections. The current section continues past a skipped line.
+fn is_note_or_disabled_line(comment: &str) -> bool {
+    let text = comment.trim();
+    if let Some(rest) = text.strip_prefix('"') {
+        if let Some(end) = rest.find('"') {
+            if rest[end + 1..].trim_start().starts_with(':') {
+                return true;
+            }
+        }
+    }
+    ["TODO", "FIXME", "XXX", "NOTE"].iter().any(|marker| {
+        text.get(..marker.len())
+            .is_some_and(|start| start.eq_ignore_ascii_case(marker))
+            && matches!(text[marker.len()..].chars().next(), None | Some(':'))
+    })
 }
 
 /// Resolve the effective target + status for one key from saved state, falling
@@ -1200,6 +1190,8 @@ struct KeyInspection {
 
     status_counts: StatusCounts,
     source_hashes: Vec<SourceKeyHash>,
+    /// Target keys that `default.json` no longer has (informational).
+    extra_target_keys: Vec<String>,
 }
 
 fn inspect_keys_checked(
@@ -1244,6 +1236,13 @@ fn inspect_keys_checked(
             source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
         })
         .collect();
+    let source_folded: HashSet<String> = source.keys().map(|key| folded_key(key)).collect();
+    let extra_target_keys = target_map
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .filter(|key| !source_folded.contains(&folded_key(key)))
+        .cloned()
+        .collect();
     Ok(KeyInspection {
         total,
         translated,
@@ -1252,6 +1251,7 @@ fn inspect_keys_checked(
 
         status_counts,
         source_hashes,
+        extra_target_keys,
     })
 }
 
@@ -1264,20 +1264,31 @@ fn read_target_object_within_root(
     })
 }
 
+/// Canonicalize a read boundary once, so per-file reads below it only resolve
+/// the file itself.
+fn canonical_root(allowed_root: &Path) -> Result<PathBuf, String> {
+    std::fs::canonicalize(allowed_root).map_err(|error| {
+        let name = allowed_root
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        format!(
+            "Could not open the folder \"{name}\" ({}). Check that it exists and is not locked by another program, then scan again.",
+            plain_io_error(&error)
+        )
+    })
+}
+
+/// Read `path` if it resolves inside `canonical_root`, which must already be
+/// canonical (see [`canonical_root`]); a non-canonical root refuses every read.
 fn read_object_within_root(
     path: &Path,
-    allowed_root: &Path,
+    canonical_root: &Path,
     kind: &str,
 ) -> Result<serde_json::Map<String, Value>, String> {
-    let canonical_root = std::fs::canonicalize(allowed_root).map_err(|error| {
-        format!(
-            "Could not validate Mods folder {}: {error}",
-            allowed_root.display()
-        )
-    })?;
     let canonical_read = std::fs::canonicalize(path)
         .map_err(|error| format!("Could not validate {kind} file {}: {error}", path.display()))?;
-    if !canonical_read.starts_with(&canonical_root) {
+    if !canonical_read.starts_with(canonical_root) {
         return Err(format!(
             "{kind} file resolves outside the configured Mods folder: {}",
             path.display()
@@ -1345,13 +1356,41 @@ fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
         })
 }
 
+/// An I/O error in plain words, without the `(os error N)` suffix.
+pub(crate) fn plain_io_error(error: &std::io::Error) -> String {
+    match error.kind() {
+        std::io::ErrorKind::NotFound => "it no longer exists".to_string(),
+        std::io::ErrorKind::PermissionDenied => "Windows denied access".to_string(),
+        _ => {
+            let text = error.to_string();
+            match text.rfind(" (os error ") {
+                Some(index) if text.ends_with(')') => {
+                    text[..index].trim_end_matches('.').to_string()
+                }
+                _ => text,
+            }
+        }
+    }
+}
+
+/// A translation folder that cannot be listed, named by its last two parts
+/// (`i18n/de`) so the message never carries the user's folder layout.
+fn unreadable_folder(dir: &Path, error: &std::io::Error) -> String {
+    let parts: Vec<_> = dir.components().rev().take(2).collect();
+    let shown: PathBuf = parts.into_iter().rev().collect();
+    format!(
+        "Could not read the folder {} ({}). Check that it exists and is not locked by another program, then scan again.",
+        shown.display().to_string().replace('\\', "/"),
+        plain_io_error(error)
+    )
+}
+
 /// Folded keys of every source document beside `source` (all split segments).
-fn split_source_keys(source: &Path, root: &Path) -> Result<HashSet<String>, String> {
+fn split_source_keys(source: &Path, canonical_root: &Path) -> Result<HashSet<String>, String> {
     let mut known = HashSet::new();
-    for entry in std::fs::read_dir(source.parent().ok_or("Invalid split source")?)
-        .map_err(|e| e.to_string())?
-    {
-        let path = entry.map_err(|e| e.to_string())?.path();
+    let sources = source.parent().ok_or("Invalid split source")?;
+    for entry in std::fs::read_dir(sources).map_err(|e| unreadable_folder(sources, &e))? {
+        let path = entry.map_err(|e| unreadable_folder(sources, &e))?.path();
         if !path
             .extension()
             .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -1359,7 +1398,7 @@ fn split_source_keys(source: &Path, root: &Path) -> Result<HashSet<String>, Stri
             continue;
         }
         known.extend(
-            read_object_within_root(&path, root, "source")?
+            read_object_within_root(&path, canonical_root, "source")?
                 .keys()
                 .filter(|key| !is_ignored_i18n_key(key))
                 .map(|key| folded_key(key)),
@@ -1374,6 +1413,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
         .and_then(Path::parent)
         .ok_or("Invalid split source")?;
     let target = root.join(language);
+    let canonical = canonical_root(root)?;
     let keys: HashSet<_> = read_object_checked(source)?
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
@@ -1382,8 +1422,8 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
     let mut matches = Vec::new();
     let mut all_source_keys = None;
     if target.is_dir() {
-        for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
-            let path = entry.map_err(|e| e.to_string())?.path();
+        for entry in std::fs::read_dir(&target).map_err(|e| unreadable_folder(&target, &e))? {
+            let path = entry.map_err(|e| unreadable_folder(&target, &e))?.path();
             if !path
                 .extension()
                 .is_some_and(|e| e.eq_ignore_ascii_case("json"))
@@ -1395,7 +1435,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                     .file_name()
                     .is_some_and(|own| own.eq_ignore_ascii_case(name))
             });
-            let values = match read_object_within_root(&path, root, "target") {
+            let values = match read_object_within_root(&path, &canonical, "target") {
                 Ok(values) => values,
                 // SMAPI skips a locale document it cannot parse (per-file
                 // try/continue in SCore.ReadTranslationFiles), so one broken
@@ -1416,7 +1456,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                     // document make this target ambiguous.
                     let known_keys = match all_source_keys {
                         Some(ref known) => known,
-                        None => all_source_keys.insert(split_source_keys(source, root)?),
+                        None => all_source_keys.insert(split_source_keys(source, &canonical)?),
                     };
                     if existing
                         .iter()
@@ -1436,8 +1476,8 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                 // A same-named document without shared keys is a stub (`{}`) or
                 // holds only keys the source no longer has. It belongs to this
                 // segment unless it carries keys another source document owns.
-                let other_source_keys = split_source_keys(source, root)?;
-                let owned_elsewhere = read_object_within_root(&path, root, "target")?
+                let other_source_keys = split_source_keys(source, &canonical)?;
+                let owned_elsewhere = read_object_within_root(&path, &canonical, "target")?
                     .keys()
                     .filter(|key| !is_ignored_i18n_key(key))
                     .map(|key| folded_key(key))
@@ -1503,9 +1543,9 @@ fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, S
         return Ok(vec![Ok(dir.to_path_buf())]);
     }
     if std::fs::read_dir(dir)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| unreadable_folder(dir, &e))?
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| e.to_string())?
+        .map_err(|e| unreadable_folder(dir, &e))?
         .into_iter()
         .any(|e| {
             e.path()
@@ -1518,8 +1558,12 @@ fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, S
         );
     }
     let mut files: Vec<_> = std::fs::read_dir(&split)
-        .map_err(|e| e.to_string())?
-        .map(|entry| entry.map(|e| e.path()).map_err(|e| e.to_string()))
+        .map_err(|e| unreadable_folder(&split, &e))?
+        .map(|entry| {
+            entry
+                .map(|e| e.path())
+                .map_err(|e| unreadable_folder(&split, &e))
+        })
         .collect::<Result<_, _>>()?;
     files.retain(|p| {
         p.extension()
@@ -1540,13 +1584,15 @@ fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, S
     Ok(files.into_iter().map(Ok).collect())
 }
 
+/// One scanned translation unit, its status counts, and the target keys that
+/// `default.json` no longer has, all from a single read of source and target.
 fn build_i18n_file(
     mod_dir: &Path,
     i18n_dir: &Path,
-    mods_path: &Path,
+    canonical_mods: &Path,
     target_lang: &str,
     state: &ModState,
-) -> Result<(ScannedI18nFile, StatusCounts), String> {
+) -> Result<(ScannedI18nFile, StatusCounts, Vec<String>), String> {
     let split = i18n_dir.is_file();
     let source_dir = if split {
         i18n_dir
@@ -1584,7 +1630,7 @@ fn build_i18n_file(
     let inspection = inspect_keys_checked(
         &default_path,
         &target_path,
-        Some(mods_path),
+        Some(canonical_mods),
         state,
         &relative_dir,
     )?;
@@ -1600,7 +1646,7 @@ fn build_i18n_file(
         review_needed,
         source_hashes: inspection.source_hashes,
     };
-    Ok((file, inspection.status_counts))
+    Ok((file, inspection.status_counts, inspection.extra_target_keys))
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
@@ -3020,6 +3066,65 @@ mod tests {
     }
 
     #[test]
+    fn commented_out_entries_and_notes_do_not_start_sections() {
+        let body = r#"{
+  // Greetings
+  //"OldGreeting": "Hi",
+  "hello": "Hello",
+  // "Removed" : "Gone",
+  // TODO: reword this
+  "bye": "Bye",
+  // fixme: later
+  // Note: keep short
+  // XXX
+  "later": "Later",
+  // Notebook entries
+  "page": "Page",
+  // ÄÖÜ title
+  "umlaut": "Umlaut"
+}"#;
+        let sections = extract_sections(body);
+        for key in ["hello", "bye", "later"] {
+            assert_eq!(
+                sections.get(&folded_key(key)).map(String::as_str),
+                Some("Greetings"),
+                "{key}"
+            );
+        }
+        assert_eq!(
+            sections.get(&folded_key("page")).map(String::as_str),
+            Some("Notebook entries")
+        );
+        assert_eq!(
+            sections.get(&folded_key("umlaut")).map(String::as_str),
+            Some("ÄÖÜ title")
+        );
+        assert!(!sections.contains_key(&folded_key("OldGreeting")));
+    }
+
+    #[test]
+    fn only_quoted_keys_and_bare_markers_are_skipped_as_headings() {
+        for skipped in [
+            r#""OldGreeting": "Hi","#,
+            r#" "Removed" : "Gone""#,
+            "TODO",
+            "TODO: reword",
+            "NOTE:",
+        ] {
+            assert!(is_note_or_disabled_line(skipped), "{skipped}");
+        }
+        for heading in [
+            r#" "Festival" lines"#,
+            "Todo list",
+            "Note on festivals",
+            "Notebook entries",
+            "Greetings",
+        ] {
+            assert!(!is_note_or_disabled_line(heading), "{heading}");
+        }
+    }
+
+    #[test]
     fn imported_baselines_snapshots_only_untracked_translations() {
         let root = crate::test_support::temp_dir("imported-baselines");
         let i18n = root.join("i18n");
@@ -3564,6 +3669,30 @@ mod blank_source_tests {
 #[cfg(test)]
 mod split_locale_tests {
     use super::*;
+
+    #[test]
+    fn unreadable_split_folders_are_named_briefly_in_plain_words() {
+        let missing = std::io::Error::from(std::io::ErrorKind::NotFound);
+        let message = unreadable_folder(Path::new("C:/Users/Someone/Mods/Mod/i18n/de"), &missing);
+        assert_eq!(
+            message,
+            "Could not read the folder i18n/de (it no longer exists). Check that it exists and is not locked by another program, then scan again."
+        );
+        let other = std::io::Error::other("The disk is busy. (os error 170)");
+        assert_eq!(plain_io_error(&other), "The disk is busy");
+    }
+
+    #[test]
+    fn unresolvable_read_boundary_names_only_the_folder() {
+        let root = crate::test_support::temp_dir("canonical-root-missing");
+        let error = canonical_root(&root.join("Gone").join("i18n")).unwrap_err();
+        assert_eq!(
+            error,
+            "Could not open the folder \"i18n\" (it no longer exists). Check that it exists and is not locked by another program, then scan again."
+        );
+        std::fs::remove_dir_all(root).ok();
+    }
+
     #[test]
     fn split_units_roundtrip_through_batch_working_state_and_folder_export() {
         let root = crate::test_support::temp_dir("split-working-roundtrip");

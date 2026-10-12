@@ -10,6 +10,15 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Glossaries are built only from the game's own `Content/Strings` files; the
+  app no longer reads a `Content (unpacked)` folder or points to
+  StardewXnbHack. Community language packs take their English names from the
+  same game files. When a game file is missing or cannot be read, the message
+  names that file and says this language may not be available in this game
+  version.
+- Community language packs that split their `content.json` into other files
+  with Content Patcher's `Include` are now recognized: they are left out of
+  the mods to translate and can supply a glossary.
 - The automatic scan at start no longer opens the scan report when it only
   skips a component; the header's "Needs attention" button shows it. Repeated
   scans without changes share one Activity log line.
@@ -109,6 +118,19 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A glossary built in Settings shows its hints in the editor right away,
+  also when Settings is then closed without saving, instead of only after a
+  restart.
+- Commented-out entries such as `//"OldGreeting": "Hi",` and notes such as
+  `// TODO` in `default.json` no longer show up as section headings in the
+  editor or in the AI request.
+- The glossary keeps names with small words such as "Ring of Yoba" or
+  "Message in a Bottle", and keeps Vietnamese names, which write each
+  syllable as a separate word.
+- When a file or folder of a split `i18n/<lang>/` translation cannot be
+  opened during a scan or an export, the message names it (relative to the
+  Mods folder or as `i18n/<lang>`) and says what to do, instead of showing
+  only a system error.
 - F5, Ctrl+R, F3 and Ctrl+P no longer reload, search or print inside the app
   window; Translate with AI keeps Ctrl+F5.
 - An export failure stays visible when another result replaced its card, the

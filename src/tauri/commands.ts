@@ -676,12 +676,10 @@ export function pickLlmBatchFile(): Promise<string | null> {
 /** Analyze a selected batch against the current mod without writing state. */
 export function preflightLlmBatchPath(
   modUniqueId: string,
-  files: ExportFileInput[],
   path: string,
 ): Promise<LlmImportPreflight> {
   return invoke<LlmImportPreflight>("preflight_llm_batch_path", {
     modUniqueId,
-    files,
     path,
   });
 }
@@ -689,12 +687,10 @@ export function preflightLlmBatchPath(
 /** Import a drag-and-dropped LLM batch/result file for one selected mod. */
 export function importLlmBatchPath(
   modUniqueId: string,
-  files: ExportFileInput[],
   path: string,
 ): Promise<LlmImportSummary> {
   return invoke<LlmImportSummary>("import_llm_batch_path", {
     modUniqueId,
-    files,
     path,
   });
 }
@@ -714,9 +710,7 @@ export interface GlossaryInfo {
 export interface GlossaryStatus {
   /** Direct game Content/Strings/*.xnb assets are available. */
   gameXnbPresent: boolean;
-  /** StardewXnbHack-compatible Content (unpacked)/Strings JSON is available. */
-  unpackedPresent: boolean;
-  /** Any local game string source is available for glossary extraction. */
+  /** The game's Content/Strings XNB files are available for glossary extraction (same as gameXnbPresent). */
   sourceAvailable: boolean;
   cached: GlossaryInfo | null;
   /** A glossary.json exists but is old/invalid (untyped) — rebuild recommended. */

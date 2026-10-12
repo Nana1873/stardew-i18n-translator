@@ -14,7 +14,6 @@ import {
   defaultModsPath,
   detectStardew,
   glossaryStatus,
-  openUrl,
   pickFolder,
   validateStardewPath,
 } from "../tauri/commands";
@@ -101,7 +100,6 @@ export function SetupWizard({
         if (active)
           setGlossary({
             gameXnbPresent: false,
-            unpackedPresent: false,
             sourceAvailable: false,
             cached: null,
             outdatedCache: false,
@@ -447,8 +445,9 @@ export function SetupWizard({
                       !gameSupportsLanguage(targetLang) &&
                       !glossary.packAvailable)) ? (
                   <StatusCard tone="ready" title="Cached glossary available">
-                    {glossary.cached.termCount} cached terms remain available. A
-                    local source is needed only to rebuild them.
+                    {glossary.cached.termCount} cached terms remain available.
+                    The game’s Content/Strings files are needed only to rebuild
+                    them.
                   </StatusCard>
                 ) : targetLang && !gameSupportsLanguage(targetLang) ? (
                   glossary.packAvailable && glossary.sourceAvailable ? (
@@ -480,24 +479,12 @@ export function SetupWizard({
                     <StatusCard
                       tone="neutral"
                       title="No usable glossary source"
-                      action={
-                        <button
-                          type="button"
-                          onClick={() =>
-                            void openUrl(
-                              "https://github.com/Pathoschild/StardewXnbHack",
-                            )
-                          }
-                        >
-                          Open StardewXnbHack
-                        </button>
-                      }
                     >
                       A community language pack
                       {glossary.packName ? ` (${glossary.packName})` : ""} was
-                      detected, but the app could not read a local English
-                      Strings source. You can finish setup without building a
-                      glossary.
+                      detected, but the game’s Content/Strings files with the
+                      English names were not found. Check the Stardew Valley
+                      folder, or finish setup without building a glossary.
                     </StatusCard>
                   ) : (
                     <StatusCard
@@ -531,9 +518,7 @@ export function SetupWizard({
                       ? "An older glossary from a previous version was found — rebuild recommended."
                       : glossary.cached
                         ? `A cached glossary with ${glossary.cached.termCount} terms already exists. Rebuild it to refresh the data.`
-                        : glossary.gameXnbPresent
-                          ? "Game Strings were found. Building usually takes only a moment."
-                          : "Unpacked game files were found and can be used instead. Building usually takes only a moment."}
+                        : "Game Strings were found. Building usually takes only a moment."}
                   </StatusCard>
                 ) : (
                   <StatusCard
@@ -547,24 +532,12 @@ export function SetupWizard({
                         ? "Cached glossary available"
                         : "Glossary source unavailable"
                     }
-                    action={
-                      <button
-                        type="button"
-                        onClick={() =>
-                          void openUrl(
-                            "https://github.com/Pathoschild/StardewXnbHack",
-                          )
-                        }
-                      >
-                        Open StardewXnbHack
-                      </button>
-                    }
                   >
                     {glossary.cached && !glossary.outdatedCache
-                      ? `${glossary.cached.termCount} cached terms remain available. A local source is needed only to rebuild them.`
+                      ? `${glossary.cached.termCount} cached terms remain available. The game’s Content/Strings files are needed only to rebuild them.`
                       : glossary.outdatedCache
-                        ? "The cached glossary needs a rebuild. You can finish setup and add a local source later."
-                        : "You can finish setup without a glossary and add hints later using local game Strings or StardewXnbHack."}
+                        ? "The cached glossary needs a rebuild, but the game’s Content/Strings files were not found. Check the Stardew Valley folder, or finish setup and rebuild later."
+                        : "The game’s Content/Strings files were not found. Check the Stardew Valley folder, or finish setup without a glossary and build it later in Settings."}
                   </StatusCard>
                 )}
               </section>
