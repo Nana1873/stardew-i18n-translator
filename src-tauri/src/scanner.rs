@@ -440,6 +440,14 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
+            for (path, error) in unreadable_split_targets(i18n_dir, target_lang, mods_path) {
+                warnings.push(format!(
+                    "{} in {} was ignored because it cannot be read: {}",
+                    safe_relative_location(&path, mods_path),
+                    scanned.name,
+                    safe_skip_reason(&error, mods_path)
+                ));
+            }
             for unit in i18n_units(i18n_dir, mods_path).unwrap_or_else(|error| vec![Err(error)]) {
                 match unit
                     .and_then(|unit| build_i18n_file(&owner, &unit, mods_path, target_lang, state))
@@ -1035,6 +1043,31 @@ pub(crate) fn parse_flat_object(
     Ok(object.clone())
 }
 
+/// Read an existing translation file. Unlike a source, a target may hold
+/// numbers or booleans (SMAPI reads them as text) and values the game cannot
+/// use, such as `null`, lists, or objects; those keys count as untranslated
+/// instead of hiding the whole component and its English source.
+pub(crate) fn read_target_file(path: &Path) -> Result<serde_json::Map<String, Value>, String> {
+    let body = input_limits::read_json_text(path)?;
+    let value = parse_json_lenient(&body)
+        .map_err(|error| format!("Invalid JSON in {}: {error}", path.display()))?;
+    let Value::Object(object) = value else {
+        return Err(format!(
+            "{} must contain one flat JSON object.",
+            path.display()
+        ));
+    };
+    Ok(object
+        .into_iter()
+        .filter_map(|(key, value)| match value {
+            Value::String(_) => Some((key, value)),
+            Value::Number(number) => Some((key, Value::String(number.to_string()))),
+            Value::Bool(flag) => Some((key, Value::String(flag.to_string()))),
+            _ => None,
+        })
+        .collect())
+}
+
 /// Read the canonical target file, with SMAPI's regional filename
 /// (`pt-BR.json`, `zh-CN.json`) as an import-only fallback. The scanned path
 /// remains `pt.json`/`zh.json`, so exports always use the app's canonical
@@ -1046,7 +1079,7 @@ pub(crate) fn read_target_object_checked(
     if !read_path.is_file() {
         return Ok(serde_json::Map::new());
     }
-    read_object_checked(&read_path)
+    read_target_file(&read_path)
 }
 
 pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
@@ -1202,7 +1235,11 @@ fn read_object_within_root(
 
     // Read the resolved file rather than following the original path again;
     // this narrows the swap window for a link between validation and opening.
-    read_object_checked(&canonical_read)
+    if kind == "target" {
+        read_target_file(&canonical_read)
+    } else {
+        read_object_checked(&canonical_read)
+    }
 }
 
 fn string_field(object: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
@@ -1302,7 +1339,19 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
             {
                 continue;
             }
-            let values = read_object_within_root(&path, root, "target")?;
+            let same_name = path.file_name().is_some_and(|name| {
+                source
+                    .file_name()
+                    .is_some_and(|own| own.eq_ignore_ascii_case(name))
+            });
+            let values = match read_object_within_root(&path, root, "target") {
+                Ok(values) => values,
+                // SMAPI skips a locale document it cannot parse, so one broken
+                // file only blocks the source document it would be written to;
+                // the scan reports it once (see `unreadable_split_targets`).
+                Err(_) if !same_name => continue,
+                Err(error) => return Err(error),
+            };
             let existing: Vec<_> = values
                 .keys()
                 .filter(|k| !is_ignored_i18n_key(k))
@@ -1350,6 +1399,48 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
         1 => Ok(matches.remove(0)),
         _ => Err("Existing locale keys are spread across multiple documents; automatic export is ambiguous.".into()),
     }
+}
+
+/// Locale documents in a split `i18n/<lang>/` folder that cannot be read and
+/// share no name with a source document. They are ignored for export, so
+/// they are reported once per scan instead of once per source document.
+fn unreadable_split_targets(
+    i18n_dir: &Path,
+    target_lang: &str,
+    root: &Path,
+) -> Vec<(PathBuf, String)> {
+    let sources = i18n_dir.join("default");
+    let target = i18n_dir.join(target_lang);
+    if !sources.is_dir() || !target.is_dir() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(&target) else {
+        return Vec::new();
+    };
+    let mut broken: Vec<_> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("json"))
+        })
+        .filter(|path| {
+            !path.file_name().is_some_and(|name| {
+                std::fs::read_dir(&sources).is_ok_and(|mut sources| {
+                    sources.any(|source| {
+                        source.is_ok_and(|source| source.file_name().eq_ignore_ascii_case(name))
+                    })
+                })
+            })
+        })
+        .filter_map(|path| {
+            read_object_within_root(&path, root, "target")
+                .err()
+                .map(|error| (path, error))
+        })
+        .collect();
+    broken.sort();
+    broken
 }
 
 /// SMAPI merges immediate locale-directory JSON files into one namespace.
@@ -3475,6 +3566,95 @@ mod split_locale_tests {
             .unwrap(),
         );
         assert!(crate::batch::apply_batch(&batch, "Example.Split", "de", &rows_by_dir).is_err());
+    }
+
+    fn split_fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+        let root = crate::test_support::temp_dir(name);
+        let moddir = root.join("Mods/Example");
+        std::fs::create_dir_all(moddir.join("i18n/default")).unwrap();
+        std::fs::create_dir_all(moddir.join("i18n/de")).unwrap();
+        std::fs::write(
+            moddir.join("manifest.json"),
+            r#"{"Name":"Example","UniqueID":"Example.Split","Version":"1.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Dialogue.json"),
+            r#"{"dialogue.hello":"Hello"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            moddir.join("i18n/default/Events.json"),
+            r#"{"event.start":"Start"}"#,
+        )
+        .unwrap();
+        (root, moddir)
+    }
+
+    #[test]
+    fn one_unreadable_split_target_is_reported_once_and_keeps_the_component() {
+        let (root, moddir) = split_fixture("split-broken-other");
+        std::fs::write(moddir.join("i18n/de/Notes.json"), "{ not json").unwrap();
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        assert_eq!(scan.mods[0].i18n_files.len(), 2);
+        assert!(scan.skipped_components.is_empty());
+        let notes: Vec<_> = scan
+            .warnings
+            .iter()
+            .filter(|warning| warning.contains("Notes.json"))
+            .collect();
+        assert_eq!(notes.len(), 1);
+        assert!(!notes[0].contains(&root.display().to_string()));
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn an_unreadable_same_named_split_target_skips_only_its_document() {
+        let (root, moddir) = split_fixture("split-broken-same");
+        std::fs::write(moddir.join("i18n/de/Events.json"), "{ not json").unwrap();
+        let scan = scan_mods(&root.join("Mods"), "de", &root.join("data"));
+        let files = &scan.mods[0].i18n_files;
+        assert_eq!(files.len(), 1);
+        assert!(files[0].relative_dir.ends_with("Dialogue.json"));
+        assert_eq!(scan.skipped_components.len(), 1);
+        std::fs::remove_dir_all(root).ok();
+    }
+
+    #[test]
+    fn utf16_targets_and_non_string_target_values_load() {
+        let root = crate::test_support::temp_dir("target-tolerance");
+        let i18n = root.join("i18n");
+        std::fs::create_dir_all(&i18n).unwrap();
+        std::fs::write(
+            i18n.join("default.json"),
+            r#"{"a":"One","b":"Two","c":"Three","d":"Four"}"#,
+        )
+        .unwrap();
+        let text = r#"{"a":"Eins","b":2,"c":null,"d":{"x":"y"}}"#;
+        let utf16: Vec<u8> = [0xFF, 0xFE]
+            .into_iter()
+            .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
+            .collect();
+        std::fs::write(i18n.join("de.json"), utf16).unwrap();
+
+        let rows = load_strings_checked(
+            &i18n.join("default.json"),
+            &i18n.join("de.json"),
+            &ModState::new(),
+            "i18n",
+        )
+        .unwrap();
+        let target = |key: &str| {
+            rows.iter()
+                .find(|row| row.key == key)
+                .map(|row| row.target.clone())
+                .unwrap()
+        };
+        assert_eq!(target("a"), "Eins");
+        assert_eq!(target("b"), "2");
+        assert_eq!(target("c"), "");
+        assert_eq!(target("d"), "");
+        std::fs::remove_dir_all(root).ok();
     }
 
     #[test]

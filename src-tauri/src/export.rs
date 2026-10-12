@@ -797,7 +797,7 @@ fn validate_locale_variants(target_path: &Path) -> Result<(), String> {
             .into_iter()
             .filter(|path| path.is_file())
         {
-            scanner::read_object_checked(&path)?;
+            scanner::read_target_file(&path)?;
         }
     }
     Ok(())

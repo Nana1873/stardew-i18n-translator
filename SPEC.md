@@ -46,8 +46,13 @@ does not imply this intent. Protected-token validation still applies.
   Mods folder. Match `manifest.json` case-insensitively and skip folders whose
   name starts with `.`, as SMAPI does; such folders are neither translation
   targets nor duplicate-UniqueID candidates.
-- Accept relaxed mod JSON, but require source and target dictionaries to be
-  flat string objects. Preserve source key order for display and export.
+- Accept relaxed mod JSON in UTF-8 or, with a byte order mark, UTF-16. Require
+  source dictionaries to be flat string objects. In a target, read numbers and
+  booleans as text and treat other non-string values as untranslated. Preserve
+  source key order for display and export.
+- In a split `i18n/<lang>/` folder, an unreadable locale document blocks only
+  the source document of the same name; other unreadable documents are
+  ignored for export and reported once as a scan warning.
 - Import existing targets using SMAPI-compatible case-insensitive, trimmed key
   matching. Extra target keys are informational: they do not count toward
   progress or block export, and a rewritten target omits them.
