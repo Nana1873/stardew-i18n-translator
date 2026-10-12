@@ -101,11 +101,11 @@ function genericMessage(difference: TokenDifference): string {
   if (token === "@")
     return `The player name @ ${change} ${counts}. Fine if intended.`;
   if (token === "^")
-    return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break.`;
+    return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.`;
   if (token === "{" || token === "}")
     return `A single ${token} ${change} ${counts}. The game treats single braces as commands and hides text.`;
   if (token === "#")
-    return `# ${change} ${counts}. # separates dialogue boxes.`;
+    return `# ${change} ${counts}. In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.`;
   return `${token} ${change} ${counts}. ${tokenConsequence(difference)}`;
 }
 

@@ -267,23 +267,24 @@ describe("validate", () => {
     ).toEqual(["token-missing"]);
   });
 
-  it("protects standalone # and repeated ^ markers (quotes are ignored)", () => {
+  it("reports standalone # and repeated ^ markers as notes (quotes are ignored)", () => {
     const issues = validate(
       "'Hello' # first^^second",
       "„Hallo“ first^second",
       false,
     );
-    // `#` and `^` are runtime syntax -> blocking errors. The `'` -> „" change
-    // is ordinary localized punctuation and produces no issue.
-    const errors = issues
-      .filter((issue) => issue.severity === "error")
+    // `#` and `^` split pages and genders in dialogue but are plain text in
+    // letters and UI strings, so they are notes the translator decides on.
+    // The `'` -> „" change is ordinary localized punctuation: no issue.
+    const notes = issues
+      .filter((issue) => issue.severity === "warning")
       .map((issue) => issue.message)
       .sort();
-    expect(errors).toEqual([
-      "# is missing (English 1, translation 0). # separates dialogue boxes.",
-      "^ is missing (English 2, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break.",
+    expect(notes).toEqual([
+      "# is missing (English 1, translation 0). In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended.",
+      "^ is missing (English 2, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended.",
     ]);
-    expect(issues.every((issue) => issue.severity === "error")).toBe(true);
+    expect(issues.every((issue) => issue.severity === "warning")).toBe(true);
     expect(
       issues.some(
         (issue) =>

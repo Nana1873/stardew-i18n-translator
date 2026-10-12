@@ -10,6 +10,10 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- A changed bare `^` or `#` is a note instead of a token error, so the string
+  is exported. In dialogue they split pages and genders, but in letters `^` is a
+  line break and in UI strings `#` is ordinary text, so the translator decides.
+  Dialogue commands such as `#$b#` stay protected.
 - Every token finding now says what it does in the game, for example that a
   missing `[#]` shows the letter title as part of the letter text or that a
   missing `%item … %%` means the attached item is not given. Notes end with
@@ -38,6 +42,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A second portrait on the male or female part of a dialogue page split by
+  `^` is a token error, and different portraits for the two parts are no
+  longer flagged.
 - A second portrait that only the other player gender sees, inside a he/she
   switch, is now a token error like any other second portrait on a page.
 - `$neutral` is no longer treated as a portrait. The game does not read it

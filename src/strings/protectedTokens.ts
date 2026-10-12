@@ -162,6 +162,7 @@ export function pagesWithMultiplePortraits(value: string): number {
       (branch) =>
         branchText(value, branch)
           .split("#")
+          .map((page) => genderHalf(page, branch))
           .filter(
             (page) =>
               new Set(extractProtectedTokens(page).filter(isPortraitCommand))
@@ -169,6 +170,15 @@ export function pagesWithMultiplePortraits(value: string): number {
           ).length,
     ),
   );
+}
+
+/** `Dialogue.applyGenderSwitch` also cuts a page at its first bare `^`: the
+ * male player sees the left part, everyone else the right part. Letters have
+ * no portraits, so this split never affects them. */
+function genderHalf(page: string, branch: number): string {
+  const caret = page.indexOf("^");
+  if (caret < 0) return page;
+  return branch === 0 ? page.slice(0, caret) : page.slice(caret + 1);
 }
 
 /** The text a player sees for one gender: every well-formed switch is
@@ -214,6 +224,10 @@ export function tokenSeverity(
   const harmless =
     isGenderSwitchShape(token) ||
     token === "@" ||
+    // A bare `^` or `#` changes the page or gender split in dialogue but is
+    // plain text in letters and UI strings; translators decide (PD-1).
+    token === "^" ||
+    token === "#" ||
     (isPortraitCommand(token) && !introducesMultiplePortraits) ||
     // A missing placeholder only drops its value; a renamed or extra one
     // stays visible as literal `{{...}}` or breaks string.Format.

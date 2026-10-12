@@ -476,10 +476,10 @@
       "blocked": true
     },
     {
-      "name": "extra caret is blocked",
+      "name": "an extra caret is a note, not an error",
       "source": "Hello there.",
       "target": "Hallo^du.",
-      "blocked": true
+      "blocked": false
     },
     {
       "name": "portraits in separate gender branches do not hide a new double portrait",
@@ -600,6 +600,24 @@
       "source": "Hello.",
       "target": "Hallo.$neutral",
       "blocked": true
+    },
+    {
+      "name": "a second portrait in the male half of a ^ page is an error",
+      "source": "Hi.$h^Hey.$s",
+      "target": "Hallo.$h $s^Hey.$s",
+      "blocked": true
+    },
+    {
+      "name": "different portraits for each half of a ^ page are fine",
+      "source": "Hi.$h^Hey.$h",
+      "target": "Hallo.$h^Hey.$s",
+      "blocked": false
+    },
+    {
+      "name": "a changed # alone is a note, not an error",
+      "source": "Slot {{slot}}",
+      "target": "Platz #{{slot}}",
+      "blocked": false
     }
   ],
   "explanations": [
@@ -751,12 +769,12 @@
     {
       "source": "Hi.",
       "target": "Hallo.^Du.",
-      "text": "^ was added (English 0, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break."
+      "text": "^ was added (English 0, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break. Fine if intended."
     },
     {
       "source": "Hi.",
       "target": "Hallo.#Du.",
-      "text": "# was added (English 0, translation 1). # separates dialogue boxes."
+      "text": "# was added (English 0, translation 1). In dialogue, # separates dialogue boxes; elsewhere it is plain text. Fine if intended."
     },
     {
       "source": "Hi.",
