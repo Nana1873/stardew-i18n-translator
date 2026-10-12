@@ -161,6 +161,18 @@ export function describeProgressChanges(
       warning: true,
     });
   }
+  for (const [field, label] of [
+    ["terminologyRepairSkipped", "Terminology check"],
+    ["tokenRepairSkipped", "Token repair"],
+  ] as const) {
+    const skipped = (next[field] ?? 0) - (previous?.[field] ?? 0);
+    if (skipped > 0) {
+      entries.push({
+        message: `${label} skipped for ${skipped} ${skipped === 1 ? "text" : "texts"}; ${skipped === 1 ? "it goes" : "they go"} to Review as ${skipped === 1 ? "it is" : "they are"}.`,
+        warning: true,
+      });
+    }
+  }
   // Removing an active batch can also mean failure or cancellation. Only the
   // backend's persisted completion count can establish a save.
   const saved = next.completed - (previous?.completed ?? 0);

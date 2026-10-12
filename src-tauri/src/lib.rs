@@ -1622,6 +1622,10 @@ struct AiRunProgress {
     parallel_limit: Option<usize>,
     retries: usize,
     splits: usize,
+    /// Strings whose terminology or token repair failed and that are kept
+    /// unrepaired; the activity log names each new skip.
+    terminology_repair_skipped: usize,
+    token_repair_skipped: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
     recovery: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1704,7 +1708,7 @@ fn provider_activity_stage(activity: ai_provider::ProviderActivity) -> &'static 
 fn provider_failure_category(failure: &ai::ProviderFailure) -> &'static str {
     match failure {
         ai::ProviderFailure::Cancelled => "cancelled",
-        ai::ProviderFailure::Transient(_) => "transient",
+        ai::ProviderFailure::Transient(..) => "transient",
         ai::ProviderFailure::InvalidResponse(_) => "invalidResponse",
         ai::ProviderFailure::Message(_) => "provider",
     }
@@ -1830,6 +1834,28 @@ fn local_ai_failure_summary(failures: &[LocalAiItemFailure]) -> Option<String> {
     ))
 }
 
+/// Name a few strings that stayed untranslated, so they can be found again.
+fn isolated_failure_message(failures: &[ai::AiStringIdentity], cause: &str) -> String {
+    const MAX_NAMED: usize = 3;
+    let named = failures
+        .iter()
+        .take(MAX_NAMED)
+        .map(|identity| bounded_single_line(&identity.key, 80))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let more = failures.len().saturating_sub(MAX_NAMED);
+    let more = if more == 0 {
+        String::new()
+    } else {
+        format!(" and {more} more")
+    };
+    format!(
+        "{} {} couldn't be translated, even after retrying ({named}{more}). {cause}",
+        failures.len(),
+        if failures.len() == 1 { "text" } else { "texts" },
+    )
+}
+
 fn combine_local_ai_errors(
     terminal_error: Option<String>,
     item_failures: &[LocalAiItemFailure],
@@ -1867,6 +1893,16 @@ fn update_ai_progress(
     emit_ai_progress(app, &snapshot);
 }
 
+/// A failed run that still saved suggestions is reported as complete; its
+/// error explains what was left out.
+fn settled_outcome(outcome: ai::AiRunOutcome, completed: usize) -> ai::AiRunOutcome {
+    if outcome == ai::AiRunOutcome::Error && completed > 0 {
+        ai::AiRunOutcome::Complete
+    } else {
+        outcome
+    }
+}
+
 fn ai_run_result(
     request: &ai::AiTranslationRequest,
     requested: usize,
@@ -1877,11 +1913,7 @@ fn ai_run_result(
 ) -> ai::AiRunResult {
     let (engine, model, reasoning) = provider;
     let completed = suggestions.len();
-    let outcome = if outcome == ai::AiRunOutcome::Error && completed > 0 {
-        ai::AiRunOutcome::Complete
-    } else {
-        outcome
-    };
+    let outcome = settled_outcome(outcome, completed);
     ai::AiRunResult {
         run_id: request.run_id.clone(),
         engine: engine.to_string(),
@@ -2017,6 +2049,7 @@ struct ReviewSkips {
     items: usize,
     transient: bool,
     invalid_response: bool,
+    too_long: bool,
 }
 
 impl ReviewSkips {
@@ -2025,6 +2058,7 @@ impl ReviewSkips {
         match reason {
             ai_provider::ReviewSkipReason::Transient => self.transient = true,
             ai_provider::ReviewSkipReason::InvalidResponse => self.invalid_response = true,
+            ai_provider::ReviewSkipReason::TooLong => self.too_long = true,
         }
     }
 
@@ -2032,6 +2066,7 @@ impl ReviewSkips {
         self.items = self.items.saturating_add(other.items);
         self.transient |= other.transient;
         self.invalid_response |= other.invalid_response;
+        self.too_long |= other.too_long;
     }
 }
 
@@ -2041,10 +2076,16 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
     if outcome != ai::AiRunOutcome::Complete || skips.items == 0 {
         return None;
     }
-    let cause = match (skips.transient, skips.invalid_response) {
-        (true, true) => "temporary ChatGPT failures and invalid review responses",
-        (true, false) => "a temporary ChatGPT failure",
-        _ => "an invalid review response",
+    let failures = match (skips.transient, skips.invalid_response) {
+        (true, true) => Some("temporary ChatGPT failures and invalid review responses"),
+        (true, false) => Some("a temporary ChatGPT failure"),
+        (false, true) => Some("an invalid review response"),
+        (false, false) => None,
+    };
+    let cause = match (failures, skips.too_long) {
+        (Some(failures), true) => format!("{failures}, and texts too long to review"),
+        (Some(failures), false) => failures.to_string(),
+        (None, _) => "texts too long to review".to_string(),
     };
     Some(format!(
         "The quality check didn't finish for {} {} ({cause}). Their drafts are in Review; please check them.",
@@ -2053,9 +2094,51 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
     ))
 }
 
+/// Settle the run outcome first, so a failed run that still saved suggestions
+/// also reports the review warning for them.
+fn with_review_warning(
+    outcome: ai::AiRunOutcome,
+    completed: usize,
+    error: Option<String>,
+    skips: ReviewSkips,
+) -> (ai::AiRunOutcome, Option<String>) {
+    let outcome = settled_outcome(outcome, completed);
+    let error = match (error, review_skipped_warning(outcome, skips)) {
+        (Some(error), Some(warning)) => Some(format!("{error} {warning}")),
+        (error, warning) => error.or(warning),
+    };
+    (outcome, error)
+}
+
 #[cfg(test)]
 mod review_warning_tests {
-    use super::{review_skipped_warning, ReviewSkips};
+    use super::{review_skipped_warning, with_review_warning, ReviewSkips};
+
+    #[test]
+    fn review_warning_survives_a_failed_run_that_saved_suggestions() {
+        let mut skips = ReviewSkips::default();
+        skips.record(2, ReviewSkipReason::Transient);
+        let (outcome, error) = with_review_warning(
+            AiRunOutcome::Error,
+            3,
+            Some("1 text couldn't be translated, even after retrying.".into()),
+            skips,
+        );
+        assert_eq!(outcome, AiRunOutcome::Complete);
+        let error = error.unwrap();
+        assert!(error.starts_with("1 text couldn't be translated"));
+        assert!(error.contains("didn't finish for 2 texts"));
+
+        let (outcome, error) =
+            with_review_warning(AiRunOutcome::Error, 0, Some("Stopped.".into()), skips);
+        assert_eq!(outcome, AiRunOutcome::Error);
+        assert_eq!(error.as_deref(), Some("Stopped."));
+
+        let (_, error) = with_review_warning(AiRunOutcome::Complete, 3, None, skips);
+        assert!(error
+            .unwrap()
+            .starts_with("The quality check didn't finish"));
+    }
     use crate::ai::AiRunOutcome;
     use crate::ai_provider::ReviewSkipReason;
 
@@ -2079,6 +2162,17 @@ mod review_warning_tests {
         let warning = review_skipped_warning(AiRunOutcome::Complete, saved).unwrap();
         assert!(warning.contains("for 4 texts"));
         assert!(warning.contains("temporary ChatGPT failures and invalid review responses"));
+
+        let mut long = ReviewSkips::default();
+        long.record(1, ReviewSkipReason::TooLong);
+        let warning = review_skipped_warning(AiRunOutcome::Complete, long).unwrap();
+        assert!(warning.contains("(texts too long to review)"), "{warning}");
+        long.record(2, ReviewSkipReason::Transient);
+        let warning = review_skipped_warning(AiRunOutcome::Complete, long).unwrap();
+        assert!(
+            warning.contains("a temporary ChatGPT failure, and texts too long to review"),
+            "{warning}"
+        );
     }
 }
 
@@ -2207,6 +2301,8 @@ async fn translate_with_local_ai(
         parallel_limit: None,
         retries: 0,
         splits: 0,
+        terminology_repair_skipped: 0,
+        token_repair_skipped: 0,
         recovery: None,
         provider_stage: None,
         provider_activity_sequence: 0,
@@ -2341,7 +2437,7 @@ async fn translate_with_local_ai(
             }
             Err(
                 ai::ProviderFailure::Message(cause)
-                | ai::ProviderFailure::Transient(cause)
+                | ai::ProviderFailure::Transient(cause, _)
                 | ai::ProviderFailure::InvalidResponse(cause),
             ) => {
                 let error_category = local_ai_error_category(&cause);
@@ -2409,7 +2505,11 @@ async fn cloud_ai_models() -> Result<Vec<ai_provider::CloudAiModel>, String> {
 }
 
 #[tauri::command]
-async fn chatgpt_sign_in(app: AppHandle) -> Result<(), String> {
+async fn chatgpt_sign_in(
+    app: AppHandle,
+    state: State<'_, ai::AiRuntimeState>,
+) -> Result<(), String> {
+    state.ensure_idle_for_sign_in()?;
     let url = chatgpt_auth::login_url().await?;
     if app.opener().open_url(&url, None::<String>).is_err() {
         chatgpt_auth::abort_login().await;
@@ -2418,7 +2518,8 @@ async fn chatgpt_sign_in(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 #[tauri::command]
-async fn chatgpt_sign_out() -> Result<(), String> {
+async fn chatgpt_sign_out(state: State<'_, ai::AiRuntimeState>) -> Result<(), String> {
+    state.ensure_idle_for_sign_in()?;
     chatgpt_auth::logout().await
 }
 
@@ -2472,7 +2573,7 @@ async fn complete_cloud_batch(
         chunk,
         &translations,
         cancelled,
-        progress,
+        Arc::clone(&progress),
     )
     .await
     {
@@ -2480,6 +2581,22 @@ async fn complete_cloud_batch(
         Err(ai::ProviderFailure::Cancelled) => Ok((translations, true)),
         Err(failure) => {
             log::warn!(target: "ai_run", "{}", serde_json::json!({"event":"token_repair_not_applied", "errorCategory":provider_failure_category(&failure)}));
+            let damaged = chunk
+                .iter()
+                .filter(|item| {
+                    translations.iter().any(|translation| {
+                        translation.id == item.id
+                            && !tokens::blocking_differences(&item.source, &translation.text)
+                                .is_empty()
+                    })
+                })
+                .count();
+            if damaged > 0 {
+                progress(ai_provider::ProviderProgressEvent::RepairSkipped {
+                    phase: ai_provider::ProviderPhase::TokenRepair,
+                    item_count: damaged,
+                });
+            }
             Ok((translations, false))
         }
     }
@@ -2517,7 +2634,7 @@ async fn translate_with_cloud_ai(
     let mut staging_available = true;
     let mut batch_attempt = 0usize;
     let mut batch_total = pending.len();
-    let mut isolated_failures = 0usize;
+    let mut isolated_failures = Vec::<ai::AiStringIdentity>::new();
     let mut last_isolated_failure = None;
     let run_started_at = Instant::now();
     let log_run_id = safe_ai_run_id_for_log(&request.run_id).to_string();
@@ -2552,6 +2669,8 @@ async fn translate_with_cloud_ai(
         parallel_limit: None,
         retries: 0,
         splits: 0,
+        terminology_repair_skipped: 0,
+        token_repair_skipped: 0,
         recovery: None,
         provider_stage: None,
         provider_activity_sequence: 0,
@@ -2614,6 +2733,14 @@ async fn translate_with_cloud_ai(
                         progress.set_batch_recovery(batch_index, "split");
                     }
                     ai_provider::ProviderProgressEvent::ReviewSkipped { .. } => {}
+                    ai_provider::ProviderProgressEvent::RepairSkipped { phase, item_count } => {
+                        let skipped = if phase == ai_provider::ProviderPhase::TokenRepair {
+                            &mut progress.token_repair_skipped
+                        } else {
+                            &mut progress.terminology_repair_skipped
+                        };
+                        *skipped = skipped.saturating_add(item_count);
+                    }
                     ai_provider::ProviderProgressEvent::Activity(activity) => {
                         progress.provider_stage = Some(provider_activity_stage(activity));
                         progress.provider_activity_sequence =
@@ -2702,6 +2829,23 @@ async fn translate_with_cloud_ai(
                             "reason": match reason {
                                 ai_provider::ReviewSkipReason::Transient => "transient",
                                 ai_provider::ReviewSkipReason::InvalidResponse => "invalidResponse",
+                                ai_provider::ReviewSkipReason::TooLong => "tooLong",
+                            },
+                        })
+                    );
+                }
+                ai_provider::ProviderProgressEvent::RepairSkipped { phase, item_count } => {
+                    log::warn!(
+                        target: "ai_run",
+                        "{}",
+                        serde_json::json!({
+                            "event": "repair_skipped",
+                            "runId": log_run_id,
+                            "itemCount": item_count,
+                            "phase": if phase == ai_provider::ProviderPhase::TokenRepair {
+                                "tokenRepair"
+                            } else {
+                                "terminologyRepair"
                             },
                         })
                     );
@@ -2960,7 +3104,7 @@ async fn translate_with_cloud_ai(
                 );
             }
             Err(ai::ProviderFailure::InvalidResponse(cause)) => {
-                isolated_failures += 1;
+                isolated_failures.extend(chunk.iter().map(|item| item.identity.clone()));
                 last_isolated_failure = Some(cause);
                 log::info!(
                     target: "ai_run",
@@ -2970,16 +3114,15 @@ async fn translate_with_cloud_ai(
                         "runId": log_run_id,
                         "batchAttempt": batch_attempt,
                         "outcome": "isolatedInvalidResponse",
-                        "isolatedFailures": isolated_failures,
+                        "isolatedFailures": isolated_failures.len(),
                     })
                 );
             }
             Err(failure) => {
                 let error_category = provider_failure_category(&failure);
                 let cause = match failure {
-                    ai::ProviderFailure::Message(cause) | ai::ProviderFailure::Transient(cause) => {
-                        cause
-                    }
+                    ai::ProviderFailure::Message(cause)
+                    | ai::ProviderFailure::Transient(cause, _) => cause,
                     ai::ProviderFailure::Cancelled | ai::ProviderFailure::InvalidResponse(_) => {
                         unreachable!("cancelled and invalid-response failures are handled above")
                     }
@@ -3004,19 +3147,12 @@ async fn translate_with_cloud_ai(
             }
         }
     }
-    if outcome == ai::AiRunOutcome::Complete && isolated_failures > 0 {
+    if outcome == ai::AiRunOutcome::Complete && !isolated_failures.is_empty() {
         outcome = ai::AiRunOutcome::Error;
         let cause = last_isolated_failure
             .as_deref()
             .unwrap_or(ai::UNUSABLE_ANSWER);
-        error = Some(format!(
-            "{isolated_failures} {} couldn't be translated, even after retrying. {cause}",
-            if isolated_failures == 1 {
-                "text"
-            } else {
-                "texts"
-            }
-        ));
+        error = Some(isolated_failure_message(&isolated_failures, cause));
     }
     update_ai_progress(&app, &progress_state, |progress| {
         progress.active_batches = Some(0);
@@ -3034,12 +3170,7 @@ async fn translate_with_cloud_ai(
             .unwrap_or(usize::MAX)
     });
     outcome = lease.finish(outcome)?;
-    if let Some(warning) = review_skipped_warning(outcome, saved_review_skips) {
-        error = Some(match error {
-            Some(error) => format!("{error} {warning}"),
-            None => warning,
-        });
-    }
+    (outcome, error) = with_review_warning(outcome, suggestions.len(), error, saved_review_skips);
     let progress_snapshot = progress_state.lock().ok().map(|progress| progress.clone());
     let result = ai_run_result(
         &request,
@@ -3869,6 +4000,28 @@ mod ai_run_contract_tests {
     }
 
     #[test]
+    fn isolated_cloud_failures_name_up_to_three_keys() {
+        let identity = |key: &str| ai::AiStringIdentity {
+            mod_unique_id: "Example.Mod".to_string(),
+            relative_dir: "i18n".to_string(),
+            key: key.to_string(),
+        };
+        let one = isolated_failure_message(&[identity("greeting")], ai::UNUSABLE_ANSWER);
+        assert_eq!(
+            one,
+            format!(
+                "1 text couldn't be translated, even after retrying (greeting). {}",
+                ai::UNUSABLE_ANSWER
+            )
+        );
+        let many = ["a", "b", "c", "d", "e"].map(identity);
+        let message = isolated_failure_message(&many, "Cause.");
+        assert!(message.starts_with("5 texts couldn't be translated"));
+        assert!(message.contains("(a, b, c and 2 more). Cause."));
+        assert!(!message.contains("item-"));
+    }
+
+    #[test]
     fn local_ai_failure_summary_collects_ids_and_errors_without_unbounded_output() {
         let failures = vec![
             LocalAiItemFailure {
@@ -3932,6 +4085,8 @@ mod ai_run_contract_tests {
             parallel_limit: Some(4),
             retries: 1,
             splits: 2,
+            terminology_repair_skipped: 3,
+            token_repair_skipped: 5,
             recovery: Some("structureRetry"),
             provider_stage: Some("reasoning"),
             provider_activity_sequence: 7,
@@ -3953,6 +4108,8 @@ mod ai_run_contract_tests {
         assert_eq!(value["recovery"], "structureRetry");
         assert_eq!(value["providerStage"], "reasoning");
         assert_eq!(value["providerActivitySequence"], 7);
+        assert_eq!(value["terminologyRepairSkipped"], 3);
+        assert_eq!(value["tokenRepairSkipped"], 5);
         assert!(value.get("codexStage").is_none());
         assert!(value.get("codexActivitySequence").is_none());
         assert_eq!(value["usage"]["cachedInputTokens"], 32_900);

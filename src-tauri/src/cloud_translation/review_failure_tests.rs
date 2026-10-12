@@ -5,9 +5,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use super::{
-    build_terminology_repair_plans, execute_review_plans, execute_terminology_repair_plans,
-    PreparedAiItem, ProviderFailure, ProviderProgressCallback, ProviderProgressEvent,
-    ProviderTranslation, ReviewPlan, ReviewSkipReason,
+    build_terminology_repair_plans, build_token_repair_plans, execute_review_plans,
+    execute_terminology_repair_plans, execute_token_repair_plans, PreparedAiItem, ProviderFailure,
+    ProviderPhase, ProviderProgressCallback, ProviderProgressEvent, ProviderTranslation,
+    ReviewPlan, ReviewSkipReason,
 };
 
 fn item(id: &str, source: &str, group: usize) -> PreparedAiItem {
@@ -105,7 +106,7 @@ fn persistent_transient_review_failure_keeps_drafts_and_reports_a_warning() {
         |_, _, _| {
             attempts += 1;
             std::future::ready(Err::<Vec<ProviderTranslation>, _>(
-                ProviderFailure::Transient("provider unavailable".to_string()),
+                ProviderFailure::Transient("provider unavailable".to_string(), None),
             ))
         },
     ));
@@ -130,7 +131,7 @@ fn one_failing_plan_keeps_its_draft_while_other_plans_are_reviewed() {
         progress,
         |review_items, _, _| {
             std::future::ready(if review_items[0].id == "item-0000" {
-                Err(ProviderFailure::Transient("temporary".to_string()))
+                Err(ProviderFailure::Transient("temporary".to_string(), None))
             } else {
                 Ok(vec![translation("item-0001", "Zweiter, geprüft")])
             })
@@ -259,6 +260,62 @@ fn invalid_review_response_splits_the_plan_and_skips_only_the_bad_item() {
         skipped(&events),
         vec![(1, ReviewSkipReason::InvalidResponse)]
     );
+}
+
+#[test]
+fn failed_repairs_keep_translations_and_report_the_skipped_texts() {
+    let mut parsnip = item("item-0000", "Parsnip for [FarmName]", 0);
+    parsnip.glossary_pairs = vec![("Parsnip".to_string(), "Pastinake".to_string())];
+    let items = vec![parsnip];
+    let reviewed = vec![translation("item-0000", "Rübe für dich")];
+
+    let (progress, events) = recorder();
+    let plans = build_terminology_repair_plans("German", &items, &reviewed).unwrap();
+    let terminology = tauri::async_runtime::block_on(execute_terminology_repair_plans(
+        &items,
+        &reviewed,
+        plans,
+        Arc::new(AtomicBool::new(false)),
+        progress,
+        |_, _, _, _| {
+            std::future::ready(Err::<Vec<ProviderTranslation>, _>(
+                ProviderFailure::Message("unavailable".to_string()),
+            ))
+        },
+    ))
+    .unwrap();
+    assert_eq!(terminology, reviewed);
+    assert!(events
+        .lock()
+        .unwrap()
+        .contains(&ProviderProgressEvent::RepairSkipped {
+            phase: ProviderPhase::TerminologyRepair,
+            item_count: 1,
+        }));
+
+    let (progress, events) = recorder();
+    let plans = build_token_repair_plans("German", &items, &reviewed).unwrap();
+    let repaired = tauri::async_runtime::block_on(execute_token_repair_plans(
+        &items,
+        &reviewed,
+        plans,
+        Arc::new(AtomicBool::new(false)),
+        progress,
+        |_, _| {
+            std::future::ready(Err::<Vec<ProviderTranslation>, _>(
+                ProviderFailure::Transient("busy".to_string(), None),
+            ))
+        },
+    ))
+    .unwrap();
+    assert_eq!(repaired.translations, reviewed);
+    assert!(events
+        .lock()
+        .unwrap()
+        .contains(&ProviderProgressEvent::RepairSkipped {
+            phase: ProviderPhase::TokenRepair,
+            item_count: 1,
+        }));
 }
 
 #[test]

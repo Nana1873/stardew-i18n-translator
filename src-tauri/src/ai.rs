@@ -67,6 +67,18 @@ impl AiRuntimeState {
         })
     }
 
+    /// Changing the ChatGPT sign-in cancels a running request, so it waits
+    /// until no AI run is active.
+    pub(crate) fn ensure_idle_for_sign_in(&self) -> Result<(), String> {
+        let active = self.active_run.lock().map_err(|_| {
+            "AI translation state is unavailable. Restart the app and try again.".to_string()
+        })?;
+        if active.is_some() {
+            return Err("Finish or cancel the running AI translation first.".to_string());
+        }
+        Ok(())
+    }
+
     pub fn cancel_run(&self, run_id: &str) -> Result<bool, String> {
         let active = self.active_run.lock().map_err(|_| {
             "AI translation couldn't start. Restart the app and try again.".to_string()
@@ -216,7 +228,9 @@ pub(crate) struct ProviderTranslation {
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) enum ProviderFailure {
     Cancelled,
-    Transient(String),
+    /// A temporary failure that gets one delayed retry. The optional delay is
+    /// the provider's Retry-After hint.
+    Transient(String, Option<std::time::Duration>),
     InvalidResponse(String),
     Message(String),
 }
@@ -974,6 +988,19 @@ pub(crate) async fn wait_for_cancel(cancelled: Arc<AtomicBool>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sign_in_changes_wait_for_the_running_ai_translation() {
+        let state = AiRuntimeState::default();
+        assert_eq!(state.ensure_idle_for_sign_in(), Ok(()));
+        let lease = state.begin_run("run-1").unwrap();
+        assert_eq!(
+            state.ensure_idle_for_sign_in(),
+            Err("Finish or cancel the running AI translation first.".to_string())
+        );
+        lease.finish(AiRunOutcome::Complete).unwrap();
+        assert_eq!(state.ensure_idle_for_sign_in(), Ok(()));
+    }
 
     fn identity(mod_unique_id: &str, relative_dir: &str, key: &str) -> AiStringIdentity {
         AiStringIdentity {

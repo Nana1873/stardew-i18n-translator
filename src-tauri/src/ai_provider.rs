@@ -50,6 +50,12 @@ pub(crate) enum ProviderProgressEvent {
         item_count: usize,
         reason: ReviewSkipReason,
     },
+    /// A terminology or token repair (`phase`) failed for `item_count`
+    /// strings; their previous translations are kept unrepaired.
+    RepairSkipped {
+        phase: ProviderPhase,
+        item_count: usize,
+    },
     Activity(ProviderActivity),
     Usage(ProviderTokenUsage),
 }
@@ -62,6 +68,8 @@ pub(crate) enum ReviewSkipReason {
     Transient,
     /// A single-item review response stayed invalid after its structure retry.
     InvalidResponse,
+    /// The text is too long to send for a review; its draft is kept.
+    TooLong,
 }
 
 pub(crate) type ProviderProgressCallback = Arc<dyn Fn(ProviderProgressEvent) + Send + Sync>;

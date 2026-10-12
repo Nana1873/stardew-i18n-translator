@@ -170,6 +170,29 @@ it("asks for browser sign-in when no session exists", async () => {
   expect(invokeMock).not.toHaveBeenCalledWith("cloud_ai_models");
 });
 
+it("shows why sign-out waits for a running AI translation", async () => {
+  const refusal = "Finish or cancel the running AI translation first.";
+  invokeMock.mockImplementation((command: string) => {
+    if (command === "cloud_ai_status")
+      return Promise.resolve({ installed: true, authenticated: true });
+    if (command === "cloud_ai_models") return Promise.resolve([]);
+    if (command === "chatgpt_sign_out") return Promise.reject(refusal);
+    return Promise.resolve(null);
+  });
+  render(
+    <SettingsDialog
+      settings={settings}
+      onSave={() => {}}
+      onClose={() => {}}
+      onReRunSetup={() => {}}
+    />,
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "Translation engines" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Sign out" }));
+  expect(await screen.findByText(refusal)).toBeVisible();
+  expect(screen.getByRole("button", { name: "Sign out" })).toBeVisible();
+});
+
 it.each([
   "Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.",
   "Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.",

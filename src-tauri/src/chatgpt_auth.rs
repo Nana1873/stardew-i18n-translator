@@ -301,7 +301,10 @@ pub async fn read_bounded(
     let mut bytes = Vec::new();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.map_err(|_| {
-            crate::ai::ProviderFailure::Transient("The OpenAI response was interrupted.".into())
+            crate::ai::ProviderFailure::Transient(
+                "The OpenAI response was interrupted.".into(),
+                None,
+            )
         })?;
         if bytes.len().saturating_add(chunk.len()) > 2 * 1024 * 1024 {
             return Err(crate::ai::ProviderFailure::InvalidResponse(
@@ -316,26 +319,64 @@ pub fn message(error: crate::ai::ProviderFailure) -> String {
     use crate::ai::ProviderFailure::*;
     match error {
         Cancelled => "The request was cancelled.".into(),
-        Transient(e) | InvalidResponse(e) | Message(e) => e,
+        Transient(e, _) | InvalidResponse(e) | Message(e) => e,
     }
+}
+fn code_guidance(code: Option<&str>) -> Option<&'static str> {
+    Some(match code? {
+        "subscription_sharing_user_not_eligible" => {
+            "ChatGPT plan use is not available for this account or workspace yet."
+        }
+        "subscription_sharing_usage_limit_exceeded" => {
+            "A ChatGPT plan or app usage limit was reached. Check ChatGPT usage settings."
+        }
+        "subscription_sharing_usage_unavailable" => {
+            "ChatGPT plan usage is temporarily unavailable. Try later."
+        }
+        "invalid_grant" => "The ChatGPT session expired. Sign in again.",
+        _ => return None,
+    })
+}
+/// An `error` or `response.failed` event inside a streamed response. It has
+/// no HTTP status of its own; busy or overloaded services are temporary.
+pub fn stream_failure(error: &Value) -> crate::ai::ProviderFailure {
+    use crate::ai::ProviderFailure;
+    let code = error["code"].as_str().or_else(|| error.as_str());
+    let busy = [code, error["type"].as_str()]
+        .into_iter()
+        .flatten()
+        .any(|c| {
+            matches!(
+                c,
+                "server_error"
+                    | "server_overloaded"
+                    | "server_is_overloaded"
+                    | "overloaded"
+                    | "overloaded_error"
+                    | "subscription_sharing_usage_unavailable"
+            )
+        });
+    if busy {
+        return ProviderFailure::Transient(
+            "OpenAI was busy and stopped the response early. Try again in a moment.".into(),
+            None,
+        );
+    }
+    ProviderFailure::Message(
+        code_guidance(code)
+            .unwrap_or("OpenAI stopped the response with an error. Try again later.")
+            .into(),
+    )
 }
 pub fn api_failure(status: u16, body: &Value) -> crate::ai::ProviderFailure {
     use crate::ai::ProviderFailure;
-    let guidance = match body["error"]["code"]
-        .as_str()
-        .or_else(|| body["error"].as_str())
-    {
-        Some("subscription_sharing_user_not_eligible") => {
-            "ChatGPT plan use is not available for this account or workspace yet."
-        }
-        Some("subscription_sharing_usage_limit_exceeded") => {
-            "A ChatGPT plan or app usage limit was reached. Check ChatGPT usage settings."
-        }
-        Some("subscription_sharing_usage_unavailable") => {
-            "ChatGPT plan usage is temporarily unavailable. Try later."
-        }
-        Some("invalid_grant") => "The ChatGPT session expired. Sign in again.",
-        _ => match status {
+    let guidance = match code_guidance(
+        body["error"]["code"]
+            .as_str()
+            .or_else(|| body["error"].as_str()),
+    ) {
+        Some(guidance) => guidance,
+        None => match status {
             401 => "OpenAI did not accept this session. Sign in again.",
             403 => "OpenAI refused this request under the current account or workspace policy.",
             429 => "OpenAI's usage limit was reached. Check ChatGPT usage settings.",
@@ -344,7 +385,7 @@ pub fn api_failure(status: u16, body: &Value) -> crate::ai::ProviderFailure {
     };
     let safe = format!("{guidance} HTTP {status}.");
     if status >= 500 {
-        ProviderFailure::Transient(safe)
+        ProviderFailure::Transient(safe, None)
     } else {
         ProviderFailure::Message(safe)
     }
@@ -357,6 +398,7 @@ async fn json(request: reqwest::RequestBuilder) -> Result<Value, crate::ai::Prov
         .map_err(|_| {
             crate::ai::ProviderFailure::Transient(
                 "Could not reach OpenAI. Check the network and try again.".into(),
+                None,
             )
         })?;
     let status = response.status();
@@ -900,30 +942,77 @@ pub async fn abort_login() {
         }
     }
 }
-pub async fn logout() -> Result<(), String> {
-    GENERATION.fetch_add(1, Ordering::AcqRel);
-    let mut state = state()?.lock().await;
+/// End the session on this PC: stop a pending sign-in, forget the session,
+/// and delete its saved file. No network call happens here, so the caller
+/// can release the lock before revoking the tokens.
+fn take_session(state: &mut AuthState) -> (Option<Session>, Result<(), String>) {
     if let Some(task) = state.pending.take() {
         task.abort();
     }
     let session = state.session.take();
     state.error = None;
+    let deleted = match std::fs::remove_file(state.directory.join("chatgpt-session.bin")) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(_) => Err("Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.".to_string()),
+    };
+    (session, deleted)
+}
+/// Tokens that sign-out revokes: the refresh token first, so no new access
+/// token can be issued, then the current access token.
+fn revocations(session: &Session) -> Vec<(&str, &'static str)> {
+    session
+        .refresh_token
+        .as_deref()
+        .map(|token| (token, "refresh_token"))
+        .into_iter()
+        .chain([(session.access_token.as_str(), "access_token")])
+        .collect()
+}
+pub async fn logout() -> Result<(), String> {
+    GENERATION.fetch_add(1, Ordering::AcqRel);
+    let (session, deleted) = take_session(&mut *state()?.lock().await);
     let remote = async {
-        let Some(session) = session else { return Ok(()); };
-        let Some(refresh) = session.refresh_token else { return Ok(()); };
+        let Some(session) = session else {
+            return Ok(());
+        };
         let client = client()?;
         let config = discovery(&client).await?;
         let endpoint = trusted_endpoint(&config["revocation_endpoint"])?;
-        for retry in 0..2 {
-            let result = client.post(endpoint.clone()).timeout(Duration::from_secs(15))
-                .form(&[("token", refresh.as_str()), ("token_type_hint", "refresh_token"), ("client_id", session.client_id.as_str())]).send().await;
-            if matches!(&result, Ok(response) if response.status().as_u16() == 200) { return Ok(()); }
-            if retry == 0 { tokio::time::sleep(Duration::from_millis(500)).await; }
+        let mut confirmed = true;
+        for (token, hint) in revocations(&session) {
+            let mut revoked = false;
+            for retry in 0..2 {
+                let result = client
+                    .post(endpoint.clone())
+                    .timeout(Duration::from_secs(15))
+                    .form(&[
+                        ("token", token),
+                        ("token_type_hint", hint),
+                        ("client_id", session.client_id.as_str()),
+                    ])
+                    .send()
+                    .await;
+                if matches!(&result, Ok(response) if response.status().as_u16() == 200) {
+                    revoked = true;
+                    break;
+                }
+                if retry == 0 {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            }
+            // The refresh token decides the warning: without it no new access
+            // token can be issued. Revoking the access token is best effort.
+            confirmed &= revoked || hint == "access_token";
         }
-        Err("Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
-    }.await;
-    let path = state.directory.join("chatgpt-session.bin");
-    match std::fs::remove_file(path) { Ok(()) => {}, Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}, Err(_) => return Err("Signed out, but the saved sign-in could not be deleted. Close the app and delete data/chatgpt-session.bin before starting it again.".into()) }
+        if confirmed {
+            Ok(())
+        } else {
+            Err(String::new())
+        }
+    }
+    .await;
+    deleted?;
     remote.map_err(|_| "Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
 }
 
@@ -1083,12 +1172,74 @@ mod tests {
         .is_err());
     }
     #[test]
+    fn sign_out_deletes_the_saved_session_before_any_network_call() {
+        let directory = crate::test_support::temp_dir("chatgpt-signout");
+        std::fs::create_dir_all(&directory).unwrap();
+        let saved = directory.join("chatgpt-session.bin");
+        std::fs::write(&saved, b"synthetic").unwrap();
+        let mut state = AuthState {
+            directory: directory.clone(),
+            registration: Registration {
+                host_id: "h".into(),
+                client_id: None,
+                subject: None,
+            },
+            session: Some(Session {
+                client_id: "synthetic-client".into(),
+                subject: "synthetic-subject".into(),
+                email: None,
+                access_token: "synthetic-access".into(),
+                refresh_token: Some("synthetic-refresh".into()),
+                id_token: None,
+                scope: PLAN_SCOPE.into(),
+                expires_at: 0,
+            }),
+            pending: None,
+            error: Some("old".into()),
+        };
+
+        // Synchronous: the lock is held only while the session is taken.
+        let (session, deleted) = take_session(&mut state);
+
+        assert!(deleted.is_ok());
+        assert!(!saved.exists());
+        assert_eq!(session.unwrap().access_token, "synthetic-access");
+        assert!(state.session.is_none() && state.error.is_none());
+        assert!(take_session(&mut state).1.is_ok());
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn sign_out_revokes_the_refresh_and_the_access_token() {
+        let mut session = Session {
+            client_id: "synthetic-client".into(),
+            subject: "synthetic-subject".into(),
+            email: None,
+            access_token: "synthetic-access".into(),
+            refresh_token: Some("synthetic-refresh".into()),
+            id_token: None,
+            scope: PLAN_SCOPE.into(),
+            expires_at: 0,
+        };
+        assert_eq!(
+            revocations(&session),
+            vec![
+                ("synthetic-refresh", "refresh_token"),
+                ("synthetic-access", "access_token")
+            ]
+        );
+        session.refresh_token = None;
+        assert_eq!(
+            revocations(&session),
+            vec![("synthetic-access", "access_token")]
+        );
+    }
+    #[test]
     fn errors_do_not_echo_remote_messages() {
         let body = serde_json::json!({"error":{"message":"SECRET", "code":"unknown"}});
         assert!(!message(api_failure(400, &body)).contains("SECRET"));
         assert!(matches!(
             api_failure(503, &body),
-            crate::ai::ProviderFailure::Transient(_)
+            crate::ai::ProviderFailure::Transient(..)
         ));
     }
     #[cfg(windows)]

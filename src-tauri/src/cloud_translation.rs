@@ -13,7 +13,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc,
     },
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 const MAX_STRUCTURAL_HINT_CHARS: usize = 240;
@@ -258,14 +258,23 @@ fn build_review_plans(
     target_language: &str,
     items: &[PreparedAiItem],
     drafts: &[ProviderTranslation],
-) -> Result<Vec<ReviewPlan>, ProviderFailure> {
-    let ordered = ai::validate_provider_output(items, drafts.to_vec())
+) -> Result<(Vec<ReviewPlan>, usize), ProviderFailure> {
+    let validated = ai::validate_provider_output(items, drafts.to_vec())
         .map_err(ProviderFailure::InvalidResponse)?;
-    let fitted = items
-        .iter()
-        .zip(&ordered)
-        .map(|(item, draft)| fit_review_item(target_language, item, draft))
-        .collect::<Result<Vec<_>, _>>()?;
+    // An item whose review prompt cannot be built is not reviewed; it keeps
+    // its draft and counts as skipped, while the other items are reviewed.
+    let mut skipped = 0usize;
+    let mut fitted = Vec::with_capacity(items.len());
+    let mut ordered = Vec::with_capacity(items.len());
+    for (item, draft) in items.iter().zip(validated) {
+        match fit_review_item(target_language, item, &draft) {
+            Ok(item) => {
+                fitted.push(item);
+                ordered.push(draft);
+            }
+            Err(_) => skipped += 1,
+        }
+    }
     let mut plans = Vec::new();
     let mut start = 0usize;
     while start < fitted.len() {
@@ -301,13 +310,14 @@ fn build_review_plans(
                 }
                 split_end = candidate_end;
             }
-            if split_end == start {
-                return Err(ProviderFailure::InvalidResponse(
-                    "One AI full-review item exceeds the bounded prompt size.".to_string(),
-                ));
-            }
             end = split_end;
             break;
+        }
+        if end == start {
+            // Even this item alone does not fit: skip it, keep its draft.
+            skipped += 1;
+            start += 1;
+            continue;
         }
         plans.push(ReviewPlan {
             items: fitted[start..end].to_vec(),
@@ -315,7 +325,7 @@ fn build_review_plans(
         });
         start = end;
     }
-    Ok(plans)
+    Ok((plans, skipped))
 }
 
 fn build_review_attempt_prompt(
@@ -445,7 +455,7 @@ where
                     })
                 );
                 match failure {
-                    ProviderFailure::Transient(_) => ReviewSkipReason::Transient,
+                    ProviderFailure::Transient(..) => ReviewSkipReason::Transient,
                     ProviderFailure::InvalidResponse(_) => ReviewSkipReason::InvalidResponse,
                     // Messages are configuration or environment errors such as
                     // a signed-out or missing cloud provider. They get no retry and
@@ -792,12 +802,16 @@ where
             }
             Err(
                 ProviderFailure::Message(_)
-                | ProviderFailure::Transient(_)
+                | ProviderFailure::Transient(..)
                 | ProviderFailure::InvalidResponse(_),
             ) => {
                 log::warn!(
                     "One focused AI terminology-repair sub-batch failed; its full-review translations are retained."
                 );
+                progress(ProviderProgressEvent::RepairSkipped {
+                    phase: ProviderPhase::TerminologyRepair,
+                    item_count: plan.items.len(),
+                });
             }
         }
     }
@@ -984,6 +998,10 @@ where
                 log::warn!(
                     "One AI token-repair sub-batch failed; its original suggestions are retained."
                 );
+                progress(ProviderProgressEvent::RepairSkipped {
+                    phase: ProviderPhase::TokenRepair,
+                    item_count: repair_items.len(),
+                });
             }
         }
     }
@@ -1039,9 +1057,12 @@ async fn run_review_attempt(
 ) -> Result<Vec<ProviderTranslation>, ProviderFailure> {
     #[cfg(debug_assertions)]
     if std::env::var(FORCE_REVIEW_FAILURE_ENV).is_ok_and(|value| value == "1") {
-        return Err(ProviderFailure::Transient(format!(
-            "AI review failure forced by {FORCE_REVIEW_FAILURE_ENV}=1 (debug builds only)."
-        )));
+        return Err(ProviderFailure::Transient(
+            format!(
+                "AI review failure forced by {FORCE_REVIEW_FAILURE_ENV}=1 (debug builds only)."
+            ),
+            None,
+        ));
     }
     let prompt = build_review_attempt_prompt(
         &target_language,
@@ -1092,6 +1113,19 @@ async fn run_terminology_repair_attempt(
     .await
 }
 
+/// Wait before the one transient retry. Tests use no wait.
+const TRANSIENT_RETRY_DELAY: Duration = if cfg!(test) {
+    Duration::ZERO
+} else {
+    Duration::from_secs(2)
+};
+/// Upper bound for a provider's Retry-After hint.
+const MAX_RETRY_AFTER: Duration = Duration::from_secs(30);
+
+fn transient_retry_delay(retry_after: Option<Duration>) -> Duration {
+    retry_after.map_or(TRANSIENT_RETRY_DELAY, |delay| delay.min(MAX_RETRY_AFTER))
+}
+
 async fn translate_chunk_with_recovery_reporting<F, Fut, R>(
     cancelled: Arc<AtomicBool>,
     mut attempt: F,
@@ -1111,9 +1145,16 @@ where
             return Err(ProviderFailure::Cancelled);
         }
         match attempt(structural_error.clone()).await {
-            Err(ProviderFailure::Transient(_)) if !transient_retried => {
+            Err(ProviderFailure::Transient(_, retry_after)) if !transient_retried => {
                 transient_retried = true;
                 report(ProviderProgressEvent::TransientRetry);
+                // An immediate retry usually meets the same overloaded service.
+                tokio::select! {
+                    () = tokio::time::sleep(transient_retry_delay(retry_after)) => {}
+                    () = ai::wait_for_cancel(Arc::clone(&cancelled)) => {
+                        return Err(ProviderFailure::Cancelled);
+                    }
+                }
             }
             // A same-size retry after the five-minute limit would only time out
             // again: hand it straight to the split.
@@ -1159,7 +1200,15 @@ async fn apply_quality_review(
         return Ok(drafts);
     }
 
-    let review_plans = build_review_plans(&target_language, &items, &drafts)?;
+    // An item whose review cannot be prepared is skipped like a failed review:
+    // its draft is kept and goes to Review unreviewed. Only drafts that do not match their items fail here; those are invalid.
+    let (review_plans, skipped) = build_review_plans(&target_language, &items, &drafts)?;
+    if skipped > 0 {
+        progress(ProviderProgressEvent::ReviewSkipped {
+            item_count: skipped,
+            reason: ReviewSkipReason::TooLong,
+        });
+    }
     let review_model = model.clone();
     let review_reasoning = reasoning.clone();
     let review_language = target_language.clone();
@@ -1197,6 +1246,10 @@ async fn apply_quality_review(
             log::warn!(
                     "The focused AI terminology-repair plan could not be prepared; the full-review translations are retained."
                 );
+            progress(ProviderProgressEvent::RepairSkipped {
+                phase: ProviderPhase::TerminologyRepair,
+                item_count: items.len(),
+            });
             return Ok(reviewed);
         }
     };
@@ -1374,7 +1427,7 @@ async fn run_prompt_once(
     let outcome = match &result {
         Ok(_) => "complete",
         Err(ProviderFailure::Cancelled) => "cancelled",
-        Err(ProviderFailure::Transient(_)) => "transient_error",
+        Err(ProviderFailure::Transient(..)) => "transient_error",
         Err(ProviderFailure::InvalidResponse(_)) => "invalid_response",
         Err(ProviderFailure::Message(_)) => "error",
     };

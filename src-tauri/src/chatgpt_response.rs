@@ -54,22 +54,13 @@ impl ResponseState {
                 return self.finish(&event["response"], true, progress).map(Some)
             }
             "response.failed" | "error" => {
+                // A plain `error` event carries its code at the top level.
                 let error = event
                     .pointer("/response/error")
                     .or_else(|| event.get("error"))
-                    .unwrap_or(&Value::Null);
-                if matches!(
-                    error["code"].as_str(),
-                    Some("server_error" | "subscription_sharing_usage_unavailable")
-                ) {
-                    return Err(ProviderFailure::Transient(
-                        "OpenAI temporarily could not complete the response. Try again.".into(),
-                    ));
-                }
-                return Err(crate::chatgpt_auth::api_failure(
-                    400,
-                    &serde_json::json!({"error":error}),
-                ));
+                    .filter(|error| !error.is_null())
+                    .unwrap_or(&event);
+                return Err(crate::chatgpt_auth::stream_failure(error));
             }
             "response.incomplete" => return Err(invalid()),
             // A refusal concerns the content of this batch, not the run: treat
@@ -204,6 +195,7 @@ pub async fn consume(
             } else {
                 ProviderFailure::Transient(
                     "The OpenAI response stream was interrupted. Try again.".into(),
+                    None,
                 )
             }
         })?;
@@ -302,6 +294,42 @@ mod tests {
                 "{kind}"
             );
         }
+    }
+    #[test]
+    fn stream_error_events_report_no_http_status_and_busy_codes_are_transient() {
+        let fail = |event: Value| {
+            ResponseState::default()
+                .event(event, &progress())
+                .unwrap_err()
+        };
+        for event in [
+            json!({"type":"response.failed","response":{"error":{"code":"server_is_overloaded"}}}),
+            json!({"type":"error","error":{"code":"server_error"}}),
+        ] {
+            assert!(
+                matches!(fail(event.clone()), ProviderFailure::Transient(..)),
+                "{event}"
+            );
+        }
+        for event in [
+            json!({"type":"error","code":"invalid_prompt","message":"SECRET"}),
+            // Rate limits stop the run until real 429 data says otherwise (PD-3).
+            json!({"type":"error","code":"rate_limit_exceeded","message":"SECRET"}),
+            json!({"type":"response.failed","response":{"error":null}}),
+        ] {
+            let ProviderFailure::Message(message) = fail(event) else {
+                panic!("an unknown stream error is not retried");
+            };
+            assert!(!message.contains("HTTP"));
+            assert!(!message.contains("SECRET"));
+        }
+        let ProviderFailure::Message(message) =
+            fail(json!({"type":"error","code":"subscription_sharing_usage_limit_exceeded"}))
+        else {
+            panic!("a usage limit is not retried");
+        };
+        assert!(message.contains("usage limit"));
+        assert!(!message.contains("HTTP"));
     }
     #[test]
     fn invalid_duplicate_and_refused_output_is_rejected() {
