@@ -310,7 +310,8 @@
 #stardew-i18n-translator .translator-textarea {
   color: var(--translator-text);
   background: var(--translator-surface);
-  border: 1px solid var(--translator-border);
+  /* Input edges use the strong border so fields stay visible (3:1 contrast). */
+  border: 1px solid var(--translator-border-strong);
   border-radius: 7px;
 }
 

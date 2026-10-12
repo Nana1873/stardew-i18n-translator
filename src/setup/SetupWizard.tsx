@@ -710,7 +710,7 @@ function PathDisplay({
             ? "✓"
             : invalid
               ? "!"
-              : "..."}
+              : "…"}
       </span>
       <span className="wizard__path-content">
         <strong>{label}</strong>
