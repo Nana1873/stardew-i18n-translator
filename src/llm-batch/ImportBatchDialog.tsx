@@ -217,31 +217,40 @@ export function ImportBatchDialog({
                     (preflight.ready ? "is-ready" : "is-change")
                   }
                 >
-                  {preflight.ready ? "Checked" : "Nothing changed yet"}
+                  {preflight.ready ? "Checked" : "Not imported"}
                 </span>
               </div>
-              <dl className="translator-import-preflight-grid">
-                <div>
-                  <dt>Ready for Review</dt>
-                  <dd>{preflight.importable}</dd>
+              {/* When blocked, the reason comes first and the counts would
+                  only show zeros. */}
+              {preflight.blockingReason && (
+                <div className="translator-flow-callout is-error" role="alert">
+                  {preflight.blockingReason}
                 </div>
-                <div>
-                  <dt>Local translations preserved</dt>
-                  <dd>{preflight.preservedLocal}</dd>
-                </div>
-                {preflight.skippedEmpty > 0 && (
+              )}
+              {preflight.ready && (
+                <dl className="translator-import-preflight-grid">
                   <div>
-                    <dt>Empty values skipped</dt>
-                    <dd>{preflight.skippedEmpty}</dd>
+                    <dt>Ready for Review</dt>
+                    <dd>{preflight.importable}</dd>
                   </div>
-                )}
-                {preflight.identicalToSource > 0 && (
                   <div>
-                    <dt>Identical to source</dt>
-                    <dd>{preflight.identicalToSource}</dd>
+                    <dt>Local translations preserved</dt>
+                    <dd>{preflight.preservedLocal}</dd>
                   </div>
-                )}
-              </dl>
+                  {preflight.skippedEmpty > 0 && (
+                    <div>
+                      <dt>Empty values skipped</dt>
+                      <dd>{preflight.skippedEmpty}</dd>
+                    </div>
+                  )}
+                  {preflight.identicalToSource > 0 && (
+                    <div>
+                      <dt>Same as English</dt>
+                      <dd>{preflight.identicalToSource}</dd>
+                    </div>
+                  )}
+                </dl>
+              )}
               <details className="translator-result-help">
                 <summary>Details</summary>
                 <dl className="translator-import-preflight-grid">
@@ -279,10 +288,11 @@ export function ImportBatchDialog({
                   {errorIssues.length}{" "}
                   {errorIssues.length === 1 ? "string has" : "strings have"} a
                   token error that would break the game.{" "}
-                  {errorIssues.length === 1 ? "It is" : "They are"} imported to
-                  Review; export leaves{" "}
-                  {errorIssues.length === 1 ? "it" : "them"} out (English in
-                  game) until fixed or accepted.
+                  {errorIssues.length === 1 ? "It goes" : "They go"} to Review
+                  and {errorIssues.length === 1 ? "stays" : "stay"} English in
+                  the game until you fix{" "}
+                  {errorIssues.length === 1 ? "it" : "them"} or choose Save
+                  anyway.
                 </div>
               )}
               {tokenIssues.length > 0 && (
@@ -305,7 +315,9 @@ export function ImportBatchDialog({
                           issue.importedText,
                         ).map((item, index) => (
                           <span key={index} data-severity={item.severity}>
-                            {item.severity === "error" ? "Error: " : "Note: "}
+                            {item.severity === "error"
+                              ? "Must fix: "
+                              : "Worth a look: "}
                             {item.message}
                           </span>
                         ))}
@@ -316,11 +328,6 @@ export function ImportBatchDialog({
                     ))}
                   </ul>
                 </details>
-              )}
-              {preflight.blockingReason && (
-                <div className="translator-flow-callout is-error" role="alert">
-                  {preflight.blockingReason}
-                </div>
               )}
               {!preflight.modMatches &&
                 onSwitchToMatchingMod &&
