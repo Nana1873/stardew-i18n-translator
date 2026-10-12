@@ -444,7 +444,7 @@ fn an_unplannable_review_item_keeps_its_draft_and_the_others_are_reviewed() {
         *events.lock().unwrap(),
         vec![ProviderProgressEvent::ReviewSkipped {
             item_count: 1,
-            reason: ReviewSkipReason::InvalidResponse,
+            reason: ReviewSkipReason::TooLong,
         }]
     );
 }

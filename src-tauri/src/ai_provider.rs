@@ -68,6 +68,8 @@ pub(crate) enum ReviewSkipReason {
     Transient,
     /// A single-item review response stayed invalid after its structure retry.
     InvalidResponse,
+    /// The text is too long to send for a review; its draft is kept.
+    TooLong,
 }
 
 pub(crate) type ProviderProgressCallback = Arc<dyn Fn(ProviderProgressEvent) + Send + Sync>;

@@ -1206,7 +1206,7 @@ async fn apply_quality_review(
     if skipped > 0 {
         progress(ProviderProgressEvent::ReviewSkipped {
             item_count: skipped,
-            reason: ReviewSkipReason::InvalidResponse,
+            reason: ReviewSkipReason::TooLong,
         });
     }
     let review_model = model.clone();

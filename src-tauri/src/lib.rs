@@ -2049,6 +2049,7 @@ struct ReviewSkips {
     items: usize,
     transient: bool,
     invalid_response: bool,
+    too_long: bool,
 }
 
 impl ReviewSkips {
@@ -2057,6 +2058,7 @@ impl ReviewSkips {
         match reason {
             ai_provider::ReviewSkipReason::Transient => self.transient = true,
             ai_provider::ReviewSkipReason::InvalidResponse => self.invalid_response = true,
+            ai_provider::ReviewSkipReason::TooLong => self.too_long = true,
         }
     }
 
@@ -2064,6 +2066,7 @@ impl ReviewSkips {
         self.items = self.items.saturating_add(other.items);
         self.transient |= other.transient;
         self.invalid_response |= other.invalid_response;
+        self.too_long |= other.too_long;
     }
 }
 
@@ -2073,10 +2076,16 @@ fn review_skipped_warning(outcome: ai::AiRunOutcome, skips: ReviewSkips) -> Opti
     if outcome != ai::AiRunOutcome::Complete || skips.items == 0 {
         return None;
     }
-    let cause = match (skips.transient, skips.invalid_response) {
-        (true, true) => "temporary ChatGPT failures and invalid review responses",
-        (true, false) => "a temporary ChatGPT failure",
-        _ => "an invalid review response",
+    let failures = match (skips.transient, skips.invalid_response) {
+        (true, true) => Some("temporary ChatGPT failures and invalid review responses"),
+        (true, false) => Some("a temporary ChatGPT failure"),
+        (false, true) => Some("an invalid review response"),
+        (false, false) => None,
+    };
+    let cause = match (failures, skips.too_long) {
+        (Some(failures), true) => format!("{failures}, and texts too long to review"),
+        (Some(failures), false) => failures.to_string(),
+        (None, _) => "texts too long to review".to_string(),
     };
     Some(format!(
         "The quality check didn't finish for {} {} ({cause}). Their drafts are in Review; please check them.",
@@ -2153,6 +2162,17 @@ mod review_warning_tests {
         let warning = review_skipped_warning(AiRunOutcome::Complete, saved).unwrap();
         assert!(warning.contains("for 4 texts"));
         assert!(warning.contains("temporary ChatGPT failures and invalid review responses"));
+
+        let mut long = ReviewSkips::default();
+        long.record(1, ReviewSkipReason::TooLong);
+        let warning = review_skipped_warning(AiRunOutcome::Complete, long).unwrap();
+        assert!(warning.contains("(texts too long to review)"), "{warning}");
+        long.record(2, ReviewSkipReason::Transient);
+        let warning = review_skipped_warning(AiRunOutcome::Complete, long).unwrap();
+        assert!(
+            warning.contains("a temporary ChatGPT failure, and texts too long to review"),
+            "{warning}"
+        );
     }
 }
 
@@ -2809,6 +2829,7 @@ async fn translate_with_cloud_ai(
                             "reason": match reason {
                                 ai_provider::ReviewSkipReason::Transient => "transient",
                                 ai_provider::ReviewSkipReason::InvalidResponse => "invalidResponse",
+                                ai_provider::ReviewSkipReason::TooLong => "tooLong",
                             },
                         })
                     );
