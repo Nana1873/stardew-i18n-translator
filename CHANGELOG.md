@@ -41,6 +41,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - If a package breaks between the preview and the build of the ZIP for all
   mods, the result and the Activity log name it as left out instead of leaving
   it out without a word.
+- An `i18n` folder without a `manifest.json` above it appears in the scan
+  result as information instead of disappearing silently; SMAPI does not load
+  it either.
+- When several strings fail in Local AI for the same reason, such as an
+  unreachable server, the message names that reason once and lists the
+  affected strings after it.
 - An LLM batch is written only to a `.json` file picked in the Save dialog,
   never into the app's data folder or the game and Mods folders, and through a
   temporary file so a failed write leaves no half-written batch.

@@ -53,7 +53,9 @@ mod's translation files until you export.
 ![Editor showing a synthetic translation and its protected tokens](assets/screenshots/editor.png)
 
 The example uses synthetic text. Preserve placeholders such as `{{PlayerName}}`
-and dialogue commands when translating the surrounding words.
+and dialogue commands when translating the surrounding words. The editor's token
+chips use the marks from Issues, a red circle for an error and a yellow triangle
+for a harmless difference; a dashed outline marks an accepted mismatch.
 
 ## Understand status and validation
 
