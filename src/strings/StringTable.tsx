@@ -795,10 +795,11 @@ export function StringTable({
   const requestedPlanRef = useRef<string | null>(null);
   useEffect(() => {
     let active = true;
+    // A reload of the same mods and language (after a rescan, AI run, import,
+    // or undo) keeps the rows, selection, and open editor; identities that no
+    // longer exist drop out of the selection once the new rows are visible.
     const sameContext =
-      requestedPlanRef.current === aiContextKey &&
-      rowsRef.current !== null &&
-      editorSession !== null;
+      requestedPlanRef.current === aiContextKey && rowsRef.current !== null;
     requestedPlanRef.current = aiContextKey;
     if (!sameContext) {
       aiProvenanceByIdentity.current.clear();
@@ -1041,6 +1042,9 @@ export function StringTable({
     return out;
   }, [visible, sort, effectiveScope]);
 
+  const displayRef = useRef(display);
+  displayRef.current = display;
+
   const virtualizer = useVirtualizer({
     count: display.length,
     getScrollElement: () => parentRef.current,
@@ -1277,7 +1281,8 @@ export function StringTable({
   }
 
   function focusRow(identity: string) {
-    const displayIndex = display.findIndex(
+    // Read the latest rows: callers may run from a frame after a re-render.
+    const displayIndex = displayRef.current.findIndex(
       (entry) => entry.kind === "row" && entry.identity === identity,
     );
     if (displayIndex < 0) return;
@@ -1287,6 +1292,36 @@ export function StringTable({
         parentRef.current?.querySelectorAll<HTMLElement>("[data-row-id]") ?? [],
       ).find((candidate) => candidate.dataset.rowId === identity);
       element?.focus();
+    });
+  }
+
+  /** After the editor closes, keep keyboard focus in the table: on the edited
+   * row, or on the row that took its place when it left the filter. */
+  function focusAfterEditor(identity: string, previousIndex: number) {
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const rows = displayRef.current;
+      let index = rows.findIndex(
+        (entry) => entry.kind === "row" && entry.identity === identity,
+      );
+      if (index < 0) {
+        const after = rows.findIndex(
+          (entry, position) =>
+            position >= previousIndex && entry.kind === "row",
+        );
+        index = after;
+        for (
+          let position = rows.length - 1;
+          index < 0 && position >= 0;
+          position--
+        )
+          if (rows[position].kind === "row") index = position;
+      }
+      const target = rows[index];
+      if (!target || target.kind !== "row") return;
+      setActiveIdentity(target.identity);
+      focusRow(target.identity);
     });
   }
 
@@ -2947,7 +2982,14 @@ export function StringTable({
             onSave={(value, nextStatus, tokenMismatchAccepted) =>
               saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
             }
-            onClose={() => setEditorSession(null)}
+            onClose={() => {
+              const previousIndex = display.findIndex(
+                (entry) =>
+                  entry.kind === "row" && entry.identity === editingIdentity,
+              );
+              setEditorSession(null);
+              focusAfterEditor(editingIdentity, Math.max(previousIndex, 0));
+            }}
             onNavigate={(delta) =>
               setEditorSession((current) => {
                 if (!current) return current;
