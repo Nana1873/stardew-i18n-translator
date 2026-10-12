@@ -1487,7 +1487,13 @@ function GlossarySettings({
           <strong>
             {cached ? englishNumberFormat.format(cached.termCount) : "—"}
           </strong>
-          <span>{cached ? "terms" : "terms unavailable"}</span>
+          <span>
+            {cached
+              ? cached.termCount === 1
+                ? "term"
+                : "terms"
+              : "no terms yet"}
+          </span>
         </div>
       </div>
 
