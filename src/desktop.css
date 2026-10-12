@@ -1734,3 +1734,20 @@
   .translator-string-table-body {
   padding-bottom: 120px;
 }
+
+/* No mod has a Nexus ID: drop the column instead of a row of dashes. */
+#stardew-i18n-translator .translator-mod-columns[data-no-nexus],
+#stardew-i18n-translator [data-no-nexus] .translator-mod-row,
+#stardew-i18n-translator [data-no-nexus] .translator-mod-group-row {
+  grid-template-columns: minmax(0, 1fr) 42px 52px;
+}
+#stardew-i18n-translator
+  .translator-mod-columns[data-no-nexus]
+  span:nth-child(3),
+#stardew-i18n-translator
+  [data-no-nexus]
+  .translator-mod-group-row
+  span:nth-child(3),
+#stardew-i18n-translator [data-no-nexus] .translator-mod-nexus {
+  display: none;
+}

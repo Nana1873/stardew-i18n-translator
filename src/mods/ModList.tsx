@@ -104,6 +104,8 @@ export function ModList({
   onClearQuery,
 }: ModListProps) {
   const groups = groupByPackage(mods);
+  // A Nexus column full of dashes says nothing; show it once any mod has an ID.
+  const noNexus = !mods.some((mod) => mod.nexusId != null) || undefined;
   const [menu, setMenu] = useState<ModMenuState | null>(null);
   const [collapsedPackages, setCollapsedPackages] = useState<Set<string>>(
     new Set(),
@@ -283,7 +285,11 @@ export function ModList({
 
   return (
     <>
-      <div className="translator-mod-columns" aria-hidden="true">
+      <div
+        className="translator-mod-columns"
+        aria-hidden="true"
+        data-no-nexus={noNexus}
+      >
         <span>Mod</span>
         <span>Ver.</span>
         <span>Nexus</span>
@@ -291,6 +297,7 @@ export function ModList({
       </div>
       <div
         className="translator-mod-list"
+        data-no-nexus={noNexus}
         role="tree"
         aria-label="Mods"
         onKeyDown={onTreeKeyDown}
