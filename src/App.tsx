@@ -1996,6 +1996,38 @@ export function App() {
     }
   }
 
+  function resultReviewModIds(): string[] {
+    const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
+    const exportModIds =
+      resultTray?.kind === "export" && resultTray.retry.kind === "selected"
+        ? [resultTray.retry.modUniqueId]
+        : [];
+    return [
+      ...new Set(
+        (resultTray?.reviewModUniqueIds ?? exportModIds).filter((id) =>
+          knownModIds.has(id),
+        ),
+      ),
+    ];
+  }
+
+  /** Strings the Open Review jump would show right now (not at result time). */
+  function currentResultReviewCount(): number {
+    const ids = resultReviewModIds();
+    const mods =
+      ids.length === 1
+        ? (scan?.mods.filter((mod) => mod.uniqueId === ids[0]) ?? [])
+        : (scan?.mods ?? []);
+    const includeChanged = resultTray?.kind === "export";
+    return mods.reduce(
+      (total, mod) =>
+        total +
+        (mod.statusCounts?.["review-needed"] ?? mod.reviewNeeded) +
+        (includeChanged ? (mod.statusCounts?.outdated ?? 0) : 0),
+      0,
+    );
+  }
+
   function openResultReviewQueue() {
     if (
       resultTray?.reviewWorkspace &&
@@ -2003,18 +2035,7 @@ export function App() {
         resultTray.reviewWorkspace.targetLang !== settings?.targetLang)
     )
       return;
-    const knownModIds = new Set(scan?.mods.map((mod) => mod.uniqueId) ?? []);
-    const exportModIds =
-      resultTray?.kind === "export" && resultTray.retry.kind === "selected"
-        ? [resultTray.retry.modUniqueId]
-        : [];
-    const reviewModIds = [
-      ...new Set(
-        (resultTray?.reviewModUniqueIds ?? exportModIds).filter((id) =>
-          knownModIds.has(id),
-        ),
-      ),
-    ];
+    const reviewModIds = resultReviewModIds();
     setSearch("");
     setScanStringFilter(null);
     if (reviewModIds.length === 1) {
@@ -2233,7 +2254,9 @@ export function App() {
               (resultTray.kind === "history" &&
                 (resultTray.entry.kind === "import" ||
                   resultTray.entry.kind === "ai") &&
-                resultTray.entry.itemCount > 0))
+                resultTray.entry.itemCount > 0)) &&
+            // Offer the jump only while there is still something to review.
+            currentResultReviewCount() > 0
               ? openResultReviewQueue
               : undefined
           }

@@ -374,6 +374,21 @@ function exportScan(targetExists: boolean): ScanResult {
   };
 }
 
+/** A scan whose single mod still has one string waiting in Review. */
+function withPendingReview(result: ScanResult): ScanResult {
+  for (const mod of result.mods) {
+    mod.reviewNeeded = 1;
+    mod.i18nFiles[0].reviewNeeded = 1;
+    mod.statusCounts = {
+      untranslated: 0,
+      outdated: 0,
+      "review-needed": 1,
+      translated: 0,
+    };
+  }
+  return result;
+}
+
 function scanWithMod(uniqueId: string, name: string) {
   const result = exportScan(false);
   result.mods = [
@@ -2126,6 +2141,8 @@ describe("App shell", () => {
     async (change) => {
       let releaseTranslation!: (result: AiRunResult) => void;
       let activeRunId = "";
+      // The finished run saved its suggestion to the original workspace.
+      let suggestionSaved = false;
       let currentSettings: AppSettings = {
         ...CONFIGURED,
         llm: {
@@ -2147,24 +2164,29 @@ describe("App shell", () => {
             modsPath: string;
             targetLang: string;
           };
-          const scan = exportScan(false);
+          const scan = withPendingReview(exportScan(false));
           scan.mods[0].i18nFiles[0].defaultPath = `${modsPath}/Test/i18n/default.json`;
           scan.mods[0].i18nFiles[0].targetPath = `${modsPath}/Test/i18n/${targetLang}.json`;
           return Promise.resolve(scan);
         }
-        if (cmd === "load_strings")
+        if (cmd === "load_strings") {
+          const original =
+            currentSettings.targetLang === "de" &&
+            currentSettings.modsPath === CONFIGURED.modsPath;
           return Promise.resolve([
             {
               key: "greeting",
               source: "Hello",
-              target:
-                currentSettings.targetLang !== "de" ||
-                currentSettings.modsPath !== CONFIGURED.modsPath
-                  ? "Current workspace translation"
+              target: !original
+                ? "Current workspace translation"
+                : suggestionSaved
+                  ? "Stale German suggestion"
                   : "",
-              status: "untranslated",
+              status:
+                original && suggestionSaved ? "review-needed" : "untranslated",
             },
           ]);
+        }
         if (cmd === "translate_with_local_ai") {
           activeRunId = (args as { request: { runId: string } }).request.runId;
           return new Promise<AiRunResult>((resolve) => {
@@ -2196,6 +2218,7 @@ describe("App shell", () => {
       fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
       await screen.findByText("Current workspace translation");
       const beforeFinish = invokeMock.mock.calls.length;
+      suggestionSaved = true;
       await act(async () => {
         releaseTranslation({
           runId: activeRunId,
@@ -2265,6 +2288,8 @@ describe("App shell", () => {
   it("replaces a cancelled AI progress dialog with the exact partial result", async () => {
     let releaseTranslation: ((result: AiRunResult) => void) | null = null;
     let activeRunId = "";
+    // The backend saves the partial suggestion as a Review string.
+    let first = { target: "", status: "untranslated" };
     invokeMock.mockImplementation((cmd: string, args?: unknown) => {
       if (cmd === "load_settings")
         return Promise.resolve({
@@ -2277,15 +2302,11 @@ describe("App shell", () => {
           },
         });
       if (cmd === "load_glossary") return Promise.resolve(null);
-      if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "scan_mods")
+        return Promise.resolve(withPendingReview(exportScan(false)));
       if (cmd === "load_strings")
         return Promise.resolve([
-          {
-            key: "first",
-            source: "First",
-            target: "",
-            status: "untranslated",
-          },
+          { key: "first", source: "First", ...first },
           {
             key: "second",
             source: "Second",
@@ -2349,6 +2370,7 @@ describe("App shell", () => {
     expect(invokeMock).toHaveBeenCalledWith("cancel_ai_run", {
       runId: activeRunId,
     });
+    first = { target: "Erste", status: "review-needed" };
     act(() => {
       releaseTranslation?.({
         runId: activeRunId,
@@ -4075,7 +4097,7 @@ describe("App shell", () => {
     expect(invokeMock).not.toHaveBeenCalledWith("scan_mods", expect.anything());
   });
 
-  it("imports one dropped JSON result into the selected mod", async () => {
+  it("hides Open Review when the imported strings were already reviewed", async () => {
     const summary = {
       imported: 1,
       skippedTranslated: 0,
@@ -4088,6 +4110,102 @@ describe("App shell", () => {
       if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
       if (cmd === "load_glossary") return Promise.resolve(null);
       if (cmd === "scan_mods") return Promise.resolve(exportScan(false));
+      if (cmd === "load_strings") return Promise.resolve([]);
+      if (cmd === "preflight_llm_batch_path")
+        return Promise.resolve(READY_IMPORT_PREFLIGHT);
+      if (cmd === "import_llm_batch_path") {
+        backendHistory = [importHistory()];
+        return Promise.resolve(summary);
+      }
+      return Promise.resolve(null);
+    });
+    render(<App />);
+    openWorkspace();
+
+    expect(await screen.findAllByText("Test Mod")).not.toHaveLength(0);
+    await waitFor(() => expect(fileDropHandler).not.toBeNull());
+
+    act(() => {
+      fileDropHandler?.({
+        type: "enter",
+        paths: ["C:/results/test.llm-result.json"],
+      });
+    });
+    expect(await screen.findByText("Import into Test Mod")).toBeInTheDocument();
+    const dropState = document.querySelector(".translator-native-drop-state");
+    expect(dropState).toHaveClass(
+      "translator-file-choice",
+      "translator-drop-zone",
+      "is-dragging",
+    );
+    expect(document.querySelector(".batchdrop")).toBeNull();
+
+    act(() => {
+      fileDropHandler?.({
+        type: "drop",
+        paths: ["C:/results/test.llm-result.json"],
+      });
+    });
+    const dialog = await screen.findByRole("dialog", {
+      name: "Import LLM batch",
+    });
+    expect(dialog).toHaveTextContent("test.llm-result.json");
+    expect(dialog).toHaveTextContent("C:/results/test.llm-result.json");
+    expect(await within(dialog).findByText("Ready to import")).toBeVisible();
+    expect(dialog).toHaveTextContent("1 / 1");
+    expect(invokeMock).toHaveBeenCalledWith("preflight_llm_batch_path", {
+      modUniqueId: "a.b",
+      files: [
+        {
+          relativeDir: "i18n",
+          defaultPath: "x/i18n/default.json",
+          targetPath: "x/i18n/de.json",
+        },
+      ],
+      path: "C:/results/test.llm-result.json",
+    });
+    expect(invokeMock).not.toHaveBeenCalledWith(
+      "import_llm_batch_path",
+      expect.anything(),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Import file" }),
+    );
+    await waitFor(() =>
+      expect(invokeMock).toHaveBeenCalledWith("import_llm_batch_path", {
+        modUniqueId: "a.b",
+        files: [
+          {
+            relativeDir: "i18n",
+            defaultPath: "x/i18n/default.json",
+            targetPath: "x/i18n/de.json",
+          },
+        ],
+        path: "C:/results/test.llm-result.json",
+      }),
+    );
+    const result = await inspectLatestResult();
+    expect(result).toHaveTextContent("1 of 1 text added to Review");
+    // The scan shows nothing left in Review, so the jump would be empty.
+    expect(
+      within(result).queryByRole("button", { name: "Open Review" }),
+    ).toBeNull();
+  });
+
+  it("imports one dropped JSON result into the selected mod", async () => {
+    const summary = {
+      imported: 1,
+      skippedTranslated: 0,
+      unmatched: 0,
+      identicalToSource: 0,
+      importedWithTokenErrors: 0,
+      totalInFile: 1,
+    };
+    invokeMock.mockImplementation((cmd: string) => {
+      if (cmd === "load_settings") return Promise.resolve(CONFIGURED);
+      if (cmd === "load_glossary") return Promise.resolve(null);
+      if (cmd === "scan_mods")
+        return Promise.resolve(withPendingReview(exportScan(false)));
       if (cmd === "load_strings") return Promise.resolve([]);
       if (cmd === "preflight_llm_batch_path")
         return Promise.resolve(READY_IMPORT_PREFLIGHT);
