@@ -38,6 +38,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- The `_` separators of a `$y 'question_answer_reply'` quick response are
+  protected. A dropped or added separator used to pass silently and mixed up
+  which reply belongs to which answer in the game, or stopped the dialogue
+  with an error. A single `*` in a reply, which the game turns into a new
+  dialogue box, is protected as well. A quick response on a later dialogue
+  page can now be translated instead of counting as one changed token.
 - A translation file saved as UTF-16 (with a byte order mark) is read like
   SMAPI reads it, and a target value that is a number, `null`, or a list no
   longer hides the whole component: numbers become text and other values

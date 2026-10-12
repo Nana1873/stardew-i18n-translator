@@ -92,7 +92,8 @@ function extractTokens(value: string): string[] {
       continue;
     }
 
-    const action = readBetasMessage(value, offset);
+    const action =
+      readBetasMessage(value, offset) ?? readQuickResponse(value, offset);
     if (action) {
       tokens.push(...action.tokens);
       offset = action.end;
@@ -133,6 +134,8 @@ export function describeToken(token: string): string {
   if (token === "}$") return "}$ (switch end)";
   if (token === "#") return "# (dialogue/mail separator)";
   if (token === "'") return "' (quote delimiter)";
+  if (token === "_") return "_ (quick-response separator)";
+  if (token === "*") return "* (quick-response page break)";
   if (token === "\n") return "newline";
   return token;
 }
@@ -427,6 +430,62 @@ function readBetasMessage(
   };
 }
 
+/** Index of the opening quote when `$y` and spaces start a quick response
+ * at `offset` (the game reads the command word, then the first `'`). */
+function quickResponseQuote(value: string, offset: number): number {
+  if (!value.startsWith("$y ", offset)) return -1;
+  let index = offset + 3;
+  while (value[index] === " ") index++;
+  return value[index] === "'" ? index : -1;
+}
+
+/** `$y 'question_answer_reply_answer_reply'`: the game splits the quoted text
+ * at `_` into a question and answer/reply pairs, so every separator is
+ * protected. Underscores inside `{{tokens}}` or `[tokens]` are not separators.
+ * A single `*` in a reply becomes a `#$b#` page break in the game (`**` is a
+ * literal asterisk), so it is protected too. Mirrors Rust `read_quick_response`. */
+function readQuickResponse(
+  value: string,
+  offset: number,
+): { end: number; tokens: string[] } | null {
+  const opening = quickResponseQuote(value, offset);
+  if (opening < 0) return null;
+  const start = opening + 1;
+  // The last quote before the next page break closes it, so an apostrophe
+  // such as "Don't" stays part of the text.
+  const page = value.indexOf("#", start);
+  const close = value.lastIndexOf("'", (page < 0 ? value.length : page) - 1);
+  if (close < start) return null;
+  const body = value.slice(start, close);
+  const separators: string[] = [];
+  // Segment 0 is the question, odd segments are answers, and even segments
+  // from 2 on are replies; only replies turn `*` into a page break.
+  let segment = 0;
+  let index = 0;
+  while (index < body.length) {
+    const nested =
+      readContentPatcherToken(body, index) ?? readBracketToken(body, index);
+    if (nested) {
+      index = nested.end;
+      continue;
+    }
+    if (body.startsWith("**", index)) {
+      index += 2;
+      continue;
+    }
+    if (body[index] === "_") {
+      separators.push("_");
+      segment += 1;
+    } else if (body[index] === "*" && segment >= 2 && segment % 2 === 0)
+      separators.push("*");
+    index += 1;
+  }
+  return {
+    end: close + 1,
+    tokens: ["$y", "'", "'", ...separators, ...extractTokens(body)],
+  };
+}
+
 /** After `#$h|s|u|l|a`, an uppercase ASCII letter or any character that is
  * not an ASCII letter, digit, or `#` (CJK, `¡`, `«`, `Ä`, a space) starts the
  * page's prose. Lowercase ASCII would be a longer command such as `#$action`. */
@@ -453,6 +512,9 @@ function readDialogueBreak(value: string, offset: number): Token | null {
   // or a portrait followed by prose. Only `#` is the separator here; reading
   // up to the next `#` would turn the whole page into one opaque token.
   if (value[offset + 2] === "{") return null;
+  // `#$y '…'` starts a quick response on a new page; its own reader protects
+  // the separators instead of one opaque token for the whole page.
+  if (quickResponseQuote(value, offset + 1) >= 0) return null;
   if (
     command &&
     /^\$[hsula]$/.test(command.raw) &&
