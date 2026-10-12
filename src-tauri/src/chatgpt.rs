@@ -193,7 +193,9 @@ pub(crate) fn timeout_failure() -> ProviderFailure {
 
 #[path = "cloud_translation.rs"]
 mod cloud_translation;
-pub(crate) use cloud_translation::{repair_token_mismatches_once, translate_chunk};
+pub(crate) use cloud_translation::{
+    repair_token_mismatches_once, safe_model_for_log, translate_chunk,
+};
 
 #[cfg(test)]
 mod time_limit_tests {

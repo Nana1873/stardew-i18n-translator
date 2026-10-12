@@ -2559,6 +2559,27 @@ async fn chatgpt_sign_out(state: State<'_, ai::AiRuntimeState>) -> Result<(), St
     chatgpt_auth::logout().await
 }
 
+/// The `run_started` event logs the model with the same cleaning policy as
+/// each ChatGPT `attempt_started` event.
+fn cloud_run_started_diagnostic(
+    log_run_id: &str,
+    model: &str,
+    reasoning: &str,
+    total: usize,
+    batches: usize,
+) -> serde_json::Value {
+    serde_json::json!({
+        "event": "run_started",
+        "runId": log_run_id,
+        "engine": "chatgpt",
+        "transport": "responses",
+        "model": chatgpt::safe_model_for_log(Some(model)),
+        "reasoning": reasoning,
+        "total": total,
+        "batches": batches,
+    })
+}
+
 /// A ChatGPT run needs a saved model; the provider has no implicit default.
 fn required_cloud_model(model: Option<&str>) -> Result<String, String> {
     model
@@ -2688,16 +2709,13 @@ async fn translate_with_cloud_ai(
     log::info!(
         target: "ai_run",
         "{}",
-        serde_json::json!({
-            "event": "run_started",
-            "runId": log_run_id,
-            "engine": log_engine,
-            "transport": log_transport,
-            "model": "configured",
-            "reasoning": reasoning,
-            "total": prepared.len(),
-            "batches": batch_total,
-        })
+        cloud_run_started_diagnostic(
+            &log_run_id,
+            &cloud_model,
+            &reasoning,
+            prepared.len(),
+            batch_total
+        )
     );
     let progress_state = Arc::new(Mutex::new(AiRunProgress {
         run_id: request.run_id.clone(),
@@ -4066,6 +4084,20 @@ mod ai_run_contract_tests {
             "timeout"
         );
         assert!(LOCAL_AI_TIMEOUT_STOP_MESSAGE.contains("three times in a row"));
+    }
+
+    #[test]
+    fn chatgpt_run_started_logs_the_cleaned_model_name() {
+        let event = cloud_run_started_diagnostic("run-1", "gpt-5.6-sol", "medium", 3, 1);
+        assert_eq!(event["event"], "run_started");
+        assert_eq!(event["model"], "gpt-5.6-sol");
+        assert_eq!(
+            event["model"],
+            chatgpt::safe_model_for_log(Some("gpt-5.6-sol"))
+        );
+        let private = cloud_run_started_diagnostic("run-1", "C:/Users/me/model", "low", 1, 1);
+        assert_eq!(private["model"], "redacted");
+        assert!(!private.to_string().contains("Users"));
     }
 
     #[test]

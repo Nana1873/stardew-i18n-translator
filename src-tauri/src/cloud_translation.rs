@@ -25,7 +25,10 @@ fn no_progress_callback() -> ProviderProgressCallback {
     Arc::new(|_| {})
 }
 
-fn safe_model_for_log(model: Option<&str>) -> &str {
+/// The model name as it appears in diagnostics: the plain id, or "redacted"
+/// when it could carry a path or other private text. Every ChatGPT log event
+/// uses this one policy.
+pub(crate) fn safe_model_for_log(model: Option<&str>) -> &str {
     match model {
         None => "default",
         Some(value)
