@@ -992,17 +992,32 @@
     {
       "source": "Hi.#$b#Bye.",
       "target": "你好。＃＄b＃再见。",
-      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ]."
+      "text": "#$b# is missing from the translation. It starts a new dialogue box, so the text would be split into boxes differently. The text contains full-width ＄＃ where the English text has $ #. The game shows them as they are; use the normal characters."
     },
     {
       "source": "Thanks @!",
       "target": "谢谢＠！",
-      "text": "The player name @ is missing from the translation. Fine if intended. The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ]."
+      "text": "The player name @ is missing from the translation. Fine if intended. The text contains full-width ＠ where the English text has @. The game shows them as they are; use the normal characters."
+    },
+    {
+      "source": "Hi @!",
+      "target": "嗨！50％",
+      "text": "The player name @ is missing from the translation. Fine if intended."
+    },
+    {
+      "source": "My ${handsome^beautiful}$ wizard.",
+      "target": "我的＄｛英俊＾美丽｝＄巫师。",
+      "text": "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended. The text contains full-width ＄｛｝＾ where the English text has $ { } ^. The game shows them as they are; use the normal characters."
+    },
+    {
+      "source": "Hi %spouse!",
+      "target": "嗨％spouse！",
+      "text": "%spouse is missing from the translation. The game puts the spouse's name here. Fine if intended. The text contains full-width ％ where the English text has %. The game shows them as they are; use the normal characters."
     },
     {
       "source": "Welcome to [FarmName].",
       "target": "欢迎来到［FarmName］。",
-      "text": "[FarmName] is missing from the translation. The game would not insert this value or item. The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ]."
+      "text": "[FarmName] is missing from the translation. The game would not insert this value or item. The text contains full-width ［］ where the English text has [ ]. The game shows them as they are; use the normal characters."
     },
     {
       "source": "Fine.",

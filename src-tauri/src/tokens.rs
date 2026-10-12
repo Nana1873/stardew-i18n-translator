@@ -205,10 +205,10 @@ pub fn blocking_differences(source: &str, target: &str) -> Vec<TokenDifference> 
         .collect()
 }
 
-/// Full-width look-alikes an LLM or a CJK keyboard may write instead of ASCII
-/// token syntax (mirrors TS `FULL_WIDTH_LOOKALIKES`).
-const FULL_WIDTH_LOOKALIKES: [char; 9] = ['＄', '｛', '｝', '＾', '＃', '＠', '％', '［', '］'];
-const FULL_WIDTH_HINT: &str = "The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ].";
+/// Token characters an LLM or a CJK keyboard may write as their full-width
+/// look-alikes (U+FF01..U+FF5E, ASCII + 0xFEE0). Mirrors TS
+/// `FULL_WIDTH_LOOKALIKES`.
+const FULL_WIDTH_LOOKALIKES: &str = "${}^#@%[]";
 
 /// A plain-language explanation of game-breaking differences for export and
 /// release results. Gender-switch damage is described as one structural
@@ -253,14 +253,38 @@ pub fn explain_differences(differences: &[TokenDifference], translation: &str) -
         messages.push(difference_message(difference));
     }
     // A look-alike explains a token difference but never adds one.
-    if !messages.is_empty()
-        && translation
-            .chars()
-            .any(|c| FULL_WIDTH_LOOKALIKES.contains(&c))
-    {
-        messages.push(FULL_WIDTH_HINT.to_string());
+    if !messages.is_empty() {
+        messages.extend(full_width_hint(differences, translation));
     }
     messages.join(" ")
+}
+
+/// A hint when the translation has the full-width form of a character of a
+/// token that went missing or changed. `％［］` are ordinary CJK punctuation,
+/// so they only count when such a token needs them. Mirrors TS
+/// `fullWidthHint`.
+fn full_width_hint(differences: &[TokenDifference], translation: &str) -> Option<String> {
+    let full_width = |c: char| char::from_u32(c as u32 + 0xfee0).unwrap_or(c);
+    let found: Vec<char> = FULL_WIDTH_LOOKALIKES
+        .chars()
+        .filter(|c| {
+            differences.iter().any(|difference| {
+                difference.target_count < difference.source_count && difference.token.contains(*c)
+            }) && translation.contains(full_width(*c))
+        })
+        .collect();
+    if found.is_empty() {
+        return None;
+    }
+    let wide: String = found.iter().map(|c| full_width(*c)).collect();
+    let ascii = found
+        .iter()
+        .map(char::to_string)
+        .collect::<Vec<_>>()
+        .join(" ");
+    Some(format!(
+        "The text contains full-width {wide} where the English text has {ascii}. The game shows them as they are; use the normal characters."
+    ))
 }
 
 /// How a token count differs, in words (mirrors TS `changePhrase`).

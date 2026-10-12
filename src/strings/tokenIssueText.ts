@@ -12,11 +12,32 @@ export interface TokenDifference {
   severity: TokenSeverity;
 }
 
-/** Full-width look-alikes an LLM or a CJK keyboard may write instead of
- * ASCII token syntax. Mirrors Rust `FULL_WIDTH_LOOKALIKES`. */
-const FULL_WIDTH_LOOKALIKES = /[＄｛｝＾＃＠％［］]/u;
-const FULL_WIDTH_HINT =
-  "The text contains full-width characters such as ＄｛｝＾. The game shows them as they are; tokens need the normal characters $ { } ^ # @ % [ ].";
+/** Token characters an LLM or a CJK keyboard may write as their full-width
+ * look-alikes (U+FF01..U+FF5E, ASCII + 0xFEE0). Mirrors Rust
+ * `FULL_WIDTH_LOOKALIKES`. */
+const FULL_WIDTH_LOOKALIKES = "${}^#@%[]";
+
+function fullWidth(char: string): string {
+  return String.fromCharCode(char.charCodeAt(0) + 0xfee0);
+}
+
+/** A hint when the translation has the full-width form of a character of a
+ * token that went missing or changed. `％［］` are ordinary CJK punctuation,
+ * so they only count when such a token needs them. Mirrors Rust
+ * `full_width_hint`. */
+function fullWidthHint(
+  differences: TokenDifference[],
+  translation: string,
+): string | null {
+  const needed = new Set<string>();
+  for (const { token, sourceCount, targetCount } of differences)
+    if (targetCount < sourceCount) for (const char of token) needed.add(char);
+  const found = [...FULL_WIDTH_LOOKALIKES].filter(
+    (char) => needed.has(char) && translation.includes(fullWidth(char)),
+  );
+  if (found.length === 0) return null;
+  return `The text contains full-width ${found.map(fullWidth).join("")} where the English text has ${found.join(" ")}. The game shows them as they are; use the normal characters.`;
+}
 
 export interface TokenIssueMessage {
   severity: TokenSeverity;
@@ -210,13 +231,14 @@ export function describeTokenIssue(
 
   // A look-alike explains a token difference but never adds one, so the hint
   // takes the strongest severity already present.
-  if (messages.length > 0 && FULL_WIDTH_LOOKALIKES.test(translation)) {
+  const hint = fullWidthHint(differences, translation);
+  if (messages.length > 0 && hint !== null) {
     messages.push({
       severity: messages.some((item) => item.severity === "error")
         ? "error"
         : "warning",
       kind: "added",
-      message: FULL_WIDTH_HINT,
+      message: hint,
     });
   }
   return messages;
