@@ -181,8 +181,30 @@ export function SettingsDialog({
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [discardPrompt, setDiscardPrompt] = useState(false);
-  // Everything the user can edit here, to ask before closing with changes.
-  const editable = JSON.stringify([
+  const llmRequest = useRef(0);
+  const dialogRef = useRef<HTMLElement>(null);
+  const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
+  const cloudAvailable = Boolean(cloudStatus?.authenticated);
+  const cloudAccountError = chatgptAuthError || cloudStatus?.error;
+  function resolveEngine(preferred: AiEngine | null): AiEngine | null {
+    return preferred === CLOUD_ENGINE_ID && cloudStatus === null
+      ? null
+      : preferred === "local" && localAvailable
+        ? "local"
+        : preferred === CLOUD_ENGINE_ID && cloudAvailable
+          ? CLOUD_ENGINE_ID
+          : localAvailable
+            ? "local"
+            : cloudAvailable
+              ? CLOUD_ENGINE_ID
+              : null;
+  }
+  const defaultEngine = resolveEngine(preferredEngine);
+
+  // Ask before closing only when saving would store something different.
+  // The engine is compared as resolved, so picking an engine that is not
+  // available (and would not be saved) is not a change.
+  const editableFields = {
     stardewPath,
     modsPath,
     targetLang,
@@ -196,10 +218,12 @@ export function SettingsDialog({
     cloudQualityReview,
     cloudModel,
     cloudParallelBatches,
-    preferredEngine,
-  ]);
-  const initialEditable = useRef(editable);
-  const hasChanges = editable !== initialEditable.current;
+  };
+  const initialFields = useRef(editableFields);
+  const hasChanges =
+    JSON.stringify(editableFields) !== JSON.stringify(initialFields.current) ||
+    (defaultEngine ?? "local") !==
+      (resolveEngine(savedDefaultEngine) ?? "local");
 
   function requestClose() {
     if (hasChanges) {
@@ -208,23 +232,6 @@ export function SettingsDialog({
     }
     onClose();
   }
-  const llmRequest = useRef(0);
-  const dialogRef = useRef<HTMLElement>(null);
-  const localAvailable = Boolean(llmBaseUrl.trim() && llmModel.trim());
-  const cloudAvailable = Boolean(cloudStatus?.authenticated);
-  const cloudAccountError = chatgptAuthError || cloudStatus?.error;
-  const defaultEngine: AiEngine | null =
-    preferredEngine === CLOUD_ENGINE_ID && cloudStatus === null
-      ? null
-      : preferredEngine === "local" && localAvailable
-        ? "local"
-        : preferredEngine === CLOUD_ENGINE_ID && cloudAvailable
-          ? CLOUD_ENGINE_ID
-          : localAvailable
-            ? "local"
-            : cloudAvailable
-              ? CLOUD_ENGINE_ID
-              : null;
   const selectedCloudModel = cloudModels?.find(
     (candidate) => candidate.model === cloudModel.trim(),
   );
@@ -250,14 +257,20 @@ export function SettingsDialog({
     ) {
       return;
     }
-    setCloudReasoning(
+    const fitted =
       selectedCloudModel.defaultReasoningEffort &&
-        selectedCloudModel.supportedReasoningEfforts.includes(
-          selectedCloudModel.defaultReasoningEffort,
-        )
+      selectedCloudModel.supportedReasoningEfforts.includes(
+        selectedCloudModel.defaultReasoningEffort,
+      )
         ? selectedCloudModel.defaultReasoningEffort
-        : selectedCloudModel.supportedReasoningEfforts[0],
-    );
+        : selectedCloudModel.supportedReasoningEfforts[0];
+    if (initialFields.current.cloudReasoning === cloudReasoning) {
+      initialFields.current = {
+        ...initialFields.current,
+        cloudReasoning: fitted,
+      };
+    }
+    setCloudReasoning(fitted);
   }, [cloudReasoning, selectedCloudModel]);
 
   useEffect(
@@ -1346,6 +1359,7 @@ export function SettingsDialog({
                   className="translator-button translator-button-quiet"
                   type="button"
                   onClick={onClose}
+                  disabled={saving}
                 >
                   Discard changes
                 </button>
@@ -1353,6 +1367,7 @@ export function SettingsDialog({
                   className="translator-button translator-button-quiet"
                   type="button"
                   onClick={() => setDiscardPrompt(false)}
+                  disabled={saving}
                 >
                   Keep editing
                 </button>

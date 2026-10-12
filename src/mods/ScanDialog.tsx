@@ -221,7 +221,8 @@ export function ScanDialog({
  * (a duplicate ID with its skipped folders is one item). `null` when the
  * scan result carries no skip list. */
 export function scanAttentionCount(result: ScanResult): number | null {
-  if (!result.skippedComponents) return null;
+  if (!result.skippedComponents)
+    return result.warnings.length > 0 ? result.warnings.length : null;
   const skips = result.skippedComponents.filter(
     (component) => component.requiresAttention,
   );

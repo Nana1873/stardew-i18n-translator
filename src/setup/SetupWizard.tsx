@@ -588,6 +588,7 @@ export function SetupWizard({
                   type="button"
                   className="wizard__cancel"
                   onClick={onCancel}
+                  disabled={busy}
                 >
                   Discard changes
                 </button>
@@ -595,6 +596,7 @@ export function SetupWizard({
                   type="button"
                   className="wizard__cancel"
                   onClick={() => setDiscardPrompt(false)}
+                  disabled={busy}
                 >
                   Keep editing
                 </button>

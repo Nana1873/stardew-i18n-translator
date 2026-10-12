@@ -3005,7 +3005,9 @@ export function StringTable({
               onCancelAi
                 ? () => {
                     const runId = singleAiRunId.current;
-                    if (runId) void onCancelAi(runId).catch(() => {});
+                    return runId
+                      ? onCancelAi(runId).catch(() => false)
+                      : Promise.resolve(false);
                   }
                 : undefined
             }

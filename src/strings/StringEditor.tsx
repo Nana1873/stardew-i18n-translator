@@ -123,7 +123,8 @@ interface StringEditorProps {
   glossary?: GlossaryEntry[] | null;
   /** Translate the exact row through the configured live engine. */
   /** Stops a running single-string AI translation. */
-  onCancelTranslate?: () => void;
+  /** Resolves false when the run could not be stopped in time. */
+  onCancelTranslate?: () => Promise<boolean>;
   onTranslate?: (
     source: string,
     section?: string | null,
@@ -626,7 +627,12 @@ export function StringEditor({
   function cancelTranslate(message = "AI translation cancelled.") {
     if (!translating) return;
     aiRequest.current += 1;
-    onCancelTranslate?.();
+    void Promise.resolve(onCancelTranslate?.()).then((stopped) => {
+      if (stopped === false)
+        setTranslateMsg(
+          "Too late to cancel; the AI suggestion was saved for review.",
+        );
+    });
     setTranslating(false);
     setTranslateMsg(message);
     setTranslateMsgKind("note");
