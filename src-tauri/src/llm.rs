@@ -25,7 +25,7 @@ const MAX_READ_ONLY_NEIGHBORS: usize = 2;
 fn describe_transport_error(url: &str, error: &reqwest::Error) -> String {
     if error.is_connect() {
         format!(
-            "Local AI is not reachable at {url}. Start LM Studio or Ollama, check the Base              URL in Settings > Translation engines, then try again."
+            "Local AI is not reachable at {url}. Start LM Studio or Ollama, check the Base URL in Settings > Translation engines, then try again."
         )
     } else {
         // reqwest repeats the URL in its own text; keep the rest of it.

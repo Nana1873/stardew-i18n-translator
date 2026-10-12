@@ -222,8 +222,10 @@ body {
 
 #stardew-i18n-translator .translator-editor-overlay > .translator-editor {
   width: min(980px, 100%);
-  height: min(760px, calc(100dvh - 32px));
-  max-height: min(760px, calc(100dvh - 32px));
+  /* Relative to the overlay, so a workspace smaller than the viewport still
+     shows the footer with Save & next. */
+  height: min(760px, calc(100% - 4px));
+  max-height: calc(100% - 4px);
 }
 
 #stardew-i18n-translator .translator-editor > .translator-flow-overlay {

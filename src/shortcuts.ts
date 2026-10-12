@@ -143,6 +143,11 @@ export function shortcutProblem(shortcut: string): string | null {
   const key = parts.at(-1) ?? "";
   if (key === "Tab") return "Tab is reserved for keyboard navigation.";
   const hasModifier = parts.length > 1;
+  // Shift alone still types (Shift+Space, Shift+Backspace), so editing keys
+  // need Ctrl, Alt, or Meta to be usable as commands inside a text field.
+  const hasCommandModifier = parts
+    .slice(0, -1)
+    .some((part) => part !== "Shift");
   const isFunctionKey = /^F([1-9]|1[0-2])$/.test(key);
   const isConfirmKey = key === "Enter" || key === "Escape";
   // Keys that edit or move the caret inside a text field. Without a modifier
@@ -162,7 +167,7 @@ export function shortcutProblem(shortcut: string): string | null {
     "Backspace",
   ].includes(key);
 
-  if (!hasModifier && isEditingKey)
+  if (!hasCommandModifier && isEditingKey)
     return "Typing keys such as Space, Backspace, Delete, and the arrow keys need Ctrl or Alt so they stay usable in text fields.";
   if (!hasModifier && !isFunctionKey && !isConfirmKey)
     return "Use Ctrl, Shift, or Alt with letters and numbers.";

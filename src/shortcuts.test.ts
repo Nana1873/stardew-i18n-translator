@@ -39,6 +39,8 @@ describe("shortcuts", () => {
       expect(shortcutProblem(key)).toMatch(/text fields/);
     }
     expect(shortcutProblem("Ctrl+Backspace")).toBeNull();
+    expect(shortcutProblem("Shift+Delete")).toMatch(/text fields/);
+    expect(shortcutProblem("Shift+Enter")).toBeNull();
     expect(shortcutProblem("Enter")).toBeNull();
     expect(shortcutProblem("Escape")).toBeNull();
   });

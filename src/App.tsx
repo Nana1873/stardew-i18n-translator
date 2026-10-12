@@ -2101,16 +2101,14 @@ export function App() {
               Details…
             </button>
           )}
-          {
-            <button
-              className="translator-toast-dismiss"
-              type="button"
-              aria-label="Dismiss notification"
-              onClick={() => setToast(null)}
-            >
-              <X aria-hidden />
-            </button>
-          }
+          <button
+            className="translator-toast-dismiss"
+            type="button"
+            aria-label="Dismiss notification"
+            onClick={() => setToast(null)}
+          >
+            <X aria-hidden />
+          </button>
         </div>
       )}
       {resultTray && !resultHidden && (
