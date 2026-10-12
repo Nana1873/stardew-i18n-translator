@@ -54,6 +54,22 @@ pub fn base_status(status: &str) -> &str {
         .unwrap_or(status)
 }
 
+/// Rejects a status the app does not write. Reading stays lenient for legacy
+/// state files, but a save must not store a value that later reads as Done.
+pub fn check_save_status(status: &str) -> Result<(), String> {
+    match base_status(status) {
+        "untranslated"
+        | "translated"
+        | "review-needed"
+        | "outdated"
+        | TOKEN_MISMATCH_ACCEPTED_STATUS
+        | REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS => Ok(()),
+        other => Err(format!(
+            "Unknown translation status \"{other}\". Nothing was saved."
+        )),
+    }
+}
+
 pub fn status_for_save(source: &str, target: &str, status: &str) -> String {
     let base = base_status(status);
     if !source.trim().is_empty()
@@ -836,6 +852,7 @@ mod tests {
             TOKEN_MISMATCH_ACCEPTED_STATUS,
             REVIEW_NEEDED_TOKEN_MISMATCH_ACCEPTED_STATUS,
         ] {
+            check_save_status(status).unwrap();
             let saved = status_for_save("Tree", " ", status);
             assert_ne!(saved, status);
             assert_eq!(base_status(&saved), status);
@@ -1528,5 +1545,19 @@ mod tests {
         assert!(backup.contains_key(&entry_key("i18n", "k1")));
         assert!(!backup.contains_key(&entry_key("i18n", "k2")));
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn saving_rejects_unknown_statuses() {
+        for status in ["done", "imported", "not-translatable", "", "Translated"] {
+            assert!(check_save_status(status).is_err(), "{status}");
+        }
+        for status in [
+            "untranslated",
+            "translated-intentionally-blank",
+            "review-needed-intentionally-blank",
+        ] {
+            assert!(check_save_status(status).is_ok(), "{status}");
+        }
     }
 }
