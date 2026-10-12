@@ -38,6 +38,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- A translation file saved as UTF-16 (with a byte order mark) is read like
+  SMAPI reads it, and a target value that is a number, `null`, or a list no
+  longer hides the whole component: numbers become text and other values
+  count as untranslated.
+- One unreadable document in a split `i18n/<lang>/` folder no longer skips
+  every source document of the component. It blocks only the document of the
+  same name; any other is reported once as a scan warning.
 - The string selection, scroll position, and visible rows stay in place when
   the same strings reload after an AI run, rescan, import, or undo. Selected
   strings that no longer exist drop out. An AI run reloads the table once
