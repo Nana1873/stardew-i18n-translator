@@ -2776,8 +2776,17 @@ export function StringTable({
           {visible.length === 0 ? (
             <div className="tableempty translator-empty-state">
               <SearchX aria-hidden="true" />
-              <strong>No matching strings</strong>
-              <span>Change the filter, scope, or search text.</span>
+              {effectiveIssuesOnly && issueCount === 0 ? (
+                <>
+                  <strong>No validation findings in this scope.</strong>
+                  <span>Token and text checks found nothing to fix here.</span>
+                </>
+              ) : (
+                <>
+                  <strong>No matching strings</strong>
+                  <span>Change the filter, scope, or search text.</span>
+                </>
+              )}
               <button
                 className="translator-button translator-button-quiet"
                 type="button"

@@ -1581,6 +1581,10 @@ describe("StringTable workbench", () => {
       "aria-pressed",
       "true",
     );
+    // With no findings left, the Issues view says so instead of "No matching".
+    expect(
+      screen.getByText("No validation findings in this scope."),
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: /^All \d/ })).toHaveAttribute(
       "aria-pressed",
       "false",

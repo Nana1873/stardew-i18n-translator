@@ -5167,7 +5167,8 @@ describe("App shell", () => {
 
     await screen.findByText("Hallo {{name}}");
     fireEvent.click(screen.getByRole("button", { name: /^Done\b/ }));
-    expect(screen.getByRole("button", { name: "Issues 0" })).toBeDisabled();
+    // Issues stays clickable at 0 so its help and empty view stay reachable.
+    expect(screen.getByRole("button", { name: "Issues 0" })).toBeEnabled();
     target = "Hallo";
     fireEvent.click(screen.getByLabelText("Scan mods"));
 
