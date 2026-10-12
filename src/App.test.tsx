@@ -4052,10 +4052,11 @@ describe("App shell", () => {
       await waitFor(() => expect(next).toBeEnabled());
       fireEvent.click(next);
     }
-    fireEvent.change(
-      await within(setup).findByRole("combobox", { name: "Target language" }),
-      { target: { value: "fr" } },
-    );
+    const language = await within(setup).findByRole("combobox", {
+      name: "Target language",
+    });
+    fireEvent.change(language, { target: { value: "fr" } });
+    expect(language).toHaveValue("fr");
     fireEvent.click(within(setup).getByRole("button", { name: "Cancel" }));
 
     await waitFor(() =>
