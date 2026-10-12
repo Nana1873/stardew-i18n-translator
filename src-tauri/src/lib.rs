@@ -4077,6 +4077,16 @@ mod ai_run_contract_tests {
     }
 
     #[test]
+    fn content_security_policy_does_not_allow_the_unused_asset_protocol() {
+        let config: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let csp = config["app"]["security"]["csp"].as_str().unwrap();
+        assert!(csp.contains("img-src 'self' data:;"), "{csp}");
+        assert!(!csp.contains("asset:"), "{csp}");
+        assert!(csp.contains("script-src 'self';"), "{csp}");
+    }
+
+    #[test]
     fn ai_request_preparation_runs_off_the_async_thread() {
         let caller = std::thread::current().id();
         let worker = tauri::async_runtime::block_on(run_blocking(|| {
