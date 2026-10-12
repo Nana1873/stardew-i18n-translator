@@ -560,6 +560,11 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
         ? PREVIEW_MODS_PATH
         : PREVIEW_GAME_PATH;
     case "load_settings":
+      // `?broken-settings` shows the startup error page for visual checks.
+      if (new URLSearchParams(window.location.search).has("broken-settings"))
+        return reject(
+          "Settings file C:\\Preview\\data\\settings.json is corrupted (expected value at line 1 column 1) and no usable backup exists (file not found). Your translations are stored separately and are not affected. Fix the file or restore a working copy, then retry.",
+        );
       return settings;
     case "save_settings":
       settings = args.settings as AppSettings;

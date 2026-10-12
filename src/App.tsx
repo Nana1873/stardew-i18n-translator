@@ -60,6 +60,7 @@ import {
   loadSettings,
   logFrontendError,
   openFolder,
+  openLogsDir,
   pickLlmBatchDestination,
   pickLlmBatchFile,
   preflightLlmBatchPath,
@@ -2235,18 +2236,30 @@ export function App() {
             role="alert"
           >
             <h2>Could not load settings</h2>
-            <p>{settingsLoadError}</p>
             <p>
-              Restore or repair the settings file, then retry. Your translation
-              work has not been reset.
+              The app's settings file is damaged. Your translations are stored
+              separately and are safe. Fix the file or put back a working copy,
+              then retry.
             </p>
-            <button
-              type="button"
-              className="translator-button"
-              onClick={() => setSettingsLoadAttempt((attempt) => attempt + 1)}
-            >
-              Retry loading settings
-            </button>
+            <pre className="translator-startup-error-detail">
+              {settingsLoadError}
+            </pre>
+            <div className="translator-startup-error-actions">
+              <button
+                type="button"
+                className="translator-button translator-button-primary"
+                onClick={() => setSettingsLoadAttempt((attempt) => attempt + 1)}
+              >
+                Retry loading settings
+              </button>
+              <button
+                type="button"
+                className="translator-button translator-button-quiet"
+                onClick={() => void openLogsDir()}
+              >
+                Open logs folder
+              </button>
+            </div>
           </section>
         ) : !loaded ? (
           <div className="panel__empty" role="status">

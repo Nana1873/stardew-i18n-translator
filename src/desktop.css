@@ -1808,3 +1808,36 @@
   color: var(--translator-muted);
   font-style: italic;
 }
+
+/* Startup error: one calm card instead of loose text across the window. */
+#stardew-i18n-translator
+  .translator-view-panel.is-active.translator-startup-error {
+  align-self: start;
+  justify-self: center;
+  width: min(640px, calc(100% - 32px));
+  height: auto;
+  min-height: 0;
+  margin-top: 48px;
+  padding: 20px 22px;
+  background: var(--translator-surface);
+  border: 1px solid var(--translator-border);
+  border-left: 3px solid var(--translator-red);
+  border-radius: 8px;
+}
+#stardew-i18n-translator .translator-startup-error h2 {
+  margin: 0 0 8px;
+}
+#stardew-i18n-translator .translator-startup-error-detail {
+  margin: 12px 0;
+  padding: 8px 10px;
+  color: var(--translator-muted);
+  background: var(--translator-canvas);
+  border-radius: 5px;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+#stardew-i18n-translator .translator-startup-error-actions {
+  display: flex;
+  gap: 8px;
+}
