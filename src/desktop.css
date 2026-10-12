@@ -1720,6 +1720,11 @@
 #stardew-i18n-translator .editor__status.translator-state::before {
   content: none;
 }
+#stardew-i18n-translator .translator-editor-blank-hint {
+  margin: 4px 0 0;
+  color: var(--translator-muted);
+  font-size: 12px;
+}
 /* Same status hues as the table and filters, drawn from the state class. */
 #stardew-i18n-translator .editor__status.translator-state {
   border-color: color-mix(in srgb, currentColor 50%, transparent);

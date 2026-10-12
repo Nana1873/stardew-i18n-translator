@@ -1216,7 +1216,21 @@ export function StringEditor({
                 value={value}
                 onChange={(event) => editValue(event.target.value)}
                 readOnly={saving || translating}
+                aria-describedby={
+                  isIntentionalBlankTarget(row.source, value)
+                    ? "translator-editor-blank-hint"
+                    : undefined
+                }
               />
+              {/* A single space is invisible in the field; say what it means. */}
+              {isIntentionalBlankTarget(row.source, value) && (
+                <p
+                  className="translator-editor-blank-hint"
+                  id="translator-editor-blank-hint"
+                >
+                  Left blank on purpose: the game shows nothing here.
+                </p>
+              )}
             </div>
           </div>
 

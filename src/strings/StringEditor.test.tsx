@@ -872,6 +872,18 @@ describe("StringEditor", () => {
     expect(screen.queryByText("Done")).not.toBeInTheDocument();
   });
 
+  it("explains an intentional single-space translation under the field", () => {
+    renderEditor({ source: "Hello", target: " ", status: "translated" });
+    const field = screen.getByRole("textbox", { name: "Translation" });
+    expect(field).toHaveAccessibleDescription(
+      "Left blank on purpose: the game shows nothing here.",
+    );
+    fireEvent.change(field, { target: { value: "Hallo" } });
+    expect(
+      screen.queryByText("Left blank on purpose: the game shows nothing here."),
+    ).toBeNull();
+  });
+
   it("colors the status badge with the shared status classes, not inline styles", () => {
     renderEditor({ status: "review-needed" });
     const badge = screen.getByText("Review").closest(".editor__status");
