@@ -1035,9 +1035,10 @@ pub(crate) fn parse_flat_object(
     Ok(object.clone())
 }
 
-/// Read the canonical target file, with SMAPI's Portuguese filename as an
-/// import-only fallback. The scanned path remains `pt.json`, so exports always
-/// use the app's canonical filename and never overwrite `pt-BR.json`.
+/// Read the canonical target file, with SMAPI's regional filename
+/// (`pt-BR.json`, `zh-CN.json`) as an import-only fallback. The scanned path
+/// remains `pt.json`/`zh.json`, so exports always use the app's canonical
+/// filename and never overwrite the regional file.
 pub(crate) fn read_target_object_checked(
     target_path: &Path,
 ) -> Result<serde_json::Map<String, Value>, String> {
@@ -1049,8 +1050,7 @@ pub(crate) fn read_target_object_checked(
 }
 
 pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
-    if is_flat_portuguese_target(target_path) {
-        let fallback = target_path.with_file_name("pt-BR.json");
+    if let Some(fallback) = regional_target_variant(target_path) {
         if fallback.is_file() {
             return fallback;
         }
@@ -1058,17 +1058,28 @@ pub(crate) fn target_read_path(target_path: &Path) -> PathBuf {
     target_path.to_path_buf()
 }
 
-/// Locale aliases apply to top-level locale files, never to the arbitrary
-/// document names inside a split locale folder.
-pub(crate) fn is_flat_portuguese_target(path: &Path) -> bool {
-    path.file_name()
+/// SMAPI looks up the game's regional locale file before the language file
+/// (`pt-BR.json` before `pt.json`, `zh-CN.json` before `zh.json`). Aliases apply
+/// to top-level locale files, never to the arbitrary document names inside a
+/// split locale folder.
+pub(crate) fn regional_target_variant(path: &Path) -> Option<PathBuf> {
+    let in_i18n = path
+        .parent()
+        .and_then(Path::file_name)
         .and_then(|name| name.to_str())
-        .is_some_and(|name| name.eq_ignore_ascii_case("pt.json"))
-        && path
-            .parent()
-            .and_then(Path::file_name)
-            .and_then(|name| name.to_str())
-            .is_some_and(|name| name.eq_ignore_ascii_case("i18n"))
+        .is_some_and(|name| name.eq_ignore_ascii_case("i18n"));
+    if !in_i18n {
+        return None;
+    }
+    let name = path.file_name()?.to_str()?;
+    let regional = if name.eq_ignore_ascii_case("pt.json") {
+        "pt-BR.json"
+    } else if name.eq_ignore_ascii_case("zh.json") {
+        "zh-CN.json"
+    } else {
+        return None;
+    };
+    Some(path.with_file_name(regional))
 }
 
 /// (total source keys, source keys with a non-empty **working** target — saved
@@ -1244,6 +1255,29 @@ fn is_content_patcher_assets_i18n(mod_dir: &Path, i18n_dir: &Path) -> bool {
         })
 }
 
+/// Folded keys of every source document beside `source` (all split segments).
+fn split_source_keys(source: &Path, root: &Path) -> Result<HashSet<String>, String> {
+    let mut known = HashSet::new();
+    for entry in std::fs::read_dir(source.parent().ok_or("Invalid split source")?)
+        .map_err(|e| e.to_string())?
+    {
+        let path = entry.map_err(|e| e.to_string())?.path();
+        if !path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("json"))
+        {
+            continue;
+        }
+        known.extend(
+            read_object_within_root(&path, root, "source")?
+                .keys()
+                .filter(|key| !is_ignored_i18n_key(key))
+                .map(|key| folded_key(key)),
+        );
+    }
+    Ok(known)
+}
+
 pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf, String> {
     let root = source
         .parent()
@@ -1277,29 +1311,9 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                     // Removed keys have no current source owner and remain
                     // informational orphans. Only keys owned by another source
                     // document make this target ambiguous.
-                    let known_keys = if let Some(ref known) = all_source_keys {
-                        known
-                    } else {
-                        let mut known = HashSet::new();
-                        for entry in
-                            std::fs::read_dir(source.parent().ok_or("Invalid split source")?)
-                                .map_err(|e| e.to_string())?
-                        {
-                            let path = entry.map_err(|e| e.to_string())?.path();
-                            if !path
-                                .extension()
-                                .is_some_and(|e| e.eq_ignore_ascii_case("json"))
-                            {
-                                continue;
-                            }
-                            known.extend(
-                                read_object_within_root(&path, root, "source")?
-                                    .keys()
-                                    .filter(|key| !is_ignored_i18n_key(key))
-                                    .map(|key| folded_key(key)),
-                            );
-                        }
-                        all_source_keys.insert(known)
+                    let known_keys = match all_source_keys {
+                        Some(ref known) => known,
+                        None => all_source_keys.insert(split_source_keys(source, root)?),
                     };
                     if existing
                         .iter()
@@ -1314,10 +1328,23 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
     }
     match matches.len() {
         0 => {
-            let path=target.join(source.file_name().ok_or("Invalid split source")?);
-            if path.exists() { return Err("Target filename is occupied by a different source segment.".into()); }
+            let path = target.join(source.file_name().ok_or("Invalid split source")?);
+            if path.exists() {
+                // A same-named document without shared keys is a stub (`{}`) or
+                // holds only keys the source no longer has. It belongs to this
+                // segment unless it carries keys another source document owns.
+                let other_source_keys = split_source_keys(source, root)?;
+                let owned_elsewhere = read_object_within_root(&path, root, "target")?
+                    .keys()
+                    .filter(|key| !is_ignored_i18n_key(key))
+                    .map(|key| folded_key(key))
+                    .any(|key| !keys.contains(&key) && other_source_keys.contains(&key));
+                if owned_elsewhere {
+                    return Err("Target filename is occupied by a different source segment.".into());
+                }
+            }
             Ok(path)
-        },
+        }
         1 => Ok(matches.remove(0)),
         _ => Err("Existing locale keys are spread across multiple documents; automatic export is ambiguous.".into()),
     }
@@ -3493,9 +3520,20 @@ mod split_locale_tests {
             })
             .collect();
         crate::export::validate_paths(&root.join("Mods"), "de", &inputs).unwrap();
+        // A same-named stub or a document holding only removed keys belongs
+        // to this segment; only keys owned by another source segment block it.
+        for stub in [r#"{}"#, r#"{"unrelated.key":"Elsewhere"}"#] {
+            std::fs::write(moddir.join("i18n/de/Events.json"), stub).unwrap();
+            assert!(
+                split_target_path(&moddir.join("i18n/default/Events.json"), "de")
+                    .unwrap()
+                    .ends_with("Events.json"),
+                "{stub}"
+            );
+        }
         std::fs::write(
             moddir.join("i18n/de/Events.json"),
-            r#"{"unrelated.key":"Elsewhere"}"#,
+            r#"{"dialogue.hello":"Elsewhere"}"#,
         )
         .unwrap();
         assert!(

@@ -139,8 +139,9 @@ Export is explicit and applies to the current mod or all scanned mods:
   visible `.json.bak` backups and atomic replacement. If a later write fails,
   restore earlier targets to their pre-export state.
 
-Flat Portuguese imports prefer `i18n/pt-BR.json`; successful exports canonicalize to
-`i18n/pt.json`, backing up and removing the fallback. Split document names are
+Flat imports prefer SMAPI's regional filename where the game uses one
+(`i18n/pt-BR.json`, `i18n/zh-CN.json`); successful exports canonicalize to
+`i18n/pt.json` or `i18n/zh.json`, backing up and removing the regional file. Split document names are
 literal and do not trigger this language-filename migration. Existing targets, including
 omitted orphan keys, remain recoverable from their export backup.
 
