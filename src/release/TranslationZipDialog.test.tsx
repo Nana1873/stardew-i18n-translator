@@ -32,6 +32,30 @@ const PREVIEW: ZipPreview = {
 };
 
 describe("TranslationZipDialog", () => {
+  it("keeps ZIP settings open while a folder is typed", () => {
+    render(
+      <TranslationZipDialog
+        preview={{ ...PREVIEW, versionConflicts: [] }}
+        componentCount={1}
+        error={null}
+        building={false}
+        onInspect={vi.fn()}
+        onBuild={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    const settings = screen
+      .getByText("ZIP settings")
+      .closest("details") as HTMLDetailsElement;
+    expect(settings.open).toBe(false);
+    // An empty folder needs attention and opens the settings; a valid one
+    // must not close them again under the user's cursor.
+    const folder = screen.getAllByRole("textbox").at(-1)!;
+    fireEvent.change(folder, { target: { value: "" } });
+    expect(settings.open).toBe(true);
+    fireEvent.change(folder, { target: { value: "Fixed" } });
+    expect(settings.open).toBe(true);
+  });
   it("previews included paths, omissions and version conflicts", () => {
     render(
       <TranslationZipDialog

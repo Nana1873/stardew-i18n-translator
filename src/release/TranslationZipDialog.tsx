@@ -227,7 +227,7 @@ export function TranslationZipDialog({
                 <ExportSection
                   title="ZIP settings"
                   summary={fileName}
-                  defaultOpen={settingsNeedAttention}
+                  openWhen={settingsNeedAttention}
                 >
                   <div className="desktop-xd-rows">
                     {!combined && (

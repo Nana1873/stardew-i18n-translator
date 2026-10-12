@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { CircleAlert, X } from "lucide-react";
 import "./exportDialog.css";
 
@@ -215,17 +215,27 @@ export function ExportSection({
   title,
   summary,
   summaryId,
-  defaultOpen = false,
+  openWhen = false,
   children,
 }: {
   title: string;
   summary?: ReactNode;
   summaryId?: string;
-  defaultOpen?: boolean;
+  /** Opens the section while true (something inside needs attention). It
+   * never closes it again: the user may be typing in it. */
+  openWhen?: boolean;
   children: ReactNode;
 }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null);
+  useLayoutEffect(() => {
+    if (openWhen && detailsRef.current) detailsRef.current.open = true;
+  }, [openWhen]);
   return (
-    <details className="desktop-xd-section" open={defaultOpen || undefined}>
+    <details
+      ref={detailsRef}
+      className="desktop-xd-section"
+      data-section={title}
+    >
       <summary>
         <span className="desktop-xd-section-title">{title}</span>
         {summary != null && (
