@@ -245,6 +245,12 @@ pub fn build(config_dir: &Path, request: &ZipBuildRequest) -> Result<ZipBuildOut
     if destination.exists() && !request.overwrite {
         return Err("OVERWRITE_REQUIRED".to_string());
     }
+    let settings = crate::settings::load_checked(config_dir)?;
+    check_destination(
+        destination,
+        Path::new(&request.mods_path),
+        settings.stardew_path.as_deref(),
+    )?;
 
     let mut prepared = prepare(
         config_dir,
@@ -399,6 +405,8 @@ fn prepare(
     let mut problems = Vec::new();
     let mut total_strings = 0;
     let mut total_source_strings = 0;
+    // English sources read for this package, checked again before writing.
+    let mut source_checks = Vec::new();
 
     for component in components {
         let component_root = Path::new(&component.folder_path);
@@ -428,8 +436,14 @@ fn prepare(
             };
             let relative_i18n = Path::new(&output_unit);
             validate_relative_path(relative_i18n)?;
+            let source_path = Path::new(&file.default_path);
+            let source_text = crate::input_limits::read_json_text(source_path)?;
+            source_checks.push((
+                source_path.to_path_buf(),
+                translations::source_hash(&source_text),
+            ));
             let rows = scanner::load_strings_checked(
-                Path::new(&file.default_path),
+                source_path,
                 Path::new(&file.target_path),
                 &state,
                 &file.relative_dir,
@@ -523,7 +537,7 @@ fn prepare(
     Ok(PreparedPackage {
         preview,
         entries,
-        source_checks: Vec::new(),
+        source_checks,
         left_out: Vec::new(),
     })
 }
@@ -549,6 +563,19 @@ pub(crate) fn build_output_with_folders(
 ) -> Result<ZipBuildOutcome, String> {
     let settings = crate::settings::load_checked(config)?;
     let (mods, _) = output_context(&settings)?;
+    check_destination(destination, &mods, settings.stardew_path.as_deref())?;
+    let mut prepared = prepare_output(config)?;
+    apply_install_folders(&mut prepared, install_folders)?;
+    write_prepared(prepared, destination, overwrite)
+}
+
+/// A ZIP is never written into the game or Mods folder, nor through a link
+/// or onto something that is not a regular file. Used by both ZIP builds.
+fn check_destination(
+    destination: &Path,
+    mods: &Path,
+    stardew_path: Option<&str>,
+) -> Result<(), String> {
     let mut existing_parent = destination
         .parent()
         .ok_or("Choose an output destination folder.")?;
@@ -559,11 +586,13 @@ pub(crate) fn build_output_with_folders(
     }
     let parent = std::fs::canonicalize(existing_parent)
         .map_err(|e| format!("Could not inspect output folder: {e}"))?;
-    for protected in std::iter::once(mods).chain(settings.stardew_path.map(PathBuf::from)) {
-        let protected = std::fs::canonicalize(protected)
-            .map_err(|e| format!("Could not inspect game folder: {e}"))?;
+    for protected in std::iter::once(mods).chain(stardew_path.map(Path::new)) {
+        // A folder that does not exist cannot contain the destination.
+        let Ok(protected) = std::fs::canonicalize(protected) else {
+            continue;
+        };
         if parent.starts_with(protected) {
-            return Err("Save Stardew Translator Output outside the game and Mods folders.".into());
+            return Err("Save the ZIP outside the game and Mods folders.".into());
         }
     }
     if std::fs::symlink_metadata(destination)
@@ -571,9 +600,7 @@ pub(crate) fn build_output_with_folders(
     {
         return Err("The output destination must be a regular ZIP file.".into());
     }
-    let mut prepared = prepare_output(config)?;
-    apply_install_folders(&mut prepared, install_folders)?;
-    write_prepared(prepared, destination, overwrite)
+    Ok(())
 }
 
 fn output_context(settings: &crate::settings::AppSettings) -> Result<(PathBuf, String), String> {
@@ -1886,6 +1913,37 @@ mod tests {
             overwrite,
             install_folders: Vec::new(),
         }
+    }
+
+    #[test]
+    fn mod_zip_refuses_a_destination_inside_the_mods_folder() {
+        // The per-mod ZIP uses the same destination guard as the all-mods one.
+        let root = crate::test_support::temp_dir("release-zip-mods-destination");
+        let mods = root.join("Mods");
+        let package = mods.join("Sample Pack");
+        let config = root.join("data");
+        let components = vec![component(&package, "[CP] Sample", "sample.cp", "2.0")];
+        save_translation(&config, "sample.cp", "Hallo {{name}}");
+
+        let inside = package.join("translation.zip");
+        let error = build(
+            &config,
+            &request(&mods, "Sample Pack", components.clone(), &inside, false),
+        )
+        .unwrap_err();
+        assert!(
+            error.contains("outside the game and Mods folders"),
+            "{error}"
+        );
+        assert!(!inside.exists());
+
+        let outside = root.join("translation.zip");
+        build(
+            &config,
+            &request(&mods, "Sample Pack", components, &outside, false),
+        )
+        .unwrap();
+        assert!(outside.is_file());
     }
 
     #[test]
