@@ -829,7 +829,6 @@ export function StringEditor({
       isInsertableProtectedToken(token) &&
       (valueTokenCounts.get(token) ?? 0) < required,
   );
-  // The installed empty value only matters while the draft still is it.
   const issues = validate(row.source, value);
   // Severity per token, so each chip can say whether it blocks the export.
   // Mirrors validate(): an empty field has no token findings yet.
@@ -1413,7 +1412,6 @@ export function StringEditor({
                 <button
                   className="translator-button translator-button-primary"
                   type="button"
-                  autoFocus
                   onClick={() => {
                     setPendingSave(null);
                     setPendingMove(null);

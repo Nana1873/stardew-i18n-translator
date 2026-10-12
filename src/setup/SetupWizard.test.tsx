@@ -85,7 +85,7 @@ describe("SetupWizard", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Next" })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "Browse..." }));
+    fireEvent.click(screen.getByRole("button", { name: "Browse…" }));
     await screen.findByText("E:/OtherGame");
     expect(screen.getByRole("button", { name: "Next" })).toBeDisabled();
     await act(async () => finishValidation(false));
@@ -93,7 +93,7 @@ describe("SetupWizard", () => {
     expect(
       screen.getByText(/does not look like a Stardew Valley folder/),
     ).toBeVisible();
-    expect(screen.getByRole("button", { name: "Browse..." })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Browse…" })).toBeEnabled();
   });
   it("presents the four setup steps and updates visible progress", async () => {
     render(<SetupWizard initial={null} onComplete={() => {}} />);

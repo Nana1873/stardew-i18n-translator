@@ -118,7 +118,7 @@ export const FIXTURE_MODS: FixtureMod[] = [
         key: "longtext",
         section: "Greetings",
         source:
-          "This is a long paragraph used to test how the editor and table handle very long translations without truncation problems or overflow in the preview columns, including line wrapping behaviour, scrolling, and the token hint area below the text fields.",
+          "This is a long paragraph used to test how the editor and table handle very long translations without truncation problems or overflow in the preview columns, including line wrapping behavior, scrolling, and the token hint area below the text fields.",
         target:
           "Dies ist ein sehr langer Absatz, der testet, wie der Editor und die Tabelle mit sehr langen Übersetzungen umgehen, ohne dass Texte abgeschnitten werden oder in den Vorschauspalten überlaufen, einschließlich Zeilenumbruch, Scrollen und dem Bereich für Token-Hinweise unter den Textfeldern. Außerdem enthält er Umlaute wie Ä, Ö, Ü und ß sowie typografische Anführungszeichen „so“ und ‚so‘ und einen Gedankenstrich – hier – zur Prüfung der Darstellung.",
         status: "translated",

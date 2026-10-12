@@ -349,7 +349,7 @@ fn token_consequence(difference: &TokenDifference) -> &'static str {
         return if missing {
             "The event choice or gift-taste reveal would not happen."
         } else {
-            "It adds event behaviour the English text does not have."
+            "It adds event behavior the English text does not have."
         };
     }
     if token.starts_with("{{") || match_positional(&chars, 0) == Some(chars.len()) {

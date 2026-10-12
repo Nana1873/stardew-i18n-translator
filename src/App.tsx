@@ -1225,8 +1225,11 @@ export function App() {
 
   /** Files menu: an LLM batch with every Open or Changed string of the
    * selected mod, without selecting rows first. */
+  // A double click must not load every file twice.
+  const llmBatchLoading = useRef(false);
   async function exportLlmBatchForSelectedMod() {
-    if (!selectedMod || !llmBatchExport) return;
+    if (!selectedMod || !llmBatchExport || llmBatchLoading.current) return;
+    llmBatchLoading.current = true;
     try {
       const items: LlmBatchItem[] = [];
       for (const file of selectedMod.i18nFiles) {
@@ -1260,6 +1263,8 @@ export function App() {
       await llmBatchExport(selectedMod, items);
     } catch (cause) {
       notify(`Could not prepare the LLM batch: ${String(cause)}`, "error");
+    } finally {
+      llmBatchLoading.current = false;
     }
   }
 

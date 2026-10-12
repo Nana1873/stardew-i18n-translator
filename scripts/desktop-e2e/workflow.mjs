@@ -252,7 +252,7 @@ const button = (name) => {
 };
 const browseFolder = (label) =>
   By.xpath(
-    `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse..."]`,
+    `//section[@aria-label=${JSON.stringify(label)}]//button[normalize-space(.)="Browse…"]`,
   );
 async function element(locator) {
   return driver.wait(

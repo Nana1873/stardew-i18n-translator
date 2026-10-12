@@ -63,11 +63,11 @@ export function reportActivity(event: ActivityEvent) {
   );
 }
 
-/** Keep a bounded session log, protecting the latest 100 warnings/errors
- * from being displaced by routine batch progress. Preserve chronological order. */
 /** The line shown while a scan runs. */
 export const SCANNING_MESSAGE = "Scanning mods…";
 
+/** Keep a bounded session log, protecting the latest 100 warnings/errors
+ * from being displaced by routine batch progress. Preserve chronological order. */
 export function appendActivity(
   buffer: ActivityBuffer,
   event: ActivityEvent,

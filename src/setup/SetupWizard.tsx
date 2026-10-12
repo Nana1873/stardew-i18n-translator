@@ -314,10 +314,10 @@ export function SetupWizard({
                     onClick={autoDetect}
                     disabled={busy}
                   >
-                    {busy ? "Detecting..." : "Auto-detect"}
+                    {busy ? "Detecting…" : "Auto-detect"}
                   </button>
                   <button type="button" onClick={browseStardew} disabled={busy}>
-                    Browse...
+                    Browse…
                   </button>
                 </div>
                 <PathDisplay
@@ -342,7 +342,7 @@ export function SetupWizard({
                 </div>
                 <div className="wizard__row">
                   <button type="button" onClick={browseMods} disabled={busy}>
-                    Browse...
+                    Browse…
                   </button>
                 </div>
                 <PathDisplay
@@ -375,7 +375,7 @@ export function SetupWizard({
                       aria-label="Target language"
                     >
                       <option value="" disabled>
-                        Choose a language...
+                        Choose a language…
                       </option>
                       {TARGET_LANGUAGES.map((language) => (
                         <option key={language.code} value={language.code}>
@@ -426,7 +426,7 @@ export function SetupWizard({
                 </div>
 
                 {glossary === null ? (
-                  <StatusCard tone="neutral" title="Checking game content...">
+                  <StatusCard tone="neutral" title="Checking game content…">
                     Looking for the files needed to build your glossary.
                   </StatusCard>
                 ) : glossaryBuilt ? (
@@ -462,7 +462,7 @@ export function SetupWizard({
                           disabled={glossaryBuilding || !targetLang}
                         >
                           {glossaryBuilding
-                            ? "Building glossary..."
+                            ? "Building glossary…"
                             : glossary.cached
                               ? "Rebuild from community pack"
                               : "Build from community pack"}
@@ -519,7 +519,7 @@ export function SetupWizard({
                         disabled={glossaryBuilding || !targetLang}
                       >
                         {glossaryBuilding
-                          ? "Building glossary..."
+                          ? "Building glossary…"
                           : glossary.cached
                             ? "Rebuild glossary"
                             : "Build glossary"}
@@ -658,7 +658,7 @@ export function SetupWizard({
               onClick={() => void finish()}
               disabled={busy}
             >
-              {busy ? "Saving..." : "Finish"}
+              {busy ? "Saving…" : "Finish"}
             </button>
           )}
         </footer>

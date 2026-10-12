@@ -63,7 +63,7 @@ export function tokenConsequence(difference: TokenDifference): string {
   if (token === "%fork" || token.startsWith("%revealtaste"))
     return missing
       ? "The event choice or gift-taste reveal would not happen."
-      : "It adds event behaviour the English text does not have.";
+      : "It adds event behavior the English text does not have.";
   if (token.startsWith("{{") || /^\{\d+\}$/.test(token)) {
     if (missing)
       return "The game shows nothing in its place. Fine if intended.";

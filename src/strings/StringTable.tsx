@@ -3747,7 +3747,8 @@ function RowView({
           className="translator-cell-clip"
           title={targetOverflow.title}
         >
-          {isIntentionalBlankTarget(row.source, row.target) ? (
+          {isIntentionalBlankTarget(row.source, row.target) &&
+          row.status === "translated" ? (
             <span
               className="translator-blank-target"
               title="Left blank on purpose: the game shows nothing here."
