@@ -432,17 +432,6 @@ fn build_entries_from_json(
     )
 }
 
-fn build_entries_from_xnb(
-    english_dir: &Path,
-    target_dir: &Path,
-    target_file: &dyn Fn(&str) -> String,
-) -> Vec<GlossaryEntry> {
-    build_entries(
-        &|asset| xnb::read_string_dictionary(&english_dir.join(format!("{asset}.xnb"))).ok(),
-        &|asset| xnb::read_string_dictionary(&target_dir.join(target_file(asset))).ok(),
-    )
-}
-
 /// Build the official glossary for a game-supported `target_lang` from the
 /// unpacked content folder (English base + the inline `.<locale>.json` variant).
 pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, String> {
@@ -451,8 +440,11 @@ pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, Str
     let strings_dir = unpacked_content.join("Strings");
     if !strings_dir.is_dir() {
         return Err(format!(
-            "No unpacked Strings folder at {}. Run StardewXnbHack first.",
-            unpacked_content.display()
+            "No unpacked Strings folder in \"{}\". Run StardewXnbHack first.",
+            unpacked_content
+                .file_name()
+                .map(|name| name.to_string_lossy())
+                .unwrap_or_default()
         ));
     }
 
@@ -476,10 +468,39 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
     let suffix = game_locale_suffix(target_lang)
         .ok_or_else(|| format!("Unsupported target language: {target_lang}"))?;
     let strings_dir = default_game_strings_path(stardew_path);
+    // The first problem per asset, kept so a failed fallback can name the real
+    // cause instead of only asking for unpacked files.
+    let problems = std::cell::RefCell::new(Vec::<(String, String)>::new());
+    let note = |asset: &str, problem: String| {
+        let mut problems = problems.borrow_mut();
+        if !problems.iter().any(|(seen, _)| seen == asset) {
+            problems.push((asset.to_string(), problem));
+        }
+    };
     if strings_dir.is_dir() {
-        let entries = build_entries_from_xnb(&strings_dir, &strings_dir, &|asset| {
-            format!("{asset}.{suffix}.xnb")
-        });
+        let read = |asset: &str, file: String| {
+            let path = strings_dir.join(&file);
+            if !path.is_file() {
+                return None;
+            }
+            xnb::read_string_dictionary(&path)
+                .inspect_err(|error| note(asset, format!("{file}: {error}")))
+                .ok()
+        };
+        let entries = build_entries(
+            &|asset| {
+                let english = read(asset, format!("{asset}.xnb"));
+                let target = format!("{asset}.{suffix}.xnb");
+                if english.is_some() && !strings_dir.join(&target).is_file() {
+                    note(asset, format!("{target} is missing"));
+                }
+                english
+            },
+            &|asset| read(asset, format!("{asset}.{suffix}.xnb")),
+        );
+        for (_, problem) in problems.borrow().iter() {
+            log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {problem}");
+        }
         if !entries.is_empty() {
             return Ok(Glossary {
                 format: GLOSSARY_FORMAT,
@@ -492,7 +513,21 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
             });
         }
     }
-    build(&default_unpacked_path(stardew_path), target_lang)
+    let problems = problems.into_inner();
+    build(&default_unpacked_path(stardew_path), target_lang).map_err(|error| {
+        let Some((_, first)) = problems.first() else {
+            return error;
+        };
+        let more = match problems.len() - 1 {
+            0 => String::new(),
+            1 => " One more file has a problem too.".to_string(),
+            n => format!(" {n} more files have problems too."),
+        };
+        format!(
+            "The game's text files could not be read (Content/Strings/{}).{more} There are no unpacked files to use instead. Verify the game files in Steam or GOG, or unpack them with StardewXnbHack, then build the glossary again.",
+            first.trim_end_matches('.')
+        )
+    })
 }
 
 /// Build a glossary for a game-unsupported `target_lang` from an installed
@@ -1116,6 +1151,45 @@ mod tests {
         let root = crate::test_support::temp_dir("glossary-missing");
         let err = build(&root.join("Content (unpacked)"), "de").unwrap_err();
         assert!(err.contains("StardewXnbHack"));
+    }
+
+    #[test]
+    fn build_from_game_names_the_xnb_problem_when_no_unpacked_files_exist() {
+        let root = crate::test_support::temp_dir("glossary-game-xnb-broken");
+        let strings = root.join("Content").join("Strings");
+        let mut lz4 = test_xnb_dictionary(&[("24", "Parsnip")]);
+        lz4[5] |= 0x40;
+        write_bytes(&strings.join("Objects.xnb"), &lz4);
+        write_bytes(
+            &strings.join("Objects.de-DE.xnb"),
+            &test_xnb_dictionary(&[("24", "Pastinake")]),
+        );
+
+        let error = build_from_game(&root, "de").unwrap_err();
+        assert_eq!(
+            error,
+            "The game's text files could not be read (Content/Strings/Objects.xnb: LZ4-compressed XNB files are not supported). There are no unpacked files to use instead. Verify the game files in Steam or GOG, or unpack them with StardewXnbHack, then build the glossary again."
+        );
+
+        // A missing translated file is named too, together with the count of
+        // further problems (one per asset).
+        write_bytes(
+            &strings.join("Objects.xnb"),
+            &test_xnb_dictionary(&[("24", "Parsnip")]),
+        );
+        std::fs::remove_file(strings.join("Objects.de-DE.xnb")).unwrap();
+        write_bytes(&strings.join("BigCraftables.xnb"), b"broken XNB");
+        write_bytes(&strings.join("BigCraftables.de-DE.xnb"), b"broken XNB");
+        let error = build_from_game(&root, "de").unwrap_err();
+        assert!(
+            error.starts_with(
+                "The game's text files could not be read (Content/Strings/Objects.de-DE.xnb is missing). One more file has a problem too. There are no unpacked files"
+            ),
+            "{error}"
+        );
+        assert!(!error.contains(&root.display().to_string()), "{error}");
+
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
