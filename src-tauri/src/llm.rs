@@ -226,11 +226,19 @@ struct ChatRequest {
     stop: Option<Vec<String>>,
 }
 
+/// The highest output-token budget for one Local AI translation. Sources up to
+/// about 4,000 characters get the full 2x budget; a longer translation that
+/// needs more stops with a clear "stopped before finishing" error.
+const MAX_OUTPUT_TOKENS: u32 = 8192;
+
 /// A bounded output-token budget for translating `source`. Generous (≈2× the
 /// source character count, so well above a real translation's need) but capped,
-/// so a runaway model is stopped quickly instead of hanging.
+/// so a runaway model is stopped instead of hanging.
 fn output_token_budget(source: &str) -> u32 {
-    ((source.chars().count() as u32).saturating_mul(2)).clamp(64, 1024)
+    u32::try_from(source.chars().count())
+        .unwrap_or(u32::MAX)
+        .saturating_mul(2)
+        .clamp(64, MAX_OUTPUT_TOKENS)
 }
 
 /// Stop sequences for translating `source`. A source with no newline must
@@ -1166,9 +1174,17 @@ mod tests {
         assert_eq!(output_token_budget("UI Info Suite Options"), 64);
         // Long source → scales, but stays capped.
         let long = "x".repeat(5000);
-        assert_eq!(output_token_budget(&long), 1024);
+        assert_eq!(output_token_budget(&long), MAX_OUTPUT_TOKENS);
         // Mid-length source → ~2× the character count.
         assert_eq!(output_token_budget(&"y".repeat(100)), 200);
+    }
+
+    #[test]
+    fn long_sources_get_a_budget_that_fits_their_translation() {
+        // A 3,000-character paragraph used to be cut off at 1,024 tokens.
+        assert_eq!(output_token_budget(&"word ".repeat(600)), 6000);
+        // The largest accepted source (64 KiB) still gets a bounded budget.
+        assert_eq!(output_token_budget(&"z".repeat(64 * 1024)), 8192);
     }
 
     #[test]
