@@ -10,6 +10,12 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- Glossaries are built only from the game's own `Content/Strings` files; the
+  app no longer reads a `Content (unpacked)` folder or points to
+  StardewXnbHack. Community language packs take their English names from the
+  same game files. When a game file is missing or cannot be read, the message
+  names that file and says this language may not be available in this game
+  version.
 - The automatic scan at start no longer opens the scan report when it only
   skips a component; the header's "Needs attention" button shows it. Repeated
   scans without changes share one Activity log line.

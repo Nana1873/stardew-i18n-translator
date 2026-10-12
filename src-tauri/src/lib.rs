@@ -1371,7 +1371,7 @@ fn build_glossary(
 ) -> Result<glossary::GlossaryInfo, String> {
     let target_lang = language::normalize_target_code(&target_lang)?;
     let config = config_dir(&app)?;
-    let unpacked = glossary::default_unpacked_path(Path::new(&stardew_path));
+    let game_strings = glossary::default_game_strings_path(Path::new(&stardew_path));
     // A game-supported language builds from official content; a game-unsupported
     // one (e.g. Thai) builds from an installed community language pack.
     let built = if glossary::game_locale_suffix(&target_lang).is_some() {
@@ -1380,7 +1380,7 @@ fn build_glossary(
         let mods = mods_dir(&config, &stardew_path);
         match lang_pack::detect_language_pack(&mods, &target_lang).pack {
             Some(pack) => glossary::build_from_pack(
-                &unpacked,
+                &game_strings,
                 &pack.root,
                 &pack.strings_dir,
                 pack.format,
@@ -1429,7 +1429,6 @@ fn glossary_status(
     // from official content) — so the Mods folder is only scanned when relevant.
     let stardew = Path::new(&stardew_path);
     let game_xnb_present = glossary::game_xnb_present(stardew);
-    let unpacked_present = glossary::unpacked_present(stardew);
     let detected =
         if !target_lang.is_empty() && glossary::game_locale_suffix(&target_lang).is_none() {
             lang_pack::detect_language_pack(&mods_dir(&config, &stardew_path), &target_lang).pack
@@ -1441,7 +1440,6 @@ fn glossary_status(
         .is_some_and(|pack| pack.format == glossary::StringAssetFormat::Xnb);
     Ok(glossary::GlossaryStatus {
         game_xnb_present,
-        unpacked_present,
         source_available: glossary::source_available(stardew),
         cached,
         outdated_cache,

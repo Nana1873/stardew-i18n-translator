@@ -905,7 +905,6 @@ async function handle(cmd: string, args: Args): Promise<unknown> {
     case "glossary_status": {
       const status: GlossaryStatus = {
         gameXnbPresent: false,
-        unpackedPresent: false,
         sourceAvailable: false,
         cached: {
           targetLang: targetLang(),

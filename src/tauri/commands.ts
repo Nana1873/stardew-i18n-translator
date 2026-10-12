@@ -710,8 +710,6 @@ export interface GlossaryInfo {
 export interface GlossaryStatus {
   /** Direct game Content/Strings/*.xnb assets are available. */
   gameXnbPresent: boolean;
-  /** StardewXnbHack-compatible Content (unpacked)/Strings JSON is available. */
-  unpackedPresent: boolean;
   /** Any local game string source is available for glossary extraction. */
   sourceAvailable: boolean;
   cached: GlossaryInfo | null;

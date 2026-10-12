@@ -3,8 +3,8 @@
 //! A Stardew "language pack" is a Content Patcher content pack that registers an
 //! additional in-game language (`Data/AdditionalLanguages` → `LanguageCode`) and
 //! ships translated `Strings/*` for it. For a game-unsupported target language we
-//! can build a typed glossary from such a pack (English base from unpacked
-//! content + the pack's translated `Strings`). This module only *locates* a
+//! can build a typed glossary from such a pack (English base from the game's
+//! `Content/Strings` XNB files + the pack's translated `Strings`). This module only *locates* a
 //! usable pack; [`crate::glossary::build_from_pack`] does the extraction.
 //!
 //! Read-only and narrowly bounded: a pack's
@@ -707,9 +707,9 @@ mod tests {
             detection.warnings.len()
         );
 
-        let unpacked = crate::glossary::default_unpacked_path(stardew);
+        let game_strings = crate::glossary::default_game_strings_path(stardew);
         match crate::glossary::build_from_pack(
-            &unpacked,
+            &game_strings,
             &pack.root,
             &pack.strings_dir,
             pack.format,

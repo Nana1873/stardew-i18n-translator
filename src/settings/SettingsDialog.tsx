@@ -360,7 +360,6 @@ export function SettingsDialog({
     if (!stardewPath) {
       setGlossary({
         gameXnbPresent: false,
-        unpackedPresent: false,
         sourceAvailable: false,
         cached: null,
         outdatedCache: false,
@@ -379,7 +378,6 @@ export function SettingsDialog({
           active &&
           setGlossary({
             gameXnbPresent: false,
-            unpackedPresent: false,
             sourceAvailable: false,
             cached: null,
             outdatedCache: false,
@@ -406,7 +404,6 @@ export function SettingsDialog({
       if (context !== glossaryContextRef.current) return;
       setGlossary((previous) => ({
         gameXnbPresent: previous?.gameXnbPresent ?? false,
-        unpackedPresent: previous?.unpackedPresent ?? false,
         sourceAvailable: previous?.sourceAvailable ?? true,
         cached: info,
         outdatedCache: false,
@@ -1558,18 +1555,10 @@ function GlossarySettings({
                 <span>
                   A community language pack was detected
                   {glossary.packName ? " (" + glossary.packName + ")" : ""}, but
-                  the app could not read a local English Strings source.
+                  the game’s Content/Strings files with the English names were
+                  not found. Check the Stardew Valley folder above.
                 </span>
               </span>
-              <button
-                className="translator-button translator-button-quiet"
-                type="button"
-                onClick={() =>
-                  void openUrl("https://github.com/Pathoschild/StardewXnbHack")
-                }
-              >
-                Get StardewXnbHack ↗
-              </button>
             </div>
           )}
 
@@ -1592,21 +1581,10 @@ function GlossarySettings({
               <strong>Notice</strong>
               <span>
                 {cached && !glossary.outdatedCache
-                  ? "Cached terms remain available. Rebuilding needs a local source."
-                  : "Game Strings could not be read. StardewXnbHack can supply unpacked sources."}
+                  ? "Cached terms remain available. Rebuilding needs the game’s Content/Strings files."
+                  : "The game’s Content/Strings files were not found. Check the Stardew Valley folder above."}
               </span>
             </span>
-            {(supported || glossary.packAvailable) && (
-              <button
-                className="translator-button translator-button-quiet"
-                type="button"
-                onClick={() =>
-                  void openUrl("https://github.com/Pathoschild/StardewXnbHack")
-                }
-              >
-                Get StardewXnbHack ↗
-              </button>
-            )}
           </div>
         )}
 

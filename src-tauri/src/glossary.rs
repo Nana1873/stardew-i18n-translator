@@ -13,10 +13,10 @@
 //! assets, each restricted to the keys that hold display names and screened by a
 //! strict term-like quality gate.
 //!
-//! Data sources are deliberately narrow and read-only. Installed game XNB
-//! string dictionaries are decoded directly when available; a StardewXnbHack
-//! `Content (unpacked)/Strings/*.json` tree remains the compatibility fallback.
-//! Community language packs may supply the corresponding target dictionaries.
+//! Data sources are deliberately narrow and read-only. The installed game's
+//! `Content/Strings/*.xnb` string dictionaries are decoded directly; no
+//! unpacking tool is needed. Community language packs may supply the
+//! corresponding target dictionaries (as XNB or JSON).
 //! English and target values are paired by key before the quality gate runs.
 
 use std::collections::{HashMap, HashSet};
@@ -46,9 +46,8 @@ pub enum TermKind {
     Season,
 }
 
-/// Where a glossary's term pairs came from. `Official` uses installed game
-/// strings (direct XNB or the unpacked JSON fallback) for a game-supported
-/// language. `CommunityPack` pairs the English game base with an installed
+/// Where a glossary's term pairs came from. `Official` uses the installed
+/// game's XNB strings for a game-supported language. `CommunityPack` pairs the English game base with an installed
 /// custom-language pack's `Strings/*`. Defaults to `Official` so caches written
 /// before this field round-trip unchanged.
 #[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -59,9 +58,8 @@ pub enum GlossarySource {
     CommunityPack,
 }
 
-/// Storage format for a folder of Stardew `Strings` assets usable by the
-/// glossary. JSON is the unpacked/StardewXnbHack layout; XNB is direct
-/// `Dictionary<string,string>` content.
+/// Storage format of a community language pack's `Strings` assets. JSON is
+/// a plain key/value file; XNB is direct `Dictionary<string,string>` content.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum StringAssetFormat {
     Json,
@@ -289,10 +287,8 @@ impl GlossaryInfo {
 pub struct GlossaryStatus {
     /// Whether the installed game exposes direct `Content/Strings/*.xnb` assets.
     pub game_xnb_present: bool,
-    /// Whether a StardewXnbHack-unpacked `Strings/` folder is present.
-    pub unpacked_present: bool,
-    /// Whether at least one local game string source is available for glossary
-    /// extraction (direct XNB first, unpacked JSON as compatibility fallback).
+    /// Whether the game's string source for glossary extraction is available
+    /// (currently the same as `game_xnb_present`).
     pub source_available: bool,
     /// The currently cached glossary, if a valid typed one exists.
     pub cached: Option<GlossaryInfo>,
@@ -328,11 +324,6 @@ pub fn game_locale_suffix(smapi_lang: &str) -> Option<&'static str> {
     })
 }
 
-/// The conventional unpacked-content folder next to the game install.
-pub fn default_unpacked_path(stardew_path: &Path) -> PathBuf {
-    stardew_path.join("Content (unpacked)")
-}
-
 /// The installed game's direct `Content/Strings` folder.
 pub fn default_game_strings_path(stardew_path: &Path) -> PathBuf {
     stardew_path.join("Content").join("Strings")
@@ -347,14 +338,9 @@ pub fn game_xnb_present(stardew_path: &Path) -> bool {
             .any(|spec| strings_dir.join(format!("{}.xnb", spec.asset)).is_file())
 }
 
-/// Whether an unpacked `Strings/` folder is present (i.e. StardewXnbHack ran).
-pub fn unpacked_present(stardew_path: &Path) -> bool {
-    default_unpacked_path(stardew_path).join("Strings").is_dir()
-}
-
-/// Whether any local game glossary source is available.
+/// Whether the local game glossary source is available.
 pub fn source_available(stardew_path: &Path) -> bool {
-    game_xnb_present(stardew_path) || unpacked_present(stardew_path)
+    game_xnb_present(stardew_path)
 }
 
 /// The content `Strings/*` asset base-names the typed glossary extracts from
@@ -364,12 +350,11 @@ pub fn typed_asset_names() -> Vec<&'static str> {
     TYPED_ASSETS.iter().map(|spec| spec.asset).collect()
 }
 
-/// Extract typed entries by pairing an English `Strings/` dir with a target
-/// `Strings/` dir. `target_file` names the target file for an asset, which is the
-/// only thing that differs between the two sources: official content stores the
-/// locale inline (`Objects.de-DE.json`), while a community pack uses plain,
-/// English-identical filenames (`Objects.json`). Both English bases are
-/// `<asset>.json`. The first typed asset to define a name wins (priority order).
+/// Extract typed entries by pairing the English dictionary of each typed asset
+/// with its target dictionary. Official content stores the locale inline
+/// (`Objects.de-DE.xnb`), while a community pack uses its own file names
+/// (`Objects.json`, `Objects_th.xnb`). The first typed asset to define a name
+/// wins (priority order).
 fn build_entries(
     english_map: &dyn Fn(&str) -> Option<HashMap<String, String>>,
     target_map: &dyn Fn(&str) -> Option<HashMap<String, String>>,
@@ -422,60 +407,19 @@ fn build_entries(
     entries
 }
 
-fn build_entries_from_json(
-    english_dir: &Path,
-    target_dir: &Path,
-    target_file: &dyn Fn(&str) -> String,
-    target_lang: &str,
-) -> Vec<GlossaryEntry> {
-    build_entries(
-        &|asset| read_string_map(&english_dir.join(format!("{asset}.json"))),
-        &|asset| read_string_map(&target_dir.join(target_file(asset))),
-        target_lang,
-    )
-}
+/// The game's `Content/Strings` folder is missing.
+const NO_GAME_STRINGS: &str = "The game's Content/Strings folder was not found. Check that the Stardew Valley folder in Settings is correct, then build the glossary again.";
 
-/// Build the official glossary for a game-supported `target_lang` from the
-/// unpacked content folder (English base + the inline `.<locale>.json` variant).
-pub fn build(unpacked_content: &Path, target_lang: &str) -> Result<Glossary, String> {
-    let suffix = game_locale_suffix(target_lang)
-        .ok_or_else(|| format!("Unsupported target language: {target_lang}"))?;
-    let strings_dir = unpacked_content.join("Strings");
-    if !strings_dir.is_dir() {
-        return Err(format!(
-            "No unpacked Strings folder in \"{}\". Run StardewXnbHack first.",
-            unpacked_content
-                .file_name()
-                .map(|name| name.to_string_lossy())
-                .unwrap_or_default()
-        ));
-    }
-
-    let entries = build_entries_from_json(
-        &strings_dir,
-        &strings_dir,
-        &|asset| format!("{asset}.{suffix}.json"),
-        target_lang,
-    );
-    Ok(Glossary {
-        format: GLOSSARY_FORMAT,
-        source_lang: "default".to_string(),
-        target_lang: target_lang.to_string(),
-        term_count: entries.len(),
-        source: GlossarySource::Official,
-        pack_name: None,
-        entries,
-    })
-}
-
-/// Build the official glossary from the installed game. Direct XNB dictionaries
-/// are preferred; the unpacked JSON layout remains a compatibility fallback.
+/// Build the official glossary from the installed game's `Content/Strings`
+/// XNB dictionaries (English base + the inline `.<locale>.xnb` variant).
 pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossary, String> {
     let suffix = game_locale_suffix(target_lang)
         .ok_or_else(|| format!("Unsupported target language: {target_lang}"))?;
     let strings_dir = default_game_strings_path(stardew_path);
-    // The first problem per asset, kept so a failed fallback can name the real
-    // cause instead of only asking for unpacked files.
+    if !strings_dir.is_dir() {
+        return Err(NO_GAME_STRINGS.to_string());
+    }
+    // The first problem per asset, kept so a failed build can name the cause.
     let problems = std::cell::RefCell::new(Vec::<(String, String)>::new());
     let note = |asset: &str, problem: String| {
         let mut problems = problems.borrow_mut();
@@ -483,90 +427,75 @@ pub fn build_from_game(stardew_path: &Path, target_lang: &str) -> Result<Glossar
             problems.push((asset.to_string(), problem));
         }
     };
-    if strings_dir.is_dir() {
-        let read = |asset: &str, file: String| {
-            let path = strings_dir.join(&file);
-            if !path.is_file() {
-                return None;
+    let read = |asset: &str, file: String| {
+        let path = strings_dir.join(&file);
+        if !path.is_file() {
+            return None;
+        }
+        xnb::read_string_dictionary(&path)
+            .inspect_err(|error| note(asset, format!("{file}: {error}")))
+            .ok()
+    };
+    let entries = build_entries(
+        &|asset| {
+            let english = read(asset, format!("{asset}.xnb"));
+            let target = format!("{asset}.{suffix}.xnb");
+            if english.is_some() && !strings_dir.join(&target).is_file() {
+                note(asset, format!("{target} is missing"));
             }
-            xnb::read_string_dictionary(&path)
-                .inspect_err(|error| note(asset, format!("{file}: {error}")))
-                .ok()
-        };
-        let entries = build_entries(
-            &|asset| {
-                let english = read(asset, format!("{asset}.xnb"));
-                let target = format!("{asset}.{suffix}.xnb");
-                if english.is_some() && !strings_dir.join(&target).is_file() {
-                    note(asset, format!("{target} is missing"));
-                }
-                english
-            },
-            &|asset| read(asset, format!("{asset}.{suffix}.xnb")),
-            target_lang,
-        );
-        for (_, problem) in problems.borrow().iter() {
-            log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {problem}");
-        }
-        if !entries.is_empty() {
-            return Ok(Glossary {
-                format: GLOSSARY_FORMAT,
-                source_lang: "default".to_string(),
-                target_lang: target_lang.to_string(),
-                term_count: entries.len(),
-                source: GlossarySource::Official,
-                pack_name: None,
-                entries,
-            });
-        }
-    }
+            english
+        },
+        &|asset| read(asset, format!("{asset}.{suffix}.xnb")),
+        target_lang,
+    );
     let problems = problems.into_inner();
-    build(&default_unpacked_path(stardew_path), target_lang).map_err(|error| {
-        let Some((_, first)) = problems.first() else {
-            return error;
-        };
-        let more = match problems.len() - 1 {
-            0 => String::new(),
-            1 => " One more file has a problem too.".to_string(),
-            n => format!(" {n} more files have problems too."),
-        };
-        format!(
-            "The game's text files could not be read (Content/Strings/{}).{more} There are no unpacked files to use instead. Verify the game files in Steam or GOG, or unpack them with StardewXnbHack, then build the glossary again.",
-            first.trim_end_matches('.')
-        )
-    })
+    for (_, problem) in &problems {
+        log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {problem}");
+    }
+    if !entries.is_empty() {
+        return Ok(Glossary {
+            format: GLOSSARY_FORMAT,
+            source_lang: "default".to_string(),
+            target_lang: target_lang.to_string(),
+            term_count: entries.len(),
+            source: GlossarySource::Official,
+            pack_name: None,
+            entries,
+        });
+    }
+    let Some((_, first)) = problems.first() else {
+        return Err("No official names were found in the game's Content/Strings files. Check that the Stardew Valley folder in Settings is correct, then build the glossary again.".to_string());
+    };
+    let more = match problems.len() - 1 {
+        0 => String::new(),
+        1 => " One more file has a problem too.".to_string(),
+        n => format!(" {n} more files have problems too."),
+    };
+    Err(format!(
+        "The game's text files could not be read ({}).{more} This language may not be available in this game version, or the game files are damaged. Verify the game files in Steam or GOG, then build the glossary again.",
+        first.trim_end_matches('.')
+    ))
 }
 
 /// Build a glossary for a game-unsupported `target_lang` from an installed
-/// community language pack. The English base prefers the installed game's XNB
-/// dictionaries and falls back to unpacked `Content/Strings` JSON; the target
-/// side comes from the pack's `Strings/` folder, whose files share the English
-/// keys. Untranslated (English-identical) values are dropped by the term-quality
-/// gate, so only genuine translations remain.
+/// community language pack. The English base comes from the installed game's
+/// `Content/Strings` XNB dictionaries; the target side comes from the pack's
+/// `Strings/` folder, whose files share the English keys. Untranslated
+/// (English-identical) values are dropped by the term-quality gate, so only
+/// genuine translations remain.
 pub fn build_from_pack(
-    unpacked_content: &Path,
+    game_strings: &Path,
     pack_root: &Path,
     pack_strings_dir: &Path,
     pack_format: StringAssetFormat,
     target_lang: &str,
     pack_name: &str,
 ) -> Result<Glossary, String> {
-    let strings_dir = unpacked_content.join("Strings");
     if !pack_strings_dir.is_dir() {
         return Err("The language pack has no readable Strings folder.".to_string());
     }
-    let game_strings = unpacked_content.parent().map(default_game_strings_path);
-    let has_english_xnb = game_strings.as_ref().is_some_and(|dir| dir.is_dir());
-    let has_english_json = strings_dir.is_dir();
-    if !has_english_xnb && !has_english_json {
-        return Err(format!(
-            "No readable game Strings source at {} or {}. Direct game XNB or unpacked JSON is required.",
-            game_strings
-                .as_ref()
-                .map(|path| path.display().to_string())
-                .unwrap_or_else(|| "<unknown>".to_string()),
-            strings_dir.display()
-        ));
+    if !game_strings.is_dir() {
+        return Err(NO_GAME_STRINGS.to_string());
     }
 
     let pack_root = pack_root
@@ -586,24 +515,22 @@ pub fn build_from_pack(
             StringAssetFormat::Xnb => xnb::read_string_dictionary(&path).ok(),
         }
     };
-    let entries = if let Some(game_strings) = game_strings.as_ref().filter(|dir| dir.is_dir()) {
-        build_entries(
-            &|asset| xnb::read_string_dictionary(&game_strings.join(format!("{asset}.xnb"))).ok(),
-            &target_map,
-            target_lang,
-        )
-    } else {
-        Vec::new()
-    };
-    let entries = if entries.is_empty() && has_english_json {
-        build_entries(
-            &|asset| read_string_map(&strings_dir.join(format!("{asset}.json"))),
-            &target_map,
-            target_lang,
-        )
-    } else {
-        entries
-    };
+    let entries = build_entries(
+        &|asset| {
+            let file = format!("{asset}.xnb");
+            let path = game_strings.join(&file);
+            if !path.is_file() {
+                return None;
+            }
+            xnb::read_string_dictionary(&path)
+                .inspect_err(|error| {
+                    log::warn!(target: "app", "Game Strings XNB skipped for the glossary: {file}: {error}")
+                })
+                .ok()
+        },
+        &target_map,
+        target_lang,
+    );
     if entries.is_empty() {
         return Err(format!(
             "No official terms could be extracted from the language pack \"{pack_name}\"."
@@ -730,7 +657,7 @@ fn writes_syllables_as_words(target_lang: &str) -> bool {
 
 fn read_string_map(path: &Path) -> Option<HashMap<String, String>> {
     let body = crate::input_limits::read_json_text(path).ok()?;
-    // Pack and unpacked Strings files are hand-edited like other mod JSON:
+    // Pack Strings files are hand-edited like other mod JSON:
     // accept comments and trailing commas (SPEC: relaxed mod JSON).
     let value: Value = crate::scanner::parse_json_lenient(&body).ok()?;
     let object = value.as_object()?;
@@ -1129,56 +1056,77 @@ mod tests {
     #[test]
     fn builds_typed_entries_from_assets_and_excludes_prose() {
         let root = crate::test_support::temp_dir("glossary-build");
-        let strings = root.join("Content (unpacked)").join("Strings");
+        let strings = root.join("Content").join("Strings");
+        let xnb = |file: &str, entries: &[(&str, &str)]| {
+            write_bytes(&strings.join(file), &test_xnb_dictionary(entries));
+        };
 
         // Objects: an item name (kept) + a description value (rejected: ends `.`).
-        write(
-            &strings.join("Objects.json"),
-            r#"{ "24": "Parsnip", "24_desc": "A spring tuber closely related to the carrot." }"#,
+        xnb(
+            "Objects.xnb",
+            &[
+                ("24", "Parsnip"),
+                ("24_desc", "A spring tuber closely related to the carrot."),
+            ],
         );
-        write(
-            &strings.join("Objects.de-DE.json"),
-            r#"{ "24": "Pastinake", "24_desc": "Eine Frühlingsknolle, eng verwandt mit der Karotte." }"#,
+        xnb(
+            "Objects.de-DE.xnb",
+            &[
+                ("24", "Pastinake"),
+                (
+                    "24_desc",
+                    "Eine Frühlingsknolle, eng verwandt mit der Karotte.",
+                ),
+            ],
         );
         // Weapons: only `_Name` keys are eligible; `_Description` is skipped.
-        write(
-            &strings.join("Weapons.json"),
-            r#"{ "4_Name": "Galaxy Sword", "4_Description": "A legendary blade of unknown origin." }"#,
+        xnb(
+            "Weapons.xnb",
+            &[
+                ("4_Name", "Galaxy Sword"),
+                ("4_Description", "A legendary blade of unknown origin."),
+            ],
         );
-        write(
-            &strings.join("Weapons.de-DE.json"),
-            r#"{ "4_Name": "Galaxieschwert", "4_Description": "Eine legendäre Klinge unbekannter Herkunft." }"#,
+        xnb(
+            "Weapons.de-DE.xnb",
+            &[
+                ("4_Name", "Galaxieschwert"),
+                (
+                    "4_Description",
+                    "Eine legendäre Klinge unbekannter Herkunft.",
+                ),
+            ],
         );
         // NPCNames: clean single-word names.
-        write(
-            &strings.join("NPCNames.json"),
-            r#"{ "Abigail": "Abigail" }"#,
-        );
-        write(
-            &strings.join("NPCNames.de-DE.json"),
-            r#"{ "Abigail": "Abby" }"#,
-        );
+        xnb("NPCNames.xnb", &[("Abigail", "Abigail")]);
+        xnb("NPCNames.de-DE.xnb", &[("Abigail", "Abby")]);
         // Locations: a real place name (kept) + a prose/format value (rejected).
-        write(
-            &strings.join("Locations.json"),
-            r#"{ "Town": "Pelican Town", "Beach_Sign": "Welcome to the beach! Watch for {0}." }"#,
+        xnb(
+            "Locations.xnb",
+            &[
+                ("Town", "Pelican Town"),
+                ("Beach_Sign", "Welcome to the beach! Watch for {0}."),
+            ],
         );
-        write(
-            &strings.join("Locations.de-DE.json"),
-            r#"{ "Town": "Pelikanstadt", "Beach_Sign": "Willkommen am Strand! Achte auf {0}." }"#,
+        xnb(
+            "Locations.de-DE.xnb",
+            &[
+                ("Town", "Pelikanstadt"),
+                ("Beach_Sign", "Willkommen am Strand! Achte auf {0}."),
+            ],
         );
         // StringsFromCSFiles: only the season keys (stored lowercase in real
         // data, normalized to `Spring`); greeting prose is rejected.
-        write(
-            &strings.join("StringsFromCSFiles.json"),
-            r#"{ "spring": "spring", "Greeting": "Hello there" }"#,
+        xnb(
+            "StringsFromCSFiles.xnb",
+            &[("spring", "spring"), ("Greeting", "Hello there")],
         );
-        write(
-            &strings.join("StringsFromCSFiles.de-DE.json"),
-            r#"{ "spring": "Frühling", "Greeting": "Hallo zusammen" }"#,
+        xnb(
+            "StringsFromCSFiles.de-DE.xnb",
+            &[("spring", "Frühling"), ("Greeting", "Hallo zusammen")],
         );
 
-        let glossary = build(&root.join("Content (unpacked)"), "de").unwrap();
+        let glossary = build_from_game(&root, "de").unwrap();
         let find = |source: &str| glossary.entries.iter().find(|e| e.source == source);
 
         assert_eq!(glossary.format, GLOSSARY_FORMAT);
@@ -1208,14 +1156,27 @@ mod tests {
     }
 
     #[test]
-    fn missing_unpacked_folder_errors_cleanly() {
+    fn missing_game_strings_folder_errors_cleanly() {
         let root = crate::test_support::temp_dir("glossary-missing");
-        let err = build(&root.join("Content (unpacked)"), "de").unwrap_err();
-        assert!(err.contains("StardewXnbHack"));
+        let err = build_from_game(&root, "de").unwrap_err();
+        assert_eq!(err, NO_GAME_STRINGS);
+        assert!(!err.contains("StardewXnbHack"));
+        // Readable XNB files without any usable name say so plainly.
+        write_bytes(
+            &root.join("Content/Strings/Objects.xnb"),
+            &test_xnb_dictionary(&[("24_desc", "A tuber.")]),
+        );
+        write_bytes(
+            &root.join("Content/Strings/Objects.de-DE.xnb"),
+            &test_xnb_dictionary(&[("24_desc", "Eine Knolle.")]),
+        );
+        let err = build_from_game(&root, "de").unwrap_err();
+        assert!(err.starts_with("No official names were found"), "{err}");
+        std::fs::remove_dir_all(&root).ok();
     }
 
     #[test]
-    fn build_from_game_names_the_xnb_problem_when_no_unpacked_files_exist() {
+    fn build_from_game_names_the_xnb_problem_in_plain_words() {
         let root = crate::test_support::temp_dir("glossary-game-xnb-broken");
         let strings = root.join("Content").join("Strings");
         let mut lz4 = test_xnb_dictionary(&[("24", "Parsnip")]);
@@ -1229,7 +1190,7 @@ mod tests {
         let error = build_from_game(&root, "de").unwrap_err();
         assert_eq!(
             error,
-            "The game's text files could not be read (Content/Strings/Objects.xnb: LZ4-compressed XNB files are not supported). There are no unpacked files to use instead. Verify the game files in Steam or GOG, or unpack them with StardewXnbHack, then build the glossary again."
+            "The game's text files could not be read (Objects.xnb: LZ4-compressed XNB files are not supported). This language may not be available in this game version, or the game files are damaged. Verify the game files in Steam or GOG, then build the glossary again."
         );
 
         // A missing translated file is named too, together with the count of
@@ -1244,7 +1205,7 @@ mod tests {
         let error = build_from_game(&root, "de").unwrap_err();
         assert!(
             error.starts_with(
-                "The game's text files could not be read (Content/Strings/Objects.de-DE.xnb is missing). One more file has a problem too. There are no unpacked files"
+                "The game's text files could not be read (Objects.de-DE.xnb is missing). One more file has a problem too. This language may not be available"
             ),
             "{error}"
         );
@@ -1280,17 +1241,17 @@ mod tests {
     fn builds_from_pack_pairing_english_base_with_pack_strings() {
         // A game-unsupported language (Thai) builds from an installed pack
         // whose Strings keys are English-identical. English values come from the
-        // unpacked base; the pack supplies the target side.
+        // game's XNB files; the pack supplies the target side.
         let root = crate::test_support::temp_dir("glossary-pack");
-        let english = root.join("Content (unpacked)").join("Strings");
+        let english = root.join("Content").join("Strings");
         let pack = root.join("pack").join("Strings");
-        write(
-            &english.join("Objects.json"),
-            r#"{ "24": "Parsnip", "78": "Cave Carrot" }"#,
+        write_bytes(
+            &english.join("Objects.xnb"),
+            &test_xnb_dictionary(&[("24", "Parsnip"), ("78", "Cave Carrot")]),
         );
-        write(
-            &english.join("NPCNames.json"),
-            r#"{ "Abigail": "Abigail" }"#,
+        write_bytes(
+            &english.join("NPCNames.xnb"),
+            &test_xnb_dictionary(&[("Abigail", "Abigail")]),
         );
         // Pack: same keys, Thai values — `Cave Carrot` left untranslated.
         write(
@@ -1300,7 +1261,7 @@ mod tests {
         write(&pack.join("NPCNames.json"), r#"{ "Abigail": "อบิเกล" }"#);
 
         let glossary = build_from_pack(
-            &root.join("Content (unpacked)"),
+            &english,
             &root.join("pack"),
             &pack,
             StringAssetFormat::Json,
@@ -1324,9 +1285,12 @@ mod tests {
     #[test]
     fn pack_extraction_rejects_an_external_asset_link() {
         let root = crate::test_support::temp_dir("glossary-external-pack-asset");
-        let english = root.join("Content (unpacked)");
+        let english = root.join("Content/Strings");
         let pack = root.join("pack");
-        write(&english.join("Strings/Objects.json"), r#"{"24":"Parsnip"}"#);
+        write_bytes(
+            &english.join("Objects.xnb"),
+            &test_xnb_dictionary(&[("24", "Parsnip")]),
+        );
         let outside = root.join("outside.json");
         write(&outside, r#"{"24":"Outside Term"}"#);
         std::fs::create_dir_all(pack.join("Strings")).unwrap();
@@ -1388,7 +1352,7 @@ mod tests {
         );
 
         let glossary = build_from_pack(
-            &root.join("Content (unpacked)"),
+            &game,
             &root.join("pack"),
             &pack,
             StringAssetFormat::Xnb,
@@ -1427,7 +1391,7 @@ mod tests {
     }
 
     #[test]
-    fn direct_xnb_comparison_cannot_fall_back_to_valid_json() {
+    fn broken_game_xnb_fails_instead_of_using_unpacked_json() {
         let root = crate::test_support::temp_dir("strict-xnb-comparison");
         let strings = root.join("Content/Strings");
         write_bytes(
@@ -1438,6 +1402,7 @@ mod tests {
             &strings.join("Objects.de-DE.xnb"),
             &test_xnb_dictionary(&[("24", "Pastinake")]),
         );
+        // An old StardewXnbHack export is no longer read.
         write(
             &root.join("Content (unpacked)/Strings/Objects.json"),
             r#"{"24":"Parsnip"}"#,
@@ -1448,13 +1413,14 @@ mod tests {
         );
         assert_eq!(checked_xnb_entries(&strings).len(), 1);
         write_bytes(&strings.join("Objects.xnb"), b"broken XNB");
-        assert_eq!(build_from_game(&root, "de").unwrap().term_count, 1);
+        let error = build_from_game(&root, "de").unwrap_err();
+        assert!(error.contains("(Objects.xnb: "), "{error}");
         assert!(std::panic::catch_unwind(|| checked_xnb_entries(&strings)).is_err());
         std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]
-    fn real_direct_xnb_matches_unpacked_json_when_available() {
+    fn real_direct_xnb_builds_a_glossary_when_available() {
         let Ok(stardew) = std::env::var("SIT_REAL_STARDEW") else {
             eprintln!("glossary: SIT_REAL_STARDEW not set - skipped");
             return;
@@ -1469,58 +1435,26 @@ mod tests {
             !direct.is_empty(),
             "Configured XNB source produced no terms."
         );
-        let fallback = build(&default_unpacked_path(stardew), "de")
-            .expect("Configured unpacked JSON comparison must build successfully.");
-        assert!(
-            fallback.term_count > 0,
-            "Configured unpacked JSON source produced no terms."
-        );
-        let mut direct_entries: Vec<_> = direct
-            .iter()
-            .map(|entry| {
-                (
-                    entry.source.clone(),
-                    entry.target.clone(),
-                    format!("{:?}", entry.kind),
-                    entry.asset.clone(),
-                    entry.key.clone(),
-                )
-            })
-            .collect();
-        let mut fallback_entries: Vec<_> = fallback
-            .entries
-            .iter()
-            .map(|entry| {
-                (
-                    entry.source.clone(),
-                    entry.target.clone(),
-                    format!("{:?}", entry.kind),
-                    entry.asset.clone(),
-                    entry.key.clone(),
-                )
-            })
-            .collect();
-        direct_entries.sort();
-        fallback_entries.sort();
-        eprintln!(
-            "glossary: direct XNB terms {}, unpacked JSON terms {}",
-            direct_entries.len(),
-            fallback_entries.len()
-        );
-        assert_eq!(direct_entries, fallback_entries);
+        let built =
+            build_from_game(stardew, "de").expect("Configured game Strings must build a glossary.");
+        assert_eq!(built.term_count, direct.len());
+        eprintln!("glossary: direct XNB terms {}", direct.len());
     }
 
     #[test]
     fn build_from_pack_without_any_translation_errors() {
         let root = crate::test_support::temp_dir("glossary-pack-empty");
-        let english = root.join("Content (unpacked)").join("Strings");
+        let english = root.join("Content").join("Strings");
         let pack = root.join("pack").join("Strings");
-        write(&english.join("Objects.json"), r#"{ "24": "Parsnip" }"#);
+        write_bytes(
+            &english.join("Objects.xnb"),
+            &test_xnb_dictionary(&[("24", "Parsnip")]),
+        );
         // Pack value identical to English → nothing extractable.
         write(&pack.join("Objects.json"), r#"{ "24": "Parsnip" }"#);
 
         let err = build_from_pack(
-            &root.join("Content (unpacked)"),
+            &english,
             &root.join("pack"),
             &pack,
             StringAssetFormat::Json,

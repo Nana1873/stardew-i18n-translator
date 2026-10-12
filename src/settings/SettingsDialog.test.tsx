@@ -34,7 +34,6 @@ beforeEach(() => {
       case "glossary_status":
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -815,7 +814,6 @@ describe("SettingsDialog", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: true,
-          unpackedPresent: true,
           sourceAvailable: true,
           cached: null,
           outdatedCache: true,
@@ -838,12 +836,11 @@ describe("SettingsDialog", () => {
     expect(await screen.findByText(/rebuild recommended/i)).toBeInTheDocument();
   });
 
-  it("offers Build for a game-supported language with unpacked content", async () => {
+  it("offers Build for a game-supported language with game Strings", async () => {
     invokeMock.mockImplementation((cmd: string) => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: true,
-          unpackedPresent: true,
           sourceAvailable: true,
           cached: null,
           outdatedCache: false,
@@ -894,7 +891,6 @@ describe("SettingsDialog", () => {
         if (cmd === "glossary_status")
           return Promise.resolve({
             gameXnbPresent: true,
-            unpackedPresent: true,
             sourceAvailable: true,
             cached: {
               targetLang: "de",
@@ -952,7 +948,6 @@ describe("SettingsDialog", () => {
         cmd === "glossary_status"
           ? Promise.resolve({
               gameXnbPresent: sourceAvailable,
-              unpackedPresent: false,
               sourceAvailable,
               cached: {
                 targetLang: "th",
@@ -1000,7 +995,6 @@ describe("SettingsDialog", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: true,
-          unpackedPresent: true,
           sourceAvailable: true,
           cached: null,
           outdatedCache: false,
@@ -1042,7 +1036,6 @@ describe("SettingsDialog", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -1076,7 +1069,6 @@ describe("SettingsDialog", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,

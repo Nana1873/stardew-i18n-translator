@@ -3744,7 +3744,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -3908,7 +3907,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -3967,7 +3965,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
@@ -4038,7 +4035,6 @@ describe("App shell", () => {
       if (cmd === "glossary_status")
         return Promise.resolve({
           gameXnbPresent: false,
-          unpackedPresent: false,
           sourceAvailable: false,
           cached: null,
           outdatedCache: false,
