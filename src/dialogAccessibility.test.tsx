@@ -119,6 +119,28 @@ describe("dialog accessibility", () => {
     ).not.toHaveAttribute("aria-hidden");
   });
 
+  it("restores the page when one dialog briefly overlaps the next", () => {
+    const layout = (first: boolean, second: boolean) => (
+      <div id="stardew-i18n-translator">
+        <button type="button">Command bar</button>
+        {first && <TestDialog key="first" onClose={vi.fn()} />}
+        {second && <TestDialog key="second" onClose={vi.fn()} />}
+      </div>
+    );
+    // The second dialog opens while the first is still open, then the first
+    // closes: the order of a JSON and ZIP preview swap in the Export… dialog.
+    const { rerender } = render(layout(true, false));
+    rerender(layout(true, true));
+    rerender(layout(false, true));
+    const commandBar = screen.getByText("Command bar");
+    expect(commandBar).toHaveAttribute("aria-hidden", "true");
+    expect(commandBar.inert).toBe(true);
+
+    rerender(layout(false, false));
+    expect(commandBar).not.toHaveAttribute("aria-hidden");
+    expect(commandBar.inert).not.toBe(true);
+  });
+
   it("traps Tab and handles Escape inside the active layer", () => {
     const onClose = vi.fn();
     render(
