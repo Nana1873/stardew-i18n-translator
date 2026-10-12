@@ -736,7 +736,14 @@ fn build_stardew_translator_output(
                 install_folders.as_deref().unwrap_or_default(),
             )
         },
-        |r| Summary::new(Outcome::Success, r.strings, r.entries, 0),
+        |r| {
+            let outcome = if r.left_out.is_empty() {
+                Outcome::Success
+            } else {
+                Outcome::Partial
+            };
+            Summary::new(outcome, r.strings, r.entries, r.left_out.len())
+        },
     )
 }
 
@@ -779,7 +786,7 @@ fn remember_zip_operation(
                 Vec::new()
             } else {
                 vec![format!(
-                    "Left out because the scan skipped all or part of them: {}.",
+                    "Left out because the scan skipped all or part of them: {}. Open Scan for details.",
                     result.left_out.join(", ")
                 )]
             },
