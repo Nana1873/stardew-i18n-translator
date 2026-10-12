@@ -471,7 +471,7 @@ export async function releaseCases(h) {
           await element(row("Tree"))
         ).findElement(css("[data-translation-cell] .translator-cell-clip"))
       ).getAttribute("textContent"),
-      "(space)",
+      "(left blank)",
     );
     assert.ok(
       (await driver.findElement(css("body")).getText()).includes(
@@ -501,7 +501,7 @@ export async function releaseCases(h) {
           await element(row("Tree"))
         ).findElement(css("[data-translation-cell] .translator-cell-clip"))
       ).getAttribute("textContent"),
-      "(space)",
+      "(left blank)",
     );
     await openEntry("Tree");
     assert.equal(

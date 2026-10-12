@@ -3750,9 +3750,9 @@ function RowView({
           {isIntentionalBlankTarget(row.source, row.target) ? (
             <span
               className="translator-blank-target"
-              title="Intentionally blank: a single space is exported."
+              title="Left blank on purpose: the game shows nothing here."
             >
-              (space)
+              (left blank)
             </span>
           ) : (
             row.target || "—"

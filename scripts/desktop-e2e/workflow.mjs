@@ -337,7 +337,7 @@ async function saveEntry(key, value) {
     ).findElement(css("[data-translation-cell] .translator-cell-clip"));
     return (
       (await cell.getAttribute("textContent")) ===
-      (value === " " ? "(space)" : value || "—")
+      (value === " " ? "(left blank)" : value || "—")
     );
   });
 }
