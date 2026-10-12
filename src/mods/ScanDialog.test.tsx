@@ -1,6 +1,6 @@
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { vi } from "vitest";
-import { ScanDialog } from "./ScanDialog";
+import { ScanDialog, scanAttentionCount } from "./ScanDialog";
 import type { ScanResult } from "../tauri/commands";
 
 const RESULT: ScanResult = {
@@ -568,5 +568,24 @@ describe("ScanDialog", () => {
       key: "Escape",
     });
     expect(onClose).not.toHaveBeenCalled();
+  });
+});
+
+describe("scanAttentionCount", () => {
+  it("counts attention skips and warnings", () => {
+    expect(scanAttentionCount(RESULT)).toBe(2);
+  });
+
+  it("still counts warnings when the scan has no skip list", () => {
+    expect(
+      scanAttentionCount({ ...RESULT, skippedComponents: undefined }),
+    ).toBe(1);
+    expect(
+      scanAttentionCount({
+        ...RESULT,
+        warnings: [],
+        skippedComponents: undefined,
+      }),
+    ).toBeNull();
   });
 });

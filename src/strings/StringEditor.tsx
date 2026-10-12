@@ -627,10 +627,12 @@ export function StringEditor({
   function cancelTranslate(message = "AI translation cancelled.") {
     if (!translating) return;
     aiRequest.current += 1;
+    const cancelledRow = draftIdentityRef.current;
     void Promise.resolve(onCancelTranslate?.()).then((stopped) => {
-      if (stopped === false)
+      // Only speak for the string the cancel was for.
+      if (stopped === false && draftIdentityRef.current === cancelledRow)
         setTranslateMsg(
-          "Too late to cancel; the AI suggestion was saved for review.",
+          "The AI run could not be stopped in time; a finished suggestion is kept for review.",
         );
     });
     setTranslating(false);
