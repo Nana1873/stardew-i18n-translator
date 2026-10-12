@@ -793,12 +793,18 @@ export function StringTable({
   }
 
   const requestedPlanRef = useRef<string | null>(null);
+  // False after a failed load, so Retry and later reloads show the loading
+  // state and the error panel again instead of an empty table.
+  const lastLoadSucceeded = useRef(false);
   useEffect(() => {
     let active = true;
+    // A reload of the same mods and language (after a rescan, AI run, import,
+    // or undo) keeps the rows, selection, and open editor; identities that no
+    // longer exist drop out of the selection once the new rows are visible.
     const sameContext =
       requestedPlanRef.current === aiContextKey &&
       rowsRef.current !== null &&
-      editorSession !== null;
+      lastLoadSucceeded.current;
     requestedPlanRef.current = aiContextKey;
     if (!sameContext) {
       aiProvenanceByIdentity.current.clear();
@@ -845,6 +851,7 @@ export function StringTable({
         if (!active) return;
         if (revision !== manualSaveRevision.current) continue;
         rowsRef.current = loaded;
+        lastLoadSucceeded.current = true;
         setLoadedContext(
           JSON.stringify([planSignature, reloadToken, postSaveReloadToken]),
         );
@@ -859,6 +866,7 @@ export function StringTable({
         return;
       }
       rowsRef.current = [];
+      lastLoadSucceeded.current = false;
       setRows([]);
       setError(String(cause));
     });
@@ -1040,6 +1048,12 @@ export function StringTable({
     }
     return out;
   }, [visible, sort, effectiveScope]);
+
+  const displayRef = useRef(display);
+  displayRef.current = display;
+  // Where the edited row was last displayed. A save can move it out of the
+  // filter while the editor is open; focus then goes to the row now there.
+  const editedDisplayIndex = useRef(0);
 
   const virtualizer = useVirtualizer({
     count: display.length,
@@ -1277,7 +1291,8 @@ export function StringTable({
   }
 
   function focusRow(identity: string) {
-    const displayIndex = display.findIndex(
+    // Read the latest rows: callers may run from a frame after a re-render.
+    const displayIndex = displayRef.current.findIndex(
       (entry) => entry.kind === "row" && entry.identity === identity,
     );
     if (displayIndex < 0) return;
@@ -1287,6 +1302,36 @@ export function StringTable({
         parentRef.current?.querySelectorAll<HTMLElement>("[data-row-id]") ?? [],
       ).find((candidate) => candidate.dataset.rowId === identity);
       element?.focus();
+    });
+  }
+
+  /** After the editor closes, keep keyboard focus in the table: on the edited
+   * row, or on the row that took its place when it left the filter. */
+  function focusAfterEditor(identity: string, previousIndex: number) {
+    requestAnimationFrame(() => {
+      const active = document.activeElement;
+      if (active && active !== document.body) return;
+      const rows = displayRef.current;
+      let index = rows.findIndex(
+        (entry) => entry.kind === "row" && entry.identity === identity,
+      );
+      if (index < 0) {
+        const after = rows.findIndex(
+          (entry, position) =>
+            position >= previousIndex && entry.kind === "row",
+        );
+        index = after;
+        for (
+          let position = rows.length - 1;
+          index < 0 && position >= 0;
+          position--
+        )
+          if (rows[position].kind === "row") index = position;
+      }
+      const target = rows[index];
+      if (!target || target.kind !== "row") return;
+      setActiveIdentity(target.identity);
+      focusRow(target.identity);
     });
   }
 
@@ -1670,6 +1715,8 @@ export function StringTable({
           tokenMismatchAccepted: change.tokenMismatchAccepted,
         };
       });
+      // A reload read before this write must not overwrite it.
+      manualSaveRevision.current += 1;
       const currentRows = rowsRef.current;
       if (currentRows) {
         const presentCompletedMods = new Set<string>();
@@ -1792,6 +1839,7 @@ export function StringTable({
     // a different table context, even if the user switched away and back.
     if (aiContextRef.current.version !== aiContextVersion) return;
     if (result.suggestions.length === 0) return;
+    manualSaveRevision.current += 1;
     const suggestions = new Map(
       result.suggestions.map((suggestion) => [
         JSON.stringify([
@@ -2296,6 +2344,12 @@ export function StringTable({
       : rowIndex.get(editingIdentity);
   const editingRow =
     editingIndex === undefined ? null : (data[editingIndex] ?? null);
+  if (editingIdentity) {
+    const shown = display.findIndex(
+      (entry) => entry.kind === "row" && entry.identity === editingIdentity,
+    );
+    if (shown >= 0) editedDisplayIndex.current = shown;
+  }
   const editingAiAllowed = Boolean(
     editingRow &&
     (editingRow.status === "untranslated" ||
@@ -2947,7 +3001,10 @@ export function StringTable({
             onSave={(value, nextStatus, tokenMismatchAccepted) =>
               saveRow(editingIdentity, value, nextStatus, tokenMismatchAccepted)
             }
-            onClose={() => setEditorSession(null)}
+            onClose={() => {
+              setEditorSession(null);
+              focusAfterEditor(editingIdentity, editedDisplayIndex.current);
+            }}
             onNavigate={(delta) =>
               setEditorSession((current) => {
                 if (!current) return current;
