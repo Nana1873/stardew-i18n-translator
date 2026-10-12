@@ -151,14 +151,17 @@ export function isPortraitCommand(token: string): boolean {
   );
 }
 
-/** Only the first emotion token on a dialogue page is applied; any further
- * one stays visible as raw text. Counts the pages that show such raw text. */
+/** The game applies one emotion per dialogue page and removes every copy of
+ * it (`Dialogue.checkEmotions` uses `Replace`), so a repeated portrait is
+ * harmless; a second, different one stays visible as raw text. Counts the
+ * pages that show such raw text. Mirrors Rust `pages_with_multiple_portraits`. */
 export function pagesWithMultiplePortraits(value: string): number {
   return firstBranchText(value)
     .split("#")
     .filter(
       (page) =>
-        extractProtectedTokens(page).filter(isPortraitCommand).length > 1,
+        new Set(extractProtectedTokens(page).filter(isPortraitCommand)).size >
+        1,
     ).length;
 }
 
@@ -300,8 +303,11 @@ function readGenderSwitch(value: string, offset: number): GenderSwitch | null {
   return { branches, end: closingStart + 2, separator };
 }
 
+/** The game closes a switch at the first `}$` after `${` and does not nest
+ * (Stardew 1.6 `Dialogue.applyGenderSwitchBlocks`), so a switch inside a
+ * switch shows broken text. Such a block is not read as one switch; its
+ * markers stay visible to validation. Mirrors Rust `find_switch_close`. */
 function findGenderSwitchClose(value: string, offset: number): number | null {
-  let depth = 1;
   let index = offset + 2;
   while (index < value.length) {
     const contentPatcherToken = readContentPatcherToken(value, index);
@@ -309,17 +315,8 @@ function findGenderSwitchClose(value: string, offset: number): number | null {
       index = contentPatcherToken.end;
       continue;
     }
-    if (value.startsWith("${", index)) {
-      depth += 1;
-      index += 2;
-      continue;
-    }
-    if (value.startsWith("}$", index)) {
-      depth -= 1;
-      if (depth === 0) return index;
-      index += 2;
-      continue;
-    }
+    if (value.startsWith("${", index)) return null;
+    if (value.startsWith("}$", index)) return index;
     index += 1;
   }
   return null;

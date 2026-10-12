@@ -35,7 +35,7 @@
     },
     {
       "value": "Nested ${one ${inner^innen}$^two}$ and ${he¦she}$",
-      "tokens": ["${^}$", "${^}$", "${¦}$"]
+      "tokens": ["${", "${^}$", "^", "}$", "${¦}$"]
     },
     {
       "value": "${{{Lookup:one^two}}^second}$",
@@ -576,6 +576,18 @@
       "source": "Hello#$y 'Like fish?_Yes_Great!'#Bye",
       "target": "Hallo#$y 'Magst du Fisch?_Ja_Toll!'#Tschüss",
       "blocked": false
+    },
+    {
+      "name": "the same portrait twice on one page is harmless",
+      "source": "Hello.$h",
+      "target": "Hallo.$h Schön.$h",
+      "blocked": false
+    },
+    {
+      "name": "a second different portrait on one page is an error",
+      "source": "Hello.$h",
+      "target": "Hallo.$h Schön.$s",
+      "blocked": true
     }
   ],
   "explanations": [
@@ -748,6 +760,11 @@
       "source": "$y 'Hungry?_Yes_Here.*Enjoy!'",
       "target": "$y 'Hunger?_Ja_Hier. Guten Appetit!'",
       "text": "* is missing (English 1, translation 0). In a $y reply it starts a new dialogue box, so the page structure changes."
+    },
+    {
+      "source": "${He^She}$ is here.",
+      "target": "${Er ${x^y}$^Sie}$ ist da.",
+      "text": "A he/she switch needs two or three variants separated by ^, like ${he^she}$, and cannot contain another switch."
     }
   ]
 }
