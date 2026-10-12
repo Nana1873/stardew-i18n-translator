@@ -13,6 +13,11 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 - One mod the scan has to skip no longer turns off the comparison of changed
   and new English strings for every other mod. The skipped mod keeps its
   previous baseline and is compared again once it scans cleanly.
+- A changed bare `^` or `#` is a note instead of a token error, so the string
+  is exported. In dialogue they split pages and genders, but in letters `^` is a
+  line break and in UI strings `#` is ordinary text, so the translator decides.
+  It stays an error when it puts two different portraits on one page, and the
+  `#` before a `$y` quick response stays protected, like `#$b#`.
 - Every token finding now says what it does in the game, for example that a
   missing `[#]` shows the letter title as part of the letter text or that a
   missing `%item … %%` means the attached item is not given. Notes end with
@@ -41,6 +46,13 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Fixed
 
+- An `i18n` folder deeper inside a mod without its own `manifest.json` is no
+  longer offered for translation, because SMAPI never loads it; Scan lists it
+  as information. Mods whose components each have a manifest, such as
+  Stardew Valley Expanded, are unaffected.
+- A second portrait on the male or female part of a dialogue page split by
+  `^` is a token error, and different portraits for the two parts are no
+  longer flagged.
 - A second portrait that only the other player gender sees, inside a he/she
   switch, is now a token error like any other second portrait on a page.
 - `$neutral` is no longer treated as a portrait. The game does not read it

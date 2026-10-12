@@ -523,7 +523,8 @@ function Metric({ value, label }: { value: number | string; label: string }) {
 }
 
 /** Expected exclusions are community language packs (they belong to a
- * package) or `i18n` folders without a manifest, which SMAPI ignores too. */
+ * package) or `i18n` folders SMAPI does not load: without a manifest, or
+ * deeper inside a mod than the folder beside its manifest. */
 function describeExpectedExclusions(components: SkippedComponent[]): string {
   if (components.length === 0) return "";
   const folders = components.filter(
@@ -535,7 +536,7 @@ function describeExpectedExclusions(components: SkippedComponent[]): string {
       ? `${packs} community language ${packs === 1 ? "pack" : "packs"}`
       : "",
     folders > 0
-      ? `${folders} ${folders === 1 ? "folder" : "folders"} without a manifest.json`
+      ? `${folders} i18n ${folders === 1 ? "folder" : "folders"} that SMAPI does not load`
       : "",
   ].filter(Boolean);
   return `${parts.join(" and ")} ${components.length === 1 ? "was" : "were"} ignored`;

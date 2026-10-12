@@ -584,7 +584,7 @@ mod tests {
         let mods = root.join("Mods");
         for (folder, unique_id, relative_dir) in [
             ("One", "Example.One", "i18n"),
-            ("Two", "Example.Two", "optional/i18n"),
+            ("Two", "Example.Two", "i18n/default"),
         ] {
             write(
                 &mods.join(folder).join("manifest.json"),
@@ -599,14 +599,17 @@ mod tests {
 
         write(&mods.join("One/i18n/default.json"), r#"{"same":"After"}"#);
         write(
-            &mods.join("Two/optional/i18n/default.json"),
+            &mods.join("Two/i18n/default/default.json"),
             r#"{"same":"After"}"#,
         );
         let second = scan_with_snapshot(&mods, &data, "de");
         let deltas = second.source_deltas.unwrap();
         assert_eq!(deltas.sources_changed, 2);
         assert_eq!(deltas.changed_sources[0].mod_unique_id, "Example.One");
-        assert_eq!(deltas.changed_sources[1].relative_dir, "optional/i18n");
+        assert_eq!(
+            deltas.changed_sources[1].relative_dir,
+            "i18n/@split/default.json"
+        );
 
         std::fs::remove_dir_all(root).ok();
     }
