@@ -2216,7 +2216,6 @@ fn remember_ai_run(
     let engine_label = match result.engine.as_str() {
         "local" => "Local AI",
         "chatgpt" => "ChatGPT",
-        "codex" => "Codex CLI",
         _ => "AI",
     };
     let scope = match result.scope {
@@ -2560,6 +2559,15 @@ async fn chatgpt_sign_out(state: State<'_, ai::AiRuntimeState>) -> Result<(), St
     chatgpt_auth::logout().await
 }
 
+/// A ChatGPT run needs a saved model; the provider has no implicit default.
+fn required_cloud_model(model: Option<&str>) -> Result<String, String> {
+    model
+        .map(str::trim)
+        .filter(|model| !model.is_empty())
+        .map(str::to_string)
+        .ok_or_else(|| "Select a ChatGPT model in Settings before translating.".to_string())
+}
+
 /// Signal native provider workers even if the command future is dropped.
 struct CloudPipelineCancellation(Arc<AtomicBool>);
 
@@ -2650,7 +2658,7 @@ async fn translate_with_cloud_ai(
     let lease = state.begin_run(&request.run_id)?;
     let (settings, target_language, translation_root, prepared) =
         prepare_ai_request(&app, &request)?;
-    let cloud_model = settings.ai.cloud_model.clone();
+    let cloud_model = required_cloud_model(settings.ai.cloud_model.as_deref())?;
     let reasoning = ai::normalize_reasoning(&settings.ai.cloud_reasoning)?;
     let cloud_quality_review = settings.ai.cloud_quality_review;
     let mut suggestions = Vec::with_capacity(prepared.len());
@@ -2685,7 +2693,7 @@ async fn translate_with_cloud_ai(
             "runId": log_run_id,
             "engine": log_engine,
             "transport": log_transport,
-            "model": if cloud_model.is_some() { "configured" } else { "default" },
+            "model": "configured",
             "reasoning": reasoning,
             "total": prepared.len(),
             "batches": batch_total,
@@ -2970,7 +2978,7 @@ async fn translate_with_cloud_ai(
             let attempt = batch_attempt;
             in_flight.push(async move {
                 let result = complete_cloud_batch(
-                    model.as_deref(),
+                    Some(model.as_str()),
                     &reasoning,
                     &language,
                     cloud_quality_review,
@@ -3212,11 +3220,7 @@ async fn translate_with_cloud_ai(
     let result = ai_run_result(
         &request,
         prepared.len(),
-        (
-            "chatgpt",
-            cloud_model.unwrap_or_else(|| "ChatGPT default".to_string()),
-            reasoning,
-        ),
+        ("chatgpt", cloud_model, reasoning),
         suggestions,
         outcome,
         error,
@@ -4065,6 +4069,20 @@ mod ai_run_contract_tests {
     }
 
     #[test]
+    fn chatgpt_runs_require_a_saved_model_instead_of_a_default_label() {
+        assert_eq!(
+            required_cloud_model(Some(" gpt-5.6-sol ")).as_deref(),
+            Ok("gpt-5.6-sol")
+        );
+        for missing in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                required_cloud_model(missing),
+                Err("Select a ChatGPT model in Settings before translating.".to_string())
+            );
+        }
+    }
+
+    #[test]
     fn isolated_cloud_failures_name_up_to_three_keys() {
         let identity = |key: &str| ai::AiStringIdentity {
             mod_unique_id: "Example.Mod".to_string(),
@@ -4263,11 +4281,7 @@ mod ai_run_contract_tests {
         let result = ai_run_result(
             &request,
             3,
-            (
-                "chatgpt",
-                "ChatGPT default".to_string(),
-                "medium".to_string(),
-            ),
+            ("chatgpt", "gpt-5.6-sol".to_string(), "medium".to_string()),
             vec![suggestion],
             ai::AiRunOutcome::Error,
             Some("provider stopped after one chunk".to_string()),
@@ -4287,11 +4301,7 @@ mod ai_run_contract_tests {
         let failed = ai_run_result(
             &request,
             3,
-            (
-                "chatgpt",
-                "ChatGPT default".to_string(),
-                "medium".to_string(),
-            ),
+            ("chatgpt", "gpt-5.6-sol".to_string(), "medium".to_string()),
             Vec::new(),
             ai::AiRunOutcome::Error,
             Some("provider stopped before saving".to_string()),
