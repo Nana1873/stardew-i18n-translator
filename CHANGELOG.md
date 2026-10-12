@@ -10,6 +10,9 @@ Per-release notes also live under [`docs/release/`](docs/release/).
 
 ### Changed
 
+- One mod the scan has to skip no longer turns off the comparison of changed
+  and new English strings for every other mod. The skipped mod keeps its
+  previous baseline and is compared again once it scans cleanly.
 - Every token finding now says what it does in the game, for example that a
   missing `[#]` shows the letter title as part of the letter text or that a
   missing `%item … %%` means the attached item is not given. Notes end with
