@@ -42,7 +42,8 @@ Per-release notes also live under [`docs/release/`](docs/release/).
   protected. A dropped or added separator used to pass silently and mixed up
   which reply belongs to which answer in the game, or stopped the dialogue
   with an error. A single `*` in a reply, which the game turns into a new
-  dialogue box, is protected as well.
+  dialogue box, is protected as well. A quick response on a later dialogue
+  page can now be translated instead of counting as one changed token.
 - Exporting a mod again without changes leaves target files that already hold
   the exported content untouched, so their earlier `.bak` backup and file
   date are kept. A failed export no longer reports an incomplete rollback for

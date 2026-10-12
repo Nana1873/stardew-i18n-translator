@@ -238,6 +238,18 @@
     {
       "value": "$y 'Hungry?_Yes_Here.*Enjoy! **5** stars'",
       "tokens": ["$y", "'", "'", "_", "_", "*"]
+    },
+    {
+      "value": "Hello#$y 'Q_A_R'#Bye",
+      "tokens": ["#", "$y", "'", "'", "_", "_", "#"]
+    },
+    {
+      "value": "$y 'Q *sigh*_A_R'",
+      "tokens": ["$y", "'", "'", "_", "_"]
+    },
+    {
+      "value": "$y  'Q_A_R'",
+      "tokens": ["$y", "'", "'", "_", "_"]
     }
   ],
   "comparisons": [
@@ -557,6 +569,12 @@
       "name": "translated quick-response answers keep their separators",
       "source": "$y 'Like fish?_Yes_Great!_No_Too bad.'",
       "target": "$y 'Magst du Fisch?_Ja_Toll!_Nein_Schade.'",
+      "blocked": false
+    },
+    {
+      "name": "a quick response on a later page can be translated",
+      "source": "Hello#$y 'Like fish?_Yes_Great!'#Bye",
+      "target": "Hallo#$y 'Magst du Fisch?_Ja_Toll!'#Tschüss",
       "blocked": false
     }
   ],
