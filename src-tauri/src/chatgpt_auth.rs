@@ -960,23 +960,58 @@ fn take_session(state: &mut AuthState) -> (Option<Session>, Result<(), String>) 
     };
     (session, deleted)
 }
+/// Tokens that sign-out revokes: the refresh token first, so no new access
+/// token can be issued, then the current access token.
+fn revocations(session: &Session) -> Vec<(&str, &'static str)> {
+    session
+        .refresh_token
+        .as_deref()
+        .map(|token| (token, "refresh_token"))
+        .into_iter()
+        .chain([(session.access_token.as_str(), "access_token")])
+        .collect()
+}
 pub async fn logout() -> Result<(), String> {
     GENERATION.fetch_add(1, Ordering::AcqRel);
     let (session, deleted) = take_session(&mut *state()?.lock().await);
     let remote = async {
-        let Some(session) = session else { return Ok(()); };
-        let Some(refresh) = session.refresh_token else { return Ok(()); };
+        let Some(session) = session else {
+            return Ok(());
+        };
         let client = client()?;
         let config = discovery(&client).await?;
         let endpoint = trusted_endpoint(&config["revocation_endpoint"])?;
-        for retry in 0..2 {
-            let result = client.post(endpoint.clone()).timeout(Duration::from_secs(15))
-                .form(&[("token", refresh.as_str()), ("token_type_hint", "refresh_token"), ("client_id", session.client_id.as_str())]).send().await;
-            if matches!(&result, Ok(response) if response.status().as_u16() == 200) { return Ok(()); }
-            if retry == 0 { tokio::time::sleep(Duration::from_millis(500)).await; }
+        let mut confirmed = true;
+        for (token, hint) in revocations(&session) {
+            let mut revoked = false;
+            for retry in 0..2 {
+                let result = client
+                    .post(endpoint.clone())
+                    .timeout(Duration::from_secs(15))
+                    .form(&[
+                        ("token", token),
+                        ("token_type_hint", hint),
+                        ("client_id", session.client_id.as_str()),
+                    ])
+                    .send()
+                    .await;
+                if matches!(&result, Ok(response) if response.status().as_u16() == 200) {
+                    revoked = true;
+                    break;
+                }
+                if retry == 0 {
+                    tokio::time::sleep(Duration::from_millis(500)).await;
+                }
+            }
+            confirmed &= revoked;
         }
-        Err("Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
-    }.await;
+        if confirmed {
+            Ok(())
+        } else {
+            Err(String::new())
+        }
+    }
+    .await;
     deleted?;
     remote.map_err(|_| "Signed out on this PC, but ChatGPT did not confirm it. To be safe, remove this app from the connected apps in your ChatGPT settings.".to_string())
 }
@@ -1172,6 +1207,31 @@ mod tests {
         assert!(state.session.is_none() && state.error.is_none());
         assert!(take_session(&mut state).1.is_ok());
         std::fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn sign_out_revokes_the_refresh_and_the_access_token() {
+        let mut session = Session {
+            client_id: "synthetic-client".into(),
+            subject: "synthetic-subject".into(),
+            email: None,
+            access_token: "synthetic-access".into(),
+            refresh_token: Some("synthetic-refresh".into()),
+            id_token: None,
+            scope: PLAN_SCOPE.into(),
+            expires_at: 0,
+        };
+        assert_eq!(
+            revocations(&session),
+            vec![
+                ("synthetic-refresh", "refresh_token"),
+                ("synthetic-access", "access_token")
+            ]
+        );
+        session.refresh_token = None;
+        assert_eq!(
+            revocations(&session),
+            vec![("synthetic-access", "access_token")]
+        );
     }
     #[test]
     fn errors_do_not_echo_remote_messages() {
