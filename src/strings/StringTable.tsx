@@ -911,6 +911,19 @@ export function StringTable({
     return byIdentity;
   }, [data]);
 
+  // A reload (rescan, file change) can drop the string being edited. Close
+  // the editor instead of leaving an invisible session behind.
+  useEffect(() => {
+    if (!editorSession || rows === null) return;
+    const identity = editorSession.identities[editorSession.position];
+    if (identity !== undefined && rowIndex.has(identity)) return;
+    setEditorSession(null);
+    onNotify?.(
+      "The string you were editing is no longer in the file, so the editor closed.",
+      "info",
+    );
+  }, [editorSession, rows, rowIndex]);
+
   const statusCounts = useMemo(() => countByStatus(data), [data]);
   const issueCount = useMemo(
     () => data.filter((row) => rowHasIssues(row)).length,

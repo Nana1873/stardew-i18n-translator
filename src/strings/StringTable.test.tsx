@@ -3688,6 +3688,28 @@ it("keeps the selection when the same strings reload", async () => {
   expect(screen.getByRole("button", { name: "1 selected" })).toBeVisible();
 });
 
+it("closes the editor with a note when a reload drops the edited string", async () => {
+  const onNotify = vi.fn();
+  installBackendRows();
+  const { rerender } = render(
+    <StringTable mod={MOD} reloadToken={0} onNotify={onNotify} />,
+  );
+  await screen.findByText("bye");
+  fireEvent.doubleClick(rowFor("bye"));
+  expect(screen.getByRole("textbox", { name: "Translation" })).toBeVisible();
+
+  installBackendRows({ "a.b": [ROWS["a.b"][0]] });
+  rerender(<StringTable mod={MOD} reloadToken={1} onNotify={onNotify} />);
+
+  await waitFor(() =>
+    expect(screen.queryByRole("textbox", { name: "Translation" })).toBeNull(),
+  );
+  expect(onNotify).toHaveBeenCalledWith(
+    "The string you were editing is no longer in the file, so the editor closed.",
+    "info",
+  );
+});
+
 it("returns focus to the edited row when its launcher is gone", async () => {
   installBackendRows();
   render(<StringTable mod={MOD} />);
