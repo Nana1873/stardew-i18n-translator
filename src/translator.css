@@ -441,7 +441,7 @@
 }
 
 #stardew-i18n-translator .translator-mod-columns {
-  padding: 5px 9px;
+  padding: 5px 30px 5px 9px;
   color: var(--translator-faint);
   border-bottom: 1px solid var(--translator-border);
   font-size: 0.76em;
@@ -2146,10 +2146,9 @@
     grid-template-columns: minmax(0, 1fr) 38px 48px;
   }
 
+  /* Only the Nexus column goes; Coverage keeps its header with its values. */
   #stardew-i18n-translator .translator-mod-columns span:nth-child(3),
-  #stardew-i18n-translator .translator-mod-columns span:nth-child(4),
   #stardew-i18n-translator .translator-mod-group-row span:nth-child(3),
-  #stardew-i18n-translator .translator-mod-group-row span:nth-child(4),
   #stardew-i18n-translator .translator-mod-nexus {
     display: none;
   }
@@ -2184,6 +2183,11 @@
 
   #stardew-i18n-translator .translator-mod-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* One header row cannot label two side-by-side mod columns. */
+  #stardew-i18n-translator .translator-mod-columns {
+    display: none;
   }
 
   #stardew-i18n-translator .translator-string-toolbar {

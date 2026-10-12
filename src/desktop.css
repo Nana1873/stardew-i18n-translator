@@ -254,7 +254,8 @@
 }
 #stardew-i18n-translator .translator-mod-row {
   min-height: 32px;
-  padding: 6px 8px;
+  /* Room at the end for the row menu so it never covers the coverage value. */
+  padding: 6px 30px 6px 8px;
   font-size: 13px;
 }
 #stardew-i18n-translator .translator-mod-progress {
