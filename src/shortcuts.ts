@@ -57,8 +57,8 @@ export const SHORTCUT_COMMANDS = [
     id: "editor.translate",
     group: "String editor",
     label: "Translate with AI",
-    // F5 and Ctrl+F5 reload the WebView, so the default stays off browser keys.
-    defaultShortcut: "F8",
+    // The browser action of Ctrl+F5 (reload) is blocked, so the key is free.
+    defaultShortcut: "Ctrl+F5",
   },
   {
     id: "editor.close",
@@ -129,8 +129,8 @@ export function displayShortcut(shortcut: string): string {
 }
 
 // Keys the WebView would handle itself: reload, find next, and print. The
-// app blocks their browser action (see blockBrowserKeys), so they can never
-// work as app shortcuts either.
+// app blocks only their browser action (see blockBrowserKeys); they stay
+// free for app shortcuts.
 const BROWSER_KEYS = new Set([
   "F5",
   "Ctrl+F5",
@@ -146,9 +146,9 @@ const BROWSER_KEYS = new Set([
 const RESERVED_SHORTCUTS = new Set([
   "Alt+F4",
   "Ctrl+W",
+  "Ctrl+R",
   "Ctrl+Shift+I",
   "Ctrl+Shift+J",
-  ...BROWSER_KEYS,
 ]);
 
 /** True for keys whose default WebView action (reload, print, find next) must not run. */

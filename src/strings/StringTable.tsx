@@ -82,6 +82,7 @@ import {
   type ResolvedShortcuts,
   displayShortcut,
   matchesShortcut,
+  isBrowserKey,
 } from "../shortcuts";
 
 export type StringTableScope = "mod" | "all";
@@ -1226,7 +1227,7 @@ export function StringTable({
   useEffect(() => {
     const focusSearch = (event: KeyboardEvent) => {
       if (
-        event.defaultPrevented ||
+        (event.defaultPrevented && !isBrowserKey(event)) ||
         editorSession ||
         document.querySelector('[role="dialog"][aria-modal="true"]')
       )
@@ -1408,7 +1409,7 @@ export function StringTable({
     function selectAllFromWorkspace(event: KeyboardEvent) {
       if (!matchesShortcut(event, shortcuts["table.selectAll"])) return;
       if (preservesNativeTextSelection(event.target)) return;
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented && !isBrowserKey(event)) return;
       event.preventDefault();
       event.stopPropagation();
       if (

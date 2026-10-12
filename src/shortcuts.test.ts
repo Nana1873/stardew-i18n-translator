@@ -66,18 +66,13 @@ describe("shortcuts", () => {
     expect(shortcutProblem("Ctrl+Tab")).toMatch(/keyboard navigation/);
   });
 
-  it("reserves browser reload, find, and print keys", () => {
-    for (const shortcut of ["F5", "Ctrl+F5", "Ctrl+R", "F3", "Ctrl+P"]) {
-      expect(shortcutProblem(shortcut)).toMatch(/reserved/);
+  it("keeps browser keys free for app shortcuts and Ctrl+F5 as the AI default", () => {
+    // Their browser action is blocked instead (see blockBrowserKeys).
+    for (const shortcut of ["F5", "Ctrl+F5", "F3", "Ctrl+P"]) {
+      expect(shortcutProblem(shortcut)).toBeNull();
     }
-    expect(DEFAULT_SHORTCUTS["editor.translate"]).toBe("F8");
-    expect(shortcutProblem(DEFAULT_SHORTCUTS["editor.translate"])).toBeNull();
-  });
-
-  it("keeps saved shortcuts but replaces a saved Ctrl+F5 with the new default", () => {
-    expect(
-      resolveShortcuts({ "editor.translate": "Ctrl+F5" })["editor.translate"],
-    ).toBe("F8");
+    expect(shortcutProblem("Ctrl+R")).toMatch(/reserved/);
+    expect(DEFAULT_SHORTCUTS["editor.translate"]).toBe("Ctrl+F5");
     expect(
       resolveShortcuts({ "editor.translate": "Ctrl+Shift+T" })[
         "editor.translate"

@@ -11,7 +11,7 @@ import {
   type EditorTranslationResult,
 } from "./StringEditor";
 import type { GlossaryEntry } from "../tauri/commands";
-import { resolveShortcuts } from "../shortcuts";
+import { blockBrowserKeys, resolveShortcuts } from "../shortcuts";
 
 function row(overrides: Partial<EditorRow> = {}): EditorRow {
   return {
@@ -160,7 +160,7 @@ describe("StringEditor", () => {
     fireEvent.keyDown(window, { key: "F4" });
     fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
     fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(window, { key: "F8" });
+    fireEvent.keyDown(window, { key: "F5", ctrlKey: true });
 
     expect(field).toHaveValue("Unsaved edit");
     expect(onSave).not.toHaveBeenCalled();
@@ -870,6 +870,25 @@ describe("StringEditor", () => {
     });
     expect(screen.getByText("Review")).toBeInTheDocument();
     expect(screen.queryByText("Done")).not.toBeInTheDocument();
+  });
+
+  it("still translates on Ctrl+F5 while the browser reload of that key is blocked", async () => {
+    const stop = blockBrowserKeys(window);
+    const onTranslate = vi.fn(async () => ({
+      text: "Hallo",
+      missingTokens: [],
+      glossaryMisses: [],
+    }));
+    renderEditor({ target: "", status: "untranslated" }, onTranslate);
+    const event = new KeyboardEvent("keydown", {
+      key: "F5",
+      ctrlKey: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(true);
+    await waitFor(() => expect(onTranslate).toHaveBeenCalledOnce());
+    stop();
   });
 
   it("explains an intentional single-space translation next to the field label", () => {

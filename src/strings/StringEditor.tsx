@@ -10,7 +10,7 @@
  * Shortcuts: Ctrl+Enter save · Ctrl+Shift+Enter save & next (review backlog
  * fast path) · Esc cancel · Alt+←/→ prev/next · F2 keep original (copies
  * the source — an explicit identical translation) · F4 reset (clears
- * the field) · F8 translate with the configured live AI engine.
+ * the field) · Ctrl+F5 translate with the configured live AI engine.
  */
 import {
   type KeyboardEvent as ReactKeyboardEvent,
@@ -82,6 +82,7 @@ import {
   type ResolvedShortcuts,
   displayShortcut,
   matchesShortcut,
+  isBrowserKey,
 } from "../shortcuts";
 import { useModalIsolation } from "../dialogAccessibility";
 import type { NoticeOptions } from "../ui/activity";
@@ -727,7 +728,8 @@ export function StringEditor({
 
   useEffect(() => {
     const handleGlobalKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      // Browser keys arrive with their browser action already blocked.
+      if (event.defaultPrevented && !isBrowserKey(event)) return;
       const modalDialogs = Array.from(
         document.querySelectorAll<HTMLElement>(
           '[role="dialog"][aria-modal="true"]',
