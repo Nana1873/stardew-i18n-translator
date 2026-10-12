@@ -182,11 +182,13 @@ Coverage and open reviews remain visible in the workspace and export preview.
 Package preview and build resolve current component/file bindings again. A
 changed component inventory, version, or file list requires a new displayed
 scan and preview before writing.
-Results retain the actual destination and filename for **Show in folder**.
+Results retain the actual destination and filename for **Show file** and
+**Open folder**.
 ZIP replacement is confirmed by the native Windows Save dialog, without a
 second app confirmation. Canceling the picker leaves the existing archive
 unchanged; a confirmed build replaces it only after the new archive is complete.
-**Translation ZIP · all mods** previews and writes one translation ZIP for all
+**Files… > Export ZIP for all mods…** previews and writes one translation ZIP,
+with the package name **Stardew Translator Output**, for all
 scanned components with effective target-language values in the configured Mods
 folder. A package the scan had to skip in whole or in part is left out and named
 in the preview; only an incomplete folder traversal blocks the build. Each

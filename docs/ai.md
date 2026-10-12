@@ -114,7 +114,7 @@ notice with serial work. A quiet interval can mean the engine is still processin
 progress cannot describe every moment inside a provider call.
 
 **Cancel** stops further work while retaining suggestions already saved to
-Review. The same applies to a later error. Use **Open review queue** to inspect
+Review. The same applies to a later error. Use **Open Review** to inspect
 those results, then select the remaining Open or Changed strings for a later
 run. Unsaved drafts are not a resumable background job.
 

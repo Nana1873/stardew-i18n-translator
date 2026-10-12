@@ -81,6 +81,10 @@ Changed, Review, Done, or All leaves the Issues view. Open an affected string to
 inspect the source and target. Hover or focus an icon to see the finding in
 plain language and its effect on export.
 
+**Open Review** after an export shows the **Needs review** filter, which lists
+Review and Changed strings together because both should be checked before
+release.
+
 - Red circles mark token **errors** that would break the game, such as a
   he/she switch missing its closing `}$`. Export leaves only that string out, so
   the game shows its English text; everything else is exported.
@@ -104,9 +108,9 @@ details appear below the key so source and translation remain side by side.
 After resizing columns manually, use **Fit columns** to restore automatic sizing.
 
 Select rows with checkboxes, Ctrl+click, Shift+click, or Ctrl+A in the string
-table. The batch toolbar and right-click menu offer copy, mark Done, keep
-original, clear translation, and AI/batch actions. Mark Done only after checking
-the selected translations. Empty rows cannot be marked Done.
+table. The batch toolbar and right-click menu offer copy, **Mark as done**, keep
+original, clear translation, and AI/batch actions. Use **Mark as done** only after
+checking the selected translations. Empty rows cannot be marked as done.
 
 One completed batch edit can be undone while its snapshot is still current.
 A newer completed operation replaces that snapshot. Undo refuses to overwrite
@@ -171,8 +175,9 @@ see [data sent to AI](ai.md#data-and-privacy).
 
 ## Export translation files
 
-Choose **Files… > Export JSON** for the selected mod or all scanned mods. The confirmation
-shows the scope, replacement information, and strings needing attention.
+Choose **Files… > Export JSON for selected mod…** or **Export JSON for all
+mods…**. The confirmation shows the scope, replacement information, and strings
+needing attention.
 
 **Nonempty Review and Changed translations are included in export after a
 warning.** They do not become Done as a result. Empty entries are omitted so
