@@ -88,7 +88,7 @@ it("separates scan and AI runs while retaining each run's steps and copied spaci
     ),
   ).toEqual([
     expect.stringContaining("AI translation started for Test mod."),
-    expect.stringContaining("Scanning mods"),
+    expect.stringContaining("Scan done"),
     expect.stringContaining("AI translation started for Next mod."),
   ]);
   expect(log.querySelector("p:first-child")).not.toHaveAttribute(
@@ -148,9 +148,13 @@ it.each(["success", "warning", "cancelled", "failed"] as const)(
     const finished = rows.findIndex((row) =>
       row.textContent?.includes(completion.title),
     );
-    const scan = rows.findIndex((row) =>
-      row.textContent?.includes("Scanning mods"),
-    );
+    // The refresh scan is the last one; the first is the initial scan.
+    const scan =
+      rows.length -
+      1 -
+      [...rows]
+        .reverse()
+        .findIndex((row) => row.textContent?.includes("Scan done"));
     expect(finished).toBeGreaterThan(0);
     expect(finished).toBeLessThan(scan);
     expect(rows[finished]).not.toHaveAttribute("data-group-start");

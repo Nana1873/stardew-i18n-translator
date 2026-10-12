@@ -530,7 +530,8 @@ export async function progressCases(h) {
           const finished = rows.indexOf(completions[0]);
           const scan = rows.findIndex(
             (row, index) =>
-              index > finished && row.textContent.includes("Scanning mods"),
+              index > finished &&
+              /Scanning mods|Scan done/.test(row.textContent),
           );
           return (
             completions.length === 1 &&

@@ -5,6 +5,7 @@ import {
   appendActivity,
   operationActivity,
   reportActivity,
+  SCANNING_MESSAGE,
   type ActivityBuffer,
   type ActivityDetails,
   type ActivityEvent,
@@ -123,7 +124,7 @@ export function ActivityLog({
     if (scanning)
       append({
         kind: "message",
-        message: "Scanning mods…",
+        message: SCANNING_MESSAGE,
         tone: "info",
         startsGroup: true,
       });
