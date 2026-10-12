@@ -91,7 +91,7 @@ function genericMessage(difference: TokenDifference): string {
   if (isPortraitCommand(token))
     return severity === "error"
       ? missing
-        ? `The portrait ${token} ${change} ${counts}: another portrait on the same dialogue page is now shown as raw text.`
+        ? `The portrait ${token} ${change} ${counts}: the portraits changed and one dialogue page now shows a portrait as raw text.`
         : `The portrait ${token} ${change} ${counts}: a second portrait on one dialogue page is shown as raw text.`
       : `The portrait ${token} ${change} ${counts}: the character shows a different face. Fine if intended.`;
   if (token === "@")

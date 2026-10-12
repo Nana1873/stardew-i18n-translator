@@ -244,7 +244,7 @@ fn difference_message(difference: &TokenDifference) -> String {
     }
     if is_portrait_command(token) {
         return if difference.is_error() && missing {
-            format!("The portrait {token} {change} {counts}: another portrait on the same dialogue page is now shown as raw text.")
+            format!("The portrait {token} {change} {counts}: the portraits changed and one dialogue page now shows a portrait as raw text.")
         } else if difference.is_error() {
             format!("The portrait {token} {change} {counts}: a second portrait on one dialogue page is shown as raw text.")
         } else {
