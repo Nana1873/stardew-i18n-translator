@@ -5,6 +5,8 @@ import {
   matchesShortcut,
   resolveShortcuts,
   shortcutFromEvent,
+  blockBrowserKeys,
+  isBrowserKey,
   shortcutProblem,
 } from "./shortcuts";
 
@@ -62,6 +64,55 @@ describe("shortcuts", () => {
     expect(shortcutProblem("Tab")).toMatch(/keyboard navigation/);
     expect(shortcutProblem("Shift+Tab")).toMatch(/keyboard navigation/);
     expect(shortcutProblem("Ctrl+Tab")).toMatch(/keyboard navigation/);
+  });
+
+  it("reserves browser reload, find, and print keys", () => {
+    for (const shortcut of ["F5", "Ctrl+F5", "Ctrl+R", "F3", "Ctrl+P"]) {
+      expect(shortcutProblem(shortcut)).toMatch(/reserved/);
+    }
+    expect(DEFAULT_SHORTCUTS["editor.translate"]).toBe("F8");
+    expect(shortcutProblem(DEFAULT_SHORTCUTS["editor.translate"])).toBeNull();
+  });
+
+  it("keeps saved shortcuts but replaces a saved Ctrl+F5 with the new default", () => {
+    expect(
+      resolveShortcuts({ "editor.translate": "Ctrl+F5" })["editor.translate"],
+    ).toBe("F8");
+    expect(
+      resolveShortcuts({ "editor.translate": "Ctrl+Shift+T" })[
+        "editor.translate"
+      ],
+    ).toBe("Ctrl+Shift+T");
+  });
+
+  it("blocks the browser action of reload and print keys only", () => {
+    const stop = blockBrowserKeys(window);
+    const press = (init: KeyboardEventInit) => {
+      const event = new KeyboardEvent("keydown", {
+        ...init,
+        cancelable: true,
+      });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    expect(press({ key: "F5" })).toBe(true);
+    expect(press({ key: "F5", ctrlKey: true })).toBe(true);
+    expect(press({ key: "r", ctrlKey: true })).toBe(true);
+    expect(press({ key: "p", ctrlKey: true })).toBe(true);
+    expect(press({ key: "F3" })).toBe(true);
+    expect(press({ key: "F8" })).toBe(false);
+    expect(press({ key: "c", ctrlKey: true })).toBe(false);
+    stop();
+    expect(press({ key: "F5" })).toBe(false);
+    expect(
+      isBrowserKey({
+        key: "F2",
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+      }),
+    ).toBe(false);
   });
 
   it("uses compact arrow glyphs for display", () => {

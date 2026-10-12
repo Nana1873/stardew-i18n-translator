@@ -160,7 +160,7 @@ describe("StringEditor", () => {
     fireEvent.keyDown(window, { key: "F4" });
     fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
     fireEvent.keyDown(window, { key: "Enter", ctrlKey: true });
-    fireEvent.keyDown(window, { key: "F5", ctrlKey: true });
+    fireEvent.keyDown(window, { key: "F8" });
 
     expect(field).toHaveValue("Unsaved edit");
     expect(onSave).not.toHaveBeenCalled();
