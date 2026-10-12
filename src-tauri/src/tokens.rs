@@ -397,8 +397,6 @@ fn branch_text(chars: &[char], branch: usize) -> String {
     text
 }
 
-/// Only the first emotion token on a dialogue page is applied; any further
-/// one stays visible as raw text. Counts the pages that show such raw text.
 /// The game applies one emotion per dialogue page and removes every copy of
 /// it (`Dialogue.checkEmotions` uses `Replace`), so a repeated portrait is
 /// harmless; a second, different one stays visible as raw text. Mirrors TS
