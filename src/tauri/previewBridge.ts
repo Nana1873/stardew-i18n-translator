@@ -270,7 +270,8 @@ function saveRow(
   map.set(key, {
     ...row,
     target,
-    targetPresent: target !== "" || row.targetPresent,
+    // Like the scanner: only an unchanged installed value counts as present.
+    targetPresent: row.targetPresent && target === row.target,
     status: target === "" && row.source.trim() !== "" ? "untranslated" : status,
     tokenMismatchAccepted: accepted,
     savedSource: source,

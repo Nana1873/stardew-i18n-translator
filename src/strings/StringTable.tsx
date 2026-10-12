@@ -3528,7 +3528,9 @@ function RowView({
           : "Must fix: this text stays English in the game until fixed."
       : acceptedTokenMismatch
         ? "Kept on purpose: exported as written."
-        : "Worth a look: exported as written.";
+        : issues.every((issue) => issue.ruleId === "empty-target")
+          ? "Worth a look:"
+          : "Worth a look: exported as written.";
   const issueHelp = severity
     ? `${issueSummary} ${issues.map((issue) => issue.message).join(" ")}`
     : "";

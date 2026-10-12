@@ -160,6 +160,14 @@ export const FIXTURE_MODS: FixtureMod[] = [
         status: "translated",
       },
       {
+        // The installed file has "" for this key: the game shows its
+        // "(no translation)" placeholder, so the table warns.
+        key: "item.price",
+        section: "Items",
+        source: "Sells for 500g.",
+        target: "",
+      },
+      {
         // A single space saved on purpose: the game shows nothing here.
         key: "item.silent",
         section: "Items",

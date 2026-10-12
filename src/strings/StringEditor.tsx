@@ -1280,7 +1280,11 @@ export function StringEditor({
                               )
                               ? "Must fix or Save anyway – until then this string stays English in the game"
                               : "Must fix"
-                            : "Worth a look – exported as written"}
+                            : group.every(
+                                  (issue) => issue.ruleId === "empty-target",
+                                )
+                              ? "Worth a look"
+                              : "Worth a look – exported as written"}
                         </span>
                         {group.map((issue, i) => (
                           <span
