@@ -1115,9 +1115,16 @@ where
                 transient_retried = true;
                 report(ProviderProgressEvent::TransientRetry);
             }
+            // A same-size retry after the five-minute limit would only time out
+            // again: hand it straight to the split.
+            Err(ProviderFailure::InvalidResponse(error)) if error == super::TIMEOUT_MESSAGE => {
+                return Err(ProviderFailure::InvalidResponse(error));
+            }
             Err(ProviderFailure::InvalidResponse(error)) if !structure_retried => {
                 structure_retried = true;
-                structural_error = Some(error);
+                // A refusal is not a structural error; do not tell the model
+                // its previous response failed the validator.
+                structural_error = (error != super::REFUSAL_MESSAGE).then_some(error);
                 report(ProviderProgressEvent::StructureRetry);
             }
             result => return result,
