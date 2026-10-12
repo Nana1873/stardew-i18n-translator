@@ -406,6 +406,9 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
     // silently treated as empty, and saves elsewhere refuse to overwrite it.
     let mut state_cache: HashMap<String, ModState> = HashMap::new();
     let mut extra_keys = Vec::new();
+    // The read boundary for every i18n file, resolved once per scan. If the
+    // Mods folder vanished mid-scan, the unresolved path refuses every read.
+    let canonical_mods = canonical_root(mods_path).unwrap_or_else(|_| mods_path.to_path_buf());
     for i18n_dir in &i18n_dirs {
         let Some(owner) = nearest_manifest_owner(i18n_dir, &manifest_dirs) else {
             // SMAPI only loads i18n folders of a mod with a manifest. Report the
@@ -467,7 +470,7 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     slot.insert(loaded)
                 }
             };
-            for (path, error) in unreadable_split_targets(i18n_dir, target_lang, mods_path) {
+            for (path, error) in unreadable_split_targets(i18n_dir, target_lang, &canonical_mods) {
                 warnings.push(format!(
                     "{} in {} was ignored because it cannot be read: {}",
                     safe_relative_location(&path, mods_path),
@@ -475,33 +478,23 @@ pub fn scan_mods(mods_path: &Path, target_lang: &str, config_dir: &Path) -> Scan
                     safe_skip_reason(&error, mods_path)
                 ));
             }
-            for unit in i18n_units(i18n_dir, mods_path).unwrap_or_else(|error| vec![Err(error)]) {
-                match unit
-                    .and_then(|unit| build_i18n_file(&owner, &unit, mods_path, target_lang, state))
-                {
-                    Ok((file, status_counts)) => {
-                        let diagnostics = extra_target_keys(
-                            &scanned.name,
-                            &file.relative_dir,
-                            Path::new(&file.default_path),
-                            Path::new(&file.target_path),
-                            mods_path,
-                        );
-                        match diagnostics {
-                            Ok(diagnostics) => {
-                                extra_keys.extend(diagnostics);
-                                scanned.status_counts.merge(&status_counts);
-                                scanned.i18n_files.push(file);
+            for unit in
+                i18n_units(i18n_dir, &canonical_mods).unwrap_or_else(|error| vec![Err(error)])
+            {
+                match unit.and_then(|unit| {
+                    build_i18n_file(&owner, &unit, &canonical_mods, target_lang, state)
+                }) {
+                    Ok((file, status_counts, extra_target_keys)) => {
+                        extra_keys.extend(extra_target_keys.into_iter().map(|key| {
+                            ExtraKeyDiagnostic {
+                                mod_name: scanned.name.clone(),
+                                relative_dir: file.relative_dir.clone(),
+                                target_path: file.target_path.clone(),
+                                key,
                             }
-                            Err(error) => {
-                                skipped_components.push(skipped_i18n_component(
-                                    scanned,
-                                    i18n_dir,
-                                    mods_path,
-                                    safe_skip_reason(&error, mods_path),
-                                ));
-                            }
-                        }
+                        }));
+                        scanned.status_counts.merge(&status_counts);
+                        scanned.i18n_files.push(file);
                     }
                     Err(error) => {
                         skipped_components.push(skipped_i18n_component(
@@ -635,30 +628,6 @@ pub(crate) fn safe_skip_reason(reason: &str, mods_path: &Path) -> String {
         safe = safe.replace(&root.replace('\\', "/"), "Mods");
     }
     safe
-}
-
-fn extra_target_keys(
-    mod_name: &str,
-    relative_dir: &str,
-    default_path: &Path,
-    target_path: &Path,
-    allowed_root: &Path,
-) -> Result<Vec<ExtraKeyDiagnostic>, String> {
-    let target = read_target_object_within_root(target_path, allowed_root)?;
-    let source = read_object_within_root(default_path, allowed_root, "source")?;
-    let source_folded: HashSet<String> = source.keys().map(|key| folded_key(key)).collect();
-
-    Ok(target
-        .keys()
-        .filter(|key| !is_ignored_i18n_key(key))
-        .filter(|key| !source_folded.contains(&folded_key(key)))
-        .map(|key| ExtraKeyDiagnostic {
-            mod_name: mod_name.to_string(),
-            relative_dir: relative_dir.to_string(),
-            target_path: target_path.display().to_string(),
-            key: key.clone(),
-        })
-        .collect())
 }
 
 fn read_manifest(manifest: &Path, dir: &Path, mods_path: &Path) -> Result<ScannedMod, String> {
@@ -1218,6 +1187,8 @@ struct KeyInspection {
 
     status_counts: StatusCounts,
     source_hashes: Vec<SourceKeyHash>,
+    /// Target keys that `default.json` no longer has (informational).
+    extra_target_keys: Vec<String>,
 }
 
 fn inspect_keys_checked(
@@ -1262,6 +1233,13 @@ fn inspect_keys_checked(
             source_hash: translations::source_hash(value.as_str().unwrap_or_default()),
         })
         .collect();
+    let source_folded: HashSet<String> = source.keys().map(|key| folded_key(key)).collect();
+    let extra_target_keys = target_map
+        .keys()
+        .filter(|key| !is_ignored_i18n_key(key))
+        .filter(|key| !source_folded.contains(&folded_key(key)))
+        .cloned()
+        .collect();
     Ok(KeyInspection {
         total,
         translated,
@@ -1270,6 +1248,7 @@ fn inspect_keys_checked(
 
         status_counts,
         source_hashes,
+        extra_target_keys,
     })
 }
 
@@ -1282,20 +1261,27 @@ fn read_target_object_within_root(
     })
 }
 
-fn read_object_within_root(
-    path: &Path,
-    allowed_root: &Path,
-    kind: &str,
-) -> Result<serde_json::Map<String, Value>, String> {
-    let canonical_root = std::fs::canonicalize(allowed_root).map_err(|error| {
+/// Canonicalize a read boundary once, so per-file reads below it only resolve
+/// the file itself.
+fn canonical_root(allowed_root: &Path) -> Result<PathBuf, String> {
+    std::fs::canonicalize(allowed_root).map_err(|error| {
         format!(
             "Could not validate Mods folder {}: {error}",
             allowed_root.display()
         )
-    })?;
+    })
+}
+
+/// Read `path` if it resolves inside `canonical_root`, which must already be
+/// canonical (see [`canonical_root`]); a non-canonical root refuses every read.
+fn read_object_within_root(
+    path: &Path,
+    canonical_root: &Path,
+    kind: &str,
+) -> Result<serde_json::Map<String, Value>, String> {
     let canonical_read = std::fs::canonicalize(path)
         .map_err(|error| format!("Could not validate {kind} file {}: {error}", path.display()))?;
-    if !canonical_read.starts_with(&canonical_root) {
+    if !canonical_read.starts_with(canonical_root) {
         return Err(format!(
             "{kind} file resolves outside the configured Mods folder: {}",
             path.display()
@@ -1393,7 +1379,7 @@ fn unreadable_folder(dir: &Path, error: &std::io::Error) -> String {
 }
 
 /// Folded keys of every source document beside `source` (all split segments).
-fn split_source_keys(source: &Path, root: &Path) -> Result<HashSet<String>, String> {
+fn split_source_keys(source: &Path, canonical_root: &Path) -> Result<HashSet<String>, String> {
     let mut known = HashSet::new();
     let sources = source.parent().ok_or("Invalid split source")?;
     for entry in std::fs::read_dir(sources).map_err(|e| unreadable_folder(sources, &e))? {
@@ -1405,7 +1391,7 @@ fn split_source_keys(source: &Path, root: &Path) -> Result<HashSet<String>, Stri
             continue;
         }
         known.extend(
-            read_object_within_root(&path, root, "source")?
+            read_object_within_root(&path, canonical_root, "source")?
                 .keys()
                 .filter(|key| !is_ignored_i18n_key(key))
                 .map(|key| folded_key(key)),
@@ -1420,6 +1406,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
         .and_then(Path::parent)
         .ok_or("Invalid split source")?;
     let target = root.join(language);
+    let canonical = canonical_root(root)?;
     let keys: HashSet<_> = read_object_checked(source)?
         .keys()
         .filter(|key| !is_ignored_i18n_key(key))
@@ -1441,7 +1428,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                     .file_name()
                     .is_some_and(|own| own.eq_ignore_ascii_case(name))
             });
-            let values = match read_object_within_root(&path, root, "target") {
+            let values = match read_object_within_root(&path, &canonical, "target") {
                 Ok(values) => values,
                 // SMAPI skips a locale document it cannot parse (per-file
                 // try/continue in SCore.ReadTranslationFiles), so one broken
@@ -1462,7 +1449,7 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                     // document make this target ambiguous.
                     let known_keys = match all_source_keys {
                         Some(ref known) => known,
-                        None => all_source_keys.insert(split_source_keys(source, root)?),
+                        None => all_source_keys.insert(split_source_keys(source, &canonical)?),
                     };
                     if existing
                         .iter()
@@ -1482,8 +1469,8 @@ pub(crate) fn split_target_path(source: &Path, language: &str) -> Result<PathBuf
                 // A same-named document without shared keys is a stub (`{}`) or
                 // holds only keys the source no longer has. It belongs to this
                 // segment unless it carries keys another source document owns.
-                let other_source_keys = split_source_keys(source, root)?;
-                let owned_elsewhere = read_object_within_root(&path, root, "target")?
+                let other_source_keys = split_source_keys(source, &canonical)?;
+                let owned_elsewhere = read_object_within_root(&path, &canonical, "target")?
                     .keys()
                     .filter(|key| !is_ignored_i18n_key(key))
                     .map(|key| folded_key(key))
@@ -1590,13 +1577,15 @@ fn i18n_units(dir: &Path, root: &Path) -> Result<Vec<Result<PathBuf, String>>, S
     Ok(files.into_iter().map(Ok).collect())
 }
 
+/// One scanned translation unit, its status counts, and the target keys that
+/// `default.json` no longer has, all from a single read of source and target.
 fn build_i18n_file(
     mod_dir: &Path,
     i18n_dir: &Path,
-    mods_path: &Path,
+    canonical_mods: &Path,
     target_lang: &str,
     state: &ModState,
-) -> Result<(ScannedI18nFile, StatusCounts), String> {
+) -> Result<(ScannedI18nFile, StatusCounts, Vec<String>), String> {
     let split = i18n_dir.is_file();
     let source_dir = if split {
         i18n_dir
@@ -1634,7 +1623,7 @@ fn build_i18n_file(
     let inspection = inspect_keys_checked(
         &default_path,
         &target_path,
-        Some(mods_path),
+        Some(canonical_mods),
         state,
         &relative_dir,
     )?;
@@ -1650,7 +1639,7 @@ fn build_i18n_file(
         review_needed,
         source_hashes: inspection.source_hashes,
     };
-    Ok((file, inspection.status_counts))
+    Ok((file, inspection.status_counts, inspection.extra_target_keys))
 }
 
 /// Walk `root`, collecting `manifest.json` files and `i18n/` dirs that contain a
