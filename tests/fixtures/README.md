@@ -5,6 +5,9 @@ used by both [the TypeScript suite](../../src/strings/tokenCases.test.ts) and
 [the Rust suite](../../src-tauri/src/tokens.rs) (`shared_fixture_cases_match`).
 Add new token-extractor cases here so both implementations are checked against
 the same expectations.
+`comparisons` pin which differences block the export, and `explanations` pin
+the exact plain-language sentence for single differences, so the editor and
+the export or ZIP results word a finding the same way.
 
 Other tests keep synthetic fixtures inline, including temporary directories
 with `manifest.json` and `i18n/*.json` files. Shared static data belongs here

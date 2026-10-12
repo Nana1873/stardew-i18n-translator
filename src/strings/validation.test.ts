@@ -8,7 +8,8 @@ describe("validate", () => {
       {
         ruleId: "token-missing",
         severity: "error",
-        message: "#$b# is missing (English 1, translation 0).",
+        message:
+          "#$b# is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes.",
       },
     ]);
     expect(worstSeverity(issues)).toBe("error");
@@ -20,7 +21,8 @@ describe("validate", () => {
       {
         ruleId: "token-missing",
         severity: "warning",
-        message: "{{name}} is missing (English 1, translation 0).",
+        message:
+          "{{name}} is missing (English 1, translation 0). The value is left out. Fine if intended.",
       },
     ]);
     expect(worstSeverity(issues)).toBe("warning");
@@ -93,7 +95,7 @@ describe("validate", () => {
     const issues = validate("${a^b}$", "${x^y^z}$ ${neu^neu}$", false);
 
     expect(issues.map((issue) => issue.ruleId)).toEqual(["token-added"]);
-    expect(issues[0].message).toContain("he/she variants changed");
+    expect(issues[0].message).toContain("he/she switches changed");
   });
 
   it("still blocks a malformed target-only gender switch", () => {
@@ -165,7 +167,8 @@ describe("validate", () => {
       {
         ruleId: "token-missing",
         severity: "warning",
-        message: "The player name @ is missing (English 1, translation 0).",
+        message:
+          "The player name @ is missing (English 1, translation 0). Fine if intended.",
       },
     ]);
   });
@@ -173,7 +176,9 @@ describe("validate", () => {
   it("catches a dropped second $b via multiset comparison", () => {
     const issues = validate("a$b b$b c", "a$b b c", false);
     expect(issues.map((i) => i.ruleId)).toEqual(["token-missing"]);
-    expect(issues[0].message).toBe("$b is missing (English 2, translation 1).");
+    expect(issues[0].message).toBe(
+      "$b is missing (English 2, translation 1). The game would show it as text or change the dialogue flow.",
+    );
   });
 
   it("treats a #$b# dialogue break and $s command as protected tokens", () => {
@@ -187,7 +192,7 @@ describe("validate", () => {
       "token-missing",
     ]);
     expect(broken.map((i) => i.message).sort()).toEqual([
-      "#$b# is missing (English 1, translation 0).",
+      "#$b# is missing (English 1, translation 0). It starts a new dialogue box, so the page structure changes.",
       "The portrait $s is missing (English 2, translation 0): the character shows a different face. Fine if intended.",
     ]);
   });
@@ -276,7 +281,7 @@ describe("validate", () => {
       .sort();
     expect(errors).toEqual([
       "# is missing (English 1, translation 0). # separates dialogue boxes.",
-      "^ is missing (English 2, translation 1). In dialogue, ^ splits the text into male and female versions.",
+      "^ is missing (English 2, translation 1). In dialogue, ^ splits the text into male and female versions; in a letter it is a line break.",
     ]);
     expect(issues.every((issue) => issue.severity === "error")).toBe(true);
     expect(

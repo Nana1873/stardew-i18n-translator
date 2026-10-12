@@ -27,25 +27,82 @@ function delta(differences: TokenDifference[], token: string) {
   return difference ? difference.targetCount - difference.sourceCount : 0;
 }
 
+/** What a token difference does in the game, as one sentence. Errors name
+ * the consequence; warnings end with "Fine if intended." Mirrors Rust
+ * `tokens::token_consequence` word for word. */
+export function tokenConsequence(difference: TokenDifference): string {
+  const { token, sourceCount, targetCount, severity } = difference;
+  const missing = targetCount < sourceCount;
+  if (token === "${" || token === "}$")
+    return severity === "error"
+      ? "A he/she switch marker is unbalanced, so the game would show broken text."
+      : "Fine if intended.";
+  if (/^#\$b[#$*]/.test(token))
+    return "It starts a new dialogue box, so the page structure changes.";
+  if (/^#\$e[#$*]/.test(token))
+    return "It ends the conversation and shows the rest next time, so the page structure changes.";
+  if (
+    token.startsWith("#$action") ||
+    ((token.startsWith("#$") || token.startsWith("$")) && token.endsWith("#"))
+  )
+    return "It carries response ids, flags, or keys the game needs.";
+  if (token.startsWith("%item") || token.startsWith("%action"))
+    return missing
+      ? "The attached item or reward would not be given."
+      : "It adds an item or reward the English mail does not give.";
+  if (token === "[#]")
+    return missing
+      ? "The letter title would show as part of the letter text."
+      : "Text after it would become the letter title.";
+  if (token === "%fork" || token.startsWith("%revealtaste"))
+    return missing
+      ? "The event branch or gift-taste reveal is lost."
+      : "It changes event logic the English text does not have.";
+  if (token.startsWith("{{") || /^\{\d+\}$/.test(token)) {
+    if (missing) return "The value is left out. Fine if intended.";
+    return token.startsWith("{{")
+      ? "An unknown placeholder stays visible as raw text."
+      : "A placeholder without a value breaks the text.";
+  }
+  if (token.toLowerCase().startsWith("[articlefor"))
+    return missing
+      ? "Only the a/an article is lost. Fine if intended."
+      : "A changed or extra game token shows as raw text.";
+  if (token.startsWith("["))
+    return missing
+      ? "The game would not insert this value or item."
+      : "A changed or extra game token shows as raw text.";
+  if (token.startsWith("$") && !isPortraitCommand(token))
+    return "The game would show it as text or change the dialogue flow.";
+  return severity === "warning"
+    ? "Fine if intended."
+    : "The game would show it as raw text or misread the line.";
+}
+
 function genericMessage(difference: TokenDifference): string {
-  const { token, sourceCount, targetCount } = difference;
+  const { token, sourceCount, targetCount, severity } = difference;
   const counts = `(English ${sourceCount}, translation ${targetCount})`;
   const missing = targetCount < sourceCount;
+  const change = missing ? "is missing" : "was added";
   if (isGenderSwitchShape(token))
     return missing
       ? "A he/she variant ${…^…}$ was removed; everyone sees the same text. Fine if intended."
-      : "The number of he/she variants changed. Fine if intended.";
+      : "The number or shape of he/she switches changed. Fine if intended.";
   if (isPortraitCommand(token))
-    return `The portrait ${token} ${missing ? "is missing" : "was added"} ${counts}: the character shows a different face. Fine if intended.`;
+    return severity === "error"
+      ? missing
+        ? `The portrait ${token} ${change} ${counts}: the portraits changed and one dialogue page now shows a portrait as raw text.`
+        : `The portrait ${token} ${change} ${counts}: a second portrait on one dialogue page is shown as raw text.`
+      : `The portrait ${token} ${change} ${counts}: the character shows a different face. Fine if intended.`;
   if (token === "@")
-    return `The player name @ ${missing ? "is missing" : "was added"} ${counts}.`;
+    return `The player name @ ${change} ${counts}. Fine if intended.`;
   if (token === "^")
-    return `^ ${missing ? "is missing" : "was added"} ${counts}. In dialogue, ^ splits the text into male and female versions.`;
+    return `^ ${change} ${counts}. In dialogue, ^ splits the text into male and female versions; in a letter it is a line break.`;
   if (token === "{" || token === "}")
-    return `A single ${token} ${missing ? "is missing" : "was added"} ${counts}. The game treats single braces as commands and hides text.`;
+    return `A single ${token} ${change} ${counts}. The game treats single braces as commands and hides text.`;
   if (token === "#")
-    return `# ${missing ? "is missing" : "was added"} ${counts}. # separates dialogue boxes.`;
-  return `${token} ${missing ? "is missing" : "was added"} ${counts}.`;
+    return `# ${change} ${counts}. # separates dialogue boxes.`;
+  return `${token} ${change} ${counts}. ${tokenConsequence(difference)}`;
 }
 
 /**
