@@ -2186,6 +2186,28 @@ export function StringTable({
     target: targetWidth,
   } = renderedColumnWidths;
   const fixedTargetWidth = !fitColumns && targetColumnSized;
+  // Widths saved in a wider window can push the issue icons out of view.
+  // Fit them once on open; widths changed later stay as the user sets them.
+  const restoredFitChecked = useRef(false);
+  useEffect(() => {
+    if (restoredFitChecked.current || workbenchWidth <= 0) return;
+    restoredFitChecked.current = true;
+    if (fitColumns) return;
+    const restoredTotal =
+      34 +
+      ROW_ACTIONS_WIDTH +
+      (showModColumn ? columnWidths.mod : 0) +
+      (showFileColumn ? columnWidths.file : 0) +
+      columnWidths.status +
+      columnWidths.key +
+      columnWidths.source +
+      (targetColumnSized ? columnWidths.target : COLUMN_LIMITS.target.min);
+    if (restoredTotal > workbenchWidth) {
+      setFitColumns(true);
+      setTargetColumnSized(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workbenchWidth]);
   const gridTemplateColumns = [
     "34px",
     ...(showModColumn ? [String(modWidth) + "px"] : []),
